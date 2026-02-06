@@ -78,7 +78,7 @@ module type S = sig
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
   val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
-  val get_where : unit -> (Trace.t, 'env) t
+  val get_trace : unit -> (Trace.t, 'env) t
 
   val with_extra_call_trace :
     loc:Meta.span_data -> msg:string -> ('a, 'env) t -> ('a, 'env) t
@@ -325,9 +325,9 @@ struct
     ESM.lift
     @@ State.SM.lift
          (let open Rustsymex.Syntax in
-          let* where = Rustsymex.get_where () in
+          let* trace = Rustsymex.get_trace () in
           let+- err = sym in
-          Error.decorate where err)
+          Error.decorate trace err)
 
   let assert_ cond err =
     lift_err (assert_or_error (cond :> Typed.T.sbool Typed.t) err)
@@ -380,7 +380,7 @@ struct
     ESM.lift
       (let open State.SM.Syntax in
        let*- err = State.with_decay_map f in
-       let+^ where = get_where () in
+       let+^ where = get_trace () in
 
        Compo_res.Error (Error.decorate where err))
 
@@ -396,7 +396,7 @@ struct
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> with_loc ~loc (f () env state)
 
-  let get_where () : (Trace.t, 'env) t = lift_symex @@ Rustsymex.get_where ()
+  let get_trace () : (Trace.t, 'env) t = lift_symex @@ Rustsymex.get_trace ()
 
   let with_extra_call_trace ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
    fun env state -> Rustsymex.with_extra_call_trace ~loc ~msg (x env state)

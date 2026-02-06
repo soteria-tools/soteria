@@ -44,7 +44,7 @@ module Meta = struct
     size : Typed.T.sint Typed.t;
     tb_root : Tree_borrow.tag;
     kind : Alloc_kind.t;
-    where : Trace.t;
+    trace : Trace.t;
   }
   [@@deriving show { with_path = false }]
 end
@@ -203,9 +203,9 @@ module Freeable_block_with_meta = struct
     let open DecayMapMonad.Syntax in
     let tb, tag = Tree_borrow.init ~state:Unique () in
     let block = Tree_block.alloc ?zeroed size in
-    let+^ where = get_where () in
-    let where = Trace.move_to_opt span where in
-    let info : Meta.t = { align; size; kind; where; tb_root = tag } in
+    let+^ trace = get_trace () in
+    let trace = Trace.move_to_opt span trace in
+    let info : Meta.t = { align; size; kind; trace; tb_root = tag } in
     let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
     (({ node = Alive (Some block, tb); info = Some info } : t), tag)
 end
@@ -328,14 +328,15 @@ let log action ptr =
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st)
 
-let[@inline] with_loc_err ?trace () (f : unit -> ('a, Error.t, 'f) SM.Result.t)
-    : ('a, Error.with_trace, 'f) SM.Result.t =
+let[@inline] with_loc_err ?trace:msg ()
+    (f : unit -> ('a, Error.t, 'f) SM.Result.t) :
+    ('a, Error.with_trace, 'f) SM.Result.t =
   let*- err = f () in
-  let+^ where = get_where () in
-  let where =
-    Option.fold ~none:where ~some:(fun t -> Trace.set_op t where) trace
+  let+^ trace = get_trace () in
+  let trace =
+    Option.fold ~none:trace ~some:(fun t -> Trace.set_op t trace) msg
   in
-  Error (Error.decorate where err)
+  Error (Error.decorate trace err)
 
 let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
   let* st = SM.get_state () in
@@ -744,17 +745,17 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
            (* FIXME: This only works because our addresses are concrete *)
            let open DecayMapMonad in
            match v with
-           | { node = Alive _; info = Some { kind = Heap; where; _ }; _ }
+           | { node = Alive _; info = Some { kind = Heap; trace; _ }; _ }
              when not (List.mem k global_addresses) ->
-               Result.ok ((k, where) :: leaks)
+               Result.ok ((k, trace) :: leaks)
            | _ -> Result.ok leaks)
          [] heap
      in
      if List.is_empty leaks then Result.ok ()
      else (
        L.info (fun m ->
-           let pp_leak ft (k, where) =
-             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp where
+           let pp_leak ft (k, trace) =
+             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp trace
            in
            m "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks);
        let wheres = List.map snd leaks in

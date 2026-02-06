@@ -35,5 +35,4 @@ let push_to_stack ~loc ~msg where =
 let loc_or_default where =
   match where.loc with Some loc -> loc | None -> Charon_util.empty_span_data
 
-let nowhere =
-  { op = None; loc = None; stack = Soteria.Terminal.Call_trace.empty }
+let empty = { op = None; loc = None; stack = Soteria.Terminal.Call_trace.empty }

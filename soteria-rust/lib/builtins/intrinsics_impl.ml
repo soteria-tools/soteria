@@ -151,9 +151,9 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let catch_unwind exec_fun ~_try_fn:try_fn_ptr ~_data:data
       ~_catch_fn:catch_fn_ptr =
-    let* where = get_where () in
+    let* trace = get_trace () in
     let[@inline] exec_fun msg fn args =
-      with_extra_call_trace ~loc:(Trace.loc_or_default where) ~msg
+      with_extra_call_trace ~loc:(Trace.loc_or_default trace) ~msg
       @@ exec_fun fn args
     in
     let* try_fn = State.lookup_fn try_fn_ptr in

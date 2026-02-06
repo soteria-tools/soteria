@@ -25,14 +25,14 @@ end)
 
 module MonadState = struct
   type t = {
-    where : Trace.t;
+    trace : Trace.t;
     subst : Charon.Substitute.subst;
     generic_layouts : Layout_common.t TypeMap.t;
   }
 
   let empty =
     {
-      where = Trace.nowhere;
+      trace = Trace.empty;
       subst = Charon.Substitute.empty_subst;
       generic_layouts = TypeMap.empty;
     }
@@ -97,27 +97,30 @@ let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
 let with_loc ~loc (f : 'a t) : 'a t =
  fun st ->
   let open MonoSymex.Syntax in
-  let current_loc = st.where.loc in
-  let+ result, state = f { st with where = Trace.move_to loc st.where } in
-  (result, { state with where = Trace.move_to_opt current_loc state.where })
+  let current_loc = st.trace.loc in
+  let+ result, state = f { st with trace = Trace.move_to loc st.trace } in
+  (result, { state with trace = Trace.move_to_opt current_loc state.trace })
 
-let get_where () : Trace.t t =
+let get_trace () : Trace.t t =
   let open Syntax in
-  let+ { where; _ } = get_state () in
-  where
+  let+ { trace; _ } = get_state () in
+  trace
 
 let error ?trace e : ('a, Error.with_trace, 'f) Result.t =
   let open Syntax in
-  let+ where = get_where () in
+  let+ where = get_trace () in
   let where = Option.fold trace ~some:Trace.set_op ~none:Fun.id where in
   Error.log_at where e;
   let e = Error.decorate where e in
   Soteria.Symex.Compo_res.Error e
 
 let with_extra_call_trace ~loc ~msg (f : 'a t) : 'a t =
-  let open Syntax in
-  let* st = get_state () in
-  with_state ~state:{ st with where = Trace.push_to_stack ~loc ~msg st.where } f
+ fun st ->
+  let open MonoSymex.Syntax in
+  let cur_trace = st.trace in
+  let new_trace = Trace.push_to_stack ~loc ~msg cur_trace in
+  let+ result, st = f { st with trace = new_trace } in
+  (result, { st with trace = cur_trace })
 
 let rename_trace trace (f : unit -> ('a, Error.with_trace, 'f) Result.t) :
     ('a, Error.with_trace, 'f) Result.t =
