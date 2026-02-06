@@ -29,7 +29,7 @@ ocaml-format-check:
 	
 .PHONY: check-opam-files
 check-opam-files:
-	python3 scripts/check-opam-files.py
+	@git diff --name-only HEAD | grep -q '\.opam$$' && echo "Error: .opam files have changed since last commit" && exit 1 || exit 0
 	
 
 .PHONY: ocaml-test
