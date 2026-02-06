@@ -79,6 +79,9 @@ module type Core = sig
       that is easier to manipulate. *)
   val consume_false : unit -> ('a, [> lfail ], 'b) Compo_res.t t
 
+  (** Do not use [nondet_UNSAFE]. *)
+  val nondet_UNSAFE : 'a vt -> 'a v
+
   (** [nondet ty] creates a fresh variable of type [ty]. *)
   val nondet : 'a vt -> 'a v t
 
@@ -161,6 +164,23 @@ module type Base = sig
   val iter_list : 'a list -> f:('a -> unit t) -> unit t
   val iter_iter : 'a Iter.t -> f:('a -> unit t) -> unit t
   val map_list : 'a list -> f:('a -> 'b t) -> 'b list t
+
+  module Producer : sig
+    type 'a symex := 'a t
+    type subst := Value.Expr.Subst.t
+
+    include Monad.S
+
+    val lift : 'a symex -> 'a t
+    val vanish : unit -> 'a t
+
+    val apply_subst :
+      ((Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
+
+    val produce_pure : Value.Expr.t -> unit t
+    val run_producer : subst:subst -> 'a t -> ('a * subst) symex
+    val run_identity_producer : 'a t -> 'a symex
+  end
 
   module Result : sig
     type nonrec ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t t
@@ -530,11 +550,11 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     if Approx.As_ctx.is_ux () then ()
     else f (Compo_res.Error (`Lfail (Value.bool false)))
 
-  let nondet ty f =
+  let nondet_UNSAFE ty =
     let v = Solver.fresh_var ty in
-    let v = Value.mk_var v ty in
-    f v
+    Value.mk_var v ty
 
+  let nondet ty f = f (nondet_UNSAFE ty)
   let simplify v f = f (Solver.simplify v)
   let fresh_var ty f = f (Solver.fresh_var ty)
 
@@ -700,6 +720,65 @@ module Base_extension (Core : Core) = struct
 
   let map_list x ~f =
     mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
+
+  module Producer = struct
+    module P =
+      Monad.StateT_base
+        (struct
+          type t = Value.Expr.Subst.t option
+        end)
+        (Core)
+
+    include P
+    include Monad.Extend (P)
+
+    let vanish () = lift (vanish ())
+
+    let apply_subst (sf : (Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : 'sem t =
+     fun s ->
+      (* There's maybe a safer version with effects and no reference? *)
+      match s with
+      | None ->
+          let vsf e =
+            let v, _ =
+              let open Value.Expr.Subst in
+              apply ~missing_var:(fun v ty -> Value.mk_var v ty) empty e
+            in
+            v
+          in
+          let res = sf vsf e in
+          Core.return (res, None)
+      | Some s ->
+          let s = ref s in
+          let vsf e =
+            let v, s' =
+              Value.Expr.Subst.apply
+                ~missing_var:(fun _ ty -> nondet_UNSAFE ty)
+                !s e
+            in
+            s := s';
+            v
+          in
+          let res = sf vsf e in
+          Core.return (res, Some !s)
+
+    let produce_pure e : unit t =
+      let open Syntax in
+      (* FIXME: This does no check that `e` is indeed a boolean. *)
+      let* v = apply_subst Fun.id e in
+      lift (assume [ v ])
+
+    let run_producer ~subst p =
+      let ( let+ ) = Core.map in
+      let+ x, s = p (Some subst) in
+      (x, Option.get s)
+
+    let run_identity_producer p =
+      let ( let+ ) = Core.map in
+      let+ x, _s = p None in
+      x
+  end
 
   module Result = struct
     include Compo_res.T (Core)

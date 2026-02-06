@@ -71,6 +71,7 @@ module Make
     let[@inline] assert_ b = lift (Sym.assert_ b)
     let[@inline] consume_pure b = lift (Sym.consume_pure b)
     let[@inline] consume_false () = lift (Sym.consume_false ())
+    let[@inline] nondet_UNSAFE ty = Sym.nondet_UNSAFE ty
     let[@inline] nondet ty = lift (Sym.nondet ty)
     let[@inline] simplify v = lift (Sym.simplify v)
     let[@inline] fresh_var ty = lift (Sym.fresh_var ty)
