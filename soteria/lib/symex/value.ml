@@ -18,30 +18,31 @@ module type Expr = sig
 
   (** A susbtitution projects the syntactic to the semantic world. *)
   module Subst : sig
+    type expr := t
+
     (** Type of substitutions *)
     type t
 
     val empty : t
+
+    (* * Applies a substitution to a syntactic representation to obtain a
+       symbolic value. Should values be missing, fresh values are generated
+       using the provided function. *)
+    val apply : missing_var:(Var.t -> 'a ty -> 'a v) -> t -> expr -> 'a v * t
+
+    (** [learn θ e v] takes the substitution [θ], the expression [e] and the
+        value [v] and completes [θ] into the unique substitution [θ'] such that
+        [θ'(e) = v]. If there is zero or more than one such substitution,
+        returns [None].
+
+        FIXME: I'm not sure that's true. I believe that for the inputs:
+        - [θ = [x -> 0]]
+        - [v = 1]
+        - [e = x] the function should return [Some θ] (i.e. not modify the
+          substitution), and the consumption is in charge of checking the
+          equality after. This function needs a better documentation. *)
+    val learn : t -> expr -> 'a v -> t option
   end
-
-  (** Applies a substitution to a syntactic representation to obtain a symbolic
-      value. Should values be missing, fresh values are generated using the
-      provided function. *)
-  val subst :
-    missing_var:(Var.t -> 'a ty -> 'a v) -> Subst.t -> t -> 'a v * Subst.t
-
-  (** [learn θ e v] takes the substitution [θ], the expression [e] and the value
-      [v] and completes [θ] into the unique substitution [θ'] such that
-      [θ'(e) = v]. If there is zero or more than one such substitution, returns
-      [None].
-
-      FIXME: I'm not sure that's true. I believe that for the inputs:
-      - [θ = [x -> 0]]
-      - [v = 1]
-      - [e = x] the function should return [Some θ] (i.e. not modify the
-        substitution), and the consumption is in charge of checking the equality
-        after. This function needs a better documentation. *)
-  val learn : Subst.t -> t -> 'a v -> Subst.t option
 end
 
 module type S = sig
