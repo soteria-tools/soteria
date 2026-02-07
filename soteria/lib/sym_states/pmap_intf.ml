@@ -49,7 +49,7 @@ struct
     type codom
     type t
     type codom_serialized
-    type serialized = Key.t * codom_serialized
+    type syn = Key.t * codom_serialized
 
     module SM :
       State_monad.S
@@ -57,7 +57,7 @@ struct
          and module Value = Symex.Value
          and type st = t option
 
-    type ('a, 'err) res := ('a, 'err, serialized list) SM.Result.t
+    type ('a, 'err) res := ('a, 'err, syn list) SM.Result.t
 
     type ('a, 'err) codom_res :=
       codom option ->
@@ -77,14 +77,9 @@ struct
 
     val pp : Format.formatter -> t -> unit
     val show : t -> string
-    val pp_serialized : Format.formatter -> serialized -> unit
-    val show_serialized : serialized -> string
-    val serialize : t -> serialized list
-    val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
-
-    val iter_vars_serialized :
-      serialized -> (Var.t * 'b Symex.Value.ty -> unit) -> unit
-
+    val pp_syn : Format.formatter -> syn -> unit
+    val show_serialized : syn -> string
+    val to_syn : t -> syn list
     val of_opt : t option -> t
     val to_opt : t -> t option
     val alloc : new_codom:codom -> (Key.t, 'err) res
@@ -102,7 +97,7 @@ struct
       t option ->
       'acc Symex.t
 
-    val produce : serialized -> t option -> (unit * t option) Symex.t
+    val produce : syn -> t option -> (unit * t option) Symex.t
 
     (* val consume :
      *  ('inner_serialized ->

@@ -30,17 +30,10 @@ struct
 
   open SM.Syntax
 
-  type serialized = (B.serialized, Info.t) with_info
-  [@@deriving show { with_path = false }]
+  type syn = (B.syn, Info.t) with_info [@@deriving show { with_path = false }]
 
-  let serialize (t : t) : serialized list =
-    B.serialize t.node |> List.map (fun node -> { node; info = t.info })
-
-  let subst_serialized subst_var serialized =
-    let node = B.subst_serialized subst_var serialized.node in
-    { node; info = serialized.info }
-
-  let iter_vars_serialized s = B.iter_vars_serialized s.node
+  let to_syn (t : t) : syn list =
+    B.to_syn t.node |> List.map (fun node -> { node; info = t.info })
 
   let lower = function
     | None -> (None, None)
@@ -48,19 +41,19 @@ struct
 
   let lift ~info = function None -> None | Some node -> Some { node; info }
 
-  let wrap (f : ('a, 'err, B.serialized list) B.SM.Result.t) :
-      ('a, 'err, serialized list) SM.Result.t =
+  let wrap (f : ('a, 'err, B.syn list) B.SM.Result.t) :
+      ('a, 'err, syn list) SM.Result.t =
     let* t = SM.get_state () in
     let node, info = lower t in
     let*^ res, node' = f node in
     let+ () = SM.set_state (lift ~info node') in
     Compo_res.map_missing res (List.map (fun fix -> { node = fix; info }))
 
-  let produce serialized : unit SM.t =
+  let produce syn : unit SM.t =
     let* t = SM.get_state () in
     let t_opt, t_orig = lower t in
-    let info = Option.merge (fun a _ -> a) t_orig serialized.info in
-    let*^ (), node = B.produce serialized.node t_opt in
+    let info = Option.merge (fun a _ -> a) t_orig syn.info in
+    let*^ (), node = B.produce syn.node t_opt in
     SM.set_state (lift ~info node)
 
   (* let consume consume_inner serialized t =

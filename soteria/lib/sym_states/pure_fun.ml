@@ -7,15 +7,20 @@
 open Symex
 open Compo_res
 
+(** FIXME: This is almost verbatim the same thing as the input of excl *)
 module Codom (Symex : Symex.Base) = struct
-  module type S = sig
-    type t
+  open Symex
 
-    val pp : Format.formatter -> t -> unit
+  module type S = sig
+    type t [@@deriving show]
+    type syn [@@deriving show]
+
     val fresh : unit -> t Symex.t
     val sem_eq : t -> t -> Symex.Value.(sbool t)
-    val subst : (Var.t -> Var.t) -> t -> t
-    val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+    val to_syn : t -> syn
+    val subst : (Value.Expr.t -> 'a Value.t) -> syn -> t
+    val learn_eq : syn -> t -> (unit, 'a) Symex.Consumer.t
+    val exprs_syn : syn -> Symex.Value.Expr.t list
   end
 end
 
@@ -23,7 +28,15 @@ module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
   open C
 
   type t = C.t [@@deriving show]
-  type serialized = t [@@deriving show]
+  type syn = C.syn [@@deriving show]
+
+  let produce (s : syn) (t : E.t option) : E.t option Producer.t =
+    let open Producer.Syntax in
+    match t with
+    | None ->
+        let+ x = Producer.apply_subst E.subst s in
+        Some x
+    | Some _ -> Producer.vanish ()
 
   module SM =
     State_monad.Make
@@ -35,11 +48,9 @@ module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
   open SM
   open SM.Syntax
 
-  let serialize s = [ s ]
-  let subst_serialized subst_var s = C.subst subst_var s
-  let iter_vars_serialized s f = C.iter_vars s f
+  let to_syn s = [ s ]
   let pp = C.pp
-  let pp_serialized = pp
+  let pp_syn = pp
 
   let load () =
     let* st = SM.get_state () in
@@ -50,13 +61,6 @@ module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
         let+ () = SM.set_state (Some x) in
         Ok x
 
-  let produce (serialized : serialized) : unit SM.t =
-    let* t = SM.get_state () in
-    match t with
-    | Some x -> SM.assume [ sem_eq x serialized ]
-    | None -> SM.set_state (Some serialized)
-
-  let consume (serialized : serialized) =
-    let** t = load () in
-    lift @@ Symex.consume_pure (sem_eq t serialized)
+  (* let consume (syn : syn) = let** t = load () in lift @@ Symex.consume_pure
+     (sem_eq t syn) *)
 end

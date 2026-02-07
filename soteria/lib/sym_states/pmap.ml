@@ -27,11 +27,11 @@ module Build_from_find_opt_sym
     (Codom : Base.M(Symex).S) :
   S(Symex)(Key).S
     with type codom := Codom.t
-     and type codom_serialized := Codom.serialized = struct
+     and type codom_serialized := Codom.syn = struct
   module M = Map
 
   type t = Codom.t M.t
-  type serialized = Key.t * Codom.serialized
+  type syn = Key.t * Codom.syn
 
   module SM =
     State_monad.Make
@@ -44,30 +44,22 @@ module Build_from_find_opt_sym
   let syntactic_bindings (x : t) = M.to_seq x
   let syntactic_mem = M.mem
 
-  let lift_fixes ~key (fix : Codom.serialized list list) : serialized list list
-      =
+  let lift_fixes ~key (fix : Codom.syn list list) : syn list list =
     List.map (List.map (fun v_ser -> (key, v_ser))) fix
 
   open SM
   open SM.Syntax
 
-  let pp_serialized : Format.formatter -> serialized -> unit =
-    Fmt.Dump.(pair Key.pp Codom.pp_serialized)
+  let pp_syn : Format.formatter -> syn -> unit =
+    Fmt.Dump.(pair Key.pp Codom.pp_syn)
 
-  let show_serialized = Fmt.to_to_string pp_serialized
+  let show_serialized = Fmt.to_to_string pp_syn
 
-  let serialize m =
+  let to_syn m =
     M.to_seq m
     |> Seq.concat_map (fun (k, v) ->
-        List.to_seq (Codom.serialize v) |> Seq.map (fun v_ser -> (k, v_ser)))
+        List.to_seq (Codom.to_syn v) |> Seq.map (fun v_ser -> (k, v_ser)))
     |> List.of_seq
-
-  let subst_serialized subst_var (key, v) =
-    (Key.subst subst_var key, Codom.subst_serialized subst_var v)
-
-  let iter_vars_serialized (key, v) f =
-    Key.iter_vars key f;
-    Codom.iter_vars_serialized v f
 
   let pp' ?(key = Key.pp) ?(codom = Codom.pp) ?(ignore = fun _ -> false) =
     let open Fmt in
@@ -84,8 +76,7 @@ module Build_from_find_opt_sym
   let to_opt m = if M.is_empty m then None else Some m
   let add_opt k v m = M.update k (fun _ -> v) m
 
-  let alloc ~(new_codom : Codom.t) : (Key.t, 'err, serialized list) SM.Result.t
-      =
+  let alloc ~(new_codom : Codom.t) : (Key.t, 'err, syn list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in
     let* key = lift @@ Key.fresh () in
@@ -97,7 +88,7 @@ module Build_from_find_opt_sym
     Ok key
 
   let allocs (type a k) ~(fn : a -> Key.t -> (k * Codom.t) Symex.t)
-      ~(els : a list) : (k list, 'err, serialized list) SM.Result.t =
+      ~(els : a list) : (k list, 'err, syn list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in
     let*^ bindings, out_keys =
@@ -116,8 +107,8 @@ module Build_from_find_opt_sym
     Ok out_keys
 
   let wrap (type a err) (key : Key.t)
-      (f : (a, err, Codom.serialized list) Codom.SM.Result.t) :
-      (a, err, serialized list) SM.Result.t =
+      (f : (a, err, Codom.syn list) Codom.SM.Result.t) :
+      (a, err, syn list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in
     let* key, codom = lift @@ Find_opt_sym.f key st in
@@ -130,10 +121,10 @@ module Build_from_find_opt_sym
     | Error e -> SM.Result.error e
     | Missing fixes -> SM.Result.miss (lift_fixes ~key fixes)
 
-  let produce (serialized : serialized) : unit SM.t =
+  let produce (syn : syn) : unit SM.t =
     let* st = SM.get_state () in
     let st = of_opt st in
-    let key, inner_ser = serialized in
+    let key, inner_ser = syn in
     let* key, codom = lift @@ Find_opt_sym.f key st in
     let* (), codom = lift @@ Codom.produce inner_ser codom in
     let st = add_opt key codom st in

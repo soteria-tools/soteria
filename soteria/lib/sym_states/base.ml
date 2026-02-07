@@ -1,5 +1,3 @@
-open Symex
-
 module M (Symex : Symex.Base) = struct
   module type S = sig
     type t [@@deriving show]
@@ -12,14 +10,11 @@ module M (Symex : Symex.Base) = struct
          and type 'a Symex.Value.ty = 'a Symex.Value.ty
          and type Symex.Value.sbool = Symex.Value.sbool
 
-    type serialized [@@deriving show]
+    type syn [@@deriving show]
 
-    val serialize : t -> serialized list
-    val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
-
-    val iter_vars_serialized :
-      serialized -> (Var.t * 'a Symex.Value.ty -> unit) -> unit
-
-    val produce : serialized -> t option -> (unit * t option) Symex.t
+    val to_syn : t -> syn list
+    val ins_outs : syn -> Symex.Value.Expr.(t list * t list)
+    val produce : syn -> t option -> t option Symex.Producer.t
+    (* val consume : syn -> t option -> (t option, syn list) Symex.Consumer.t *)
   end
 end

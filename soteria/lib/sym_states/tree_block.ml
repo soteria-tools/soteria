@@ -35,13 +35,11 @@ and node_qty = Partially | Totally
     children, ensuring no information is lost.
 
     Furthermore, to enable bi-abduction, a memory value can potentially be
-    serialized into one or more predicates (named [serialized]). Consuming
-    should extract that predicate from the given tree; producing adds it onto
-    it.
+    serialized into one or more predicates (named [syn]). Consuming should
+    extract that predicate from the given tree; producing adds it onto it.
 
-    [serialized] mustn't store information about the offset or length it applies
-    to, as [Tree_block] wraps it into a structure containing this information.
-*)
+    [syn] mustn't store information about the offset or length it applies to, as
+    [Tree_block] wraps it into a structure containing this information. *)
 module MemVal (Symex : Symex.Base) = struct
   module type S = sig
     module SBoundedInt : sig
@@ -79,47 +77,41 @@ module MemVal (Symex : Symex.Base) = struct
     val split :
       at:sint -> t -> ((t, sint) Split_tree.t * (t, sint) Split_tree.t) Symex.t
 
-    type serialized
+    type syn
 
-    val pp_serialized : Format.formatter -> serialized -> unit
-    val show_serialized : serialized -> string
-    val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
+    val pp_syn : Format.formatter -> syn -> unit
+    val show_serialized : syn -> string
 
-    val iter_vars_serialized :
-      serialized -> (Var.t * 'b Symex.Value.ty -> unit) -> unit
+    (** Serialize this memory value; either returns [Some syn], or [None] to
+        signal the children must instead be syn. *)
+    val to_syn : t -> syn Seq.t option
 
-    (** Serialize this memory value; either returns [Some serialized], or [None]
-        to signal the children must instead be serialized. *)
-    val serialize : t -> serialized Seq.t option
-
-    (** Extract the given [serialized] predicate from the tree; this may result
-        in an empty ([NotOwned Totally]) tree, or may only modify part of the
-        tree if the predicate only represents part of this tree's state. A
-        [Missing] may be raised if part of the state is missing for the
-        consumption to succeed.
+    (** Extract the given [syn] predicate from the tree; this may result in an
+        empty ([NotOwned Totally]) tree, or may only modify part of the tree if
+        the predicate only represents part of this tree's state. A [Missing] may
+        be raised if part of the state is missing for the consumption to
+        succeed.
 
         The input tree corresponds to the subtree relevant to the predicate's
         offset and length, meaning [t.node] is the node covering the whole
         predicate's range. *)
     val consume :
-      serialized ->
-      (t, sint) tree ->
-      ((t, sint) tree, 'err, serialized) Symex.Result.t
+      syn -> (t, sint) tree -> ((t, sint) tree, 'err, syn) Symex.Result.t
 
-    (** Add the given [serialized] predicate onto the given tree; the input tree
-        is not necessarily empty ([NotOwned Totally]), and if the predicate
-        overlaps the production may [vanish].
+    (** Add the given [syn] predicate onto the given tree; the input tree is not
+        necessarily empty ([NotOwned Totally]), and if the predicate overlaps
+        the production may [vanish].
 
         The input tree corresponds to the subtree relevant to the predicate's
         offset and length, meaning [t.node] is the node covering the whole
         predicate's range. *)
-    val produce : serialized -> (t, sint) tree -> (t, sint) tree Symex.t
+    val produce : syn -> (t, sint) tree -> (t, sint) tree Symex.t
 
     (** Returns [ok] if this memory value is exclusively owned, ie no additional
         state can be composed with it; in other words, calling [produce] on a
         tree with this node must always vanish. Otherwise this should raise a
         [miss] with the fixes needed for this to become exclusively owned. *)
-    val assert_exclusively_owned : t -> (unit, 'err, serialized) Symex.Result.t
+    val assert_exclusively_owned : t -> (unit, 'err, syn) Symex.Result.t
   end
 end
 
@@ -492,17 +484,16 @@ struct
 
     (** Cons/prod *)
 
-    let consume (serialized : MemVal.serialized) (range : Range.t) (st : t) :
-        (t, 'err, MemVal.serialized) Symex.Result.t =
-      let replace_node = MemVal.consume serialized in
+    let consume (syn : MemVal.syn) (range : Range.t) (st : t) :
+        (t, 'err, MemVal.syn) Symex.Result.t =
+      let replace_node = MemVal.consume syn in
       let rebuild_parent = of_children in
       let++ _, tree = frame_range st ~replace_node ~rebuild_parent range in
       tree
 
-    let produce (serialized : MemVal.serialized) (range : Range.t) (st : t) :
-        t Symex.t =
+    let produce (syn : MemVal.syn) (range : Range.t) (st : t) : t Symex.t =
       let replace_node t =
-        let+ t = MemVal.produce serialized t in
+        let+ t = MemVal.produce syn t in
         Ok t
       in
       let rebuild_parent = of_children in
@@ -545,11 +536,11 @@ struct
 
   (** Logic *)
 
-  type serialized =
+  type syn =
     | MemVal of {
         offset : sint; [@printer Symex.Value.ppa]
         len : sint; [@printer Symex.Value.ppa]
-        v : MemVal.serialized;
+        v : MemVal.syn;
       }
     | Bound of sint [@printer fun f v -> Fmt.pf f "Bound(%a)" Symex.Value.ppa v]
   [@@deriving show { with_path = false }]
@@ -558,8 +549,8 @@ struct
     let+? fix = symex in
     [ MemVal { v = fix; offset; len } ]
 
-  let iter_values_serialized serialized f =
-    List.iter (function MemVal { v; _ } -> f v | _ -> ()) serialized
+  let iter_values_serialized syn f =
+    List.iter (function MemVal { v; _ } -> f v | _ -> ()) syn
 
   let of_opt ?(mk_fixes = fun () -> Symex.return []) = function
     | None ->
@@ -572,8 +563,8 @@ struct
   (* Bit of a hack here, we lift the [StateT (Result)] to [ResultT (State)] by
      propagating the input state to erroneous outcomes. *)
   let with_bound_check ?mk_fixes (ofs : sint)
-      (f : Tree.t -> ('a * Tree.t, 'err, serialized list) Symex.Result.t) :
-      ('a, 'err, serialized list) SM.Result.t =
+      (f : Tree.t -> ('a * Tree.t, 'err, syn list) Symex.Result.t) :
+      ('a, 'err, syn list) SM.Result.t =
    fun st ->
     let+ res =
       let** t = of_opt ?mk_fixes st in
@@ -615,8 +606,7 @@ struct
 
   (* This is used for copy_nonoverapping. It is an action on the destination
      block, and assumes the received tree is at offset 0 *)
-  let put_raw_tree ofs (tree : Tree.t) :
-      (unit, 'err, serialized list) SM.Result.t =
+  let put_raw_tree ofs (tree : Tree.t) : (unit, 'err, syn list) SM.Result.t =
     let size = Range.size tree.range in
     with_bound_check (ofs +@ size) (fun t ->
         let tree = Tree.offset ~by:ofs tree in
@@ -630,23 +620,7 @@ struct
 
   (** Logic *)
 
-  let subst_serialized subst_var (serialized : serialized) =
-    let v_subst v = Symex.Value.subst subst_var v in
-    match serialized with
-    | MemVal { offset; len; v } ->
-        let v = MemVal.subst_serialized subst_var v in
-        MemVal { offset = v_subst offset; len = v_subst len; v }
-    | Bound v -> Bound (v_subst v)
-
-  let iter_vars_serialized serialized f =
-    match serialized with
-    | MemVal { offset; len; v } ->
-        Symex.Value.iter_vars offset f;
-        Symex.Value.iter_vars len f;
-        MemVal.iter_vars_serialized v f
-    | Bound v -> Symex.Value.iter_vars v f
-
-  let serialize (t : t) : serialized list =
+  let to_syn (t : t) : syn list =
     let bound =
       match t.bound with
       | None -> Seq.empty
@@ -658,7 +632,7 @@ struct
       | Owned v -> (
           let offset = fst tree.range in
           let len = Range.size tree.range in
-          match MemVal.serialize v with
+          match MemVal.to_syn v with
           | None ->
               let left, right = Option.get tree.children in
               Seq.append (serialize_tree left) (serialize_tree right)
@@ -718,14 +692,14 @@ struct
     let++ root = lift_miss ~offset ~len @@ Tree.consume v range t.root in
     to_opt { t with root }
 
-  (* let consume (list : serialized) (t : t option) =
+  (* let consume (list : syn) (t : t option) =
    *   Symex.Result.fold_list
    *     ~f:(fun acc -> function
    *       | Bound bound -> consume_bound bound acc
    *       | MemVal { offset; len; v } -> consume_mem_val offset len v acc)
    *     ~init:t list *)
 
-  let produce (ser : serialized) : unit SM.t =
+  let produce (ser : syn) : unit SM.t =
     match ser with
     | Bound bound -> produce_bound bound
     | MemVal { offset; len; v } -> produce_mem_val offset len v

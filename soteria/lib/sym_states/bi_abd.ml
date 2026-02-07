@@ -8,8 +8,8 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
   (** This is unsound in {!Symex.Approx.OX}-mode, use only in
       {!Symex.Approx.UX}-mode. *)
 
-  type t = B.t option * B.serialized list
-  type serialized = B.serialized
+  type t = B.t option * B.syn list
+  type syn = B.syn
 
   module SM =
     State_monad.Make
@@ -27,17 +27,17 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
   let to_opt : t -> t option = function None, [] -> None | other -> Some other
   let expose (st, fixes) = (st, fixes)
 
-  let pp' ?(inner = B.pp) ?(serialized = B.pp_serialized) fmt (st, fixes) =
+  let pp' ?(inner = B.pp) ?(syn = B.pp_syn) fmt (st, fixes) =
     Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" (Fmt.Dump.option inner)
-      st (Fmt.Dump.list serialized) fixes
+      st (Fmt.Dump.list syn) fixes
 
   let pp fmt t = pp' fmt t
   let show = Fmt.to_to_string pp
 
-  let wrap ?(fuel = 1) (f : ('v, 'err, B.serialized list) B.SM.Result.t) :
-      ('v, 'err, serialized list) SM.Result.t =
+  let wrap ?(fuel = 1) (f : ('v, 'err, B.syn list) B.SM.Result.t) :
+      ('v, 'err, syn list) SM.Result.t =
     let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
-    let rec with_fuel fuel : ('v, 'err, serialized list) SM.Result.t =
+    let rec with_fuel fuel : ('v, 'err, syn list) SM.Result.t =
       let* bi_st = SM.get_state () in
       let st, fixes = of_opt bi_st in
       let*^ res, st' = f st in

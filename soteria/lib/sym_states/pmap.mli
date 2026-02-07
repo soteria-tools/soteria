@@ -10,7 +10,7 @@ module Make
     (Codom : Base.M(Symex).S) :
   S(Symex)(Key).S
     with type codom := Codom.t
-     and type codom_serialized := Codom.serialized
+     and type codom_serialized := Codom.syn
 
 module Make_patricia_tree
     (Symex : Symex.Base)
@@ -18,7 +18,7 @@ module Make_patricia_tree
     (Codom : Base.M(Symex).S) :
   S(Symex)(Key).S
     with type codom := Codom.t
-     and type codom_serialized := Codom.serialized
+     and type codom_serialized := Codom.syn
 
 module Direct_access
     (Symex : Symex.Base)
@@ -26,7 +26,7 @@ module Direct_access
     (Codom : Base.M(Symex).S) :
   S(Symex)(Key).S
     with type codom := Codom.t
-     and type codom_serialized := Codom.serialized
+     and type codom_serialized := Codom.syn
 
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
@@ -34,7 +34,7 @@ module Direct_access_patricia_tree
     (Codom : Base.M(Symex).S) :
   S(Symex)(Key).S
     with type codom := Codom.t
-     and type codom_serialized := Codom.serialized
+     and type codom_serialized := Codom.syn
 
 module Concrete
     (Symex : Symex.Base)
@@ -42,4 +42,4 @@ module Concrete
     (Codom : Base.M(Symex).S) :
   S(Symex)(Key).S
     with type codom := Codom.t
-     and type codom_serialized := Codom.serialized
+     and type codom_serialized := Codom.syn
