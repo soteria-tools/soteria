@@ -10,12 +10,17 @@ WHICHX=$(DUNE) exec -- which
 
 YARN=yarn
 
-DYLIB_LIST_FILE=packaging/macOS_dylibs.txt
-PACKAGING_BIN=$(DUNE) exec -- packaging/package.exe
+DYLIB_LIST_FILE=packaging/soteria-c/macOS_dylibs.txt
+PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-c/package.exe
 SOTERIA_C_BIN=_build/install/default/bin/soteria-c
 VSCODE_BC_JS=vscode/src/soteria_vscode.bc.js
 
-PACKAGE_DIST=package
+SOTERIA_RUST_DYLIB_LIST_FILE=packaging/soteria-rust/macOS_dylibs.txt
+SOTERIA_RUST_PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-rust/package.exe
+SOTERIA_RUST_BIN=_build/install/default/bin/soteria-rust
+
+SOTERIA_C_PACKAGE=packages/soteria-c
+SOTERIA_RUST_PACKAGE=packages/soteria-rust
 VSCODE_DIST=dist
 
 ##### Normal ocaml stuff #####
@@ -47,21 +52,47 @@ doc:
 # From inside the package folder one can run:
 # SOTERIA_Z3_PATH=./bin/z3 DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c exec-main file.c
 .PHONY: package
-package: ocaml packaging/bin-locations.txt packaging/macOS_dylibs.txt
-	$(DUNE) build @dylist-file
-	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(PACKAGE_DIST)/lib
-	$(PACKAGING_BIN) copy-files packaging/bin-locations.txt $(PACKAGE_DIST)/bin
-	mkdir -p $(PACKAGE_DIST)/lib
-	$(PACKAGING_BIN) copy-cerb-runtime $(PACKAGE_DIST)/lib
-	$(PACKAGING_BIN) copy-soteria-c-auto-includes $(PACKAGE_DIST)/lib/
+package: package-soteria-c package-soteria-rust
+
+.PHONY: package-soteria-c
+package-soteria-c: ocaml packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt
+	$(DUNE) build @soteria-c-dylist-file
+	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(SOTERIA_C_PACKAGE)/lib
+	$(PACKAGING_BIN) copy-files packaging/soteria-c/bin-locations.txt $(SOTERIA_C_PACKAGE)/bin
+	mkdir -p $(SOTERIA_C_PACKAGE)/lib
+	$(PACKAGING_BIN) copy-cerb-runtime $(SOTERIA_C_PACKAGE)/lib
+	$(PACKAGING_BIN) copy-soteria-c-auto-includes $(SOTERIA_C_PACKAGE)/lib/
 
 
-packaging/bin-locations.txt:
+packaging/soteria-c/bin-locations.txt:
 	$(WHICHX) soteria-c > $@
 	$(WHICHX) z3 >> $@
 
-packaging/macOS_dylibs.txt:
+packaging/soteria-c/macOS_dylibs.txt:
 	$(PACKAGING_BIN) infer-dylibs $(SOTERIA_C_BIN) > $@
+
+##### Packaging soteria-rust #####
+
+# From inside the package folder one can run:
+# SOTERIA_Z3_PATH=./bin/z3 SOTERIA_OBOL_PATH=./bin/obol SOTERIA_CHARON_PATH=./bin/charon \
+#   SOTERIA_RUST_PLUGINS=./plugins DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-rust cargo .
+.PHONY: package-soteria-rust
+package-soteria-rust: ocaml packaging/soteria-rust/bin-locations.txt packaging/soteria-rust/macOS_dylibs.txt
+	$(DUNE) build @soteria-rust-dylist-file
+	$(SOTERIA_RUST_PACKAGING_BIN) copy-files $(SOTERIA_RUST_DYLIB_LIST_FILE) $(SOTERIA_RUST_PACKAGE)/lib
+	$(SOTERIA_RUST_PACKAGING_BIN) copy-files packaging/soteria-rust/bin-locations.txt $(SOTERIA_RUST_PACKAGE)/bin
+	$(SOTERIA_RUST_PACKAGING_BIN) copy-soteria-rust-plugins $(SOTERIA_RUST_PACKAGE)/plugins
+
+packaging/soteria-rust/bin-locations.txt:
+	$(WHICHX) soteria-rust > $@
+	$(WHICHX) z3 >> $@
+	which obol >> $@
+	which charon >> $@
+	which obol-driver >> $@ 2>/dev/null || true
+	which charon-driver >> $@ 2>/dev/null || true
+
+packaging/soteria-rust/macOS_dylibs.txt:
+	$(SOTERIA_RUST_PACKAGING_BIN) infer-dylibs $(SOTERIA_RUST_BIN) > $@
 
 ##### Switch creation / dependency setup #####
 
@@ -109,9 +140,10 @@ for-local: ocaml vscode
 .PHONY: clean
 clean:
 	$(DUNE) clean
-	rm -rf $(PACKAGE_DIST)
+	rm -rf packages
 	rm -rf $(VSCODE_DIST)
-	rm -rf packaging/bin-locations.txt packaging/macOS_dylibs.txt
+	rm -rf packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt
+	rm -rf packaging/soteria-rust/bin-locations.txt packaging/soteria-rust/macOS_dylibs.txt
 	rm -f soteria-vscode.vsix
 
 license-check:

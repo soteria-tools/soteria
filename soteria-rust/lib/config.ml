@@ -39,6 +39,20 @@ type t = {
   frontend : (frontend[@conv frontend_cmdliner_conv ()]);
       [@default Obol] [@make.default Obol] [@names [ "frontend" ]]
       (** Choose the frontend to use: Charon or Obol *)
+  obol_path : string;
+      [@default "obol"]
+      [@make.default "obol"]
+      [@names [ "obol-path" ]]
+      [@env "SOTERIA_OBOL_PATH"]
+      (** Path to the obol binary. Defaults to "obol", i.e. looked up in PATH.
+      *)
+  charon_path : string;
+      [@default "charon"]
+      [@make.default "charon"]
+      [@names [ "charon-path" ]]
+      [@env "SOTERIA_CHARON_PATH"]
+      (** Path to the charon binary. Defaults to "charon", i.e. looked up in
+          PATH. *)
   sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
       (** The sysroot to use for compilation. If not provided, the default
           sysroot is used. *)
