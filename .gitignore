@@ -1,8 +1,10 @@
 ### Packaging ###
 *.vsix
-package
-packaging/bin-locations.txt
-packaging/macOS_dylibs.txt
+packages
+packaging/soteria-c/bin-locations.txt
+packaging/soteria-c/macOS_dylibs.txt
+packaging/soteria-rust/bin-locations.txt
+packaging/soteria-rust/macOS_dylibs.txt
 package.zip
 secrets.env
 upload_package.sh

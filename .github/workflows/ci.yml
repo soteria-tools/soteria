@@ -121,13 +121,13 @@ jobs:
         run: yarn compile
 
       # Packaging OCaml distribution and sending it as artifact
-      - name: OCaml zip file creation
-        run: make package
-      - name: Upload zip file
+      - name: Create soteria-c package
+        run: make package-soteria-c
+      - name: Upload soteria-c package
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.operating-system }}-package
-          path: package
+          name: ${{ matrix.operating-system }}-soteria-c-package
+          path: packages/soteria-c
           if-no-files-found: error
 
       - name: Build API documentation
@@ -145,8 +145,8 @@ jobs:
       - name: Opam Cleanup
         run: opam clean -a -r
 
-  test-package:
-    name: Test Package
+  test-soteria-c-package:
+    name: Test soteria-c Package
     strategy:
       matrix:
         operating-system: [macos-latest]
@@ -166,7 +166,7 @@ jobs:
       - name: Download package
         uses: actions/download-artifact@v4
         with:
-          name: ${{ matrix.operating-system }}-package
+          name: ${{ matrix.operating-system }}-soteria-c-package
       - name: Add executable permissions
         run: |
           chmod +x ./bin/soteria-c

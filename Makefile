@@ -10,12 +10,12 @@ WHICHX=$(DUNE) exec -- which
 
 YARN=yarn
 
-DYLIB_LIST_FILE=packaging/macOS_dylibs.txt
-PACKAGING_BIN=$(DUNE) exec -- packaging/package.exe
+DYLIB_LIST_FILE=packaging/soteria-c/macOS_dylibs.txt
+PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-c/package.exe
 SOTERIA_C_BIN=_build/install/default/bin/soteria-c
 VSCODE_BC_JS=vscode/src/soteria_vscode.bc.js
 
-PACKAGE_DIST=package
+SOTERIA_C_PACKAGE=packages/soteria-c
 VSCODE_DIST=dist
 
 ##### Normal ocaml stuff #####
@@ -47,20 +47,23 @@ doc:
 # From inside the package folder one can run:
 # SOTERIA_Z3_PATH=./bin/z3 DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c exec-main file.c
 .PHONY: package
-package: ocaml packaging/bin-locations.txt packaging/macOS_dylibs.txt
-	$(DUNE) build @dylist-file
-	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(PACKAGE_DIST)/lib
-	$(PACKAGING_BIN) copy-files packaging/bin-locations.txt $(PACKAGE_DIST)/bin
-	mkdir -p $(PACKAGE_DIST)/lib
-	$(PACKAGING_BIN) copy-cerb-runtime $(PACKAGE_DIST)/lib
-	$(PACKAGING_BIN) copy-soteria-c-auto-includes $(PACKAGE_DIST)/lib/
+package: package-soteria-c
+
+.PHONY: package-soteria-c
+package-soteria-c: ocaml packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt
+	$(DUNE) build @soteria-c-dylist-file
+	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(SOTERIA_C_PACKAGE)/lib
+	$(PACKAGING_BIN) copy-files packaging/soteria-c/bin-locations.txt $(SOTERIA_C_PACKAGE)/bin
+	mkdir -p $(SOTERIA_C_PACKAGE)/lib
+	$(PACKAGING_BIN) copy-cerb-runtime $(SOTERIA_C_PACKAGE)/lib
+	$(PACKAGING_BIN) copy-soteria-c-auto-includes $(SOTERIA_C_PACKAGE)/lib/
 
 
-packaging/bin-locations.txt:
+packaging/soteria-c/bin-locations.txt:
 	$(WHICHX) soteria-c > $@
 	$(WHICHX) z3 >> $@
 
-packaging/macOS_dylibs.txt:
+packaging/soteria-c/macOS_dylibs.txt:
 	$(PACKAGING_BIN) infer-dylibs $(SOTERIA_C_BIN) > $@
 
 ##### Switch creation / dependency setup #####
@@ -109,9 +112,9 @@ for-local: ocaml vscode
 .PHONY: clean
 clean:
 	$(DUNE) clean
-	rm -rf $(PACKAGE_DIST)
+	rm -rf packages
 	rm -rf $(VSCODE_DIST)
-	rm -rf packaging/bin-locations.txt packaging/macOS_dylibs.txt
+	rm -rf packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt
 	rm -f soteria-vscode.vsix
 
 license-check:

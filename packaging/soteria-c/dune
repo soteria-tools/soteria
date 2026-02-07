@@ -10,7 +10,7 @@
   soteria_c_lib))
 
 (rule ; This rule makes sure the macOS_dylibs.txt are up-to-date.
- (alias dylist-file)
+ (alias soteria-c-dylist-file)
  (deps %{bin:soteria-c} ./package.exe)
  (action
   (progn
