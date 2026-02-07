@@ -1,9 +1,7 @@
 (executable
  (name package)
  (libraries
-  cmdliner
-  shexp.process
-  str
+  packaging_common
   cerberus-lib.c_parser
   cerberus-lib.mem.concrete
   cerberus-lib.backend_common
