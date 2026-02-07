@@ -216,8 +216,8 @@ jobs:
           chmod +x ./bin/z3
           chmod +x ./bin/obol
           chmod +x ./bin/charon
-          [ -f ./bin/obol-driver ] && chmod +x ./bin/obol-driver || true
-          [ -f ./bin/charon-driver ] && chmod +x ./bin/charon-driver || true
+          chmod +x ./bin/obol-driver
+          chmod +x ./bin/charon-driver
       - name: Run soteria-rust --help (smoke test)
         run: |
           DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-rust --help
