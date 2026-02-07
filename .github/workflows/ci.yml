@@ -130,6 +130,15 @@ jobs:
           path: packages/soteria-c
           if-no-files-found: error
 
+      - name: Create soteria-rust package
+        run: make package-soteria-rust
+      - name: Upload soteria-rust package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-soteria-rust-package
+          path: packages/soteria-rust
+          if-no-files-found: error
+
       - name: Build API documentation
         run: make doc
 
@@ -186,6 +195,36 @@ jobs:
           SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c
           SOTERIA_SOLVER_TIMEOUT: 100
           SOTERIA_USE_CERB_HEADERS: true
+
+  test-soteria-rust-package:
+    name: Test soteria-rust Package
+    strategy:
+      matrix:
+        operating-system: [macos-latest]
+    runs-on: ${{ matrix.operating-system }}
+    needs: build
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-soteria-rust-package
+      - name: Add executable permissions
+        run: |
+          chmod +x ./bin/soteria-rust
+          chmod +x ./bin/z3
+          chmod +x ./bin/obol
+          chmod +x ./bin/charon
+          chmod +x ./bin/obol-driver
+          chmod +x ./bin/charon-driver
+      - name: Run soteria-rust --help (smoke test)
+        run: |
+          DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-rust --help
+          echo "soteria-rust smoke test passed"
+        env:
+          SOTERIA_Z3_PATH: ./bin/z3
+          SOTERIA_OBOL_PATH: ./bin/obol
+          SOTERIA_CHARON_PATH: ./bin/charon
+          SOTERIA_RUST_PLUGINS: ./plugins
 
   publish-doc:
     name: Publish documentation
