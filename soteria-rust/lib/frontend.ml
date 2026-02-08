@@ -146,13 +146,14 @@ module Cmd = struct
       rustc = c1.rustc @ c2.rustc;
     }
 
+  let frontend_cmd () =
+    match (Config.get ()).frontend with
+    | Obol -> (Config.get ()).obol_path
+    | Charon -> (Config.get ()).charon_path
+
   let toolchain_path =
     lazy
-      (let cmd =
-         match (Config.get ()).frontend with
-         | Obol -> "obol"
-         | Charon -> "charon"
-       in
+      (let cmd = frontend_cmd () in
        Exe.exec_exn cmd [ "toolchain-path" ] |> List.hd)
 
   let cargo () = Lazy.force toolchain_path ^ "/bin/cargo"
@@ -188,8 +189,8 @@ module Cmd = struct
     let rustc = rustc @ user_specified @ features in
     let cmd, args =
       match (Config.get ()).frontend with
-      | Obol -> ("obol", obol)
-      | Charon -> ("charon", charon)
+      | Obol -> ((Config.get ()).obol_path, obol)
+      | Charon -> ((Config.get ()).charon_path, charon)
     in
     match mode with
     | Rustc ->
