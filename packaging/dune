@@ -1,20 +1,3 @@
-(executable
- (name package)
- (libraries
-  cmdliner
-  shexp.process
-  str
-  cerberus-lib.c_parser
-  cerberus-lib.mem.concrete
-  cerberus-lib.backend_common
-  soteria_c_lib))
-
-(rule ; This rule makes sure the macOS_dylibs.txt are up-to-date.
- (alias dylist-file)
- (deps %{bin:soteria-c} ./package.exe)
- (action
-  (progn
-   (with-stdout-to
-    macOS_dylibs_found.txt
-    (run ./package.exe infer-dylibs %{bin:soteria-c}))
-   (diff? macOS_dylibs.txt macOS_dylibs_found.txt))))
+(library
+ (name packaging_common)
+ (libraries cmdliner shexp.process str))
