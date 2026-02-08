@@ -1,3 +1,25 @@
+(** This module defines a three-way result type for compositional symbolic
+    execution. Unlike standard [Result.t] which has two cases (Ok/Error), this
+    type adds a third case [Missing] for bi-abduction scenarios where frame
+    inference is needed.
+
+    When performing a function call, the current state may not contain all
+    resources needed by the callee. Rather than immediately failing, we can
+    infer what's missing (the "frame") and continue analysis.
+
+    {b Three Cases}:
+    - {b Ok}: Operation succeeded, resources matched
+    - {b Error}: Definite error found (e.g., null dereference, assertion
+      failure)
+    - {b Missing}: Resources needed but not present; includes fixes. Missing
+      contains a {b list} of fixes, providing different ways to resolve the
+      missing resources; for instance, when accessing a location in memory, two
+      options are possible: either the location is allocated, or the location
+      has been freed.
+
+    This module also provides a functor to lift this result type into any
+    monadic context. *)
+
 open Soteria_std
 
 type ('ok, 'err, 'fix) t = Ok of 'ok | Error of 'err | Missing of 'fix list
