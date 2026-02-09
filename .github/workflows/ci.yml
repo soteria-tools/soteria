@@ -151,27 +151,6 @@ jobs:
         # No need to upload artifact twice
         if: ${{ matrix.operating-system == 'macos-latest' }}
 
-      # === Run benchmarks (main branch only) ===
-      - name: Install hyperfine
-        if: github.ref == 'refs/heads/main' && matrix.operating-system == 'macos-latest'
-        run: brew install hyperfine
-
-      - name: Run benchmarks
-        if: github.ref == 'refs/heads/main' && matrix.operating-system == 'macos-latest'
-        run: |
-          python3 scripts/run_benchmarks.py \
-            "${{ github.sha }}" \
-            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            benchmark-results.json
-
-      - name: Upload benchmark results
-        if: github.ref == 'refs/heads/main' && matrix.operating-system == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: benchmark-results
-          path: benchmark-results.json
-          if-no-files-found: error
-
       - name: Opam Cleanup
         run: opam clean -a -r
 
@@ -333,47 +312,3 @@ jobs:
           destination_dir: ./api/main
 
       - run: echo "Successfully published documentation to https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/main"
-
-  publish-benchmarks:
-    name: Publish benchmarks
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Retrieve benchmark results
-        uses: actions/download-artifact@v4
-        with:
-          name: benchmark-results
-          path: .
-
-      - name: Checkout gh-pages
-        uses: actions/checkout@v4
-        with:
-          ref: gh-pages
-          path: gh-pages
-
-      - name: Generate benchmark page
-        run: |
-          mkdir -p gh-pages/benchmarks
-          python3 scripts/generate_benchmark_page.py \
-            --new-results benchmark-results.json \
-            --history gh-pages/benchmarks/main-history.json \
-            --output gh-pages/benchmarks/main.html \
-            --history-output gh-pages/benchmarks/main-history.json \
-            --mode main \
-            --max-history 50 \
-            --repo-url "https://github.com/${{ github.repository }}"
-
-      - name: Commit and push
-        working-directory: gh-pages
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add benchmarks/
-          git diff --staged --quiet || git commit -m "Update benchmarks for ${{ github.sha }}"
-          git push
-
-      - run: echo "Successfully published benchmarks to https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/benchmarks/main.html"

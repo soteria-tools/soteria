@@ -63,12 +63,6 @@ def run_single_benchmark(name: str, command: str) -> BenchmarkResult:
     try:
         # Run hyperfine with warmup and multiple runs for reliability
         hyperfine_cmd = [
-            "opam",
-            "exec",
-            "--",
-            "dune",
-            "exec",
-            "--",
             "hyperfine",
             "--warmup",
             "1",
