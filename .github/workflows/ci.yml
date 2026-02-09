@@ -167,36 +167,50 @@ jobs:
         with:
           repository: srdja/Collections-C
           ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-soteria-c-package
+          path: soteria-c-package
+      - name: Add executable permissions
+        run: |
+          chmod +x ./soteria-c-package/bin/soteria-c
+          chmod +x ./soteria-c-package/bin/z3
+      - name: Setup environment variables
+        run: |
+          PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-c-package"
+          echo "CERB_INSTALL_PREFIX=${PACKAGE_DIR}" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
+          echo "SOTERIA_AUTO_INCLUDE_PATH=${PACKAGE_DIR}/lib/soteria-c" >> $GITHUB_ENV
+          echo "SOTERIA_C=${PACKAGE_DIR}/bin/soteria-c" >> $GITHUB_ENV
+          echo "SOTERIA_SOLVER_TIMEOUT=100" >> $GITHUB_ENV
+          echo "SOTERIA_USE_CERB_HEADERS=true" >> $GITHUB_ENV
       - name: Create compilation database
         run: |
           mkdir -p build
           cd build
           cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
-      - name: Download package
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.operating-system }}-soteria-c-package
-      - name: Add executable permissions
-        run: |
-          chmod +x ./bin/soteria-c
-          chmod +x ./bin/z3
-      - name: Run soteria-c (expecting exit code 13)
+      - name: Run soteria-c on Collections-C (expecting exit code 13)
         run: |
           set +e
-          ./bin/soteria-c capture-db build/compile_commands.json
+          $SOTERIA_C capture-db build/compile_commands.json
           EXIT_CODE=$?
           if [ $EXIT_CODE -ne 13 ]; then
             echo "Expected exit code 13, but got $EXIT_CODE"
             exit 1
           fi
-          echo "Correctly received exit code 13, bug was found"
-        env:
-          CERB_INSTALL_PREFIX: ${{ github.workspace }}
-          DYLD_LIBRARY_PATH: ./lib:$DYLD_LIBRARY_PATH
-          SOTERIA_Z3_PATH: ./bin/z3
-          SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c
-          SOTERIA_SOLVER_TIMEOUT: 100
-          SOTERIA_USE_CERB_HEADERS: true
+          echo "✓ Collections-C test passed (found expected bug, exit code 13)"
+      - name: Checkout Soteria repository for test files
+        uses: actions/checkout@v4
+        with:
+          path: soteria-repo
+      - name: Test symbolic execution with sym.c (nondet test)
+        working-directory: soteria-repo/soteria-c/test/cram/simple.t
+        run: |
+          echo "Testing sym.c (verifying __soteria___nondet_int is found)"
+          $SOTERIA_C exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
+          echo "✓ sym.c test passed (symbolic execution with nondet successful)"
 
   test-soteria-rust-package:
     name: Test soteria-rust Package
