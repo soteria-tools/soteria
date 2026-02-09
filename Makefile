@@ -89,6 +89,7 @@ package-soteria-rust: ocaml packaging/soteria-rust/bin-locations.txt packaging/s
 	$(DUNE) build @soteria-rust-dylist-file
 	$(SOTERIA_RUST_PACKAGING_BIN) copy-files $(SOTERIA_RUST_DYLIB_LIST_FILE) $(SOTERIA_RUST_PACKAGE)/lib
 	$(SOTERIA_RUST_PACKAGING_BIN) copy-files packaging/soteria-rust/bin-locations.txt $(SOTERIA_RUST_PACKAGE)/bin
+	rm -rf $(SOTERIA_RUST_PACKAGE)/plugins
 	$(SOTERIA_RUST_PACKAGING_BIN) copy-soteria-rust-plugins $(SOTERIA_RUST_PACKAGE)/plugins
 
 packaging/soteria-rust/bin-locations.txt:
