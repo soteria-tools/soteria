@@ -18,7 +18,8 @@ The core library is just a small toolbox that we use for writing a set of analys
 
 - [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
-  - [Building from Source](#building-from-source)
+  - [Installing from Source](#installing-from-source)
+  - [Building from Source for Development](#building-from-source-for-development)
   - [Installing Rust Frontends](#installing-rust-frontends)
 - [Using Soteria as a Library](#using-soteria-as-a-library)
 - [Soteria Rust](#soteria-rust)
@@ -30,7 +31,7 @@ The core library is just a small toolbox that we use for writing a set of analys
 
 ### Prerequisites
 
-Before building Soteria, ensure you have the following installed:
+Before using Soteria, ensure you have the following installed:
 
 | Dependency | Version | Installation |
 |------------|---------|--------------|
@@ -48,7 +49,31 @@ For **Soteria Rust**, you will also need:
 
 > **Note:** Both frontends are required to run the full test suite.
 
-### Building from Source
+### Installing from Source
+
+For users who want to install and use Soteria:
+
+1. **Clone the repository:**
+   ```sh
+   git clone https://github.com/soteria-tools/soteria.git
+   cd soteria
+   ```
+
+2. **Create a global opam switch and install:**
+   ```sh
+   make glob-switch && make install
+   ```
+   This creates a global opam switch called `soteria-install`, switches to it, and installs Soteria.
+
+3. **Activate the switch:**
+   ```sh
+   eval $(opam env --switch=soteria-install)
+   ```
+   Add this line to your shell profile (`.bashrc`, `.zshrc`, etc.) to make it permanent, or run `opam switch soteria-install` to switch to it in your current shell.
+
+### Building from Source for Development
+
+For developers who want to contribute to Soteria:
 
 1. **Clone the repository:**
    ```sh

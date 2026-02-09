@@ -101,6 +101,15 @@ switch:
 	$(OPAM) switch create . ocaml-base-compiler.$(OCAML_VERSION) --deps-only --with-test --with-doc -y
 	$(OPAM) install ocaml-lsp-server odig ocamlformat.$(OCAMLFORMAT_VERSION) -y
 
+.PHONY: glob-switch
+glob-switch:
+	$(OPAM) switch create soteria-install ocaml-base-compiler.$(OCAML_VERSION) -y
+	$(OPAM) switch soteria-install
+
+.PHONY: install
+install:
+	$(OPAM) install . -y
+
 .PHONY: ocaml-deps
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc
