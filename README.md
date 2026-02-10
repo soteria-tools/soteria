@@ -160,12 +160,12 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
 
 **Manual installation:**
 1. **Clone Charon at the correct commit:**
-   <!-- [versionsync: CHARON_COMMIT_HASH=79077103ea9d0493bc72315462a1c84fcdf014e0] -->
+   <!-- [versionsync: CHARON_COMMIT_HASH=49dceb9a0361a52f3c779ededaaadc93cddf2a8e] -->
    ```sh
    cd ..
    git clone https://github.com/soteria-tools/charon.git
    cd charon
-   git checkout 79077103ea9d0493bc72315462a1c84fcdf014e0
+   git checkout 49dceb9a0361a52f3c779ededaaadc93cddf2a8e
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `CHARON_COMMIT_HASH`.
 

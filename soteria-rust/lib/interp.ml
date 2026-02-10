@@ -930,7 +930,7 @@ module Make (State : State_intf.S) = struct
             map_env (Store.dealloc local)
         | Uninit | Value _ -> map_env (Store.dealloc local)
         | Dead -> ok ())
-    | Assert { cond; expected; on_failure } -> (
+    | Assert ({ cond; expected; _ }, on_failure) -> (
         let* cond = eval_operand cond in
         let cond_int = as_base TBool cond in
         let cond_bool = BV.to_bool cond_int in
@@ -1019,6 +1019,17 @@ module Make (State : State_intf.S) = struct
           iter_list ptr_tys ~f:(fun (ptr, ty) -> State.tb_load ptr ty)
         in
         value
+    | TAssert ({ cond; expected; check_kind }, target, on_unwind) ->
+        let* cond = eval_operand cond in
+        let cond_int = as_base TBool cond in
+        let cond_bool = BV.to_bool cond_int in
+        let cond_bool = if expected then cond_bool else Typed.not cond_bool in
+        if%sat cond_bool then
+          let block = UllbcAst.BlockId.nth body.body target in
+          exec_block ~body block
+        else
+          let block = UllbcAst.BlockId.nth body.body on_unwind in
+          exec_block ~body block
     | Switch (discr, switch) -> (
         let* discr = eval_operand discr in
         match switch with
