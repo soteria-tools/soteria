@@ -100,6 +100,8 @@ let set_and_lock_global (config : global) =
           rustc_flags = config.ruxt.rustc_flags;
           (* Default to Charon for compositionality *)
           frontend = Soteria_rust_lib.Config.Charon;
+          obol_path = "obol";
+          charon_path = "charon";
           sysroot = config.ruxt.sysroot;
           with_kani = config.ruxt.with_kani;
           with_miri = config.ruxt.with_miri;
