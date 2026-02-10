@@ -39,8 +39,6 @@
   simple_smt
   iter
   patricia-tree
-  (ppx_expect
-   (>= 0.17.0))
   ppx_deriving
   fmt
   printbox-text
