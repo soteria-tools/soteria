@@ -311,7 +311,7 @@ def aggregate_results():
         print(f"{RED}No results folder found: {result_folder}{RESET}")
         return
 
-    all_stats = Stats.empty()
+    all_stats = {}
     for subfolder in result_folder.iterdir():
         file = subfolder / "stats.json"
         if not subfolder.is_dir() or not file.exists():
@@ -323,21 +323,28 @@ def aggregate_results():
                 global_printer.print_error(f"Failed to read json from {file}")
                 continue
             try:
-                j = Stats.from_dict(j)
-            except:
-                global_printer.print_error(f"{file}'s json doesn't match expectations")
+                # Normalize the stats (removes soteria-c.give-up-reasons, 
+                # converts soteria.give-up-reasons from list to count dict)
+                j = normalize_stats(j)
+            except Exception as e:
+                global_printer.print_error(f"Failed to normalize stats from {file}: {e}")
                 continue
             all_stats = merge_stats(all_stats, j)
-    to_remove = "Unsupported: Could not resolve function"
-    if to_remove in all_stats.give_up_reasons:
-        del all_stats.give_up_reasons[to_remove]
-    all_stats.give_up_reasons = dict(
-        sorted(all_stats.give_up_reasons.items(), key=lambda kv: kv[1], reverse=True)
-    )
+    
+    # Sort give-up-reasons by count (descending) if it exists
+    if "soteria.give-up-reasons" in all_stats and isinstance(all_stats["soteria.give-up-reasons"], dict):
+        all_stats["soteria.give-up-reasons"] = dict(
+            sorted(
+                all_stats["soteria.give-up-reasons"].items(), 
+                key=lambda kv: kv[1], 
+                reverse=True
+            )
+        )
+    
     with open(result_folder / "all_stats.json", "w") as f:
-        json.dump(all_stats.as_dict(), f, indent=2)
+        json.dump(all_stats, f, indent=2)
         global_printer.print_success(
-            f"Aggregated unsupported features written to {result_folder / 'all_stats.json'}"
+            f"Aggregated stats written to {result_folder / 'all_stats.json'}"
         )
 
 

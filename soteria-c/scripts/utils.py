@@ -1,11 +1,11 @@
-from dataclasses import dataclass, asdict
-
 """Utility functions for Soteria-C scripts."""
 
 import sys
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import Any
+from collections import Counter
 
 PURPLE = "\033[0;35m"
 RED = "\033[0;31m"
@@ -60,64 +60,107 @@ class GlobalPrinter(PrintersMixin):
 global_printer = GlobalPrinter()
 
 
-@dataclass
-class Stats:
-    branch_number: int
-    steps_number: int
-    unexplored_branch_number: int
-    sat_unknowns: int
-    exec_time: float
-    sat_time: float
-    give_up_reasons: dict[str, int]
-    missing_without_fixes: list[str]
-    sat_checks: int
-
-    def as_dict(self):
-        return asdict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict):
-        if "give_up_reasons" in data:
-            # map each field to its length
-            data["give_up_reasons"] = {
-                k: len(v) if isinstance(v, list) else v
-                for k, v in data["give_up_reasons"].items()
-            }
-        return cls(**data)
-
-    @classmethod
-    def empty(cls):
-        return cls(
-            branch_number=0,
-            steps_number=0,
-            exec_time=0.0,
-            give_up_reasons={},
-            missing_without_fixes=[],
-            unexplored_branch_number=0,
-            sat_unknowns=0,
-            sat_time=0.0,
-            sat_checks=0,
-        )
+def normalize_stats(data: dict[str, Any]) -> dict[str, Any]:
+    """
+    Normalize a stats dictionary by:
+    1. Removing the 'soteria-c.give-up-reasons' key entirely
+    2. Converting 'soteria.give-up-reasons' from a list to a count dictionary
+    
+    Args:
+        data: Raw statistics dictionary
+        
+    Returns:
+        Normalized statistics dictionary
+    """
+    result = {}
+    
+    for key, value in data.items():
+        # Remove soteria-c.give-up-reasons entirely
+        if key == "soteria-c.give-up-reasons":
+            continue
+            
+        # Convert soteria.give-up-reasons from list to count dict
+        if key == "soteria.give-up-reasons" and isinstance(value, list):
+            result[key] = dict(Counter(value))
+        else:
+            result[key] = value
+            
+    return result
 
 
-def merge_stats(a: Stats, b: Stats) -> Stats:
-    return Stats(
-        branch_number=a.branch_number + b.branch_number,
-        steps_number=a.steps_number + b.steps_number,
-        exec_time=a.exec_time + b.exec_time,
-        give_up_reasons={
-            k: a.give_up_reasons.get(k, 0) + b.give_up_reasons.get(k, 0)
-            for k in set(a.give_up_reasons) | set(b.give_up_reasons)
-        },
-        missing_without_fixes=list(
-            set(a.missing_without_fixes + b.missing_without_fixes)
-        ),
-        unexplored_branch_number=a.unexplored_branch_number
-        + b.unexplored_branch_number,
-        sat_unknowns=a.sat_unknowns + b.sat_unknowns,
-        sat_time=a.sat_time + b.sat_time,
-        sat_checks=a.sat_checks + b.sat_checks,
-    )
+def merge_entry(entry1: Any, entry2: Any) -> Any:
+    """
+    Merge two stat entries based on their types, following the OCaml logic:
+    - Int: addition
+    - Float: addition
+    - List (StrSeq): concatenation
+    - Dict (Map): recursive merge
+    - Other: create list of both values
+    
+    Args:
+        entry1: First entry
+        entry2: Second entry
+        
+    Returns:
+        Merged entry
+        
+    Raises:
+        ValueError: If entries are incompatible types
+    """
+    # Both are ints
+    if isinstance(entry1, int) and isinstance(entry2, int):
+        return entry1 + entry2
+    
+    # Both are floats
+    if isinstance(entry1, float) and isinstance(entry2, float):
+        return entry1 + entry2
+    
+    # Both are lists (StrSeq)
+    if isinstance(entry1, list) and isinstance(entry2, list):
+        return entry1 + entry2
+    
+    # Both are dicts (Map) - merge recursively
+    if isinstance(entry1, dict) and isinstance(entry2, dict):
+        return merge_stats(entry1, entry2)
+    
+    # Incompatible types - create a list containing both
+    if isinstance(entry1, list) and not isinstance(entry2, list):
+        return entry1 + [entry2]
+    if not isinstance(entry1, list) and isinstance(entry2, list):
+        return [entry1] + entry2
+    
+    # Neither is a list - create a new list
+    return [entry1, entry2]
+
+
+def merge_stats(stats1: dict[str, Any], stats2: dict[str, Any]) -> dict[str, Any]:
+    """
+    Merge two statistics dictionaries generically based on entry types.
+    
+    Args:
+        stats1: First statistics dictionary
+        stats2: Second statistics dictionary
+        
+    Returns:
+        Merged statistics dictionary
+    """
+    result = {}
+    
+    # Get all keys from both dictionaries
+    all_keys = set(stats1.keys()) | set(stats2.keys())
+    
+    for key in all_keys:
+        if key in stats1 and key in stats2:
+            # Both have this key - merge the entries
+            result[key] = merge_entry(stats1[key], stats2[key])
+        elif key in stats1:
+            # Only in stats1
+            result[key] = stats1[key]
+        else:
+            # Only in stats2
+            result[key] = stats2[key]
+            
+    return result
 
 
 def ask_and_remove(path: Path):
