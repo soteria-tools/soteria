@@ -121,13 +121,22 @@ jobs:
         run: yarn compile
 
       # Packaging OCaml distribution and sending it as artifact
-      - name: OCaml zip file creation
-        run: make package
-      - name: Upload zip file
+      - name: Create soteria-c package
+        run: make package-soteria-c
+      - name: Upload soteria-c package
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.operating-system }}-package
-          path: package
+          name: ${{ matrix.operating-system }}-soteria-c-package
+          path: packages/soteria-c
+          if-no-files-found: error
+
+      - name: Create soteria-rust package
+        run: make package-soteria-rust
+      - name: Upload soteria-rust package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-soteria-rust-package
+          path: packages/soteria-rust
           if-no-files-found: error
 
       - name: Build API documentation
@@ -145,8 +154,8 @@ jobs:
       - name: Opam Cleanup
         run: opam clean -a -r
 
-  test-package:
-    name: Test Package
+  test-soteria-c-package:
+    name: Test soteria-c Package
     strategy:
       matrix:
         operating-system: [macos-latest]
@@ -158,34 +167,144 @@ jobs:
         with:
           repository: srdja/Collections-C
           ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-soteria-c-package
+          path: soteria-c-package
+      - name: Add executable permissions
+        run: |
+          chmod +x ./soteria-c-package/bin/soteria-c
+          chmod +x ./soteria-c-package/bin/z3
+      - name: Setup environment variables
+        run: |
+          PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-c-package"
+          echo "CERB_INSTALL_PREFIX=${PACKAGE_DIR}" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
+          echo "SOTERIA_AUTO_INCLUDE_PATH=${PACKAGE_DIR}/lib/soteria-c" >> $GITHUB_ENV
+          echo "SOTERIA_C=${PACKAGE_DIR}/bin/soteria-c" >> $GITHUB_ENV
+          echo "SOTERIA_SOLVER_TIMEOUT=100" >> $GITHUB_ENV
+          echo "SOTERIA_USE_CERB_HEADERS=true" >> $GITHUB_ENV
       - name: Create compilation database
         run: |
           mkdir -p build
           cd build
           cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
-      - name: Download package
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.operating-system }}-package
-      - name: Add executable permissions
-        run: |
-          chmod +x ./bin/soteria-c
-          chmod +x ./bin/z3
-      - name: Run soteria-c (expecting exit code 13)
+      - name: Run soteria-c on Collections-C (expecting exit code 13)
         run: |
           set +e
-          CERB_INSTALL_PREFIX=$(pwd) DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c capture-db build/compile_commands.json
+          $SOTERIA_C capture-db build/compile_commands.json
           EXIT_CODE=$?
           if [ $EXIT_CODE -ne 13 ]; then
             echo "Expected exit code 13, but got $EXIT_CODE"
             exit 1
           fi
-          echo "Correctly received exit code 13, bug was found"
-        env:
-          SOTERIA_Z3_PATH: ./bin/z3
-          SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c
-          SOTERIA_SOLVER_TIMEOUT: 100
-          SOTERIA_USE_CERB_HEADERS: true
+          echo "✓ Collections-C test passed (found expected bug, exit code 13)"
+      - name: Checkout Soteria repository for test files
+        uses: actions/checkout@v4
+        with:
+          path: soteria-repo
+      - name: Test symbolic execution with sym.c (nondet test)
+        working-directory: soteria-repo/soteria-c/test/cram/simple.t
+        run: |
+          echo "Testing sym.c (verifying __soteria___nondet_int is found)"
+          $SOTERIA_C exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
+          echo "✓ sym.c test passed (symbolic execution with nondet successful)"
+
+  test-soteria-rust-package:
+    name: Test soteria-rust Package
+    strategy:
+      matrix:
+        operating-system: [macos-latest]
+    runs-on: ${{ matrix.operating-system }}
+    needs: build
+    steps:
+      - name: Get Rust toolchain
+        run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-soteria-rust-package
+          path: soteria-rust-package
+      - name: Add executable permissions
+        run: |
+          chmod +x ./soteria-rust-package/bin/soteria-rust
+          chmod +x ./soteria-rust-package/bin/z3
+          chmod +x ./soteria-rust-package/bin/obol
+          chmod +x ./soteria-rust-package/bin/charon
+          chmod +x ./soteria-rust-package/bin/obol-driver
+          chmod +x ./soteria-rust-package/bin/charon-driver
+      - name: Setup environment variables
+        run: |
+          PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-rust-package"
+          echo "DYLD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
+          echo "SOTERIA_OBOL_PATH=${PACKAGE_DIR}/bin/obol" >> $GITHUB_ENV
+          echo "SOTERIA_CHARON_PATH=${PACKAGE_DIR}/bin/charon" >> $GITHUB_ENV
+          echo "SOTERIA_RUST_PLUGINS=${PACKAGE_DIR}/plugins" >> $GITHUB_ENV
+          echo "SOTERIA_RUST=${PACKAGE_DIR}/bin/soteria-rust" >> $GITHUB_ENV
+      - name: Run soteria-rust --help (smoke test)
+        run: |
+          $SOTERIA_RUST --help
+          echo "soteria-rust smoke test passed"
+      - name: Test basic Miri plugin (simple.t tests)
+        working-directory: soteria-rust/test/cram/simple.t
+        run: |
+          echo "Testing leak.rs (Miri plugin)"
+          set +e
+          $SOTERIA_RUST rustc leak.rs
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 1 ]; then
+            echo "Expected exit code 1 for leak.rs, but got $EXIT_CODE"
+            exit 1
+          fi
+          echo "✓ leak.rs test passed (found expected memory leak)"
+
+          echo "Testing char_min_max.rs (Miri plugin)"
+          set -e
+          $SOTERIA_RUST rustc char_min_max.rs
+          echo "✓ char_min_max.rs test passed"
+      - name: Test Kani plugin (kani.t tests)
+        working-directory: soteria-rust/test/cram/kani.t
+        run: |
+          echo "Testing any.rs (Kani plugin)"
+          $SOTERIA_RUST rustc any.rs --kani
+          echo "✓ any.rs test passed"
+
+          echo "Testing assume.rs (Kani plugin)"
+          $SOTERIA_RUST rustc assume.rs --kani
+          echo "✓ assume.rs test passed"
+      - name: Test Rusteria plugin (rusteria-lib.t tests)
+        working-directory: soteria-rust/test/cram/rusteria-lib.t
+        run: |
+          echo "Testing lib-fns.rs (Rusteria plugin)"
+          $SOTERIA_RUST rustc lib-fns.rs
+          echo "✓ lib-fns.rs test passed"
+
+          echo "Testing annots.rs (Rusteria annotations)"
+          $SOTERIA_RUST rustc annots.rs
+          echo "✓ annots.rs test passed"
+      - name: Test polymorphic support (poly.t tests)
+        working-directory: soteria-rust/test/cram/poly.t
+        run: |
+          echo "Testing trivial.rs (polymorphic support with Charon)"
+          $SOTERIA_RUST rustc trivial.rs --frontend charon --poly
+          echo "✓ trivial.rs test passed"
+
+          echo "Testing vec.rs (polymorphic Vec support)"
+          set +e
+          $SOTERIA_RUST rustc vec.rs --frontend charon --poly
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 1 ]; then
+            echo "Expected exit code 1 for vec.rs, but got $EXIT_CODE"
+            exit 1
+          fi
+          echo "✓ vec.rs test passed (found expected assertion failure)"
 
   publish-doc:
     name: Publish documentation
