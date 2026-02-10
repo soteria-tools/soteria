@@ -1,0 +1,3 @@
+(test
+ (name svalue_fuzz)
+ (libraries soteria simple_smt qcheck-core qcheck-alcotest alcotest))
