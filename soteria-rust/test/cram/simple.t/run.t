@@ -261,3 +261,14 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
   
   [1]
+
+Test HashMap random keys stub (std::sys::random::hashmap_random_keys)
+  $ soteria-rust rustc hashmap_random_keys.rs --ignore-leaks
+  Compiling... done in <time>
+  note: main: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000004 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffff2) /\
+        (0x0000000000000004 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffff6) /\
+        (0b00 == extract[0-1](V|1|)) /\ (extract[0-1](V|2|) == 0b00) /\
+        (0b00 == extract[0-1](V|3|))
+  

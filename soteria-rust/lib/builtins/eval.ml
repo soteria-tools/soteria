@@ -29,7 +29,7 @@ type alloc_fn =
   | Realloc
   | NoAllocShimIsUnstable
 
-type system_fn = TlvAtexit
+type system_fn = TlvAtexit | HashmapRandomKeys
 
 type fn =
   | Alloc of alloc_fn
@@ -74,6 +74,7 @@ let std_fun_pair_list =
        is unsatisfactory (checking if the name starts with "__rust"). *)
     ( "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
       System TlvAtexit );
+    ("std::sys::random::hashmap_random_keys", System HashmapRandomKeys);
     (* Panic Builtins *)
     ("__rust_panic_cleanup", Fixme PanicCleanup);
     (* Dropping, in particular for the generic case, does nothing. *)
@@ -170,6 +171,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     | Fixme PanicCleanup -> fixme_panic_cleanup
     | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
     | System TlvAtexit -> System.tlv_atexit fun_exec
+    | System HashmapRandomKeys -> System.hashmap_random_keys
     | DropInPlace -> nop
 
   let std_fun_eval (f : UllbcAst.fun_decl) generics fun_exec =

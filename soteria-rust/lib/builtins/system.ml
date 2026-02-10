@@ -26,4 +26,11 @@ module M (Rust_state_m : Rust_state_m.S) = struct
           ok ())
     in
     Tuple []
+
+  let hashmap_random_keys args =
+    let u64 = Charon.Types.TLiteral (TUInt U64) in
+    let u64_u64 = Charon_util.mk_concrete_tuple_ty [ u64; u64 ] in
+    match args with
+    | [] -> Encoder.nondet u64_u64
+    | _ -> Fmt.failwith "hashmap_random_keys: invalid arguments"
 end
