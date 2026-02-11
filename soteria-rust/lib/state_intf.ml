@@ -65,8 +65,14 @@ module type S = sig
   val store_global : Types.global_decl_id -> full_ptr -> unit ret
   val load_str_global : string -> full_ptr option ret
   val load_global : Types.global_decl_id -> full_ptr option ret
-  val borrow : full_ptr -> Types.ty -> Expressions.borrow_kind -> full_ptr ret
-  val protect : full_ptr -> Types.ty -> Types.ref_kind -> full_ptr ret
+
+  val borrow :
+    ?protect:bool ->
+    full_ptr ->
+    Types.ty ->
+    Expressions.borrow_kind ->
+    full_ptr ret
+
   val unprotect : full_ptr -> Types.ty -> unit ret
   val with_exposed : [< sint ] Typed.t -> full_ptr ret
   val leak_check : unit -> unit ret
