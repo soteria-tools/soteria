@@ -69,6 +69,10 @@ type t = {
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
+  show_pcs : bool;
+      [@make.default false] [@names [ "show-pcs"; "pcs" ]] [@env "SHOW_PCS"]
+      (** Whether to show the path conditions for outcomes at the end of
+          execution. *)
   (* Symbolic execution behaviour *)
   ignore_leaks : bool; [@make.default false] [@names [ "ignore-leaks" ]]
       (** Ignore memory leaks *)

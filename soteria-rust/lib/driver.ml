@@ -42,7 +42,7 @@ let print_pcs pcs =
       let pp_pc = list ~sep:(any " /\\@, ") Typed.ppa in
       pf ft "%a @[<-1>%a@]" (pp_style `Bold) name pp_pc pc
   in
-  if not @@ (Soteria.Terminal.Config.get ()).compact then
+  if (Config.get ()).show_pcs then
     let pcs_indexed = List.mapi (fun i pc -> (pc, i + 1)) pcs in
     (list ~sep:(any "@\n") pp_pc) Fmt.stdout pcs_indexed
 
@@ -122,6 +122,8 @@ let exec_crate
   (* execute! *)
   let entry_name = Fmt.to_to_string Crate.pp_name fun_decl.item_meta.name in
   let@ () = print_outcomes entry_name in
+  Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
+    ("Running " ^ entry_name ^ "...");
   let { res = branches; stats } : 'res Soteria.Stats.with_stats =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
@@ -165,10 +167,13 @@ let exec_crate
     Stats.get_int stats Soteria.Symex.StatKeys.unexplored_branches
   in
   if unexplored > 0 then
-    if Option.is_some (Config.get ()).branch_fuel then
+    if
+      Option.is_some (Config.get ()).branch_fuel
+      || Option.is_some (Config.get ()).step_fuel
+    then
       Fmt.kstr Soteria.Terminal.Warn.warn
-        "Note that %a were left unexplored due to branch fuel. Errors may have \
-         been missed."
+        "Note that at least %a were left unexplored due to fuel exhaustion. \
+         Errors may have been missed."
         pp_branches unexplored
     else Fmt.kstr execution_err "Missed %a" pp_branches unexplored
   else if List.exists Compo_res.is_missing outcomes then
