@@ -46,10 +46,6 @@ let get_bool_var idx =
       Hashtbl.replace bool_var_pool idx sv;
       sv
 
-(* ------------------------------------------------------------------ *)
-(* Random helpers                                                      *)
-(* ------------------------------------------------------------------ *)
-
 let gen_z ~bv_size =
   let open QCheck2.Gen in
   (* We limit most tests to 16-bit integers anyway *)
@@ -237,12 +233,12 @@ and gen_bool_leaf : Sv.t Gen.t =
   in
   oneof [ gen_concrete; gen_var ]
 
-(* ------------------------------------------------------------------ *)
-(* Exported top-level generators                                       *)
-(* ------------------------------------------------------------------ *)
-
 let depth = Gen.int_bound 5
-let bv_size = Gen.oneof_array [| 8; 16 |]
+
+(* We could restrict to 8 and 16, but this means the generator can then shrink
+   the inputs to bvs of size 2 if it can reproduce it there and that's really
+   nice. *)
+let bv_size = Gen.int_range 1 16
 
 (** Generate a bitvector expression (direct) and its smartified version. *)
 let gen_bv_pair : (Sv.t * Sv.t) Gen.t =
