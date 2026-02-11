@@ -17,7 +17,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     let max_size = Layout.max_value_z (TInt Isize) in
     let max_size = Typed.BitVec.usize max_size in
     let* () =
-      assert_ (Usize.(1s) <=@ align &&@ (size <@ max_size)) `InvalidAlloc
+      assert_ (Usize.(1s) <=@ align &&@ (size <=@ max_size)) `InvalidAlloc
     in
     let align = Typed.cast align in
     let+ ptr = State.alloc_untyped ~zeroed ~size ~align () in
