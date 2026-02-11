@@ -78,6 +78,9 @@ module Make (Sptr : Sptr.S) = struct
                 BV.concat v v2
           in
           split_rval (Int v) at
+      | Float f ->
+          let* v = Encoder.float_to_bv_bits f in
+          split_rval (Int v) at
       | Int v ->
           (* get our starting size and unsigned integer *)
           let size = Typed.size_of_int v / 8 in
