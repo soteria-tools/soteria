@@ -335,6 +335,7 @@ let[@inline] with_loc_err ?trace:msg ()
   let trace =
     Option.fold ~none:trace ~some:(fun t -> Trace.set_op t trace) msg
   in
+  Error.log_at trace err;
   Error (Error.decorate trace err)
 
 let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =

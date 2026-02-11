@@ -327,6 +327,7 @@ struct
          (let open Rustsymex.Syntax in
           let* trace = Rustsymex.get_trace () in
           let+- err = sym in
+          Error.log_at trace err;
           Error.decorate trace err)
 
   let assert_ cond err =
@@ -380,9 +381,9 @@ struct
     ESM.lift
       (let open State.SM.Syntax in
        let*- err = State.with_decay_map f in
-       let+^ where = get_trace () in
-
-       Compo_res.Error (Error.decorate where err))
+       let+^ trace = get_trace () in
+       Error.log_at trace err;
+       Compo_res.Error (Error.decorate trace err))
 
   let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
     ESM.lift (State.SM.map (State.with_decay_map f) Compo_res.ok)
