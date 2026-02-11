@@ -1971,7 +1971,7 @@ and BitVec : BitVec = struct
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( + )
     | BitVec z, _ when Z.equal z Z.zero -> Bool.v_false
     | _, BitVec z when Z.equal z Z.zero -> Bool.v_false
-    | _ when signed && size_of v1.node.ty == 1 ->
+    | _ when size_of v1.node.ty == 1 ->
         let one = one 1 in
         Bool.and_ (Bool.sem_eq v1 one) (Bool.sem_eq v2 one)
     | BitVec z, _ when Stdlib.not signed ->
