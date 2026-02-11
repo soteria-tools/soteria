@@ -1971,6 +1971,9 @@ and BitVec : BitVec = struct
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( + )
     | BitVec z, _ when Z.equal z Z.zero -> Bool.v_false
     | _, BitVec z when Z.equal z Z.zero -> Bool.v_false
+    | _ when signed && size_of v1.node.ty == 1 ->
+        let one = one 1 in
+        Bool.and_ (Bool.sem_eq v1 one) (Bool.sem_eq v2 one)
     | BitVec z, _ when Stdlib.not signed ->
         let n = size_of v1.node.ty in
         let m = max_for signed n in
@@ -2003,10 +2006,11 @@ and BitVec : BitVec = struct
   let mul_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( * )
-    | _ when size_of v1.node.ty == 1 ->
+    | _ when signed && size_of v1.node.ty == 1 ->
         (* We need to special-case size one because the other simplifications
            will mes with that case, and it's pretty easy to simplify. *)
-        Bool.and_ (Bool.sem_eq v1 (one 1)) (Bool.sem_eq v2 (one 1))
+        let one = one 1 in
+        Bool.and_ (Bool.sem_eq v1 one) (Bool.sem_eq v2 one)
     | _
       when if signed then msb_of v1 + msb_of v2 < size_of v1.node.ty - 2
            else msb_of v1 + msb_of v2 < size_of v1.node.ty - 1 ->
