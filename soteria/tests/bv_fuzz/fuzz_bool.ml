@@ -1,24 +1,8 @@
 (** Fuzz test: boolean smart constructor equivalence. *)
 
-open Soteria.Bv_values
-
-let print_bool_params (depth, bv_size, seed) =
-  Printf.sprintf "depth=%d, bv_size=%d, seed=%d" depth bv_size seed
-
 let test_bool_equivalence =
-  QCheck.Test.make ~count:10000 ~name:"bool_smart_eq_direct"
-    QCheck.(make ~print:print_bool_params Fuzz_common.gen_params)
-    (fun (depth, bv_size, seed) ->
-      let rs = Random.State.make [| seed |] in
-      let smart, direct = Gen.gen_bool_pair ~depth ~bv_size rs in
-      if Svalue.equal smart direct then true
-      else begin
-        let ok = Fuzz_common.check_equivalence smart direct in
-        if not ok then
-          Format.eprintf "COUNTEREXAMPLE:@.%a@." Fuzz_common.pp_pair
-            (smart, direct);
-        ok
-      end)
+  Fuzz_common.mk_test ~count:10000 ~name:"bool_smart_eq_direct"
+    Gen.gen_bool_pair
 
 let () =
   Fuzz_common.setup ();

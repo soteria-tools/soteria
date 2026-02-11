@@ -54,12 +54,21 @@ let check_equivalence (smart : Svalue.t) (direct : Svalue.t) : bool =
         pp_pair (smart, direct);
       true
 
-let gen_params =
-  QCheck.Gen.(
-    let* depth = int_range 2 5 in
-    let* bv_size = oneof_list [ 8; 16 ] in
-    let* seed = nat in
-    return (depth, bv_size, seed))
+let print_svalue = Fmt.to_to_string Svalue.pp
+
+let print_pair =
+  let open QCheck2.Print in
+  pair print_svalue print_svalue
+
+let check_smart_eq_direct (smart, direct) =
+  if Svalue.equal smart direct then true
+  else
+    let ok = check_equivalence smart direct in
+    if not ok then Format.eprintf "COUNTEREXAMPLE:@.%a@." pp_pair (smart, direct);
+    ok
+
+let mk_test ~name ~count gen =
+  QCheck2.Test.make ~count ~name ~print:print_pair gen check_smart_eq_direct
 
 (** Call this at the start of main to configure the Z3 timeout. *)
 let setup () =

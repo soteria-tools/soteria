@@ -4,6 +4,7 @@
     (non-simplifying) constructors, then replays it through the smart
     constructors using {!Soteria.Bv_values.Eval.eval} to obtain a simplified
     version. Both should be semantically equivalent. *)
+open QCheck2
 
 open Soteria.Bv_values
 module Sv = Svalue
@@ -49,60 +50,44 @@ let get_bool_var idx =
 (* Random helpers                                                      *)
 (* ------------------------------------------------------------------ *)
 
-let pick_random arr rs = arr.(Random.State.int rs (Array.length arr))
-
-let random_z ~bv_size rs =
-  (* Generate a random Z.t that fits in bv_size bits *)
-  let bytes = Bytes.create ((bv_size + 7) / 8) in
-  for i = 0 to Bytes.length bytes - 1 do
-    Bytes.set bytes i (Char.chr (Random.State.int rs 256))
-  done;
-  let z = Z.of_bits (Bytes.to_string bytes) in
-  Z.extract z 0 bv_size
-
-let random_bool rs = Random.State.bool rs
-let random_signed rs = Random.State.bool rs
+let gen_z ~bv_size =
+  let open QCheck2.Gen in
+  (* We limit most tests to 16-bit integers anyway *)
+  assert (bv_size < 63);
+  let+ v = QCheck2.Gen.int_bound ((1 lsl bv_size) - 1) in
+  Z.of_int v
 
 (* ------------------------------------------------------------------ *)
 (* Bitvector operations to pick from                                   *)
 (* ------------------------------------------------------------------ *)
 
-type bv_binop = BAdd | BSub | BMul | BAnd | BOr | BXor | BShl | BLshr | BAshr
-type bv_unop = BNot | BNeg
+let all_bv_binops =
+  [|
+    D.BitVec.add ~checked:false;
+    D.BitVec.sub ~checked:false;
+    D.BitVec.mul ~checked:false;
+    D.BitVec.and_;
+    D.BitVec.or_;
+    D.BitVec.xor;
+    D.BitVec.shl;
+    D.BitVec.lshr;
+    D.BitVec.ashr;
+  |]
 
-let all_bv_binops = [| BAdd; BSub; BMul; BAnd; BOr; BXor; BShl; BLshr; BAshr |]
-let all_bv_unops = [| BNot; BNeg |]
-
-let apply_bv_binop op ~checked v1 v2 =
-  match op with
-  | BAdd -> D.BitVec.add ~checked v1 v2
-  | BSub -> D.BitVec.sub ~checked v1 v2
-  | BMul -> D.BitVec.mul ~checked v1 v2
-  | BAnd -> D.BitVec.and_ v1 v2
-  | BOr -> D.BitVec.or_ v1 v2
-  | BXor -> D.BitVec.xor v1 v2
-  | BShl -> D.BitVec.shl v1 v2
-  | BLshr -> D.BitVec.lshr v1 v2
-  | BAshr -> D.BitVec.ashr v1 v2
-
-let apply_bv_unop op v =
-  match op with BNot -> D.BitVec.not_ v | BNeg -> D.BitVec.neg v
+let all_bv_unops = [| D.BitVec.not_; D.BitVec.neg |]
 
 (* ------------------------------------------------------------------ *)
 (* Bool operations that compare bitvectors                             *)
 (* ------------------------------------------------------------------ *)
 
-type bv_cmp_op = BLt | BLeq | BEq | BAddOvf | BMulOvf
-
-let all_bv_cmp_ops = [| BLt; BLeq; BEq; BAddOvf; BMulOvf |]
-
-let apply_bv_cmp_op op ~signed v1 v2 =
-  match op with
-  | BLt -> D.BitVec.lt ~signed v1 v2
-  | BLeq -> D.BitVec.leq ~signed v1 v2
-  | BEq -> D.Bool.eq v1 v2
-  | BAddOvf -> D.BitVec.add_overflows ~signed v1 v2
-  | BMulOvf -> D.BitVec.mul_overflows ~signed v1 v2
+let all_bv_cmp_ops =
+  [|
+    D.BitVec.lt;
+    D.BitVec.leq;
+    (fun ~signed:_ -> D.Bool.eq);
+    D.BitVec.add_overflows;
+    D.BitVec.mul_overflows;
+  |]
 
 (* ------------------------------------------------------------------ *)
 (* Core generators — produce direct (non-simplifying) AST only        *)
@@ -112,116 +97,145 @@ let num_vars = 3
 
 (** Generate a bitvector expression of the given size via direct constructors.
 *)
-let rec gen_bv ~depth ~bv_size rs : Sv.t =
-  if depth <= 0 then gen_bv_leaf ~bv_size rs
-  else
-    let choice = Random.State.int rs 10 in
-    match choice with
-    (* 0-3: same-size binary op *)
-    | 0 | 1 | 2 | 3 ->
-        let op = pick_random all_bv_binops rs in
-        let checked = false in
-        let v1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        let v2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_binop op ~checked v1 v2
-    (* 4-5: unary op *)
-    | 4 | 5 ->
-        let op = pick_random all_bv_unops rs in
-        let v = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_unop op v
-    (* 6: ite *)
-    | 6 ->
-        let cond = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let v1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        let v2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+let rec gen_bv ~bv_size : Sv.t Gen.sized =
+  let open Gen in
+  fun depth ->
+    if depth <= 0 then gen_bv_leaf ~bv_size
+    else
+      let gen_same_size_binop =
+        let* bv_binop = oneof_array all_bv_binops in
+
+        let* v1 = gen_bv ~bv_size (depth - 1) in
+        let+ v2 = gen_bv ~bv_size (depth - 1) in
+        bv_binop v1 v2
+      in
+      let gen_unop =
+        let* bv_unop = oneof_array all_bv_unops in
+        let+ v = gen_bv ~bv_size (depth - 1) in
+        bv_unop v
+      in
+      let gen_ite =
+        let* cond = gen_bool ~bv_size (depth - 1) in
+        let* v1 = gen_bv ~bv_size (depth - 1) in
+        let+ v2 = gen_bv ~bv_size (depth - 1) in
         D.Bool.ite cond v1 v2
-    (* 7: extract — generate wider, then extract bv_size bits *)
-    | 7 when bv_size >= 2 ->
-        let extra = Random.State.int rs (min 8 bv_size) in
-        let wider = bv_size + extra in
-        let from_ = Random.State.int rs (extra + 1) in
-        let to_ = from_ + bv_size - 1 in
-        let v = gen_bv ~depth:(depth - 1) ~bv_size:wider rs in
-        D.BitVec.extract from_ to_ v
-    (* 8: extend — generate narrower, then extend *)
-    | 8 when bv_size >= 2 ->
-        let narrow = 1 + Random.State.int rs (bv_size - 1) in
-        let by = bv_size - narrow in
-        let signed = random_signed rs in
-        let v = gen_bv ~depth:(depth - 1) ~bv_size:narrow rs in
-        D.BitVec.extend ~signed by v
-    (* 9: of_bool *)
-    | 9 ->
-        let v = gen_bool ~depth:(depth - 1) ~bv_size rs in
+      in
+      let gen_extract =
+        if bv_size >= 2 then
+          let* extra = Gen.int_bound (min 8 bv_size - 1) in
+          let wider = bv_size + extra in
+          let* from_ = Gen.int_bound extra in
+          let to_ = from_ + bv_size - 1 in
+          let+ v = gen_bv ~bv_size:wider (depth - 1) in
+          D.BitVec.extract from_ to_ v
+        else
+          (* Fallback *)
+          gen_unop
+      in
+      let gen_extend =
+        if bv_size >= 2 then
+          let* narrow_m_1 = Gen.int_bound (bv_size - 2) in
+          let narrow = narrow_m_1 + 1 in
+          let by = bv_size - narrow in
+          let* signed = Gen.bool in
+          let+ v = gen_bv ~bv_size:narrow (depth - 1) in
+          D.BitVec.extend ~signed by v
+        else
+          (* Fallback *)
+          gen_unop
+      in
+      let gen_of_bool =
+        let+ v = gen_bool ~bv_size (depth - 1) in
         D.BitVec.of_bool bv_size v
-    (* fallback for when bv_size < 2: unary op *)
-    | _ ->
-        let op = pick_random all_bv_unops rs in
-        let v = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_unop op v
+      in
+      oneof_weighted
+        [
+          (1, gen_bv_leaf ~bv_size);
+          (1, gen_of_bool);
+          (2, gen_unop);
+          (1, gen_extract);
+          (1, gen_extend);
+          (1, gen_ite);
+          (4, gen_same_size_binop);
+        ]
 
 (** Generate a bitvector leaf (concrete value or symbolic variable). *)
-and gen_bv_leaf ~bv_size rs : Sv.t =
-  if random_bool rs then
-    let z = random_z ~bv_size rs in
+and gen_bv_leaf ~bv_size : Sv.t QCheck2.Gen.t =
+  let open QCheck2.Gen in
+  let gen_concrete =
+    let+ z = gen_z ~bv_size in
     D.BitVec.mk bv_size z
-  else
-    let idx = Random.State.int rs num_vars in
-    get_bv_var bv_size idx
+  in
+  let gen_var =
+    no_shrink
+      (let+ idx = int_bound (num_vars - 1) in
+       get_bv_var bv_size idx)
+  in
+  oneof [ gen_concrete; gen_var ]
 
 (** Generate a boolean expression. [bv_size] is the bitvector width used when we
     need BV sub-expressions. *)
-and gen_bool ~depth ~bv_size rs : Sv.t =
-  if depth <= 0 then gen_bool_leaf rs
-  else
-    let choice = Random.State.int rs 10 in
-    match choice with
-    (* 0-2: BV comparison *)
-    | 0 | 1 | 2 ->
-        let op = pick_random all_bv_cmp_ops rs in
-        let signed = random_signed rs in
-        let v1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        let v2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_cmp_op op ~signed v1 v2
-    (* 3-4: bool binary op (and / or) *)
-    | 3 | 4 ->
-        let v1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let v2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        if random_bool rs then D.Bool.and_ v1 v2 else D.Bool.or_ v1 v2
-    (* 5: not *)
-    | 5 ->
-        let v = gen_bool ~depth:(depth - 1) ~bv_size rs in
+and gen_bool ~bv_size : Sv.t Gen.sized =
+  let open Gen in
+  fun depth ->
+    if depth <= 0 then gen_bool_leaf
+    else
+      let gen_bool_binop =
+        let* v1 = gen_bool ~bv_size (depth - 1) in
+        let* v2 = gen_bool ~bv_size (depth - 1) in
+        let+ op = oneof_array [| D.Bool.and_; D.Bool.or_ |] in
+        op v1 v2
+      in
+      let gen_not =
+        let+ v = gen_bool ~bv_size (depth - 1) in
         D.Bool.not_ v
-    (* 6: ite *)
-    | 6 ->
-        let cond = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let v1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let v2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        D.Bool.ite cond v1 v2
-    (* 7: bool eq *)
-    | 7 ->
-        let v1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let v2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
+      in
+      let gen_ite =
+        let* cond = gen_bool ~bv_size (depth - 1) in
+        let* t = gen_bool ~bv_size (depth - 1) in
+        let+ e = gen_bool ~bv_size (depth - 1) in
+        D.Bool.ite cond t e
+      in
+      let gen_eq =
+        let* v1 = gen_bv ~bv_size (depth - 1) in
+        let+ v2 = gen_bv ~bv_size (depth - 1) in
         D.Bool.eq v1 v2
-    (* 8: to_bool (bv -> bool), i.e. not(v == 0) *)
-    | 8 ->
-        let v = gen_bv ~depth:(depth - 1) ~bv_size rs in
+      in
+      let gen_to_bool =
+        let+ v = gen_bv ~bv_size (depth - 1) in
         D.BitVec.to_bool v
-    (* 9: additional BV comparison *)
-    | 9 ->
-        let op = pick_random all_bv_cmp_ops rs in
-        let signed = random_signed rs in
-        let v1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        let v2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_cmp_op op ~signed v1 v2
-    | _ -> gen_bool_leaf rs
+      in
+      let gen_bv_comp =
+        let* op = oneof_array all_bv_cmp_ops in
+        let* signed = Gen.bool in
+        let* v1 = gen_bv ~bv_size (depth - 1) in
+        let+ v2 = gen_bv ~bv_size (depth - 1) in
+        op ~signed v1 v2
+      in
+      oneof_weighted
+        [
+          (1, gen_bool_leaf);
+          (1, gen_eq);
+          (1, gen_not);
+          (1, gen_to_bool);
+          (1, gen_ite);
+          (2, gen_bool_binop);
+          (3, gen_bv_comp);
+        ]
 
 (** Generate a boolean leaf (concrete or symbolic). *)
-and gen_bool_leaf rs : Sv.t =
-  if random_bool rs then D.Bool.bool (random_bool rs)
-  else
-    let idx = Random.State.int rs num_vars in
-    get_bool_var idx
+and gen_bool_leaf : Sv.t Gen.t =
+  let open Gen in
+  let gen_concrete =
+    let+ b = bool in
+    D.Bool.bool b
+  in
+  let gen_var =
+    no_shrink
+      (let+ idx = int_bound (num_vars - 1) in
+       get_bool_var idx)
+  in
+  oneof [ gen_concrete; gen_var ]
 
 (* ------------------------------------------------------------------ *)
 (* Exported top-level generators                                       *)
@@ -263,14 +277,21 @@ let smartify (x : Sv.t) : Sv.t =
   in
   go x
 
+let depth = Gen.int_bound 5
+let bv_size = Gen.oneof_array [| 8; 16 |]
+
 (** Generate a bitvector expression (direct) and its smartified version. *)
-let gen_bv_pair ~depth ~bv_size rs : Sv.t * Sv.t =
-  let direct = gen_bv ~depth ~bv_size rs in
+let gen_bv_pair : (Sv.t * Sv.t) Gen.t =
+  let open Gen in
+  let* bv_size = bv_size in
+  let+ direct = Gen.sized_size depth @@ gen_bv ~bv_size in
   let smart = smartify direct in
   (smart, direct)
 
 (** Generate a boolean expression (direct) and its smartified version. *)
-let gen_bool_pair ~depth ~bv_size rs : Sv.t * Sv.t =
-  let direct = gen_bool ~depth ~bv_size rs in
+let gen_bool_pair : (Sv.t * Sv.t) Gen.t =
+  let open Gen in
+  let* bv_size = bv_size in
+  let+ direct = Gen.sized_size depth @@ gen_bool ~bv_size in
   let smart = smartify direct in
   (smart, direct)
