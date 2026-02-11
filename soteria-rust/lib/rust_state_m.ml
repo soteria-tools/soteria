@@ -224,9 +224,12 @@ module type S = sig
     val check_ptr_align : full_ptr -> Types.ty -> (unit, 'env) t
 
     val borrow :
-      full_ptr -> Types.ty -> Expressions.borrow_kind -> (full_ptr, 'env) t
+      ?protect:bool ->
+      full_ptr ->
+      Types.ty ->
+      Expressions.borrow_kind ->
+      (full_ptr, 'env) t
 
-    val protect : full_ptr -> Types.ty -> Types.ref_kind -> (full_ptr, 'env) t
     val unprotect : full_ptr -> Types.ty -> (unit, 'env) t
     val with_exposed : [< Typed.T.sint ] Typed.t -> (full_ptr, 'env) t
     val tb_load : full_ptr -> Types.ty -> (unit, 'env) t
@@ -515,8 +518,10 @@ struct
     let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
     let[@inline] free ptr = ESM.lift (free ptr)
     let[@inline] check_ptr_align ptr ty = ESM.lift (check_ptr_align ptr ty)
-    let[@inline] borrow ptr ty mut = ESM.lift (borrow ptr ty mut)
-    let[@inline] protect ptr ty mut = ESM.lift (protect ptr ty mut)
+
+    let[@inline] borrow ?protect ptr ty mut =
+      ESM.lift (borrow ?protect ptr ty mut)
+
     let[@inline] unprotect ptr ty = ESM.lift (unprotect ptr ty)
     let[@inline] with_exposed addr = ESM.lift (with_exposed addr)
     let[@inline] tb_load ptr ty = ESM.lift (tb_load ptr ty)
