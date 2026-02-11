@@ -2,12 +2,14 @@
  (names fuzz_bool fuzz_bv)
  (libraries soteria simple_smt qcheck-core qcheck-alcotest alcotest))
 
-(rule
- (alias slow-tests)
- (action
-  (run ./fuzz_bool.exe)))
+; running each test twice in parallel.
+; Github CI runners have 4 cores, so dune build @slow-tests will run 4 tests in parallel.
 
 (rule
  (alias slow-tests)
  (action
-  (run ./fuzz_bv.exe)))
+  (concurrent
+   (run ./fuzz_bool.exe)
+   (run ./fuzz_bool.exe)
+   (run ./fuzz_bv.exe)
+   (run ./fuzz_bv.exe))))
