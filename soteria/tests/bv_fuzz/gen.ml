@@ -23,10 +23,6 @@ let bv_var_pool : (int * int, pair) Hashtbl.t = Hashtbl.create 32
 (** Pre-allocated boolean variables. *)
 let bool_var_pool : (int, pair) Hashtbl.t = Hashtbl.create 8
 
-(** Pre-allocated float variables for each precision. *)
-let float_var_pool : (Sv.FloatPrecision.t * int, pair) Hashtbl.t =
-  Hashtbl.create 8
-
 let var_counter = ref 1000
 
 let fresh_var () =
@@ -54,16 +50,6 @@ let get_bool_var idx =
       let sv = Sv.mk_var v Sv.t_bool in
       let p = (sv, sv) in
       Hashtbl.replace bool_var_pool idx p;
-      p
-
-let get_float_var fp idx =
-  match Hashtbl.find_opt float_var_pool (fp, idx) with
-  | Some p -> p
-  | None ->
-      let v = fresh_var () in
-      let sv = Sv.mk_var v (Sv.t_float fp) in
-      let p = (sv, sv) in
-      Hashtbl.replace float_var_pool (fp, idx) p;
       p
 
 (* ------------------------------------------------------------------ *)
@@ -150,41 +136,6 @@ let apply_bool_binop op (s1, d1) (s2, d2) : pair =
   match op with
   | BoolAnd -> (Smart.Bool.and_ s1 s2, D.Bool.and_ d1 d2)
   | BoolOr -> (Smart.Bool.or_ s1 s2, D.Bool.or_ d1 d2)
-
-(* ------------------------------------------------------------------ *)
-(* Float operation types                                               *)
-(* ------------------------------------------------------------------ *)
-
-type float_binop = FAdd | FSub | FMul | FDiv | FRem
-type float_unop = FAbs | FRound_op
-
-let all_float_binops = [| FAdd; FSub; FMul; FDiv; FRem |]
-let all_float_unops = [| FAbs; FRound_op |]
-
-type float_cmp_op = FEq | FLt | FLeq
-
-let all_float_cmp_ops = [| FEq; FLt; FLeq |]
-
-let apply_float_binop op (s1, d1) (s2, d2) : pair =
-  match op with
-  | FAdd -> (Smart.Float.add s1 s2, D.Float.add d1 d2)
-  | FSub -> (Smart.Float.sub s1 s2, D.Float.sub d1 d2)
-  | FMul -> (Smart.Float.mul s1 s2, D.Float.mul d1 d2)
-  | FDiv -> (Smart.Float.div s1 s2, D.Float.div d1 d2)
-  | FRem -> (Smart.Float.rem s1 s2, D.Float.rem d1 d2)
-
-let apply_float_unop op (s, d) : pair =
-  match op with
-  | FAbs -> (Smart.Float.abs s, D.Float.abs d)
-  | FRound_op ->
-      let rm = Sv.RoundingMode.NearestTiesToEven in
-      (Smart.Float.round rm s, D.Float.round rm d)
-
-let apply_float_cmp_op op (s1, d1) (s2, d2) : pair =
-  match op with
-  | FEq -> (Smart.Float.eq s1 s2, D.Float.eq d1 d2)
-  | FLt -> (Smart.Float.lt s1 s2, D.Float.lt d1 d2)
-  | FLeq -> (Smart.Float.leq s1 s2, D.Float.leq d1 d2)
 
 (* ------------------------------------------------------------------ *)
 (* Core generators                                                     *)
@@ -300,23 +251,19 @@ and gen_bool ~depth ~bv_size rs : pair =
     | 7 ->
         let p = gen_bv ~depth:(depth - 1) ~bv_size rs in
         (Smart.BitVec.to_bool (fst p), D.BitVec.to_bool (snd p))
-    (* 8: float comparison *)
+    (* 8: additional BV comparison — more coverage *)
     | 8 ->
-        let fp = pick_random [| Sv.FloatPrecision.F32; F64 |] rs in
-        let op = pick_random all_float_cmp_ops rs in
-        let p1 = gen_float ~depth:(depth - 1) ~fp rs in
-        let p2 = gen_float ~depth:(depth - 1) ~fp rs in
-        apply_float_cmp_op op p1 p2
-    (* 9: float classification *)
+        let op = pick_random all_bv_cmp_ops rs in
+        let signed = random_signed rs in
+        let p1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        let p2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        apply_bv_cmp_op op ~signed p1 p2
+    (* 9: additional bool binary op *)
     | 9 ->
-        let fp = pick_random [| Sv.FloatPrecision.F32; F64 |] rs in
-        let fc =
-          pick_random
-            [| Sv.FloatClass.Normal; Subnormal; Zero; Infinite; NaN |]
-            rs
-        in
-        let p = gen_float ~depth:(depth - 1) ~fp rs in
-        (Smart.Float.is_floatclass fc (fst p), D.Float.is fc (snd p))
+        let op = pick_random all_bool_binops rs in
+        let p1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        let p2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        apply_bool_binop op p1 p2
     | _ -> gen_bool_leaf rs
 
 (** Generate a boolean leaf (concrete or symbolic). *)
@@ -328,39 +275,6 @@ and gen_bool_leaf rs : pair =
     let idx = Random.State.int rs num_vars in
     get_bool_var idx
 
-(** Generate a float expression pair. *)
-and gen_float ~depth ~fp rs : pair =
-  if depth <= 0 then gen_float_leaf ~fp rs
-  else
-    let choice = Random.State.int rs 6 in
-    match choice with
-    (* 0-2: binary float op *)
-    | 0 | 1 | 2 ->
-        let op = pick_random all_float_binops rs in
-        let p1 = gen_float ~depth:(depth - 1) ~fp rs in
-        let p2 = gen_float ~depth:(depth - 1) ~fp rs in
-        apply_float_binop op p1 p2
-    (* 3-4: unary float op *)
-    | 3 | 4 ->
-        let op = pick_random all_float_unops rs in
-        let p = gen_float ~depth:(depth - 1) ~fp rs in
-        apply_float_unop op p
-    (* 5: ite *)
-    | 5 ->
-        let bv_size = 8 in
-        let cond = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let p1 = gen_float ~depth:(depth - 1) ~fp rs in
-        let p2 = gen_float ~depth:(depth - 1) ~fp rs in
-        ( Smart.Bool.ite (fst cond) (fst p1) (fst p2),
-          D.Bool.ite (snd cond) (snd p1) (snd p2) )
-    | _ -> gen_float_leaf ~fp rs
-
-(** Generate a float leaf (symbolic variable only — no concrete floats to avoid
-    NaN comparison issues in generation). *)
-and gen_float_leaf ~fp rs : pair =
-  let idx = Random.State.int rs num_vars in
-  get_float_var fp idx
-
 (* ------------------------------------------------------------------ *)
 (* Exported top-level generators                                       *)
 (* ------------------------------------------------------------------ *)
@@ -370,6 +284,3 @@ let gen_bv_pair ~depth ~bv_size rs : pair = gen_bv ~depth ~bv_size rs
 
 (** Generate a boolean equivalence check pair. *)
 let gen_bool_pair ~depth ~bv_size rs : pair = gen_bool ~depth ~bv_size rs
-
-(** Generate a float equivalence check pair. *)
-let gen_float_pair ~depth ~fp rs : pair = gen_float ~depth ~fp rs

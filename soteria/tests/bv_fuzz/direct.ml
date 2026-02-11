@@ -109,30 +109,3 @@ module BitVec = struct
     let fp = FloatPrecision.of_size n in
     Unop (FloatOfBvRaw fp, v) <| TFloat fp
 end
-
-(* ------------------------------------------------------------------ *)
-(* Float operations                                                    *)
-(* ------------------------------------------------------------------ *)
-
-module Float = struct
-  let mk fp s = Float s <| TFloat fp
-  let eq v1 v2 = Binop (FEq, v1, v2) <| TBool
-  let lt v1 v2 = Binop (FLt, v1, v2) <| TBool
-  let leq v1 v2 = Binop (FLeq, v1, v2) <| TBool
-  let gt v1 v2 = lt v2 v1
-  let geq v1 v2 = leq v2 v1
-  let add v1 v2 = Binop (FAdd, v1, v2) <| v1.Hc.node.ty
-  let sub v1 v2 = Binop (FSub, v1, v2) <| v1.Hc.node.ty
-  let mul v1 v2 = Binop (FMul, v1, v2) <| v1.Hc.node.ty
-  let div v1 v2 = Binop (FDiv, v1, v2) <| v1.Hc.node.ty
-  let rem v1 v2 = Binop (FRem, v1, v2) <| v1.Hc.node.ty
-  let abs v = Unop (FAbs, v) <| v.Hc.node.ty
-  let round rm v = Unop (FRound rm, v) <| v.Hc.node.ty
-
-  let neg fp v =
-    (* Implemented as 0.0 - v, same as smart constructor *)
-    let zero = Float "0.0" <| TFloat fp in
-    Binop (FSub, zero, v) <| v.Hc.node.ty
-
-  let is fc v = Unop (FIs fc, v) <| TBool
-end
