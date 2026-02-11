@@ -1,7 +1,13 @@
-(test
- (name fuzz_bv)
+(executables
+ (names fuzz_bool fuzz_bv)
  (libraries soteria simple_smt qcheck-core qcheck-alcotest alcotest))
 
-(test
- (name fuzz_bool)
- (libraries soteria simple_smt qcheck-core qcheck-alcotest alcotest))
+(rule
+ (alias slow-tests)
+ (action
+  (run ./fuzz_bool.exe)))
+
+(rule
+ (alias slow-tests)
+ (action
+  (run ./fuzz_bv.exe)))

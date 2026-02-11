@@ -41,6 +41,10 @@ check-opam-files:
 ocaml-test:
 	$(DUNE) test
 
+.PHONY: ocaml-slow-tests
+ocaml-slow-tests:
+	$(DUNE) build @slow-tests
+
 .PHONY: doc
 doc:
 	$(DUNE) build @doc
