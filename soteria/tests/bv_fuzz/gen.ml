@@ -101,7 +101,6 @@ let rec gen_bv ~bv_size : Sv.t Gen.sized =
     else
       let gen_same_size_binop =
         let* bv_binop = oneof_array all_bv_binops in
-
         let* v1 = gen_bv ~bv_size (depth - 1) in
         let+ v2 = gen_bv ~bv_size (depth - 1) in
         bv_binop v1 v2
