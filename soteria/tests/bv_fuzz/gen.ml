@@ -241,42 +241,6 @@ and gen_bool_leaf : Sv.t Gen.t =
 (* Exported top-level generators                                       *)
 (* ------------------------------------------------------------------ *)
 
-(** Replay a direct AST through the smart constructors.
-
-    Unlike {!Eval.eval} (which short-circuits when children are physically
-    unchanged), this function unconditionally calls the smart constructor at
-    every node. Variables and literals are returned as-is since they are already
-    canonical. *)
-let smartify (x : Sv.t) : Sv.t =
-  let memo : (int, Sv.t) Hashtbl.t = Hashtbl.create 64 in
-  let rec go (v : Sv.t) : Sv.t =
-    match Hashtbl.find_opt memo v.Hc.tag with
-    | Some r -> r
-    | None ->
-        let r = go_node v in
-        Hashtbl.replace memo v.Hc.tag r;
-        r
-  and go_node (v : Sv.t) : Sv.t =
-    match v.Hc.node.kind with
-    | Sv.Var _ | Sv.Bool _ | Sv.BitVec _ -> v
-    | Sv.Unop (op, a) ->
-        let a' = go a in
-        Eval.eval_unop op a'
-    | Sv.Binop (op, a, b) ->
-        let a' = go a in
-        let b' = go b in
-        Eval.eval_binop op a' b'
-    | Sv.Ite (c, t, e) ->
-        let c' = go c in
-        let t' = go t in
-        let e' = go e in
-        Sv.Bool.ite c' t' e'
-    | Sv.Nop (Sv.Nop.Distinct, l) -> Sv.Bool.distinct (List.map go l)
-    | Sv.Ptr (l, o) -> Sv.Ptr.mk (go l) (go o)
-    | Sv.Float _ | Sv.Seq _ -> v
-  in
-  go x
-
 let depth = Gen.int_bound 5
 let bv_size = Gen.oneof_array [| 8; 16 |]
 
@@ -285,7 +249,7 @@ let gen_bv_pair : (Sv.t * Sv.t) Gen.t =
   let open Gen in
   let* bv_size = bv_size in
   let+ direct = Gen.sized_size depth @@ gen_bv ~bv_size in
-  let smart = smartify direct in
+  let smart = Eval.eval ~force:true direct in
   (smart, direct)
 
 (** Generate a boolean expression (direct) and its smartified version. *)
@@ -293,5 +257,5 @@ let gen_bool_pair : (Sv.t * Sv.t) Gen.t =
   let open Gen in
   let* bv_size = bv_size in
   let+ direct = Gen.sized_size depth @@ gen_bool ~bv_size in
-  let smart = smartify direct in
+  let smart = Eval.eval ~force:true direct in
   (smart, direct)
