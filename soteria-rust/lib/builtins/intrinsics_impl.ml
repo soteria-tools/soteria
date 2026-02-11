@@ -559,12 +559,11 @@ module M (Rust_state_m : Rust_state_m.S) :
       | _ -> failwith "Unexpected read array"
     in
     let rec aux = function
-      | [] -> ok Typed.v_true
-      | (Int l, Int r) :: rest ->
-          if%sat l ==@ r then aux rest else ok Typed.v_false
+      | [] -> Typed.v_true
+      | (Int l, Int r) :: rest -> l ==@ r &&@ aux rest
       | _ :: _ -> failwith "Unexpected read array"
     in
-    aux byte_pairs
+    ok (aux byte_pairs)
 
   let rotate_ ~(side : [ `Left | `Right ]) ~t ~x ~shift : rust_val ret =
     let t = TypesUtils.ty_as_literal t in
