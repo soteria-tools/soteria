@@ -122,7 +122,10 @@ module Make (State : State_intf.S) = struct
         let* value, protected' =
           Encoder.update_ref_tys_in value local.local_ty ~init:acc
             ~f:(fun acc ptr subty mut ->
-              let+ ptr' = State.protect ptr subty mut in
+              let borrow : Expressions.borrow_kind =
+                match mut with RMut -> BMut | RShared -> BShared
+              in
+              let+ ptr' = State.borrow ~protect:true ptr subty borrow in
               (ptr', (ptr', subty) :: acc))
         in
         let+ () = map_env (Store.declare_value local.index value) in
