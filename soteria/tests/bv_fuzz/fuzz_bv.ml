@@ -12,13 +12,12 @@ let test_bv_equivalence =
       let rs = Random.State.make [| seed |] in
       let smart, direct = Gen.gen_bv_pair ~depth ~bv_size rs in
       if Svalue.equal smart direct then true
-      else begin
-        let ok = Fuzz_common.check_equivalence smart direct in
-        if not ok then
+      else
+        let check = Fuzz_common.check_equivalence smart direct in
+        if not check then
           Format.eprintf "COUNTEREXAMPLE:@.%a@." Fuzz_common.pp_pair
             (smart, direct);
-        ok
-      end)
+        check)
 
 let () =
   Fuzz_common.setup ();

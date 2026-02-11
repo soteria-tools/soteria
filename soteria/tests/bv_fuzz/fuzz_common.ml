@@ -47,9 +47,7 @@ let check_equivalence (smart : Svalue.t) (direct : Svalue.t) : bool =
   Z3_raw.add_constraint solver neq_expr;
   match Z3_raw.check_sat solver with
   | Sat -> false
-  | Unsat ->
-      Format.eprintf "Successfully passed equivalence check within time@.@?";
-      true
+  | Unsat -> true
   | Unknown ->
       (* Avoid signaling bugs on timeout *)
       Format.eprintf "Z3 returned Unknown (timeout?) when checking:@.%a@.@?"

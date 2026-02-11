@@ -1,27 +1,23 @@
-(** Type-aware random expression pair generator.
+(** Random expression generator and smart-constructor replay.
 
-    Generates pairs [(smart, direct)] of {!Soteria.Bv_values.Svalue.t}
-    expressions simultaneously — one built via smart constructors and one via
-    direct (non-simplifying) constructors. Both should be semantically
-    equivalent. *)
+    Generates a random {!Soteria.Bv_values.Svalue.t} expression built via direct
+    (non-simplifying) constructors, then replays it through the smart
+    constructors using {!Soteria.Bv_values.Eval.eval} to obtain a simplified
+    version. Both should be semantically equivalent. *)
 
 open Soteria.Bv_values
 module Sv = Svalue
-module Smart = Svalue
 module D = Direct
-
-(** A pair of expressions: smart (simplified) and direct (raw). *)
-type pair = Sv.t * Sv.t
 
 (* ------------------------------------------------------------------ *)
 (* Variable pool                                                       *)
 (* ------------------------------------------------------------------ *)
 
 (** Pre-allocated symbolic variables for each bitvector width. *)
-let bv_var_pool : (int * int, pair) Hashtbl.t = Hashtbl.create 32
+let bv_var_pool : (int * int, Sv.t) Hashtbl.t = Hashtbl.create 32
 
 (** Pre-allocated boolean variables. *)
-let bool_var_pool : (int, pair) Hashtbl.t = Hashtbl.create 8
+let bool_var_pool : (int, Sv.t) Hashtbl.t = Hashtbl.create 8
 
 let var_counter = ref 1000
 
@@ -33,24 +29,21 @@ let fresh_var () =
 let get_bv_var bv_size idx =
   let key = (bv_size, idx) in
   match Hashtbl.find_opt bv_var_pool key with
-  | Some p -> p
+  | Some v -> v
   | None ->
       let v = fresh_var () in
       let sv = Sv.mk_var v (Sv.t_bv bv_size) in
-      (* Both smart and direct use the same variable *)
-      let p = (sv, sv) in
-      Hashtbl.replace bv_var_pool key p;
-      p
+      Hashtbl.replace bv_var_pool key sv;
+      sv
 
 let get_bool_var idx =
   match Hashtbl.find_opt bool_var_pool idx with
-  | Some p -> p
+  | Some v -> v
   | None ->
       let v = fresh_var () in
       let sv = Sv.mk_var v Sv.t_bool in
-      let p = (sv, sv) in
-      Hashtbl.replace bool_var_pool idx p;
-      p
+      Hashtbl.replace bool_var_pool idx sv;
+      sv
 
 (* ------------------------------------------------------------------ *)
 (* Random helpers                                                      *)
@@ -71,206 +64,161 @@ let random_bool rs = Random.State.bool rs
 let random_signed rs = Random.State.bool rs
 
 (* ------------------------------------------------------------------ *)
-(* Bitvector expression generation                                     *)
+(* Bitvector operations to pick from                                   *)
 (* ------------------------------------------------------------------ *)
 
-(** Operations that produce a bitvector of the same size as their inputs *)
-type bv_same_binop =
-  | BAdd
-  | BSub
-  | BMul
-  | BAnd
-  | BOr
-  | BXor
-  | BShl
-  | BLshr
-  | BAshr
+type bv_binop = BAdd | BSub | BMul | BAnd | BOr | BXor | BShl | BLshr | BAshr
+type bv_unop = BNot | BNeg
 
-type bv_same_unop = BNot | BNeg
+let all_bv_binops = [| BAdd; BSub; BMul; BAnd; BOr; BXor; BShl; BLshr; BAshr |]
+let all_bv_unops = [| BNot; BNeg |]
 
-let all_bv_same_binops =
-  [| BAdd; BSub; BMul; BAnd; BOr; BXor; BShl; BLshr; BAshr |]
-
-let all_bv_same_unops = [| BNot; BNeg |]
-
-let apply_bv_same_binop op ~checked (s1, d1) (s2, d2) : pair =
+let apply_bv_binop op ~checked v1 v2 =
   match op with
-  | BAdd -> (Smart.BitVec.add ~checked s1 s2, D.BitVec.add ~checked d1 d2)
-  | BSub -> (Smart.BitVec.sub ~checked s1 s2, D.BitVec.sub ~checked d1 d2)
-  | BMul -> (Smart.BitVec.mul ~checked s1 s2, D.BitVec.mul ~checked d1 d2)
-  | BAnd -> (Smart.BitVec.and_ s1 s2, D.BitVec.and_ d1 d2)
-  | BOr -> (Smart.BitVec.or_ s1 s2, D.BitVec.or_ d1 d2)
-  | BXor -> (Smart.BitVec.xor s1 s2, D.BitVec.xor d1 d2)
-  | BShl -> (Smart.BitVec.shl s1 s2, D.BitVec.shl d1 d2)
-  | BLshr -> (Smart.BitVec.lshr s1 s2, D.BitVec.lshr d1 d2)
-  | BAshr -> (Smart.BitVec.ashr s1 s2, D.BitVec.ashr d1 d2)
+  | BAdd -> D.BitVec.add ~checked v1 v2
+  | BSub -> D.BitVec.sub ~checked v1 v2
+  | BMul -> D.BitVec.mul ~checked v1 v2
+  | BAnd -> D.BitVec.and_ v1 v2
+  | BOr -> D.BitVec.or_ v1 v2
+  | BXor -> D.BitVec.xor v1 v2
+  | BShl -> D.BitVec.shl v1 v2
+  | BLshr -> D.BitVec.lshr v1 v2
+  | BAshr -> D.BitVec.ashr v1 v2
 
-let apply_bv_same_unop op (s, d) : pair =
-  match op with
-  | BNot -> (Smart.BitVec.not s, D.BitVec.not_ d)
-  | BNeg -> (Smart.BitVec.neg s, D.BitVec.neg d)
+let apply_bv_unop op v =
+  match op with BNot -> D.BitVec.not_ v | BNeg -> D.BitVec.neg v
 
-(** Operations that produce a bool from two same-size bitvectors *)
+(* ------------------------------------------------------------------ *)
+(* Bool operations that compare bitvectors                             *)
+(* ------------------------------------------------------------------ *)
+
 type bv_cmp_op = BLt | BLeq | BEq | BAddOvf | BMulOvf
 
 let all_bv_cmp_ops = [| BLt; BLeq; BEq; BAddOvf; BMulOvf |]
 
-let apply_bv_cmp_op op ~signed (s1, d1) (s2, d2) : pair =
+let apply_bv_cmp_op op ~signed v1 v2 =
   match op with
-  | BLt -> (Smart.BitVec.lt ~signed s1 s2, D.BitVec.lt ~signed d1 d2)
-  | BLeq -> (Smart.BitVec.leq ~signed s1 s2, D.BitVec.leq ~signed d1 d2)
-  | BEq -> (Smart.Bool.sem_eq s1 s2, D.Bool.eq d1 d2)
-  | BAddOvf ->
-      ( Smart.BitVec.add_overflows ~signed s1 s2,
-        D.BitVec.add_overflows ~signed d1 d2 )
-  | BMulOvf ->
-      ( Smart.BitVec.mul_overflows ~signed s1 s2,
-        D.BitVec.mul_overflows ~signed d1 d2 )
-
-(** Operations that produce a bool from two booleans *)
-type bool_binop = BoolAnd | BoolOr
-
-let all_bool_binops = [| BoolAnd; BoolOr |]
-
-let apply_bool_binop op (s1, d1) (s2, d2) : pair =
-  match op with
-  | BoolAnd -> (Smart.Bool.and_ s1 s2, D.Bool.and_ d1 d2)
-  | BoolOr -> (Smart.Bool.or_ s1 s2, D.Bool.or_ d1 d2)
+  | BLt -> D.BitVec.lt ~signed v1 v2
+  | BLeq -> D.BitVec.leq ~signed v1 v2
+  | BEq -> D.Bool.eq v1 v2
+  | BAddOvf -> D.BitVec.add_overflows ~signed v1 v2
+  | BMulOvf -> D.BitVec.mul_overflows ~signed v1 v2
 
 (* ------------------------------------------------------------------ *)
-(* Core generators                                                     *)
+(* Core generators — produce direct (non-simplifying) AST only        *)
 (* ------------------------------------------------------------------ *)
 
 let num_vars = 3
 
-(** Generate a bitvector expression pair of the given size. *)
-let rec gen_bv ~depth ~bv_size rs : pair =
+(** Generate a bitvector expression of the given size via direct constructors.
+*)
+let rec gen_bv ~depth ~bv_size rs : Sv.t =
   if depth <= 0 then gen_bv_leaf ~bv_size rs
   else
     let choice = Random.State.int rs 10 in
     match choice with
     (* 0-3: same-size binary op *)
     | 0 | 1 | 2 | 3 ->
-        let op = pick_random all_bv_same_binops rs in
-        (* checked=true is a precondition (caller guarantees no overflow), not
-           something we can set randomly — always use false *)
+        let op = pick_random all_bv_binops rs in
         let checked = false in
-        let p1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        let p2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_same_binop op ~checked p1 p2
-    (* 4-5: same-size unary op *)
+        let v1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        let v2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        apply_bv_binop op ~checked v1 v2
+    (* 4-5: unary op *)
     | 4 | 5 ->
-        let op = pick_random all_bv_same_unops rs in
-        let p = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_same_unop op p
+        let op = pick_random all_bv_unops rs in
+        let v = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        apply_bv_unop op v
     (* 6: ite *)
     | 6 ->
         let cond = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let p1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        let p2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        let s = Smart.Bool.ite (fst cond) (fst p1) (fst p2) in
-        let d = D.Bool.ite (snd cond) (snd p1) (snd p2) in
-        (s, d)
+        let v1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        let v2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        D.Bool.ite cond v1 v2
     (* 7: extract — generate wider, then extract bv_size bits *)
     | 7 when bv_size >= 2 ->
         let extra = Random.State.int rs (min 8 bv_size) in
         let wider = bv_size + extra in
         let from_ = Random.State.int rs (extra + 1) in
         let to_ = from_ + bv_size - 1 in
-        let p = gen_bv ~depth:(depth - 1) ~bv_size:wider rs in
-        ( Smart.BitVec.extract from_ to_ (fst p),
-          D.BitVec.extract from_ to_ (snd p) )
+        let v = gen_bv ~depth:(depth - 1) ~bv_size:wider rs in
+        D.BitVec.extract from_ to_ v
     (* 8: extend — generate narrower, then extend *)
     | 8 when bv_size >= 2 ->
         let narrow = 1 + Random.State.int rs (bv_size - 1) in
         let by = bv_size - narrow in
         let signed = random_signed rs in
-        let p = gen_bv ~depth:(depth - 1) ~bv_size:narrow rs in
-        ( Smart.BitVec.extend ~signed by (fst p),
-          D.BitVec.extend ~signed by (snd p) )
+        let v = gen_bv ~depth:(depth - 1) ~bv_size:narrow rs in
+        D.BitVec.extend ~signed by v
     (* 9: of_bool *)
     | 9 ->
-        let p = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        (Smart.BitVec.of_bool bv_size (fst p), D.BitVec.of_bool bv_size (snd p))
+        let v = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        D.BitVec.of_bool bv_size v
     (* fallback for when bv_size < 2: unary op *)
     | _ ->
-        let op = pick_random all_bv_same_unops rs in
-        let p = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_same_unop op p
+        let op = pick_random all_bv_unops rs in
+        let v = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        apply_bv_unop op v
 
 (** Generate a bitvector leaf (concrete value or symbolic variable). *)
-and gen_bv_leaf ~bv_size rs : pair =
+and gen_bv_leaf ~bv_size rs : Sv.t =
   if random_bool rs then
-    (* Concrete bitvector *)
     let z = random_z ~bv_size rs in
-    let s = Smart.BitVec.mk bv_size z in
-    let d = D.BitVec.mk bv_size z in
-    (s, d)
+    D.BitVec.mk bv_size z
   else
-    (* Symbolic variable *)
     let idx = Random.State.int rs num_vars in
     get_bv_var bv_size idx
 
-(** Generate a boolean expression pair. [bv_size] is the bitvector width used
-    when we need BV sub-expressions. *)
-and gen_bool ~depth ~bv_size rs : pair =
+(** Generate a boolean expression. [bv_size] is the bitvector width used when we
+    need BV sub-expressions. *)
+and gen_bool ~depth ~bv_size rs : Sv.t =
   if depth <= 0 then gen_bool_leaf rs
   else
     let choice = Random.State.int rs 10 in
     match choice with
-    (* 0-1: BV comparison *)
-    | 0 | 1 ->
+    (* 0-2: BV comparison *)
+    | 0 | 1 | 2 ->
         let op = pick_random all_bv_cmp_ops rs in
         let signed = random_signed rs in
-        let p1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        let p2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_cmp_op op ~signed p1 p2
-    (* 2-3: bool binary op *)
-    | 2 | 3 ->
-        let op = pick_random all_bool_binops rs in
-        let p1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let p2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        apply_bool_binop op p1 p2
-    (* 4: not *)
-    | 4 ->
-        let p = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        (Smart.Bool.not (fst p), D.Bool.not_ (snd p))
-    (* 5: ite *)
+        let v1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        let v2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        apply_bv_cmp_op op ~signed v1 v2
+    (* 3-4: bool binary op (and / or) *)
+    | 3 | 4 ->
+        let v1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        let v2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        if random_bool rs then D.Bool.and_ v1 v2 else D.Bool.or_ v1 v2
+    (* 5: not *)
     | 5 ->
-        let cond = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let p1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let p2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        ( Smart.Bool.ite (fst cond) (fst p1) (fst p2),
-          D.Bool.ite (snd cond) (snd p1) (snd p2) )
-    (* 6: bool eq *)
+        let v = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        D.Bool.not_ v
+    (* 6: ite *)
     | 6 ->
-        let p1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let p2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        (Smart.Bool.sem_eq (fst p1) (fst p2), D.Bool.eq (snd p1) (snd p2))
-    (* 7: to_bool (bv -> bool) *)
+        let cond = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        let v1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        let v2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        D.Bool.ite cond v1 v2
+    (* 7: bool eq *)
     | 7 ->
-        let p = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        (Smart.BitVec.to_bool (fst p), D.BitVec.to_bool (snd p))
-    (* 8: additional BV comparison — more coverage *)
+        let v1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        let v2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
+        D.Bool.eq v1 v2
+    (* 8: to_bool (bv -> bool), i.e. not(v == 0) *)
     | 8 ->
+        let v = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        D.BitVec.to_bool v
+    (* 9: additional BV comparison *)
+    | 9 ->
         let op = pick_random all_bv_cmp_ops rs in
         let signed = random_signed rs in
-        let p1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        let p2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
-        apply_bv_cmp_op op ~signed p1 p2
-    (* 9: additional bool binary op *)
-    | 9 ->
-        let op = pick_random all_bool_binops rs in
-        let p1 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        let p2 = gen_bool ~depth:(depth - 1) ~bv_size rs in
-        apply_bool_binop op p1 p2
+        let v1 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        let v2 = gen_bv ~depth:(depth - 1) ~bv_size rs in
+        apply_bv_cmp_op op ~signed v1 v2
     | _ -> gen_bool_leaf rs
 
 (** Generate a boolean leaf (concrete or symbolic). *)
-and gen_bool_leaf rs : pair =
-  if random_bool rs then
-    let b = random_bool rs in
-    (Smart.Bool.bool b, D.Bool.bool b)
+and gen_bool_leaf rs : Sv.t =
+  if random_bool rs then D.Bool.bool (random_bool rs)
   else
     let idx = Random.State.int rs num_vars in
     get_bool_var idx
@@ -279,8 +227,50 @@ and gen_bool_leaf rs : pair =
 (* Exported top-level generators                                       *)
 (* ------------------------------------------------------------------ *)
 
-(** Generate a bitvector equivalence check pair. *)
-let gen_bv_pair ~depth ~bv_size rs : pair = gen_bv ~depth ~bv_size rs
+(** Replay a direct AST through the smart constructors.
 
-(** Generate a boolean equivalence check pair. *)
-let gen_bool_pair ~depth ~bv_size rs : pair = gen_bool ~depth ~bv_size rs
+    Unlike {!Eval.eval} (which short-circuits when children are physically
+    unchanged), this function unconditionally calls the smart constructor at
+    every node. Variables and literals are returned as-is since they are already
+    canonical. *)
+let smartify (x : Sv.t) : Sv.t =
+  let memo : (int, Sv.t) Hashtbl.t = Hashtbl.create 64 in
+  let rec go (v : Sv.t) : Sv.t =
+    match Hashtbl.find_opt memo v.Hc.tag with
+    | Some r -> r
+    | None ->
+        let r = go_node v in
+        Hashtbl.replace memo v.Hc.tag r;
+        r
+  and go_node (v : Sv.t) : Sv.t =
+    match v.Hc.node.kind with
+    | Sv.Var _ | Sv.Bool _ | Sv.BitVec _ -> v
+    | Sv.Unop (op, a) ->
+        let a' = go a in
+        Eval.eval_unop op a'
+    | Sv.Binop (op, a, b) ->
+        let a' = go a in
+        let b' = go b in
+        Eval.eval_binop op a' b'
+    | Sv.Ite (c, t, e) ->
+        let c' = go c in
+        let t' = go t in
+        let e' = go e in
+        Sv.Bool.ite c' t' e'
+    | Sv.Nop (Sv.Nop.Distinct, l) -> Sv.Bool.distinct (List.map go l)
+    | Sv.Ptr (l, o) -> Sv.Ptr.mk (go l) (go o)
+    | Sv.Float _ | Sv.Seq _ -> v
+  in
+  go x
+
+(** Generate a bitvector expression (direct) and its smartified version. *)
+let gen_bv_pair ~depth ~bv_size rs : Sv.t * Sv.t =
+  let direct = gen_bv ~depth ~bv_size rs in
+  let smart = smartify direct in
+  (smart, direct)
+
+(** Generate a boolean expression (direct) and its smartified version. *)
+let gen_bool_pair ~depth ~bv_size rs : Sv.t * Sv.t =
+  let direct = gen_bool ~depth ~bv_size rs in
+  let smart = smartify direct in
+  (smart, direct)
