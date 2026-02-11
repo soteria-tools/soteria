@@ -77,10 +77,13 @@ module Exe = struct
   let exec ?(env = []) cmd args =
     (* let args = Array.of_list args in *)
     let current_env = Unix.environment () in
-    let env = Array.append current_env (Array.of_list env) in
     let cmd = String.concat " " (cmd :: args) in
     if (Config.get ()).log_compilation then
-      L.info (fun g -> g "Running command: %s" cmd);
+      L.info (fun g ->
+          g "Running command: %s@.With env:@.%a@." cmd
+            Fmt.(list ~sep:(any "@.") string)
+            env);
+    let env = Array.append current_env (Array.of_list env) in
     let out, inp, err = Unix.open_process_full cmd env in
     let output, error = read_both_nonblocking out err in
     let status = Unix.close_process_full (out, inp, err) in
@@ -325,6 +328,7 @@ let default =
           "unstable-options";
           (* No warning *)
           "-Awarnings";
+          "--cap-lints=allow";
           (* include our std and rusteria crates *)
           "-Z";
           "crate-attr=feature(register_tool)";
