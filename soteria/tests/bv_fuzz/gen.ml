@@ -9,42 +9,45 @@ open QCheck2
 open Soteria.Bv_values
 module Sv = Svalue
 module D = Direct
+module Var = Soteria.Symex.Var
 
 (* ------------------------------------------------------------------ *)
 (* Variable pool                                                       *)
 (* ------------------------------------------------------------------ *)
 
-(** Pre-allocated symbolic variables for each bitvector width. *)
-let bv_var_pool : (int * int, Sv.t) Hashtbl.t = Hashtbl.create 32
+module Var_gen = struct
+  let max_var_per_ty = 4
 
-(** Pre-allocated boolean variables. *)
-let bool_var_pool : (int, Sv.t) Hashtbl.t = Hashtbl.create 8
+  let get_next_name =
+    let name_counter = ref 0 in
+    fun () ->
+      let res = !name_counter in
+      incr name_counter;
+      Var.of_int res
 
-let var_counter = ref 1000
+  (* We want to generate at most [max_var_per_ty] variables per type. This
+     avoids generating expressions with only different variables, which cannot
+     be reduced interestingly. *)
+  let var_pool : (int * Svalue.ty, Sv.t) Hashtbl.t = Hashtbl.create 1024
 
-let fresh_var () =
-  let v = !var_counter in
-  incr var_counter;
-  Soteria.Symex.Var.of_int v
+  let get_from_pool idx ty =
+    let key = (idx, ty) in
+    match Hashtbl.find_opt var_pool key with
+    | None ->
+        let name = get_next_name () in
+        let v = Sv.mk_var name ty in
+        Hashtbl.replace var_pool key v;
+        v
+    | Some v -> v
 
-let get_bv_var bv_size idx =
-  let key = (bv_size, idx) in
-  match Hashtbl.find_opt bv_var_pool key with
-  | Some v -> v
-  | None ->
-      let v = fresh_var () in
-      let sv = Sv.mk_var v (Sv.t_bv bv_size) in
-      Hashtbl.replace bv_var_pool key sv;
-      sv
+  let gen_var ~ty =
+    let open Gen in
+    let+ idx = int_bound (max_var_per_ty - 1) in
+    get_from_pool idx ty
+end
 
-let get_bool_var idx =
-  match Hashtbl.find_opt bool_var_pool idx with
-  | Some v -> v
-  | None ->
-      let v = fresh_var () in
-      let sv = Sv.mk_var v Sv.t_bool in
-      Hashtbl.replace bool_var_pool idx sv;
-      sv
+let gen_bv_var ~bv_size = Var_gen.gen_var ~ty:(TBitVector bv_size)
+let gen_bool_var = Var_gen.gen_var ~ty:TBool
 
 let gen_z ~bv_size =
   let open QCheck2.Gen in
@@ -88,8 +91,6 @@ let all_bv_cmp_ops =
 (* ------------------------------------------------------------------ *)
 (* Core generators — produce direct (non-simplifying) AST only        *)
 (* ------------------------------------------------------------------ *)
-
-let num_vars = 3
 
 (** Generate a bitvector expression of the given size via direct constructors.
 *)
@@ -162,12 +163,7 @@ and gen_bv_leaf ~bv_size : Sv.t QCheck2.Gen.t =
     let+ z = gen_z ~bv_size in
     D.BitVec.mk bv_size z
   in
-  let gen_var =
-    no_shrink
-      (let+ idx = int_bound (num_vars - 1) in
-       get_bv_var bv_size idx)
-  in
-  oneof [ gen_concrete; gen_var ]
+  oneof [ gen_concrete; gen_bv_var ~bv_size ]
 
 (** Generate a boolean expression. [bv_size] is the bitvector width used when we
     need BV sub-expressions. *)
@@ -226,12 +222,7 @@ and gen_bool_leaf : Sv.t Gen.t =
     let+ b = bool in
     D.Bool.bool b
   in
-  let gen_var =
-    no_shrink
-      (let+ idx = int_bound (num_vars - 1) in
-       get_bool_var idx)
-  in
-  oneof [ gen_concrete; gen_var ]
+  oneof [ gen_concrete; gen_bool_var ]
 
 let depth = Gen.int_bound 5
 
