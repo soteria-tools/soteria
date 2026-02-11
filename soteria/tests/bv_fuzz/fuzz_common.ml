@@ -62,9 +62,15 @@ let z3_check_equivalent (smart : Svalue.t) (direct : Svalue.t) : bool =
 
 let print_svalue = Fmt.to_to_string Svalue.pp
 
-let print_pair =
-  let open QCheck2.Print in
-  pair print_svalue print_svalue
+let print_pair (s, d) =
+  let vars = collect_vars d in
+  let pp_vars =
+    Fmt.iter_bindings ~sep:Fmt.semi Var.Hashtbl.iter
+      (Fmt.Dump.pair Var.pp Svalue.pp_ty)
+  in
+  Format.asprintf
+    "@[<v>full: %a@,simplified: %a@,@[<v 2>with variables:@,%a@]@]" Svalue.pp d
+    Svalue.pp s pp_vars vars
 
 let check_smart_eq_direct (smart, direct) =
   if Svalue.equal smart direct then true else z3_check_equivalent smart direct
