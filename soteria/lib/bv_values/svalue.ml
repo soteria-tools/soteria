@@ -530,8 +530,8 @@ module rec Bool : Bool = struct
     | Binop (Leq s1, l1, r1), Binop (Lt s2, l2, r2)
       when s1 = s2 && equal l1 r2 && equal r1 l2 ->
         v_true
-    | Binop (Or, v1, v1'), _ when equal v1 v2 || equal v1' v2 -> v1
-    | _, Binop (Or, v2, v2') when equal v1 v2 || equal v1 v2' -> v2
+    | Binop (Or, a, b), _ when equal a v2 || equal b v2 -> v1
+    | _, Binop (Or, a, b) when equal v1 a || equal v1 b -> v2
     | _ -> mk_commut_binop Or v1 v2 <| TBool
 
   and not sv =
@@ -1038,7 +1038,11 @@ and BitVec : BitVec = struct
     | ( BitVec mask,
         (Binop ((LShr | AShr), _, { node = { kind = BitVec shift; _ }; _ }) as
          base) )
-      when let bitwidth = n - Z.to_int shift in
+      when let shift_i = Z.to_int shift in
+           shift_i >= 0
+           && shift_i < n
+           &&
+           let bitwidth = n - shift_i in
            let low_mask = Z.(pred (one lsl bitwidth)) in
            Z.(equal (mask land low_mask) low_mask) ->
         base <| t_bv n
@@ -1438,7 +1442,8 @@ and BitVec : BitVec = struct
         zero (size_of v1.node.ty)
     | Binop (Shl, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
-        shl v (mk n Z.(s1 + s2))
+        let total = Z.(s1 + s2) in
+        if Z.(total >= of_int n) then zero n else shl v (mk n total)
     | Binop (LShr, x, { node = { kind = BitVec sr; _ }; _ }), BitVec sl ->
         if Z.leq sl sr then
           (* (x >> s1) << s2 where s2 < s1 = x >> (s1 - s2) & (mask with lower
@@ -1475,7 +1480,8 @@ and BitVec : BitVec = struct
         zero (size_of v1.node.ty)
     | Binop (LShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
-        lshr v (mk n Z.(s1 + s2))
+        let total = Z.(s1 + s2) in
+        if Z.(total >= of_int n) then zero n else lshr v (mk n total)
     | Binop (BitAnd, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
     | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
         (* (x & mask) >> s = (x >> s) & (mask >> s) *)
@@ -1498,7 +1504,11 @@ and BitVec : BitVec = struct
     | _, BitVec s when Z.equal s Z.zero -> v1
     | Binop (AShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
-        ashr v (mk n Z.(s1 + s2))
+        let total = Z.(s1 + s2) in
+        if Z.(total >= of_int n) then
+          (* Shift by >= bitwidth: result is all sign bits *)
+          ashr v (mk_masked n (Z.of_int (n - 1)))
+        else ashr v (mk n total)
     | _ -> Binop (AShr, v1, v2) <| v1.node.ty
 
   and mul ?(checked = false) v1 v2 =
@@ -1663,7 +1673,7 @@ and BitVec : BitVec = struct
               Bool.and_ (not_eq_0 v)
                 (Bool.not (Bool.sem_eq (aux_lt_zero l) (aux_lt_zero r)))
           | Binop (BvConcat, l, _) -> aux_lt_zero l
-          | Unop (BvNot, v) -> not (aux_lt_zero v)
+          | Unop (BvNot, v) -> Bool.not (aux_lt_zero v)
           | Unop (BvOfBool n, _) when n > 1 -> Bool.v_false
           | Ite (_, l, r) ->
               let pos_l = aux_lt_zero l in
@@ -1993,26 +2003,44 @@ and BitVec : BitVec = struct
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( * )
     | _
-      when if signed then msb_of v1 + msb_of v2 < size_of v1.node.ty - 1
-           else msb_of v1 + msb_of v2 < size_of v1.node.ty ->
+      when if signed then msb_of v1 + msb_of v2 < size_of v1.node.ty - 2
+           else msb_of v1 + msb_of v2 < size_of v1.node.ty - 1 ->
         Bool.v_false
-    (* | BitVec z, x | x, BitVec z -> (* z is a known constant *) if Z.equal z
-       Z.zero || Z.equal z Z.one then Bool.v_false else let n = size_of
-       v1.node.ty in let z = bv_to_z signed n z in if signed then (* For signed
-       overflow, the correct condition is: z * x overflows iff x < min_x or x >
-       max_x, where min_x = ceil((-2^(n-1))/z), max_x = floor((2^(n-1)-1)/z) for
-       z > 0, and swapped for z < 0. *) let min_val = Z.neg (Z.shift_left Z.one
-       (n - 1)) in let max_val = Z.pred (Z.shift_left Z.one (n - 1)) in if
-       Z.equal z (Z.of_int (-1)) then (* z = -1: only overflows when x =
-       MIN_VALUE *) Bool.sem_eq (x <| v1.node.ty) (mk_masked n min_val) else let
-       min_x, max_x = if Z.gt z Z.zero then (* z > 0 *) let min_x = Z.(min_val /
-       z) in let max_x = Z.(max_val / z) in (min_x, max_x) else (* z < 0 *) let
-       min_x = Z.(max_val / z) in let max_x = Z.(min_val / z) in (min_x, max_x)
-       in Bool.or_ (lt ~signed (x <| v1.node.ty) (mk_masked n min_x)) (gt
-       ~signed (x <| v1.node.ty) (mk_masked n max_x)) else (* For unsigned
-       overflow, * z * x overflows iff x > floor((2^n - 1) / z) *) let maxn =
-       Z.pred (Z.shift_left Z.one n) in let bound = Z.(maxn / z) in gt ~signed
-       (x <| v1.node.ty) (mk n bound) *)
+    | BitVec z, x | x, BitVec z ->
+        (* z is a known constant *)
+        if Z.equal z Z.zero || Z.equal z Z.one then Bool.v_false
+        else
+          let n = size_of v1.node.ty in
+          let z = bv_to_z signed n z in
+          if signed then
+            (* For signed overflow, the correct condition is: z * x overflows
+               iff x < min_x or x > max_x, where min_x = ceil((-2^(n-1))/z),
+               max_x = floor((2^(n-1)-1)/z) for z > 0, and swapped for z < 0. *)
+            let min_val = Z.neg (Z.shift_left Z.one (n - 1)) in
+            let max_val = Z.pred (Z.shift_left Z.one (n - 1)) in
+            if Z.equal z (Z.of_int (-1)) then
+              (* z = -1: only overflows when x = MIN_VALUE *)
+              Bool.sem_eq (x <| v1.node.ty) (mk_masked n min_val)
+            else
+              let min_x, max_x =
+                if Z.gt z Z.zero then (* z > 0 *)
+                  let min_x = Z.(min_val / z) in
+                  let max_x = Z.(max_val / z) in
+                  (min_x, max_x)
+                else (* z < 0 *)
+                  let min_x = Z.(max_val / z) in
+                  let max_x = Z.(min_val / z) in
+                  (min_x, max_x)
+              in
+              Bool.or_
+                (lt ~signed (x <| v1.node.ty) (mk_masked n min_x))
+                (gt ~signed (x <| v1.node.ty) (mk_masked n max_x))
+          else
+            (* For unsigned overflow, * z * x overflows iff x > floor((2^n - 1)
+               / z) *)
+            let maxn = Z.pred (Z.shift_left Z.one n) in
+            let bound = Z.(maxn / z) in
+            gt ~signed (x <| v1.node.ty) (mk n bound)
     | _ -> mk_commut_binop (MulOvf signed) v1 v2 <| TBool
 
   let neg_overflows v =
