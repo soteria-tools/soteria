@@ -114,6 +114,26 @@ jobs:
       - name: Test
         run: make ocaml-test
 
+      - name: Check if bv_values files were modified
+        if: github.event_name == 'merge_group'
+        id: check-bv-files
+        run: |
+          # Get the base branch commit (the commit before merge queue)
+          BASE_SHA=$(git merge-base origin/main HEAD)
+          
+          # Check if any files in soteria/lib/bv_values were modified
+          if git diff --name-only $BASE_SHA HEAD | grep -q "^soteria/lib/bv_values/"; then
+            echo "modified=true" >> $GITHUB_OUTPUT
+            echo "Files in soteria/lib/bv_values were modified, will run slow tests"
+          else
+            echo "modified=false" >> $GITHUB_OUTPUT
+            echo "No files in soteria/lib/bv_values were modified, skipping slow tests"
+          fi
+
+      - name: Run slow tests (fuzz tests)
+        if: github.event_name == 'merge_group' && steps.check-bv-files.outputs.modified == 'true'
+        run: make ocaml-slow-tests
+
       # Building js stuff
       - name: Install JS dependencies
         run: yarn install
@@ -326,3 +346,4 @@ jobs:
           destination_dir: ./api/main
 
       - run: echo "Successfully published documentation to https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/main"
+
