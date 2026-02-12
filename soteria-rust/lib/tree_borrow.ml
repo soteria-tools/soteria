@@ -19,7 +19,15 @@ end)
 
 type access = Read | Write
 and locality = Local | Foreign
-and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
+
+and state =
+  | Reserved of bool
+  | Unique
+  | Frozen
+  | ReservedIM
+  | Cell
+  | Disabled
+  | UB
 
 (** Whether this node has a protector (this is distinct from having the
     protector toggled!), its parents (including this node's ID!), and its
@@ -33,6 +41,7 @@ let pp_state fmt = function
   | Unique -> Fmt.string fmt "Uniq"
   | Frozen -> Fmt.string fmt "Froz"
   | ReservedIM -> Fmt.string fmt "ReIM"
+  | Cell -> Fmt.string fmt "Cell"
   | Disabled -> Fmt.string fmt "Dis "
   | UB -> Fmt.string fmt "UB  "
 
@@ -44,6 +53,8 @@ let[@inline] meet st1 st2 =
   | Unique, _ | _, Unique -> Unique
   | Reserved b1, Reserved b2 -> Reserved (b1 || b2)
   | ReservedIM, ReservedIM -> ReservedIM
+  | Cell, Cell -> Cell
+  | Cell, _ | _, Cell -> failwith "Can't compare Cell with non-Cell"
   | Reserved _, ReservedIM | ReservedIM, Reserved _ ->
       failwith "Can't compare Reserved and ReservedIM"
 
@@ -52,6 +63,7 @@ let[@inline] meet' (p1, st1) (p2, st2) = (p1 || p2, meet st1 st2)
 let transition =
   let transition st e =
     match (st, e) with
+    | Cell, _ -> Cell
     | Reserved b, (_, Read) -> Reserved b
     | Reserved _, (Local, Write) -> Unique
     | Reserved _, (Foreign, Write) -> Disabled

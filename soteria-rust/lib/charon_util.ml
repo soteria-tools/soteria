@@ -174,11 +174,32 @@ let meta_get_attr (meta : Types.item_meta) attr =
 let decl_get_attr (decl : 'a GAst.gfun_decl) attr =
   meta_get_attr decl.item_meta attr
 
+let adt_is_box (adt : Types.type_decl_ref) =
+  match adt.id with
+  | TAdtId id ->
+      let adt = Crate.get_adt_raw id in
+      adt.item_meta.lang_item = Some "owned_box"
+  | _ -> false
+
+let adt_is_nonnull (adt : Types.type_decl_ref) =
+  match adt.id with
+  | TAdtId id ->
+      let adt = Crate.get_adt_raw id in
+      meta_get_attr adt.item_meta "rustc_diagnostic_item" = Some "NonNull"
+  | _ -> false
+
 let get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
   | TRawPtr (ty, _)
   | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
       ty
+  | TAdt adt when adt_is_box adt -> (
+      if (Config.get ()).polymorphic then List.hd adt.generics.types
+      else
+        let adt = Crate.get_adt adt in
+        match List.last adt.item_meta.name with
+        | PeInstantiated gargs -> List.hd gargs.binder_value.types
+        | _ -> failwith "Box with non instantiates args in monomorphic mode?")
   | _ -> failwith "Non-pointer type given to get_pointee"
 
 let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
