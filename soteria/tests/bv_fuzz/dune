@@ -2,8 +2,9 @@
  (names fuzz_bool fuzz_bv)
  (libraries soteria simple_smt qcheck-core qcheck-alcotest alcotest))
 
-; running each test twice in parallel.
-; Github CI runners have 4 cores, so dune build @slow-tests will run 4 tests in parallel.
+; running each tests 4 times in parallel
+; will run locally using 8 threads, and in CI using 4 threads (because that's what GH Actions provides)
+; It's embarassingly parallel, so we can just run multiple instances of the same test in parallel to speed it up.
 
 (rule
  (alias slow-tests)
@@ -11,6 +12,10 @@
   (concurrent
    (run ./fuzz_bool.exe)
    (run ./fuzz_bool.exe)
+   (run ./fuzz_bool.exe)
+   (run ./fuzz_bool.exe)
+   (run ./fuzz_bv.exe)
+   (run ./fuzz_bv.exe)
    (run ./fuzz_bv.exe)
    (run ./fuzz_bv.exe))))
 
@@ -19,9 +24,13 @@
  (action
   (setenv
    "QCHECK_TEST_COUNT"
-   "30000"
+   "15000"
    (concurrent
     (run ./fuzz_bool.exe)
     (run ./fuzz_bool.exe)
+    (run ./fuzz_bool.exe)
+    (run ./fuzz_bool.exe)
+    (run ./fuzz_bv.exe)
+    (run ./fuzz_bv.exe)
     (run ./fuzz_bv.exe)
     (run ./fuzz_bv.exe)))))

@@ -10,7 +10,7 @@ module Var = Soteria.Symex.Var
 let solver = Z3_raw.init ()
 
 let test_count =
-  let default = 10000 in
+  let default = 5000 in
   lazy
     (match Sys.getenv "QCHECK_TEST_COUNT" with
     | s -> ( match int_of_string_opt s with Some n -> n | None -> default)
