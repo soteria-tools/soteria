@@ -493,11 +493,7 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   let is_ptr_like : Types.ty -> bool = function
     | TRef _ | TRawPtr _ -> true
     | TAdt { id = TBuiltin TBox; _ } -> true
-    | TAdt { id = TAdtId id; _ } ->
-        let adt = Crate.get_adt_raw id in
-        adt.item_meta.lang_item = Some "owned_box"
-        || Charon_util.meta_get_attr adt.item_meta "rustc_diagnostic_item"
-           = Some "NonNull"
+    | TAdt adt -> adt_is_box adt || adt_is_nonnull adt
     | _ -> false
   in
   match (ty1, ty2) with

@@ -590,12 +590,15 @@ module Encoder (Sptr : Sptr.S) = struct
         []
     | _ -> []
 
+  (** Folds over all the references and boxes in the given value and type,
+      applying [fn] to them. This is used to update nested references when
+      reborrowing. Calls [fn] with the pointer value and the pointer type (not
+      the pointee). *)
   let rec update_ref_tys_in
       (fn :
         'acc ->
         'a full_ptr ->
         Types.ty ->
-        Types.ref_kind ->
         ('a full_ptr * 'acc, 'e, 'f) Rustsymex.Result.t) (init : 'acc)
       (v : rust_val) (ty : Types.ty) :
       (rust_val * 'acc, 'e, 'f) Rustsymex.Result.t =
@@ -620,9 +623,20 @@ module Encoder (Sptr : Sptr.S) = struct
       (List.rev vs, acc)
     in
     match (v, ty) with
-    | Ptr ptr, TRef (_, _, rk) ->
-        let++ ptr, acc = fn init ptr (get_pointee ty) rk in
+    | Ptr ptr, TRef (_, _, _) ->
+        let++ ptr, acc = fn init ptr ty in
         (Ptr ptr, acc)
+    | Tuple _, TAdt adt when adt_is_box adt ->
+        (* a box has only one non ZST, the pointer *)
+        let ptr = as_ptr @@ List.hd @@ flatten v in
+        let++ ptr, acc = fn init ptr ty in
+        (* recursively look for where the pointer is and replace it *)
+        let rec subst_ptr = function
+          | Tuple vs -> Tuple (List.map subst_ptr vs)
+          | Ptr _ -> Ptr ptr
+          | v -> v
+        in
+        (subst_ptr v, acc)
     | Tuple vs, TAdt adt ->
         let++ vs, acc = fs2 init vs (Crate.as_struct_or_tuple adt) in
         (Tuple vs, acc)
