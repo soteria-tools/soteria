@@ -1448,15 +1448,15 @@ and BitVec : BitVec = struct
           (* (x >> s1) << s2 where s2 < s1 = x >> (s1 - s2) & (mask with lower
              bits cleared) *)
           let n = size_of v1.node.ty in
-          let mask = Z.(lognot (pred (one lsl to_int sr))) in
+          let mask = Z.(lognot (pred (one lsl to_int sl))) in
           and_ (lshr x (mk n Z.(sr - sl))) (mk_masked n mask)
         else
           (* (x >> s1) << s2 where s2 > s1 = x << (s2 - s1) & (mask with lower
              bits cleared) *)
           let n = size_of v1.node.ty in
           let shift = Z.(sl - sr) in
-          let mask = Z.(lognot (pred (one lsl to_int sl))) in
-          and_ (shl x (mk n shift)) (mk_masked n mask)
+          let mask = Z.(lognot (pred (one lsl to_int sr))) in
+          shl (and_ x (mk_masked n mask)) (mk n shift)
     | Binop (BitAnd, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
     | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
         (* (x & mask) << s = (x << s) & (mask << s) *)
