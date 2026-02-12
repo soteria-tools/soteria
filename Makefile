@@ -44,6 +44,10 @@ ocaml-test:
 .PHONY: ocaml-slow-tests
 ocaml-slow-tests:
 	$(DUNE) build @slow-tests
+	
+.PHONY: ocaml-very-slow-tests
+ocaml-very-slow-tests:
+	$(DUNE) build @very-slow-tests
 
 .PHONY: doc
 doc:
@@ -113,6 +117,10 @@ glob-switch:
 .PHONY: install
 install:
 	$(OPAM) install . -y
+
+.PHONY: soteria-core-deps
+soteria-core-deps:
+	$(OPAM) install ./soteria.opam --deps-only --with-test
 
 .PHONY: ocaml-deps
 ocaml-deps:

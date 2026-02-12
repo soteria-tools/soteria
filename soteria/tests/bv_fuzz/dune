@@ -13,3 +13,15 @@
    (run ./fuzz_bool.exe)
    (run ./fuzz_bv.exe)
    (run ./fuzz_bv.exe))))
+
+(rule
+ (alias very-slow-tests)
+ (action
+  (setenv
+   "QCHECK_TEST_COUNT"
+   "30000"
+   (concurrent
+    (run ./fuzz_bool.exe)
+    (run ./fuzz_bool.exe)
+    (run ./fuzz_bv.exe)
+    (run ./fuzz_bv.exe)))))
