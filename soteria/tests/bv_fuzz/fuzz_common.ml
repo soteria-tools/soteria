@@ -9,6 +9,13 @@ module Var = Soteria.Symex.Var
 
 let solver = Z3_raw.init ()
 
+let test_count =
+  let default = 10000 in
+  lazy
+    (match Sys.getenv "QCHECK_TEST_COUNT" with
+    | s -> ( match int_of_string_opt s with Some n -> n | None -> default)
+    | exception Not_found -> default)
+
 (** Collect all free variables and their types from an expression. *)
 let collect_vars (v : Svalue.t) : Svalue.ty Var.Hashtbl.t =
   let tbl = Var.Hashtbl.create 16 in
