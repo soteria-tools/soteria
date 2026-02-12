@@ -1,7 +1,7 @@
 (** Fuzz test: boolean smart constructor equivalence. *)
 
 let test_bool_equivalence =
-  Fuzz_common.mk_test ~count:10000 ~name:"bool_smart_eq_direct"
+  Fuzz_common.mk_test ~count:20000 ~name:"bool_smart_eq_direct"
     Gen.gen_bool_pair
 
 let () =
