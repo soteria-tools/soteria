@@ -47,6 +47,9 @@ type t =
   | `AliasingError  (** Tree borrow violation that lead to UB *)
   | `RefInvalidatedEarly
     (** A protected reference was invalidated before the end of the function *)
+  | `InvalidFreeStrongProtector
+    (** Tried freeing an allocation when a strongly protected reference to it
+        still exists *)
   | `FailedAssert of string option  (** Failed assert!(cond) *)
   | `Panic of string option  (** Regular panic, with a message *)
   | `UnwindTerminate  (** Unwinding terminated *)
@@ -84,6 +87,9 @@ let pp ft : [> t ] -> unit = function
         "Mismatch in types expected of function; expected %a, received %a" pp_ty
         exp pp_ty got
   | `InvalidFree -> Fmt.string ft "Invalid free"
+  | `InvalidFreeStrongProtector ->
+      Fmt.string ft
+        "Tried freeing an allocation with a strong protector still alive"
   | `InvalidLayout ty -> Fmt.pf ft "Invalid layout: %a" pp_ty ty
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
   | `MemoryLeak -> Fmt.string ft "Memory leak"

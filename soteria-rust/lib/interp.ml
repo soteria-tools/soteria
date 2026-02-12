@@ -1131,10 +1131,6 @@ module Make (State : State_intf.S) = struct
     let@@ () = Poly.push_generics ~params:fundef.generics ~args:generics in
     let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc:fundef.item_meta.span.data in
-    L.info (fun m ->
-        m "Calling %a with %a" Crate.pp_name name
-          Fmt.(hbox @@ brackets @@ list ~sep:comma pp_rust_val)
-          args);
     let* protected = alloc_stack body.locals args in
     let starting_block = List.hd body.body in
     let exec_block = exec_block ~body starting_block in
