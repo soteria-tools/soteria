@@ -121,12 +121,10 @@ module Make (State : State_intf.S) = struct
         (* Passed (nested) references must be protected and be valid. *)
         let* value, protected' =
           Encoder.update_ref_tys_in value local.local_ty ~init:acc
-            ~f:(fun acc ptr subty mut ->
-              let borrow : Expressions.borrow_kind =
-                match mut with RMut -> BMut | RShared -> BShared
-              in
-              let+ ptr' = State.borrow ~protect:true ptr subty borrow in
-              (ptr', (ptr', subty) :: acc))
+            ~f:(fun acc ptr ptr_ty ->
+              let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
+              let pointee = Charon_util.get_pointee ptr_ty in
+              (ptr', (ptr', pointee) :: acc))
         in
         let+ () = map_env (Store.declare_value local.index value) in
         protected')
@@ -540,13 +538,13 @@ module Make (State : State_intf.S) = struct
 
   and eval_operand_list = map_list ~f:eval_operand
 
-  and eval_rvalue (expr : Expressions.rvalue) =
+  and eval_rvalue (expr : Expressions.rvalue) expr_ty =
     match expr with
     | Use op -> eval_operand op
     (* Reference *)
-    | RvRef (place, borrow, _metadata) ->
+    | RvRef (place, _borrow, _metadata) ->
         let* ptr = resolve_place place in
-        let* ptr' = State.borrow ptr place.ty borrow in
+        let* ptr' = State.borrow ptr expr_ty in
         let+ () = State.fake_read ptr' place.ty in
         Ptr ptr'
     (* Raw pointer *)
@@ -912,7 +910,7 @@ module Make (State : State_intf.S) = struct
     | Nop -> ok ()
     | Assign (place, rval) ->
         let* ptr = resolve_place_lazy place in
-        let* v = eval_rvalue rval in
+        let* v = eval_rvalue rval place.ty in
         L.info (fun m -> m "Assigning %a <- %a" pp_lazy_ptr ptr pp_rust_val v);
         store_lazy ptr place.ty v
     | StorageLive local ->

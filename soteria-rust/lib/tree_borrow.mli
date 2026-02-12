@@ -2,7 +2,16 @@ open Rustsymex
 
 type tag
 and access = Read | Write
-and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
+
+and state =
+  | Reserved of bool
+  | Unique
+  | Frozen
+  | ReservedIM
+  | Cell
+  | Disabled
+  | UB
+
 and t
 and tb_state
 

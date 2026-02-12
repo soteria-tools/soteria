@@ -115,34 +115,35 @@ module Block = struct
     let+ () = SM.set_state (to_opt (tree, tb)) in
     v
 
-  let borrow ?protect:(protector = false) ((ptr : Sptr.t), meta) ty
-      (kind : Expressions.borrow_kind) ofs =
+  (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
+      being reborrowed. *)
+  let borrow ?protect:(protector = false) ((ptr : Sptr.t), meta) (ty : Types.ty)
+      ofs =
     let open SM in
     let open SM.Syntax in
-    let* tag_st =
-      match kind with
-      | BShared -> return Tree_borrow.Frozen
-      | (BTwoPhaseMut | BMut) when Layout.is_unsafe_cell ty ->
-          return Tree_borrow.ReservedIM
-      | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
-      | BUniqueImmutable -> return @@ Tree_borrow.Reserved false
-      | BShallow ->
-          SM.lift @@ DecayMapMonad.not_impl "Unhandled borrow kind: BShallow"
+    let pointee = Charon_util.get_pointee ty in
+    let state =
+      match (ty, Layout.is_unsafe_cell pointee) with
+      | (TRawPtr _ | TFnPtr _), _ -> failwith "borrow received a raw pointer"
+      | TRef (_, _, RShared), false -> Tree_borrow.Frozen
+      | TRef (_, _, RShared), true -> Tree_borrow.Cell
+      | _, false -> Tree_borrow.Reserved false
+      | _, true -> Tree_borrow.ReservedIM
     in
     let* t_opt = SM.get_state () in
     let block, tb = of_opt t_opt in
     let parent = Option.get ptr.tag in
-    let tb', tag = Tree_borrow.add_child ~parent ~state:tag_st ~protector tb in
+    let tb', tag = Tree_borrow.add_child ~parent ~state ~protector tb in
     let ptr' = { ptr with tag = Some tag } in
     L.debug (fun m ->
         m "%s pointer %a -> %a (%a)"
           (if protector then "Protecting" else "Borrowing")
-          Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state tag_st);
+          Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state state);
     if not protector then
       let+ () = SM.set_state (to_opt (block, tb')) in
       Ok (ptr', meta)
     else
-      let**^ size = DecayMapMonad.lift @@ Layout.size_of ty in
+      let**^ size = DecayMapMonad.lift @@ Layout.size_of pointee in
       if%sat size ==@ Usize.(0s) then
         let+ () = SM.set_state (to_opt (block, tb')) in
         Ok (ptr', meta)
@@ -651,15 +652,13 @@ let load_global g =
   let ptr = GlobMap.find_opt (Global g) globals in
   (ptr, globals)
 
-let borrow ?protect (((ptr : Sptr.t), _) as fptr) (ty : Types.ty)
-    (kind : Expressions.borrow_kind) =
+let borrow ?protect (((ptr : Sptr.t), _) as fptr) (ty : Types.ty) =
   let@ () = with_loc_err ~trace:"Borrow" () in
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
-  if Option.is_none ptr.tag || (kind = BShared && Layout.is_unsafe_cell ty) then
-    Result.ok fptr
+  if Option.is_none ptr.tag then Result.ok fptr
   else
     let@ ofs = with_ptr ptr in
-    Block.borrow ?protect fptr ty kind ofs
+    Block.borrow ?protect fptr ty ofs
 
 let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) =
   let@ () = with_loc_err ~trace:"Reference unprotection" () in

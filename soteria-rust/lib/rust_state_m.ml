@@ -173,12 +173,7 @@ module type S = sig
       ?include_ptrs:bool -> rust_val -> Types.ty -> (full_ptr * Types.ty) list
 
     val update_ref_tys_in :
-      f:
-        ('acc ->
-        full_ptr ->
-        Types.ty ->
-        Types.ref_kind ->
-        (full_ptr * 'acc, 'env) monad) ->
+      f:('acc -> full_ptr -> Types.ty -> (full_ptr * 'acc, 'env) monad) ->
       init:'acc ->
       rust_val ->
       Types.ty ->
@@ -222,14 +217,7 @@ module type S = sig
     val uninit : full_ptr -> Types.ty -> (unit, 'env) t
     val free : full_ptr -> (unit, 'env) t
     val check_ptr_align : full_ptr -> Types.ty -> (unit, 'env) t
-
-    val borrow :
-      ?protect:bool ->
-      full_ptr ->
-      Types.ty ->
-      Expressions.borrow_kind ->
-      (full_ptr, 'env) t
-
+    val borrow : ?protect:bool -> full_ptr -> Types.ty -> (full_ptr, 'env) t
     val unprotect : full_ptr -> Types.ty -> (unit, 'env) t
     val with_exposed : [< Typed.T.sint ] Typed.t -> (full_ptr, 'env) t
     val tb_load : full_ptr -> Types.ty -> (unit, 'env) t
@@ -470,19 +458,15 @@ struct
     (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
        without having to re-define. *)
     let update_ref_tys_in
-        ~(f :
-           'acc ->
-           full_ptr ->
-           Types.ty ->
-           Types.ref_kind ->
-           (full_ptr * 'acc, 'env) monad) ~(init : 'acc) (v : rust_val)
-        (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
+        ~(f : 'acc -> full_ptr -> Types.ty -> (full_ptr * 'acc, 'env) monad)
+        ~(init : 'acc) (v : rust_val) (ty : Types.ty) :
+        (rust_val * 'acc, 'env) monad =
      fun env state ->
       let open Rustsymex.Syntax in
       (* The inner function operates in Rustsymex.Result.t, carrying (acc, env,
          state) as accumulator *)
-      let f_inner (acc, env, state) ptr ty rk =
-        let+ (res, new_env), new_state = f acc ptr ty rk env state in
+      let f_inner (acc, env, state) ptr ty =
+        let+ (res, new_env), new_state = f acc ptr ty env state in
         Compo_res.map res (fun (ptr, acc) -> (ptr, (acc, new_env, new_state)))
       in
       let+ res = update_ref_tys_in f_inner (init, env, state) v ty in
@@ -518,10 +502,7 @@ struct
     let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
     let[@inline] free ptr = ESM.lift (free ptr)
     let[@inline] check_ptr_align ptr ty = ESM.lift (check_ptr_align ptr ty)
-
-    let[@inline] borrow ?protect ptr ty mut =
-      ESM.lift (borrow ?protect ptr ty mut)
-
+    let[@inline] borrow ?protect ptr ty = ESM.lift (borrow ?protect ptr ty)
     let[@inline] unprotect ptr ty = ESM.lift (unprotect ptr ty)
     let[@inline] with_exposed addr = ESM.lift (with_exposed addr)
     let[@inline] tb_load ptr ty = ESM.lift (tb_load ptr ty)
