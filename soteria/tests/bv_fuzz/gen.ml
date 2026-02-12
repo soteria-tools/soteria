@@ -16,7 +16,7 @@ module Var = Soteria.Symex.Var
 (* ------------------------------------------------------------------ *)
 
 module Var_gen = struct
-  let max_var_per_ty = 4
+  let max_var_per_ty = 5
 
   let get_next_name =
     let name_counter = ref 0 in
@@ -111,10 +111,18 @@ let rec gen_bv ~bv_size : Sv.t Gen.sized =
         bv_unop v
       in
       let gen_ite =
-        let* cond = gen_bool ~bv_size (depth - 1) in
-        let* v1 = gen_bv ~bv_size (depth - 1) in
-        let+ v2 = gen_bv ~bv_size (depth - 1) in
-        D.Bool.ite cond v1 v2
+        let generator =
+          let* cond = gen_bool ~bv_size (depth - 1) in
+          let* t = gen_bv ~bv_size (depth - 1) in
+          let+ e = gen_bv ~bv_size (depth - 1) in
+          D.Bool.ite cond t e
+        in
+        let shrink_to_branches (ite : Sv.t) =
+          match ite.node.kind with
+          | Sv.Ite (_, t, e) -> List.to_seq [ t; e ]
+          | _ -> Seq.empty
+        in
+        Gen.set_shrink shrink_to_branches generator
       in
       let gen_extract =
         if bv_size >= 2 then
@@ -182,10 +190,18 @@ and gen_bool ~bv_size : Sv.t Gen.sized =
         D.Bool.not_ v
       in
       let gen_ite =
-        let* cond = gen_bool ~bv_size (depth - 1) in
-        let* t = gen_bool ~bv_size (depth - 1) in
-        let+ e = gen_bool ~bv_size (depth - 1) in
-        D.Bool.ite cond t e
+        let generator =
+          let* cond = gen_bool ~bv_size (depth - 1) in
+          let* t = gen_bool ~bv_size (depth - 1) in
+          let+ e = gen_bool ~bv_size (depth - 1) in
+          D.Bool.ite cond t e
+        in
+        let shrink_to_branches (ite : Sv.t) =
+          match ite.node.kind with
+          | Sv.Ite (_, t, e) -> List.to_seq [ t; e ]
+          | _ -> Seq.empty
+        in
+        Gen.set_shrink shrink_to_branches generator
       in
       let gen_eq =
         let* v1 = gen_bv ~bv_size (depth - 1) in
@@ -223,7 +239,7 @@ and gen_bool_leaf : Sv.t Gen.t =
   in
   oneof [ gen_concrete; gen_bool_var ]
 
-let depth = Gen.int_bound 5
+let depth = Gen.int_bound 6
 
 (* We could restrict to 8 and 16, but this means the generator can then shrink
    the inputs to bvs of size 2 if it can reproduce it there and that's really
