@@ -1033,12 +1033,10 @@ and BitVec : BitVec = struct
     | _, BitVec mask when covers_bitwidth n mask -> v1
     (* For (x >> s) & m, the mask is irrelevant if it entirely covers [bitsize -
        s] *)
-    | ( (Binop ((LShr | AShr), _, { node = { kind = BitVec shift; _ }; _ }) as
-         base),
+    | ( (Binop (LShr, _, { node = { kind = BitVec shift; _ }; _ }) as base),
         BitVec mask )
     | ( BitVec mask,
-        (Binop ((LShr | AShr), _, { node = { kind = BitVec shift; _ }; _ }) as
-         base) )
+        (Binop (LShr, _, { node = { kind = BitVec shift; _ }; _ }) as base) )
       when let shift_i = Z.to_int shift in
            shift_i >= 0
            && shift_i < n
@@ -1994,7 +1992,12 @@ and BitVec : BitVec = struct
           (* z < 0 so overflows if x < min - z *)
           let min = min_for signed n in
           lt ~signed x (mk_masked n (Z.sub min z))
-    | Unop (BvOfBool _, _), Unop (BvOfBool _, _) -> Bool.v_false
+    | Unop (BvOfBool n, b1), Unop (BvOfBool _, b2) ->
+        if signed && n == 2 then
+          (* Signed addition of two booleans of size 2 overflows iff they are
+             both true *)
+          Bool.and_ b1 b2
+        else Bool.v_false
     | Unop (BvOfBool _, b), other | other, Unop (BvOfBool _, b) ->
         (* ite(b, 1, 0) + x only overflows if b && x == max *)
         let n = size_of v1.node.ty in
