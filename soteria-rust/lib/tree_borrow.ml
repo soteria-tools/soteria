@@ -29,10 +29,16 @@ and state =
   | Disabled
   | UB
 
+and protector = Strong | Weak
+
 (** Whether this node has a protector (this is distinct from having the
     protector toggled!), its parents (including this node's ID!), and its
     initial state if it doesn't exist in the state. *)
-and node = { protector : bool; parents : tag list; initial_state : state }
+and node = {
+  protector : protector option;
+  parents : tag list;
+  initial_state : state;
+}
 [@@deriving show { with_path = false }]
 
 let pp_state fmt = function
@@ -101,12 +107,12 @@ let pp ft t =
 
 let init ~state () =
   let tag = fresh_tag () in
-  let node = { protector = false; parents = [ tag ]; initial_state = state } in
+  let node = { protector = None; parents = [ tag ]; initial_state = state } in
   (TagMap.singleton tag node, tag)
 
 let ub_state = fst @@ init ~state:UB ()
 
-let add_child ~parent ?(protector = false) ~state st =
+let add_child ~parent ?protector ~state st =
   let tag = fresh_tag () in
   let node_parent = TagMap.find parent st in
   let node =
@@ -117,7 +123,11 @@ let add_child ~parent ?(protector = false) ~state st =
 let unprotect tag =
   TagMap.update tag (function
     | None -> raise Not_found
-    | Some n -> Some { n with protector = false })
+    | Some n -> Some { n with protector = None })
+
+let strong_protector_exists st =
+  (* Annoyingly, there is no [exists], only [for_all] *)
+  not (TagMap.for_all (fun _ { protector; _ } -> protector <> Some Strong) st)
 
 (** [tag -> (protected * state)], [protected] indicating the tag's protector
     (managed outside [tb_state]) was toggled. *)
@@ -157,7 +167,9 @@ let access accessed e (root : t) (st : tb_state) =
         in
         (* if the tag has a protector and is accessed, this toggles the
            protector! *)
-        let protected = (tag = accessed || protected) && protector in
+        let protected =
+          (tag = accessed || protected) && Option.is_some protector
+        in
         let st' = transition ~protected st (rel, e) in
         if st' = UB then (
           ub_happened := true;

@@ -117,29 +117,34 @@ module Block = struct
 
   (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
       being reborrowed. *)
-  let borrow ?protect:(protector = false) ((ptr : Sptr.t), meta) (ty : Types.ty)
-      ofs =
+  let borrow ?(protect = false) ((ptr : Sptr.t), meta) (ty : Types.ty) ofs =
     let open SM in
     let open SM.Syntax in
     let pointee = Charon_util.get_pointee ty in
     let state =
       match (ty, Layout.is_unsafe_cell pointee) with
-      | (TRawPtr _ | TFnPtr _), _ -> failwith "borrow received a raw pointer"
       | TRef (_, _, RShared), false -> Tree_borrow.Frozen
       | TRef (_, _, RShared), true -> Tree_borrow.Cell
       | _, false -> Tree_borrow.Reserved false
       | _, true -> Tree_borrow.ReservedIM
     in
+    let protector =
+      match (protect, ty) with
+      | false, _ -> None
+      | true, TRef _ -> Some Tree_borrow.Strong
+      | true, TAdt adt when Charon_util.adt_is_box adt -> Some Tree_borrow.Weak
+      | true, _ -> failwith "Non-ref or box in borrow?"
+    in
     let* t_opt = SM.get_state () in
     let block, tb = of_opt t_opt in
     let parent = Option.get ptr.tag in
-    let tb', tag = Tree_borrow.add_child ~parent ~state ~protector tb in
+    let tb', tag = Tree_borrow.add_child ~parent ~state ?protector tb in
     let ptr' = { ptr with tag = Some tag } in
     L.debug (fun m ->
         m "%s pointer %a -> %a (%a)"
-          (if protector then "Protecting" else "Borrowing")
+          (if protect then "Protecting" else "Borrowing")
           Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state state);
-    if not protector then
+    if not protect then
       let+ () = SM.set_state (to_opt (block, tb')) in
       Ok (ptr', meta)
     else
@@ -236,6 +241,15 @@ module Heap = struct
         if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
         else return miss
     | ok_or_err -> return ok_or_err
+
+  let is_freed loc =
+    wrap loc
+      (let open Freeable_block_with_meta in
+       let open SM.Syntax in
+       let* block = SM.get_state () in
+       match block with
+       | Some { node = Freed; _ } -> SM.Result.ok true
+       | _ -> SM.Result.ok false)
 
   module Decoder =
     Value_codec.Decoder
@@ -448,18 +462,24 @@ and fake_read ((_, meta) as ptr) ty =
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
     accesses; all of these are ignored. *)
-let tb_load ((ptr : Sptr.t), _) ty =
-  let@ () = with_loc_err ~trace:"Tree Borrow access" () in
+let tb_load_untyped (ptr : Sptr.t) size =
   let open SM in
   match ptr.tag with
   | None -> Result.ok ()
   | Some tag ->
-      let**^ size = Layout.size_of ty in
       if%sat size ==@ Usize.(0s) then Result.ok ()
       else
         let* () = log "tb_load" ptr in
         let@ ofs = with_ptr ptr in
         Block.with_tree_block_read_tb (Tree_block.tb_access ofs size tag)
+
+(** Performs a load at the tree borrow level, by updating the borrow state,
+    without attempting to validate the values or checking uninitialised memory
+    accesses; all of these are ignored. *)
+let tb_load ((ptr : Sptr.t), _) ty =
+  let@ () = with_loc_err ~trace:"Tree Borrow access" () in
+  let**^ size = Layout.size_of ty in
+  tb_load_untyped ptr size
 
 let store ((ptr, _) as fptr) ty sval :
     (unit, Error.with_trace, serialized list) Result.t =
@@ -605,19 +625,24 @@ let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
          let ptr : Sptr.t = { ptr; tag; align; size } in
          return ((ptr, Thin), block)))
 
-let free (({ ptr; _ } : Sptr.t), _) =
+let free ((ptr : Sptr.t), _) =
   let@ () = with_loc_err ~trace:"Freeing memory" () in
-  let** () = assert_or_error (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `InvalidFree in
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  let** () = assert_or_error (ofs ==@ Usize.(0s)) `InvalidFree in
+  (* Freeing encurs a write access on the whole allocation. *)
+  let** () = tb_load_untyped ptr ptr.size in
+  (* Freeing also requires there to be no strong protectors in the tree. See:
+     https://github.com/minirust/minirust/blob/master/spec/mem/tree_borrows/memory.md *)
+  let** () =
+    with_ptr ptr (fun _ ->
+        Block.with_tree_block_read_tb (fun tb ->
+            if Tree_borrow.strong_protector_exists tb then
+              Tree_block.SM.Result.error `InvalidFreeStrongProtector
+            else Tree_block.SM.Result.ok ()))
+  in
+  L.debug (fun m -> m "Freeing pointer %a" Sptr.pp ptr);
   with_heap
-    (L.trace (fun m -> m "Freeing pointer %a" Typed.ppa ptr);
-     (* TODO: freeing encurs a write access on the whole allocation, and also
-        requires there to be no strong protectors in the tree. We currently
-        don't have a notion of strong or weak protector.
-
-        See:
-        https://github.com/minirust/minirust/blob/master/spec/mem/tree_borrows/memory.md *)
-     Heap.wrap (Typed.Ptr.loc ptr)
-       (Freeable_block_with_meta.wrap (Freeable_block.free ())))
+    (Heap.wrap loc (Freeable_block_with_meta.wrap (Freeable_block.free ())))
 
 let zeros (ptr, _) size =
   let@ () = with_loc_err ~trace:"Memory store (0s)" () in
@@ -665,10 +690,13 @@ let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) =
   match ptr.tag with
   | None -> Result.ok ()
   | Some tag ->
-      let**^ size = Layout.size_of ty in
-      let@ ofs = with_ptr ptr in
-      L.debug (fun m -> m "Unprotecting pointer %a" Sptr.pp ptr);
-      Block.unprotect ofs tag size
+      let** freed = with_heap @@ Heap.is_freed (Typed.Ptr.loc ptr.ptr) in
+      if freed then Result.ok ()
+      else
+        let**^ size = Layout.size_of ty in
+        let@ ofs = with_ptr ptr in
+        L.debug (fun m -> m "Unprotecting pointer %a" Sptr.pp ptr);
+        Block.unprotect ofs tag size
 
 let with_exposed addr =
   let@ () = with_loc_err ~trace:"Casting integer to pointer" () in
