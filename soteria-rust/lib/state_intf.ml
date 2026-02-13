@@ -52,7 +52,8 @@ module type S = sig
     full_ptr list ret
 
   val free : full_ptr -> unit ret
-  val fake_read : full_ptr -> Types.ty -> Error.t option SM.t
+  val fake_read : full_ptr -> Types.ty -> unit ret
+  val check_non_dangling : full_ptr -> Types.ty -> unit ret
   val check_ptr_align : full_ptr -> Types.ty -> unit ret
 
   val copy_nonoverlapping :

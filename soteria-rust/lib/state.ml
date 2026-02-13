@@ -389,6 +389,17 @@ let uninit ((ptr, _) : Sptr.t * 'a) (ty : Types.ty) :
   let@ ofs = with_ptr ptr in
   Block.with_tree_block @@ Tree_block.uninit_range ofs size
 
+let check_non_dangling ((ptr : Sptr.t), _) ty =
+  let**^ size = Layout.size_of ty in
+  if%sat size ==@ Usize.(0s) then Result.ok ()
+  else
+    let open Block.SM.Syntax in
+    let@ ofs = with_ptr ptr in
+    let+- _ =
+      Block.with_tree_block (Tree_block.check_owned ofs (Typed.cast size))
+    in
+    `UBDanglingPointer
+
 let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   (* The expected alignment of a dyn pointer is stored inside the VTable *)
   let** exp_align =
@@ -410,15 +421,19 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
     (Sptr.is_aligned exp_align ptr)
     (`MisalignedPointer (exp_align, align, ofs))
 
-and load ?ignore_borrow ?(ref_checks = true) ((ptr, meta) as fptr) ty :
+and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
     (Sptr.t rust_val, Error.t, serialized list) Result.t =
   let** () = check_ptr_align fptr ty in
   let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
   let** value = apply_parser ?ignore_borrow ptr parser in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
-  if ref_checks then
-    let++ () = Encoder.check_valid ~fake_read value ty in
+  if check_refs then
+    let check_ref =
+      if (Config.get ()).recursive_validity then fake_read
+      else check_non_dangling
+    in
+    let++ () = Encoder.check_valid ~check_ref value ty in
     value
   else Result.ok value
 
@@ -429,7 +444,7 @@ and load_discriminant ((ptr, _) as fptr) ty =
 
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns [Some error] if an error occurred, and [None]
-    otherwise *)
+    otherwise. Will wrap whatever error happened in [`InvalidRef]. *)
 (* We can't return a [Rustsymex.Result.t] here, because it's used in [load]
    which expects a [Tree_block.serialized_atom list] for the [Missing] case,
    while the external signature expects a [serialized]. This could be fixed by
@@ -448,16 +463,16 @@ and fake_read ((_, meta) as ptr) ty =
         (* FIXME: i am not certain how one checks for the validity of a &dyn *)
         true
   in
-  if is_uncheckable_dst then return None
+  if is_uncheckable_dst then Result.ok ()
   else (
     L.debug (fun m ->
         m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) ptr
           Charon_util.pp_ty ty);
-    let+ res = load ~ignore_borrow:true ~ref_checks:false ptr ty in
-    match res with
-    | Ok _ -> None
-    | Error e -> Some e
-    | Missing _ -> failwith "Miss in fake_read")
+    let+- err =
+      let++ _ = load ~ignore_borrow:true ~check_refs:false ptr ty in
+      ()
+    in
+    `InvalidRef err)
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
@@ -484,6 +499,7 @@ let tb_load ((ptr : Sptr.t), _) ty =
 let store ((ptr, _) as fptr) ty sval :
     (unit, Error.with_trace, serialized list) Result.t =
   let@ () = with_loc_err ~trace:"Memory store" () in
+  (* let** () = Encoder.check_valid ~fake_read sval ty in *)
   let**^ parts = Encoder.encode ~offset:Usize.(0s) sval ty in
   if Iter.is_empty parts then Result.ok ()
   else
@@ -515,6 +531,14 @@ let load ?ignore_borrow ptr ty =
 let load_discriminant ptr ty =
   let@ () = with_loc_err ~trace:"Memory load (discriminant)" () in
   load_discriminant ptr ty
+
+let check_non_dangling ptr ty =
+  let@ () = with_loc_err ~trace:"Dangling check" () in
+  check_non_dangling ptr ty
+
+let fake_read ptr ty =
+  let@ () = with_loc_err ~trace:"Fake read" () in
+  fake_read ptr ty
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
     (unit, Error.with_trace, serialized list) Result.t =

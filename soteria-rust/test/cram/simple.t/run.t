@@ -128,7 +128,7 @@ Check permissive provenance allows int to ptr casts
   Compiling... done in <time>
   => Running main...
   error: main: found issues in <time>, errors in 1 branch (out of 1)
-  bug: UB: dangling pointer in main
+  bug: Dangling pointer in main
       ┌─ $TESTCASE_ROOT/provenance.rs:7:9
     1 │  fn main() {
       │  --------- 1: Entry point
@@ -144,7 +144,7 @@ Check corner cases with permissive provenance, around transmutes
   Compiling... done in <time>
   => Running addr_doesnt_expose...
   error: addr_doesnt_expose: found issues in <time>, errors in 1 branch (out of 1)
-  bug: UB: dangling pointer in addr_doesnt_expose
+  bug: Dangling pointer in addr_doesnt_expose
       ┌─ $TESTCASE_ROOT/provenance_transmute.rs:9:9
     2 │  fn addr_doesnt_expose() {
       │  ----------------------- 1: Entry point
@@ -155,7 +155,7 @@ Check corner cases with permissive provenance, around transmutes
   
   => Running transmute_doesnt_restore_provenance...
   error: transmute_doesnt_restore_provenance: found issues in <time>, errors in 1 branch (out of 1)
-  bug: UB: dangling pointer in transmute_doesnt_restore_provenance
+  bug: Dangling pointer in transmute_doesnt_restore_provenance
       ┌─ $TESTCASE_ROOT/provenance_transmute.rs:22:9
    15 │  fn transmute_doesnt_restore_provenance() {
       │  ---------------------------------------- 1: Entry point
@@ -207,7 +207,7 @@ Test null and dangling pointers
   
   => Running dangling_ptr_not_zst...
   error: dangling_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
-  bug: UB: dangling pointer in dangling_ptr_not_zst
+  bug: Dangling pointer in dangling_ptr_not_zst
       ┌─ $TESTCASE_ROOT/dangling_ptrs.rs:17:29
    15 │  fn dangling_ptr_not_zst() {
       │  ------------------------- 1: Entry point
@@ -265,5 +265,85 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
     1 │  fn main() {
       │  --------- 1: Entry point
   PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
+  
+  [1]
+
+Test recursive validity check for references; disabled
+  $ soteria-rust rustc ref_validity.rs 
+  Compiling... done in <time>
+  => Running test_uninit_ref...
+  note: test_uninit_ref: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  => Running test_dangling_ref...
+  error: test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Dangling pointer in test_dangling_ref
+      ┌─ $TESTCASE_ROOT/ref_validity.rs:17:38
+   14 │  fn test_dangling_ref() {
+      │  ---------------------- 1: Entry point
+   15 │      let b32 = Box::new(MaybeUninit::<u32>::uninit());
+   16 │      let as_ptr = b32.as_ptr() as *const u32 as *const [u32; 2];
+   17 │      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
+      │                                       ^^^^^^^^ Dangling check
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  => Running test_unaligned_ref...
+  error: test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Misaligned pointer; expected 0x0000000000000008, received 0x0000000000000004 with offset 0x0000000000000000 in test_unaligned_ref
+      ┌─ $TESTCASE_ROOT/ref_validity.rs:25:33
+   22 │  fn test_unaligned_ref() {
+      │  ----------------------- 1: Entry point
+   23 │      let b32 = Box::new(MaybeUninit::<[u32; 2]>::uninit());
+   24 │      let as_ptr = b32.as_ptr() as *const [u32; 2] as *const u64;
+   25 │      let as_ref: &u64 = unsafe { &*as_ptr };
+      │                                  ^^^^^^^^ Requires well-aligned pointer
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  [1]
+
+Test recursive validity check for references; enabled
+  $ soteria-rust rustc ref_validity.rs --recursive-validity
+  Compiling... done in <time>
+  => Running test_uninit_ref...
+  error: test_uninit_ref: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Invalid reference: Uninitialized memory access in test_uninit_ref
+      ┌─ $TESTCASE_ROOT/ref_validity.rs:7:33
+    4 │  fn test_uninit_ref() {
+      │  -------------------- 1: Entry point
+    5 │      let b32 = Box::new(MaybeUninit::<u32>::uninit());
+    6 │      let as_ptr = b32.as_ptr() as *const u32;
+    7 │      let as_ref: &u32 = unsafe { &*as_ptr };
+      │                                  ^^^^^^^^ Fake read
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  => Running test_dangling_ref...
+  error: test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Dangling pointer in test_dangling_ref
+      ┌─ $TESTCASE_ROOT/ref_validity.rs:17:38
+   14 │  fn test_dangling_ref() {
+      │  ---------------------- 1: Entry point
+   15 │      let b32 = Box::new(MaybeUninit::<u32>::uninit());
+   16 │      let as_ptr = b32.as_ptr() as *const u32 as *const [u32; 2];
+   17 │      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
+      │                                       ^^^^^^^^ Dangling check
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  => Running test_unaligned_ref...
+  error: test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Misaligned pointer; expected 0x0000000000000008, received 0x0000000000000004 with offset 0x0000000000000000 in test_unaligned_ref
+      ┌─ $TESTCASE_ROOT/ref_validity.rs:25:33
+   22 │  fn test_unaligned_ref() {
+      │  ----------------------- 1: Entry point
+   23 │      let b32 = Box::new(MaybeUninit::<[u32; 2]>::uninit());
+   24 │      let as_ptr = b32.as_ptr() as *const [u32; 2] as *const u64;
+   25 │      let as_ref: &u64 = unsafe { &*as_ptr };
+      │                                  ^^^^^^^^ Requires well-aligned pointer
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (extract[0-1](V|1|) == 0b00)
   
   [1]
