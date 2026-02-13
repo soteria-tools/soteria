@@ -544,8 +544,14 @@ module Make (State : State_intf.S) = struct
     (* Reference *)
     | RvRef (place, _borrow, _metadata) ->
         let* ptr = resolve_place place in
-        let* ptr' = State.borrow ptr expr_ty in
-        let+ () = State.fake_read ptr' place.ty in
+        let* () = State.check_ptr_align ptr place.ty in
+        let* () = State.check_non_dangling ptr place.ty in
+        let* () =
+          if (Config.get ()).recursive_validity then
+            State.fake_read ptr place.ty
+          else ok ()
+        in
+        let+ ptr' = State.borrow ptr expr_ty in
         Ptr ptr'
     (* Raw pointer *)
     | RawPtr (place, _kind, _metadata) ->

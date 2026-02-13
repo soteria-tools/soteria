@@ -237,6 +237,7 @@ module type S = sig
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
+    val check_non_dangling : full_ptr -> Types.ty -> (unit, 'env) t
   end
 
   module Syntax : sig
@@ -535,14 +536,10 @@ struct
       ESM.lift (register_thread_exit unlifted)
 
     let[@inline] run_thread_exits () = ESM.lift (run_thread_exits ())
+    let[@inline] fake_read ptr ty = ESM.lift (fake_read ptr ty)
 
-    let[@inline] fake_read ptr ty : (unit, 'env) monad =
-     fun env ->
-      let open SM.Syntax in
-      let* is_valid = fake_read ptr ty in
-      match is_valid with
-      | None -> SM.return (Compo_res.Ok (), env)
-      | Some err -> error err env
+    let[@inline] check_non_dangling ptr ty =
+      ESM.lift (check_non_dangling ptr ty)
   end
 
   module Syntax = struct
