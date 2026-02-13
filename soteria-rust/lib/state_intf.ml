@@ -52,6 +52,10 @@ module type S = sig
     full_ptr list ret
 
   val free : full_ptr -> unit ret
+
+  val size_and_align_of_val :
+    Types.ty -> Sptr.t Rust_val.meta -> (T.sint Typed.t * T.nonzero Typed.t) ret
+
   val fake_read : full_ptr -> Types.ty -> unit ret
   val check_non_dangling : full_ptr -> Types.ty -> unit ret
   val check_ptr_align : full_ptr -> Types.ty -> unit ret
