@@ -475,7 +475,7 @@ let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
       if res = WEXITED 2 then compilation_err (String.concat "\n" err)
       else
         Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
-          Fmt.(list string)
+          Fmt.(list ~sep:(any "\n") string)
           err;
     Cleaner.touched output);
   let crate =
