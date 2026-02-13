@@ -320,7 +320,7 @@ module Encoder (Sptr : Sptr.S) = struct
       pointer metadata, e.g. slice lengths and vtables. The [fake_read] function
       is used to simulate reading from memory to check the validity of a pointee
       type. *)
-  let check_valid ~fake_read v ty st =
+  let check_valid ~check_ref v ty st =
     let open Rustsymex in
     let open Syntax in
     let open Compo_res in
@@ -342,8 +342,8 @@ module Encoder (Sptr : Sptr.S) = struct
           let** layout = Layout.layout_of pointee in
           if layout.uninhabited then error `RefToUninhabited
           else
-            let* opt_err, st = fake_read p pointee st in
-            match opt_err with Some err -> error err | None -> ok st
+            let+ res, st = check_ref p pointee st in
+            Compo_res.map res (fun _ -> st)
         in
         match res with
         | Ok st -> (Ok (), st)

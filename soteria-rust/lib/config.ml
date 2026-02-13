@@ -86,6 +86,10 @@ type t = {
       [@default Permissive] [@names [ "provenance" ]]
       (** The provenance model to use for pointers. If not provided, the default
           is permissive. *)
+  recursive_validity : bool;
+      [@make.default false] [@names [ "recursive-validity" ]]
+      (** Whether to check the validity of the addressed memory when obtaining a
+          reference to it. We only go one level deep. *)
   step_fuel : int option; [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
       (** The default step fuel for each entrypoint -- every control flow jump
           counts as one fuel. Defaults to infinite fuel. *)

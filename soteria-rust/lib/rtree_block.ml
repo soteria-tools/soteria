@@ -253,6 +253,10 @@ module Make (Sptr : Sptr.S) = struct
     | NotOwned _ -> miss_no_fix ~reason:"as_owned" ()
     | Owned (v, tb) -> f (v, tb)
 
+  let check_owned (ofs : [< T.sint ] Typed.t) (size : [< T.nonzero ] Typed.t) =
+    let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
+    with_bound_check bound (fun t -> DecayMapMonad.Result.ok ((), t))
+
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
       (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) =
     let open SM.Syntax in

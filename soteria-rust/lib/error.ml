@@ -31,6 +31,9 @@ type t =
   | `Overflow  (** Arithmetic over or underflow *)
   | `RefToUninhabited
     (** Attempt to have a reference to an uninhabited value *)
+  | `InvalidRef of t
+    (** Attempt to have a reference that is not valid, e.g. because it points to
+        uninitialised memory. Keeps track of the inner error *)
   | `StdErr of string
     (** Error caused by the std library (mainly intrinsics); kind of equivalent
         to `Panic *)
@@ -67,7 +70,7 @@ let is_unwindable : [> t ] -> bool = function
       true
   | _ -> false
 
-let pp ft : [> t ] -> unit = function
+let rec pp ft : [> t ] -> unit = function
   | `AccessedFnPointer -> Fmt.string ft "Accessed function pointer's pointee"
   | `AliasingError -> Fmt.string ft "Aliasing error"
   | `Breakpoint -> Fmt.string ft "Breakpoint hit"
@@ -91,6 +94,7 @@ let pp ft : [> t ] -> unit = function
       Fmt.string ft
         "Tried freeing an allocation with a strong protector still alive"
   | `InvalidLayout ty -> Fmt.pf ft "Invalid layout: %a" pp_ty ty
+  | `InvalidRef e -> Fmt.pf ft "Invalid reference: %a" pp e
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
   | `MemoryLeak -> Fmt.string ft "Memory leak"
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
@@ -110,7 +114,7 @@ let pp ft : [> t ] -> unit = function
   | `StdErr msg -> Fmt.pf ft "UB in std: %s" msg
   | `UninitializedMemoryAccess -> Fmt.string ft "Uninitialized memory access"
   | `UBAbort -> Fmt.string ft "UB: undefined behaviour trap reached"
-  | `UBDanglingPointer -> Fmt.string ft "UB: dangling pointer"
+  | `UBDanglingPointer -> Fmt.string ft "Dangling pointer"
   | `UBPointerArithmetic -> Fmt.string ft "UB: pointer arithmetic"
   | `UBPointerComparison -> Fmt.string ft "UB: pointer comparison"
   | `UBIntToPointerNoProvenance addr ->
