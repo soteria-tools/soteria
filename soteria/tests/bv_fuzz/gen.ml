@@ -35,11 +35,10 @@ let gen_z ~bv_size =
 (* Bitvector operations to pick from                                   *)
 (* ------------------------------------------------------------------ *)
 
-let all_bv_binops =
+let bv_checked_binops = [| D.BitVec.add; D.BitVec.sub; D.BitVec.mul |]
+
+let bv_unchecked_binops =
   [|
-    D.BitVec.add ~checked:false;
-    D.BitVec.sub ~checked:false;
-    D.BitVec.mul ~checked:false;
     D.BitVec.and_;
     D.BitVec.or_;
     D.BitVec.xor;
@@ -47,6 +46,20 @@ let all_bv_binops =
     D.BitVec.lshr;
     D.BitVec.ashr;
   |]
+
+let bv_binop : 'a Gen.t =
+  let bv_checked_binop =
+    let open Gen in
+    let* op = oneof_array bv_checked_binops in
+    let+ checked = bool in
+    op ~checked
+  in
+  let bv_unchecked_binop = Gen.oneof_array bv_unchecked_binops in
+  Gen.oneof_weighted
+    [
+      (Array.length bv_checked_binops, bv_checked_binop);
+      (Array.length bv_unchecked_binops, bv_unchecked_binop);
+    ]
 
 let all_bv_unops = [| D.BitVec.not_; D.BitVec.neg |]
 
@@ -75,7 +88,7 @@ let rec gen_bv ~bv_size : Sv.t Gen.sized =
     if depth <= 0 then gen_bv_leaf ~bv_size
     else
       let gen_same_size_binop =
-        let* bv_binop = oneof_array all_bv_binops in
+        let* bv_binop = bv_binop in
         let* v1 = gen_bv ~bv_size (depth - 1) in
         let+ v2 = gen_bv ~bv_size (depth - 1) in
         bv_binop v1 v2
