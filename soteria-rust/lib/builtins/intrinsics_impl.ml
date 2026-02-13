@@ -198,18 +198,27 @@ module M (Rust_state_m : Rust_state_m.S) :
     let zero = Usize.(0s) in
     let one = Usize.(1s) in
     let byte = Types.TLiteral (TUInt U8) in
-    let rec aux ?(inc = one) l r len =
-      if%sat len ==@ zero then ok U32.(0s)
+    let rec aux ?res ?(inc = one) l r len =
+      if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
         let* l = Sptr.offset ~signed:false l inc in
         let* r = Sptr.offset ~signed:false r inc in
         let* bl = State.load (l, Thin) byte in
-        let bl = as_base_i U8 bl in
         let* br = State.load (r, Thin) byte in
-        let br = as_base_i U8 br in
-        if%sat bl ==@ br then aux l r (len -!@ one)
-        else if%sat bl <@ br then ok U32.(-1s)
-        else ok U32.(1s)
+        (* compare_bytes reads all bytes and mustn't short-circuit, so we must
+           keep reading; here we only modify the result if we haven't reached a
+           conclusion yet *)
+        let* res =
+          match res with
+          | Some _ -> ok res
+          | None ->
+              let bl = as_base_i U8 bl in
+              let br = as_base_i U8 br in
+              if%sat bl ==@ br then ok None
+              else if%sat bl <@ br then ok (Some U32.(-1s))
+              else ok (Some U32.(1s))
+        in
+        aux ?res l r (len -!@ one)
     in
     aux ~inc:zero l r (bytes :> T.sint Typed.t)
 
