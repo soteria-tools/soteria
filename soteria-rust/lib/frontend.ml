@@ -419,6 +419,23 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
     List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
   in
+
+  let filter_name name =
+    let any_contains rs =
+      List.exists
+        (fun r ->
+          try Str.search_forward (Str.regexp r) name 0 >= 0
+          with Not_found -> false)
+        rs
+    in
+
+    let filters = (Config.get ()).filter in
+    let excludes = (Config.get ()).exclude in
+
+    (List.is_empty filters || any_contains filters)
+    && not (any_contains excludes)
+  in
+
   let get_entry_point crate (decl : fun_decl) =
     let rec aux acc rest =
       match (acc, rest) with
@@ -441,20 +458,9 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
       | None, (p : 'a plugin) :: rest -> aux (p.get_entry_point decl) rest
       | None, [] -> None
     in
-    let filters = (Config.get ()).filter in
-    let filter_ok =
-      match filters with
-      | [] -> true
-      | _ ->
-          let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-          let name = PrintTypes.name_to_string fmt_env decl.item_meta.name in
-          List.exists
-            (fun f ->
-              try Str.search_forward (Str.regexp f) name 0 >= 0
-              with Not_found -> false)
-            filters
-    in
-    if not filter_ok then None else aux None plugins
+    let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+    let name = PrintTypes.name_to_string fmt_env decl.item_meta.name in
+    if not (filter_name name) then None else aux None plugins
   in
   { mk_cmd; get_entry_point }
 
