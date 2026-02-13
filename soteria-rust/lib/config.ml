@@ -64,8 +64,12 @@ type t = {
   (* Printing settings *)
   filter : string list; [@default []] [@names [ "filter" ]]
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
-          run. Multiple filters can be provided; tests matching any will be
-          selected. The filters are treated as regexes. *)
+          run. Multiple filters can be provided, comma-separated; tests matching
+          any will be selected. The filters are treated as regexes. *)
+  exclude : string list; [@default []] [@names [ "exclude" ]]
+      (** Filter the entrypoints to exclude, by name. If empty, no entrypoints
+          are excluded. Multiple filters can be provided, comma-separated; tests
+          matching any will be excluded. The filters are treated as regexes. *)
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
