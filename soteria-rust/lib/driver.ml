@@ -13,20 +13,22 @@ exception ExecutionError of string
 let execution_err msg = raise (ExecutionError msg)
 
 module Outcome = struct
-  type t = Ok | Error | Fatal
+  type t = Ok | OkPartial | Error | Fatal
 
   let merge o1 o2 =
     match (o1, o2) with
     | Fatal, _ | _, Fatal -> Fatal
     | Error, _ | _, Error -> Error
+    | OkPartial, _ | _, OkPartial -> OkPartial
     | Ok, Ok -> Ok
 
   let merge_list = List.fold_left (fun o1 (_, o2) -> merge o1 o2) Ok
-  let as_status_code = function Ok -> 0 | Error -> 1 | Fatal -> 2
+  let as_status_code = function Ok | OkPartial -> 0 | Error -> 1 | Fatal -> 2
   let exit o = exit (as_status_code o)
 
   let pp ft = function
     | Ok -> pp_ok ft "ok"
+    | OkPartial -> Fmt.pf ft "%a %a" pp_ok "ok" (pp_clr `Yellow) "(partial)"
     | Error -> pp_err ft "error"
     | Fatal -> pp_fatal ft "unknown"
 end
@@ -49,14 +51,14 @@ let print_pcs pcs =
 let print_outcomes entry_name f =
   let time = Unix.gettimeofday () in
   match f () with
-  | Ok (pcs, ntotal) ->
+  | Ok (pcs, ntotal, partial) ->
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
       print_pcs pcs;
       Fmt.pr "@.@.";
-      (entry_name, Outcome.Ok)
+      (entry_name, if partial then Outcome.OkPartial else Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
       let err_branches =
@@ -181,7 +183,7 @@ let exec_crate
 
   if not (List.exists Compo_res.is_error outcomes) then
     let pcs = List.map snd branches in
-    Ok (pcs, nbranches)
+    Ok (pcs, nbranches, unexplored > 0)
   else
     (* join th errors by [error type * calltrace], and find all matching PCs *)
     let errors =
