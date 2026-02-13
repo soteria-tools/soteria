@@ -276,24 +276,28 @@ and compute_arbitrary_layout ?fst_size ?fst_align
   (* Calculates the offsets, size and alignment for a tuple-like type with fields of
      the given types. Also returns a symbolic boolean to assert this calculation did
      not overflow. *)
-  let rec aux offsets curr_size curr_align overflowed = function
-    | [] -> ok (List.rev offsets, curr_size, curr_align, overflowed)
+  let rec aux offsets curr_size curr_align overflowed uninhabited = function
+    | [] -> ok (List.rev offsets, curr_size, curr_align, overflowed, uninhabited)
     | ty :: rest ->
-        let** { size; align; _ } = layout_of ty in
-        let offset = size_to_fit ~size:curr_size ~align in
-        let new_size, ovf = offset +$?@ size in
-        let new_align = BV.max ~signed:false align curr_align in
-        aux (offset :: offsets) new_size new_align (ovf ||@ overflowed) rest
+        let** layout = layout_of ty in
+        let offset = size_to_fit ~size:curr_size ~align:layout.align in
+        let new_size, ovf = offset +$?@ layout.size in
+        let new_align = BV.max ~signed:false layout.align curr_align in
+        aux (offset :: offsets) new_size new_align (ovf ||@ overflowed)
+          (uninhabited || layout.uninhabited)
+          rest
   in
   let fst_size = Option.value fst_size ~default:(BV.usizei 0) in
   let fst_align = Option.value fst_align ~default:(BV.usizeinz 1) in
-  let** offsets, size, align, overflowed =
-    aux [] fst_size fst_align Typed.v_false members
+  let** offsets, size, align, overflowed, uninhabited =
+    aux [] fst_size fst_align Typed.v_false false members
   in
   let++ () = assert_or_error (Typed.not overflowed) (`InvalidLayout ty) in
   let size = size_to_fit ~size ~align in
   let layout =
-    mk ~size ~align ~fields:(Arbitrary (variant, Array.of_list offsets)) ()
+    mk ~size ~align ~uninhabited
+      ~fields:(Arbitrary (variant, Array.of_list offsets))
+      ()
   in
   Fmt.kstr layout_warning "Computed an arbitrary layout:@.%a" pp layout ty;
   layout
