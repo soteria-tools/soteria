@@ -661,4 +661,69 @@ module Encoder (Sptr : Sptr.S) = struct
            }] *)
         Result.ok (v, init)
     | v, _ -> Result.ok (v, init)
+
+  (** Calculates the size and alignment of a type [t], according to the pointer
+      metadata [meta]. Receives an arbitrary state and [load] function, to
+      possibly access a heap to get VTable information. *)
+  let rec size_and_align_of_val ~load ~t ~meta st =
+    let open Rustsymex in
+    let open Rustsymex.Syntax in
+    (* Takes inspiration from rustc, to calculate the size and alignment of
+       DSTs.
+       https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
+    if not (Layout.is_dst t) then
+      let++ layout = Layout.layout_of t in
+      (layout.size, layout.align)
+    else
+      match (t, meta) with
+      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), (Thin | VTable _) ->
+          failwith "size_and_align_of_val: Invalid metadata for slice type"
+      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), Len meta ->
+          let sub_ty = Layout.dst_slice_ty t in
+          let* sub_ty =
+            of_opt_not_impl "size_of_val: missing a DST slice type" sub_ty
+          in
+          let** layout = Layout.layout_of sub_ty in
+          let len = Typed.cast_i Usize meta in
+          let size, ovf_mul = layout.size *?@ len in
+          let++ () = assert_or_error (Typed.not ovf_mul) `Overflow in
+          (size, layout.align)
+      | TDynTrait _, (Thin | Len _) ->
+          failwith "size_and_align_of_val: Invalid metadata for dyn type"
+      | TDynTrait _, VTable vtable ->
+          let usize = Types.TLiteral (TUInt Usize) in
+          let** size_ptr =
+            Sptr.offset ~signed:true ~ty:usize vtable Usize.(1s)
+          in
+          let** align_ptr =
+            Sptr.offset ~signed:true ~ty:usize vtable Usize.(2s)
+          in
+          let* size, _ = load (size_ptr, Thin) usize st in
+          let** size = return size in
+          let* align, _ = load (align_ptr, Thin) usize st in
+          let++ align = return align in
+          let size = as_base_i Usize size in
+          let align = as_base_i Usize align in
+          (size, Typed.cast align)
+      | TAdt { id = TTuple | TAdtId _; _ }, _ ->
+          let field_tys =
+            match t with
+            | TAdt adt -> Crate.as_struct_or_tuple adt
+            | _ -> failwith "impossible"
+          in
+          let last_field_ty = List.last field_tys in
+          let** layout = Layout.layout_of t in
+          let last_field_ofs =
+            match layout.fields with
+            | Arbitrary (_, offsets) -> offsets.(Array.length offsets - 1)
+            | _ -> failwith "size_and_align_of_val: Unexpected layout for ADT"
+          in
+          let++ unsized_size, unsized_align =
+            size_and_align_of_val ~load ~t:last_field_ty ~meta st
+          in
+          let align = BV.max ~signed:false unsized_align layout.align in
+          let size = last_field_ofs +!!@ unsized_size in
+          let size = Layout.size_to_fit ~size ~align in
+          (size, align)
+      | _ -> not_impl "size_and_align_of_val: Unexpected type"
 end
