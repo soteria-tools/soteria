@@ -389,28 +389,14 @@ let uninit ((ptr, _) : Sptr.t * 'a) (ty : Types.ty) :
   let@ ofs = with_ptr ptr in
   Block.with_tree_block @@ Tree_block.uninit_range ofs size
 
-let check_non_dangling ((ptr : Sptr.t), _) ty =
-  let**^ size = Layout.size_of ty in
-  if%sat size ==@ Usize.(0s) then Result.ok ()
-  else
-    let open Block.SM.Syntax in
-    let@ ofs = with_ptr ptr in
-    let+- _ =
-      Block.with_tree_block (Tree_block.check_owned ofs (Typed.cast size))
-    in
-    `UBDanglingPointer
+let rec size_and_align_of_val ty meta =
+  let load = load ~ignore_borrow:true ~check_refs:false in
+  let* st = get_state () in
+  lift @@ Encoder.size_and_align_of_val ~load ~t:ty ~meta st
 
-let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
+and check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   (* The expected alignment of a dyn pointer is stored inside the VTable *)
-  let** exp_align =
-    match (ty, meta) with
-    | TDynTrait _, VTable vt ->
-        let usize = Types.TLiteral (TUInt Usize) in
-        let**^ ptr = Sptr.offset ~ty:usize ~signed:false vt Usize.(2s) in
-        let++ align = load (ptr, Thin) usize in
-        Typed.cast (as_base_i Usize align)
-    | _ -> SM.lift @@ Layout.align_of ty
-  in
+  let** _, exp_align = size_and_align_of_val ty meta in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
         Typed.ppa exp_align Charon_util.pp_ty ty);
@@ -421,6 +407,17 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
     (Sptr.is_aligned exp_align ptr)
     (`MisalignedPointer (exp_align, align, ofs))
 
+and check_non_dangling ((ptr : Sptr.t), meta) (ty : Types.ty) =
+  let** size, _ = size_and_align_of_val ty meta in
+  if%sat size ==@ Usize.(0s) then Result.ok ()
+  else
+    let open Block.SM.Syntax in
+    let@ ofs = with_ptr ptr in
+    let+- _ =
+      Block.with_tree_block (Tree_block.check_owned ofs (Typed.cast size))
+    in
+    `UBDanglingPointer
+
 and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
     (Sptr.t rust_val, Error.t, serialized list) Result.t =
   let** () = check_ptr_align fptr ty in
@@ -428,14 +425,12 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
   let** value = apply_parser ?ignore_borrow ptr parser in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
-  if check_refs then
-    let check_ref =
-      if (Config.get ()).recursive_validity then fake_read
-      else check_non_dangling
-    in
-    let++ () = Encoder.check_valid ~check_ref value ty in
-    value
-  else Result.ok value
+  let check_ref =
+    if (Config.get ()).recursive_validity && check_refs then fake_read
+    else check_non_dangling
+  in
+  let++ () = Encoder.check_valid ~check_ref value ty in
+  value
 
 and load_discriminant ((ptr, _) as fptr) ty =
   let** () = check_ptr_align fptr ty in
@@ -519,6 +514,10 @@ let store ((ptr, _) as fptr) ty sval :
         let** () = Tree_block.uninit_range ofs size in
         Result.iter_iter parts ~f:(fun (value, offset) ->
             Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
+
+let size_and_align_of_val ty meta =
+  let@ () = with_loc_err ~trace:"Size and alignment check" () in
+  size_and_align_of_val ty meta
 
 let check_ptr_align ptr ty =
   let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in

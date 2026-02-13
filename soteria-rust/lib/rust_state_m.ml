@@ -238,6 +238,11 @@ module type S = sig
     val leak_check : unit -> (unit, 'env) t
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
     val check_non_dangling : full_ptr -> Types.ty -> (unit, 'env) t
+
+    val size_and_align_of_val :
+      Types.ty ->
+      Sptr.t Rust_val.meta ->
+      (Typed.T.sint Typed.t * Typed.T.nonzero Typed.t, 'env) t
   end
 
   module Syntax : sig
@@ -540,6 +545,9 @@ struct
 
     let[@inline] check_non_dangling ptr ty =
       ESM.lift (check_non_dangling ptr ty)
+
+    let[@inline] size_and_align_of_val ty meta =
+      ESM.lift (size_and_align_of_val ty meta)
   end
 
   module Syntax = struct
