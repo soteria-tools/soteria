@@ -41,9 +41,14 @@ let z3_check_equivalent (smart : Svalue.t) (direct : Svalue.t) : bool =
   Z3_raw.reset solver;
   (* Collect and declare all variables from both expressions *)
   let vars_d = collect_vars direct in
+  (* Collect all assumptions made by checked operators *)
+  let assumptions : Svalue.t list = Direct.collect_checked_assumptions direct in
   (* The vars of the simplified version should be a subset of the vars of the
      raw version. *)
   assert (check_no_new_vars vars_d smart);
+  (* The vars of the assumptions should also not be new *)
+  assert (List.for_all (check_no_new_vars vars_d) assumptions);
+  (* Declare the assumptions as constraints in Z3 *)
   let seen = Hashtbl.create 16 in
   let declare (var, ty) =
     let key = Soteria.Symex.Var.to_int var in
@@ -53,6 +58,7 @@ let z3_check_equivalent (smart : Svalue.t) (direct : Svalue.t) : bool =
     end
   in
   Var.Hashtbl.iter (fun v ty -> declare (v, ty)) vars_d;
+  List.iter (Z3_raw.add_constraint solver) assumptions;
   (* Build: not(smart = direct) using RAW constructors to avoid relying on the
      smart constructors we're testing. *)
   let eq_expr = Svalue.(Binop (Eq, smart, direct) <| TBool) in
@@ -69,21 +75,31 @@ let z3_check_equivalent (smart : Svalue.t) (direct : Svalue.t) : bool =
 
 let print_svalue = Fmt.to_to_string Svalue.pp
 
-let print_pair (s, d) =
+let print_test d =
   let vars = collect_vars d in
   let pp_vars =
     Fmt.iter_bindings ~sep:Fmt.semi Var.Hashtbl.iter
       (Fmt.Dump.pair Var.pp Svalue.pp_ty)
   in
+  let s = Eval.eval ~force:true d in
+  let checks = Direct.collect_checked_assumptions d in
+  let pp_checks = Fmt.iter ~sep:Fmt.semi List.iter Svalue.pp in
   Format.asprintf
-    "@[<v>full: %a@,simplified: %a@,@[<v 2>with variables:@,%a@]@]" Svalue.pp d
-    Svalue.pp s pp_vars vars
+    "@[<v>full: %a@,\
+     simplified: %a@,\
+     @[<v 2>with variables:@,\
+     %a@]@,\
+     @[<v 2>and checks:@,\
+     %a@]@]"
+    Svalue.pp d Svalue.pp s pp_vars vars pp_checks checks
 
-let check_smart_eq_direct (smart, direct) =
+let check_smart_eq_direct direct =
+  let smart = Eval.eval ~force:true direct in
   if Svalue.equal smart direct then true else z3_check_equivalent smart direct
 
-let mk_test ~name ~count gen =
-  QCheck2.Test.make ~count ~name ~print:print_pair gen check_smart_eq_direct
+let mk_test ~name gen =
+  QCheck2.Test.make ~count:(Lazy.force test_count) ~name ~print:print_test gen
+    check_smart_eq_direct
 
 (** Call this at the start of main to configure the Z3 timeout. *)
 let setup () =
