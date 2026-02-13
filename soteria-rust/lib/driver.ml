@@ -46,7 +46,7 @@ let print_pcs pcs =
   in
   if (Config.get ()).show_pcs then
     let pcs_indexed = List.mapi (fun i pc -> (pc, i + 1)) pcs in
-    (list ~sep:(any "@\n") pp_pc) Fmt.stdout pcs_indexed
+    Fmt.pr "%a@." (list ~sep:(any "@\n") pp_pc) pcs_indexed
 
 let print_outcomes entry_name f =
   let time = Unix.gettimeofday () in
@@ -57,7 +57,7 @@ let print_outcomes entry_name f =
         (Diagnostic.print_diagnostic_simple ~severity:Note)
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
       print_pcs pcs;
-      Fmt.pr "@.@.";
+      Fmt.pr "@.";
       (entry_name, if partial then Outcome.OkPartial else Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
@@ -82,7 +82,7 @@ let print_outcomes entry_name f =
           ~error;
         Fmt.pr "@.";
         print_pcs pcs;
-        Fmt.pr "@.@."
+        Fmt.pr "@."
       in
       (entry_name, Outcome.Error)
   | exception e ->
