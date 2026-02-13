@@ -1441,8 +1441,7 @@ and BitVec : BitVec = struct
         zero (size_of v1.node.ty)
     | Binop (Shl, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
-        let total = Z.(s1 + s2) in
-        if Z.(total >= of_int n) then zero n else shl v (mk n total)
+        shl v (mk n Z.(s1 + s2))
     | Binop (LShr, x, { node = { kind = BitVec sr; _ }; _ }), BitVec sl ->
         if Z.leq sl sr then
           (* (x >> s1) << s2 where s2 < s1 = x >> (s1 - s2) & (mask with lower
@@ -1479,8 +1478,7 @@ and BitVec : BitVec = struct
         zero (size_of v1.node.ty)
     | Binop (LShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
-        let total = Z.(s1 + s2) in
-        if Z.(total >= of_int n) then zero n else lshr v (mk n total)
+        lshr v (mk n Z.(s1 + s2))
     | Binop (BitAnd, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
     | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
         (* (x & mask) >> s = (x >> s) & (mask >> s) *)
@@ -1496,18 +1494,17 @@ and BitVec : BitVec = struct
     | _ -> Binop (LShr, v1, v2) <| v1.node.ty
 
   and ashr v1 v2 =
+    let size = size_of v1.node.ty in
+    let size_z = Z.of_int (size_of v1.node.ty) in
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
         let n = size_of v1.node.ty in
         mk_masked n Z.(Z.signed_extract l 0 n asr to_int r)
     | _, BitVec s when Z.equal s Z.zero -> v1
+    | _, BitVec s when Z.geq s size_z ->
+        ashr v1 (mk_masked size (Z.pred size_z))
     | Binop (AShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
-        let n = size_of v1.node.ty in
-        let total = Z.(s1 + s2) in
-        if Z.(total >= of_int n) then
-          (* Shift by >= bitwidth: result is all sign bits *)
-          ashr v (mk_masked n (Z.of_int (n - 1)))
-        else ashr v (mk n total)
+        ashr v (mk size Z.(s1 + s2))
     | _ -> Binop (AShr, v1, v2) <| v1.node.ty
 
   and mul ?(checked = false) v1 v2 =
