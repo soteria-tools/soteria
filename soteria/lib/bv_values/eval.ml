@@ -48,28 +48,29 @@ let eval_unop : Unop.t -> t -> t = function
   | FIs fc -> Float.is_floatclass fc
   | FRound rm -> Float.round rm
 
-let rec eval ~eval_var (x : t) : t =
-  let eval = eval ~eval_var in
+let rec eval ~force ~eval_var (x : t) : t =
+  let eval = eval ~force ~eval_var in
   match x.node.kind with
   | Var v -> eval_var x v x.node.ty
   | Bool _ | Float _ | BitVec _ -> x
   | Ptr (l, o) ->
       let nl = eval l in
       let no = eval o in
-      if l == nl && o == no then x else Ptr.mk (eval l) (eval o)
+      if (not force) && l == nl && o == no then x else Ptr.mk nl no
   | Unop (unop, v) ->
       let nv = eval v in
-      if v == nv then x else eval_unop unop nv
+      if (not force) && v == nv then x else eval_unop unop nv
   | Binop (binop, v1, v2) ->
       (* TODO: for binops that may short-circuit such as || or &&, we could do
          this without evaluating both sides, and deciding if any of either side
          evaluates properly to e.g. true/false *)
       let nv1 = eval v1 in
       let nv2 = eval v2 in
-      if v1 == nv1 && v2 == nv2 then x else eval_binop binop nv1 nv2
+      if (not force) && v1 == nv1 && v2 == nv2 then x
+      else eval_binop binop nv1 nv2
   | Nop (nop, l) -> (
       let l, changed = List.map_changed eval l in
-      if Stdlib.not changed then x
+      if (not force) && not changed then x
       else match nop with Distinct -> Bool.distinct l)
   | Ite (guard, then_, else_) ->
       let guard = eval guard in
@@ -78,11 +79,15 @@ let rec eval ~eval_var (x : t) : t =
       else Bool.ite guard (eval then_) (eval else_)
   | Seq l ->
       let l, changed = List.map_changed eval l in
-      if Stdlib.not changed then x else Svalue.SSeq.mk ~seq_ty:x.node.ty l
+      if (not force) && not changed then x
+      else Svalue.SSeq.mk ~seq_ty:x.node.ty l
 
 (** Evaluates an expression; will call [eval_var] on each [Var] encountered. If
     evaluation errors (e.g. from a division by zero), gives up and returns the
-    original expression. *)
-let eval ?(eval_var : Svalue.t -> Var.t -> Svalue.ty -> t = fun x _ _ -> x)
-    (x : t) : t =
-  try eval ~eval_var x with Division_by_zero -> x
+    original expression. The [force] flag forces evaluation to proceed even if
+    no sub-expressions changed (required if evaluating an expression that has
+    not been constructed using smart constructors). *)
+let eval ?(force = false)
+    ?(eval_var : Svalue.t -> Var.t -> Svalue.ty -> t = fun x _ _ -> x) (x : t) :
+    t =
+  try eval ~force ~eval_var x with Division_by_zero -> x

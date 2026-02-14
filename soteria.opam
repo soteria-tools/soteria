@@ -29,6 +29,9 @@ depends: [
   "grace"
   "odoc" {with-doc}
   "mdx" {with-test}
+  "alcotest" {with-test}
+  "qcheck-core" {with-test}
+  "qcheck-alcotest" {with-test}
   "dune" {>= "3.14" & build & >= "3.14.0"}
   "ppxlib"
   "hc" {>= "0.5"}

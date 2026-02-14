@@ -530,8 +530,8 @@ module rec Bool : Bool = struct
     | Binop (Leq s1, l1, r1), Binop (Lt s2, l2, r2)
       when s1 = s2 && equal l1 r2 && equal r1 l2 ->
         v_true
-    | Binop (Or, v1, v1'), _ when equal v1 v2 || equal v1' v2 -> v1
-    | _, Binop (Or, v2, v2') when equal v1 v2 || equal v1 v2' -> v2
+    | Binop (Or, a, b), _ when equal a v2 || equal b v2 -> v1
+    | _, Binop (Or, a, b) when equal v1 a || equal v1 b -> v2
     | _ -> mk_commut_binop Or v1 v2 <| TBool
 
   and not sv =
@@ -767,6 +767,7 @@ end
 (** {2 Bit vectors} *)
 and BitVec : BitVec = struct
   let mk n bv =
+    assert (n > 0);
     assert (Z.(zero <= bv && bv < one lsl n));
     BitVec bv <| t_bv n
 
@@ -1032,13 +1033,15 @@ and BitVec : BitVec = struct
     | _, BitVec mask when covers_bitwidth n mask -> v1
     (* For (x >> s) & m, the mask is irrelevant if it entirely covers [bitsize -
        s] *)
-    | ( (Binop ((LShr | AShr), _, { node = { kind = BitVec shift; _ }; _ }) as
-         base),
+    | ( (Binop (LShr, _, { node = { kind = BitVec shift; _ }; _ }) as base),
         BitVec mask )
     | ( BitVec mask,
-        (Binop ((LShr | AShr), _, { node = { kind = BitVec shift; _ }; _ }) as
-         base) )
-      when let bitwidth = n - Z.to_int shift in
+        (Binop (LShr, _, { node = { kind = BitVec shift; _ }; _ }) as base) )
+      when let shift_i = Z.to_int shift in
+           shift_i >= 0
+           && shift_i < n
+           &&
+           let bitwidth = n - shift_i in
            let low_mask = Z.(pred (one lsl bitwidth)) in
            Z.(equal (mask land low_mask) low_mask) ->
         base <| t_bv n
@@ -1444,15 +1447,15 @@ and BitVec : BitVec = struct
           (* (x >> s1) << s2 where s2 < s1 = x >> (s1 - s2) & (mask with lower
              bits cleared) *)
           let n = size_of v1.node.ty in
-          let mask = Z.(lognot (pred (one lsl to_int sr))) in
+          let mask = Z.(lognot (pred (one lsl to_int sl))) in
           and_ (lshr x (mk n Z.(sr - sl))) (mk_masked n mask)
         else
           (* (x >> s1) << s2 where s2 > s1 = x << (s2 - s1) & (mask with lower
              bits cleared) *)
           let n = size_of v1.node.ty in
           let shift = Z.(sl - sr) in
-          let mask = Z.(lognot (pred (one lsl to_int sl))) in
-          and_ (shl x (mk n shift)) (mk_masked n mask)
+          let mask = Z.(lognot (pred (one lsl to_int sr))) in
+          shl (and_ x (mk_masked n mask)) (mk n shift)
     | Binop (BitAnd, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
     | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
         (* (x & mask) << s = (x << s) & (mask << s) *)
@@ -1491,14 +1494,17 @@ and BitVec : BitVec = struct
     | _ -> Binop (LShr, v1, v2) <| v1.node.ty
 
   and ashr v1 v2 =
+    let size = size_of v1.node.ty in
+    let size_z = Z.of_int (size_of v1.node.ty) in
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
         let n = size_of v1.node.ty in
         mk_masked n Z.(Z.signed_extract l 0 n asr to_int r)
     | _, BitVec s when Z.equal s Z.zero -> v1
+    | _, BitVec s when Z.geq s size_z ->
+        ashr v1 (mk_masked size (Z.pred size_z))
     | Binop (AShr, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
-        let n = size_of v1.node.ty in
-        ashr v (mk n Z.(s1 + s2))
+        ashr v (mk size Z.(s1 + s2))
     | _ -> Binop (AShr, v1, v2) <| v1.node.ty
 
   and mul ?(checked = false) v1 v2 =
@@ -1663,7 +1669,7 @@ and BitVec : BitVec = struct
               Bool.and_ (not_eq_0 v)
                 (Bool.not (Bool.sem_eq (aux_lt_zero l) (aux_lt_zero r)))
           | Binop (BvConcat, l, _) -> aux_lt_zero l
-          | Unop (BvNot, v) -> not (aux_lt_zero v)
+          | Unop (BvNot, v) -> Bool.not (aux_lt_zero v)
           | Unop (BvOfBool n, _) when n > 1 -> Bool.v_false
           | Ite (_, l, r) ->
               let pos_l = aux_lt_zero l in
@@ -1960,6 +1966,9 @@ and BitVec : BitVec = struct
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( + )
     | BitVec z, _ when Z.equal z Z.zero -> Bool.v_false
     | _, BitVec z when Z.equal z Z.zero -> Bool.v_false
+    | _ when size_of v1.node.ty == 1 ->
+        let one = one 1 in
+        Bool.and_ (Bool.sem_eq v1 one) (Bool.sem_eq v2 one)
     | BitVec z, _ when Stdlib.not signed ->
         let n = size_of v1.node.ty in
         let m = max_for signed n in
@@ -1980,7 +1989,12 @@ and BitVec : BitVec = struct
           (* z < 0 so overflows if x < min - z *)
           let min = min_for signed n in
           lt ~signed x (mk_masked n (Z.sub min z))
-    | Unop (BvOfBool _, _), Unop (BvOfBool _, _) -> Bool.v_false
+    | Unop (BvOfBool n, b1), Unop (BvOfBool _, b2) ->
+        if signed && n == 2 then
+          (* Signed addition of two booleans of size 2 overflows iff they are
+             both true *)
+          Bool.and_ b1 b2
+        else Bool.v_false
     | Unop (BvOfBool _, b), other | other, Unop (BvOfBool _, b) ->
         (* ite(b, 1, 0) + x only overflows if b && x == max *)
         let n = size_of v1.node.ty in
@@ -1992,9 +2006,14 @@ and BitVec : BitVec = struct
   let mul_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( * )
+    | _ when signed && size_of v1.node.ty == 1 ->
+        (* We need to special-case size one because the other simplifications
+           will mess with that case, and it's pretty easy to simplify. *)
+        let one = one 1 in
+        Bool.and_ (Bool.sem_eq v1 one) (Bool.sem_eq v2 one)
     | _
-      when if signed then msb_of v1 + msb_of v2 < size_of v1.node.ty - 1
-           else msb_of v1 + msb_of v2 < size_of v1.node.ty ->
+      when if signed then msb_of v1 + msb_of v2 < size_of v1.node.ty - 2
+           else msb_of v1 + msb_of v2 < size_of v1.node.ty - 1 ->
         Bool.v_false
     | BitVec z, x | x, BitVec z ->
         (* z is a known constant *)
@@ -2013,20 +2032,12 @@ and BitVec : BitVec = struct
               Bool.sem_eq (x <| v1.node.ty) (mk_masked n min_val)
             else
               let min_x, max_x =
-                if Z.gt z Z.zero then
-                  (* z > 0 *)
-                  let min_x =
-                    if Z.divisible min_val z then Z.(min_val / z)
-                    else Z.((min_val / z) + one)
-                  in
+                if Z.gt z Z.zero then (* z > 0 *)
+                  let min_x = Z.(min_val / z) in
                   let max_x = Z.(max_val / z) in
                   (min_x, max_x)
-                else
-                  (* z < 0 *)
-                  let min_x =
-                    if Z.divisible max_val z then Z.(max_val / z)
-                    else Z.((max_val / z) + one)
-                  in
+                else (* z < 0 *)
+                  let min_x = Z.(max_val / z) in
                   let max_x = Z.(min_val / z) in
                   (min_x, max_x)
               in
@@ -2034,8 +2045,8 @@ and BitVec : BitVec = struct
                 (lt ~signed (x <| v1.node.ty) (mk_masked n min_x))
                 (gt ~signed (x <| v1.node.ty) (mk_masked n max_x))
           else
-            (* For unsigned overflow,
-             * z * x overflows iff x > floor((2^n - 1) / z) *)
+            (* For unsigned overflow, * z * x overflows iff x > floor((2^n - 1)
+               / z) *)
             let maxn = Z.pred (Z.shift_left Z.one n) in
             let bound = Z.(maxn / z) in
             gt ~signed (x <| v1.node.ty) (mk n bound)
