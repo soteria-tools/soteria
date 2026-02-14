@@ -119,6 +119,7 @@ module BV = BitVec
 module Float = struct
   include Float
 
+  let mk_fp = mk
   let mk fty = mk (Charon_util.float_precision fty)
 end
 
