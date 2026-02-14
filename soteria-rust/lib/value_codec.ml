@@ -721,6 +721,8 @@ module Encoder (Sptr : Sptr.S) = struct
           let++ unsized_size, unsized_align =
             size_and_align_of_val ~load ~t:last_field_ty ~meta st
           in
+          (* TODO: we need to check if [layout] is packed, in which case
+             unsized_align is 1! See 113-125 of above function. *)
           let align = BV.max ~signed:false unsized_align layout.align in
           let size = last_field_ofs +!!@ unsized_size in
           let size = Layout.size_to_fit ~size ~align in
