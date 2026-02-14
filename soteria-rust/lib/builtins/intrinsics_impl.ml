@@ -168,6 +168,150 @@ module M (Rust_state_m : Rust_state_m.S) :
                 ~f:(fun _ -> ok U32.(1s))
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
 
+  (* HACK: floating point intrinsics for complex float operations are heavily
+     approximated, à la CBMC.
+
+     See
+     https://github.com/diffblue/cbmc/blob/develop/src/ansi-c/library/math.c *)
+  let floating_inaccuracy_warn () =
+    Soteria.Terminal.Warn.warn_once
+      "A complex floating point intrinsic was encountered; it will be executed \
+       with a significant over-approximation."
+
+  let cos_ fp x =
+    floating_inaccuracy_warn ();
+    let* res = lift_symex @@ Rustsymex.nondet (Typed.t_float fp) in
+    let* to_assume =
+      if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
+        ok [ Typed.Float.is_nan res ]
+      else
+        ok
+          [
+            res <=.@ Typed.Float.mk_fp fp "1.0";
+            res >=.@ Typed.Float.mk_fp fp "-1.0";
+            Typed.not (x ==.@ Typed.Float.mk_fp fp "0.0")
+            ||@ (res ==.@ Typed.Float.mk_fp fp "1.0");
+          ]
+    in
+    let+^ () = Rustsymex.assume to_assume in
+    res
+
+  let cosf16 ~x = cos_ F16 x
+  let cosf32 ~x = cos_ F32 x
+  let cosf64 ~x = cos_ F64 x
+  let cosf128 ~x = cos_ F128 x
+
+  let sin_ fp x =
+    floating_inaccuracy_warn ();
+    let* res = lift_symex @@ Rustsymex.nondet (Typed.t_float fp) in
+    let* to_assume =
+      if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
+        ok [ Typed.Float.is_nan res ]
+      else
+        ok
+          [
+            res <=.@ Typed.Float.mk_fp fp "1.0";
+            res >=.@ Typed.Float.mk_fp fp "-1.0";
+            Typed.not (x ==.@ Typed.Float.mk_fp fp "0.0")
+            ||@ (res ==.@ Typed.Float.mk_fp fp "0.0");
+          ]
+    in
+    let+^ () = Rustsymex.assume to_assume in
+    res
+
+  let sinf16 ~x = sin_ F16 x
+  let sinf32 ~x = sin_ F32 x
+  let sinf64 ~x = sin_ F64 x
+  let sinf128 ~x = sin_ F128 x
+
+  let pow_ fp _x _y =
+    floating_inaccuracy_warn ();
+    lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
+
+  let powf16 ~a ~x = pow_ F16 a x
+  let powf32 ~a ~x = pow_ F32 a x
+  let powf64 ~a ~x = pow_ F64 a x
+  let powf128 ~a ~x = pow_ F128 a x
+
+  let powi_ fp x y =
+    floating_inaccuracy_warn ();
+    if%sat y ==@ U32.(0s) then ok (Typed.Float.mk_fp fp "1.0")
+    else if%sat y ==@ U32.(1s) then ok (x :> Typed.T.sfloat Typed.t)
+    else lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
+
+  let powif16 ~a ~x = powi_ F16 a x
+  let powif32 ~a ~x = powi_ F32 a x
+  let powif64 ~a ~x = powi_ F64 a x
+  let powif128 ~a ~x = powi_ F128 a x
+
+  let sqrt_ fp x =
+    floating_inaccuracy_warn ();
+    if%sat x <.@ Typed.Float.mk_fp fp "0.0" then ok (Typed.Float.mk_fp fp "NaN")
+    else if%sat
+      Typed.Float.is_infinite x
+      ||@ (x ==.@ Typed.Float.mk_fp fp "0.0")
+      ||@ Typed.Float.is_nan x
+    then ok (x :> Typed.T.sfloat Typed.t)
+    else lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
+
+  let sqrtf16 ~x = sqrt_ F16 x
+  let sqrtf32 ~x = sqrt_ F32 x
+  let sqrtf64 ~x = sqrt_ F64 x
+  let sqrtf128 ~x = sqrt_ F128 x
+
+  let expf_ fp x =
+    floating_inaccuracy_warn ();
+    if%sat
+      Typed.Float.is_nan x
+      ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.mk_fp fp "0.0"))
+    then ok (x :> Typed.T.sfloat Typed.t)
+    else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.mk_fp fp "0.0")
+    then ok (Typed.Float.mk_fp fp "0.0")
+    else
+      let*^ res = Rustsymex.nondet (Typed.t_float fp) in
+      let+^ () = Rustsymex.assume [ res >.@ Typed.Float.mk_fp fp "0.0" ] in
+      res
+
+  let expf16 ~x = expf_ F16 x
+  let expf32 ~x = expf_ F32 x
+  let expf64 ~x = expf_ F64 x
+  let expf128 ~x = expf_ F128 x
+
+  (* we also approximate 2^x as e^x *)
+  let exp2f16 ~x = expf_ F16 x
+  let exp2f32 ~x = expf_ F32 x
+  let exp2f64 ~x = expf_ F64 x
+  let exp2f128 ~x = expf_ F128 x
+
+  let logf_ ~exp fp x =
+    floating_inaccuracy_warn ();
+    let exp = Typed.Float.mk_fp fp exp in
+    if%sat x <.@ Typed.Float.mk_fp fp "0.0" then ok (Typed.Float.mk_fp fp "NaN")
+    else if%sat x ==.@ Typed.Float.mk_fp fp "0.0" then
+      ok (Typed.Float.mk_fp fp "-inf")
+    else if%sat Typed.Float.is_infinite x then ok (Typed.Float.mk_fp fp "inf")
+    else if%sat x ==.@ exp then ok (Typed.Float.mk_fp fp "1.0")
+    else
+      let*^ res = Rustsymex.nondet (Typed.t_float fp) in
+      let* to_assume =
+        if%sat x <.@ exp then ok [ res <.@ Typed.Float.mk_fp fp "1.0" ]
+        else ok [ res >.@ Typed.Float.mk_fp fp "1.0" ]
+      in
+      let+^ () = Rustsymex.assume to_assume in
+      res
+
+  let logf16 ~x = logf_ ~exp:"2.7182818" F16 x
+  let logf32 ~x = logf_ ~exp:"2.7182818" F32 x
+  let logf64 ~x = logf_ ~exp:"2.7182818" F64 x
+  let logf128 ~x = logf_ ~exp:"2.7182818" F128 x
+  let log10f16 ~x = logf_ ~exp:"10" F16 x
+  let log10f32 ~x = logf_ ~exp:"10" F32 x
+  let log10f64 ~x = logf_ ~exp:"10" F64 x
+  let log10f128 ~x = logf_ ~exp:"10" F128 x
+  let log2f16 ~x = logf_ ~exp:"2" F16 x
+  let log2f32 ~x = logf_ ~exp:"2" F32 x
+  let log2f64 ~x = logf_ ~exp:"2" F64 x
+  let log2f128 ~x = logf_ ~exp:"2" F128 x
   let[@inline] float_rounding rm x = ok (Typed.Float.round rm x)
   let ceilf16 ~x = float_rounding Ceil x
   let ceilf32 ~x = float_rounding Ceil x
