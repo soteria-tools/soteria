@@ -49,8 +49,11 @@
    (>= 0.5.0))
   grace
   (odoc :with-doc)
-  (mdx :with-test)
-  (dune
+   (mdx :with-test)
+   (alcotest :with-test)
+   (qcheck-core :with-test)
+   (qcheck-alcotest :with-test)
+   (dune
    (and
     :build
     (>= 3.14.0)))

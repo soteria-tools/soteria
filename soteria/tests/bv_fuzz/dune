@@ -1,0 +1,36 @@
+(executables
+ (names fuzz_bool fuzz_bv)
+ (libraries soteria simple_smt qcheck-core qcheck-alcotest alcotest))
+
+; running each tests 4 times in parallel
+; will run locally using 8 threads, and in CI using 4 threads (because that's what GH Actions provides)
+; It's embarassingly parallel, so we can just run multiple instances of the same test in parallel to speed it up.
+
+(rule
+ (alias slow-tests)
+ (action
+  (concurrent
+   (run ./fuzz_bool.exe)
+   (run ./fuzz_bool.exe)
+   (run ./fuzz_bool.exe)
+   (run ./fuzz_bool.exe)
+   (run ./fuzz_bv.exe)
+   (run ./fuzz_bv.exe)
+   (run ./fuzz_bv.exe)
+   (run ./fuzz_bv.exe))))
+
+(rule
+ (alias very-slow-tests)
+ (action
+  (setenv
+   "QCHECK_TEST_COUNT"
+   "15000"
+   (concurrent
+    (run ./fuzz_bool.exe)
+    (run ./fuzz_bool.exe)
+    (run ./fuzz_bool.exe)
+    (run ./fuzz_bool.exe)
+    (run ./fuzz_bv.exe)
+    (run ./fuzz_bv.exe)
+    (run ./fuzz_bv.exe)
+    (run ./fuzz_bv.exe)))))

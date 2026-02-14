@@ -114,6 +114,32 @@ jobs:
       - name: Test
         run: make ocaml-test
 
+      - name: Check if bv_values files were modified
+        if: github.event_name == 'merge_group'
+        id: check-bv-files
+        run: |
+          BASE_SHA="${{ github.event.merge_group.base_sha }}"
+          HEAD_SHA="${{ github.event.merge_group.head_sha }}"
+          echo "Comparing $BASE_SHA..$HEAD_SHA"
+          
+          # Use the GitHub API to compare commits (avoids needing full git history)
+          CHANGED=$(gh api repos/${{ github.repository }}/compare/${BASE_SHA}...${HEAD_SHA} \
+            --jq '.files[].filename' | grep -c "^soteria/lib/bv_values/" || true)
+          
+          if [ "$CHANGED" -gt 0 ]; then
+            echo "modified=true" >> $GITHUB_OUTPUT
+            echo "Files in soteria/lib/bv_values were modified, will run slow tests"
+          else
+            echo "modified=false" >> $GITHUB_OUTPUT
+            echo "No files in soteria/lib/bv_values were modified, skipping slow tests"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Run slow tests (fuzz tests)
+        if: github.event_name == 'merge_group' && steps.check-bv-files.outputs.modified == 'true'
+        run: make ocaml-slow-tests
+
       # Building js stuff
       - name: Install JS dependencies
         run: yarn install
@@ -326,3 +352,4 @@ jobs:
           destination_dir: ./api/main
 
       - run: echo "Successfully published documentation to https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/main"
+
