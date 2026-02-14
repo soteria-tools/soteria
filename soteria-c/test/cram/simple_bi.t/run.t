@@ -45,59 +45,34 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       ┌─ manifest.c:6:10
     6 │    return *x;
       │           ^^ Invalid memory load
-    7 │  }
-    8 │  
-    9 │  int test_np_uninit()
-   10 │  {
-   11 │    int *x = (int *)malloc(sizeof(int));
-   12 │    load(x);
-   13 │    return 0;
-   14 │  }
-   15 │  
-   16 │  int test_uninit()
-   17 │  {
-   18 │    int *x = (int *)malloc(sizeof(int));
-   19 │    if (!x)
-   20 │      return 1;
+  ... ·  
    21 │    load(x);
       │    ------- 1: Called from here
   error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
       │           ^^ Invalid memory load
-    7 │  }
-    8 │  
-    9 │  int test_np_uninit()
-   10 │  {
-   11 │    int *x = (int *)malloc(sizeof(int));
+  ... ·  
    12 │    load(x);
       │    ------- 1: Called from here
   error: Null pointer dereference in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
       │           ^^ Invalid memory load
-    7 │  }
-    8 │  
-    9 │  int test_np_uninit()
-   10 │  {
-   11 │    int *x = (int *)malloc(sizeof(int));
+  ... ·  
    12 │    load(x);
       │    ------- 1: Called from here
   warning: Memory leak in test_leak
-      ┌─ manifest.c:26:2
+      ┌─ manifest.c:26:1
    25 │    
-   26 │    int test_leak()
-      │ ╭───^
+   26 │ ╭  int test_leak()
    27 │ │  {
    28 │ │    int *x = (int *)malloc(sizeof(int));
       │ │                    ------------------- 1: This allocation leaked
-   29 │ │    if (!x)
-   30 │ │      return 1;
-   31 │ │    *x = 12;
-   32 │ │    load(x);
+  ... · │  
    33 │ │    return 0;
    34 │ │  }
-      │ ╰──
+      │ ╰──^ 
    35 │    
   Summaries for load_563:
     Analysed {

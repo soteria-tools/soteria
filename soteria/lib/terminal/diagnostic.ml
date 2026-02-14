@@ -133,14 +133,14 @@ let pp ft diag =
   let module GConfig = Grace_ansi_renderer.Config in
   let { color; utf8 } : Logs.Profile.t = Logs.Profile.get () in
   let styles, use_ansi =
-    if color then (GConfig.Style_sheet.default, true)
-    else (GConfig.Style_sheet.(no_color default), false)
+    if color then (GConfig.Style_sheet.default, Some true)
+    else (GConfig.Style_sheet.(no_color default), Some false)
   in
   let chars = if utf8 then GConfig.Chars.unicode else GConfig.Chars.ascii in
   let config = GConfig.{ chars; styles; use_ansi } in
   if (Config.get ()).compact then
-    Grace_ansi_renderer.pp_compact_diagnostic ~config () ft diag
-  else Grace_ansi_renderer.pp_diagnostic ~config () ft diag
+    Grace_ansi_renderer.pp_compact_diagnostic ~config ft diag
+  else Grace_ansi_renderer.pp_diagnostic ~config ft diag
 
 let print_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
   with_unaltered_geo @@ fun () ->
