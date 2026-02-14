@@ -195,18 +195,27 @@ module M (Rust_state_m : Rust_state_m.S) :
     let zero = Usize.(0s) in
     let one = Usize.(1s) in
     let byte = Types.TLiteral (TUInt U8) in
-    let rec aux ?(inc = one) l r len =
-      if%sat len ==@ zero then ok U32.(0s)
+    let rec aux ?res ?(inc = one) l r len =
+      if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
         let* l = Sptr.offset ~signed:false l inc in
         let* r = Sptr.offset ~signed:false r inc in
         let* bl = State.load (l, Thin) byte in
-        let bl = as_base_i U8 bl in
         let* br = State.load (r, Thin) byte in
-        let br = as_base_i U8 br in
-        if%sat bl ==@ br then aux l r (len -!@ one)
-        else if%sat bl <@ br then ok U32.(-1s)
-        else ok U32.(1s)
+        (* compare_bytes reads all bytes and mustn't short-circuit, so we must
+           keep reading; here we only modify the result if we haven't reached a
+           conclusion yet *)
+        let* res =
+          match res with
+          | Some _ -> ok res
+          | None ->
+              let bl = as_base_i U8 bl in
+              let br = as_base_i U8 br in
+              if%sat bl ==@ br then ok None
+              else if%sat bl <@ br then ok (Some U32.(-1s))
+              else ok (Some U32.(1s))
+        in
+        aux ?res l r (len -!@ one)
     in
     aux ~inc:zero l r (bytes :> T.sint Typed.t)
 
@@ -559,12 +568,11 @@ module M (Rust_state_m : Rust_state_m.S) :
       | _ -> failwith "Unexpected read array"
     in
     let rec aux = function
-      | [] -> ok Typed.v_true
-      | (Int l, Int r) :: rest ->
-          if%sat l ==@ r then aux rest else ok Typed.v_false
+      | [] -> Typed.v_true
+      | (Int l, Int r) :: rest -> l ==@ r &&@ aux rest
       | _ :: _ -> failwith "Unexpected read array"
     in
-    aux byte_pairs
+    ok (aux byte_pairs)
 
   let rotate_ ~(side : [ `Left | `Right ]) ~t ~x ~shift : rust_val ret =
     let t = TypesUtils.ty_as_literal t in
@@ -630,70 +638,12 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let size_of ~t = Layout.size_of t
 
-  let rec size_and_align_of_val ~t ~meta =
-    (* Takes inspiration from rustc, to calculate the size and alignment of
-       DSTs.
-       https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
-    if not (Layout.is_dst t) then
-      let+ layout = Layout.layout_of t in
-      (layout.size, layout.align)
-    else
-      match (t, meta) with
-      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), (Thin | VTable _) ->
-          failwith "size_and_align_of_val: Invalid metadata for slice type"
-      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), Len meta ->
-          let sub_ty = Layout.dst_slice_ty t in
-          let* sub_ty =
-            of_opt_not_impl "size_of_val: missing a DST slice type" sub_ty
-          in
-          let* layout = Layout.layout_of sub_ty in
-          let len = Typed.cast_i Usize meta in
-          let size, ovf_mul = layout.size *?@ len in
-          let+ () = assert_not ovf_mul `Overflow in
-          (size, layout.align)
-      | TDynTrait _, (Thin | Len _) ->
-          failwith "size_and_align_of_val: Invalid metadata for dyn type"
-      | TDynTrait _, VTable vtable ->
-          let usize = Types.TLiteral (TUInt Usize) in
-          let* size_ptr =
-            Sptr.offset ~signed:true ~ty:usize vtable Usize.(1s)
-          in
-          let* align_ptr =
-            Sptr.offset ~signed:true ~ty:usize vtable Usize.(2s)
-          in
-          let* size = State.load (size_ptr, Thin) usize in
-          let+ align = State.load (align_ptr, Thin) usize in
-          let size = as_base_i Usize size in
-          let align = as_base_i Usize align in
-          (size, Typed.cast align)
-      | TAdt { id = TTuple | TAdtId _; _ }, _ ->
-          let field_tys =
-            match t with
-            | TAdt adt -> Crate.as_struct_or_tuple adt
-            | _ -> failwith "impossible"
-          in
-          let last_field_ty = List.last field_tys in
-          let* layout = Layout.layout_of t in
-          let last_field_ofs =
-            match layout.fields with
-            | Arbitrary (_, offsets) -> offsets.(Array.length offsets - 1)
-            | _ -> failwith "size_and_align_of_val: Unexpected layout for ADT"
-          in
-          let+ unsized_size, unsized_align =
-            size_and_align_of_val ~t:last_field_ty ~meta
-          in
-          let align = BV.max ~signed:false unsized_align layout.align in
-          let size = last_field_ofs +!!@ unsized_size in
-          let size = Layout.size_to_fit ~size ~align in
-          (size, align)
-      | _ -> not_impl "size_and_align_of_val: Unexpected type"
-
   let size_of_val ~t ~ptr:(_, meta) =
-    let+ size, _ = size_and_align_of_val ~t ~meta in
+    let+ size, _ = State.size_and_align_of_val t meta in
     size
 
   let align_of_val ~t ~ptr:(_, meta) =
-    let+ _, align = size_and_align_of_val ~t ~meta in
+    let+ _, align = State.size_and_align_of_val t meta in
     (align :> T.sint Typed.t)
 
   let transmute ~t_src ~dst ~src = Core.transmute ~from_ty:t_src ~to_ty:dst src

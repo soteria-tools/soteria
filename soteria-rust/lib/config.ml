@@ -64,11 +64,19 @@ type t = {
   (* Printing settings *)
   filter : string list; [@default []] [@names [ "filter" ]]
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
-          run. Multiple filters can be provided; tests matching any will be
-          selected. The filters are treated as regexes. *)
+          run. Multiple filters can be provided, comma-separated; tests matching
+          any will be selected. The filters are treated as regexes. *)
+  exclude : string list; [@default []] [@names [ "exclude" ]]
+      (** Filter the entrypoints to exclude, by name. If empty, no entrypoints
+          are excluded. Multiple filters can be provided, comma-separated; tests
+          matching any will be excluded. The filters are treated as regexes. *)
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
+  show_pcs : bool;
+      [@make.default false] [@names [ "show-pcs"; "pcs" ]] [@env "SHOW_PCS"]
+      (** Whether to show the path conditions for outcomes at the end of
+          execution. *)
   (* Symbolic execution behaviour *)
   ignore_leaks : bool; [@make.default false] [@names [ "ignore-leaks" ]]
       (** Ignore memory leaks *)
@@ -78,6 +86,10 @@ type t = {
       [@default Permissive] [@names [ "provenance" ]]
       (** The provenance model to use for pointers. If not provided, the default
           is permissive. *)
+  recursive_validity : bool;
+      [@make.default false] [@names [ "recursive-validity" ]]
+      (** Whether to check the validity of the addressed memory when obtaining a
+          reference to it. We only go one level deep. *)
   step_fuel : int option; [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
       (** The default step fuel for each entrypoint -- every control flow jump
           counts as one fuel. Defaults to infinite fuel. *)

@@ -121,9 +121,10 @@ module Make (State : State_intf.S) = struct
         (* Passed (nested) references must be protected and be valid. *)
         let* value, protected' =
           Encoder.update_ref_tys_in value local.local_ty ~init:acc
-            ~f:(fun acc ptr subty mut ->
-              let+ ptr' = State.protect ptr subty mut in
-              (ptr', (ptr', subty) :: acc))
+            ~f:(fun acc ptr ptr_ty ->
+              let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
+              let pointee = Charon_util.get_pointee ptr_ty in
+              (ptr', (ptr', pointee) :: acc))
         in
         let+ () = map_env (Store.declare_value local.index value) in
         protected')
@@ -537,14 +538,20 @@ module Make (State : State_intf.S) = struct
 
   and eval_operand_list = map_list ~f:eval_operand
 
-  and eval_rvalue (expr : Expressions.rvalue) =
+  and eval_rvalue (expr : Expressions.rvalue) expr_ty =
     match expr with
     | Use op -> eval_operand op
     (* Reference *)
-    | RvRef (place, borrow, _metadata) ->
+    | RvRef (place, _borrow, _metadata) ->
         let* ptr = resolve_place place in
-        let* ptr' = State.borrow ptr place.ty borrow in
-        let+ () = State.fake_read ptr' place.ty in
+        let* () = State.check_ptr_align ptr place.ty in
+        let* () = State.check_non_dangling ptr place.ty in
+        let* () =
+          if (Config.get ()).recursive_validity then
+            State.fake_read ptr place.ty
+          else ok ()
+        in
+        let+ ptr' = State.borrow ptr expr_ty in
         Ptr ptr'
     (* Raw pointer *)
     | RawPtr (place, _kind, _metadata) ->
@@ -909,7 +916,7 @@ module Make (State : State_intf.S) = struct
     | Nop -> ok ()
     | Assign (place, rval) ->
         let* ptr = resolve_place_lazy place in
-        let* v = eval_rvalue rval in
+        let* v = eval_rvalue rval place.ty in
         L.info (fun m -> m "Assigning %a <- %a" pp_lazy_ptr ptr pp_rust_val v);
         store_lazy ptr place.ty v
     | StorageLive local ->
@@ -1130,10 +1137,6 @@ module Make (State : State_intf.S) = struct
     let@@ () = Poly.push_generics ~params:fundef.generics ~args:generics in
     let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc:fundef.item_meta.span.data in
-    L.info (fun m ->
-        m "Calling %a with %a" Crate.pp_name name
-          Fmt.(hbox @@ brackets @@ list ~sep:comma pp_rust_val)
-          args);
     let* protected = alloc_stack body.locals args in
     let starting_block = List.hd body.body in
     let exec_block = exec_block ~body starting_block in
