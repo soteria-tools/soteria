@@ -11,6 +11,32 @@ open Soteria.Bv_values.Svalue
 (* Boolean operations                                                  *)
 (* ------------------------------------------------------------------ *)
 
+module Var_pool = struct
+  let max_var_per_ty = 5
+
+  let get_next_name =
+    let name_counter = ref 0 in
+    fun () ->
+      let res = !name_counter in
+      incr name_counter;
+      Var.of_int res
+
+  (* We want to generate at most [max_var_per_ty] variables per type. This
+     avoids generating expressions with only different variables, which cannot
+     be reduced interestingly. *)
+  let var_pool : (int * ty, t) Hashtbl.t = Hashtbl.create 1024
+
+  let get_from_pool idx ty =
+    let key = (idx, ty) in
+    match Hashtbl.find_opt var_pool key with
+    | None ->
+        let name = get_next_name () in
+        let v = mk_var name ty in
+        Hashtbl.replace var_pool key v;
+        v
+    | Some v -> v
+end
+
 module Bool = struct
   let v_true = Bool true <| TBool
   let v_false = Bool false <| TBool
@@ -84,6 +110,19 @@ module BitVec = struct
   let add_overflows ~signed v1 v2 = Binop (AddOvf signed, v1, v2) <| TBool
   let mul_overflows ~signed v1 v2 = Binop (MulOvf signed, v1, v2) <| TBool
 
+  let neg_overflows (v : t) =
+    let n = size_of v.node.ty in
+    let min = Z.(neg (one lsl Stdlib.( - ) n 1)) in
+    Binop (Binop.Eq, v, BitVec.mk_masked n min) <| TBool
+
+  let sub_overflows ~signed v1 v2 =
+    if Stdlib.not signed then lt ~signed v1 v2
+    else
+      let neg_ovf = neg_overflows v2 in
+      let neg_v2 = neg v2 in
+      let add_ovf = add_overflows ~signed v1 neg_v2 in
+      Bool.or_ neg_ovf add_ovf
+
   (* Bool-bv conversions *)
   let of_bool n v = Unop (BvOfBool n, v) <| t_bv n
 
@@ -108,4 +147,93 @@ module BitVec = struct
     let n = size_of v.Hc.node.ty in
     let fp = FloatPrecision.of_size n in
     Unop (FloatOfBvRaw fp, v) <| TFloat fp
+end
+
+let collect_checked_assumptions (v : t) : t list =
+  let assumptions = Dynarray.create () in
+
+  let rec go v =
+    match v.Hc.node.kind with
+    | Unop (_, v) -> go v
+    | Ptr (a, b) ->
+        go a;
+        go b
+    | Binop (Add { checked = true }, v1, v2) ->
+        Dynarray.append_list assumptions
+          [
+            Bool.not_ (BitVec.add_overflows ~signed:false v1 v2);
+            Bool.not_ (BitVec.add_overflows ~signed:true v1 v2);
+          ];
+        go v1;
+        go v2
+    | Binop (Sub { checked = true }, v1, v2) ->
+        Dynarray.append_list assumptions
+          [
+            Bool.not_ (BitVec.sub_overflows ~signed:false v1 (BitVec.neg v2));
+            Bool.not_ (BitVec.sub_overflows ~signed:true v1 (BitVec.neg v2));
+          ];
+        go v1;
+        go v2
+    | Binop (Mul { checked = true }, v1, v2) ->
+        Dynarray.append_list assumptions
+          [
+            Bool.not_ (BitVec.mul_overflows ~signed:false v1 (BitVec.neg v2));
+            Bool.not_ (BitVec.mul_overflows ~signed:true v1 (BitVec.neg v2));
+          ];
+        go v1;
+        go v2
+    | Binop (_, v1, v2) ->
+        go v1;
+        go v2
+    | Ite (c, t, e) ->
+        go c;
+        go t;
+        go e
+    | Seq vs | Nop (_, vs) -> List.iter go vs
+    | Var _ | Bool _ | BitVec _ | Float _ -> ()
+  in
+  go v;
+  Dynarray.to_list assumptions |> List.sort_uniq compare
+
+module Shrink = struct
+  let ( @ ) = Seq.append
+  let ( ++ ) = Seq.cons
+
+  let small_of_ty ty =
+    match ty with
+    | TBool -> Seq.cons Bool.v_false (Seq.singleton Bool.v_true)
+    | TBitVector n -> Seq.cons (BitVec.zero n) (Seq.singleton (BitVec.one n))
+    | _ -> Seq.empty
+
+  let just_var ty = Var_pool.get_from_pool 0 ty
+
+  let rec children_of_ty ~ty v =
+    let return v = v ++ shrink v in
+    let if_ty v =
+      if equal_ty ty v.Hc.node.ty then return v else children_of_ty ~ty v
+    in
+    match v.Hc.node.kind with
+    | Unop (_, v) -> if_ty v
+    | Binop (_, v1, v2) ->
+        let left = if_ty v1 in
+        let right = if_ty v2 in
+        left @ right
+    | Ite (c, t, e) ->
+        if equal c Bool.v_true then return t
+        else if equal c Bool.v_false then return e
+        else return t @ return e
+    | _ -> Seq.empty
+
+  and shrink v =
+    match v.Hc.node.kind with
+    | Var _ -> small_of_ty v.Hc.node.ty
+    | Bool _ -> Seq.empty
+    | BitVec n ->
+        let size = size_of v.Hc.node.ty in
+        if Z.gt n Z.one then List.to_seq [ BitVec.zero size; BitVec.one size ]
+        else if Z.gt n Z.zero then Seq.singleton (BitVec.zero size)
+        else Seq.empty
+    | _ ->
+        let ty = v.Hc.node.ty in
+        (just_var ty ++ small_of_ty ty) @ children_of_ty ~ty:v.Hc.node.ty v
 end

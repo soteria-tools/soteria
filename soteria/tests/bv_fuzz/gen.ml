@@ -15,39 +15,14 @@ module Var = Soteria.Symex.Var
 (* Variable pool                                                       *)
 (* ------------------------------------------------------------------ *)
 
-module Var_gen = struct
-  let max_var_per_ty = 5
+let gen_var ~ty =
+  let open Direct.Var_pool in
+  let open Gen in
+  let+ idx = int_bound (max_var_per_ty - 1) in
+  get_from_pool idx ty
 
-  let get_next_name =
-    let name_counter = ref 0 in
-    fun () ->
-      let res = !name_counter in
-      incr name_counter;
-      Var.of_int res
-
-  (* We want to generate at most [max_var_per_ty] variables per type. This
-     avoids generating expressions with only different variables, which cannot
-     be reduced interestingly. *)
-  let var_pool : (int * Svalue.ty, Sv.t) Hashtbl.t = Hashtbl.create 1024
-
-  let get_from_pool idx ty =
-    let key = (idx, ty) in
-    match Hashtbl.find_opt var_pool key with
-    | None ->
-        let name = get_next_name () in
-        let v = Sv.mk_var name ty in
-        Hashtbl.replace var_pool key v;
-        v
-    | Some v -> v
-
-  let gen_var ~ty =
-    let open Gen in
-    let+ idx = int_bound (max_var_per_ty - 1) in
-    get_from_pool idx ty
-end
-
-let gen_bv_var ~bv_size = Var_gen.gen_var ~ty:(TBitVector bv_size)
-let gen_bool_var = Var_gen.gen_var ~ty:TBool
+let gen_bv_var ~bv_size = gen_var ~ty:(TBitVector bv_size)
+let gen_bool_var = gen_var ~ty:TBool
 
 let gen_z ~bv_size =
   let open QCheck2.Gen in
@@ -60,11 +35,10 @@ let gen_z ~bv_size =
 (* Bitvector operations to pick from                                   *)
 (* ------------------------------------------------------------------ *)
 
-let all_bv_binops =
+let bv_checked_binops = [| D.BitVec.add; D.BitVec.sub; D.BitVec.mul |]
+
+let bv_unchecked_binops =
   [|
-    D.BitVec.add ~checked:false;
-    D.BitVec.sub ~checked:false;
-    D.BitVec.mul ~checked:false;
     D.BitVec.and_;
     D.BitVec.or_;
     D.BitVec.xor;
@@ -72,6 +46,20 @@ let all_bv_binops =
     D.BitVec.lshr;
     D.BitVec.ashr;
   |]
+
+let bv_binop : 'a Gen.t =
+  let bv_checked_binop =
+    let open Gen in
+    let* op = oneof_array bv_checked_binops in
+    let+ checked = bool in
+    op ~checked
+  in
+  let bv_unchecked_binop = Gen.oneof_array bv_unchecked_binops in
+  Gen.oneof_weighted
+    [
+      (Array.length bv_checked_binops, bv_checked_binop);
+      (Array.length bv_unchecked_binops, bv_unchecked_binop);
+    ]
 
 let all_bv_unops = [| D.BitVec.not_; D.BitVec.neg |]
 
@@ -100,7 +88,7 @@ let rec gen_bv ~bv_size : Sv.t Gen.sized =
     if depth <= 0 then gen_bv_leaf ~bv_size
     else
       let gen_same_size_binop =
-        let* bv_binop = oneof_array all_bv_binops in
+        let* bv_binop = bv_binop in
         let* v1 = gen_bv ~bv_size (depth - 1) in
         let+ v2 = gen_bv ~bv_size (depth - 1) in
         bv_binop v1 v2
@@ -246,18 +234,14 @@ let depth = Gen.int_bound 6
    nice. *)
 let bv_size = Gen.int_range 1 16
 
-(** Generate a bitvector expression (direct) and its smartified version. *)
-let gen_bv_pair : (Sv.t * Sv.t) Gen.t =
+let gen_bv : Sv.t Gen.t =
   let open Gen in
-  let* bv_size = bv_size in
-  let+ direct = Gen.sized_size depth @@ gen_bv ~bv_size in
-  let smart = Eval.eval ~force:true direct in
-  (smart, direct)
+  set_shrink Direct.Shrink.shrink
+    (let* bv_size = bv_size in
+     Gen.sized_size depth @@ gen_bv ~bv_size)
 
-(** Generate a boolean expression (direct) and its smartified version. *)
-let gen_bool_pair : (Sv.t * Sv.t) Gen.t =
+let gen_bool : Sv.t Gen.t =
   let open Gen in
-  let* bv_size = bv_size in
-  let+ direct = Gen.sized_size depth @@ gen_bool ~bv_size in
-  let smart = Eval.eval ~force:true direct in
-  (smart, direct)
+  set_shrink Direct.Shrink.shrink
+    (let* bv_size = bv_size in
+     Gen.sized_size depth @@ gen_bool ~bv_size)
