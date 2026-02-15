@@ -1,7 +1,8 @@
 (** This module defines a three-way result type for compositional symbolic
     execution. Unlike standard [Result.t] which has two cases (Ok/Error), this
     type adds a third case [Missing] for bi-abduction scenarios where anti-frame
-    inference is needed.
+    inference is needed, or more generally to represent incompletenesses in the
+    engine.
 
     When performing a function call, the current state may not contain all
     resources needed by the callee. Rather than immediately failing, we can
