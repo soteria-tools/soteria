@@ -1,22 +1,6 @@
 open Simple_smt
 open Logs.Import
 
-(** The type of values the solver operators on. *)
-module type Value = sig
-  type t
-  type ty
-
-  (** A list of commands that need to be aknowledged on start up of the solver.
-      These are also sent everytime [Solver_interface.S.reset] is called. *)
-  val init_commands : sexp list
-
-  (** Encode a type into a SMTLib sort *)
-  val sort_of_ty : ty -> sexp
-
-  (** Encode a value into a SMTLib value *)
-  val encode_value : t -> sexp
-end
-
 module StatKeys = struct
   let check_sats = "solvers.z3.check_sats"
 
@@ -25,7 +9,9 @@ module StatKeys = struct
         Fmt.int)
 end
 
-module Make (Value : Value) :
+(** Create a Z3 solver module from a value type. It can be configured, see
+    {!Config}. *)
+module Make (Value : Value.S) :
   Solver_interface.S with type value = Value.t and type ty = Value.ty = struct
   let initialize_solver : (Simple_smt.solver -> unit) ref =
     ref (fun solver -> List.iter (ack_command solver) Value.init_commands)
