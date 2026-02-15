@@ -1,10 +1,22 @@
+(** SMT-LIB utilities for operations missing from [Simple_smt].
+
+    Contains utilities for SMT-LIB's
+    {{:https://smt-lib.org/theories-FloatingPoint.shtml} FloatingPoint theory}
+    and
+    {{:https://smt-lib.org/theories-FixedSizeBitVecs.shtml} FixedSizeBitVecs
+     theory}, as well as some solver commands. *)
+
 open Simple_smt
 
-(* Float types and constants *)
-(* Helpful: https://smt-lib.org/theories-FloatingPoint.shtml *)
+(** {2 Rounding Modes} *)
 
 module RoundingMode = struct
-  type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
+  type t =
+    | NearestTiesToEven  (** Round to nearest, ties to even (RNE) *)
+    | NearestTiesToAway  (** Round to nearest, ties away from zero (RNA) *)
+    | Ceil  (** Round toward positive infinity (RTP) *)
+    | Floor  (** Round toward negative infinity (RTN) *)
+    | Truncate  (** Round toward zero (RTZ) *)
   [@@deriving eq, show { with_path = false }, ord]
 
   let to_sexp = function
@@ -13,7 +25,13 @@ module RoundingMode = struct
     | Ceil -> atom "RTP"
     | Floor -> atom "RTN"
     | Truncate -> atom "RTZ"
+
+  (** Equal toquivalent to NearestTiesToAway; default mode for FloatingPointe
+      operations. *)
+  let default = to_sexp NearestTiesToAway
 end
+
+(** {1 FloatingPoint} *)
 
 (** [float_shape n] is the shape of a IEEE float of a given size in bits.
     Returns a two element list [[exp, mant]], where [exp] is the number of
@@ -28,12 +46,22 @@ let float_shape = function
   | 128 -> [ 15; 113 ]
   | n -> Fmt.failwith "Unsupported float size: %d" n
 
-let rm = atom "RNA" (* equivalent to roundNearestTiesToAway; default mode *)
+(** SMT-LIB Float16 type. *)
 let t_f16 = atom "Float16"
+
+(** SMT-LIB Float32 type. *)
 let t_f32 = atom "Float32"
+
+(** SMT-LIB Float64 type. *)
 let t_f64 = atom "Float64"
+
+(** SMT-LIB Float128 type. *)
 let t_f128 = atom "Float128"
 
+(** [f32_k f] creates a Float32 constant from an OCaml float [f].
+
+    Directly encodes the IEEE 754 binary32 representation. This may incur some
+    loss of precision. *)
 let f32_k f =
   let bin = Int32.bits_of_float f in
   (* a Float32 has 8 exponent bits, 23 explicit mantissa bits *)
@@ -45,6 +73,10 @@ let f32_k f =
       bv_nat_bin 23 (Z.of_int32 @@ Int32.logand bin 0x7fffffl);
     ]
 
+(** [f64_k f] creates a Float64 constant from an OCaml float [f].
+
+    Directly encodes the IEEE 754 binary64 representation, so no precision is
+    lost. *)
 let f64_k f =
   let bin = Int64.bits_of_float f in
   (* a Float64 has 11 exponent bits, 52 mantissa bits, with a 53rd implicit 1 *)
@@ -56,32 +88,59 @@ let f64_k f =
       bv_nat_bin 52 (Z.of_int64 @@ Int64.logand bin 0xfffffffffffffL);
     ]
 
+(** [f128_k f] creates a Float128 constant from OCaml float [f].
+
+    The value is first converted into a Float64, and we then use the [to_fp]
+    SMT-LIB function to convert it to a Float128, using [RoundingMode.default].
+    Necessarily implies a loss of precision. *)
 let f128_k f =
-  (* a Float128 has 15 exponent bits, 112 explicit mantissa bits *)
-  (* we let Z3 handle the conversion *)
   let f64 = f64_k f in
   let fam = ifam "to_fp" (float_shape 128) in
-  app fam [ rm; f64 ]
+  app fam [ RoundingMode.default; f64 ]
 
+(** [f16_k f] creates a Float16 constant from OCaml float [f].
+
+    The value is first converted into a Float32, and we then use the [to_fp]
+    SMT-LIB function to convert it to a Float16, using [RoundingMode.default].
+    Necessarily implies a loss of precision. *)
 let f16_k f =
-  (* a Float16 has 5 exponent bits, 10 explicit mantissa bits *)
-  (* we let Z3 handle the conversion *)
   let f32 = f32_k f in
   let fam = ifam "to_fp" (float_shape 16) in
-  app fam [ rm; f32 ]
+  app fam [ RoundingMode.default; f32 ]
 
-(* Float ops *)
-
+(** [fp_abs f] returns the absolute value of [f]. *)
 let fp_abs f = app_ "fp.abs" [ f ]
+
+(** [fp_eq f1 f2] returns true if [f1] equals [f2] (IEEE 754 equality). *)
 let fp_eq f1 f2 = app_ "fp.eq" [ f1; f2 ]
+
+(** [fp_leq f1 f2] returns true if [f1 <= f2]. *)
 let fp_leq f1 f2 = app_ "fp.leq" [ f1; f2 ]
+
+(** [fp_lt f1 f2] returns true if [f1 < f2]. *)
 let fp_lt f1 f2 = app_ "fp.lt" [ f1; f2 ]
-let fp_add f1 f2 = app_ "fp.add" [ rm; f1; f2 ]
-let fp_sub f1 f2 = app_ "fp.sub" [ rm; f1; f2 ]
-let fp_mul f1 f2 = app_ "fp.mul" [ rm; f1; f2 ]
-let fp_div f1 f2 = app_ "fp.div" [ rm; f1; f2 ]
+
+(** [fp_add f1 f2] returns [f1 + f2] using the default rounding mode (see
+    [RoundingMode.default]). *)
+let fp_add f1 f2 = app_ "fp.add" [ RoundingMode.default; f1; f2 ]
+
+(** [fp_sub f1 f2] returns [f1 - f2] using the default rounding mode (see
+    [RoundingMode.default]). *)
+let fp_sub f1 f2 = app_ "fp.sub" [ RoundingMode.default; f1; f2 ]
+
+(** [fp_mul f1 f2] returns [f1 * f2] using the default rounding mode (see
+    [RoundingMode.default]). *)
+let fp_mul f1 f2 = app_ "fp.mul" [ RoundingMode.default; f1; f2 ]
+
+(** [fp_div f1 f2] returns [f1 / f2] using the default rounding mode (see
+    [RoundingMode.default]). *)
+let fp_div f1 f2 = app_ "fp.div" [ RoundingMode.default; f1; f2 ]
+
+(** [fp_rem f1 f2] returns [f1 % f2] (no rounding mode is involved here). *)
 let fp_rem f1 f2 = app_ "fp.rem" [ f1; f2 ]
 
+(** [fp_is fc f] tests if [f] belongs to floating-point class [fc] (which is of
+    OCaml's builtin [fpclass] type).*)
 let fp_is (fc : fpclass) f =
   match fc with
   | FP_normal -> app_ "fp.isNormal" [ f ]
@@ -90,40 +149,71 @@ let fp_is (fc : fpclass) f =
   | FP_infinite -> app_ "fp.isInfinite" [ f ]
   | FP_nan -> app_ "fp.isNaN" [ f ]
 
+(** [fp_round rm f] rounds [f] to an integer using rounding mode [rm]. *)
 let fp_round (rm : RoundingMode.t) f =
   app_ "fp.roundToIntegral" [ RoundingMode.to_sexp rm; f ]
 
-(* Float{Of,To}Bv *)
+(** {1 FloatingPoint - BitVec conversions} *)
 
+(** [float_of_bv size bv] interprets bitvector [bv] as a float of [size] bits.
+    [size] must be one of 16, 32, 64 or 128.
+
+    This is a bitwise reinterpretation, not a numeric conversion. *)
 let float_of_bv size bv = app (ifam "to_fp" (float_shape size)) [ bv ]
 
+(** [float_of_ubv rm size bv] converts unsigned bitvector [bv] to a float, with
+    rounding mode [rm]. [size] must be one of 16, 32, 64 or 128. *)
 let float_of_ubv rm size bv =
   app (ifam "to_fp_unsigned" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
 
+(** [float_of_ubv rm size bv] converts signed bitvector [bv] to a float, with
+    rounding mode [rm]. [size] must be one of 16, 32, 64 or 128. *)
 let float_of_sbv rm size bv =
   app (ifam "to_fp" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
 
+(** [ubv_of_float rm size f] converts float [f] to an unsigned bitvector of
+    [size] bits, with rounding mode [rm]. This is a numeric conversion, not a
+    bitwise reinterpretation. If [f] is out of range for the target bitvector,
+    or NaN or inf, the result is undefined. *)
 let ubv_of_float rm n f =
   app (ifam "fp.to_ubv" [ n ]) [ RoundingMode.to_sexp rm; f ]
 
+(** [ubv_of_float rm size f] converts float [f] to a signed bitvector of [size]
+    bits, with rounding mode [rm]. This is a numeric conversion, not a bitwise
+    reinterpretation. If [f] is out of range for the target bitvector, or NaN or
+    inf, the result is undefined. *)
 let sbv_of_float rm n f =
   app (ifam "fp.to_sbv" [ n ]) [ RoundingMode.to_sexp rm; f ]
 
-(* Int{Of,To}Bv *)
+(** {1 Int - BitVec conversions} *)
 
+(** [int_of_bv signed bv] converts bitvector [bv] to an integer. If [signed] is
+    true, [bv] is interpreted as a signed bitvector; otherwise, it is
+    interpreted as unsigned. *)
 let int_of_bv signed bv =
   if signed then app_ "sbv_to_int" [ bv ] else app_ "ubv_to_int" [ bv ]
 
+(** [bv_of_int size n] converts integer [n] to a bitvector of [size] bits. *)
 let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]
 
-(* BitVector overflow operators *)
+(** {1 BitVec} *)
 
+(** [bv_nego x] is true if negating [x] would overflow (signed). *)
 let bv_nego x = app_ "bvnego" [ x ]
+
+(** [bv_uaddo l r] returns true if [l + r] would overflow (unsigned). *)
 let bv_uaddo l r = app_ "bvuaddo" [ l; r ]
+
+(** [bv_saddo l r] returns true if [l + r] would overflow (signed). *)
 let bv_saddo l r = app_ "bvsaddo" [ l; r ]
+
+(** [bv_umulo l r] returns true if [l * r] would overflow (unsigned). *)
 let bv_umulo l r = app_ "bvumulo" [ l; r ]
+
+(** [bv_umulo l r] returns true if [l * r] would overflow (signed). *)
 let bv_smulo l r = app_ "bvsmulo" [ l; r ]
 
-(* Solver commands *)
+(** {1 Commands} *)
 
+(** SMT-LIB [(reset)] command to reset the solver state. *)
 let reset = simple_command [ "reset" ]
