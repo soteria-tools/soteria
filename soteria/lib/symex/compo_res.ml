@@ -5,7 +5,7 @@
 
     When performing a function call, the current state may not contain all
     resources needed by the callee. Rather than immediately failing, we can
-    infer what's missing (the "frame") and continue analysis.
+    infer what's missing (the "anti-frame") and continue analysis.
 
     {b Three Cases}:
     - {b Ok}: Operation succeeded, resources matched
