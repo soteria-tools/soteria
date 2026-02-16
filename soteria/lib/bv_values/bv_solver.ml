@@ -3,6 +3,7 @@ open Logs.Import
 module Var = Svalue.Var
 
 let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
+  let open Svalue in
   let simplify = simplify ~trivial_truthiness ~fallback in
   match v.node.kind with
   | Bool _ | BitVec _ | Float _ -> v
@@ -473,7 +474,8 @@ struct
           let values = Var.Map.find v bindings in
           let index = i mod Array.length values in
           match values.(index) with
-          | { node = { kind = Var var; ty }; _ } as v -> eval_var v var ty
+          | Svalue.{ node = { kind = Var var; ty }; _ } as v ->
+              eval_var v var ty
           | v -> v
         in
         let res = Eval.eval ~eval_var to_check in
@@ -537,7 +539,7 @@ struct
 end
 
 open Analyses
-module Analysis = Merge (Interval) (Equality)
+module Analysis = Merge (Interval) (Equality (ValueEstimator))
 module Z3 = Solvers.Z3.Make (Encoding)
 module Z3_incremental_solver = Make_incremental (Analysis) (Z3)
 module Z3_solver = Make (Analysis) (Z3)

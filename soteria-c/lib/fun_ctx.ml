@@ -53,7 +53,7 @@ let decay_fn_sym sym t =
 let get_sym sv t =
   let res =
     match Typed.kind sv with
-    | BitVec z -> Bidirectional_map.get_sym z t.bmap
+    | Svalue.BitVec z -> Bidirectional_map.get_sym z t.bmap
     | _ -> None
   in
   Csymex.of_opt_not_impl ~msg:"Could not resolve function" @@ res

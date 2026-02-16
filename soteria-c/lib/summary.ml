@@ -160,7 +160,7 @@ let prune (summary : after_exec t) : pruned t =
      from all variables of [e1] to all variables of [e2] *)
   ListLabels.iter summary.pc ~f:(fun v ->
       match Typed.kind v with
-      | Binop (Eq, el, er) ->
+      | Svalue.Binop (Eq, el, er) ->
           (* We make the second iterator peristent to avoid going over the
              structure too many times if there are many *)
           let r_iter = Iter.persistent_lazy (Svalue.iter_vars er) in

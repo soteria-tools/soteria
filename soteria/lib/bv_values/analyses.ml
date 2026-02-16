@@ -1,6 +1,6 @@
-open Symex
 open Soteria_std
 open Svalue.Infix
+open Svalue
 
 (* let log = Logs.L.warn *)
 let log _ = ()
@@ -538,7 +538,37 @@ module Interval : S = struct
       st
 end
 
-module Equality : S = struct
+module type ValueEstimator = sig
+  val cost : Svalue.t -> int
+end
+
+module ValueEstimator : ValueEstimator = struct
+  let rec cost (v : Svalue.t) : int =
+    match v.node.kind with
+    | Binop (op, l, r) -> cost_binop op + cost l + cost r
+    | Unop (op, v) -> cost_unop op + cost v
+    | Ite (i, t, e) -> cost i + cost t + cost e
+    | Nop (_, vs) -> costs vs
+    | Var _ -> 3
+    | Float _ -> 2
+    | Seq vs -> costs vs
+    | Ptr _ | Bool _ | BitVec _ -> 1
+    (* What should be the default cost, for extended nodes? *)
+    | _ -> 1
+
+  and costs vs = List.fold_left (fun acc v -> acc + cost v) 0 vs
+
+  and cost_binop : Svalue.Binop.t -> int = function
+    | FAdd | FSub | FMul | FDiv | FEq | FLt | FLeq -> 3
+    | _ -> 1
+
+  and cost_unop : Svalue.Unop.t -> int = function
+    | FRound _ | FIs _ -> 5
+    | BvOfFloat _ | FloatOfBv _ -> 4
+    | _ -> 1
+end
+
+module Equality (ValueEstimator : ValueEstimator) : S = struct
   module UnionFind = UnionFind.Make (UnionFind.StoreMap)
 
   module VMap = PatriciaTree.MakeMap (struct
@@ -558,28 +588,6 @@ module Equality : S = struct
     let uf, st = Dynarray.get_last d in
     Dynarray.add_last d (UnionFind.copy uf, st)
 
-  let rec cost (v : Svalue.t) : int =
-    match v.node.kind with
-    | Binop (op, l, r) -> cost_binop op + cost l + cost r
-    | Unop (op, v) -> cost_unop op + cost v
-    | Ite (i, t, e) -> cost i + cost t + cost e
-    | Nop (_, vs) -> costs vs
-    | Var _ -> 3
-    | Float _ -> 2
-    | Seq vs -> costs vs
-    | Ptr _ | Bool _ | BitVec _ -> 1
-
-  and costs vs = List.fold_left (fun acc v -> acc + cost v) 0 vs
-
-  and cost_binop : Svalue.Binop.t -> int = function
-    | FAdd | FSub | FMul | FDiv | FEq | FLt | FLeq -> 3
-    | _ -> 1
-
-  and cost_unop : Svalue.Unop.t -> int = function
-    | FRound _ | FIs _ -> 5
-    | BvOfFloat _ | FloatOfBv _ -> 4
-    | _ -> 1
-
   let get_or_make v ((uf, refs) as st) =
     match VMap.find_opt v refs with
     | None ->
@@ -591,7 +599,10 @@ module Equality : S = struct
   let merge v1 v2 (uf, _) =
     ignore
     @@ UnionFind.merge uf
-         (fun v1 v2 -> if cost v1 > cost v2 then v2 else v1)
+         (fun v1 v2 ->
+           let c1 = ValueEstimator.cost v1 in
+           let c2 = ValueEstimator.cost v2 in
+           if c1 > c2 then v2 else v1)
          v1 v2
 
   let find_cheaper_opt v (uf, refs) =

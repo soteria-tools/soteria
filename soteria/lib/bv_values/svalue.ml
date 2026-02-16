@@ -192,7 +192,12 @@ let pp_hash_consed pp_node ft t = pp_node ft t.node
 let equal_hash_consed _ t1 t2 = Int.equal t1.tag t2.tag
 let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
 
-type t_kind =
+type t_kind = ..
+
+type t_node = { kind : t_kind; ty : ty }
+and t = t_node hash_consed
+
+type t_kind +=
   | Var of Var.t
   | Bool of bool
   | Float of string
@@ -203,9 +208,6 @@ type t_kind =
   | Binop of Binop.t * t * t
   | Nop of Nop.t * t list
   | Ite of t * t * t
-
-and t_node = { kind : t_kind; ty : ty }
-and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 
 let hash t = t.tag
 let kind t = t.node.kind
@@ -225,14 +227,13 @@ let iter =
         aux f c;
         aux f t;
         aux f e
+    | _ -> failwith "Bv_values.iter: unhandled kind"
   in
   Fun.flip aux
 
 let iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
   iter sv @@ fun sv ->
   match sv.node.kind with Var v -> f (v, sv.node.ty) | _ -> ()
-
-let pp_full ft t = pp_t_node ft t.node
 
 let rec pp ft t =
   let open Fmt in
@@ -270,6 +271,7 @@ let rec pp ft t =
       match range with
       | Some (min, max) -> pf ft "%a(V|%d-%d|)" Nop.pp op min max
       | None -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l)
+  | _ -> failwith "Bv_values.pp: unhandled kind"
 
 let[@inline] equal a b = Int.equal a.tag b.tag
 let[@inline] compare a b = Int.compare a.tag b.tag
@@ -283,23 +285,34 @@ let rec sure_neq a b =
   | Ptr (la, oa), Ptr (lb, ob) -> sure_neq la lb || sure_neq oa ob
   | _ -> false
 
+(** Exports a way to register a hash function for modules that want to extend
+    the hashcons function. *)
+module Hash = struct
+  let extensible_hash =
+    ref (fun { kind; ty } ->
+        (* We could do a lot more efficient in terms of hashing probably, if
+           this ever becomes a bottleneck. *)
+        let hty = Hashtbl.hash ty in
+        match kind with
+        | Var _ | Bool _ | Float _ | BitVec _ -> Hashtbl.hash (kind, hty)
+        | Ptr (l, r) -> Hashtbl.hash (l.tag, r.tag, hty)
+        | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.tag) l, hty)
+        | Unop (op, v) -> Hashtbl.hash (op, v.tag, hty)
+        | Binop (op, l, r) -> Hashtbl.hash (op, l.tag, r.tag, hty)
+        | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
+        | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
+        | _ -> failwith "Bv_values.Hash.extensible_hash: unhandled kind")
+
+  (** Registers a hash function, taking as input the previously-defined hash
+      function. It must be called as a default case, to ensure extensability. *)
+  let register_hash f = extensible_hash := f !extensible_hash
+end
+
 module Hcons = Hc.Make (struct
   type t = t_node
 
-  let equal = equal_t_node
-
-  (* We could do a lot more efficient in terms of hashing probably, if this ever
-     becomes a bottleneck. *)
-  let hash { kind; ty } =
-    let hty = Hashtbl.hash ty in
-    match kind with
-    | Var _ | Bool _ | Float _ | BitVec _ -> Hashtbl.hash (kind, hty)
-    | Ptr (l, r) -> Hashtbl.hash (l.tag, r.tag, hty)
-    | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.tag) l, hty)
-    | Unop (op, v) -> Hashtbl.hash (op, v.tag, hty)
-    | Binop (op, l, r) -> Hashtbl.hash (op, l.tag, r.tag, hty)
-    | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
-    | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
+  let equal = ( = )
+  let hash v = !Hash.extensible_hash v
 end)
 
 let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
@@ -362,6 +375,7 @@ let rec subst subst_var sv =
       let e' = subst subst_var e in
       if equal c c' && equal t t' && equal e e' then sv
       else Ite (c', t', e') <| sv.node.ty
+  | _ -> failwith "Bv_values.subst: unhandled kind"
 
 (** {2 Operator declarations} *)
 

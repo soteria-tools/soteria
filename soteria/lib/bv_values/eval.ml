@@ -81,6 +81,7 @@ let rec eval ~force ~eval_var (x : t) : t =
       let l, changed = List.map_changed eval l in
       if (not force) && not changed then x
       else Svalue.SSeq.mk ~seq_ty:x.node.ty l
+  | _ -> failwith "Eval.eval: unhandled case"
 
 (** Evaluates an expression; will call [eval_var] on each [Var] encountered. If
     evaluation errors (e.g. from a division by zero), gives up and returns the

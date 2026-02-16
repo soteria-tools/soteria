@@ -93,14 +93,16 @@ let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | BvConcat -> bv_concat
 
 let rec encode_value (v : Svalue.t) =
+  let open Svalue in
   match v.node.kind with
   | Var v -> atom (Svalue.Var.to_string v)
   | Float f -> (
       match Svalue.precision_of_f v.node.ty with
-      | F16 -> f16_k @@ Float.of_string f
-      | F32 -> f32_k @@ Float.of_string f
-      | F64 -> f64_k @@ Float.of_string f
-      | F128 -> f128_k @@ Float.of_string f)
+      (* HACK: this is horrible for precision *)
+      | F16 -> f16_k @@ Stdlib.Float.of_string f
+      | F32 -> f32_k @@ Stdlib.Float.of_string f
+      | F64 -> f64_k @@ Stdlib.Float.of_string f
+      | F128 -> f128_k @@ Stdlib.Float.of_string f)
   | Bool b -> bool_k b
   | BitVec z ->
       let n = Svalue.size_of v.node.ty in
@@ -123,6 +125,7 @@ let rec encode_value (v : Svalue.t) =
   | Nop (Distinct, vs) ->
       let vs = List.map encode_value_memo vs in
       distinct vs
+  | _ -> failwith "Encoding.encode_value: unhandled case"
 
 and encode_value_memo v =
   match Hashtbl.Hint.find_opt memo_encode_value_tbl v.Hc.tag with
