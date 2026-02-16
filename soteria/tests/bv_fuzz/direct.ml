@@ -169,16 +169,16 @@ let collect_checked_assumptions (v : t) : t list =
     | Binop (Sub { checked = true }, v1, v2) ->
         Dynarray.append_list assumptions
           [
-            Bool.not_ (BitVec.sub_overflows ~signed:false v1 (BitVec.neg v2));
-            Bool.not_ (BitVec.sub_overflows ~signed:true v1 (BitVec.neg v2));
+            Bool.not_ (BitVec.sub_overflows ~signed:false v1 v2);
+            Bool.not_ (BitVec.sub_overflows ~signed:true v1 v2);
           ];
         go v1;
         go v2
     | Binop (Mul { checked = true }, v1, v2) ->
         Dynarray.append_list assumptions
           [
-            Bool.not_ (BitVec.mul_overflows ~signed:false v1 (BitVec.neg v2));
-            Bool.not_ (BitVec.mul_overflows ~signed:true v1 (BitVec.neg v2));
+            Bool.not_ (BitVec.mul_overflows ~signed:false v1 v2);
+            Bool.not_ (BitVec.mul_overflows ~signed:true v1 v2);
           ];
         go v1;
         go v2
