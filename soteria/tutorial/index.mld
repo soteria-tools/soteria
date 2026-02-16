@@ -8,14 +8,20 @@
 
 {2 Library}
 
-{!modules: Soteria}
+Core components of Soteria, enabling symbolic execution, solver-interaction, user-friendly reporting, and more.
+
 {!modules:
   Soteria.Symex
   Soteria.Sym_states
+  Soteria.Solvers
   Soteria.Logs
-  Soteria.Tiny_values
-  Soteria.Bv_values
   Soteria.Terminal
   Soteria.Stats
   Soteria.Config
   Soteria.Soteria_std}
+
+The two built-in symbolic value implementations, to get started; you can also define your own!
+
+{!modules:
+  Soteria.Tiny_values
+  Soteria.Bv_values}

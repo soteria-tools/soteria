@@ -1,3 +1,5 @@
+(** Tracking of statistics across symbolic execution. *)
+
 open Soteria_std.Hashtbl
 
 (** {2 General definitions} *)
