@@ -1593,7 +1593,6 @@ and BitVec : BitVec = struct
     | BitVec l, BitVec r ->
         Bool.bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
     | _ when equal v1 v2 -> Bool.v_false
-    (* START POSSIBLY-WRONG SIMPL *)
     | ( BitVec bv_v1,
         ( Binop
             ( Add { checked = true },
@@ -1604,6 +1603,8 @@ and BitVec : BitVec = struct
               x,
               ({ node = { kind = BitVec bv_r; _ }; _ } as r) ) ) ) ->
         if Stdlib.not signed && Z.lt bv_v1 bv_r then Bool.v_true
+        else if overflows ~signed bits bv_v1 bv_r Z.( - ) then
+          Binop (Lt signed, v1, v2) <| TBool
         else lt ~signed (sub ~checked:true v1 r) x
     | ( ( Binop
             ( Add { checked = true },
@@ -1615,8 +1616,9 @@ and BitVec : BitVec = struct
               ({ node = { kind = BitVec bv_l; _ }; _ } as l) ) ),
         BitVec bv_v2 ) ->
         if Stdlib.not signed && Z.lt bv_v2 bv_l then Bool.v_false
+        else if overflows ~signed bits bv_v2 bv_l Z.( - ) then
+          Binop (Lt signed, v1, v2) <| TBool
         else lt ~signed x (sub ~checked:true v2 l)
-          (* END POSSIBLY-WRONG SIMPL *)
     | _, Binop (Add { checked = true }, v2, v2')
       when equal v1 v2 || equal v1 v2' ->
         (* a < a + b when + doesn't overflow is equivalent to 0 < b *)
@@ -1799,7 +1801,6 @@ and BitVec : BitVec = struct
     | _ when equal v1 v2 -> Bool.v_true
     | BitVec l, BitVec r ->
         Bool.bool @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
-        (* START POSSIBLY WRONG SIMPL *)
     | ( BitVec bv_v1,
         ( Binop
             ( Add { checked = true },
@@ -1810,6 +1811,8 @@ and BitVec : BitVec = struct
               x,
               ({ node = { kind = BitVec bv_r; _ }; _ } as r) ) ) ) ->
         if Stdlib.not signed && Z.lt bv_v1 bv_r then Bool.v_true
+        else if overflows ~signed bits bv_v1 bv_r Z.( - ) then
+          Binop (Leq signed, v1, v2) <| TBool
         else leq ~signed (sub ~checked:true v1 r) x
     | ( ( Binop
             ( Add { checked = true },
@@ -1821,6 +1824,8 @@ and BitVec : BitVec = struct
               ({ node = { kind = BitVec bv_l; _ }; _ } as l) ) ),
         BitVec bv_v2 ) ->
         if Stdlib.not signed && Z.lt bv_v2 bv_l then Bool.v_false
+        else if overflows ~signed bits bv_v2 bv_l Z.( - ) then
+          Binop (Leq signed, v1, v2) <| TBool
         else leq ~signed x (sub ~checked:true v2 l)
     | ( ( Binop
             ( Add { checked = true },
@@ -1846,7 +1851,6 @@ and BitVec : BitVec = struct
         if Z.geq int_l int_r then
           leq ~signed (add ~checked:true y (sub ~checked:true l r)) x
         else leq ~signed y (add ~checked:true x (sub ~checked:true r l))
-        (* END POSSIBLY WRONG SIMPL *)
     | _, Binop (Add { checked = true }, v2, v2')
       when equal v1 v2 || equal v1 v2' ->
         (* a <= b + a when + doesn't overflow is equivalent to 0 <= b *)
