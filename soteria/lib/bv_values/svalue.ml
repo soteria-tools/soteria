@@ -626,20 +626,28 @@ module rec Bool : Bool = struct
         else if Z.(divisible n m) then
           sem_eq x (BitVec.mk (size_of x.node.ty) Z.(n / m))
         else v_false
-    | ( Binop (Mul _, { node = { kind = BitVec a; _ }; _ }, b),
-        Binop (Mul _, { node = { kind = BitVec c; _ }; _ }, d) )
+    (* THE NEXT 4 PATTERNS WERE MARKED BY CLAUDE AS INVALID WITH CHECKED=TRUE.
+       Thinking about it, I don't think that's possible, as [cheched] only adds
+       constraints, and therefore something cannot be sat with it when it's
+       unsat without. So I think that's wrong. *)
+    | ( Binop (Mul { checked = false }, { node = { kind = BitVec a; _ }; _ }, b),
+        Binop (Mul { checked = false }, { node = { kind = BitVec c; _ }; _ }, d)
+      )
       when Z.(equal a c && Stdlib.not (equal a zero)) ->
         sem_eq b d
-    | ( Binop (Mul _, b, { node = { kind = BitVec a; _ }; _ }),
-        Binop (Mul _, d, { node = { kind = BitVec c; _ }; _ }) )
+    | ( Binop (Mul { checked = false }, b, { node = { kind = BitVec a; _ }; _ }),
+        Binop (Mul { checked = false }, d, { node = { kind = BitVec c; _ }; _ })
+      )
       when Z.(equal a c && Stdlib.not (equal a zero)) ->
         sem_eq b d
-    | ( Binop (Mul _, { node = { kind = BitVec a; _ }; _ }, b),
-        Binop (Mul _, d, { node = { kind = BitVec c; _ }; _ }) )
+    | ( Binop (Mul { checked = false }, { node = { kind = BitVec a; _ }; _ }, b),
+        Binop (Mul { checked = false }, d, { node = { kind = BitVec c; _ }; _ })
+      )
       when Z.(equal a c && Stdlib.not (equal a zero)) ->
         sem_eq b d
-    | ( Binop (Mul _, b, { node = { kind = BitVec a; _ }; _ }),
-        Binop (Mul _, { node = { kind = BitVec c; _ }; _ }, d) )
+    | ( Binop (Mul { checked = false }, b, { node = { kind = BitVec a; _ }; _ }),
+        Binop (Mul { checked = false }, { node = { kind = BitVec c; _ }; _ }, d)
+      )
       when Z.(equal a c && Stdlib.not (equal a zero)) ->
         sem_eq b d (* Bitvectors *)
     (* 0 == L | R ==> 0 == L && 0 == R, splitting is better for the PC *)
@@ -1585,6 +1593,7 @@ and BitVec : BitVec = struct
     | BitVec l, BitVec r ->
         Bool.bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
     | _ when equal v1 v2 -> Bool.v_false
+    (* START POSSIBLY-WRONG SIMPL *)
     | ( BitVec bv_v1,
         ( Binop
             ( Add { checked = true },
@@ -1607,11 +1616,13 @@ and BitVec : BitVec = struct
         BitVec bv_v2 ) ->
         if Stdlib.not signed && Z.lt bv_v2 bv_l then Bool.v_false
         else lt ~signed x (sub ~checked:true v2 l)
+          (* END POSSIBLY-WRONG SIMPL *)
     | _, Binop (Add { checked = true }, v2, v2')
       when equal v1 v2 || equal v1 v2' ->
         (* a < a + b when + doesn't overflow is equivalent to 0 < b *)
         let b = if equal v1 v2 then v2' else v2 in
         lt ~signed (zero bits) b
+        (* START POSSIBLY-WRONG SIMPL *)
     | Binop (Add { checked = true }, v1, v1'), _
       when equal v2 v1 || equal v2 v1' ->
         (* a + b < a when + doesn't overflow is equivalent to b < 0 *)
@@ -1641,6 +1652,7 @@ and BitVec : BitVec = struct
         if Z.geq int_l int_r then
           lt ~signed (add ~checked:true y (sub ~checked:true l r)) x
         else lt ~signed y (add ~checked:true x (sub ~checked:true r l))
+        (* END POSSIBLY-WRONG SIMPL *)
     | _, BitVec x when Stdlib.not signed && Z.(equal x one) ->
         (* unsigned x < 1 is x == 0 *)
         Bool.sem_eq v1 (zero bits)
@@ -1770,12 +1782,14 @@ and BitVec : BitVec = struct
         else if Z.lt c1 Z.zero then leq ~signed (div ~signed v2 v1) x
         else leq ~signed x (div ~signed v2 v1)
     | ( Binop (Mul { checked = true }, l1, r1),
-        Binop (Mul { checked = true }, l2, r2) )
-      when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
-        if equal l1 l2 then lt ~signed r1 r2
-        else if equal l1 r2 then lt ~signed r1 l2
-        else if equal r1 l2 then lt ~signed l1 r2
-        else lt ~signed l1 l2
+        Binop (Mul { checked = true }, l2, r2) ) ->
+        (* Can only cancel common factor if it's provably non-zero *)
+        let is_nonzero v = sure_neq v (zero (size_of v.node.ty)) in
+        if equal l1 l2 && is_nonzero l1 then lt ~signed r1 r2
+        else if equal l1 r2 && is_nonzero l1 then lt ~signed r1 l2
+        else if equal r1 l2 && is_nonzero r1 then lt ~signed l1 r2
+        else if equal r1 r2 && is_nonzero r1 then lt ~signed l1 l2
+        else Binop (Lt signed, v1, v2) <| TBool
     | _ -> Binop (Lt signed, v1, v2) <| TBool
 
   and leq ~signed v1 v2 =
@@ -1785,6 +1799,7 @@ and BitVec : BitVec = struct
     | _ when equal v1 v2 -> Bool.v_true
     | BitVec l, BitVec r ->
         Bool.bool @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
+        (* START POSSIBLY WRONG SIMPL *)
     | ( BitVec bv_v1,
         ( Binop
             ( Add { checked = true },
@@ -1831,6 +1846,7 @@ and BitVec : BitVec = struct
         if Z.geq int_l int_r then
           leq ~signed (add ~checked:true y (sub ~checked:true l r)) x
         else leq ~signed y (add ~checked:true x (sub ~checked:true r l))
+        (* END POSSIBLY WRONG SIMPL *)
     | _, Binop (Add { checked = true }, v2, v2')
       when equal v1 v2 || equal v1 v2' ->
         (* a <= b + a when + doesn't overflow is equivalent to 0 <= b *)
@@ -1943,12 +1959,14 @@ and BitVec : BitVec = struct
         else if Z.lt c2 Z.zero then lt ~signed x (div ~signed v2 v1)
         else leq ~signed x (div ~signed v2 v1)
     | ( Binop (Mul { checked = true }, l1, r1),
-        Binop (Mul { checked = true }, l2, r2) )
-      when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
-        if equal l1 l2 then leq ~signed r1 r2
-        else if equal l1 r2 then leq ~signed r1 l2
-        else if equal r1 l2 then leq ~signed l1 r2
-        else leq ~signed l1 l2
+        Binop (Mul { checked = true }, l2, r2) ) ->
+        (* Can only cancel common factor if it's provably non-zero *)
+        let is_nonzero v = sure_neq v (zero (size_of v.node.ty)) in
+        if equal l1 l2 && is_nonzero l1 then leq ~signed r1 r2
+        else if equal l1 r2 && is_nonzero l1 then leq ~signed r1 l2
+        else if equal r1 l2 && is_nonzero r1 then leq ~signed l1 r2
+        else if equal r1 r2 && is_nonzero r1 then leq ~signed l1 l2
+        else Binop (Leq signed, v1, v2) <| TBool
     | Binop (Div false, _, { node = { kind = BitVec d; _ }; _ }), BitVec n
       when Stdlib.not signed && Z.(gt (mul n d) (max_for false bits)) ->
         Bool.v_true
