@@ -10,4 +10,5 @@ module type S = sig
   val push : t -> int -> unit
   val pop : t -> int -> unit
   val reset : t -> unit
+  val get_model : t -> Sexplib.Sexp.t option
 end

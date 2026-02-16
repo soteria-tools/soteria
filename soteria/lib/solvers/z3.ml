@@ -155,4 +155,6 @@ module Make (Value : Value) :
   let reset solver =
     ack_command solver Smt_utils.reset;
     !initialize_solver solver
+
+  let get_model solver = try Some (Simple_smt.get_model solver) with _ -> None
 end

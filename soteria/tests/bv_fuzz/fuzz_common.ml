@@ -36,13 +36,10 @@ let pp_pair fmt (smart, direct) =
     Returns [true] if equivalent (Z3 says unsat for not(smart = direct)), or
     [false] if a counterexample exists (bug found). Timeouts are treated as
     pass. *)
-let z3_check_equivalent (smart : Svalue.t) (direct : Svalue.t) : bool =
+let z3_check_equivalent_raw ~vars_d ~assumptions (smart : Svalue.t)
+    (direct : Svalue.t) : Soteria.Symex.Solver_result.t =
   Soteria.Stats.As_ctx.with_stats_ignored () @@ fun () ->
   Z3_raw.reset solver;
-  (* Collect and declare all variables from both expressions *)
-  let vars_d = collect_vars direct in
-  (* Collect all assumptions made by checked operators *)
-  let assumptions : Svalue.t list = Direct.collect_checked_assumptions direct in
   (* The vars of the simplified version should be a subset of the vars of the
      raw version. *)
   assert (check_no_new_vars vars_d smart);
@@ -64,7 +61,14 @@ let z3_check_equivalent (smart : Svalue.t) (direct : Svalue.t) : bool =
   let eq_expr = Svalue.(Binop (Eq, smart, direct) <| TBool) in
   let neq_expr = Svalue.(Unop (Not, eq_expr) <| TBool) in
   Z3_raw.add_constraint solver neq_expr;
-  match Z3_raw.check_sat solver with
+  Z3_raw.check_sat solver
+
+let z3_check_equivalent smart direct =
+  (* Collect and declare all variables from both expressions *)
+  let vars_d = collect_vars direct in
+  (* Collect all assumptions made by checked operators *)
+  let assumptions : Svalue.t list = Direct.collect_checked_assumptions direct in
+  match z3_check_equivalent_raw ~vars_d ~assumptions smart direct with
   | Sat -> false
   | Unsat -> true
   | Unknown ->
@@ -72,6 +76,12 @@ let z3_check_equivalent (smart : Svalue.t) (direct : Svalue.t) : bool =
       Format.eprintf "Z3 returned Unknown (timeout?) when checking:@.%a@.@?"
         pp_pair (smart, direct);
       true
+
+let z3_check_with_model ~vars_d ~assumptions start direct =
+  match z3_check_equivalent_raw ~vars_d ~assumptions start direct with
+  | Sat -> Z3_raw.get_model solver
+  | Unknown -> None
+  | Unsat -> failwith "Got SAT then UNSAT for the same question, impossible"
 
 let print_svalue = Fmt.to_to_string Svalue.pp
 
@@ -84,14 +94,20 @@ let print_test d =
   let s = Eval.eval ~force:true d in
   let checks = Direct.collect_checked_assumptions d in
   let pp_checks = Fmt.iter ~sep:Fmt.semi List.iter Svalue.pp in
+  let model = z3_check_with_model ~vars_d:vars ~assumptions:checks s d in
+  let pp_model fmt = function
+    | None -> Format.fprintf fmt "Model unavailable"
+    | Some m -> Fmt.pf fmt "Counterexample model:@,%a" Sexplib.Sexp.pp_hum m
+  in
   Format.asprintf
     "@[<v>full: %a@,\
      simplified: %a@,\
      @[<v 2>with variables:@,\
      %a@]@,\
      @[<v 2>and checks:@,\
-     %a@]@]"
-    Svalue.pp d Svalue.pp s pp_vars vars pp_checks checks
+     %a@]@,\
+     @[<v 2>%a@]@]"
+    Svalue.pp d Svalue.pp s pp_vars vars pp_checks checks pp_model model
 
 let check_smart_eq_direct direct =
   let smart = Eval.eval ~force:true direct in
