@@ -1,3 +1,5 @@
+(** The core of Soteria symbolic execution. *)
+
 open Soteria_std
 open Logs.Import
 open Syntaxes.FunctionWrap
