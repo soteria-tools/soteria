@@ -1,11 +1,11 @@
 (** The interface that SMT solver backends must implement to be used with the
     symbolic execution engine. This signature assumes the solver is mutable.
 
-    This is different from {!Symex.Solver.S}, which represents a solver at a
-    more abstract level (where a solver is broadly a path condition). Here
-    instead, a solver is an interface into an actual SMT-LIB solver, and exposes
-    the usual operations to declare variables, assert values, and check
-    satisfiability. *)
+    This is different from {{!Symex.Solver.Mutable_incremental}Symex.Solver},
+    which represents a solver at a more abstract level (where a solver is
+    broadly a path condition). Here instead, a solver is an interface into an
+    actual SMT-LIB solver, and exposes the usual operations to declare
+    variables, assert values, and check satisfiability. *)
 module type S = sig
   (** The solver state type. *)
   type t
