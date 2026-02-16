@@ -626,28 +626,20 @@ module rec Bool : Bool = struct
         else if Z.(divisible n m) then
           sem_eq x (BitVec.mk (size_of x.node.ty) Z.(n / m))
         else v_false
-    (* THE NEXT 4 PATTERNS WERE MARKED BY CLAUDE AS INVALID WITH CHECKED=TRUE.
-       Thinking about it, I don't think that's possible, as [cheched] only adds
-       constraints, and therefore something cannot be sat with it when it's
-       unsat without. So I think that's wrong. *)
-    | ( Binop (Mul { checked = false }, { node = { kind = BitVec a; _ }; _ }, b),
-        Binop (Mul { checked = false }, { node = { kind = BitVec c; _ }; _ }, d)
-      )
+    | ( Binop (Mul _, { node = { kind = BitVec a; _ }; _ }, b),
+        Binop (Mul _, { node = { kind = BitVec c; _ }; _ }, d) )
       when Z.(equal a c && Stdlib.not (equal a zero)) ->
         sem_eq b d
-    | ( Binop (Mul { checked = false }, b, { node = { kind = BitVec a; _ }; _ }),
-        Binop (Mul { checked = false }, d, { node = { kind = BitVec c; _ }; _ })
-      )
+    | ( Binop (Mul _, b, { node = { kind = BitVec a; _ }; _ }),
+        Binop (Mul _, d, { node = { kind = BitVec c; _ }; _ }) )
       when Z.(equal a c && Stdlib.not (equal a zero)) ->
         sem_eq b d
-    | ( Binop (Mul { checked = false }, { node = { kind = BitVec a; _ }; _ }, b),
-        Binop (Mul { checked = false }, d, { node = { kind = BitVec c; _ }; _ })
-      )
+    | ( Binop (Mul _, { node = { kind = BitVec a; _ }; _ }, b),
+        Binop (Mul _, d, { node = { kind = BitVec c; _ }; _ }) )
       when Z.(equal a c && Stdlib.not (equal a zero)) ->
         sem_eq b d
-    | ( Binop (Mul { checked = false }, b, { node = { kind = BitVec a; _ }; _ }),
-        Binop (Mul { checked = false }, { node = { kind = BitVec c; _ }; _ }, d)
-      )
+    | ( Binop (Mul _, b, { node = { kind = BitVec a; _ }; _ }),
+        Binop (Mul _, { node = { kind = BitVec c; _ }; _ }, d) )
       when Z.(equal a c && Stdlib.not (equal a zero)) ->
         sem_eq b d (* Bitvectors *)
     (* 0 == L | R ==> 0 == L && 0 == R, splitting is better for the PC *)
@@ -1624,7 +1616,6 @@ and BitVec : BitVec = struct
         (* a < a + b when + doesn't overflow is equivalent to 0 < b *)
         let b = if equal v1 v2 then v2' else v2 in
         lt ~signed (zero bits) b
-        (* START POSSIBLY-WRONG SIMPL *)
     | Binop (Add { checked = true }, v1, v1'), _
       when equal v2 v1 || equal v2 v1' ->
         (* a + b < a when + doesn't overflow is equivalent to b < 0 *)
@@ -1652,9 +1643,15 @@ and BitVec : BitVec = struct
         (* we pick the option that will make a positive constant
            (superstition) *)
         if Z.geq int_l int_r then
-          lt ~signed (add ~checked:true y (sub ~checked:true l r)) x
+          (* Check that (l - r) doesn't overflow *)
+          if overflows ~signed bits int_l int_r Z.( - ) then
+            Binop (Lt signed, v1, v2) <| TBool
+          else lt ~signed (add ~checked:true y (sub ~checked:true l r)) x
+        else if
+          (* Check that (r - l) doesn't overflow *)
+          overflows ~signed bits int_r int_l Z.( - )
+        then Binop (Lt signed, v1, v2) <| TBool
         else lt ~signed y (add ~checked:true x (sub ~checked:true r l))
-        (* END POSSIBLY-WRONG SIMPL *)
     | _, BitVec x when Stdlib.not signed && Z.(equal x one) ->
         (* unsigned x < 1 is x == 0 *)
         Bool.sem_eq v1 (zero bits)
@@ -1849,7 +1846,14 @@ and BitVec : BitVec = struct
         (* we pick the option that will make a positive constant
            (superstition) *)
         if Z.geq int_l int_r then
-          leq ~signed (add ~checked:true y (sub ~checked:true l r)) x
+          (* Check that (l - r) doesn't overflow *)
+          if overflows ~signed bits int_l int_r Z.( - ) then
+            Binop (Leq signed, v1, v2) <| TBool
+          else leq ~signed (add ~checked:true y (sub ~checked:true l r)) x
+        else if
+          (* Check that (r - l) doesn't overflow *)
+          overflows ~signed bits int_r int_l Z.( - )
+        then Binop (Leq signed, v1, v2) <| TBool
         else leq ~signed y (add ~checked:true x (sub ~checked:true r l))
     | _, Binop (Add { checked = true }, v2, v2')
       when equal v1 v2 || equal v1 v2' ->
