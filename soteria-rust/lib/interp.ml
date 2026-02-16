@@ -937,7 +937,7 @@ module Make (State : State_intf.S) = struct
             map_env (Store.dealloc local)
         | Uninit | Value _ -> map_env (Store.dealloc local)
         | Dead -> ok ())
-    | Assert { cond; expected; on_failure } -> (
+    | Assert ({ cond; expected; check_kind = _ }, on_failure) -> (
         let* cond = eval_operand cond in
         let cond_int = as_base TBool cond in
         let cond_bool = BV.to_bool cond_int in
@@ -963,9 +963,9 @@ module Make (State : State_intf.S) = struct
           @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
         in
         ok ()
-    | Deinit place ->
-        let* place_ptr = resolve_place_lazy place in
-        uninit_lazy place_ptr place.ty
+    | PlaceMention place ->
+        let* ptr = resolve_place place in
+        State.check_non_dangling ptr place.ty
     | SetDiscriminant (_, _) ->
         not_impl "Unsupported statement: SetDiscriminant"
 
@@ -1124,6 +1124,7 @@ module Make (State : State_intf.S) = struct
             let name = Option.map (Fmt.to_to_string Crate.pp_name) name in
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
+    | TAssert _ -> failwith "Charon desugars assert terminators for us"
 
   and exec_real_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args)
       args =

@@ -48,9 +48,6 @@ KNOWN_ISSUES = {
     "ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
     "Whitespace/main.rs": "Weird double move; maybe moving from a niched value doesn't actually move it?",
     # Miri
-    "fail/dangling_pointers/dangling_pointer_project_underscore_let.rs": "let _ = ... assignments get optimized out",
-    "fail/dangling_pointers/dangling_pointer_project_underscore_let_type_annotation.rs": "let _ = ... assignments get optimized out",
-    "fail/dangling_pointers/dangling_pointer_project_underscore_match.rs": "let _ = ... assignments get optimized out",
     "fail/dangling_pointers/deref_dangling_box.rs": "We don't check for dangling pointers for boxes",
     "fail/dyn-call-trait-mismatch.rs": "We don't check the validity of dyn calls",
     "fail/dyn-upcast-nop-wrong-trait.rs": "We don't check the validity of dyn casts",
