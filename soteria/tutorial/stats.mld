@@ -1,0 +1,569 @@
+{1 Soteria Statistics Tutorial}
+
+Welcome to the Soteria statistics tutorial! This tutorial will guide you through using the {{!Soteria.Stats}Stats} module for tracking, aggregating, and reporting metrics during symbolic execution and program analysis.
+
+Today you'll be learning how to:
+- {{!basic}Track basic statistics} like counters and timers
+- {{!types}Use different statistic types} for various data
+- {{!context}Manage statistics context} with algebraic effects
+- {{!custom}Create custom printers} for readable output
+- {{!integration}Integrate statistics} into symbolic execution
+- {{!best_practices}Apply best practices} for efficient tracking
+
+{2:intro Introduction}
+
+The Soteria statistics system provides a flexible way to collect, aggregate, and report metrics during program analysis. It's particularly useful for:
+
+- Tracking performance metrics (execution time, solver queries, etc.)
+- Counting events (branches explored, functions called, etc.)
+- Recording sequences of events (errors found, assumptions made, etc.)
+- Organizing complex nested data
+
+A key feature of the statistics system is that it automatically {e merges} statistics from different branches of symbolic execution, using appropriate merge strategies for each statistic type.
+
+{2:basic Getting Started with Statistics}
+
+To collect statistics, you need to wrap your computation with {{!Soteria.Stats.As_ctx.with_stats}with_stats}:
+
+{@ocaml[
+let computation () =
+  Soteria.Stats.As_ctx.incr "operations";
+  Soteria.Stats.As_ctx.incr "operations";
+  Soteria.Stats.As_ctx.incr "operations";
+  42;;
+
+let result = Soteria.Stats.As_ctx.with_stats () computation;;
+]}
+
+The {{!Soteria.Stats.with_stats}with_stats} wrapper returns a record containing both the result and the collected statistics:
+
+{@ocaml[
+(* Access the result *)
+let value = result.res;;
+
+(* Access the statistics *)
+let stats = result.stats;;
+]}
+
+{3 Basic Counter Operations}
+
+The simplest statistics are integer counters. Use {{!Soteria.Stats.As_ctx.incr}incr} to increment by 1 or {{!Soteria.Stats.As_ctx.add_int}add_int} to add any amount:
+
+{@ocaml[
+let count_things () =
+  (* Increment a counter by 1 *)
+  Soteria.Stats.As_ctx.incr "items_processed";
+  Soteria.Stats.As_ctx.incr "items_processed";
+  Soteria.Stats.As_ctx.incr "items_processed";
+  
+  (* Add a specific amount *)
+  Soteria.Stats.As_ctx.add_int "bytes_read" 1024;
+  Soteria.Stats.As_ctx.add_int "bytes_read" 2048;
+  
+  "done";;
+
+let result = Soteria.Stats.As_ctx.with_stats () count_things;;
+]}
+
+Now we can read the statistics back:
+
+{@ocaml[
+(* Get integer statistics *)
+let items = Soteria.Stats.get_int result.stats "items_processed";;
+let bytes = Soteria.Stats.get_int result.stats "bytes_read";;
+]}
+
+{3 Tracking Time}
+
+Use {{!Soteria.Stats.As_ctx.add_time_of_to}add_time_of_to} to measure how long an operation takes:
+
+{@ocaml[
+let timed_computation () =
+  Soteria.Stats.As_ctx.add_time_of_to "compute_time" (fun () ->
+    (* This work is timed *)
+    let rec fib n = if n <= 1 then n else fib (n-1) + fib (n-2) in
+    fib 20
+  );;
+
+let result = Soteria.Stats.As_ctx.with_stats () timed_computation;;
+
+(* Get the time in seconds as a float *)
+let time_taken = Soteria.Stats.get_float result.stats "compute_time";;
+]}
+
+{2:types Statistic Types}
+
+The {{!Soteria.Stats.stat_entry}stat_entry} type supports five kinds of statistics:
+
+- {{!Soteria.Stats.stat_entry.Int}Int}: Integer values (merged by addition)
+- {{!Soteria.Stats.stat_entry.Float}Float}: Floating-point values (merged by addition)
+- {{!Soteria.Stats.stat_entry.StrSeq}StrSeq}: Sequences of strings (merged by concatenation)
+- {{!Soteria.Stats.stat_entry.Map}Map}: Nested maps of statistics (merged recursively)
+- {{!Soteria.Stats.stat_entry.Yojson}Yojson}: Arbitrary JSON data (merged into arrays)
+
+{3 String Sequences}
+
+String sequences are useful for recording events or messages:
+
+{@ocaml[
+let log_events () =
+  Soteria.Stats.As_ctx.push_str "warnings" "Missing type annotation";
+  Soteria.Stats.As_ctx.push_str "warnings" "Unused variable x";
+  Soteria.Stats.As_ctx.push_str "warnings" "Deprecated function called";
+  ();;
+
+let result = Soteria.Stats.As_ctx.with_stats () log_events;;
+
+(* Get the sequence of warnings *)
+let warnings = Soteria.Stats.get_strseq result.stats "warnings";;
+
+(* String sequences are Dynarrays, which can be iterated *)
+let warning_count = Dynarray.length warnings;;
+]}
+
+{3 Nested Maps}
+
+Maps allow you to organize statistics hierarchically. Use {{!Soteria.Stats.As_ctx.push_binding}push_binding} to add entries to a map:
+
+{@ocaml[
+let track_by_function () =
+  (* Track calls per function *)
+  Soteria.Stats.As_ctx.push_binding "function_calls" "main" 
+    (Soteria.Stats.Int 5);
+  Soteria.Stats.As_ctx.push_binding "function_calls" "helper" 
+    (Soteria.Stats.Int 12);
+  Soteria.Stats.As_ctx.push_binding "function_calls" "main" 
+    (Soteria.Stats.Int 3);
+  ();;
+
+let result = Soteria.Stats.As_ctx.with_stats () track_by_function;;
+
+(* Get the nested map *)
+let calls_map = Soteria.Stats.get_map result.stats "function_calls";;
+
+(* Access specific entries using the correct module path *)
+let main_calls = 
+  match Soteria_std.Hashtbl.Hstring.find_opt calls_map "main" with
+  | Some (Soteria.Stats.Int n) -> n
+  | _ -> 0;;
+]}
+
+For string values in maps, there's a convenience function:
+
+{@ocaml[
+let track_messages () =
+  Soteria.Stats.As_ctx.push_string_binding "errors" "file_a.ml" 
+    "Type error on line 10";
+  Soteria.Stats.As_ctx.push_string_binding "errors" "file_b.ml" 
+    "Syntax error on line 5";
+  Soteria.Stats.As_ctx.push_string_binding "errors" "file_a.ml" 
+    "Undefined variable on line 15";
+  ();;
+
+let result = Soteria.Stats.As_ctx.with_stats () track_messages;;
+]}
+
+{2:merging How Statistics Merge}
+
+A crucial feature of the statistics system is automatic merging when multiple branches of execution contribute statistics. Let's see this in action:
+
+{@ocaml[
+let branching_stats () =
+  Soteria.Stats.As_ctx.incr "total_branches";
+  
+  (* Simulate two branches *)
+  let branch1_stats = Soteria.Stats.As_ctx.with_stats () (fun () ->
+    Soteria.Stats.As_ctx.add_int "branch_steps" 10;
+    Soteria.Stats.As_ctx.push_str "paths" "branch_1";
+    ()
+  ) in
+  
+  let branch2_stats = Soteria.Stats.As_ctx.with_stats () (fun () ->
+    Soteria.Stats.As_ctx.add_int "branch_steps" 15;
+    Soteria.Stats.As_ctx.push_str "paths" "branch_2";
+    ()
+  ) in
+  
+  (* Merge statistics from both branches *)
+  let merged = Soteria.Stats.merge branch1_stats.stats branch2_stats.stats in
+  merged;;
+
+let merged_stats = Soteria.Stats.As_ctx.with_stats () branching_stats;;
+]}
+
+After merging:
+- Int values are added: 10 + 15 = 25 steps
+- StrSeq values are concatenated: ["branch_1"; "branch_2"]
+- Map entries are merged recursively
+
+{@ocaml[
+let total_steps = Soteria.Stats.get_int merged_stats.stats "branch_steps";;
+let all_paths = Soteria.Stats.get_strseq merged_stats.stats "paths";;
+]}
+
+{2:custom Custom Printers}
+
+By default, statistics are printed in a generic format. You can register custom printers to make output more readable and context-aware.
+
+{3 Simple Integer Printer}
+
+Use {{!Soteria.Stats.register_int_printer}register_int_printer} for integer statistics:
+
+{@ocaml[
+(* Register a custom printer for "operations" *)
+let () = Soteria.Stats.register_int_printer "operations" 
+  ~name:"Total Operations"
+  (fun _stats ft count -> Fmt.pf ft "%d ops" count);;
+
+let demo () =
+  Soteria.Stats.As_ctx.add_int "operations" 42;
+  ();;
+
+let result = Soteria.Stats.As_ctx.with_stats () demo;;
+
+(* When printed, this will show "Total Operations: 42 ops" *)
+]}
+
+{3 Context-Aware Printer}
+
+Printers receive the full statistics object, allowing context-aware formatting:
+
+{@ocaml[
+(* Register a printer that shows percentages *)
+let () = Soteria.Stats.register_int_printer "successful_checks"
+  ~name:"Successful Checks"
+  (fun stats ft successes ->
+    let total = Soteria.Stats.get_int stats "total_checks" in
+    if total > 0 then
+      let pct = (float_of_int successes /. float_of_int total) *. 100. in
+      Fmt.pf ft "%d / %d (%.1f%%)" successes total pct
+    else
+      Fmt.pf ft "%d" successes
+  );;
+
+let demo_checks () =
+  Soteria.Stats.As_ctx.add_int "total_checks" 100;
+  Soteria.Stats.As_ctx.add_int "successful_checks" 85;
+  ();;
+
+let result = Soteria.Stats.As_ctx.with_stats () demo_checks;;
+(* When printed: "Successful Checks: 85 / 100 (85.0%)" *)
+]}
+
+{3 Float Printer with Time Formatting}
+
+For timing statistics, you can use {{!Soteria.Logs.Printers.pp_time}Logs.Printers.pp_time}:
+
+{@ocaml[
+let () = Soteria.Stats.register_float_printer "execution_time"
+  ~name:"Execution Time"
+  (fun _stats ft time ->
+    Soteria.Logs.Printers.pp_time ft time
+  );;
+]}
+
+{3 Disabling Printers}
+
+To hide certain statistics from output (e.g., internal counters):
+
+{@ocaml[
+Soteria.Stats.disable_printer "internal_counter";;
+]}
+
+{2:integration Integration with Symbolic Execution}
+
+The statistics system is designed to work seamlessly with Soteria's symbolic execution engine. The key insight is that {{!Soteria.Symex.S.run_with_stats}run_with_stats} automatically wraps the execution in a statistics context:
+
+{@ocaml[
+module Symex = Symex.Make (Tiny_solver.Z3_solver);;
+
+open Symex.Syntax;;
+open Typed.Infix;;
+open Typed.Syntax;;
+
+(* A simple symbolic process *)
+let analyze_value () =
+  let* x = Symex.nondet Typed.t_int in
+  
+  if%sat x >@ 10s then
+    Symex.return "large"
+  else
+    Symex.return "small";;
+
+(* Run with statistics tracking - this collects built-in stats like
+   execution time, SAT checks, branches explored, etc. *)
+let results = Symex.run_with_stats ~mode:OX (analyze_value ());;
+
+(* results.res contains the symbolic execution results *)
+let execution_results = results.res;;
+
+(* results.stats contains statistics from the execution *)
+let exec_time = Soteria.Stats.get_float results.stats "soteria.exec-time";;
+]}
+
+The built-in Symex statistics tracked automatically include:
+- Execution time
+- SAT solving time
+- Number of SAT checks  
+- Number of branches explored
+- Number of execution steps
+
+{3 Custom Statistics in Analysis}
+
+You can also collect custom statistics while analyzing results. Here's an example:
+
+{@ocaml[
+let analyze_and_count () =
+  (* Run symbolic execution first *)
+  let symex_results = Symex.run_with_stats ~mode:OX (analyze_value ()) in
+  
+  (* Now count and categorize results (this happens after symex) *)
+  Soteria.Stats.As_ctx.add_int "results.total" 
+    (List.length symex_results.res);
+  
+  List.iter (fun (value, _pc) ->
+    match value with
+    | "large" -> Soteria.Stats.As_ctx.incr "results.large_values"
+    | "small" -> Soteria.Stats.As_ctx.incr "results.small_values"
+    | _ -> ()
+  ) symex_results.res;
+  
+  (* Merge our custom stats with the symex stats *)
+  symex_results;;
+
+(* Wrap the analysis in a stats context to collect custom stats *)
+let final_results = Soteria.Stats.As_ctx.with_stats () analyze_and_count;;
+
+(* final_results contains both built-in symex stats and our custom stats *)
+let large_count = Soteria.Stats.get_int final_results.stats "results.large_values";;
+]}
+
+{3 Running Without Statistics}
+
+If you don't need statistics (for performance), use the regular {{!Soteria.Symex.S.run}run} function, which internally uses {{!Soteria.Stats.As_ctx.with_stats_ignored}with_stats_ignored}:
+
+{@ocaml[
+(* No statistics overhead *)
+let results_no_stats = Symex.run ~mode:OX (analyze_value ());;
+]}
+
+{2:output Outputting Statistics}
+
+{3 Pretty Printing}
+
+Use {{!Soteria.Stats.pp}pp} to print statistics to a formatter:
+
+{@ocaml[
+let demo_stats () =
+  Soteria.Stats.As_ctx.add_int "operations" 42;
+  Soteria.Stats.As_ctx.add_float "duration" 1.23;
+  ();;
+
+let result = Soteria.Stats.As_ctx.with_stats () demo_stats;;
+
+(* Print to stdout *)
+Soteria.Stats.pp Fmt.stdout result.stats;;
+]}
+
+{3 JSON Export}
+
+Convert statistics to JSON for machine-readable output:
+
+{@ocaml skip[
+let json = Soteria.Stats.to_yojson result.stats;;
+
+(* Pretty-print the JSON *)
+let json_string = Yojson.Safe.pretty_to_string json;;
+]}
+
+{3 Configuration}
+
+The {{!Soteria.Stats.Config}Stats.Config} module controls where statistics are output:
+
+{@ocaml skip[
+(* Configure to output stats to stdout *)
+let stats_config = Soteria.Stats.Config.make ~output_stats:"stdout" ();;
+Soteria.Stats.Config.set_and_lock stats_config;;
+
+(* Or output to a file *)
+let stats_config = Soteria.Stats.Config.make ~output_stats:"stats.json" ();;
+Soteria.Stats.Config.set_and_lock stats_config;;
+
+(* Use the Config.cmdliner_term for CLI integration *)
+]}
+
+Then call {{!Soteria.Stats.output}output} to write statistics according to the configuration:
+
+{@ocaml skip[
+Soteria.Stats.output result.stats;;
+]}
+
+{2:best_practices Best Practices}
+
+{3 Naming Conventions}
+
+Use consistent, hierarchical names for statistics:
+
+{@ocaml[
+let good_names () =
+  (* Use dot notation for hierarchies *)
+  Soteria.Stats.As_ctx.incr "symex.branches";
+  Soteria.Stats.As_ctx.incr "symex.sat_checks";
+  Soteria.Stats.As_ctx.incr "solver.z3.queries";
+  
+  (* Use descriptive names *)
+  Soteria.Stats.As_ctx.incr "unexplored_branches";
+  Soteria.Stats.As_ctx.add_float "total_execution_time" 1.5;
+  
+  (* Use consistent prefixes for related stats *)
+  Soteria.Stats.As_ctx.incr "memory.allocations";
+  Soteria.Stats.As_ctx.incr "memory.deallocations";
+  ();;
+]}
+
+{3 Performance Considerations}
+
+Statistics tracking has minimal overhead, but be mindful in hot loops:
+
+{@ocaml[
+let efficient_tracking () =
+  (* GOOD: Track aggregate metrics *)
+  let count = ref 0 in
+  for i = 1 to 10000 do
+    count := !count + 1
+  done;
+  Soteria.Stats.As_ctx.add_int "iterations" !count;
+  
+  ();;
+
+let result = Soteria.Stats.As_ctx.with_stats () efficient_tracking;;
+]}
+
+{@ocaml skip[
+(* LESS EFFICIENT: Track every iteration separately *)
+let less_efficient () =
+  for i = 1 to 10000 do
+    Soteria.Stats.As_ctx.incr "iterations"
+  done;
+  ();;
+]}
+
+{3 Organizing Statistics}
+
+Use maps for statistics that naturally group together:
+
+{@ocaml[
+let organize_stats () =
+  (* Instead of flat names like "phase1_time", "phase2_time", ... *)
+  (* Use a map structure *)
+  Soteria.Stats.As_ctx.push_binding "phase_times" "parsing" 
+    (Soteria.Stats.Float 0.5);
+  Soteria.Stats.As_ctx.push_binding "phase_times" "analysis" 
+    (Soteria.Stats.Float 2.3);
+  Soteria.Stats.As_ctx.push_binding "phase_times" "reporting" 
+    (Soteria.Stats.Float 0.1);
+  ();;
+
+let result = Soteria.Stats.As_ctx.with_stats () organize_stats;;
+]}
+
+{3 Tracking Both Success and Failure}
+
+Always track both sides of a metric for complete information:
+
+{@ocaml[
+let track_complete () =
+  (* Track both successful and failed operations *)
+  Soteria.Stats.As_ctx.add_int "operations.successful" 85;
+  Soteria.Stats.As_ctx.add_int "operations.failed" 15;
+  
+  (* Total can be computed from both *)
+  ();;
+
+let result = Soteria.Stats.As_ctx.with_stats () track_complete;;
+
+(* Now you can compute percentages, ratios, etc. *)
+let success = Soteria.Stats.get_int result.stats "operations.successful";;
+let failed = Soteria.Stats.get_int result.stats "operations.failed";;
+let total = success + failed;;
+]}
+
+{3 Register Printers Early}
+
+Register all custom printers at module initialization, before any statistics are collected:
+
+{@ocaml skip[
+(* In your module's initialization code *)
+let () =
+  Soteria.Stats.register_int_printer "my_counter"
+    ~name:"My Counter"
+    (fun _ ft n -> Fmt.pf ft "%d items" n);
+  
+  Soteria.Stats.register_float_printer "my_timer"
+    ~name:"My Timer"
+    (fun _ -> Soteria.Logs.Printers.pp_time);
+  
+  ()
+]}
+
+{2:realworld Real-World Example}
+
+Here's a complete example showing best practices:
+
+{@ocaml[
+(* Register printers once at startup *)
+let () =
+  let open Soteria.Stats in
+  register_int_printer "analysis.paths_explored"
+    ~name:"Paths Explored"
+    (fun _ ft n -> Fmt.pf ft "%d paths" n);
+  
+  register_float_printer "analysis.time"
+    ~name:"Analysis Time"
+    (fun _ -> Soteria.Logs.Printers.pp_time);
+  
+  ();;
+
+(* Analysis function that tracks comprehensive statistics *)
+let run_complete_analysis () =
+  let start_time = Unix.gettimeofday () in
+  
+  Soteria.Stats.As_ctx.push_str "analysis.phases" "initialization";
+  
+  (* Simulate analysis work *)
+  let rec analyze_paths remaining =
+    if remaining <= 0 then ()
+    else (
+      Soteria.Stats.As_ctx.incr "analysis.paths_explored";
+      analyze_paths (remaining - 1)
+    )
+  in
+  
+  Soteria.Stats.As_ctx.push_str "analysis.phases" "exploration";
+  analyze_paths 10;
+  
+  Soteria.Stats.As_ctx.push_str "analysis.phases" "verification";
+  Soteria.Stats.As_ctx.add_int "analysis.assertions_checked" 25;
+  
+  let duration = Unix.gettimeofday () -. start_time in
+  Soteria.Stats.As_ctx.add_float "analysis.time" duration;
+  
+  "Analysis complete";;
+
+let final_result = Soteria.Stats.As_ctx.with_stats () run_complete_analysis;;
+]}
+
+{2 That's it!}
+
+You now know how to effectively use Soteria's statistics system! Key takeaways:
+
+- Wrap computations with [Stats.As_ctx.with_stats] to enable tracking
+- Use [incr], [add_int], [add_float] for basic metrics
+- Use [add_time_of_to] for timing operations
+- Use [push_str] and [push_binding] for complex data
+- Statistics automatically merge across symbolic execution branches
+- Register custom printers for readable output
+- Consider performance: aggregate in hot loops, track at appropriate granularity
+- Use consistent naming conventions and organize related statistics
+
+For more details, see the {{!Soteria.Stats}Stats API documentation}.

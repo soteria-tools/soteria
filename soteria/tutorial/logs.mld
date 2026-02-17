@@ -1,0 +1,383 @@
+{1 Soteria Logging Tutorial}
+
+Welcome to the Soteria logging tutorial! This tutorial will guide you through using the {{!Soteria.Logs}Logs} library for debugging, monitoring, and analyzing your symbolic execution programs.
+
+Today you'll be learning how to:
+- {{!basic}Log messages} at different levels
+- {{!config}Configure} logging for your needs
+- {{!sections}Organize logs} with collapsible sections
+- {{!printers}Format output} with colors and styles
+- {{!best_practices}Apply best practices} for effective logging
+
+{2:basic Basic Logging}
+
+The Soteria logging system provides a simple, flexible way to output diagnostic information. To get started, you need to open the {{!Soteria.Logs.Import}Logs.Import} module, which brings the [L] logging module into scope:
+
+{@ocaml[
+open Soteria.Logs.Import;;
+]}
+
+The [L] module provides logging functions for different severity levels. The most common one is {{!Soteria.Logs.L.info}info}, which logs informational messages:
+
+{@ocaml[
+L.info (fun m -> m "Starting symbolic execution");;
+]}
+
+The logging API uses a callback pattern: you pass a function that receives a formatter function [m], which you then call with a format string and arguments. This design allows the logging system to avoid formatting work when a log level is disabled.
+
+Let's log a message with a value:
+
+{@ocaml[
+let x = 42 in
+L.info (fun m -> m "The answer is %d" x);;
+]}
+
+{2:levels Log Levels}
+
+Soteria provides six log levels, from most verbose to least verbose:
+
+- {{!Soteria.Logs.Level.Smt}Smt}: For messages about SMT solver interactions (queries, results)
+- {{!Soteria.Logs.Level.Trace}Trace}: For very detailed execution traces
+- {{!Soteria.Logs.Level.Debug}Debug}: For debugging information
+- {{!Soteria.Logs.Level.Info}Info}: For general informational messages
+- {{!Soteria.Logs.Level.Warn}Warn}: For warnings about potential issues
+- {{!Soteria.Logs.Level.Error}Error}: For error conditions
+
+Each level has a corresponding logging function in the [L] module:
+
+{@ocaml[
+L.trace (fun m -> m "Detailed trace: entering function");
+L.debug (fun m -> m "Variable x = %d" 10);
+L.info (fun m -> m "Processing completed successfully");
+L.warn (fun m -> m "This operation may be slow");
+L.error (fun m -> m "Failed to parse input");
+]}
+
+The {{!Soteria.Logs.L.smt}smt} level is special: it's designed for logging SMT solver interactions, which can be extremely verbose but crucial for understanding solver behavior:
+
+{@ocaml[
+L.smt (fun m -> m "Querying solver: (assert (> x 0))");;
+]}
+
+{2:config Configuration}
+
+Logging behavior is controlled by {{!Soteria.Logs.Config}Logs.Config}. You can configure:
+
+- The minimum log level to display
+- The output format (text to stderr or HTML)
+- Whether to always log SMT queries regardless of level
+- Whether to use colors in text output
+- Whether to hide unstable values like timestamps (useful for testing)
+
+Here's how to configure logging programmatically:
+
+{@ocaml[
+(* Create a configuration that logs at Debug level and above *)
+let log_config = Soteria.Logs.Config.make
+  ~level:(Some Debug)
+  ~kind:Stderr
+  ~no_color:false
+  ();;
+
+(* Note: In a real application, you would call:
+   Soteria.Logs.Config.set_and_lock log_config
+   but we skip it here to avoid affecting the tutorial environment *)
+]}
+
+The {{!Soteria.Logs.Config.make}make} function creates a configuration with these parameters:
+
+- [~level]: The minimum level to log ([None] disables logging entirely)
+- [~kind]: Either [Stderr] for text output or [Html] for HTML output
+- [~always_log_smt]: If [true], log SMT queries even when level is above [Smt]
+- [~no_color]: If [true], disable ANSI color codes in text output
+- [~hide_unstable]: If [true], hide timestamps and durations (for reproducible output)
+
+For command-line applications, Soteria provides Cmdliner integration:
+
+{@ocaml skip[
+(* In a real application's main function *)
+let () =
+  let open Cmdliner in
+  let config_term = Soteria.Logs.Config.cmdliner_term () in
+  (* ... combine with other terms and run ... *)
+  Soteria.Logs.Config.check_set_and_lock config
+]}
+
+{2:sections Organizing Logs with Sections}
+
+When logging produces a lot of output (especially in HTML mode), you can organize it into collapsible sections using {{!Soteria.Logs.L.with_section}with_section}:
+
+{@ocaml[
+L.with_section "Initialization Phase" (fun () ->
+  L.info (fun m -> m "Loading configuration");
+  L.info (fun m -> m "Connecting to solver");
+  L.info (fun m -> m "Initialization complete")
+);;
+]}
+
+Sections can be nested to create a hierarchical structure:
+
+{@ocaml[
+L.with_section "Analyzing Module" (fun () ->
+  L.info (fun m -> m "Starting analysis");
+  
+  L.with_section "Function: main" (fun () ->
+    L.debug (fun m -> m "Analyzing function body");
+    L.debug (fun m -> m "Found 3 branches")
+  );
+  
+  L.with_section "Function: helper" (fun () ->
+    L.debug (fun m -> m "Analyzing function body");
+    L.debug (fun m -> m "No branches")
+  );
+  
+  L.info (fun m -> m "Analysis complete")
+);;
+]}
+
+When using sections in the context of symbolic execution branches, you can mark them with [~is_branch:true] to help visually distinguish branch-related sections in HTML output:
+
+{@ocaml[
+L.with_section ~is_branch:true "Branch: x > 0" (fun () ->
+  L.trace (fun m -> m "Assuming x > 0");
+  L.debug (fun m -> m "Path is feasible")
+);;
+
+L.with_section ~is_branch:true "Branch: x <= 0" (fun () ->
+  L.trace (fun m -> m "Assuming x <= 0");
+  L.debug (fun m -> m "Path is feasible")
+);;
+]}
+
+{b Important:} Do not use [with_section] inside symbolic processes (functions that return ['a Symex.t]) that may branch, because the section will be opened once but closed multiple times. Use sections around calls to {{!Soteria.Symex.S.run}Symex.run} instead.
+
+{2:printers Pretty Printing and Formatting}
+
+The {{!Soteria.Logs.Printers}Logs.Printers} module provides utilities for formatting output with colors, styles, and special formatting:
+
+{3 Colors and Styles}
+
+You can print colored text using {{!Soteria.Logs.Printers.pp_clr}pp_clr}:
+
+{@ocaml[
+let pp_colored ft () =
+  let open Soteria.Logs.Printers in
+  Fmt.pf ft "%a %a %a"
+    (pp_clr `Green) "Success"
+    (pp_clr `Red) "Error"
+    (pp_clr `Blue) "Info";;
+
+(* Use in logging *)
+L.info (fun m -> m "%a" pp_colored ());;
+]}
+
+Apply text styles with {{!Soteria.Logs.Printers.pp_style}pp_style}:
+
+{@ocaml[
+let pp_styled ft () =
+  let open Soteria.Logs.Printers in
+  Fmt.pf ft "%a %a"
+    (pp_style `Bold) "Important"
+    (pp_style `Italic) "Note";;
+
+L.info (fun m -> m "%a" pp_styled ());;
+]}
+
+Or combine both with {{!Soteria.Logs.Printers.pp_clr2}pp_clr2}:
+
+{@ocaml[
+let pp_fancy ft () =
+  let open Soteria.Logs.Printers in
+  pp_clr2 `Red `Bold ft "Critical";;
+
+L.info (fun m -> m "%a" pp_fancy ());;
+]}
+
+{3 Semantic Colors}
+
+For common message types, use semantic color functions:
+
+{@ocaml[
+let pp_messages ft () =
+  let open Soteria.Logs.Printers in
+  Fmt.pf ft "%a, %a, %a, %a"
+    pp_ok "OK"
+    pp_warn "Warning"
+    pp_err "Error"
+    pp_fatal "Fatal";;
+
+L.info (fun m -> m "%a" pp_messages ());;
+]}
+
+{3 Special Formatters}
+
+Print time durations nicely with {{!Soteria.Logs.Printers.pp_time}pp_time}:
+
+{@ocaml[
+let duration_seconds = 0.0123 in
+let duration_seconds2 = 1.543 in
+
+(* pp_time is a formatter function *)
+L.info (fun m -> m "Quick: %a, Slow: %a"
+  Soteria.Logs.Printers.pp_time duration_seconds
+  Soteria.Logs.Printers.pp_time duration_seconds2);;
+]}
+
+Show percentages with {{!Soteria.Logs.Printers.pp_percent}pp_percent}:
+
+{@ocaml[
+let total = 100.0 in
+let part = 25.0 in
+
+(* pp_percent is a formatter function *)
+L.info (fun m -> m "Completed: %a"
+  Soteria.Logs.Printers.pp_percent (total, part));;
+]}
+
+Handle singular/plural forms with {{!Soteria.Logs.Printers.pp_plural}pp_plural}:
+
+{@ocaml[
+let pp_counts ft () =
+  let open Soteria.Logs.Printers in
+  Fmt.pf ft "%a, %a"
+    (pp_plural ~sing:"branch" ~plur:"branches") 1
+    (pp_plural ~sing:"branch" ~plur:"branches") 5;;
+
+L.info (fun m -> m "%a" pp_counts ());;
+]}
+
+{3 Unstable Values}
+
+When writing tests or generating reproducible output, you can hide values that change between runs (like timestamps or durations) using {{!Soteria.Logs.Printers.pp_unstable}pp_unstable}:
+
+{@ocaml[
+let current_time = Unix.gettimeofday () in
+
+(* If hide_unstable is true in config, prints "Completed at <timestamp>"
+   instead of the actual number *)
+L.info (fun m -> m "Completed at %a"
+  (Soteria.Logs.Printers.pp_unstable ~name:"timestamp" Fmt.float)
+  current_time);;
+]}
+
+{2:symex Logging in Symbolic Execution}
+
+Here's a complete example showing how logging works with symbolic execution:
+
+{@ocaml[
+module Symex = Symex.Make (Tiny_solver.Z3_solver);;
+
+open Symex.Syntax;;
+open Typed.Infix;;
+open Typed.Syntax;;
+
+(* A symbolic process that logs its execution *)
+let analyze_value () =
+  L.info (fun m -> m "Creating fresh symbolic integer");
+  let* x = Symex.nondet Typed.t_int in
+  
+  L.debug (fun m -> m "Symbolic value: %a" Typed.ppa x);
+  
+  if%sat x >@ 0s then (
+    L.info (fun m -> m "Branch: x > 0");
+    L.debug (fun m -> m "Value is positive");
+    Symex.return "positive"
+  ) else (
+    L.info (fun m -> m "Branch: x <= 0");
+    L.debug (fun m -> m "Value is non-positive");
+    Symex.return "non-positive"
+  );;
+
+(* Run the symbolic process *)
+let results = Symex.run ~mode:OX (analyze_value ());;
+]}
+
+In this example, log messages are emitted during symbolic execution. Each branch will produce its own set of log messages.
+
+{2:best_practices Best Practices}
+
+{3 When to Use Each Log Level}
+
+- Use [Smt] for all SMT solver interactions (queries, responses, theory lemmas)
+- Use [Trace] for very detailed execution flow (every step, every state transition)
+- Use [Debug] for information useful when debugging (intermediate values, decisions)
+- Use [Info] for high-level progress information (started X, completed Y)
+- Use [Warn] for unexpected but recoverable situations
+- Use [Error] for actual errors that affect correctness
+
+{3 Performance Considerations}
+
+Logging is designed to be efficient when disabled:
+
+{@ocaml[
+(* The lambda is only called if the log level is enabled *)
+L.trace (fun m -> 
+  (* This expensive computation only runs if Trace is enabled *)
+  let expensive_string = String.concat ", " (List.init 1000 string_of_int) in
+  m "Generated: %s" expensive_string
+);;
+]}
+
+However, be careful with work done {e before} calling the logging function:
+
+{@ocaml skip[
+(* BAD: Always computes the string, even if logging is disabled *)
+let expensive_string = String.concat ", " (List.init 1000 string_of_int) in
+L.trace (fun m -> m "Generated: %s" expensive_string);;
+
+(* GOOD: Only computes if needed *)
+L.trace (fun m ->
+  let expensive_string = String.concat ", " (List.init 1000 string_of_int) in
+  m "Generated: %s" expensive_string
+);;
+]}
+
+{3 Structured Logging Patterns}
+
+When logging complex operations, use consistent patterns:
+
+{@ocaml[
+let process_item item_name =
+  L.info (fun m -> m "Processing %s" item_name);
+  L.debug (fun m -> m "Loading data for %s" item_name);
+  (* ... do work ... *)
+  L.debug (fun m -> m "Completed %s successfully" item_name);;
+
+process_item "configuration";;
+process_item "input file";;
+]}
+
+Use sections for major phases:
+
+{@ocaml[
+let run_analysis () =
+  L.with_section "Setup" (fun () ->
+    L.info (fun m -> m "Initializing solver");
+    L.info (fun m -> m "Loading program")
+  );
+  
+  L.with_section "Analysis" (fun () ->
+    L.info (fun m -> m "Running symbolic execution");
+    L.info (fun m -> m "Found 10 paths")
+  );
+  
+  L.with_section "Reporting" (fun () ->
+    L.info (fun m -> m "Generating report");
+    L.info (fun m -> m "Writing output")
+  );;
+
+run_analysis ();;
+]}
+
+{2 That's it!}
+
+You now know how to effectively use Soteria's logging system! Key takeaways:
+
+- Use the [L] module from [Logs.Import] for all logging
+- Choose appropriate log levels for different types of information
+- Configure logging behavior with [Logs.Config]
+- Organize verbose output with sections
+- Use pretty printing utilities for formatted, colorful output
+- Keep performance in mind by doing expensive work inside the logging lambda
+
+For more details, see the {{!Soteria.Logs}Logs API documentation}.
