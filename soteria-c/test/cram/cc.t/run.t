@@ -3,7 +3,7 @@
       ┌─ array_add.c:104:5
   104 │      ar->buffer[ar->size] = element;
       │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Invalid memory write
-  ... ·  
+      ·  
   157 │          array_add(v1, NULL);
       │          -------------------- 1: Called from here
   Executed 163 statements

@@ -78,7 +78,7 @@ Test function calls on function pointers
       ┌─ $TESTCASE_ROOT/fn_ptr.rs:25:18
    21 │  fn fn_ptr_read() {
       │  ---------------- 1: Entry point
-  ... ·  
+      ·  
    25 │          let _b = *ptr;
       │                   ^^^^ Memory load
   PC 1: empty
@@ -88,7 +88,7 @@ Test function calls on function pointers
       ┌─ $TESTCASE_ROOT/fn_ptr.rs:34:9
    30 │  fn fn_ptr_write() {
       │  ----------------- 1: Entry point
-  ... ·  
+      ·  
    34 │          *ptr = 0;
       │          ^^^^^^^^ Memory store
   PC 1: empty
@@ -106,7 +106,7 @@ Check strict provenance disables int to ptr casts
       ┌─ $TESTCASE_ROOT/provenance.rs:5:18
     1 │  fn main() {
       │  --------- 1: Entry point
-  ... ·  
+      ·  
     5 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
       │                   ---------------------------------------------- 2: Call trace
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
@@ -121,7 +121,7 @@ Check permissive provenance allows int to ptr casts
       ┌─ $TESTCASE_ROOT/provenance.rs:7:9
     1 │  fn main() {
       │  --------- 1: Entry point
-  ... ·  
+      ·  
     7 │          *p_back = 1;
       │          ^^^^^^^^^^^ Memory store
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
@@ -136,7 +136,7 @@ Check corner cases with permissive provenance, around transmutes
       ┌─ $TESTCASE_ROOT/provenance_transmute.rs:9:9
     2 │  fn addr_doesnt_expose() {
       │  ----------------------- 1: Entry point
-  ... ·  
+      ·  
     9 │          *p_back = 1;
       │          ^^^^^^^^^^^ Memory store
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
@@ -146,7 +146,7 @@ Check corner cases with permissive provenance, around transmutes
       ┌─ $TESTCASE_ROOT/provenance_transmute.rs:22:9
    15 │  fn transmute_doesnt_restore_provenance() {
       │  ---------------------------------------- 1: Entry point
-  ... ·  
+      ·  
    22 │          *p_back = 1;
       │          ^^^^^^^^^^^ Memory store
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)

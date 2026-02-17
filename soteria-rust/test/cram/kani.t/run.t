@@ -165,7 +165,7 @@ Test our simple Kani demo works
       ┌─ $TESTCASE_ROOT/demo.rs:11:8
     8 │  fn saturating_add_overflow() -> u32 {
       │  ----------------------------------- 1: Entry point
-  ... ·  
+      ·  
    11 │      if a + b < u32::MAX {
       │         ^^^^^ Triggering operation
   PC 1: (V|1| +u_ovf V|2|)
@@ -198,7 +198,7 @@ Test our simple Kani demo works
       ┌─ $TESTCASE_ROOT/demo.rs:63:26
    58 │  fn uninit_access() {
       │  ------------------ 1: Entry point
-  ... ·  
+      ·  
    63 │          let value: u32 = *addr_value;
       │                           ^^^^^^^^^^^ Memory load
   PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)

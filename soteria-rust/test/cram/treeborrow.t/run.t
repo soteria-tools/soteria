@@ -13,7 +13,7 @@ Simple tree borrow violation
       ┌─ $TESTCASE_ROOT/simple-fail.rs:8:5
     3 │  fn main() {
       │  --------- 1: Entry point
-  ... ·  
+      ·  
     8 │      *y = 20; // UB: y is disabled
       │      ^^^^^^^ Memory store
   PC 1: empty

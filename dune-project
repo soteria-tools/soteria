@@ -47,7 +47,8 @@
   htmlit
   (progress
    (>= 0.5.0))
-  grace
+  (grace
+   (>= 0.3.0))
   (odoc :with-doc)
   (mdx :with-test)
   (dune

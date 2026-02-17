@@ -45,21 +45,21 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       ┌─ manifest.c:6:10
     6 │    return *x;
       │           ^^ Invalid memory load
-  ... ·  
+      ·  
    21 │    load(x);
       │    ------- 1: Called from here
   error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
       │           ^^ Invalid memory load
-  ... ·  
+      ·  
    12 │    load(x);
       │    ------- 1: Called from here
   error: Null pointer dereference in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
       │           ^^ Invalid memory load
-  ... ·  
+      ·  
    12 │    load(x);
       │    ------- 1: Called from here
   warning: Memory leak in test_leak
@@ -69,7 +69,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    27 │ │  {
    28 │ │    int *x = (int *)malloc(sizeof(int));
       │ │                    ------------------- 1: This allocation leaked
-  ... · │  
+      · │  
    33 │ │    return 0;
    34 │ │  }
       │ ╰──^ 
