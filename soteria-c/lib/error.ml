@@ -58,13 +58,7 @@ let add_to_call_trace ((err, trace_elem) : with_trace) trace_elem' =
 module Diagnostic = struct
   let to_loc pos =
     let col = Cerb_position.column pos in
-    let col =
-      (* FIXME: This is a hack to overcome
-         https://github.com/johnyob/grace/issues/49... We just need to avoid
-         having column 0, which will crash grace. *)
-      if col <= 1 then col else col - 1
-    in
-    (Cerb_position.line pos - 1, col)
+    (Cerb_position.line pos - 1, col - 1)
 
   let as_ranges (cerb_loc : Cerb_location.t) =
     let mk_range_file = Soteria.Terminal.Diagnostic.mk_range_file in

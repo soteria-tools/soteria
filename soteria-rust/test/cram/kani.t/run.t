@@ -165,8 +165,7 @@ Test our simple Kani demo works
       ┌─ $TESTCASE_ROOT/demo.rs:11:8
     8 │  fn saturating_add_overflow() -> u32 {
       │  ----------------------------------- 1: Entry point
-    9 │      let a: u32 = kani::any();
-   10 │      let b: u32 = kani::any();
+      ·  
    11 │      if a + b < u32::MAX {
       │         ^^^^^ Triggering operation
   PC 1: (V|1| +u_ovf V|2|)
@@ -199,10 +198,7 @@ Test our simple Kani demo works
       ┌─ $TESTCASE_ROOT/demo.rs:63:26
    58 │  fn uninit_access() {
       │  ------------------ 1: Entry point
-   59 │      let any_option: MyOption<u32> = kani::any();
-   60 │      let addr: *const u32 = &any_option as *const MyOption<u32> as *const u32;
-   61 │      unsafe {
-   62 │          let addr_value = addr.offset(1);
+      ·  
    63 │          let value: u32 = *addr_value;
       │                           ^^^^^^^^^^^ Memory load
   PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
