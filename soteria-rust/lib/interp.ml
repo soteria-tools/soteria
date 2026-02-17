@@ -1126,12 +1126,14 @@ module Make (State : State_intf.S) = struct
       | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
       | Some body -> ok body
     in
+    let name_str = Fmt.to_to_string Crate.pp_name name in
+    let@ () = Rust_state_m.with_frame name_str in
     Soteria.Stats.As_ctx.incr StatKeys.function_calls;
     let@@ () = Poly.push_generics ~params:fundef.generics ~args:generics in
     let@@ () = with_env ~env:Store.empty in
     let@ () = with_loc ~loc:fundef.item_meta.span.data in
     L.info (fun m ->
-        m "Calling %a with %a" Crate.pp_name name
+        m "Calling %s with %a" name_str
           Fmt.(hbox @@ brackets @@ list ~sep:comma pp_rust_val)
           args);
     let* protected = alloc_stack body.locals args in
@@ -1163,6 +1165,11 @@ module Make (State : State_intf.S) = struct
     let@@ () =
       with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
+    (* FIXME: If using this, this throws an error.
+       The abstraction is leaking, execution of immediate things is done *before* execution starts. *)
+    (* Fmt.pr "REACHED HERE@.@?";
+    let@ () = Rust_state_m.with_frame "Entry point" in
+    Fmt.pr "REACHED HERE 2@.@?"; *)
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
     let* value = exec_real_fun fundef generics args in
     let* () = State.run_thread_exits () in

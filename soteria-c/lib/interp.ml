@@ -1344,6 +1344,7 @@ module Make (State : State_intf.S) = struct
     let open Csymex.Syntax in
     (* Put arguments in store *)
     let name, (_loc, _, _, params, stmt) = fundef in
+    let@ () = Csymex.with_frame (Fmt.to_to_string Fmt_ail.pp_sym name) in
     let ret_ty = Ail_helpers.get_return_ty name in
     (* FIXME: let@ () = with_loc ~loc in *)
     L.debug (fun m -> m "Executing function %a" Fmt_ail.pp_sym name);
