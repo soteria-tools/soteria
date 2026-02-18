@@ -59,8 +59,16 @@ def kani(opts: CliOpts) -> TestConfig:
     @with_cache
     def kani_dyn_flags(file: Path) -> list[str]:
         config = get_config_line(file, "// kani-flags:")
-        if config:
-            return config.split()
+        if not config:
+            return []
+
+        config = config.split()
+        if opts["tool"] == "Kani":
+            return config
+
+        if len(config) != 0:
+            raise ArgError(f"Unhandled dynamic flags for Kani test {file}: {config}")
+
         return []
 
     root = Path(KANI_PATH)
@@ -76,9 +84,9 @@ def kani(opts: CliOpts) -> TestConfig:
     if opts["tool"] == "Kani":
         args = []
     elif opts["tool"] == "Miri":
-        args = ["--test", "-Zmiri-ignore-leaks"]
+        args = ["--test", "-Zmiri-ignore-leaks", "-Zmiri-disable-stacked-borrows"]
     elif opts["tool"] == "Rusteria":
-        args = ["--ignore-leaks", "--kani"]
+        args = ["--ignore-leaks", "--kani", "--ignore-aliasing"]
     else:
         assert_never(opts["tool"])
 
@@ -86,7 +94,7 @@ def kani(opts: CliOpts) -> TestConfig:
         "name": "Kani",
         "root": root,
         "args": args,
-        "dyn_flags": kani_dyn_flags if opts["tool"] == "Kani" else None,
+        "dyn_flags": kani_dyn_flags,
         "tests": tests,
     }
 
