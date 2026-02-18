@@ -510,10 +510,19 @@ module Make (State : State_intf.S) = struct
               fundef.item_meta.name);
         let global_fn = Std_funs.std_fun_eval fundef glob.generics exec_fun in
         (* First we allocate the global and store it in the State *)
-        let* ptr =
-          State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
-            decl.ty
+        let kind : Alloc_kind.t =
+          match (decl.global_kind, decl.src) with
+          | _, VTableInstanceItem { generics = { types = [ ty ]; _ }; _ } ->
+              VTable ty
+          | (AnonConst | NamedConst), _ -> Const glob
+          | _ -> Static glob
         in
+        let* ptr =
+          State.alloc_ty ~kind ~span:decl.item_meta.span.data decl.ty
+        in
+        L.warn (fun m ->
+            m "Global %a w kind %a -> %a" Crate.pp_name decl.item_meta.name
+              Alloc_kind.pp kind Sptr.pp (fst ptr));
         let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = with_env ~env:() @@ global_fn [] in
@@ -618,9 +627,7 @@ module Make (State : State_intf.S) = struct
               | MetaVTable (_, glob) ->
                   (* the global adds one level of indirection *)
                   let* glob = of_opt_not_impl "Missing VTable global" glob in
-                  let* ptr = resolve_global glob in
-                  let+ vtable = State.load ptr unit_ptr in
-                  let vtable, _ = as_ptr vtable in
+                  let+ vtable, _ = resolve_global glob in
                   VTable vtable
               | MetaVTableUpcast fields -> (
                   match prev with
@@ -989,8 +996,11 @@ module Make (State : State_intf.S) = struct
           map_list (List.combine3 args in_tys exp_tys)
             ~f:(fun (arg, from_ty, to_ty) ->
               let* arg = eval_operand arg in
-              if Types.equal_ty from_ty to_ty then ok arg
-              else Core.transmute ~from_ty ~to_ty arg)
+              match from_ty with
+              | TDynTrait _ -> ok arg
+              | _ ->
+                  if Types.equal_ty from_ty to_ty then ok arg
+                  else Core.transmute ~from_ty ~to_ty arg)
         in
         L.info (fun g ->
             g "Executing function with arguments [%a]"

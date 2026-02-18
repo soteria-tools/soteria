@@ -53,6 +53,7 @@ type t =
   | `InvalidFreeStrongProtector
     (** Tried freeing an allocation when a strongly protected reference to it
         still exists *)
+  | `InvalidVTable  (** Tried using something that isn't a vtable as a vtable *)
   | `FailedAssert of string option  (** Failed assert!(cond) *)
   | `Panic of string option  (** Regular panic, with a message *)
   | `UnwindTerminate  (** Unwinding terminated *)
@@ -96,6 +97,7 @@ let rec pp ft : [> t ] -> unit = function
   | `InvalidLayout ty -> Fmt.pf ft "Invalid layout: %a" pp_ty ty
   | `InvalidRef e -> Fmt.pf ft "Invalid reference: %a" pp e
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
+  | `InvalidVTable -> Fmt.string ft "Invalid VTable used"
   | `MemoryLeak -> Fmt.string ft "Memory leak"
   | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
   | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"

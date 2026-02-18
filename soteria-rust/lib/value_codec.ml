@@ -83,53 +83,61 @@ struct
        StateResult = StateT (Result), but I need StateT1of3 urgh. *)
     type handler = query -> rust_val res
     type get_all_handler = get_all_query -> (rust_val * T.sint Typed.t) list res
+    type get_vtable_ty_handler = Sptr.t -> Types.ty res
+
+    type handlers = {
+      query : handler;
+      get_all : get_all_handler;
+      get_vtable_ty : get_vtable_ty_handler;
+    }
 
     (* A parser monad is an object such that, given a query handler with state
        ['state], returns a state monad-ish for that state which may fail or
        branch *)
-    type 'a t = handler -> get_all_handler -> 'a res
+    type 'a t = handlers -> 'a res
 
-    let parse ~(handler : handler) ~(get_all : get_all_handler) scheduler :
-        'a res =
-      scheduler handler get_all
+    let parse ~(handler : handler) ~(get_all : get_all_handler)
+        ~(get_vtable_ty : get_vtable_ty_handler) scheduler : 'a res =
+      scheduler { query = handler; get_all; get_vtable_ty }
 
-    let ok (x : 'a) : 'a t = fun _handler _get_all -> SM.Result.ok x
-    let error (e : Error.t) : 'a t = fun _handler _get_all -> SM.Result.error e
+    let ok (x : 'a) : 'a t = fun _handlers -> SM.Result.ok x
+    let error (e : Error.t) : 'a t = fun _handlers -> SM.Result.error e
 
     let bind2 (m : 'a t) (f : 'a -> 'b t) (fe : 'err -> 'b t) : 'b t =
-     fun handler get_all ->
+     fun handlers ->
       let open SM.Syntax in
-      let* res = m handler get_all in
+      let* res = m handlers in
       match res with
-      | Compo_res.Ok x -> f x handler get_all
-      | Compo_res.Error e -> fe e handler get_all
+      | Compo_res.Ok x -> f x handlers
+      | Compo_res.Error e -> fe e handlers
       | Compo_res.Missing f -> SM.Result.miss f
 
     let bind (m : 'a t) (f : 'a -> 'b t) : 'b t =
-     fun handler get_all ->
+     fun handlers ->
       let open SM.Syntax in
-      let** x = m handler get_all in
-      f x handler get_all
+      let** x = m handlers in
+      f x handlers
 
     let map (m : 'a t) (f : 'a -> 'b) : 'b t =
-     fun handler get_all ->
+     fun handlers ->
       let open SM.Syntax in
-      let++ x = m handler get_all in
+      let++ x = m handlers in
       f x
 
-    let query (q : query) : 'a t = fun (handler : handler) _ -> handler q
+    let query (q : query) : 'a t = fun handlers -> handlers.query q
+    let get_all (q : get_all_query) : 'a t = fun handlers -> handlers.get_all q
 
-    let get_all (q : get_all_query) : 'a t =
-     fun _ get_all state -> get_all q state
+    let get_vtable_ty (ptr : Sptr.t) : 'a t =
+     fun handlers -> handlers.get_vtable_ty ptr
 
     let[@inline] lift (m : 'a DecayMapMonad.t) : 'a t =
       let open SM.Syntax in
-      fun _handler _get_all ->
+      fun _handlers ->
         let*^ m in
         SM.Result.ok m
 
     let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) : 'a t =
-     fun _handler _get_all -> SM.lift (DecayMapMonad.lift m)
+     fun _handlers -> SM.lift (DecayMapMonad.lift m)
 
     let not_impl msg = lift @@ not_impl msg
     let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
@@ -137,7 +145,7 @@ struct
     let normalise ty = lift_rsymex @@ Layout.normalise ty
 
     let assert_or_error cond err =
-     fun _handler _get_all state ->
+     fun _handlers state ->
       DecayMapMonad.Result.map (assert_or_error cond err) (fun () ->
           ((), state))
 
@@ -151,10 +159,10 @@ struct
 
       module Symex_syntax = struct
         let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
-         fun handler get_all state ->
+         fun handlers state ->
           DecayMapMonad.branch_on ?left_branch_name ?right_branch_name guard
-            ~then_:(fun () -> then_ () handler get_all state)
-            ~else_:(fun () -> else_ () handler get_all state)
+            ~then_:(fun () -> then_ () handlers state)
+            ~else_:(fun () -> else_ () handlers state)
       end
     end
   end
@@ -208,7 +216,13 @@ struct
     let* layout = layout_of ty in
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error `RefToUninhabited
-    | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
+    | _, TDynTrait _ -> (
+        match meta with
+        | VTable vt ->
+            let* ty = get_vtable_ty vt in
+            L.warn (fun m -> m "got ty %a" pp_ty ty);
+            decode ~meta ~offset ty
+        | Thin | Len _ -> failwith "No VTable metadata for dyn?")
     | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Union [])
         else

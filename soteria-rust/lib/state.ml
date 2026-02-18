@@ -251,6 +251,20 @@ module Heap = struct
        | Some { node = Freed; _ } -> SM.Result.ok true
        | _ -> SM.Result.ok false)
 
+  let ty_of_vtable (ptr : Sptr.t) =
+    let open SM in
+    let open SM.Syntax in
+    let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+    let** () = assert_or_error (ofs ==@ Usize.(0s)) `InvalidVTable in
+    wrap loc
+      (let open Freeable_block_with_meta in
+       let open SM.Syntax in
+       let* block = SM.get_state () in
+       L.warn (fun m -> m "got vtable at ptr %a" Sptr.pp ptr);
+       match block with
+       | Some { info = Some { kind = VTable ty; _ }; _ } -> SM.Result.ok ty
+       | _ -> SM.Result.error `InvalidVTable)
+
   module Decoder =
     Value_codec.Decoder
       (Sptr)
@@ -360,6 +374,7 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   let* () = log "load" ptr in
   let handler (ty, ofs) =
     let@ _ofs = Heap.with_ptr ptr in
+    L.warn (fun m -> m "Reading %a at %a" Charon_util.pp_ty ty Typed.ppa ofs);
     Block.with_tree_block_read_tb
       (Tree_block.load ~ignore_borrow ofs ty ptr.tag)
   in
@@ -367,9 +382,10 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
     let@ _ofs = Heap.with_ptr ptr in
     Block.with_tree_block (Tree_block.get_init_leaves ofs size)
   in
+  let get_vtable_ty ptr = Heap.ty_of_vtable ptr in
   let offset = Typed.Ptr.ofs ptr.ptr in
   with_heap
-  @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all
+  @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all ~get_vtable_ty
   @@ parser ~offset
 
 let with_decay_map (f : 'a DecayMapMonad.t) : 'a SM.t =
