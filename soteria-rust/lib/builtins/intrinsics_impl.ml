@@ -1,5 +1,6 @@
 open Charon
 open Charon_util
+module T = Typed.T
 module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix

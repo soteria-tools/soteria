@@ -1,5 +1,5 @@
-module T = Typed.T
-module BV = Typed.BitVec
+(* open Svalue *)
+open Typed
 
 type 'ptr meta = Thin | Len of T.sint Typed.t | VTable of 'ptr
 type 'ptr full_ptr = 'ptr * 'ptr meta

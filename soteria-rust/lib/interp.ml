@@ -1,5 +1,6 @@
 open Rustsymex
 module BV = Typed.BitVec
+module T = Typed.T
 open Typed.Syntax
 open Typed.Infix
 open Charon
