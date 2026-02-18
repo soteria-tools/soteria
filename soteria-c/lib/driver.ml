@@ -364,6 +364,13 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
       Fmt.pr "@.%a@.@?" pp_err "Verification Failure! (Unsupported features)";
       Error.Exit_code.Tool_error))
 
+let dump_report diagnostics =
+  match (Config.current ()).dump_report with
+  | None -> ()
+  | Some file ->
+      let json = `List diagnostics in
+      Yojson.Safe.to_file file json
+
 let dump_summaries results =
   match (Config.current ()).dump_summaries_file with
   | None -> ()
@@ -410,6 +417,7 @@ let generate_summaries ~functions_to_analyse prog =
   dump_summaries results;
   Fmt.pr "@\n@?";
   let found_bugs = ref false in
+  let diagnostics = ref [] in
   let list_iter r f = List.iter f r in
   let () =
     let@ fid, summaries = list_iter results in
@@ -421,13 +429,16 @@ let generate_summaries ~functions_to_analyse prog =
     already_signaled := remaining_to_signal @ !already_signaled;
     let@ error, call_trace = list_iter remaining_to_signal in
     found_bugs := true;
-    Error.Diagnostic.print_diagnostic
-      ~fid:(Fmt.to_to_string Ail_helpers.pp_sym_hum fid)
-      ~call_trace ~error;
+    let fid_str = Fmt.to_to_string Ail_helpers.pp_sym_hum fid in
+    Error.Diagnostic.print_diagnostic ~fid:fid_str ~call_trace ~error;
+    (* Collect diagnostic for JSON report *)
+    let diag_json = Error.Diagnostic.to_json ~fid:fid_str ~call_trace ~error in
+    diagnostics := diag_json :: !diagnostics;
     if (Config.current ()).show_manifest_summaries then
       Fmt.pr "@\n@[Corresponding summary:@ %a@]" Summary.pp_raw raw;
     Fmt.pr "@\n@?"
   in
+  dump_report !diagnostics;
   if !found_bugs then Error.Exit_code.Found_bug
   else (
     Fmt.pr "%a@.@?" pp_ok "No bugs found";

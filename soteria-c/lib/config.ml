@@ -86,6 +86,10 @@ type t = {
       [@env "SOTERIA_WRITE_PARSED_DB"]
       (** When using a compilation database, write a filtered version containing
           only successfully parsed files to the specified path *)
+  dump_report : string option;
+      [@docv "FILE"] [@names [ "dump-report" ]] [@env "SOTERIA_DUMP_REPORT"]
+      (** Write a JSON report of all diagnostics (bugs and errors) to the
+          specified file *)
 }
 [@@deriving make, subliner]
 
