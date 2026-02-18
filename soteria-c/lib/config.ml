@@ -80,6 +80,12 @@ type t = {
       [@names [ "print-states" ]]
       [@env "SOTERIA_PRINT_STATES"]
       (** Print final program states after whole-program symbolic testing *)
+  write_parsed_db : string option;
+      [@docv "FILE"]
+      [@names [ "write-parsed-db"; "write-parsed-compilation-db" ]]
+      [@env "SOTERIA_WRITE_PARSED_DB"]
+      (** When using a compilation database, write a filtered version containing
+          only successfully parsed files to the specified path *)
 }
 [@@deriving make, subliner]
 

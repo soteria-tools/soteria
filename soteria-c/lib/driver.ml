@@ -487,11 +487,11 @@ let capture_db soteria_config config json_file functions_to_analyse =
         ~msg:"Parsing files       " ~total:db_size ()
     in
     let* ails =
-      let ails =
+      let ails_and_items =
         List.filter_map
           (fun item ->
             match parse_and_signal item with
-            | Ok ail -> Some ail
+            | Ok ail -> Some (ail, item)
             | Error (`ParsingError msg, _loc) ->
                 L.debug (fun m ->
                     m "Ignoring file that did not parse correctly: %s@\n%s"
@@ -500,13 +500,22 @@ let capture_db soteria_config config json_file functions_to_analyse =
           db
       in
       let () =
-        let parsed = List.length ails in
+        let parsed = List.length ails_and_items in
         if parsed < db_size then
           Fmt.kstr warn
             "Some files failed to parse, successfully parsed %d out of %d files"
             parsed db_size
       in
-      Ok ails
+      (* Write parsed compilation database if requested *)
+      let () =
+        match (Config.current ()).write_parsed_db with
+        | None -> ()
+        | Some output_file ->
+            let parsed_items = List.map snd ails_and_items in
+            Compilation_database.dump_originals output_file parsed_items;
+            Fmt.pr "Wrote parsed compilation database to %s@\n@?" output_file
+      in
+      Ok (List.map fst ails_and_items)
     in
     Ail_linking.link ails
   in

@@ -26,22 +26,27 @@ parser = argparse.ArgumentParser(
     description="Run Soteria-C experiments with configurable options."
 )
 
-parser.add_argument(
+# Add subparsers for different commands
+subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
+
+# Run subcommand (default behavior)
+run_parser = subparsers.add_parser("run", help="Run Soteria-C experiments (default)")
+
+run_parser.add_argument(
     "--experiment-folder",
     type=Path,
     default=default_experiment_folder,
     help=f"Path to the experiments folder (default: {default_experiment_folder})",
 )
 
-
-parser.add_argument(
+run_parser.add_argument(
     "--solver-timeout",
     type=int,
     default=default_solver_timeout,
     help=f"Solver timeout in milliseconds (default: {default_solver_timeout})",
 )
 
-parser.add_argument(
+run_parser.add_argument(
     "--experiment",
     type=str,
     nargs="*",
@@ -49,19 +54,19 @@ parser.add_argument(
     help=f"List of experiment names to run (default: all, available: {', '.join(available_experiments)})",
 )
 
-parser.add_argument(
+run_parser.add_argument(
     "--cleanup-results-first",
     action="store_true",
     help="Remove existing results folder before running experiments",
 )
 
-parser.add_argument(
+run_parser.add_argument(
     "--cleanup-builds-first",
     action="store_true",
     help="Remove existing build folders before running experiments",
 )
 
-parser.add_argument(
+run_parser.add_argument(
     "--cleanup-first",
     action="store_true",
     help=(
@@ -70,10 +75,28 @@ parser.add_argument(
     ),
 )
 
-parser.add_argument(
+run_parser.add_argument(
     "--benchmark",
     action="store_true",
     help="Run experiments using hyperfine for benchmarking",
+)
+
+# Infer subcommand
+infer_parser = subparsers.add_parser(
+    "infer", help="Run Infer on experiment using parsed compilation database"
+)
+
+infer_parser.add_argument(
+    "experiment_name",
+    type=str,
+    help="Name of the experiment to run Infer on",
+)
+
+infer_parser.add_argument(
+    "--experiment-folder",
+    type=Path,
+    default=default_experiment_folder,
+    help=f"Path to the experiments folder (default: {default_experiment_folder})",
 )
 
 
@@ -179,6 +202,7 @@ class ExperimentConfig:
 class Experiment(PrintersMixin):
     config: ExperimentConfig
     compile_commands: Path
+    compile_commands_parsed: Path
     result_folder: Path
 
     def __init__(self, config: ExperimentConfig):
@@ -190,6 +214,12 @@ class Experiment(PrintersMixin):
             / config.path
             / config.cmake_build_path
             / "compile_commands.json"
+        ).resolve()
+        self.compile_commands_parsed = (
+            global_config.experiment_folder
+            / config.path
+            / config.cmake_build_path
+            / "compile_commands.parsed.json"
         ).resolve()
 
     def print_prefix(self) -> str:
@@ -241,6 +271,7 @@ class Experiment(PrintersMixin):
             f"--solver-timeout {global_config.solver_timeout} "
             "--dump-stats "
             f"{self.result_folder / 'stats.json'} "
+            f"--write-parsed-db {self.compile_commands_parsed} "
             f"{' '.join(self.config.soteria_args)}"
         )
         if global_config.benchmark:
@@ -252,6 +283,23 @@ class Experiment(PrintersMixin):
             cmd = f"hyperfine '{cmd}' --warmup 1 --runs 10 -i"
         self.run_command(cmd)
 
+    def generate_parsed_db_only(self):
+        """Generate the parsed compilation database without running full analysis."""
+        if self.compile_commands is None:
+            self.print_error("Script error: compile_commands.json not generated.")
+            exit(3)
+        self.print_info(
+            f"Generating parsed compilation database from: {self.compile_commands}"
+        )
+        cmd = (
+            "dune exec -- soteria-c capture-db "
+            f"{self.compile_commands} "
+            "--parse-only "
+            f"--write-parsed-db {self.compile_commands_parsed} "
+            f"{' '.join(self.config.soteria_args)}"
+        )
+        self.run_command(cmd)
+
     def run(self):
         print(f"{BOLD}{CYAN}Running experiment: {self.config.name}{RESET}")
         self.make_compile_commands()
@@ -260,21 +308,40 @@ class Experiment(PrintersMixin):
 
 ########## List experiments ##########
 
-simple_config = lambda name: ExperimentConfig(name=name, path=Path(name))
+simple_config = lambda name: ExperimentConfig(
+    name=name, path=Path(name), cmake_args=["-DBUILD_TESTING=OFF"]
+)
 configs = [
     ExperimentConfig(
         name="Collections-C",
         path=Path("Collections-C"),
         soteria_args=["--use-cerb-headers", "--havoc-undef"],
+        cmake_args=[],  # Collections-C doesn't have a cmake flag to disable tests
     ),
-    simple_config("zlib"),
-    simple_config("libgit2"),
-    simple_config("nghttp2"),
-    simple_config("mbedtls"),
-    simple_config("libtommath"),
-    simple_config("c-ares"),
-    simple_config("zlib-ng"),
-    simple_config("aws-c-common"),
+    ExperimentConfig(
+        name="zlib",
+        path=Path("zlib"),
+        cmake_args=["-DZLIB_BUILD_TESTING=OFF"],
+    ),
+    ExperimentConfig(
+        name="libgit2",
+        path=Path("libgit2"),
+        cmake_args=["-DBUILD_TESTS=OFF"],
+    ),
+    simple_config("nghttp2"),  # Uses standard BUILD_TESTING
+    ExperimentConfig(
+        name="mbedtls",
+        path=Path("mbedtls"),
+        cmake_args=["-DENABLE_TESTING=OFF"],
+    ),
+    simple_config("libtommath"),  # Uses standard BUILD_TESTING
+    ExperimentConfig(
+        name="c-ares",
+        path=Path("c-ares"),
+        cmake_args=["-DCARES_BUILD_TESTS=OFF"],
+    ),
+    simple_config("zlib-ng"),  # Uses standard BUILD_TESTING
+    simple_config("aws-c-common"),  # Uses standard BUILD_TESTING
 ]
 
 
@@ -298,11 +365,31 @@ def selected_experiments():
 
 def at_start():
     go_to_dune_root()
+
+    # Check if user is trying to run without subcommand (backwards compatibility)
+    # If first arg is not a subcommand, treat it as 'run' command
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] not in ["run", "infer"]:
+        # Insert 'run' as the subcommand
+        sys.argv.insert(1, "run")
+
     args = parser.parse_args()
-    validate_args(args)
-    global_config.set_from_args(args)
-    if global_config.cleanup_results_first:
-        ask_and_remove(global_config.result_folder())
+
+    # Default to 'run' command if no subcommand specified
+    if args.command is None:
+        args.command = "run"
+
+    # Validate args only for run command
+    if args.command == "run":
+        validate_args(args)
+        global_config.set_from_args(args)
+        if global_config.cleanup_results_first:
+            ask_and_remove(global_config.result_folder())
+    elif args.command == "infer":
+        global_config.experiment_folder = args.experiment_folder.resolve()
+
+    return args
 
 
 def aggregate_results():
@@ -323,24 +410,28 @@ def aggregate_results():
                 global_printer.print_error(f"Failed to read json from {file}")
                 continue
             try:
-                # Normalize the stats (removes soteria-c.give-up-reasons, 
+                # Normalize the stats (removes soteria-c.give-up-reasons,
                 # converts soteria.give-up-reasons from list to count dict)
                 j = normalize_stats(j)
             except Exception as e:
-                global_printer.print_error(f"Failed to normalize stats from {file}: {e}")
+                global_printer.print_error(
+                    f"Failed to normalize stats from {file}: {e}"
+                )
                 continue
             all_stats = merge_stats(all_stats, j)
-    
+
     # Sort give-up-reasons by count (descending) if it exists
-    if "soteria.give-up-reasons" in all_stats and isinstance(all_stats["soteria.give-up-reasons"], dict):
+    if "soteria.give-up-reasons" in all_stats and isinstance(
+        all_stats["soteria.give-up-reasons"], dict
+    ):
         all_stats["soteria.give-up-reasons"] = dict(
             sorted(
-                all_stats["soteria.give-up-reasons"].items(), 
-                key=lambda kv: kv[1], 
-                reverse=True
+                all_stats["soteria.give-up-reasons"].items(),
+                key=lambda kv: kv[1],
+                reverse=True,
             )
         )
-    
+
     with open(result_folder / "all_stats.json", "w") as f:
         json.dump(all_stats, f, indent=2)
         global_printer.print_success(
@@ -348,11 +439,71 @@ def aggregate_results():
         )
 
 
+def run_infer_on_experiment(experiment_name: str):
+    """Run Infer on a specific experiment using its parsed compilation database."""
+    # Find the experiment config
+    config = None
+    for c in configs:
+        if c.name == experiment_name:
+            config = c
+            break
+
+    if config is None:
+        global_printer.print_error(
+            f"Experiment '{experiment_name}' not found. Available experiments: {', '.join(available_experiments)}"
+        )
+        exit(1)
+
+    experiment = Experiment(config)
+
+    # Check if compile_commands.parsed.json exists, if not run soteria-c first
+    if not experiment.compile_commands_parsed.exists():
+        global_printer.print_info(
+            f"Parsed compilation database not found. Running Soteria-C in parse-only mode to generate it..."
+        )
+        # Make sure compile_commands.json exists
+        if not experiment.compile_commands.exists():
+            experiment.make_compile_commands()
+        # Run soteria-c in parse-only mode to generate the parsed db quickly
+        experiment.generate_parsed_db_only()
+
+    # Now run Infer
+    if not experiment.compile_commands_parsed.exists():
+        global_printer.print_error(
+            f"Failed to generate parsed compilation database at {experiment.compile_commands_parsed}"
+        )
+        exit(1)
+
+    global_printer.print_info(
+        f"Running Infer with parsed compilation database: {experiment.compile_commands_parsed}"
+    )
+
+    # Check if infer is available
+    if shutil.which("infer") is None:
+        global_printer.print_error(
+            "Infer is not found in PATH. Please install Infer and try again."
+        )
+        exit(1)
+
+    # Run infer
+    experiment_dir = global_config.experiment_folder / config.path
+    with contextlib.chdir(experiment_dir):
+        cmd = f"infer --compilation-database {experiment.compile_commands_parsed} -j 1 --pulse-only"
+        global_printer.print_message(f"{MAGENTA}Running:\n{cmd}{RESET}")
+        os.system(cmd)
+
+    global_printer.print_success("Infer analysis complete!")
+
+
 if __name__ == "__main__":
-    at_start()
-    experiments = selected_experiments()
-    if global_config.cleanup_builds_first:
-        for experiment in experiments:
-            experiment.cleanup_build()
-    run_experiments(experiments)
-    aggregate_results()
+    args = at_start()
+
+    if args.command == "run":
+        experiments = selected_experiments()
+        if global_config.cleanup_builds_first:
+            for experiment in experiments:
+                experiment.cleanup_build()
+        run_experiments(experiments)
+        aggregate_results()
+    elif args.command == "infer":
+        run_infer_on_experiment(args.experiment_name)
