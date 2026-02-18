@@ -416,37 +416,96 @@ class Experiment(PrintersMixin):
         self.make_compile_commands()
         self.run_soteria_c()
 
-    def run_soteria_c_timed(self) -> tuple[float, int]:
-        """Run Soteria-C and return (time_seconds, bug_count)."""
+    def run_soteria_c_timed(self) -> tuple[float, int, int, int]:
+        """Run Soteria-C and return (time_seconds, bug_count, total_files, parsed_files).
+
+        First runs with --parse-only to generate parsed compilation database,
+        then runs the actual analysis on the parsed database and times only that.
+        """
         import subprocess
+        import re
 
         self.make_compile_commands()
         compile_db = self.get_compile_commands_for_soteria()
         if compile_db is None or not compile_db.exists():
             self.print_error("Script error: compile_commands.json not generated.")
-            return (0.0, 0)
+            return (0.0, 0, 0, 0)
 
         os.makedirs(self.result_folder, exist_ok=True)
-        cmd = [
+
+        # Count total files from compilation database
+        total_files = 0
+        try:
+            with open(compile_db, "r") as f:
+                db = json.load(f)
+                total_files = len(db)
+        except:
+            self.print_error(f"Failed to read {compile_db}")
+
+        # Step 1: Generate parsed compilation database with --parse-only (not timed)
+        self.print_info(f"Parsing compilation database: {compile_db}")
+        parse_cmd = [
             "dune",
             "exec",
             "--",
             "soteria-c",
             "capture-db",
             str(compile_db),
+            "--parse-only",
+            "--write-parsed-db",
+            str(self.compile_commands_parsed),
+        ] + self.config.soteria_args
+
+        result = subprocess.run(parse_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            self.print_error("Failed to parse compilation database")
+            return (0.0, 0, 0, 0)
+
+        # Extract parsed file count - try from output first, then from parsed db file
+        parsed_files = 0
+        output = result.stdout + result.stderr
+        match = re.search(r"successfully parsed (\d+) out of (\d+) files", output)
+        if match:
+            parsed_files = int(match.group(1))
+            # Update total_files from the parsing output if available
+            total_files = int(match.group(2))
+        else:
+            # If no parsing output (e.g., already parsed), count from parsed db
+            if self.compile_commands_parsed.exists():
+                try:
+                    with open(self.compile_commands_parsed, "r") as f:
+                        db = json.load(f)
+                        parsed_files = len(db)
+                except:
+                    self.print_error(f"Failed to read {self.compile_commands_parsed}")
+
+        if not self.compile_commands_parsed.exists():
+            self.print_error(
+                f"Parsed compilation database not generated at {self.compile_commands_parsed}"
+            )
+            return (0.0, 0, 0, 0)
+
+        # Step 2: Run analysis on parsed database and time this part
+        self.print_info(f"Running Soteria-C analysis on parsed database")
+        analysis_cmd = [
+            "dune",
+            "exec",
+            "--",
+            "soteria-c",
+            "capture-db",
+            str(self.compile_commands_parsed),
             "--solver-timeout",
             str(global_config.solver_timeout),
             "--dump-stats",
             str(self.result_folder / "stats.json"),
             "--dump-report",
             str(self.result_folder / "report.json"),
-            "--write-parsed-db",
-            str(self.compile_commands_parsed),
         ] + self.config.soteria_args
 
-        self.print_info(f"Running Soteria-C with compile_commands: {compile_db}")
+        print(f"{MAGENTA}Running:\n{' '.join(analysis_cmd)}{RESET}")
+
         start_time = time.time()
-        subprocess.run(cmd, capture_output=False)
+        subprocess.run(analysis_cmd, capture_output=False)
         elapsed_time = time.time() - start_time
 
         # Count bugs from report.json
@@ -460,7 +519,7 @@ class Experiment(PrintersMixin):
             except:
                 self.print_error(f"Failed to read {report_file}")
 
-        return (elapsed_time, bug_count)
+        return (elapsed_time, bug_count, total_files, parsed_files)
 
     def run_infer_timed(self) -> tuple[float, int]:
         """Run Infer and return (time_seconds, bug_count)."""
@@ -524,7 +583,7 @@ configs = [
     ExperimentConfig(
         name="Collections-C",
         path=Path("Collections-C"),
-        soteria_args=["--use-cerb-headers", "--havoc-undef"],
+        soteria_args=["--use-cerb-headers"],
         cmake_args=[],  # Collections-C doesn't have a cmake flag to disable tests
         exclude_folders=["test", "examples"],  # Filter out test files manually
     ),
@@ -701,7 +760,7 @@ def run_infer_on_experiment(experiment_name: str):
     # Run infer
     experiment_dir = global_config.experiment_folder / config.path
     with contextlib.chdir(experiment_dir):
-        cmd = f"infer --compilation-database {experiment.compile_commands_parsed} -j 1 --pulse-only"
+        cmd = f"infer --compilation-database {experiment.compile_commands_parsed} -j 1 --pulse-only --no-pulse-force-continue --pulse-log-unknown-calls"
         global_printer.print_message(f"{MAGENTA}Running:\n{cmd}{RESET}")
         os.system(cmd)
 
@@ -716,7 +775,9 @@ def run_comparison(experiments: list):
 
         # Run Soteria-C
         print(f"{BOLD}Running Soteria-C...{RESET}")
-        soteria_time, soteria_bugs = exp.run_soteria_c_timed()
+        soteria_time, soteria_bugs, total_files, parsed_files = (
+            exp.run_soteria_c_timed()
+        )
 
         # Run Infer
         print(f"{BOLD}Running Infer...{RESET}")
@@ -729,12 +790,14 @@ def run_comparison(experiments: list):
                 "soteria_bugs": soteria_bugs,
                 "infer_time": infer_time,
                 "infer_bugs": infer_bugs,
+                "total_files": total_files,
+                "parsed_files": parsed_files,
             }
         )
 
         print(
             f"{GREEN}✓ {exp.config.name}: Soteria ({soteria_time:.2f}s, {soteria_bugs} bugs) | "
-            f"Infer ({infer_time:.2f}s, {infer_bugs} bugs){RESET}"
+            f"Infer ({infer_time:.2f}s, {infer_bugs} bugs) | Files: {parsed_files}/{total_files}{RESET}"
         )
 
     return results
@@ -752,6 +815,7 @@ def format_comparison_table(results: list[dict]) -> str:
     # Build table
     header = (
         f"| {'Experiment'.ljust(max_name_len)} | "
+        f"{'Successfully Parsed'.rjust(19)} | "
         f"{'Time Soteria (s)'.rjust(16)} | "
         f"{'Bugs Soteria'.rjust(13)} | "
         f"{'Time Infer (s)'.rjust(15)} | "
@@ -759,6 +823,7 @@ def format_comparison_table(results: list[dict]) -> str:
     )
     separator = (
         f"|{'-' * (max_name_len + 2)}|"
+        f"{'-' * 21}|"
         f"{'-' * 18}|"
         f"{'-' * 15}|"
         f"{'-' * 17}|"
@@ -767,8 +832,10 @@ def format_comparison_table(results: list[dict]) -> str:
 
     rows = []
     for r in results:
+        files_ratio = f"{r['parsed_files']}/{r['total_files']}"
         row = (
             f"| {r['experiment'].ljust(max_name_len)} | "
+            f"{files_ratio:>19} | "
             f"{r['soteria_time']:>16.2f} | "
             f"{r['soteria_bugs']:>13} | "
             f"{r['infer_time']:>15.2f} | "
