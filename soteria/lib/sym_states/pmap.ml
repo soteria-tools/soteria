@@ -165,6 +165,22 @@ module Build_from_find_opt_sym
     fold_seq (M.to_seq st) ~init ~f
 end
 
+module StatKeys = struct
+  let direct_hits = "soteria.data.pmap.direct-hits"
+  let lookups = "soteria.data.pmap.lookups"
+
+  let () =
+    let open Stats in
+    let open Logs.Printers in
+    disable_printer direct_hits;
+    register_int_printer lookups ~name:"Data.Map lookups"
+      (fun stats ft lookups ->
+        let direct_hits = get_int stats direct_hits in
+        Fmt.pf ft "%a direct hits (%d of %d)" pp_percent
+          (Float.of_int lookups, Float.of_int direct_hits)
+          direct_hits lookups)
+end
+
 module Build_base
     (Symex : Symex.Base)
     (Key : Key(Symex).S)
@@ -183,8 +199,11 @@ struct
       (* TODO: Investigate: this is not a tailcall, because if%sat is not an
          if. *)
     in
+    Stats.As_ctx.incr StatKeys.lookups;
     match M.find_opt key st with
-    | Some v -> Symex.return (key, Some v)
+    | Some v ->
+        Stats.As_ctx.incr StatKeys.direct_hits;
+        Symex.return (key, Some v)
     | None -> M.to_seq st |> List.of_seq |> find_bindings
 
   include
@@ -220,9 +239,12 @@ struct
           if%sat Key.sem_eq key k then Symex.return (k, Some v)
           else find_bindings tl
     in
+    Stats.As_ctx.incr StatKeys.lookups;
     let* key = Key.simplify key in
     match M.find_opt key st with
-    | Some v -> Symex.return (key, Some v)
+    | Some v ->
+        Stats.As_ctx.incr StatKeys.direct_hits;
+        Symex.return (key, Some v)
     | None ->
         let not_in_map =
           M.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct
