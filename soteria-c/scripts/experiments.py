@@ -416,11 +416,12 @@ class Experiment(PrintersMixin):
         self.make_compile_commands()
         self.run_soteria_c()
 
-    def run_soteria_c_timed(self) -> tuple[float, int, int, int]:
-        """Run Soteria-C and return (time_seconds, bug_count, total_files, parsed_files).
+    def run_soteria_c_timed(self) -> tuple[float, int, int, int, dict]:
+        """Run Soteria-C and return (time_seconds, bug_count, total_files, parsed_files, stats_dict).
 
         First runs with --parse-only to generate parsed compilation database,
         then runs the actual analysis on the parsed database and times only that.
+        The stats_dict contains additional stats extracted from stats.json.
         """
         import subprocess
         import re
@@ -429,7 +430,7 @@ class Experiment(PrintersMixin):
         compile_db = self.get_compile_commands_for_soteria()
         if compile_db is None or not compile_db.exists():
             self.print_error("Script error: compile_commands.json not generated.")
-            return (0.0, 0, 0, 0)
+            return (0.0, 0, 0, 0, {})
 
         os.makedirs(self.result_folder, exist_ok=True)
 
@@ -459,7 +460,7 @@ class Experiment(PrintersMixin):
         result = subprocess.run(parse_cmd, capture_output=True, text=True)
         if result.returncode != 0:
             self.print_error("Failed to parse compilation database")
-            return (0.0, 0, 0, 0)
+            return (0.0, 0, 0, 0, {})
 
         # Extract parsed file count - try from output first, then from parsed db file
         parsed_files = 0
@@ -483,7 +484,7 @@ class Experiment(PrintersMixin):
             self.print_error(
                 f"Parsed compilation database not generated at {self.compile_commands_parsed}"
             )
-            return (0.0, 0, 0, 0)
+            return (0.0, 0, 0, 0, {})
 
         # Step 2: Run analysis on parsed database and time this part
         self.print_info(f"Running Soteria-C analysis on parsed database")
@@ -502,8 +503,6 @@ class Experiment(PrintersMixin):
             str(self.result_folder / "report.json"),
         ] + self.config.soteria_args
 
-        print(f"{MAGENTA}Running:\n{' '.join(analysis_cmd)}{RESET}")
-
         start_time = time.time()
         subprocess.run(analysis_cmd, capture_output=False)
         elapsed_time = time.time() - start_time
@@ -519,7 +518,32 @@ class Experiment(PrintersMixin):
             except:
                 self.print_error(f"Failed to read {report_file}")
 
-        return (elapsed_time, bug_count, total_files, parsed_files)
+        # Extract stats from stats.json
+        stats_dict = {}
+        stats_file = self.result_folder / "stats.json"
+        if stats_file.exists():
+            try:
+                with open(stats_file, "r") as f:
+                    stats = json.load(f)
+                    stats_dict = {
+                        "time_parsing": stats.get("soteria-c.time_parsing", 0.0),
+                        "time_summary_generation": stats.get(
+                            "soteria-c.time_summary_generation", 0.0
+                        ),
+                        "time_summary_analysis": stats.get(
+                            "soteria-c.time_summary_analysis", 0.0
+                        ),
+                        "num_functions_to_analyse": stats.get(
+                            "soteria-c.num_functions_to_analyse", 0
+                        ),
+                        "num_summaries_generated": stats.get(
+                            "soteria-c.num_summaries_generated", 0
+                        ),
+                    }
+            except:
+                self.print_error(f"Failed to read {stats_file}")
+
+        return (elapsed_time, bug_count, total_files, parsed_files, stats_dict)
 
     def run_infer_timed(self) -> tuple[float, int]:
         """Run Infer and return (time_seconds, bug_count)."""
@@ -767,6 +791,17 @@ def run_infer_on_experiment(experiment_name: str):
     global_printer.print_success("Infer analysis complete!")
 
 
+def calculate_parsing_percentage(stats_dict: dict) -> float:
+    """Calculate percentage of time spent parsing relative to analysis time."""
+    parsing_time = stats_dict.get("time_parsing", 0.0)
+    gen_time = stats_dict.get("time_summary_generation", 0.0)
+    analysis_time = stats_dict.get("time_summary_analysis", 0.0)
+    total_time = gen_time + analysis_time + parsing_time
+    if total_time > 0:
+        return (parsing_time / total_time) * 100.0
+    return 0.0
+
+
 def run_comparison(experiments: list):
     """Run both Soteria-C and Infer on all experiments and collect results."""
     results = []
@@ -775,13 +810,16 @@ def run_comparison(experiments: list):
 
         # Run Soteria-C
         print(f"{BOLD}Running Soteria-C...{RESET}")
-        soteria_time, soteria_bugs, total_files, parsed_files = (
+        soteria_time, soteria_bugs, total_files, parsed_files, stats_dict = (
             exp.run_soteria_c_timed()
         )
 
         # Run Infer
         print(f"{BOLD}Running Infer...{RESET}")
         infer_time, infer_bugs = exp.run_infer_timed()
+
+        # Calculate parsing percentage
+        parsing_pct = calculate_parsing_percentage(stats_dict)
 
         results.append(
             {
@@ -792,6 +830,9 @@ def run_comparison(experiments: list):
                 "infer_bugs": infer_bugs,
                 "total_files": total_files,
                 "parsed_files": parsed_files,
+                "num_functions": stats_dict.get("num_functions_to_analyse", 0),
+                "num_summaries": stats_dict.get("num_summaries_generated", 0),
+                "parsing_pct": parsing_pct,
             }
         )
 
@@ -816,6 +857,9 @@ def format_comparison_table(results: list[dict]) -> str:
     header = (
         f"| {'Experiment'.ljust(max_name_len)} | "
         f"{'Successfully Parsed'.rjust(19)} | "
+        f"{'Parse %'.rjust(8)} | "
+        f"{'Functions'.rjust(10)} | "
+        f"{'Summaries'.rjust(10)} | "
         f"{'Time Soteria (s)'.rjust(16)} | "
         f"{'Bugs Soteria'.rjust(13)} | "
         f"{'Time Infer (s)'.rjust(15)} | "
@@ -824,6 +868,9 @@ def format_comparison_table(results: list[dict]) -> str:
     separator = (
         f"|{'-' * (max_name_len + 2)}|"
         f"{'-' * 21}|"
+        f"{'-' * 10}|"
+        f"{'-' * 12}|"
+        f"{'-' * 12}|"
         f"{'-' * 18}|"
         f"{'-' * 15}|"
         f"{'-' * 17}|"
@@ -836,6 +883,9 @@ def format_comparison_table(results: list[dict]) -> str:
         row = (
             f"| {r['experiment'].ljust(max_name_len)} | "
             f"{files_ratio:>19} | "
+            f"{r['parsing_pct']:>7.1f}% | "
+            f"{r['num_functions']:>10} | "
+            f"{r['num_summaries']:>10} | "
             f"{r['soteria_time']:>16.2f} | "
             f"{r['soteria_bugs']:>13} | "
             f"{r['infer_time']:>15.2f} | "
