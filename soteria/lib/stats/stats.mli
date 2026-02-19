@@ -176,6 +176,12 @@ module As_ctx : sig
       bookkeeping. *)
   val with_stats_ignored : unit -> (unit -> 'a) -> 'a
 
+  (** [with_stats_dumped () f] runs function [f] and handles effects raised by
+      the functions of this module such as {!push_entry}, and dumps the stats to
+      the file specified by the current {!field-Config.output_stats} if it is
+      set, or ignores them otherwise. *)
+  val with_stats_dumped : unit -> (unit -> 'a) -> 'a
+
   (** [push_entry name entry] adds the given statistic [entry] under the given
       name [name] to the current statistics context. *)
   val push_entry : string -> stat_entry -> unit

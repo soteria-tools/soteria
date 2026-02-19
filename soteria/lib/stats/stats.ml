@@ -192,6 +192,13 @@ module As_ctx = struct
   let with_stats_ignored () f =
     try f () with effect Apply _, k -> Effect.Deep.continue k ()
 
+  let with_stats_dumped () f =
+    if Option.is_some (Config.get ()).output_stats then (
+      let { res; stats } = with_stats () f in
+      output stats;
+      res)
+    else with_stats_ignored () f
+
   let[@inline] apply f = Effect.perform (Apply f)
 
   let push_entry key entry =

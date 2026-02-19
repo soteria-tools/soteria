@@ -273,26 +273,28 @@ let generate_errors content =
     close_out oc
   in
   match parse_and_link_ail ~includes:[] [ file_name ] with
-  | Error e -> Soteria.Stats.with_empty_stats [ e ]
+  | Error e -> [ e ]
   | Ok prog ->
       let@ () = with_function_context prog in
-      Abductor.generate_all_summaries ~functions_to_analyse:None prog
-      |> Soteria.Stats.map_with_stats (fun summaries ->
-          summaries
-          |> List.concat_map (fun (fid, summaries) ->
-              let@ () =
-                L.with_section
-                  ("Analysing summaries for function" ^ Symbol.show_symbol fid)
-              in
-              List.concat_map (Summary.manifest_bugs ~fid) summaries)
-          |> List.sort_uniq Stdlib.compare)
+      let summaries =
+        Abductor.generate_all_summaries ~functions_to_analyse:None prog
+      in
+      summaries
+      |> List.concat_map (fun (fid, summaries) ->
+          let@ () =
+            L.with_section
+              ("Analysing summaries for function" ^ Symbol.show_symbol fid)
+          in
+          List.concat_map (Summary.manifest_bugs ~fid) summaries)
+      |> List.sort_uniq Stdlib.compare
 
 (** {2 Entry points} *)
 
 (* Helper for all main entry points *)
 let initialise ?soteria_config config f =
   Option.iter Soteria.Config.set_and_lock soteria_config;
-  Config.with_config ~config f
+  let@ () = Config.with_config ~config in
+  Soteria.Stats.As_ctx.with_stats_dumped () f
 
 let print_states result =
   let open Soteria.Stats in
@@ -393,6 +395,7 @@ let analyse_summaries results =
     |> Iter.map (fun (_, l) -> List.length l)
     |> Iter.fold ( + ) 0
   in
+  Soteria.Stats.As_ctx.add_int "soteria-c.num_summaries_generated" total;
   let open Syntaxes.List in
   let@ () =
     Soteria.Terminal.Progress_bar.run ~color:`Magenta
@@ -409,11 +412,19 @@ let analyse_summaries results =
 
 let generate_summaries ~functions_to_analyse prog =
   let@ () = with_function_context prog in
-  let { Soteria.Stats.res; stats } =
+  let res =
+    let@ () =
+      Soteria.Stats.As_ctx.add_time_of_to "soteria-c.time_summary_generation"
+    in
     Abductor.generate_all_summaries ~functions_to_analyse prog
   in
-  Soteria.Stats.output stats;
-  let results = analyse_summaries res in
+
+  let results =
+    let@ () =
+      Soteria.Stats.As_ctx.add_time_of_to "soteria-c.time_summary_analysis"
+    in
+    analyse_summaries res
+  in
   dump_summaries results;
   Fmt.pr "@\n@?";
   let found_bugs = ref false in
@@ -478,12 +489,8 @@ let generate_all_summaries soteria_config config includes functions_to_analyse
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else generate_summaries ~functions_to_analyse prog
 
-(* Entry point function *)
-let capture_db soteria_config config json_file functions_to_analyse =
+let linked_prog_of_db json_file =
   let open Syntaxes.Result in
-  let@ () = with_tool_errors_caught () in
-  let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  let@ () = initialise ~soteria_config config in
   let linked_prog =
     let@ () = L.with_section "Parsing and Linking from database" in
     let db = Compilation_database.from_file json_file in
@@ -530,22 +537,30 @@ let capture_db soteria_config config json_file functions_to_analyse =
     in
     Ail_linking.link ails
   in
+  Result.get_or
+    ~err:(function
+      | `ParsingError msg, _ ->
+          Fmt.epr "%s@\n@?" msg;
+          tool_error "Failed to parse AIL"
+      | `LinkError msg, _ ->
+          let msg =
+            if (Config.current ()).no_ignore_parse_failures then msg
+            else "All files failed to parse, no analysis will be performed"
+          in
+          Fmt.pr "Error: %a@\n@?" pp_err msg;
+          if (Config.current ()).no_ignore_parse_failures then
+            tool_error "Failed to link AIL"
+          else Ail_tys.empty_linked_program)
+    linked_prog
+
+(* Entry point function *)
+let capture_db soteria_config config json_file functions_to_analyse =
+  let@ () = with_tool_errors_caught () in
+  let functions_to_analyse = as_nonempty_list functions_to_analyse in
+  let@ () = initialise ~soteria_config config in
   let linked_prog =
-    Result.get_or
-      ~err:(function
-        | `ParsingError msg, _ ->
-            Fmt.epr "%s@\n@?" msg;
-            tool_error "Failed to parse AIL"
-        | `LinkError msg, _ ->
-            let msg =
-              if (Config.current ()).no_ignore_parse_failures then msg
-              else "All files failed to parse, no analysis will be performed"
-            in
-            Fmt.pr "Error: %a@\n@?" pp_err msg;
-            if (Config.current ()).no_ignore_parse_failures then
-              tool_error "Failed to link AIL"
-            else Ail_tys.empty_linked_program)
-      linked_prog
+    let@ () = Soteria.Stats.As_ctx.add_time_of_to "soteria-c.time_parsing" in
+    linked_prog_of_db json_file
   in
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else generate_summaries ~functions_to_analyse linked_prog

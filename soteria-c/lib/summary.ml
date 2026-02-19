@@ -264,7 +264,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           in
           let is_manifest =
             try
-              let result = Csymex.run ~mode:OX process in
+              let result = Csymex.run_needs_stats ~mode:OX process in
               (* The bug is manifest if the test passed in every branch. *)
               (not (List.is_empty result)) && List.for_all fst result
             with Soteria.Symex.Gave_up _ -> false
