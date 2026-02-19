@@ -18,11 +18,13 @@ module BitVec = struct
   include BitVec
 
   let of_bool x =
-    of_bool
-      (Option.get
-         (Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_ity
-            (Signed Int_)))
-      x
+    let byte_size =
+      Option.get
+        (Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_ity
+           (Signed Int_))
+    in
+    let bit_size = byte_size * 8 in
+    of_bool bit_size x
 
   let usize z = mk ptr_bits z
   let usizenz z = mk_nz ptr_bits z
