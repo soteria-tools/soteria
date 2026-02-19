@@ -239,8 +239,7 @@ let exec_function ~includes ~fuel file_names function_name =
   let open Syntaxes.Result in
   let result =
     let* linked = parse_and_link_ail ~includes file_names in
-    if (Config.current ()).parse_only then
-      Ok (Soteria.Stats.with_empty_stats [])
+    if (Config.current ()).parse_only then Ok []
     else
       let* entry_point = resolve_function linked function_name in
       let open Wpst_interp.InterpM in
@@ -254,14 +253,13 @@ let exec_function ~includes ~fuel file_names function_name =
         Wpst_interp.exec_fun entry_point ~args:[]
       in
       let@ () = with_function_context linked in
-      Ok (Csymex.Result.run_with_stats ~mode:OX ~fuel symex)
+      Ok (Csymex.Result.run_needs_stats ~mode:OX ~fuel symex)
   in
   match result with
   | Ok v -> v
   | Error e ->
       let e = (e, SState.empty) in
-      Soteria.Stats.with_empty_stats
-        [ (Soteria.Symex.Compo_res.Error (Soteria.Symex.Or_gave_up.E e), []) ]
+      [ (Soteria.Symex.Compo_res.Error (Soteria.Symex.Or_gave_up.E e), []) ]
 
 let temp_file = lazy (Filename.temp_file "soteria_c" ".c")
 
@@ -297,7 +295,6 @@ let initialise ?soteria_config config f =
   Soteria.Stats.As_ctx.with_stats_dumped () f
 
 let print_states result =
-  let open Soteria.Stats in
   let pp_state ft state =
     (Fmt.Dump.list SState.pp_serialized) ft (SState.serialize state)
   in
@@ -311,7 +308,7 @@ let print_states result =
               (pair pp_err_and_call_trace (option SState.pp)))
          ~miss:Fmt.Dump.(list SState.pp_serialized))
         ft r)
-    result.res
+    result
 
 (* Entry point function *)
 let exec_and_print soteria_config config fuel includes file_names entry_point :
@@ -323,7 +320,6 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
   let result = exec_function ~includes ~fuel file_names entry_point in
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else (
-    Soteria.Stats.output result.stats;
     if (Config.current ()).print_states then print_states result;
     let errors_to_signal =
       List.filter_map
@@ -337,7 +333,7 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
             when not ((Config.current ()).ignore_ub && Error.is_ub e) ->
               Some (E err_with_trace)
           | _ -> None)
-        result.res
+        result
     in
 
     let has_found_bugs = ref false in
@@ -353,7 +349,8 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
                ~error:(`Gave_up msg));
     let success = List.is_empty errors_to_signal in
     let steps_number =
-      Soteria.Stats.get_int result.stats Soteria.Symex.StatKeys.steps
+      let stats = Soteria.Stats.As_ctx.get_copy () in
+      Soteria.Stats.get_int stats Soteria.Symex.StatKeys.steps
     in
     Fmt.pr "@.Executed %d statements" steps_number;
     if success then (

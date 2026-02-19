@@ -212,6 +212,10 @@ module As_ctx : sig
       entry in a string sequence statistic under the given key [key] in a map
       statistic under the given name [name]. *)
   val push_string_binding : string -> string -> string -> unit
+
+  (** [get_copy ()] retrieves a copy of the statistics aggregated in the current
+      environment *)
+  val get_copy : unit -> t
 end
 
 module Config : sig
