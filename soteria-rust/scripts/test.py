@@ -334,8 +334,6 @@ Benchmark = dict[ToolName, tuple[Outcome, float]]
 
 
 def benchmark(tool: Optional[ToolName], opts: CliOpts):
-    build()
-
     log = PWD / "benchmark.log"
     log.touch()
     log.write_text(f"Running benchmark - {datetime.datetime.now()}:\n\n")
@@ -350,6 +348,8 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
     def run_benchmark(opts: CliOpts):
         if tool is not None and opts["tool"] != tool:
             return
+        if tool == "Rusteria":
+            build()
         for name, callback in TEST_SUITES.items():
             if name == "custom":
                 continue
@@ -406,8 +406,8 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
         run_benchmark(opts_for_rusteria(opts, force_obol=True, timeout=timeout))
         run_benchmark(opts_for_kani(opts, timeout=timeout))
         run_benchmark(opts_for_miri(opts))
-    except:  # noqa E722: we make sure outputting results happens despite exit
-        ...
+    except Exception as e:
+        print(e)
 
     rows: list[list[tuple[str, Optional[str]]]] = [
         [
