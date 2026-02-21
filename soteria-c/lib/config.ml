@@ -93,7 +93,7 @@ type t = {
 }
 [@@deriving make, subliner]
 
-type mode = ExecMain | Lsp | ShowAil | GenSummaries | CaptureDb
+type mode = Compositional | Whole_program
 type _ Effect.t += GetConfig : t Effect.t
 type _ Effect.t += GetMode : mode Effect.t
 

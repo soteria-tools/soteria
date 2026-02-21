@@ -14,17 +14,16 @@ module Heap =
 
       type t = T.sloc Typed.t
 
-      let concrete_loc = ref 0
       let pp = ppa
 
       let fresh () =
         match Config.current_mode () with
-        | Lsp | ShowAil | GenSummaries | CaptureDb -> Csymex.nondet Typed.t_loc
-        | ExecMain ->
+        | Compositional -> Csymex.nondet Typed.t_loc
+        | Whole_program ->
             (* If we are in non-compositional execution, we can use concrete
                locations. *)
-            incr concrete_loc;
-            return (Typed.Ptr.loc_of_int !concrete_loc)
+            let id = Csymex.Concrete_alloc_id.get_next_id () in
+            return (Typed.Ptr.loc_of_int id)
 
       let simplify = Csymex.simplify
       let to_int = unique_tag

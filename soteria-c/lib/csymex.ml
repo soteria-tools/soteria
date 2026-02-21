@@ -1,5 +1,14 @@
 module SYMEX = Soteria.Symex.Make (Bv_solver.Z3_solver)
 
+module Concrete_alloc_id = struct
+  let next_id = ref 1
+
+  let get_next_id () =
+    let id = !next_id in
+    incr next_id;
+    id
+end
+
 (* Adding the current location being executed to the general execution state *)
 module CSYMEX =
   Soteria.Sym_states.State_monad.Make
@@ -20,6 +29,12 @@ module StatKeys = struct
        display them twice. *)
     disable_printer give_up_reasons
 end
+
+let fresh_alloc_id () =
+  match Config.current_mode () with
+  | Compositional -> nondet Typed.t_loc
+  | Whole_program ->
+      return (Typed.Ptr.loc_of_int (Concrete_alloc_id.get_next_id ()))
 
 let check_nonzero (t : Typed.T.sint Typed.t) :
     ([> Typed.T.nonzero ] Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
