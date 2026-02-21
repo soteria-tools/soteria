@@ -51,6 +51,7 @@ module Ptr = struct
   let null = null ptr_bits
   let null_loc = null_loc ptr_bits
   let loc_of_z = loc_of_z ptr_bits
+  let loc_of_int = loc_of_int ptr_bits
 end
 
 module Syntax = struct

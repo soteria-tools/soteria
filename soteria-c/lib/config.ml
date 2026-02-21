@@ -93,16 +93,22 @@ type t = {
 }
 [@@deriving make, subliner]
 
+type mode = ExecMain | Lsp | ShowAil | GenSummaries | CaptureDb
 type _ Effect.t += GetConfig : t Effect.t
+type _ Effect.t += GetMode : mode Effect.t
 
 let default = make ()
 
 let current () =
   try Effect.perform GetConfig with Effect.Unhandled GetConfig -> default
 
-let with_config ~(config : t) f =
+let current_mode () = Effect.perform GetMode
+
+let with_config ~(config : t) ~(mode : mode) f =
   if config.testcomp_compat then
     Soteria.Terminal.Warn.warn_once
       "Test-Comp compatibility mode enabled. Note that Soteria-C is *not* \
        optimised for this test suite, and does not aim to be performant on it.";
-  try f () with effect GetConfig, k -> Effect.Deep.continue k config
+  try f () with
+  | effect GetConfig, k -> Effect.Deep.continue k config
+  | effect GetMode, k -> Effect.Deep.continue k mode
