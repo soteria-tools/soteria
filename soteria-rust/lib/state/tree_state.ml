@@ -95,10 +95,11 @@ module Block = struct
         type nonrec t = t option
       end)
 
-  open SM.Syntax
+  open SM
+  open Syntax
 
   let with_tree_block (f : ('a, 'err, 'fix) Tree_block.SM.Result.t) :
-      ('a, 'err, 'fix) SM.Result.t =
+      ('a, 'err, 'fix) Result.t =
     let* t_opt = SM.get_state () in
     let tree, tb = of_opt t_opt in
     let*^ v, tree = f tree in
@@ -117,8 +118,6 @@ module Block = struct
   (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
       being reborrowed. *)
   let borrow ?(protect = false) ((ptr : Sptr.t), meta) (ty : Types.ty) ofs =
-    let open SM in
-    let open SM.Syntax in
     let pointee = Charon_util.get_pointee ty in
     let state =
       match (ty, Layout.is_unsafe_cell pointee) with
@@ -161,8 +160,6 @@ module Block = struct
         | Missing f -> Result.miss f
 
   let unprotect ofs tag size =
-    let open SM in
-    let open SM.Syntax in
     let* t_opt = SM.get_state () in
     let block, tb = of_opt t_opt in
     let tb' = Tree_borrow.unprotect tag tb in
@@ -184,7 +181,12 @@ module Block = struct
   let serialize (x, _) = Option.fold ~none:[] ~some:Tree_block.serialize x
   let subst_serialized f a = Tree_block.subst_serialized f a
   let iter_vars_serialized f a = Tree_block.iter_vars_serialized f a
-  let produce _ _ = failwith "Not implemented"
+
+  let produce s =
+    let* st = get_state () in
+    let st, tb = of_opt st in
+    let*^ (), st' = Tree_block.produce s st in
+    set_state (to_opt (st', tb))
 end
 
 module Freeable_block = Soteria.Sym_states.Freeable.Make (DecayMapMonad) (Block)
@@ -260,10 +262,14 @@ module Heap = struct
       end)
 end
 
-type serialized = Heap.serialized [@@deriving show { with_path = false }]
+type serialized = Heap of Heap.serialized
+[@@deriving show { with_path = false }]
 
-let subst_serialized = Heap.subst_serialized
-let iter_vars_serialized = Heap.iter_vars_serialized
+let subst_serialized subst = function
+  | Heap s -> Heap (Heap.subst_serialized subst s)
+
+let iter_vars_serialized ser iter =
+  match ser with Heap s -> Heap.iter_vars_serialized s iter
 
 type t = {
   heap : Heap.t option;
@@ -347,7 +353,7 @@ let[@inline] with_loc_err ?trace:msg ()
   Error.log_at trace err;
   Error (Error.decorate trace err)
 
-let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
+let with_heap_symex (f : 'a Heap.SM.t) : 'a SM.t =
   let* st = SM.get_state () in
   let st = of_opt st in
   let*^ (res, heap), pointers =
@@ -355,6 +361,11 @@ let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
   in
   let+ () = SM.set_state (Some { st with heap; pointers }) in
   res
+
+let with_heap (f : ('a, 'b, Heap.serialized list) Heap.SM.Result.t) :
+    ('a, 'b, serialized list) Result.t =
+  SM.Result.map_missing (with_heap_symex f) (fun fix ->
+      List.map (fun h -> Heap h) fix)
 
 let apply_parser (type a) ?(ignore_borrow = false) ptr
     (parser : offset:T.sint Typed.t -> a Heap.Decoder.ParserMonad.t) :
@@ -471,13 +482,14 @@ and fake_read ((ptr, meta) as fptr) ty =
     in
     match (Config.get ()).recursive_validity with
     | Deny -> Result.error (`InvalidRef err)
+    | Allow -> Result.ok ()
+    | Warn when Config.get_mode () = Compositional -> Result.ok ()
     | Warn ->
         let*^ trace = get_trace () in
         let err = Error.decorate trace (`InvalidRef err) in
         let loc = Typed.Ptr.loc ptr.ptr in
         Error.Diagnostic.warn_trace_once ~reason:(InvalidReference loc) err;
-        Result.ok ()
-    | Allow -> Result.ok ())
+        Result.ok ())
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
@@ -910,5 +922,7 @@ let run_thread_exits () =
   let st = of_opt st_opt in
   st.thread_destructor () st_opt
 
-let serialize { heap; _ } = Heap.of_opt heap |> Heap.serialize
-let produce _ = failwith "TODO: Tree_state.produce"
+let serialize { heap; _ } =
+  Heap.of_opt heap |> Heap.serialize |> List.map (fun h -> Heap h)
+
+let produce s st = match s with Heap h -> with_heap_symex (Heap.produce h) st
