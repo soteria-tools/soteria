@@ -77,7 +77,7 @@ let print_outcomes entry_name f =
       (entry_name, Outcome.Fatal)
 
 let exec_crate (crate : Charon.UllbcAst.crate)
-    (entry_points : 'fuel Frontend.entry_point list) =
+    (entry_points : Frontend.entry_point list) =
   let@ () = Crate.with_crate crate in
 
   (* get entry points to the crate *)
@@ -86,7 +86,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   (* prepare executing the entry points *)
   let exec_fun = Interp.exec_fun ~args:[] ~state:State.empty in
 
-  let@ { fuel; fun_decl; expect_error } : 'fuel Frontend.entry_point =
+  let@ { fuel; fun_decl; expect_error } : Frontend.entry_point =
     (Fun.flip List.map) entry_points
   in
   (* execute! *)
