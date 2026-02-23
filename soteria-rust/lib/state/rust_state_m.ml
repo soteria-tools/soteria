@@ -527,15 +527,7 @@ module Make (State : State_intf.S) :
       ESM.lift (lookup_const_generic id ty)
 
     let[@inline] add_error e = ESM.lift (add_error e)
-
-    (** pop_error always errors, so the result type 'a is polymorphic. We need
-        to coerce the unit result to 'a since it never succeeds. *)
-    let[@inline] pop_error () : ('a, 'env) monad =
-     fun env ->
-      let open SM.Syntax in
-      let+ res = pop_error () in
-      (res, env)
-
+    let[@inline] pop_error () : ('a, 'env) monad = ESM.lift (pop_error ())
     let[@inline] leak_check () = ESM.lift (leak_check ())
 
     let[@inline] register_thread_exit (f : unit -> (unit, unit) monad) =

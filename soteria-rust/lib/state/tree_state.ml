@@ -548,7 +548,7 @@ let fake_read ptr ty =
   let@ () = with_loc_err ~trace:"Fake read" () in
   fake_read ptr ty
 
-let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
+let copy_nonoverlapping ~src:(src, _) ~dst:(dst, _) ~size :
     (unit, Error.with_trace, serialized list) Result.t =
   let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
   let** tree_to_write =
