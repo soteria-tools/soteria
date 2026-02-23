@@ -203,14 +203,4 @@ module M (Rust_state_m : State.State_M) = struct
             Rust_state_m.Poly.push_generics ~params:f.generics ~args:generics
             @@ fn_to_stub f.signature name fun_exec stub args
       | None -> fun_exec (Real { id = f.def_id; generics })
-
-  let builtin_fun_eval (f : Types.builtin_fun_id) generics =
-    let open Std in
-    match f with
-    | ArrayRepeat -> array_repeat generics
-    | ArrayToSliceMut -> array_slice ~mut:true generics
-    | ArrayToSliceShared -> array_slice ~mut:false generics
-    | Index idx -> array_index idx generics
-    | BoxNew -> box_new generics
-    | PtrFromParts _ -> from_raw_parts
 end
