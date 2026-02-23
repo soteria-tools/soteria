@@ -1,7 +1,6 @@
 open Soteria.Symex.Compo_res
 open Typed
 open Typed.Infix
-module BV = Typed.BitVec
 open Charon
 open Syntaxes.FunctionWrap
 module DecayMapMonad = Sptr.DecayMapMonad

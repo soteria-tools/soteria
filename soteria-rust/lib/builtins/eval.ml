@@ -147,30 +147,28 @@ module M (Rust_state_m : State.State_M) = struct
   module Std = Std.M (Rust_state_m)
   module System = System.M (Rust_state_m)
 
-  let fn_to_stub fn_sig fn_name fun_exec =
-    let open Std in
-    function
+  let fn_to_stub fn_sig fn_name fun_exec = function
     | Rusteria Assert -> Rusteria.assert_
     | Rusteria Assume -> Rusteria.assume
     | Rusteria NondetBytes -> Rusteria.nondet_bytes fn_sig
     | Rusteria Panic -> Rusteria.panic ?msg:None
     | Miri AllocId -> Miri.alloc_id
     | Miri PromiseAlignement -> Miri.promise_alignement
-    | Miri Nop -> nop
-    | Optim AllocImpl -> alloc_impl
+    | Miri Nop -> Std.nop
+    | Optim AllocImpl -> Std.alloc_impl
     | Optim Panic ->
         Rusteria.panic ~msg:(Fmt.to_to_string Crate.pp_name fn_name)
-    | Optim (FloatIs fc) -> float_is fc
-    | Optim FloatIsFinite -> float_is_finite
-    | Optim (FloatIsSign { positive }) -> float_is_sign positive
+    | Optim (FloatIs fc) -> Std.float_is fc
+    | Optim FloatIsFinite -> Std.float_is_finite
+    | Optim (FloatIsSign { positive }) -> Std.float_is_sign positive
     | Alloc (Alloc { zeroed }) -> Alloc.alloc ~zeroed
     | Alloc Dealloc -> Alloc.dealloc
     | Alloc NoAllocShimIsUnstable -> Alloc.no_alloc_shim_is_unstable
     | Alloc Realloc -> Alloc.realloc
-    | Fixme PanicCleanup -> fixme_panic_cleanup
-    | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
+    | Fixme PanicCleanup -> Std.fixme_panic_cleanup
+    | Fixme CatchUnwindCleanup -> Std.fixme_catch_unwind_cleanup
     | System TlvAtexit -> System.tlv_atexit fun_exec
-    | DropInPlace -> nop
+    | DropInPlace -> Std.nop
 
   let std_fun_eval (f : UllbcAst.fun_decl) generics fun_exec =
     (* Rust allows defining functions and marking them as intrinsics within a

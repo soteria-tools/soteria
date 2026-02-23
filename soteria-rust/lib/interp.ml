@@ -1,11 +1,12 @@
 open Rustsymex
-module BV = Typed.BitVec
-open Typed.Syntax
-open Typed.Infix
 open Charon
 open Common
 open Charon_util
 open Rust_val
+open Typed.Syntax
+open Typed.Infix
+module T = Typed.T
+module BV = Typed.BV
 
 module Make (StateImpl : State.S) = struct
   module Rust_state_m = State.Make_monad (StateImpl)

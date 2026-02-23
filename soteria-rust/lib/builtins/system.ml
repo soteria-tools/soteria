@@ -1,4 +1,3 @@
-module BV = Typed.BitVec
 open Rust_val
 
 module M (Rust_state_m : State.State_M) = struct

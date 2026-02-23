@@ -1,8 +1,8 @@
 open Charon
-open Common.Charon_util
-module BV = Typed.BitVec
+open Typed
 open Typed.Syntax
 open Typed.Infix
+open Common.Charon_util
 open Rust_val
 
 module M (Rust_state_m : State.State_M) : Intrinsics_intf.M(Rust_state_m).Impl =
@@ -49,8 +49,9 @@ struct
 
   let assert_inhabited ~t =
     let* layout = Layout.layout_of t in
-    if not layout.uninhabited then ok ()
-    else error (`Panic (Some "core::intrinsics::assert_inhabited"))
+    if layout.uninhabited then
+      error (`Panic (Some "core::intrinsics::assert_inhabited"))
+    else ok ()
 
   let assert_mem_uninitialized_valid ~t:_ = ok ()
 
@@ -247,8 +248,8 @@ struct
          makes a copy of the src tree before storing into dst, the semantics are
          that of copy. *)
       let* () =
-        if not nonoverlapping then ok ()
-        else check_overlap "copy_nonoverlapping" src dst size
+        if nonoverlapping then check_overlap "copy_nonoverlapping" src dst size
+        else ok ()
       in
       State.copy_nonoverlapping ~dst:(dst, Thin) ~src:(src, Thin) ~size
 
@@ -454,8 +455,8 @@ struct
     let size = 8 * Layout.size_of_literal_ty ity in
     let max = Z.succ @@ Layout.max_value_z ity in
     let min = Z.pred @@ Layout.min_value_z ity in
-    let max = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float max in
-    let min = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float min in
+    let max = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float max in
+    let min = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float min in
     (* we use min-1 and max+1, to be able to have a strict inequality, which
        avoids issues in cases of float precision loss (I think?) *)
     let+ () =
@@ -530,7 +531,7 @@ struct
     in
     (* we cast to ignore the overflow for MIN/-1, since the size can never be
        -1 *)
-    if not unsigned then ok (Typed.cast (off /$@ size))
+    if Stdlib.not unsigned then ok (Typed.cast (off /$@ size))
     else
       let+ () =
         assert_
@@ -608,14 +609,12 @@ struct
       | Add _ ->
           let ovf = BV.add_overflows ~signed a b in
           let if_ovf =
-            if not signed then max else Typed.ite (a <$@ BV.mki_lit t 0) min max
+            if signed then Typed.ite (a <$@ BV.mki_lit t 0) min max else max
           in
           Typed.ite ovf if_ovf (a +!!@ b)
       | Sub _ ->
           let ovf = BV.sub_overflows ~signed a b in
-          let if_ovf =
-            if not signed then min else Typed.ite (a <$@ b) min max
-          in
+          let if_ovf = if signed then Typed.ite (a <$@ b) min max else min in
           Typed.ite ovf if_ovf (a -!!@ b)
       | _ -> failwith "Unreachable: not add or sub?"
     in
@@ -634,7 +633,7 @@ struct
     (* Takes inspiration from rustc, to calculate the size and alignment of
        DSTs.
        https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
-    if not (Layout.is_dst t) then
+    if Stdlib.not (Layout.is_dst t) then
       let+ layout = Layout.layout_of t in
       (layout.size, layout.align)
     else

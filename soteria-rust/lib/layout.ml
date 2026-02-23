@@ -3,7 +3,7 @@ open Typed.Infix
 open Typed.Syntax
 open Soteria.Symex.Compo_res
 module T = Typed.T
-module BV = Typed.BitVec
+module BV = Typed.BV
 open Rustsymex
 open Rustsymex.Result
 open Rustsymex.Syntax

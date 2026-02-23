@@ -1,5 +1,3 @@
-open Charon
-module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Rust_val
@@ -27,7 +25,7 @@ module M (Rust_state_m : State.State_M) = struct
       | Zero -> Typed.Float.is_zero v
       | Subnormal -> Typed.Float.is_subnormal v
     in
-    ok (Int (BV.of_bool res))
+    ok (Int (Typed.BV.of_bool res))
 
   let float_is_finite args =
     let v =
@@ -37,7 +35,7 @@ module M (Rust_state_m : State.State_M) = struct
     in
     let v = Typed.cast_float v in
     let res = Typed.((not (Float.is_nan v)) &&@ not (Float.is_infinite v)) in
-    ok (Int (BV.of_bool res))
+    ok (Int (Typed.BV.of_bool res))
 
   let float_is_sign pos args =
     let v =
@@ -51,7 +49,7 @@ module M (Rust_state_m : State.State_M) = struct
       else Typed.Float.(leq v (like v (-0.)))
     in
     let res = res ||@ Typed.Float.is_nan v in
-    ok (Int (BV.of_bool res))
+    ok (Int (Typed.BV.of_bool res))
 
   let _mk_box ptr =
     let non_null = Tuple [ ptr ] in
@@ -69,7 +67,7 @@ module M (Rust_state_m : State.State_M) = struct
           let size = Typed.cast_i Usize size in
           let align = Typed.cast_i Usize align in
           let zeroed = Typed.cast_i U8 zeroed in
-          (size, align, BV.to_bool zeroed)
+          (size, align, Typed.BV.to_bool zeroed)
       | _ ->
           Fmt.failwith "alloc_impl: invalid arguments: %a"
             Fmt.(list ~sep:(any ", ") pp_rust_val)
