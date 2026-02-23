@@ -1,3 +1,8 @@
+(** Miri-related intrinsics.
+
+    See https://github.com/rust-lang/miri/blob/master/tests/utils/miri_extern.rs
+*)
+
 open Rust_val
 
 module M (Rust_state_m : State.State_M) = struct

@@ -1,3 +1,7 @@
+(** Builtins for Soteria Rust; provide the building blocks necessary for
+    symbolic execution! *)
+(* TODO: document this *)
+
 open Rust_val
 
 module M (Rust_state_m : State.State_M) = struct

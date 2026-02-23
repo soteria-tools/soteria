@@ -1,3 +1,7 @@
+(** Builtins, for functions we stub manually, either because the originals
+    suffer from poor performance, or are not properly computable in our engine.
+*)
+
 open Typed.Syntax
 open Typed.Infix
 open Rust_val

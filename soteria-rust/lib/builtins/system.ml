@@ -1,3 +1,6 @@
+(** Builtins relating to particular operating systems. There is no central
+    documentation for these; we must instead implement them as needed. *)
+
 open Rust_val
 
 module M (Rust_state_m : State.State_M) = struct

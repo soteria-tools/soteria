@@ -1,3 +1,7 @@
+(** Builtins related to the default allocator.
+
+    See https://doc.rust-lang.org/src/alloc/alloc.rs.html *)
+
 open Rust_val
 open Typed.Infix
 open Typed.Syntax
