@@ -2,6 +2,7 @@
     manually, instead modify the script and re-run it. *)
 
 open Rust_val
+open Common
 
 module M (Rust_state_m : State.State_M) : Intrinsics_intf.M(Rust_state_m).S =
 struct
@@ -829,7 +830,7 @@ struct
           "Intrinsic %s not found, or not called with the right arguments; \
            got:@.Types: %a@.Consts: %a@.Args: %a"
           name
-          Fmt.(list ~sep:comma Common.Charon_util.pp_ty)
+          Fmt.(list ~sep:comma Charon_util.pp_ty)
           tys
           Fmt.(list ~sep:comma Crate.pp_constant_expr)
           cs

@@ -211,6 +211,7 @@ def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
         "tref",
         "trait_ref",
         "trait_refs",
+        "parent_trait_refs",
         "Trait",
         "ParentClause",
         "TraitType",
@@ -353,7 +354,6 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         )
         doc = sanitize_comment(doc)
         arg_count = len(fun["signature"]["inputs"])
-        print(fun)
         args: list[tuple[str, InterpType]] = [
             (sanitize_var_name(param["name"] or "arg"), type_of(param["ty"]))
             for param in fun["body"]["Unstructured"]["locals"]["locals"][
@@ -408,6 +408,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         {prelude}
 
         open Charon
+        open Common
 
         module M (Rust_state_m: State.State_M) = struct
           module type Impl = sig
@@ -419,7 +420,6 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     stubs_str = f"""
         {prelude}
 
-
         [@@@warning "-unused-value-declaration"]
 
         module M (Rust_state_m: State.State_M): Intrinsics_intf.M(Rust_state_m).Impl = struct
@@ -430,6 +430,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         {prelude}
 
         open Rust_val
+        open Common
 
         module M (Rust_state_m: State.State_M): Intrinsics_intf.M(Rust_state_m).S = struct
             open Rust_state_m
