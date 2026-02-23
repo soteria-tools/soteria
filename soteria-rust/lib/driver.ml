@@ -2,6 +2,7 @@ module Stats = Soteria.Stats
 open Soteria.Terminal.Diagnostic
 open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap
+open Analyses.Common
 
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;
@@ -15,11 +16,6 @@ let wrap_step name f =
     let bt = Printexc.get_raw_backtrace () in
     Fmt.pr " errored@.";
     Printexc.raise_with_backtrace e bt
-
-let fatal ?name ?(code = 2) err =
-  let msg = Option.fold ~none:"Fatal: " ~some:(Fmt.str "Fatal (%s): ") name in
-  print_diagnostic_simple ~severity:Error (msg ^ err);
-  exit code
 
 let with_exn_and_config config f =
   try
