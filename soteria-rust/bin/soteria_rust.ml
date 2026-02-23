@@ -22,13 +22,16 @@ module Exec = struct
       $ dir_arg)
 
   let cmd =
-    Cmd.v
-      (Cmd.info ~exits
-         ~doc:
-           "Run Soteria Rust on the specified file or crate; this will either \
-            use Rustc to compile that file only, or use Cargo to compile the \
-            whole crate if it's a directory. It will then look for all \
-            entrypoints and execute them symbolically."
+    Cmd.make
+      (Cmd.info ~exits ~doc:"Run symbolic execution"
+         ~man:
+           [
+             `P
+               "Run Soteria Rust on the specified file or crate; this will \
+                either use Rustc to compile that file only, or use Cargo to \
+                compile the whole crate if it's a directory. It will then look \
+                for all entrypoints and execute them symbolically.";
+           ]
          "exec")
       term
 end
@@ -40,13 +43,16 @@ module Build_plugins = struct
       $ Soteria_rust_lib.Config.global_term)
 
   let cmd =
-    Cmd.v
-      (Cmd.info ~exits
-         ~doc:
-           "Build the plugins for Soteria Rust; this is done automatically \
-            when running Soteria Rust except when --no-compile-plugins is \
-            used, so you should only need to run this command if you want to \
-            build the plugins separately."
+    Cmd.make
+      (Cmd.info ~exits ~doc:"Build plugins"
+         ~man:
+           [
+             `P
+               "Build the plugins for Soteria Rust; this is done automatically \
+                when running Soteria Rust except when --no-compile-plugins is \
+                used, so you should only need to run this command if you want \
+                to build the plugins separately.";
+           ]
          "build-plugins")
       term
 end
