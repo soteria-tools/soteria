@@ -2,6 +2,7 @@ module Compo_res = Soteria.Symex.Compo_res
 open Compo_res
 open Rustsymex
 open Charon
+open Common
 
 module Compo_resT2 (I : sig
   type fix

@@ -2,8 +2,9 @@
     manually, instead modify the script and re-run it. *)
 
 open Charon
+open Common
 
-module M (Rust_state_m : Rust_state_m.S) = struct
+module M (Rust_state_m : State.State_M) = struct
   module type Impl = sig
     type rust_val := Rust_state_m.Sptr.t Rust_val.t
     type 'a ret := ('a, unit) Rust_state_m.t

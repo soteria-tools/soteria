@@ -4,7 +4,7 @@ open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) = struct
+module M (Rust_state_m : State.State_M) = struct
   module Core = Core.M (Rust_state_m)
   module Alloc = Alloc.M (Rust_state_m)
   open Rust_state_m
@@ -14,7 +14,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     let rust_val, size =
       match (args, gen_args.const_generics) with
       | [ rust_val ], [ size ] ->
-          (rust_val, Charon_util.int_of_constant_expr size)
+          (rust_val, Common.Charon_util.int_of_constant_expr size)
       | args, cgens ->
           Fmt.failwith
             "array_repeat: unexpected params / generic constants: %a / %a"

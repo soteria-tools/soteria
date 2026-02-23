@@ -139,7 +139,7 @@ let std_fun_map =
   |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
   |> NameMatcherMap.of_list
 
-module M (Rust_state_m : Rust_state_m.S) = struct
+module M (Rust_state_m : State.State_M) = struct
   module Alloc = Alloc.M (Rust_state_m)
   module Intrinsics = Intrinsics.M (Rust_state_m)
   module Miri = Miri.M (Rust_state_m)
@@ -178,7 +178,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
        name. This means their path doesn't match the one we expect for the
        patterns; so instead of matching on a path, we only consider intrinsics
        from their name. *)
-    if Charon_util.decl_has_attr f "rustc_intrinsic" then
+    if Common.Charon_util.decl_has_attr f "rustc_intrinsic" then
       let name, generics =
         match List.rev f.item_meta.name with
         | PeIdent (name, _) :: _ -> (name, generics)

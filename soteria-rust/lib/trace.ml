@@ -11,7 +11,8 @@ type t = {
 
 let pp ft t =
   let pp_loc =
-    Soteria.Logs.Printers.pp_unstable ~name:"loc" Charon_util.pp_span_data
+    Soteria.Logs.Printers.pp_unstable ~name:"loc"
+      Common.Charon_util.pp_span_data
   in
   let pp_loc_opt : Charon.Meta.span_data option Fmt.t =
     Fmt.option ~none:(Fmt.any "unknown location") pp_loc
@@ -33,7 +34,9 @@ let push_to_stack ~loc ~msg where =
   { where with stack = call :: where.stack }
 
 let loc_or_default where =
-  match where.loc with Some loc -> loc | None -> Charon_util.empty_span_data
+  match where.loc with
+  | Some loc -> loc
+  | None -> Common.Charon_util.empty_span_data
 
 let empty = { op = None; loc = None; stack = Soteria.Terminal.Call_trace.empty }
 

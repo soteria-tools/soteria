@@ -3,7 +3,7 @@
 
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) : Intrinsics_intf.M(Rust_state_m).S =
+module M (Rust_state_m : State.State_M) : Intrinsics_intf.M(Rust_state_m).S =
 struct
   open Rust_state_m
   open Syntax
@@ -829,7 +829,7 @@ struct
           "Intrinsic %s not found, or not called with the right arguments; \
            got:@.Types: %a@.Consts: %a@.Args: %a"
           name
-          Fmt.(list ~sep:comma Charon_util.pp_ty)
+          Fmt.(list ~sep:comma Common.Charon_util.pp_ty)
           tys
           Fmt.(list ~sep:comma Crate.pp_constant_expr)
           cs

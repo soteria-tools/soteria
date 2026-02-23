@@ -1,4 +1,5 @@
 open Charon
+open Common.Charon_util
 open Syntaxes.FunctionWrap
 
 (** Something wrong internally with plugins *)
@@ -342,10 +343,8 @@ let default =
   let get_entry_point (decl : fun_decl) =
     match List.last_opt decl.item_meta.name with
     | Some (PeIdent ("main", _)) -> mk_entry_point decl
-    | _ when Charon_util.decl_has_attr decl "rusteriatool::test" ->
-        let expect_error =
-          Charon_util.decl_has_attr decl "rusteriatool::expect_fail"
-        in
+    | _ when decl_has_attr decl "rusteriatool::test" ->
+        let expect_error = decl_has_attr decl "rusteriatool::expect_fail" in
         mk_entry_point ~expect_error decl
     | _ -> None
   in
@@ -361,13 +360,11 @@ let kani =
   in
   let get_entry_point (decl : fun_decl) =
     if
-      Charon_util.decl_has_attr decl "kanitool::proof"
+      decl_has_attr decl "kanitool::proof"
       (* TODO: maybe we can raise an error or a warning here *)
       && List.is_empty decl.signature.inputs
     then
-      let expect_error =
-        Charon_util.decl_has_attr decl "kanitool::should_panic"
-      in
+      let expect_error = decl_has_attr decl "kanitool::should_panic" in
       mk_entry_point ~expect_error decl
     else None
   in
@@ -422,7 +419,7 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
           let open Soteria.Symex in
           let fuel : Fuel_gauge.t =
             let get_or name default : Fuel_gauge.Fuel_value.t =
-              match (Charon_util.decl_get_attr decl name, default) with
+              match (decl_get_attr decl name, default) with
               | Some fuel, _ -> Finite (int_of_string fuel)
               | None, Some fuel -> Finite fuel
               | None, None -> Infinite

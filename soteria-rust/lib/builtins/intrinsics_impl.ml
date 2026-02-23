@@ -1,12 +1,12 @@
 open Charon
-open Charon_util
+open Common.Charon_util
 module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) :
-  Intrinsics_intf.M(Rust_state_m).Impl = struct
+module M (Rust_state_m : State.State_M) : Intrinsics_intf.M(Rust_state_m).Impl =
+struct
   include Intrinsics_stubs.M (Rust_state_m)
   module Core = Core.M (Rust_state_m)
   open Rust_state_m
@@ -371,7 +371,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     ctlz ~t ~x
 
   let discriminant_value ~t ~v =
-    let adt = Charon_util.ty_as_adt t in
+    let adt = ty_as_adt t in
     let adt = Crate.get_adt adt in
     match adt.kind with
     | Enum variants ->

@@ -3,11 +3,12 @@ module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Charon
+open Common
 open Charon_util
 open Rust_val
 
-module Make (State : State_intf.S) = struct
-  module Rust_state_m = Rust_state_m.Make (State)
+module Make (StateImpl : State.S) = struct
+  module Rust_state_m = State.Make_monad (StateImpl)
   module Core = Core.M (Rust_state_m)
   module Std_funs = Builtins.Eval.M (Rust_state_m)
 
@@ -323,7 +324,7 @@ module Make (State : State_intf.S) = struct
             L.debug (fun f ->
                 f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
                   pp_full_ptr fptr);
-            let pointee = Charon_util.get_pointee base.ty in
+            let pointee = get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
                 let+ () = State.check_ptr_align fptr pointee in
@@ -711,7 +712,7 @@ module Make (State : State_intf.S) = struct
                 (* non-zero offset on integer pointer is not permitted, as these
                    are always dangling *)
                 let v2 = Typed.cast_i Usize v2 in
-                let ty = Charon_util.get_pointee (type_of_operand e1) in
+                let ty = get_pointee (type_of_operand e1) in
                 let* size = Layout.size_of ty in
                 let+ () =
                   assert_
@@ -736,7 +737,7 @@ module Make (State : State_intf.S) = struct
                   | Ptr (p, meta), Int v -> return (p, meta, v)
                   | _ -> Rustsymex.not_impl "Invalid operands in offset"
                 in
-                let ty = Charon_util.get_pointee (type_of_operand e1) in
+                let ty = get_pointee (type_of_operand e1) in
                 let v = Typed.cast_i Usize v in
                 let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
                 let signed = Layout.is_signed off_ty in

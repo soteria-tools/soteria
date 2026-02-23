@@ -7,15 +7,12 @@ module BV = Typed.BitVec
 open Rustsymex
 open Rustsymex.Result
 open Rustsymex.Syntax
-open Charon_util
+open Common.Charon_util
 
 (* Import types *)
 include Layout_common
 
 module Session = struct
-  (* TODO: allow different caches for different crates *)
-  (* FIXME: inter-test mutability *)
-
   (** Cache of (type or variant) -> layout *)
   type cache = (Types.ty, t) Hashtbl.t
 
@@ -150,8 +147,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
          fields don't. To avoid this, we *never* consider layouts of generic
          types, even if one is provided. This avoids inconsistent layouts. *)
       | Some layout, _
-        when (not (Config.get ()).polymorphic)
-             || Charon_util.ty_is_monomorphic ty ->
+        when (not (Config.get ()).polymorphic) || ty_is_monomorphic ty ->
           translate_layout ty layout
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
       | _, Union fields -> compute_union_layout ty (field_tys fields)
@@ -496,8 +492,7 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
     | TAdt { id = TAdtId id; _ } ->
         let adt = Crate.get_adt_raw id in
         adt.item_meta.lang_item = Some "owned_box"
-        || Charon_util.meta_get_attr adt.item_meta "rustc_diagnostic_item"
-           = Some "NonNull"
+        || meta_get_attr adt.item_meta "rustc_diagnostic_item" = Some "NonNull"
     | _ -> false
   in
   match (ty1, ty2) with

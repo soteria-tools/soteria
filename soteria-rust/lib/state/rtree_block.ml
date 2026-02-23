@@ -285,7 +285,7 @@ module Make (Sptr : Sptr.S) = struct
       (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) :
       (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
-    let** size = lift_symex @@ Rust_val.size_of value in
+    let** size = lift_symex @@ Value_codec.size_of value in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     with_bound_check bound (fun t ->
         let open DecayMapMonad.Syntax in

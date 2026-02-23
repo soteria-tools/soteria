@@ -1,6 +1,6 @@
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) = struct
+module M (Rust_state_m : State.State_M) = struct
   open Rust_state_m
   open Syntax
 

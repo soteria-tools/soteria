@@ -3,8 +3,8 @@
 
 [@@@warning "-unused-value-declaration"]
 
-module M (Rust_state_m : Rust_state_m.S) :
-  Intrinsics_intf.M(Rust_state_m).Impl = struct
+module M (Rust_state_m : State.State_M) : Intrinsics_intf.M(Rust_state_m).Impl =
+struct
   open Rust_state_m
 
   let abort = not_impl "Unsupported intrinsic: abort"

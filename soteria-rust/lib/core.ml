@@ -6,7 +6,7 @@ open Typed.Infix
 open Rust_val
 open Syntaxes.FunctionWrap
 
-module M (Rust_state_m : Rust_state_m.S) = struct
+module M (Rust_state_m : State.State_M) = struct
   open Rust_state_m
   open Syntax
 
@@ -176,8 +176,8 @@ module M (Rust_state_m : Rust_state_m.S) = struct
      *  - we need to take the max of either types for the alignment, to ensure
      *    that transmuting e.g. from [u16; 2] to (u32) works. *)
     L.debug (fun m ->
-        m "Transmuting %a: %a -> %a" pp_rust_val v Charon_util.pp_ty from_ty
-          Charon_util.pp_ty to_ty);
+        m "Transmuting %a: %a -> %a" pp_rust_val v Common.Charon_util.pp_ty
+          from_ty Common.Charon_util.pp_ty to_ty);
     let* { size; align; _ } = Layout.layout_of from_ty in
     let* { align = align_2; _ } = Layout.layout_of to_ty in
     let align = BV.max ~signed:false align align_2 in

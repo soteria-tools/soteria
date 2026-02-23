@@ -409,7 +409,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
         open Charon
 
-        module M (Rust_state_m: Rust_state_m.S) = struct
+        module M (Rust_state_m: State.State_M) = struct
           module type Impl = sig
             {type_utils}
             type full_ptr := Rust_state_m.Sptr.t Rust_val.full_ptr
@@ -422,7 +422,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
         [@@@warning "-unused-value-declaration"]
 
-        module M (Rust_state_m: Rust_state_m.S): Intrinsics_intf.M(Rust_state_m).Impl = struct
+        module M (Rust_state_m: State.State_M): Intrinsics_intf.M(Rust_state_m).Impl = struct
           open Rust_state_m
     """
 
@@ -431,7 +431,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
         open Rust_val
 
-        module M (Rust_state_m: Rust_state_m.S): Intrinsics_intf.M(Rust_state_m).S = struct
+        module M (Rust_state_m: State.State_M): Intrinsics_intf.M(Rust_state_m).S = struct
             open Rust_state_m
             open Syntax
 
@@ -569,7 +569,7 @@ if __name__ == "__main__":
     impl_file = ml_folder / "intrinsics_impl.ml"
     if not impl_file.exists():
         impl_content = """
-        module M (Rust_state_m: Rust_state_m.S) = struct
+        module M (Rust_state_m: State.State_M) = struct
         end
         """
         write_ocaml_file(impl_file, impl_content)

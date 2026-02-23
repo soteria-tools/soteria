@@ -2,10 +2,11 @@ module Stats = Soteria.Stats
 module Config_ = Config
 open Soteria.Terminal
 module Config = Config_
-open Soteria.Logs.Printers
-module Wpst_interp = Interp.Make (State)
 module Compo_res = Soteria.Symex.Compo_res
+open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap
+module Wpst_state = State.Tree_state
+module Wpst_interp = Interp.Make (Wpst_state)
 
 (** An error happened at runtime during execution *)
 exception ExecutionError of string
@@ -114,7 +115,7 @@ let exec_crate
   if List.is_empty entry_points then execution_err "No entry points found";
 
   (* prepare executing the entry points *)
-  let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:State.empty in
+  let exec_fun = Wpst_interp.exec_fun ~args:[] ~state:Wpst_state.empty in
 
   let@ { fuel; fun_decl; expect_error } : 'fuel Frontend.entry_point =
     (Fun.flip List.map) entry_points
@@ -153,7 +154,7 @@ let exec_crate
         branches
         |> List.partition_map @@ function
            | Ok _, pcs -> Left (Error (`MetaExpectedError, trace), pcs)
-           | Error _, pcs -> Right (Ok (Rust_val.unit_, State.empty), pcs)
+           | Error _, pcs -> Right (Ok (Rust_val.unit_, Wpst_state.empty), pcs)
            | v -> Left v
       in
       if List.is_empty errors then oks else errors

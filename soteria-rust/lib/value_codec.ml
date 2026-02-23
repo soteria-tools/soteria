@@ -2,7 +2,7 @@ module Compo_res = Soteria.Symex.Compo_res
 open Charon
 open Typed.Syntax
 open Typed.Infix
-open Charon_util
+open Common.Charon_util
 open Rust_val
 open Layout
 module DecayMapMonad = Sptr.DecayMapMonad
@@ -54,6 +54,20 @@ let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
       let variant = Option.get ~msg:"variant required for enum" variant in
       let fields = variant_layouts.(Types.VariantId.to_int variant) in
       aux ~variant fields
+
+let size_of =
+  let open Rustsymex.Result in
+  function
+  | Int v -> ok (BV.usizei (Typed.size_of_int v / 8))
+  | Float f ->
+      ok (BV.usizei (Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8))
+  | Ptr (_, Thin) -> ok (BV.usizei (Crate.pointer_size ()))
+  | Ptr (_, (Len _ | VTable _)) -> ok (BV.usizei (Crate.pointer_size () * 2))
+  | PolyVal tid -> Layout.size_of (TVar (Free tid))
+  (* We can't know the size of a union/tuple/enum, because of e.g. niches, or
+     padding *)
+  | Union _ | Enum _ | Tuple _ ->
+      failwith "Impossible to get size of Enum/Tuple rust_val"
 
 module Decoder
     (Sptr : Sptr.S)
@@ -181,7 +195,7 @@ struct
         match (tag_layout.encoding, res) with
         | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
         | Direct, None ->
-            let adt = Charon_util.ty_as_adt ty in
+            let adt = ty_as_adt ty in
             let adt = Crate.get_adt adt in
             let msg =
               Fmt.str "Unmatched discriminant for enum %a: %a" Crate.pp_name
@@ -295,7 +309,7 @@ module Encoder (Sptr : Sptr.S) = struct
       | Primitive, _ -> ok (Iter.singleton (value, offset))
       | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
       | Enum (tag_layout, _), Enum (disc, _) -> (
-          let adt = Charon_util.ty_as_adt ty in
+          let adt = ty_as_adt ty in
           let variants = Crate.as_enum adt in
           let variants = List.mapi (fun i v -> (i, v)) variants in
           let* variant =
@@ -386,7 +400,7 @@ module Encoder (Sptr : Sptr.S) = struct
         Result.ok (Int sv')
     | (TInt _ | TUInt _), TFloat fp ->
         let sv = Typed.cast_lit from_ty v in
-        let fp = Charon_util.float_precision fp in
+        let fp = float_precision fp in
         let signed = Layout.is_signed from_ty in
         let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
         Result.ok (Float sv')
@@ -483,7 +497,7 @@ module Encoder (Sptr : Sptr.S) = struct
         let++ fields = nondets types in
         Tuple fields
     | TArray (ty, len) ->
-        let size = Charon_util.int_of_constant_expr len in
+        let size = int_of_constant_expr len in
         let++ fields = nondets @@ List.init size (fun _ -> ty) in
         Tuple fields
     | TAdt adt as ty -> (
@@ -504,20 +518,16 @@ module Encoder (Sptr : Sptr.S) = struct
             match (res, tag_layout.encoding) with
             | Some variant, _ ->
                 let discr = BV.of_literal variant.discriminant in
-                let++ fields =
-                  nondets @@ Charon_util.field_tys variant.fields
-                in
+                let++ fields = nondets @@ field_tys variant.fields in
                 Enum (discr, fields)
             | None, Direct -> vanish ()
             | None, Niche untagged ->
                 let variant = Types.VariantId.nth variants untagged in
                 let discr = BV.of_literal variant.discriminant in
-                let++ fields =
-                  nondets @@ Charon_util.field_tys variant.fields
-                in
+                let++ fields = nondets @@ field_tys variant.fields in
                 Enum (discr, fields))
         | Struct fields ->
-            let++ fields = nondets @@ Charon_util.field_tys fields in
+            let++ fields = nondets @@ field_tys fields in
             Tuple fields
         | ty ->
             Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"

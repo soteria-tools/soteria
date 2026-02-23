@@ -5,6 +5,7 @@ open Typed.Syntax
 module T = Typed.T
 open Rustsymex
 open Charon
+open Common
 
 (* State details *)
 module DecayMap = Sptr.DecayMap
@@ -396,7 +397,7 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
-        Typed.ppa exp_align Charon_util.pp_ty ty);
+        Typed.ppa exp_align Common.Charon_util.pp_ty ty);
   (* 0-based pointers are aligned up to their offset *)
   let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
@@ -446,7 +447,7 @@ and fake_read ((_, meta) as ptr) ty =
   else (
     L.debug (fun m ->
         m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) ptr
-          Charon_util.pp_ty ty);
+          Common.Charon_util.pp_ty ty);
     let+ res = load ~ignore_borrow:true ~ref_checks:false ptr ty in
     match res with
     | Ok _ -> None
