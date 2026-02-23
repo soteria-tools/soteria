@@ -525,6 +525,8 @@ let parse_ullbc_of_crate crate_dir =
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
 
 module Diagnostic = struct
+  include Soteria.Terminal.Diagnostic
+
   let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col - 1)
 
   let as_ranges (span : Charon.Meta.span_data) =
@@ -549,14 +551,13 @@ module Diagnostic = struct
             | None -> None
         in
         [
-          Soteria.Terminal.Diagnostic.mk_range_file ?filename
-            ?content:span.file.contents file (to_loc span.beg_loc)
-            (to_loc span.end_loc);
+          mk_range_file ?filename ?content:span.file.contents file
+            (to_loc span.beg_loc) (to_loc span.end_loc);
         ]
     | Virtual _ | NotReal _ -> []
 
   let print_diagnostic ~fname ~call_trace ~error =
-    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
+    print_diagnostic ~call_trace ~as_ranges
       ~error:(Fmt.to_to_string Error.pp error)
       ~severity:(Error.severity error) ~fname
 end
