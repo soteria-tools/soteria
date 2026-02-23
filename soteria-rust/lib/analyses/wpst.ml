@@ -76,9 +76,8 @@ let print_outcomes entry_name f =
         "%s (%a): %s, %s@.@." entry_name pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
-let exec_crate
-    ( (crate : Charon.UllbcAst.crate),
-      (entry_points : 'fuel Frontend.entry_point list) ) =
+let exec_crate (crate : Charon.UllbcAst.crate)
+    (entry_points : 'fuel Frontend.entry_point list) =
   let@ () = Crate.with_crate crate in
 
   (* get entry points to the crate *)
@@ -97,11 +96,15 @@ let exec_crate
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
     let@@ () =
-      Rustsymex.run_with_stats ~mode:OX ~fuel
+      Rustsymex.Result.run_with_stats ~mode:OX ~fuel
         ~fail_fast:(Config.get ()).fail_fast
     in
     exec_fun fun_decl
   in
+  Soteria.Stats.output stats;
+
+  let nbranches = List.length branches in
+
   let branches =
     (* If any of the results were "Gave_up", we raise an exception to be caught
        by [print_outcomes] *)
@@ -111,10 +114,7 @@ let exec_crate
       @@ Fun.flip Compo_res.map_error Soteria.Symex.Or_gave_up.unwrap_exn)
       branches
   in
-  Soteria.Stats.output stats;
-
   (* inverse ok and errors if we expect a failure *)
-  let nbranches = List.length branches in
   let branches =
     if not expect_error then branches
     else
@@ -127,7 +127,7 @@ let exec_crate
                  Soteria.Terminal.Call_trace.singleton
                    ~loc:fun_decl.item_meta.span.data ()
                in
-               Left (Error (`MetaExpectedError, trace), pcs)
+               Left (Error ((`MetaExpectedError, trace), State.empty), pcs)
            | Error _, pcs -> Right (Ok (Rust_val.unit_, State.empty), pcs)
            | v -> Left v
       in
@@ -156,7 +156,8 @@ let exec_crate
     (* join th errors by [error type * calltrace], and find all matching PCs *)
     let errors =
       List.filter_map
-        (function Compo_res.Error (e, ct), pc -> Some (e, ct, pc) | _ -> None)
+        (function
+          | Compo_res.Error ((e, ct), _), pc -> Some (e, ct, pc) | _ -> None)
         branches
     in
     let errors =
@@ -180,7 +181,7 @@ let print_outcomes_summary outcomes =
     (list ~sep:(any "@\n") pp_outcome)
     outcomes
 
-let exec crate =
-  let outcomes = exec_crate crate in
+let exec (crate, entry_points) =
+  let outcomes = exec_crate crate entry_points in
   if (Config.get ()).print_summary then print_outcomes_summary outcomes;
   Outcome.merge_list outcomes
