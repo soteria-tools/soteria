@@ -35,14 +35,9 @@ let with_exn_and_config config f =
   | Exn.Config_error err ->
       fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err
 
-let exec_rustc config file_name =
+let exec_wpst config target =
   let@ () = with_exn_and_config config in
-  let compile () = Frontend.parse_ullbc_of_file file_name in
-  wrap_step "Compiling" compile |> Analyses.Wpst.exec
-
-let exec_cargo config crate_dir =
-  let@ () = with_exn_and_config config in
-  let compile () = Frontend.parse_ullbc_of_crate crate_dir in
+  let compile () = Frontend.parse_ullbc target in
   wrap_step "Compiling" compile |> Analyses.Wpst.exec
 
 let build_plugins config =

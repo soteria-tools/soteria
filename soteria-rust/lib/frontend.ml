@@ -522,6 +522,13 @@ let parse_ullbc_of_crate crate_dir =
   parse_ullbc ~mode:Cargo ~plugin ~output ~pwd:crate_dir ()
   |> with_entry_points ~plugin
 
+(** Given a path, will check if it has a [.rs] extension, in which case it will
+    parse the ULLBC of that single file using rustc; otherwise will assume it's
+    a path to a crate and use cargo. *)
+let parse_ullbc path =
+  if Filename.check_suffix path ".rs" then parse_ullbc_of_file path
+  else parse_ullbc_of_crate path
+
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
 
 module Diagnostic = struct
