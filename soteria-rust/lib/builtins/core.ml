@@ -1,6 +1,8 @@
+(** Core operations, that may be used in several parts of the interpreter, so we
+    share them here for convenience. *)
+
 open Charon
 open Typed
-module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Rust_val

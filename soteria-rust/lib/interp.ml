@@ -9,7 +9,7 @@ open Rust_val
 
 module Make (StateImpl : State.S) = struct
   module Rust_state_m = State.Make_monad (StateImpl)
-  module Core = Core.M (Rust_state_m)
+  module Core = Builtins.Core.M (Rust_state_m)
   module Std_funs = Builtins.Eval.M (Rust_state_m)
 
   exception Unsupported of (string * Meta.span_data)
