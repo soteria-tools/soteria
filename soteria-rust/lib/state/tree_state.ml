@@ -259,6 +259,9 @@ end
 
 type serialized = Heap.serialized [@@deriving show { with_path = false }]
 
+let subst_serialized = Heap.subst_serialized
+let iter_vars_serialized = Heap.iter_vars_serialized
+
 type t = {
   heap : Heap.t option;
   functions : FunBiMap.t;
@@ -869,3 +872,6 @@ let run_thread_exits () =
  fun st_opt ->
   let st = of_opt st_opt in
   st.thread_destructor () st_opt
+
+let serialize { heap; _ } = Heap.of_opt heap |> Heap.serialize
+let produce _ = failwith "TODO: Tree_state.produce"

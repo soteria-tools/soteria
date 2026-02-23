@@ -12,8 +12,7 @@ module type S = sig
   type rust_val := Sptr.t rust_val
 
   (* state *)
-  type t
-  type serialized
+  include Soteria.Sym_states.Base.M(Rustsymex).S
 
   module SM :
     Soteria.Sym_states.State_monad.S
