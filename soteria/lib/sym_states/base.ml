@@ -20,6 +20,6 @@ module M (Symex : Symex.Base) = struct
     val iter_vars_serialized :
       serialized -> (Var.t * 'a Symex.Value.ty -> unit) -> unit
 
-    val produce : serialized -> t option -> (unit * t option) Symex.t
+    val produce : serialized -> unit SM.t
   end
 end
