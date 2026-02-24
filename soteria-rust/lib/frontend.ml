@@ -136,7 +136,7 @@ module Cmd = struct
             possible it would be nicer to use the Cargo-specific command (as
             with features)? *)
   }
-  [@@deriving make]
+  [@@deriving make, show { with_path = false }]
 
   type mode = Cargo | Rustc
 
@@ -517,26 +517,49 @@ let with_entry_points ~plugin (crate : Charon.UllbcAst.crate) =
   (crate, entry_points)
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file file_name =
-  let plugin = create_using_current_config () in
+let parse_ullbc_of_file ~plugin file_name =
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
   parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder ()
-  |> with_entry_points ~plugin
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_crate crate_dir =
-  let plugin = create_using_current_config () in
+let parse_ullbc_of_crate ~plugin crate_dir =
   let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
   parse_ullbc ~mode:Cargo ~plugin ~output ~pwd:crate_dir ()
-  |> with_entry_points ~plugin
 
-(** Given a path, will check if it has a [.rs] extension, in which case it will
-    parse the ULLBC of that single file using rustc; otherwise will assume it's
-    a path to a crate and use cargo. *)
-let parse_ullbc path =
+let parse_ullbc_raw path =
   match path with
   | `File file -> parse_ullbc_of_file file
   | `Dir path -> parse_ullbc_of_crate path
+
+(** Given a path, will check if it has a [.rs] extension, in which case it will
+    parse the ULLBC of that single file using rustc; otherwise will assume it's
+    a path to a crate and use cargo.
+    {b Will translate all functions in the crate, without filtering
+       entry-points.} *)
+let parse_ullbc path =
+  let plugin = create_using_current_config () in
+  (* HACK: we should handle this better once Charon and Obol are in sync wrt to
+     flags. See
+     https://github.com/soteria-tools/soteria/commit/8532a215d944dfc8818cb16e1a3902b4395835b9 *)
+  let mk_cmd ?input ~output () =
+    let[@tailmodcons] rec filter = function
+      | "--start-from" :: _ :: rest | "--start-from-attribute" :: _ :: rest ->
+          filter rest
+      | arg :: rest -> arg :: filter rest
+      | [] -> []
+    in
+    let base_cmd = plugin.mk_cmd ?input ~output () in
+    { base_cmd with obol = filter base_cmd.obol }
+  in
+  parse_ullbc_raw path ~plugin:{ plugin with mk_cmd }
+
+(** Given a path, will check if it has a [.rs] extension, in which case it will
+    parse the ULLBC of that single file using rustc; otherwise will assume it's
+    a path to a crate and use cargo.
+    {b Will only start translation from functions considered entry-points.} *)
+let parse_ullbc_with_entry_points path =
+  let plugin = create_using_current_config () in
+  parse_ullbc_raw path ~plugin |> with_entry_points ~plugin
 
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
