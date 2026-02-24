@@ -22,8 +22,7 @@ module Heap =
         | Whole_program ->
             (* If we are in non-compositional execution, we can use concrete
                locations. *)
-            let id = Csymex.Concrete_alloc_id.get_next_id () in
-            return (Typed.Ptr.loc_of_int id)
+            return (Csymex.Concrete_alloc_id.get_next ())
 
       let simplify = Csymex.simplify
       let to_int = unique_tag
