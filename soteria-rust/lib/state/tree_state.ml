@@ -22,15 +22,20 @@ module StateKey = struct
 
   let pp = ppa
   let to_int = unique_tag
-  let i = ref 0
-  let distinct _ = v_true
+  let concrete_loc = ref 0
   let simplify = DecayMapMonad.simplify
 
+  let distinct vs =
+    match Config.get_mode () with
+    | Compositional -> distinct vs
+    | Whole_program -> v_true
+
   let fresh () =
-    incr i;
-    DecayMapMonad.return @@ Ptr.loc_of_int !i
-  (* The above only works in WPST -- otherwise, use:
-   * let fresh () = nondet (Typed.t_sloc ()) *)
+    match Config.get_mode () with
+    | Compositional -> DecayMapMonad.nondet (Typed.t_loc ())
+    | Whole_program ->
+        incr concrete_loc;
+        DecayMapMonad.return (Ptr.loc_of_int !concrete_loc)
 end
 
 module Freeable = Soteria.Sym_states.Freeable.Make (DecayMapMonad)
