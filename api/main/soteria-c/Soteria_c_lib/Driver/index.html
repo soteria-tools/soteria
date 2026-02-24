@@ -54,7 +54,7 @@ let search_urls = ['../../db.js','../../../sherlodoc.js'];
   <span><span class="label">fuel</span>:<a href="../../../soteria/Soteria/Symex/Fuel_gauge/index.html#type-t">Soteria.Symex.Fuel_gauge.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>string list</span> <span class="arrow">&#45;&gt;</span></span>
   <span>string <span class="arrow">&#45;&gt;</span></span>
-  <span><span><span>(<span><span>(<a href="../Aggregate_val/index.html#type-t">Aggregate_val.t</a> * <a href="Wpst_interp/InterpM/StateM/index.html#type-st">Wpst_interp.InterpM.StateM.st</a>,
+  <span><span>(<span><span>(<a href="../Aggregate_val/index.html#type-t">Aggregate_val.t</a> * <a href="Wpst_interp/InterpM/StateM/index.html#type-st">Wpst_interp.InterpM.StateM.st</a>,
      <span><span>(<a href="../Error/index.html#type-with_trace">Error.with_trace</a> * <a href="Wpst_interp/InterpM/StateM/index.html#type-st">Wpst_interp.InterpM.StateM.st</a>)</span>
        <a href="../../../soteria/Soteria/Symex/Or_gave_up/index.html#type-t">Soteria.Symex.Or_gave_up.t</a></span>,
      <span><a href="../State/index.html#type-serialized">SState.serialized</a> list</span>)</span>
@@ -62,15 +62,13 @@ let search_urls = ['../../db.js','../../../sherlodoc.js'];
    * <span><span><a href="../../../soteria/Soteria/Bv_values/Typed/index.html#type-sbool">Soteria.Bv_values.Bv_solver.Z3_solver.Value.sbool</a>
        <a href="../../../soteria/Soteria/Bv_values/Typed/index.html#type-t">Soteria.Bv_values.Bv_solver.Z3_solver.Value.t</a></span>
        list</span>)</span>
-    list</span>
-    <a href="../../../soteria/Soteria/Stats/index.html#type-with_stats">Soteria.Stats.with_stats</a></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-temp_file"><a href="#val-temp_file" class="anchor"></a><code><span><span class="keyword">val</span> temp_file : <span>string lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-generate_errors"><a href="#val-generate_errors" class="anchor"></a><code><span><span class="keyword">val</span> generate_errors : 
-  <span>string <span class="arrow">&#45;&gt;</span></span>
-  <span><span><span>(<a href="../Error/index.html#type-t">Error.t</a> * <span><span class="xref-unresolved">Cerb_location</span>.t <a href="../../../soteria/Soteria/Terminal/Call_trace/index.html#type-t">Call_trace.t</a></span>)</span> list</span> <a href="../../../soteria/Soteria/Stats/index.html#type-with_stats">Soteria.Stats.with_stats</a></span></span></code></div></div><h3 id="entry-points"><a href="#entry-points" class="anchor"></a>Entry points</h3><div class="odoc-spec"><div class="spec value anchored" id="val-initialise"><a href="#val-initialise" class="anchor"></a><code><span><span class="keyword">val</span> initialise : 
+    list</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-temp_file"><a href="#val-temp_file" class="anchor"></a><code><span><span class="keyword">val</span> temp_file : <span>string lazy_t</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-generate_errors"><a href="#val-generate_errors" class="anchor"></a><code><span><span class="keyword">val</span> generate_errors : <span>string <span class="arrow">&#45;&gt;</span></span> <span><span>(<a href="../Error/index.html#type-t">Error.t</a> * <span><span class="xref-unresolved">Cerb_location</span>.t <a href="../../../soteria/Soteria/Terminal/Call_trace/index.html#type-t">Call_trace.t</a></span>)</span> list</span></span></code></div></div><h3 id="entry-points"><a href="#entry-points" class="anchor"></a>Entry points</h3><div class="odoc-spec"><div class="spec value anchored" id="val-initialise"><a href="#val-initialise" class="anchor"></a><code><span><span class="keyword">val</span> initialise : 
   <span><span class="optlabel">?soteria_config</span>:<a href="../../../soteria/Soteria/Config/index.html#type-t">Soteria.Config.t</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="../Config/index.html#type-mode">Config.mode</a> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../Config/index.html#type-t">Config.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span>unit <span class="arrow">&#45;&gt;</span></span> <span class="type-var">'a</span>)</span> <span class="arrow">&#45;&gt;</span></span>
   <span class="type-var">'a</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-print_states"><a href="#val-print_states" class="anchor"></a><code><span><span class="keyword">val</span> print_states : 
-  <span><span><span><span>(<span><span>(<a href="../Aggregate_val/index.html#type-t">Aggregate_val.t</a> * <span><a href="../State/index.html#type-t">SState.t</a> option</span>,
+  <span><span><span>(<span><span>(<a href="../Aggregate_val/index.html#type-t">Aggregate_val.t</a> * <span><a href="../State/index.html#type-t">SState.t</a> option</span>,
      <span><span>(<span>(<span>[&lt; `DivisionByZero
        <span>| `DoubleFree</span>
        <span>| `FailedAssert</span>
@@ -93,8 +91,7 @@ let search_urls = ['../../db.js','../../../sherlodoc.js'];
      <span><a href="../State/index.html#type-serialized">SState.serialized</a> list</span>)</span>
      <a href="../../../soteria/Soteria/Symex/Compo_res/index.html#type-t">Soteria.Symex.Compo_res.t</a></span>
    * <span class="type-var">'a</span>)</span>
-    list</span>
-    <a href="../../../soteria/Soteria/Stats/index.html#type-with_stats">Soteria.Stats.with_stats</a></span> <span class="arrow">&#45;&gt;</span></span>
+    list</span> <span class="arrow">&#45;&gt;</span></span>
   unit</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-exec_and_print"><a href="#val-exec_and_print" class="anchor"></a><code><span><span class="keyword">val</span> exec_and_print : 
   <span><a href="../../../soteria/Soteria/Config/index.html#type-t">Soteria.Config.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../Config/index.html#type-t">Config.t</a> <span class="arrow">&#45;&gt;</span></span>
@@ -102,7 +99,7 @@ let search_urls = ['../../db.js','../../../sherlodoc.js'];
   <span><span>string list</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>string list</span> <span class="arrow">&#45;&gt;</span></span>
   <span>string <span class="arrow">&#45;&gt;</span></span>
-  <a href="../Error/Exit_code/index.html#type-t">Error.Exit_code.t</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-dump_summaries"><a href="#val-dump_summaries" class="anchor"></a><code><span><span class="keyword">val</span> dump_summaries : 
+  <a href="../Error/Exit_code/index.html#type-t">Error.Exit_code.t</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-dump_report"><a href="#val-dump_report" class="anchor"></a><code><span><span class="keyword">val</span> dump_report : <span><span><span class="xref-unresolved">Yojson</span>.Safe.t list</span> <span class="arrow">&#45;&gt;</span></span> unit</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-dump_summaries"><a href="#val-dump_summaries" class="anchor"></a><code><span><span class="keyword">val</span> dump_summaries : 
   <span><span><span>(<span class="xref-unresolved">Cerb_frontend</span>.Symbol.sym * <span><span><span class="type-var">'a</span> <a href="../Summary/index.html#type-t">Summary.t</a></span> list</span>)</span> list</span> <span class="arrow">&#45;&gt;</span></span>
   unit</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-analyse_summaries"><a href="#val-analyse_summaries" class="anchor"></a><code><span><span class="keyword">val</span> analyse_summaries : 
   <span><span><span>(<a href="../Ail_tys/index.html#type-sym">Ail_tys.sym</a> * <span><span><span class="type-var">'a</span> <a href="../Summary/index.html#type-t">Summary.t</a></span> list</span>)</span> list</span> <span class="arrow">&#45;&gt;</span></span>
@@ -120,7 +117,7 @@ let search_urls = ['../../db.js','../../../sherlodoc.js'];
   <span><span>string list</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>string list</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>string list</span> <span class="arrow">&#45;&gt;</span></span>
-  <a href="../Error/Exit_code/index.html#type-t">Error.Exit_code.t</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-capture_db"><a href="#val-capture_db" class="anchor"></a><code><span><span class="keyword">val</span> capture_db : 
+  <a href="../Error/Exit_code/index.html#type-t">Error.Exit_code.t</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-linked_prog_of_db"><a href="#val-linked_prog_of_db" class="anchor"></a><code><span><span class="keyword">val</span> linked_prog_of_db : <span>string <span class="arrow">&#45;&gt;</span></span> <a href="../Ail_tys/index.html#type-linked_program">Ail_tys.linked_program</a></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-capture_db"><a href="#val-capture_db" class="anchor"></a><code><span><span class="keyword">val</span> capture_db : 
   <span><a href="../../../soteria/Soteria/Config/index.html#type-t">Soteria.Config.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span><a href="../Config/index.html#type-t">Config.t</a> <span class="arrow">&#45;&gt;</span></span>
   <span>string <span class="arrow">&#45;&gt;</span></span>

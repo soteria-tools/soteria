@@ -19,7 +19,24 @@ let search_urls = ['../../db.js','../../../sherlodoc.js'];
   <span>| `UBPointerComparison</span>
   <span>| `UninitializedMemoryAccess</span>
   <span>| `UseAfterFree</span> ]</span> <span class="arrow">&#45;&gt;</span></span>
-  unit</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-is_ub"><a href="#val-is_ub" class="anchor"></a><code><span><span class="keyword">val</span> is_ub : 
+  unit</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-kind_string"><a href="#val-kind_string" class="anchor"></a><code><span><span class="keyword">val</span> kind_string : 
+  <span><span>[&lt; `DivisionByZero
+  <span>| `DoubleFree</span>
+  <span>| `FailedAssert</span>
+  <span><span>| `Gave_up</span> of <span class="type-var">'a</span></span>
+  <span>| `InvalidFree</span>
+  <span>| `InvalidFunctionPtr</span>
+  <span><span>| `LinkError</span> of <span class="type-var">'b</span></span>
+  <span>| `Memory_leak</span>
+  <span>| `NullDereference</span>
+  <span>| `OutOfBounds</span>
+  <span>| `Overflow</span>
+  <span><span>| `ParsingError</span> of <span class="type-var">'c</span></span>
+  <span>| `UBPointerArithmetic</span>
+  <span>| `UBPointerComparison</span>
+  <span>| `UninitializedMemoryAccess</span>
+  <span>| `UseAfterFree</span> ]</span> <span class="arrow">&#45;&gt;</span></span>
+  string</span></code></div><div class="spec-doc"><p>Same as `show` but does not include details about the error, only the kind.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-is_ub"><a href="#val-is_ub" class="anchor"></a><code><span><span class="keyword">val</span> is_ub : 
   <span><span>[&lt; `DivisionByZero
   <span>| `DoubleFree</span>
   <span>| `FailedAssert</span>
