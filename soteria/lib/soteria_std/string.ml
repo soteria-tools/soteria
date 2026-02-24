@@ -21,6 +21,10 @@ module Interned : sig
 
   (** Unique tag of the interned string. *)
   val tag : t -> int
+
+  val hash : t -> int
+  val equal : t -> t -> bool
+  val pp : Format.formatter -> t -> unit
 end = struct
   module HC = Hc.Make_strong_thread_safe (struct
     type t = string
@@ -34,4 +38,7 @@ end = struct
   let intern s = HC.hashcons s
   let to_string hc = hc.Hc.node
   let tag hc = hc.Hc.tag
+  let hash s = Int.hash @@ tag s
+  let equal s1 s2 = tag s1 = tag s2
+  let pp ft s = Fmt.string ft (to_string s)
 end
