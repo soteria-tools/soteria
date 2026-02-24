@@ -7,6 +7,7 @@ let fatal ?name ?(code = 2) err =
   exit code
 
 let pp_branches = pp_plural ~sing:"branch" ~plur:"branches"
+let pp_functions = pp_plural ~sing:"function" ~plur:"functions"
 
 let print_pcs pcs =
   let open Fmt in

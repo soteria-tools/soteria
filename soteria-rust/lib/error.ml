@@ -141,6 +141,8 @@ let severity : t -> Soteria.Terminal.Diagnostic.severity = function
 
 type with_trace = t * Meta.span_data Soteria.Terminal.Call_trace.t
 
+let pp_with_trace ft (err, _) = pp ft err
+
 let add_to_call_trace ((err, trace_elem) : with_trace) trace_elem' =
   (err, trace_elem' :: trace_elem)
 

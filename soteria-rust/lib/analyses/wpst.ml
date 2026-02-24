@@ -144,11 +144,10 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     let pcs = List.map snd branches in
     Ok (pcs, nbranches, unexplored > 0)
   else
-    (* join th errors by [error type * calltrace], and find all matching PCs *)
     let errors =
       branches
       |> List.filter_map (function
-        | Compo_res.Error (e, _), pc -> Some (e, pc)
+        | Compo_res.Error (e, _st), pc -> Some (e, pc)
         | _ -> None)
     in
     let errors_joined =
