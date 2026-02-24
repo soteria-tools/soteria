@@ -207,6 +207,13 @@ let bv_uaddo l r = app_ "bvuaddo" [ l; r ]
 (** [bv_saddo l r] returns true if [l + r] would overflow (signed). *)
 let bv_saddo l r = app_ "bvsaddo" [ l; r ]
 
+(** [bv_usubo l r] returns true if [l - r] would underflow (unsigned). *)
+let bv_usubo l r = app_ "bvusubo" [ l; r ]
+
+(** [bv_ssubo l r] returns true if [l - r] would underflow or overflow (signed).
+*)
+let bv_ssubo l r = app_ "bvssubo" [ l; r ]
+
 (** [bv_umulo l r] returns true if [l * r] would overflow (unsigned). *)
 let bv_umulo l r = app_ "bvumulo" [ l; r ]
 
