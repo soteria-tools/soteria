@@ -126,8 +126,10 @@ let call_trace_to_labels ~as_ranges (call_trace : 'a Call_trace.t) =
 
 let with_unaltered_geo f =
   let geo = Format.get_geometry () in
-  f ();
-  Format.set_geometry ~max_indent:geo.max_indent ~margin:geo.margin
+  Fun.protect
+    ~finally:(fun () ->
+      Format.set_geometry ~max_indent:geo.max_indent ~margin:geo.margin)
+    f
 
 let pp ft diag =
   let module GConfig = Grace_ansi_renderer.Config in
