@@ -5,25 +5,12 @@ open Syntaxes.FunctionWrap
 module State = State.Tree_state
 module Interp = Interp.Make (State)
 open Frontend.Diagnostic
+open Common
 
 (** An error happened at runtime during execution *)
 exception ExecutionError of string
 
 let execution_err msg = raise (ExecutionError msg)
-let pp_branches = pp_plural ~sing:"branch" ~plur:"branches"
-
-let print_pcs pcs =
-  let open Fmt in
-  let pp_pc ft (pc, i) =
-    let name = "PC " ^ string_of_int i ^ ":" in
-    if List.is_empty pc then pf ft "%a empty" (pp_style `Bold) name
-    else
-      let pp_pc = list ~sep:(any " /\\@, ") Typed.ppa in
-      pf ft "%a @[<-1>%a@]" (pp_style `Bold) name pp_pc pc
-  in
-  if not @@ (Soteria.Terminal.Config.get ()).compact then
-    let pcs_indexed = List.mapi (fun i pc -> (pc, i + 1)) pcs in
-    (list ~sep:(any "@\n") pp_pc) Fmt.stdout pcs_indexed
 
 let print_outcomes entry_name f =
   let time = Unix.gettimeofday () in
