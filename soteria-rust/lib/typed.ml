@@ -19,6 +19,7 @@ let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
        ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
 
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
+let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
 
 let cast_checked ~ty v =
