@@ -15,7 +15,15 @@ module Heap =
       type t = T.sloc Typed.t
 
       let pp = ppa
-      let fresh () = Csymex.nondet Typed.t_loc
+
+      let fresh () =
+        match Config.current_mode () with
+        | Compositional -> Csymex.nondet Typed.t_loc
+        | Whole_program ->
+            (* If we are in non-compositional execution, we can use concrete
+               locations. *)
+            return (Csymex.Concrete_alloc_id.get_next ())
+
       let simplify = Csymex.simplify
       let to_int = unique_tag
     end)
