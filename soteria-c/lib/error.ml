@@ -35,6 +35,26 @@ let pp ft = function
   | `Overflow -> Fmt.string ft "Integer overflow"
   | `Gave_up s -> Fmt.pf ft "Analysis gave up: %s" s
 
+(** Same as `show` but does not include details about the error, only the kind.
+*)
+let kind_string = function
+  | `NullDereference -> "NULL_DEREFERENCE"
+  | `OutOfBounds -> "BUFFER_OVERFLOW"
+  | `UninitializedMemoryAccess -> "UNINITIALIZED_VALUE"
+  | `UseAfterFree -> "USE_AFTER_FREE"
+  | `DivisionByZero -> "DIVISION_BY_ZERO"
+  | `ParsingError _ -> "PARSING_ERROR"
+  | `LinkError _ -> "LINK_ERROR"
+  | `UBPointerComparison -> "POINTER_COMPARISON_UB"
+  | `UBPointerArithmetic -> "POINTER_ARITHMETIC_UB"
+  | `InvalidFunctionPtr -> "INVALID_FUNCTION_POINTER"
+  | `DoubleFree -> "DOUBLE_FREE"
+  | `InvalidFree -> "INVALID_FREE"
+  | `Memory_leak -> "MEMORY_LEAK"
+  | `FailedAssert -> "ASSERTION_FAILURE"
+  | `Overflow -> "INTEGER_OVERFLOW"
+  | `Gave_up _ -> "GAVE_UP"
+
 let is_ub = function
   | `NullDereference | `OutOfBounds | `UninitializedMemoryAccess | `UseAfterFree
   | `DivisionByZero | `UBPointerComparison | `UBPointerArithmetic
@@ -87,27 +107,6 @@ module Diagnostic = struct
       ~error:(Fmt.to_to_string pp error)
       ~severity:(severity error) ~fname:fid
 
-  (* JSON serialization for diagnostic reports *)
-  let bug_type_string = function
-    | `NullDereference -> "NULL_DEREFERENCE"
-    | `OutOfBounds -> "BUFFER_OVERFLOW"
-    | `UninitializedMemoryAccess -> "UNINITIALIZED_VALUE"
-    | `UseAfterFree -> "USE_AFTER_FREE"
-    | `DivisionByZero -> "DIVISION_BY_ZERO"
-    | `ParsingError _ -> "PARSING_ERROR"
-    | `LinkError _ -> "LINK_ERROR"
-    | `UBPointerComparison -> "POINTER_COMPARISON_UB"
-    | `UBPointerArithmetic -> "POINTER_ARITHMETIC_UB"
-    | `InvalidFunctionPtr -> "INVALID_FUNCTION_POINTER"
-    | `DoubleFree -> "DOUBLE_FREE"
-    | `InvalidFree -> "INVALID_FREE"
-    | `Memory_leak -> "MEMORY_LEAK"
-    | `FailedAssert -> "ASSERTION_FAILURE"
-    | `Overflow -> "INTEGER_OVERFLOW"
-    | `Gave_up _ -> "GAVE_UP"
-
-  let severity_string = function `Memory_leak -> "WARNING" | _ -> "ERROR"
-
   let extract_location (cerb_loc : Cerb_location.t) =
     match cerb_loc with
     | Loc_unknown | Loc_other _ -> None
@@ -127,9 +126,9 @@ module Diagnostic = struct
     | Loc_regions ([], _) -> None
 
   let to_json ~fid ~call_trace ~error =
-    let bug_type = bug_type_string error in
-    let sev = severity_string error in
-    let qualifier = Fmt.to_to_string pp error in
+    let kind = kind_string error in
+    let sev = Soteria.Terminal.Diagnostic.show_severity (severity error) in
+    let details = Fmt.to_to_string pp error in
 
     (* Extract location from call trace if available *)
     let file, line, column =
@@ -143,13 +142,13 @@ module Diagnostic = struct
 
     `Assoc
       [
-        ("bug_type", `String bug_type);
-        ("qualifier", `String qualifier);
+        ("kind", `String kind);
+        ("details", `String details);
         ("severity", `String sev);
         ("file", `String file);
         ("line", `Int line);
         ("column", `Int column);
-        ("procedure", `String fid);
+        ("function", `String fid);
       ]
 end
 
