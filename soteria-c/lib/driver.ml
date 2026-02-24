@@ -274,10 +274,7 @@ let generate_errors content =
   | Error e -> [ e ]
   | Ok prog ->
       let@ () = with_function_context prog in
-      let summaries =
-        Abductor.generate_all_summaries ~functions_to_analyse:None prog
-      in
-      summaries
+      Abductor.generate_all_summaries ~functions_to_analyse:None prog
       |> List.concat_map (fun (fid, summaries) ->
           let@ () =
             L.with_section
