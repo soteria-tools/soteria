@@ -104,11 +104,14 @@ let current () =
 
 let current_mode () = Effect.perform GetMode
 
+let test_comp_warning =
+  String.Interned.intern
+    "Test-Comp compatibility mode enabled. Note that Soteria-C is *not* \
+     optimised for this test suite, and does not aim to be performant on it."
+
 let with_config ~(config : t) ~(mode : mode) f =
   if config.testcomp_compat then
-    Soteria.Terminal.Warn.warn_once
-      "Test-Comp compatibility mode enabled. Note that Soteria-C is *not* \
-       optimised for this test suite, and does not aim to be performant on it.";
+    Soteria.Terminal.Warn.warn_once test_comp_warning;
   try f () with
   | effect GetConfig, k -> Effect.Deep.continue k config
   | effect GetMode, k -> Effect.Deep.continue k mode
