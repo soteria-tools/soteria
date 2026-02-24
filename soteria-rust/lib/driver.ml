@@ -36,6 +36,11 @@ let exec_wpst config target =
   let compile () = Frontend.parse_ullbc_with_entry_points target in
   wrap_step "Compiling" compile |> Analyses.Wpst.exec
 
+let exec_biab config target =
+  let@ () = with_exn_and_config Compositional config in
+  let compile () = Frontend.parse_ullbc target in
+  wrap_step "Compiling" compile |> Analyses.Biab.generate_summaries
+
 let build_plugins config =
   let@ () = with_exn_and_config Whole_program config in
   wrap_step "Compiling plugins" Frontend.compile_all_plugins;

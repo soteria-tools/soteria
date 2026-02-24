@@ -58,7 +58,30 @@ module Build_plugins = struct
       term
 end
 
+module Biab = struct
+  let term =
+    Term.(
+      const Soteria_rust_lib.Driver.exec_biab
+      $ Soteria_rust_lib.Config.global_term
+      $ dir_arg)
+
+  let cmd =
+    Cmd.make
+      (Cmd.info ~exits ~doc:"Run bi-abduction"
+         ~man:
+           [
+             `P
+               "Perform bi-abduction on the specified file or crate; will \
+                analyse all functions compositionally, and look for reachable \
+                bugs.";
+           ]
+         "auto")
+      term
+end
+
 let cmd =
-  Cmd.group (Cmd.info ~exits "soteria-rust") [ Exec.cmd; Build_plugins.cmd ]
+  Cmd.group
+    (Cmd.info ~exits "soteria-rust")
+    [ Exec.cmd; Biab.cmd; Build_plugins.cmd ]
 
 let () = exit @@ Cmd.eval cmd
