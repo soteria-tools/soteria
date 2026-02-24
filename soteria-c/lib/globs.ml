@@ -11,7 +11,7 @@ module Loc = struct
   let pp = Typed.ppa
 
   let fresh () =
-    let* loc = Csymex.nondet Typed.t_loc in
+    let* loc = Csymex.fresh_alloc_id () in
     let+ () = Csymex.assume [ Typed.not (Typed.Ptr.is_null_loc loc) ] in
     loc
 

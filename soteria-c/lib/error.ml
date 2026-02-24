@@ -35,6 +35,26 @@ let pp ft = function
   | `Overflow -> Fmt.string ft "Integer overflow"
   | `Gave_up s -> Fmt.pf ft "Analysis gave up: %s" s
 
+(** Same as `show` but does not include details about the error, only the kind.
+*)
+let kind_string = function
+  | `NullDereference -> "NULL_DEREFERENCE"
+  | `OutOfBounds -> "BUFFER_OVERFLOW"
+  | `UninitializedMemoryAccess -> "UNINITIALIZED_VALUE"
+  | `UseAfterFree -> "USE_AFTER_FREE"
+  | `DivisionByZero -> "DIVISION_BY_ZERO"
+  | `ParsingError _ -> "PARSING_ERROR"
+  | `LinkError _ -> "LINK_ERROR"
+  | `UBPointerComparison -> "POINTER_COMPARISON_UB"
+  | `UBPointerArithmetic -> "POINTER_ARITHMETIC_UB"
+  | `InvalidFunctionPtr -> "INVALID_FUNCTION_POINTER"
+  | `DoubleFree -> "DOUBLE_FREE"
+  | `InvalidFree -> "INVALID_FREE"
+  | `Memory_leak -> "MEMORY_LEAK"
+  | `FailedAssert -> "ASSERTION_FAILURE"
+  | `Overflow -> "INTEGER_OVERFLOW"
+  | `Gave_up _ -> "GAVE_UP"
+
 let is_ub = function
   | `NullDereference | `OutOfBounds | `UninitializedMemoryAccess | `UseAfterFree
   | `DivisionByZero | `UBPointerComparison | `UBPointerArithmetic
@@ -86,6 +106,50 @@ module Diagnostic = struct
     Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
       ~error:(Fmt.to_to_string pp error)
       ~severity:(severity error) ~fname:fid
+
+  let extract_location (cerb_loc : Cerb_location.t) =
+    match cerb_loc with
+    | Loc_unknown | Loc_other _ -> None
+    | Loc_point position ->
+        let file = Cerb_position.file position in
+        let line, col = to_loc position in
+        Some (file, line + 1, col + 1)
+        (* Convert back to 1-indexed *)
+    | Loc_region (pos1, _, _) ->
+        let file = Cerb_position.file pos1 in
+        let line, col = to_loc pos1 in
+        Some (file, line + 1, col + 1)
+    | Loc_regions ((pos1, _) :: _, _) ->
+        let file = Cerb_position.file pos1 in
+        let line, col = to_loc pos1 in
+        Some (file, line + 1, col + 1)
+    | Loc_regions ([], _) -> None
+
+  let to_json ~fid ~call_trace ~error =
+    let kind = kind_string error in
+    let sev = Soteria.Terminal.Diagnostic.show_severity (severity error) in
+    let details = Fmt.to_to_string pp error in
+
+    (* Extract location from call trace if available *)
+    let file, line, column =
+      match call_trace with
+      | [] -> (fid, 0, 0)
+      | elem :: _ -> (
+          match extract_location elem.Soteria.Terminal.Call_trace.loc with
+          | Some (f, l, c) -> (f, l, c)
+          | None -> (fid, 0, 0))
+    in
+
+    `Assoc
+      [
+        ("kind", `String kind);
+        ("details", `String details);
+        ("severity", `String sev);
+        ("file", `String file);
+        ("line", `Int line);
+        ("column", `Int column);
+        ("function", `String fid);
+      ]
 end
 
 module Exit_code = struct

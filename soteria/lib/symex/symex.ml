@@ -364,6 +364,12 @@ module StatKeys = struct
   *)
   let miss_without_fix = "soteria.miss-without-fix"
 
+  (** Number of times [branch_on] was called *)
+  let branch_on_calls = "soteria.branch-on-calls"
+
+  (** Number of times [branch_on] actually branched *)
+  let branch_on_branched = "soteria.branch-on-branched"
+
   let () =
     let open Stats in
     let open Logs.Printers in
@@ -385,7 +391,13 @@ module StatKeys = struct
     register_printer give_up_reasons ~name:"Give up reasons" (fun _ ->
         default_printer);
     register_printer miss_without_fix ~name:"Misses without fix" (fun _ ->
-        default_printer)
+        default_printer);
+    disable_printer branch_on_branched;
+    register_int_printer branch_on_calls ~name:"branch_on"
+      (fun stats ft calls ->
+        let branched = get_int stats branch_on_branched in
+        Fmt.pf ft "branches %a of calls (%d of %d)" pp_percenti
+          (branched, calls) branched calls)
 end
 
 module Make_core (Sol : Solver.Mutable_incremental) = struct
@@ -521,6 +533,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       ?(right_branch_name = "Right branch") guard ~(then_ : unit -> 'a Iter.t)
       ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
    fun f ->
+    Stats.As_ctx.incr StatKeys.branch_on_calls;
     let guard = Solver.simplify guard in
     match Value.as_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
@@ -543,7 +556,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
               (* Right must be sat since left was not! We didn't branch so we
                  don't consume the counter *)
               else_ () f
-            else
+            else (
+              Stats.As_ctx.incr StatKeys.branch_on_branched;
               match Fuel.consume_branching 1 with
               | Exhausted ->
                   Stats.As_ctx.incr StatKeys.unexplored_branches;
@@ -552,7 +566,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
               | Not_exhausted ->
                   Stats.As_ctx.incr StatKeys.branches;
                   if Solver_result.is_sat (Solver.sat ()) then else_ () f
-                  else L.trace (fun m -> m "Branch is not feasible"))
+                  else L.trace (fun m -> m "Branch is not feasible")))
 
   let if_sure ?left_branch_name:_ ?right_branch_name:_ guard
       ~(then_ : unit -> 'a Iter.t) ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =

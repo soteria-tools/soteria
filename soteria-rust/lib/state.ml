@@ -22,14 +22,12 @@ module StateKey = struct
   let pp = ppa
   let to_int = unique_tag
   let i = ref 0
-
-  let fresh_rsym () =
-    incr i;
-    return (Ptr.loc_of_int !i)
-
   let distinct _ = v_true
   let simplify = DecayMapMonad.simplify
-  let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
+
+  let fresh () =
+    incr i;
+    DecayMapMonad.return @@ Ptr.loc_of_int !i
   (* The above only works in WPST -- otherwise, use:
    * let fresh () = nondet (Typed.t_sloc ()) *)
 end
