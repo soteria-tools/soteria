@@ -55,7 +55,7 @@ Test kani::assert
       │  ----------------------- 1: Entry point
     9 │      let b: bool = kani::any();
    10 │      kani::assert(b, "👻 unicode is 𝒮𝒞𝒜ℛ𝒴");
-      │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │      │
       │      Triggering operation
       │      2: Call trace
@@ -64,29 +64,29 @@ Test kani::assert
   => Running override_assert_macro...
   error: override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert!" in override_assert_macro
-      ┌─ $SOTERIA-RUST/std/src/lib.rs:23:9
-   23 │          rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
-      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      │          │
-      │          Triggering operation
-      │          2: Call trace
-      ┌─ $TESTCASE_ROOT/assert.rs:14:1
+      ┌─ $TESTCASE_ROOT/assert.rs:16:5
    14 │  fn override_assert_macro() {
       │  -------------------------- 1: Entry point
+   15 │      let b: bool = kani::any();
+   16 │      assert!(b, "I used \"assert!\"");
+      │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │      │
+      │      Triggering operation
+      │      2: Call trace
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   
   => Running override_asserteq_macro...
   error: override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: I used "assert_eq!" in override_asserteq_macro
-      ┌─ $SOTERIA-RUST/std/src/lib.rs:23:9
-   23 │          rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
-      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      │          │
-      │          Triggering operation
-      │          2: Call trace
-      ┌─ $TESTCASE_ROOT/assert.rs:20:1
+      ┌─ $TESTCASE_ROOT/assert.rs:23:5
    20 │  fn override_asserteq_macro() {
       │  ---------------------------- 1: Entry point
+      ·  
+   23 │      assert_eq!(a, b, "I used \"assert_eq!\"");
+      │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      │      │
+      │      Triggering operation
+      │      2: Call trace
   PC 1: (V|1| != V|2|)
   
   [1]

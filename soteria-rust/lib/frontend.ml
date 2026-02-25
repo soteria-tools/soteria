@@ -317,7 +317,12 @@ let default =
         @ opaque_names
         @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
       ~obol:
-        ([ "--entry-names"; "main"; "--entry-attribs"; "rusteriatool::test" ]
+        ([
+           "--start-from";
+           "main";
+           "--start-from-attribute";
+           "rusteriatool::test";
+         ]
         @ opaque_names)
       ~features:[ "rusteria" ]
       ~rustc:
@@ -359,7 +364,7 @@ let kani =
   let mk_cmd () =
     let@ _ = Lib.with_compiled Kani in
     Cmd.make ~features:[ "kani" ]
-      ~obol:[ "--entry-attribs"; "kanitool::proof" ]
+      ~obol:[ "--start-from-attribute"; "kanitool::proof" ]
       ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)"; "--extern"; "kani" ]
       ()
   in
@@ -382,7 +387,7 @@ let miri =
     let@ _ = Lib.with_compiled Miri in
     Cmd.make ~features:[ "miri" ]
       ~rustc:[ "--extern"; "miristd"; "--edition"; "2021" ]
-      ~obol:[ "--entry-names"; "miri_start" ]
+      ~obol:[ "--start-from"; "miri_start" ]
       ()
   in
   let get_entry_point (decl : fun_decl) =

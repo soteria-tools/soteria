@@ -50,15 +50,15 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   => Running main...
   error: main: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: assertion failed: result.is_err() in main
-      ┌─ $SOTERIA-RUST/std/src/lib.rs:20:9
-   20 │          rusteria::assert(!!$cond, concat!("assertion failed: ", stringify!($cond)));
-      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      ┌─ $TESTCASE_ROOT/unwind.rs:9:9
+    1 │  fn main() {
+      │  --------- 1: Entry point
+      ·  
+    9 │          assert!(result.is_err());
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^
       │          │
       │          Triggering operation
       │          2: Call trace
-      ┌─ $TESTCASE_ROOT/unwind.rs:1:1
-    1 │  fn main() {
-      │  --------- 1: Entry point
   PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   [1]
@@ -255,15 +255,15 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   => Running main...
   error: main: found an issue in <time> after exploring 1 branch -- stopped immediately (fail-fast)
   error: Panic: ok in main
-      ┌─ $SOTERIA-RUST/std/src/lib.rs:103:9
-  103 │          rusteria::panic(concat!($msg))
-      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      ┌─ $TESTCASE_ROOT/fail_fast.rs:4:9
+    1 │  fn main() {
+      │  --------- 1: Entry point
+      ·  
+    4 │          panic!("ok");
+      │          ^^^^^^^^^^^^
       │          │
       │          Triggering operation
       │          2: Call trace
-      ┌─ $TESTCASE_ROOT/fail_fast.rs:1:1
-    1 │  fn main() {
-      │  --------- 1: Entry point
   PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
   
   [1]
