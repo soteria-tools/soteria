@@ -44,4 +44,5 @@ module type S = sig
 
       Returns the solver to its initial state. *)
   val reset : t -> unit
+  val get_model : t -> Sexplib.Sexp.t option
 end
