@@ -31,11 +31,11 @@ ocaml:
 .PHONY: ocaml-format-check
 ocaml-format-check:
 	$(DUNE) build @fmt
-	
+
 .PHONY: check-opam-files
 check-opam-files:
 	@git diff --name-only HEAD | grep -q '\.opam$$' && echo "Error: .opam files have changed since last commit" && exit 1 || exit 0
-	
+
 
 .PHONY: ocaml-test
 ocaml-test:
@@ -44,7 +44,7 @@ ocaml-test:
 .PHONY: ocaml-slow-tests
 ocaml-slow-tests:
 	$(DUNE) build @slow-tests
-	
+
 .PHONY: ocaml-very-slow-tests
 ocaml-very-slow-tests:
 	$(DUNE) build @very-slow-tests
@@ -83,7 +83,7 @@ packaging/soteria-c/macOS_dylibs.txt:
 
 # From inside the package folder one can run:
 # SOTERIA_Z3_PATH=./bin/z3 SOTERIA_OBOL_PATH=./bin/obol SOTERIA_CHARON_PATH=./bin/charon \
-#   SOTERIA_RUST_PLUGINS=./plugins DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-rust cargo .
+#   SOTERIA_RUST_PLUGINS=./plugins DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-rust exec .
 .PHONY: package-soteria-rust
 package-soteria-rust: ocaml packaging/soteria-rust/bin-locations.txt packaging/soteria-rust/macOS_dylibs.txt
 	$(DUNE) build @soteria-rust-dylist-file
