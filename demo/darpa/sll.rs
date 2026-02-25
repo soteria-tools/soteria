@@ -2,7 +2,7 @@
 use std::collections::LinkedList;
 
 // Kani: kani demo/darpa/sll.rs
-// Soteria Rust: dune exec -- soteria-rust rustc ./demo/darpa/sll.rs --kani --compact
+// Soteria Rust: dune exec -- soteria-rust exec ./demo/darpa/sll.rs --kani --compact
 
 // An example of code one may want to check for bugs; due to the inherent flaws of Kani,
 // heap accesses are relatively slow, and this test doesn't complete, even when annotating loop

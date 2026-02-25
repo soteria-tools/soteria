@@ -3,6 +3,7 @@
     See https://doc.rust-lang.org/src/alloc/alloc.rs.html *)
 
 open Rust_val
+open Typed
 open Typed.Infix
 open Typed.Syntax
 

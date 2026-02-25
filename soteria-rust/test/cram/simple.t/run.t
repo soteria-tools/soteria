@@ -269,7 +269,7 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   [1]
 
 Test recursive validity check for references; disabled
-  $ soteria-rust rustc ref_validity.rs --recursive-validity=allow
+  $ soteria-rust exec ref_validity.rs --recursive-validity=allow
   Compiling... done in <time>
   => Running test_uninit_ref...
   note: test_uninit_ref: done in <time>, ran 1 branch
@@ -303,7 +303,7 @@ Test recursive validity check for references; disabled
   [1]
 
 Test recursive validity check for references; enabled
-  $ soteria-rust rustc ref_validity.rs --recursive-validity=deny
+  $ soteria-rust exec ref_validity.rs --recursive-validity=deny
   Compiling... done in <time>
   => Running test_uninit_ref...
   error: test_uninit_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -344,7 +344,7 @@ Test recursive validity check for references; enabled
   [1]
 
 Test recursive validity check for references; warn
-  $ soteria-rust rustc ref_validity.rs --recursive-validity=warn
+  $ soteria-rust exec ref_validity.rs --recursive-validity=warn
   Compiling... done in <time>
   => Running test_uninit_ref...
   warning: Invalid reference: Uninitialized memory access
@@ -385,7 +385,7 @@ Test recursive validity check for references; warn
   [1]
 
 Test approximation of complex float operations -- warn (default)
-  $ soteria-rust rustc approx_float.rs
+  $ soteria-rust exec approx_float.rs
   Compiling... done in <time>
   => Running main...
   warning: A complex floating point intrinsic was encountered; it will be executed with a significant over-approximation.
@@ -396,7 +396,7 @@ Test approximation of complex float operations -- warn (default)
   
 
 Test approximation of complex float operations -- denied
-  $ soteria-rust rustc approx_float.rs --approx-floating-ops deny
+  $ soteria-rust exec approx_float.rs --approx-floating-ops deny
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 0 branches
@@ -404,7 +404,7 @@ Test approximation of complex float operations -- denied
   
 
 Test approximation of complex float operations -- allowed
-  $ soteria-rust rustc approx_float.rs --approx-floating-ops allow
+  $ soteria-rust exec approx_float.rs --approx-floating-ops allow
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 1 branch

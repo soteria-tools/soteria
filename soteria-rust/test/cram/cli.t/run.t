@@ -47,6 +47,12 @@
              The .rs file or the directory of the crate to analyse
   
   OPTIONS
+         --approx-floating-ops=ENUM (absent=warn)
+             Whether to allow complex floating-point operations to be
+             over-approximated. Applies to e.g. sqrt, exp, pow and
+             trigonometric functions. If deny, will vanish execution when
+             encountering them.
+  
          --branch-fuel=INT (absent BRANCH_FUEL env)
              The default branch fuel for each entrypoint -- every symbolic
              execution branching point counts as one fuel. Defaults to infinite
@@ -65,13 +71,20 @@
          --dump-smt-to=VAL, --dump-smt=VAL
              Dump the SMT queries to the given file
   
+         --exclude=[,…]
+             Filter the entrypoints to exclude, by name. If empty, no
+             entrypoints are excluded. Multiple filters can be provided,
+             comma-separated; tests matching any will be excluded. The filters
+             are treated as regexes. Opposite of --filter.
+  
          --fail-fast (absent FAIL_FAST env)
              Stop symbolic execution upon the first error encountered.
   
          --filter=[,…]
              Filter the entrypoints to run, by name. If empty, all entrypoints
-             are run. Multiple filters can be provided; tests matching any will
-             be selected. The filters are treated as regexes.
+             are run. Multiple filters can be provided, comma-separated; tests
+             matching any will be selected. The filters are treated as regexes.
+             Opposite of --exclude.
   
          --frontend=ENUM (absent=obol)
              Choose the frontend to use: Charon or Obol
@@ -133,8 +146,16 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
+         --recursive-validity=ENUM (absent=warn)
+             Whether to check the validity of the addressed memory when
+             obtaining a reference to it. We only go one level deep.
+  
          --rustc=[,…] (absent RUSTC_FLAGS env)
              Additional flags to pass to the Rustc compiler
+  
+         --show-pcs, --pcs (absent SHOW_PCS env)
+             Whether to show the path conditions for outcomes at the end of
+             execution.
   
          --solver-timeout=INT (absent SOTERIA_SOLVER_TIMEOUT env)
              Set the solver timeout in miliseconds
@@ -206,6 +227,9 @@
          RUST_SYSROOT
              See option --sysroot.
   
+         SHOW_PCS
+             See option --show-pcs.
+  
          SOTERIA_CHARON_PATH
              See option --charon-path.
   
@@ -253,6 +277,12 @@
          separately.
   
   OPTIONS
+         --approx-floating-ops=ENUM (absent=warn)
+             Whether to allow complex floating-point operations to be
+             over-approximated. Applies to e.g. sqrt, exp, pow and
+             trigonometric functions. If deny, will vanish execution when
+             encountering them.
+  
          --branch-fuel=INT (absent BRANCH_FUEL env)
              The default branch fuel for each entrypoint -- every symbolic
              execution branching point counts as one fuel. Defaults to infinite
@@ -271,13 +301,20 @@
          --dump-smt-to=VAL, --dump-smt=VAL
              Dump the SMT queries to the given file
   
+         --exclude=[,…]
+             Filter the entrypoints to exclude, by name. If empty, no
+             entrypoints are excluded. Multiple filters can be provided,
+             comma-separated; tests matching any will be excluded. The filters
+             are treated as regexes. Opposite of --filter.
+  
          --fail-fast (absent FAIL_FAST env)
              Stop symbolic execution upon the first error encountered.
   
          --filter=[,…]
              Filter the entrypoints to run, by name. If empty, all entrypoints
-             are run. Multiple filters can be provided; tests matching any will
-             be selected. The filters are treated as regexes.
+             are run. Multiple filters can be provided, comma-separated; tests
+             matching any will be selected. The filters are treated as regexes.
+             Opposite of --exclude.
   
          --frontend=ENUM (absent=obol)
              Choose the frontend to use: Charon or Obol
@@ -339,8 +376,16 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
+         --recursive-validity=ENUM (absent=warn)
+             Whether to check the validity of the addressed memory when
+             obtaining a reference to it. We only go one level deep.
+  
          --rustc=[,…] (absent RUSTC_FLAGS env)
              Additional flags to pass to the Rustc compiler
+  
+         --show-pcs, --pcs (absent SHOW_PCS env)
+             Whether to show the path conditions for outcomes at the end of
+             execution.
   
          --solver-timeout=INT (absent SOTERIA_SOLVER_TIMEOUT env)
              Set the solver timeout in miliseconds
@@ -412,6 +457,9 @@
   
          RUST_SYSROOT
              See option --sysroot.
+  
+         SHOW_PCS
+             See option --show-pcs.
   
          SOTERIA_CHARON_PATH
              See option --charon-path.
