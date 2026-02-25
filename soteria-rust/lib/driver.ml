@@ -62,7 +62,7 @@ let print_outcomes entry_name f =
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
       let err_branches =
-        List.map (fun (_, _, pcs) -> List.length pcs) errs
+        List.map (fun (_, pcs) -> List.length pcs) errs
         |> List.fold_left ( + ) 0
       in
       if (Config.get ()).fail_fast then
@@ -77,9 +77,8 @@ let print_outcomes entry_name f =
           "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
           time pp_branches err_branches ntotal;
       let () =
-        let@ error, call_trace, pcs = Fun.flip List.iter errs in
-        Frontend.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace
-          ~error;
+        let@ error, pcs = Fun.flip List.iter errs in
+        Frontend.Diagnostic.print_diagnostic ~fname:entry_name ~error;
         Fmt.pr "@.";
         print_pcs pcs;
         Fmt.pr "@."
@@ -187,23 +186,20 @@ let exec_crate
   else
     (* join th errors by [error type * calltrace], and find all matching PCs *)
     let errors =
-      List.filter_map
-        (function Compo_res.Error (e, ct), pc -> Some (e, ct, pc) | _ -> None)
-        branches
+      branches
+      |> List.filter_map (function
+        | Compo_res.Error e, pc -> Some (e, pc)
+        | _ -> None)
     in
-    let errors =
-      List.map (fun (e, ct, _) -> (e, ct)) errors
+    let errors_joined =
+      List.map fst errors
       |> List.sort_uniq compare
-      |> List.map (fun (e, ct) ->
-          let pcs =
-            List.filter_map
-              (fun (e', ct', pc) ->
-                if e = e' && ct = ct' then Some pc else None)
-              errors
-          in
-          (e, ct, pcs))
+      |> List.map (fun e ->
+          errors
+          |> List.filter_map (fun (e', pc) -> if e = e' then Some pc else None)
+          |> Pair.make e)
     in
-    Error (errors, nbranches)
+    Error (errors_joined, nbranches)
 
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;

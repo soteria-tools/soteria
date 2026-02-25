@@ -573,8 +573,8 @@ module Diagnostic = struct
         ]
     | Virtual _ | NotReal _ -> []
 
-  let print_diagnostic ~fname ~call_trace ~error =
-    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
-      ~error:(Fmt.to_to_string Error.pp error)
-      ~severity:(Error.severity error) ~fname
+  let print_diagnostic ~fname ~error:((error, call_trace) : Error.with_trace) =
+    let msg = Fmt.str "%a in %s" Error.pp error fname in
+    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges ~msg
+      ~severity:(Error.severity error)
 end
