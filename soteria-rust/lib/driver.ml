@@ -79,7 +79,6 @@ let print_outcomes entry_name f =
       let () =
         let@ error, pcs = Fun.flip List.iter errs in
         Error.Diagnostic.print_diagnostic ~fname:entry_name ~error;
-        Fmt.pr "@.";
         print_pcs pcs;
         Fmt.pr "@."
       in

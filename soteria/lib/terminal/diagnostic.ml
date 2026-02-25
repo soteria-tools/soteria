@@ -147,7 +147,7 @@ let pp ft diag =
 let print_diagnostic ~severity ~as_ranges ~msg ~call_trace =
   with_unaltered_geo @@ fun () ->
   let labels = call_trace_to_labels ~as_ranges call_trace in
-  try Grace.Diagnostic.createf ~labels severity "%s" msg |> Fmt.pr "%a@?" pp
+  try Grace.Diagnostic.createf ~labels severity "%s" msg |> Fmt.pr "%a@?@." pp
   with _ ->
     Fmt.pr "%a: %a@?" pp_severity severity (Logs.Printers.pp_style `Bold) msg
 

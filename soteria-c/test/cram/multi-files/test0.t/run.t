@@ -147,6 +147,5 @@
                    info = None }));
              (Ser_globs (x_560, 0x0000000000000002));
              (Ser_globs (x_642, 0x0000000000000001))])]
-  
   Executed 7 statements
   Verification Success!
