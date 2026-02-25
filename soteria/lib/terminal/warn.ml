@@ -1,11 +1,6 @@
 open Soteria_std
 module WarnHSet = Hashset.Make (String.Interned)
-
-module WarnTraceHSet = Hashset.Make (struct
-  include Int
-
-  let pp = Fmt.int
-end)
+module WarnTraceHSet = Hashset.Make (Int)
 
 let issued_warnings = WarnHSet.with_capacity 8
 let issued_traces = WarnTraceHSet.with_capacity 8

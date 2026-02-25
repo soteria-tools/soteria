@@ -295,7 +295,7 @@ let print_states result =
   let pp_state ft state =
     (Fmt.Dump.list SState.pp_serialized) ft (SState.serialize state)
   in
-  Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n@?"
+  Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@.@?@."
     Fmt.Dump.(
       list @@ fun ft (r, _) ->
       (Soteria.Symex.Compo_res.pp

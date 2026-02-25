@@ -13,3 +13,6 @@ let of_string s =
 
 (** No-op, used for [PatriciaTree] functors. *)
 let to_int = Fun.id
+
+(** Pretty printer *)
+let pp = Fmt.int
