@@ -424,7 +424,7 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   let check_ref =
-    if (Config.get ()).recursive_validity && check_refs then fake_read
+    if (Config.get ()).recursive_validity <> Allow && check_refs then fake_read
     else check_non_dangling
   in
   let++ () = Encoder.check_valid ~check_ref value ty in
@@ -444,7 +444,7 @@ and load_discriminant ((ptr, _) as fptr) ty =
    lifting all misses individually inside [handler] and [get_all] in
    [apply_parser], but that's kind of a mess to change and not really worth it I
    believe; I don't think these misses matter at all (TBD). *)
-and fake_read ((_, meta) as ptr) ty =
+and fake_read ((ptr, meta) as fptr) ty =
   let open Syntax in
   let is_uncheckable_dst =
     match meta with
@@ -459,13 +459,21 @@ and fake_read ((_, meta) as ptr) ty =
   if is_uncheckable_dst then Result.ok ()
   else (
     L.debug (fun m ->
-        m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) ptr
+        m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) fptr
           Charon_util.pp_ty ty);
-    let+- err =
-      let++ _ = load ~ignore_borrow:true ~check_refs:false ptr ty in
+    let*- err =
+      let++ _ = load ~ignore_borrow:true ~check_refs:false fptr ty in
       ()
     in
-    `InvalidRef err)
+    match (Config.get ()).recursive_validity with
+    | Deny -> Result.error (`InvalidRef err)
+    | Warn ->
+        let*^ trace = get_trace () in
+        let id = Hashtbl.hash ("validity", Typed.Ptr.loc ptr.ptr) in
+        let err_with_trace = Error.decorate trace (`InvalidRef err) in
+        Error.Diagnostic.warn_trace_once ~id err_with_trace;
+        Result.ok ()
+    | Allow -> Result.ok ())
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
@@ -492,7 +500,6 @@ let tb_load ((ptr : Sptr.t), _) ty =
 let store ((ptr, _) as fptr) ty sval :
     (unit, Error.with_trace, serialized list) Result.t =
   let@ () = with_loc_err ~trace:"Memory store" () in
-  (* let** () = Encoder.check_valid ~fake_read sval ty in *)
   let**^ parts = Encoder.encode ~offset:Usize.(0s) sval ty in
   if Iter.is_empty parts then Result.ok ()
   else

@@ -547,7 +547,7 @@ module Make (State : State_intf.S) = struct
         let* () = State.check_ptr_align ptr place.ty in
         let* () = State.check_non_dangling ptr place.ty in
         let* () =
-          if (Config.get ()).recursive_validity then
+          if (Config.get ()).recursive_validity <> Allow then
             State.fake_read ptr place.ty
           else ok ()
         in

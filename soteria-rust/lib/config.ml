@@ -89,8 +89,8 @@ type t = {
       [@default Permissive] [@names [ "provenance" ]]
       (** The provenance model to use for pointers. If not provided, the default
           is permissive. *)
-  recursive_validity : bool;
-      [@make.default false] [@names [ "recursive-validity" ]]
+  recursive_validity : (check_level[@conv check_level_cmdliner_conv ()]);
+      [@default Warn] [@names [ "recursive-validity" ]]
       (** Whether to check the validity of the addressed memory when obtaining a
           reference to it. We only go one level deep. *)
   approx_floating_ops : (check_level[@conv check_level_cmdliner_conv ()]);

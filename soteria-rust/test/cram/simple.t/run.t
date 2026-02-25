@@ -269,7 +269,7 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   [1]
 
 Test recursive validity check for references; disabled
-  $ soteria-rust rustc ref_validity.rs 
+  $ soteria-rust rustc ref_validity.rs --recursive-validity=allow
   Compiling... done in <time>
   => Running test_uninit_ref...
   note: test_uninit_ref: done in <time>, ran 1 branch
@@ -303,7 +303,7 @@ Test recursive validity check for references; disabled
   [1]
 
 Test recursive validity check for references; enabled
-  $ soteria-rust rustc ref_validity.rs --recursive-validity
+  $ soteria-rust rustc ref_validity.rs --recursive-validity=deny
   Compiling... done in <time>
   => Running test_uninit_ref...
   error: test_uninit_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -342,6 +342,48 @@ Test recursive validity check for references; enabled
         (extract[0-1](V|1|) == 0b00)
   
   [1]
+
+Test recursive validity check for references; warn
+  $ soteria-rust rustc ref_validity.rs --recursive-validity=warn
+  Compiling... done in <time>
+  => Running test_uninit_ref...
+  warning: Invalid reference: Uninitialized memory access
+      ┌─ $TESTCASE_ROOT/ref_validity.rs:7:33
+    4 │  fn test_uninit_ref() {
+      │  -------------------- 1: Entry point
+      ·  
+    7 │      let as_ref: &u32 = unsafe { &*as_ptr };
+      │                                  ^^^^^^^^ Triggering operation
+  note: test_uninit_ref: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  => Running test_dangling_ref...
+  error: test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Dangling pointer in test_dangling_ref
+      ┌─ $TESTCASE_ROOT/ref_validity.rs:17:38
+   14 │  fn test_dangling_ref() {
+      │  ---------------------- 1: Entry point
+      ·  
+   17 │      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
+      │                                       ^^^^^^^^ Dangling check
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  => Running test_unaligned_ref...
+  error: test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Misaligned pointer; expected 0x0000000000000008, received 0x0000000000000004 with offset 0x0000000000000000 in test_unaligned_ref
+      ┌─ $TESTCASE_ROOT/ref_validity.rs:25:33
+   22 │  fn test_unaligned_ref() {
+      │  ----------------------- 1: Entry point
+      ·  
+   25 │      let as_ref: &u64 = unsafe { &*as_ptr };
+      │                                  ^^^^^^^^ Requires well-aligned pointer
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  [1]
+
 Test approximation of complex float operations -- warn (default)
   $ soteria-rust rustc approx_float.rs
   Compiling... done in <time>
