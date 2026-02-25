@@ -76,7 +76,7 @@ For **Soteria Rust**, you will also need:
 ### Building from Source for Development
 
 <details>
-<summary>For developers who want to contribute to Soteria:</summary>
+<summary>For developers who want to contribute to Soteria</summary>
 
 1. **Clone the repository:**
    ```sh
