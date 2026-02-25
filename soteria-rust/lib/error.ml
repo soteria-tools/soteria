@@ -92,7 +92,8 @@ let rec pp ft : [> t ] -> unit = function
   | `InvalidFree -> Fmt.string ft "Invalid free"
   | `InvalidFreeStrongProtector ->
       Fmt.string ft
-        "Tried freeing an allocation with a strong protector still alive"
+        "Tried freeing an allocation which was passed to a function by \
+         reference"
   | `InvalidLayout ty -> Fmt.pf ft "Invalid layout: %a" pp_ty ty
   | `InvalidRef e -> Fmt.pf ft "Invalid reference: %a" pp e
   | `InvalidShift -> Fmt.string ft "Invalid binary shift"
