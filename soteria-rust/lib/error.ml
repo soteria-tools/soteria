@@ -162,3 +162,40 @@ let decorate (where : Trace.t) (e : t) : with_trace =
       let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
       (e, List.rev @@ (elem :: where.stack))
   | None -> (e, List.rev where.stack)
+
+module Diagnostic = struct
+  let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col - 1)
+
+  let replace_subpath_opt sub_str replacement path =
+    match String.index_of ~sub_str path with
+    | Some idx ->
+        let idx = idx + String.length sub_str in
+        let rel_path = String.sub path idx (String.length path - idx) in
+        Some (replacement ^ rel_path)
+    | None -> None
+
+  let as_ranges (span : Charon.Meta.span_data) =
+    match span.file.name with
+    | Local file when String.starts_with ~prefix:"/rustc/" file -> []
+    | Local file ->
+        let ( / ) = Filename.concat in
+        let filename =
+          match replace_subpath_opt ("lib" / "rustlib") "$RUSTLIB" file with
+          | Some f -> Some f
+          | None ->
+              replace_subpath_opt
+                ("soteria-rust" / "plugins")
+                "$SOTERIA-RUST" file
+        in
+        [
+          Soteria.Terminal.Diagnostic.mk_range_file ?filename
+            ?content:span.file.contents file (to_loc span.beg_loc)
+            (to_loc span.end_loc);
+        ]
+    | Virtual _ | NotReal _ -> []
+
+  let print_diagnostic ~fname ~error:((error, call_trace) : with_trace) =
+    let msg = Fmt.str "%a in %s" pp error fname in
+    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges ~msg
+      ~severity:(severity error)
+end

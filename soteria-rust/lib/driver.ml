@@ -78,7 +78,7 @@ let print_outcomes entry_name f =
           time pp_branches err_branches ntotal;
       let () =
         let@ error, pcs = Fun.flip List.iter errs in
-        Frontend.Diagnostic.print_diagnostic ~fname:entry_name ~error;
+        Error.Diagnostic.print_diagnostic ~fname:entry_name ~error;
         Fmt.pr "@.";
         print_pcs pcs;
         Fmt.pr "@."
