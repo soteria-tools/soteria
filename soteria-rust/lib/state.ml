@@ -469,9 +469,9 @@ and fake_read ((ptr, meta) as fptr) ty =
     | Deny -> Result.error (`InvalidRef err)
     | Warn ->
         let*^ trace = get_trace () in
-        let id = Hashtbl.hash ("validity", Typed.Ptr.loc ptr.ptr) in
-        let err_with_trace = Error.decorate trace (`InvalidRef err) in
-        Error.Diagnostic.warn_trace_once ~id err_with_trace;
+        let err = Error.decorate trace (`InvalidRef err) in
+        let loc = Typed.Ptr.loc ptr.ptr in
+        Error.Diagnostic.warn_trace_once ~reason:(InvalidReference loc) err;
         Result.ok ()
     | Allow -> Result.ok ())
 

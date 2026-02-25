@@ -64,6 +64,8 @@ type t =
   | `InvalidAlloc
     (** Error in alloc/realloc; a wrong alignment or size was provided *) ]
 
+type warn_reason = InvalidReference of Typed.T.sloc Typed.t [@@deriving hash]
+
 let is_unwindable : [> t ] -> bool = function
   | `NullDereference | `OutOfBounds | `DivisionByZero | `FailedAssert _
   | `Panic _ | `Overflow ->
@@ -200,7 +202,8 @@ module Diagnostic = struct
     Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges ~msg
       ~severity:(severity error)
 
-  let warn_trace_once ~id ((error, call_trace) : with_trace) =
+  let warn_trace_once ~reason ((error, call_trace) : with_trace) =
     let msg = Fmt.to_to_string pp error in
+    let id = hash_warn_reason reason in
     Soteria.Terminal.Warn.warn_trace_once ~id ~call_trace ~as_ranges msg
 end
