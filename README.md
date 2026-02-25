@@ -52,7 +52,7 @@ For **Soteria Rust**, you will also need:
 ### Installing from Source
 
 <details>
-<summary>For users who want to install and use Soteria:</summary>
+<summary>For users who want to install and use Soteria</summary>
 
 1. **Clone the repository:**
    ```sh
