@@ -3,19 +3,16 @@ open Typed.Infix
 open Typed.Syntax
 open Soteria.Symex.Compo_res
 module T = Typed.T
-module BV = Typed.BitVec
+module BV = Typed.BV
 open Rustsymex
 open Rustsymex.Result
 open Rustsymex.Syntax
-open Charon_util
+open Common.Charon_util
 
 (* Import types *)
 include Layout_common
 
 module Session = struct
-  (* TODO: allow different caches for different crates *)
-  (* FIXME: inter-test mutability *)
-
   (** Cache of (type or variant) -> layout *)
   type cache = (Types.ty, t) Hashtbl.t
 
@@ -150,8 +147,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
          fields don't. To avoid this, we *never* consider layouts of generic
          types, even if one is provided. This avoids inconsistent layouts. *)
       | Some layout, _
-        when (not (Config.get ()).polymorphic)
-             || Charon_util.ty_is_monomorphic ty ->
+        when (not (Config.get ()).polymorphic) || ty_is_monomorphic ty ->
           translate_layout ty layout
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
       | _, Union fields -> compute_union_layout ty (field_tys fields)

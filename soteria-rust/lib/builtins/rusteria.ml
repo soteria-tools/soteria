@@ -1,7 +1,11 @@
+(** Builtins for Soteria Rust; provide the building blocks necessary for
+    symbolic execution! *)
+(* TODO: document this *)
+
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) = struct
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  open StateM
   open Syntax
 
   let parse_string ptr =

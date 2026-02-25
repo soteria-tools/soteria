@@ -1,13 +1,15 @@
+(** Core operations, that may be used in several parts of the interpreter, so we
+    share them here for convenience. *)
+
 open Charon
 open Typed
-module BV = Typed.BitVec
 open Typed.Syntax
 open Typed.Infix
 open Rust_val
 open Syntaxes.FunctionWrap
 
-module M (Rust_state_m : Rust_state_m.S) = struct
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  open StateM
   open Syntax
 
   let cmp ~signed l r =
@@ -50,7 +52,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
   let eval_lit_binop (bop : Expressions.binop) ty (l : [< T.sint ] Typed.t)
-      (r : [< T.sint ] Typed.t) : ([> T.sint ] Typed.t, 'e) Rust_state_m.t =
+      (r : [< T.sint ] Typed.t) : ([> T.sint ] Typed.t, 'e) StateM.t =
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
     let r = normalise_shift_r bop l r in
@@ -176,8 +178,8 @@ module M (Rust_state_m : Rust_state_m.S) = struct
      *  - we need to take the max of either types for the alignment, to ensure
      *    that transmuting e.g. from [u16; 2] to (u32) works. *)
     L.debug (fun m ->
-        m "Transmuting %a: %a -> %a" pp_rust_val v Charon_util.pp_ty from_ty
-          Charon_util.pp_ty to_ty);
+        m "Transmuting %a: %a -> %a" pp_rust_val v Common.Charon_util.pp_ty
+          from_ty Common.Charon_util.pp_ty to_ty);
     let* { size; align; _ } = Layout.layout_of from_ty in
     let* { align = align_2; _ } = Layout.layout_of to_ty in
     let align = BV.max ~signed:false align align_2 in

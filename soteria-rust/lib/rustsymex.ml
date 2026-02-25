@@ -41,10 +41,49 @@ end
 include Soteria.Sym_states.State_monad.Make (MonoSymex) (MonadState)
 include Syntaxes.FunctionWrap
 
-let run_with_stats ?fuel ?fail_fast ~mode symex =
+(* FIXME: for now, the [run] functions omit the [MonadState] that is obtained by
+   the end of the execution. Once we do polymorphic bi-abduction this won't be
+   sound, since [generic_layouts] contains information that must be serialized!
+
+   There are two solutions to this: either we move this information to the
+   state, and remove it from [MonadState], or add a [serialized] type to
+   [Rustsymex], along with the relevant [produce], [consume], etc. *)
+
+let run ?fuel ~mode symex =
   run_with_state ~state:MonadState.empty symex
   |> (Fun.flip MonoSymex.map) fst
-  |> MonoSymex.Result.run_with_stats ?fuel ?fail_fast ~mode
+  |> MonoSymex.run ?fuel ~mode
+
+let run_with_stats ?fuel ~mode symex =
+  run_with_state ~state:MonadState.empty symex
+  |> (Fun.flip MonoSymex.map) fst
+  |> MonoSymex.run_with_stats ?fuel ~mode
+
+let run_needs_stats ?fuel ~mode symex =
+  run_with_state ~state:MonadState.empty symex
+  |> (Fun.flip MonoSymex.map) fst
+  |> MonoSymex.run_needs_stats ?fuel ~mode
+
+module Result = struct
+  include Result
+
+  let ignore_state :
+      ('a * st, 'e * st, 'f) Soteria.Symex.Compo_res.t ->
+      ('a, 'e, 'f) Soteria.Symex.Compo_res.t = function
+    | Ok (a, _) -> Ok a
+    | Error (e, _) -> Error e
+    | Missing f -> Missing f
+
+  let run_with_stats ?fuel ?fail_fast ~mode symex =
+    run_with_state ~state:MonadState.empty symex
+    |> (Fun.flip MonoSymex.map) ignore_state
+    |> MonoSymex.Result.run_with_stats ?fuel ?fail_fast ~mode
+
+  let run_needs_stats ?fuel ?fail_fast ~mode symex =
+    run_with_state ~state:MonadState.empty symex
+    |> (Fun.flip MonoSymex.map) ignore_state
+    |> MonoSymex.Result.run_needs_stats ?fuel ?fail_fast ~mode
+end
 
 module Poly = struct
   open Charon

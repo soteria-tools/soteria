@@ -1,19 +1,18 @@
 open Charon
-open Charon_util
-module BV = Typed.BitVec
+open Typed
 open Typed.Syntax
 open Typed.Infix
+open Common.Charon_util
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) :
-  Intrinsics_intf.M(Rust_state_m).Impl = struct
-  include Intrinsics_stubs.M (Rust_state_m)
-  module Core = Core.M (Rust_state_m)
-  open Rust_state_m
+module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
+  include Intrinsics_stubs.M (StateM)
+  module Core = Core.M (StateM)
+  open StateM
   open Syntax
 
   (* some utils *)
-  type 'a ret = ('a, unit) Rust_state_m.t
+  type 'a ret = ('a, unit) StateM.t
 
   let as_base ty (v : rust_val) = Rust_val.as_base ty v
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
@@ -49,8 +48,9 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let assert_inhabited ~t =
     let* layout = Layout.layout_of t in
-    if not layout.uninhabited then ok ()
-    else error (`Panic (Some "core::intrinsics::assert_inhabited"))
+    if layout.uninhabited then
+      error (`Panic (Some "core::intrinsics::assert_inhabited"))
+    else ok ()
 
   let assert_mem_uninitialized_valid ~t:_ = ok ()
 
@@ -412,8 +412,8 @@ module M (Rust_state_m : Rust_state_m.S) :
          makes a copy of the src tree before storing into dst, the semantics are
          that of copy. *)
       let* () =
-        if not nonoverlapping then ok ()
-        else check_overlap "copy_nonoverlapping" src dst size
+        if nonoverlapping then check_overlap "copy_nonoverlapping" src dst size
+        else ok ()
       in
       State.copy_nonoverlapping ~dst:(dst, Thin) ~src:(src, Thin) ~size
 
@@ -536,7 +536,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     ctlz ~t ~x
 
   let discriminant_value ~t ~v =
-    let adt = Charon_util.ty_as_adt t in
+    let adt = ty_as_adt t in
     let adt = Crate.get_adt adt in
     match adt.kind with
     | Enum variants ->
@@ -619,8 +619,8 @@ module M (Rust_state_m : Rust_state_m.S) :
     let size = 8 * Layout.size_of_literal_ty ity in
     let max = Z.succ @@ Layout.max_value_z ity in
     let min = Z.pred @@ Layout.min_value_z ity in
-    let max = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float max in
-    let min = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float min in
+    let max = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float max in
+    let min = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float min in
     (* we use min-1 and max+1, to be able to have a strict inequality, which
        avoids issues in cases of float precision loss (I think?) *)
     let+ () =
@@ -695,7 +695,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     in
     (* we cast to ignore the overflow for MIN/-1, since the size can never be
        -1 *)
-    if not unsigned then ok (Typed.cast (off /$@ size))
+    if Stdlib.not unsigned then ok (Typed.cast (off /$@ size))
     else
       let+ () =
         assert_
@@ -772,14 +772,12 @@ module M (Rust_state_m : Rust_state_m.S) :
       | Add _ ->
           let ovf = BV.add_overflows ~signed a b in
           let if_ovf =
-            if not signed then max else Typed.ite (a <$@ BV.mki_lit t 0) min max
+            if signed then Typed.ite (a <$@ BV.mki_lit t 0) min max else max
           in
           Typed.ite ovf if_ovf (a +!!@ b)
       | Sub _ ->
           let ovf = BV.sub_overflows ~signed a b in
-          let if_ovf =
-            if not signed then min else Typed.ite (a <$@ b) min max
-          in
+          let if_ovf = if signed then Typed.ite (a <$@ b) min max else min in
           Typed.ite ovf if_ovf (a -!!@ b)
       | _ -> failwith "Unreachable: not add or sub?"
     in

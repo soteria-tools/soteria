@@ -1,5 +1,4 @@
-module T = Typed.T
-module BV = Typed.BitVec
+open Typed
 
 type 'ptr meta = Thin | Len of T.sint Typed.t | VTable of 'ptr
 type 'ptr full_ptr = 'ptr * 'ptr meta
@@ -95,20 +94,6 @@ let as_tuple = function
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a tuple, got: %a"
         ppa_rust_val v
-
-let size_of =
-  let open Rustsymex.Result in
-  function
-  | Int v -> ok (BV.usizei (Typed.size_of_int v / 8))
-  | Float f ->
-      ok (BV.usizei (Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8))
-  | Ptr (_, Thin) -> ok (BV.usizei (Crate.pointer_size ()))
-  | Ptr (_, (Len _ | VTable _)) -> ok (BV.usizei (Crate.pointer_size () * 2))
-  | PolyVal tid -> Layout.size_of (TVar (Free tid))
-  (* We can't know the size of a union/tuple/enum, because of e.g. niches, or
-     padding *)
-  | Union _ | Enum _ | Tuple _ ->
-      failwith "Impossible to get size of Enum/Tuple rust_val"
 
 let flatten v =
   let rec aux acc = function

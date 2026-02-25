@@ -82,6 +82,7 @@ module BitVec = struct
 
   (* Overflow checks *)
   let add_overflows ~signed v1 v2 = Binop (AddOvf signed, v1, v2) <| TBool
+  let sub_overflows ~signed v1 v2 = Binop (SubOvf signed, v1, v2) <| TBool
   let mul_overflows ~signed v1 v2 = Binop (MulOvf signed, v1, v2) <| TBool
 
   (* Bool-bv conversions *)

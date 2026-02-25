@@ -141,6 +141,7 @@ module Binop = struct
     | Rem of bool (* signed *)
     | Mod
     | AddOvf of bool (* signed *)
+    | SubOvf of bool (* signed *)
     | MulOvf of bool (* signed *)
     | Lt of bool (* signed *)
     | Leq of bool (* signed *)
@@ -176,6 +177,7 @@ module Binop = struct
     | Rem s -> Fmt.pf ft "rem%a" pp_signed s
     | Mod -> Fmt.string ft "mod"
     | AddOvf s -> Fmt.pf ft "+%a_ovf" pp_signed s
+    | SubOvf s -> Fmt.pf ft "-%a_ovf" pp_signed s
     | MulOvf s -> Fmt.pf ft "*%a_ovf" pp_signed s
     | Lt s -> Fmt.pf ft "<%a" pp_signed s
     | Leq s -> Fmt.pf ft "<=%a" pp_signed s
@@ -2065,12 +2067,12 @@ and BitVec : BitVec = struct
     Bool.sem_eq (mk_masked n (min_for true n)) v
 
   let sub_overflows ~signed v1 v2 =
-    if Stdlib.not signed then lt ~signed v1 v2
-    else
-      let neg_ovf = neg_overflows v2 in
-      let neg_v2 = neg v2 in
-      let add_ovf = add_overflows ~signed v1 neg_v2 in
-      Bool.or_ neg_ovf add_ovf
+    match (v1.node.kind, v2.node.kind) with
+    | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( - )
+    | _ when equal v1 v2 -> Bool.v_false
+    | _ ->
+        if Stdlib.not signed then lt ~signed v1 v2
+        else Binop (SubOvf signed, v1, v2) <| TBool
 
   let of_float ~rounding ~signed ~size v =
     Unop (BvOfFloat (rounding, signed, size), v) <| t_bv size

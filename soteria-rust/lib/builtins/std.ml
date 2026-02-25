@@ -1,104 +1,16 @@
-open Charon
-module BV = Typed.BitVec
+(** Builtins, for functions we stub manually, either because the originals
+    suffer from poor performance, or are not properly computable in our engine.
+*)
+
 open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) = struct
-  module Core = Core.M (Rust_state_m)
-  module Alloc = Alloc.M (Rust_state_m)
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  module Core = Core.M (StateM)
+  module Alloc = Alloc.M (StateM)
+  open StateM
   open Syntax
-
-  let array_repeat (gen_args : Types.generic_args) args =
-    let rust_val, size =
-      match (args, gen_args.const_generics) with
-      | [ rust_val ], [ size ] ->
-          (rust_val, Charon_util.int_of_constant_expr size)
-      | args, cgens ->
-          Fmt.failwith
-            "array_repeat: unexpected params / generic constants: %a / %a"
-            Fmt.(list pp_rust_val)
-            args
-            Fmt.(list Types.pp_constant_expr)
-            cgens
-    in
-    ok (Tuple (List.init size (fun _ -> rust_val)))
-
-  let array_index (idx_op : Types.builtin_index_op)
-      (gen_args : Types.generic_args) args =
-    let ptr, size =
-      match (idx_op.is_array, List.hd args, gen_args.const_generics) with
-      (* Array with static size *)
-      | true, Ptr (ptr, Thin), [ size ] -> (ptr, BV.of_constant_expr size)
-      | false, Ptr (ptr, Len size), [] -> (ptr, Typed.cast_i Usize size)
-      | _ ->
-          Fmt.failwith "array_index: unexpected arguments: %a / %a"
-            Fmt.(list pp_rust_val)
-            args
-            Fmt.(list Types.pp_constant_expr)
-            gen_args.const_generics
-    in
-    (* TODO: take into account idx.mutability *)
-    let idx = as_base_i Usize (List.nth args 1) in
-    let ty = List.hd gen_args.types in
-    let* ptr' = Sptr.offset ~signed:false ~ty ptr idx in
-    if not idx_op.is_range then
-      let+ () = assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ size)) `OutOfBounds in
-      Ptr (ptr', Thin)
-    else
-      let range_end = as_base_i Usize (List.nth args 2) in
-      let+ () =
-        assert_
-          (Usize.(0s)
-          <=$@ idx
-          &&@ (idx <=$@ range_end)
-          &&@ (range_end <=$@ size))
-          `OutOfBounds
-      in
-      let size = range_end -!@ idx in
-      Ptr (ptr', Len size)
-
-  let array_slice ~mut:_ (gen_args : Types.generic_args) args =
-    match (gen_args.const_generics, args) with
-    | [ size ], [ Ptr (ptr, Thin) ] ->
-        let size = BV.of_constant_expr size in
-        ok (Ptr (ptr, Len size))
-    | _ -> failwith "array_index: unexpected arguments"
-
-  let box_new (gen_args : Types.generic_args) args =
-    let ty, v =
-      match (gen_args, args) with
-      | { types = [ ty ]; _ }, [ v ] -> (ty, v)
-      | _ -> failwith "box new: invalid arguments"
-    in
-    let* ptr = State.alloc_ty ty in
-    let+ () = State.store ptr ty v in
-    Ptr ptr
-
-  let from_raw_parts args =
-    let ptr, meta =
-      match args with
-      | [ ptr; meta ] -> (ptr, meta)
-      | _ -> failwith "from_raw_parts: invalid arguments"
-    in
-    let ptr =
-      match ptr with
-      | Ptr (ptr, Thin) -> ptr
-      | Int v -> Sptr.null_ptr_of @@ Typed.cast_i Usize v
-      | _ ->
-          failwith "from_raw_parts: first argument must be a pointer or usize"
-    in
-    let meta =
-      match meta with
-      | Tuple [] -> Thin
-      | Int v -> Len (Typed.cast_i Usize v)
-      | Ptr (ptr, Thin) -> VTable ptr
-      | _ ->
-          failwith
-            "from_raw_parts: second argument must be unit, a pointer or usize"
-    in
-    ok (Ptr (ptr, meta))
 
   let nop _ = ok (Tuple [])
 
@@ -117,7 +29,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
       | Zero -> Typed.Float.is_zero v
       | Subnormal -> Typed.Float.is_subnormal v
     in
-    ok (Int (BV.of_bool res))
+    ok (Int (Typed.BV.of_bool res))
 
   let float_is_finite args =
     let v =
@@ -127,7 +39,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     in
     let v = Typed.cast_float v in
     let res = Typed.((not (Float.is_nan v)) &&@ not (Float.is_infinite v)) in
-    ok (Int (BV.of_bool res))
+    ok (Int (Typed.BV.of_bool res))
 
   let float_is_sign pos args =
     let v =
@@ -141,7 +53,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
       else Typed.Float.(leq v (like v (-0.)))
     in
     let res = res ||@ Typed.Float.is_nan v in
-    ok (Int (BV.of_bool res))
+    ok (Int (Typed.BV.of_bool res))
 
   let _mk_box ptr =
     let non_null = Tuple [ ptr ] in
@@ -159,7 +71,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
           let size = Typed.cast_i Usize size in
           let align = Typed.cast_i Usize align in
           let zeroed = Typed.cast_i U8 zeroed in
-          (size, align, BV.to_bool zeroed)
+          (size, align, Typed.BV.to_bool zeroed)
       | _ ->
           Fmt.failwith "alloc_impl: invalid arguments: %a"
             Fmt.(list ~sep:(any ", ") pp_rust_val)

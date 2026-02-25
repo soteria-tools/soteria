@@ -121,11 +121,11 @@ jobs:
           BASE_SHA="${{ github.event.merge_group.base_sha }}"
           HEAD_SHA="${{ github.event.merge_group.head_sha }}"
           echo "Comparing $BASE_SHA..$HEAD_SHA"
-          
+
           # Use the GitHub API to compare commits (avoids needing full git history)
           CHANGED=$(gh api repos/${{ github.repository }}/compare/${BASE_SHA}...${HEAD_SHA} \
             --jq '.files[].filename' | grep -c "^soteria/lib/bv_values/" || true)
-          
+
           if [ "$CHANGED" -gt 0 ]; then
             echo "modified=true" >> $GITHUB_OUTPUT
             echo "Files in soteria/lib/bv_values were modified, will run slow tests"
@@ -283,7 +283,7 @@ jobs:
         run: |
           echo "Testing leak.rs (Miri plugin)"
           set +e
-          $SOTERIA_RUST rustc leak.rs
+          $SOTERIA_RUST exec leak.rs
           EXIT_CODE=$?
           if [ $EXIT_CODE -ne 1 ]; then
             echo "Expected exit code 1 for leak.rs, but got $EXIT_CODE"
@@ -293,38 +293,38 @@ jobs:
 
           echo "Testing char_min_max.rs (Miri plugin)"
           set -e
-          $SOTERIA_RUST rustc char_min_max.rs
+          $SOTERIA_RUST exec char_min_max.rs
           echo "✓ char_min_max.rs test passed"
       - name: Test Kani plugin (kani.t tests)
         working-directory: soteria-rust/test/cram/kani.t
         run: |
           echo "Testing any.rs (Kani plugin)"
-          $SOTERIA_RUST rustc any.rs --kani
+          $SOTERIA_RUST exec any.rs --kani
           echo "✓ any.rs test passed"
 
           echo "Testing assume.rs (Kani plugin)"
-          $SOTERIA_RUST rustc assume.rs --kani
+          $SOTERIA_RUST exec assume.rs --kani
           echo "✓ assume.rs test passed"
       - name: Test Rusteria plugin (rusteria-lib.t tests)
         working-directory: soteria-rust/test/cram/rusteria-lib.t
         run: |
           echo "Testing lib-fns.rs (Rusteria plugin)"
-          $SOTERIA_RUST rustc lib-fns.rs
+          $SOTERIA_RUST exec lib-fns.rs
           echo "✓ lib-fns.rs test passed"
 
           echo "Testing annots.rs (Rusteria annotations)"
-          $SOTERIA_RUST rustc annots.rs
+          $SOTERIA_RUST exec annots.rs
           echo "✓ annots.rs test passed"
       - name: Test polymorphic support (poly.t tests)
         working-directory: soteria-rust/test/cram/poly.t
         run: |
           echo "Testing trivial.rs (polymorphic support with Charon)"
-          $SOTERIA_RUST rustc trivial.rs --frontend charon --poly
+          $SOTERIA_RUST exec trivial.rs --frontend charon --poly
           echo "✓ trivial.rs test passed"
 
           echo "Testing vec.rs (polymorphic Vec support)"
           set +e
-          $SOTERIA_RUST rustc vec.rs --frontend charon --poly
+          $SOTERIA_RUST exec vec.rs --frontend charon --poly
           EXIT_CODE=$?
           if [ $EXIT_CODE -ne 1 ]; then
             echo "Expected exit code 1 for vec.rs, but got $EXIT_CODE"
@@ -352,4 +352,3 @@ jobs:
           destination_dir: ./api/main
 
       - run: echo "Successfully published documentation to https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/main"
-

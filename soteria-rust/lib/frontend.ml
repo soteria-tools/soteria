@@ -1,4 +1,5 @@
 open Charon
+open Common.Charon_util
 open Syntaxes.FunctionWrap
 
 (** Something wrong internally with plugins *)
@@ -351,10 +352,8 @@ let default =
   let get_entry_point (decl : fun_decl) =
     match List.last_opt decl.item_meta.name with
     | Some (PeIdent ("main", _)) -> mk_entry_point decl
-    | _ when Charon_util.decl_has_attr decl "rusteriatool::test" ->
-        let expect_error =
-          Charon_util.decl_has_attr decl "rusteriatool::expect_fail"
-        in
+    | _ when decl_has_attr decl "rusteriatool::test" ->
+        let expect_error = decl_has_attr decl "rusteriatool::expect_fail" in
         mk_entry_point ~expect_error decl
     | _ -> None
   in
@@ -370,13 +369,11 @@ let kani =
   in
   let get_entry_point (decl : fun_decl) =
     if
-      Charon_util.decl_has_attr decl "kanitool::proof"
+      decl_has_attr decl "kanitool::proof"
       (* TODO: maybe we can raise an error or a warning here *)
       && List.is_empty decl.signature.inputs
     then
-      let expect_error =
-        Charon_util.decl_has_attr decl "kanitool::should_panic"
-      in
+      let expect_error = decl_has_attr decl "kanitool::should_panic" in
       mk_entry_point ~expect_error decl
     else None
   in
@@ -448,7 +445,7 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
           let open Soteria.Symex in
           let fuel : Fuel_gauge.t =
             let get_or name default : Fuel_gauge.Fuel_value.t =
-              match (Charon_util.decl_get_attr decl name, default) with
+              match (decl_get_attr decl name, default) with
               | Some fuel, _ -> Finite (int_of_string fuel)
               | None, Some fuel -> Finite fuel
               | None, None -> Infinite
@@ -512,10 +509,6 @@ let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
     Cleaner.touched crate_file);
   crate
 
-let normalize_path path =
-  if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
-  else path
-
 let with_entry_points ~plugin (crate : Charon.UllbcAst.crate) =
   let entry_points =
     Charon.Types.FunDeclId.Map.values crate.fun_decls
@@ -526,7 +519,6 @@ let with_entry_points ~plugin (crate : Charon.UllbcAst.crate) =
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file file_name =
   let plugin = create_using_current_config () in
-  let file_name = normalize_path file_name in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
   parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder ()
@@ -535,9 +527,16 @@ let parse_ullbc_of_file file_name =
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_crate crate_dir =
   let plugin = create_using_current_config () in
-  let crate_dir = normalize_path crate_dir in
   let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
   parse_ullbc ~mode:Cargo ~plugin ~output ~pwd:crate_dir ()
   |> with_entry_points ~plugin
+
+(** Given a path, will check if it has a [.rs] extension, in which case it will
+    parse the ULLBC of that single file using rustc; otherwise will assume it's
+    a path to a crate and use cargo. *)
+let parse_ullbc path =
+  match path with
+  | `File file -> parse_ullbc_of_file file
+  | `Dir path -> parse_ullbc_of_crate path
 
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]

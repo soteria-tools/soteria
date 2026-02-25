@@ -1,8 +1,10 @@
-module BV = Typed.BitVec
+(** Builtins relating to particular operating systems. There is no central
+    documentation for these; we must instead implement them as needed. *)
+
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) = struct
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  open StateM
   open Syntax
 
   (** Used on macOS to register thread local destructors; receives a function

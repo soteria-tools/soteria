@@ -1,5 +1,5 @@
 open Charon
-open Charon_util
+open Common.Charon_util
 include Soteria.Bv_values.Typed
 
 (** [CastError (value, expected, got)] *)
@@ -37,7 +37,7 @@ let cast_i uty = cast_lit (TUInt uty)
 let cast_fp fp v = cast_checked ~ty:(t_float fp) v
 
 let cast_f fty v =
-  let fp = Charon_util.float_precision fty in
+  let fp = float_precision fty in
   cast_checked ~ty:(t_float fp) v
 
 let cast_float v =
@@ -120,7 +120,7 @@ module Float = struct
   include Float
 
   let mk_fp = mk
-  let mk fty = mk (Charon_util.float_precision fty)
+  let mk fty = mk (float_precision fty)
 end
 
 module Ptr = struct

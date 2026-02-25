@@ -1,5 +1,5 @@
 open Charon
-open Charon_util
+open Common.Charon_util
 
 type t =
   [ `DoubleFree  (** Tried freeing the same allocation twice *)
@@ -146,7 +146,7 @@ let add_to_call_trace ((err, trace_elem) : with_trace) trace_elem' =
 
 let log_at (where : Trace.t) error =
   let pp_loc ft = function
-    | Some loc -> Fmt.pf ft " at %a" Charon_util.pp_span_data loc
+    | Some loc -> Fmt.pf ft " at %a" pp_span_data loc
     | None -> Fmt.string ft ""
   in
   let pp_op ft = function
@@ -196,6 +196,9 @@ module Diagnostic = struct
             (to_loc span.end_loc);
         ]
     | Virtual _ | NotReal _ -> []
+
+  let print_diagnostic_simple =
+    Soteria.Terminal.Diagnostic.print_diagnostic_simple
 
   let print_diagnostic ~fname ~error:((error, call_trace) : with_trace) =
     let msg = Fmt.str "%a in %s" pp error fname in

@@ -211,6 +211,7 @@ def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
         "tref",
         "trait_ref",
         "trait_refs",
+        "parent_trait_refs",
         "Trait",
         "ParentClause",
         "TraitType",
@@ -353,7 +354,6 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         )
         doc = sanitize_comment(doc)
         arg_count = len(fun["signature"]["inputs"])
-        print(fun)
         args: list[tuple[str, InterpType]] = [
             (sanitize_var_name(param["name"] or "arg"), type_of(param["ty"]))
             for param in fun["body"]["Unstructured"]["locals"]["locals"][
@@ -398,41 +398,42 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     """
 
     type_utils = """
-        type rust_val := Rust_state_m.Sptr.t Rust_val.t
-        type 'a ret := ('a, unit) Rust_state_m.t
+        type rust_val := StateM.Sptr.t Rust_val.t
+        type 'a ret := ('a, unit) StateM.t
         type fun_exec :=
-            Fun_kind.t -> rust_val list -> (rust_val, unit) Rust_state_m.t
+            Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
     """
 
     interface_str = f"""
         {prelude}
 
         open Charon
+        open Common
 
-        module M (Rust_state_m: Rust_state_m.S) = struct
+        module M (StateM : State.StateM.S) = struct
           module type Impl = sig
             {type_utils}
-            type full_ptr := Rust_state_m.Sptr.t Rust_val.full_ptr
+            type full_ptr := StateM.Sptr.t Rust_val.full_ptr
 
     """
 
     stubs_str = f"""
         {prelude}
 
-
         [@@@warning "-unused-value-declaration"]
 
-        module M (Rust_state_m: Rust_state_m.S): Intrinsics_intf.M(Rust_state_m).Impl = struct
-          open Rust_state_m
+        module M (StateM : State.StateM.S): Intrinsics_intf.M(StateM).Impl = struct
+          open StateM
     """
 
     main_str = f"""
         {prelude}
 
         open Rust_val
+        open Common
 
-        module M (Rust_state_m: Rust_state_m.S): Intrinsics_intf.M(Rust_state_m).S = struct
-            open Rust_state_m
+        module M (StateM : State.StateM.S): Intrinsics_intf.M(StateM).S = struct
+            open StateM
             open Syntax
 
             type rust_val = Sptr.t Rust_val.t
@@ -493,7 +494,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     """
 
     main_str += """
-            include Intrinsics_impl.M (Rust_state_m)
+            include Intrinsics_impl.M (StateM)
 
             let eval_fun name fun_exec (generics: Charon.Types.generic_args) args =
                 match name, generics.types, generics.const_generics, args with
@@ -569,7 +570,7 @@ if __name__ == "__main__":
     impl_file = ml_folder / "intrinsics_impl.ml"
     if not impl_file.exists():
         impl_content = """
-        module M (Rust_state_m: Rust_state_m.S) = struct
+        module M (StateM: State.StateM.S) = struct
         end
         """
         write_ocaml_file(impl_file, impl_content)

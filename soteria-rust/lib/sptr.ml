@@ -27,9 +27,9 @@ module type DecayMapS = sig
     expose:bool ->
     size:[< sint ] Typed.t ->
     align:[< nonzero ] Typed.t ->
-    [< T.sloc ] Typed.t ->
+    [< sloc ] Typed.t ->
     t option ->
-    (T.sint Typed.t * t option) Rustsymex.t
+    (sint Typed.t * t option) Rustsymex.t
 
   (** Tries finding, for the given integer, the matching provenance in the decay
       map. If found, it returns that provenance, along with the exposed address
@@ -37,14 +37,14 @@ module type DecayMapS = sig
   val from_exposed :
     [< sint ] Typed.t ->
     t option ->
-    ((T.sloc Typed.t * T.sint Typed.t) option * t option) Rustsymex.t
+    ((sloc Typed.t * sint Typed.t) option * t option) Rustsymex.t
 end
 
 module DecayMap : DecayMapS = struct
   module StateKey = struct
     include Typed
 
-    type t = T.sloc Typed.t
+    type t = sloc Typed.t
 
     let to_int = unique_tag
     let pp = ppa
@@ -53,7 +53,7 @@ module DecayMap : DecayMapS = struct
   end
 
   module Data = struct
-    type t = { address : T.sint Typed.t; exposed : bool }
+    type t = { address : sint Typed.t; exposed : bool }
     [@@deriving show { with_path = false }]
 
     let fresh () =
@@ -80,13 +80,12 @@ module DecayMap : DecayMapS = struct
 
   let pp ft t = pp ft t
 
-  let decay ~expose ~size ~align (loc : [< T.sloc ] Typed.t) :
-      T.sint Typed.t SM.t =
+  let decay ~expose ~size ~align (loc : [< sloc ] Typed.t) : sint Typed.t SM.t =
     if%sat Typed.Ptr.is_null_loc loc then SM.return Usize.(0s)
     else
       let+ res =
         wrap
-          (loc :> T.sloc Typed.t)
+          (loc :> sloc Typed.t)
           (let open Excl_data.SM in
            let open Syntax in
            let* data_opt = get_state () in
@@ -210,7 +209,7 @@ module type S = sig
 
   (** Returns a symbolic boolean to check whether this pointer has the given
       alignment *)
-  val is_aligned : [< T.nonzero ] Typed.t -> t -> [> sbool ] Typed.t
+  val is_aligned : [< nonzero ] Typed.t -> t -> [> sbool ] Typed.t
 
   (** Get the allocation info for this pointer: its size and alignment *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
@@ -220,20 +219,20 @@ module type S = sig
 end
 
 type arithptr_t = {
-  ptr : T.sptr Typed.t;
+  ptr : sptr Typed.t;
   tag : Tree_borrow.tag option;
-  align : T.nonzero Typed.t;
-  size : T.sint Typed.t;
+  align : nonzero Typed.t;
+  size : sint Typed.t;
 }
 
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
     location and offset, along with an optional metadata. *)
 module ArithPtr : S with type t = arithptr_t = struct
   type t = arithptr_t = {
-    ptr : T.sptr Typed.t;
+    ptr : sptr Typed.t;
     tag : Tree_borrow.tag option;
-    align : T.nonzero Typed.t;
-    size : T.sint Typed.t;
+    align : nonzero Typed.t;
+    size : sint Typed.t;
   }
 
   let pp fmt { ptr; tag; _ } =

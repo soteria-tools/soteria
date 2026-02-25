@@ -5,6 +5,7 @@ open Typed.Syntax
 module T = Typed.T
 open Rustsymex
 open Charon
+open Common
 
 (* State details *)
 module DecayMap = Sptr.DecayMap
@@ -261,6 +262,9 @@ end
 
 type serialized = Heap.serialized [@@deriving show { with_path = false }]
 
+let subst_serialized = Heap.subst_serialized
+let iter_vars_serialized = Heap.iter_vars_serialized
+
 type t = {
   heap : Heap.t option;
   functions : FunBiMap.t;
@@ -397,7 +401,7 @@ and check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   let** _, exp_align = size_and_align_of_val ty meta in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
-        Typed.ppa exp_align Charon_util.pp_ty ty);
+        Typed.ppa exp_align Common.Charon_util.pp_ty ty);
   (* 0-based pointers are aligned up to their offset *)
   let loc, ofs = Typed.Ptr.decompose ptr.ptr in
   let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
@@ -905,3 +909,6 @@ let run_thread_exits () =
  fun st_opt ->
   let st = of_opt st_opt in
   st.thread_destructor () st_opt
+
+let serialize { heap; _ } = Heap.of_opt heap |> Heap.serialize
+let produce _ = failwith "TODO: Tree_state.produce"

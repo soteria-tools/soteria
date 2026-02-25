@@ -139,38 +139,36 @@ let std_fun_map =
   |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
   |> NameMatcherMap.of_list
 
-module M (Rust_state_m : Rust_state_m.S) = struct
-  module Alloc = Alloc.M (Rust_state_m)
-  module Intrinsics = Intrinsics.M (Rust_state_m)
-  module Miri = Miri.M (Rust_state_m)
-  module Rusteria = Rusteria.M (Rust_state_m)
-  module Std = Std.M (Rust_state_m)
-  module System = System.M (Rust_state_m)
+module M (StateM : State.StateM.S) = struct
+  module Alloc = Alloc.M (StateM)
+  module Intrinsics = Intrinsics.M (StateM)
+  module Miri = Miri.M (StateM)
+  module Rusteria = Rusteria.M (StateM)
+  module Std = Std.M (StateM)
+  module System = System.M (StateM)
 
-  let fn_to_stub fn_sig fn_name fun_exec =
-    let open Std in
-    function
+  let fn_to_stub fn_sig fn_name fun_exec = function
     | Rusteria Assert -> Rusteria.assert_
     | Rusteria Assume -> Rusteria.assume
     | Rusteria NondetBytes -> Rusteria.nondet_bytes fn_sig
     | Rusteria Panic -> Rusteria.panic ?msg:None
     | Miri AllocId -> Miri.alloc_id
     | Miri PromiseAlignement -> Miri.promise_alignement
-    | Miri Nop -> nop
-    | Optim AllocImpl -> alloc_impl
+    | Miri Nop -> Std.nop
+    | Optim AllocImpl -> Std.alloc_impl
     | Optim Panic ->
         Rusteria.panic ~msg:(Fmt.to_to_string Crate.pp_name fn_name)
-    | Optim (FloatIs fc) -> float_is fc
-    | Optim FloatIsFinite -> float_is_finite
-    | Optim (FloatIsSign { positive }) -> float_is_sign positive
+    | Optim (FloatIs fc) -> Std.float_is fc
+    | Optim FloatIsFinite -> Std.float_is_finite
+    | Optim (FloatIsSign { positive }) -> Std.float_is_sign positive
     | Alloc (Alloc { zeroed }) -> Alloc.alloc ~zeroed
     | Alloc Dealloc -> Alloc.dealloc
     | Alloc NoAllocShimIsUnstable -> Alloc.no_alloc_shim_is_unstable
     | Alloc Realloc -> Alloc.realloc
-    | Fixme PanicCleanup -> fixme_panic_cleanup
-    | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
+    | Fixme PanicCleanup -> Std.fixme_panic_cleanup
+    | Fixme CatchUnwindCleanup -> Std.fixme_catch_unwind_cleanup
     | System TlvAtexit -> System.tlv_atexit fun_exec
-    | DropInPlace -> nop
+    | DropInPlace -> Std.nop
 
   let std_fun_eval (f : UllbcAst.fun_decl) generics fun_exec =
     (* Rust allows defining functions and marking them as intrinsics within a
@@ -178,7 +176,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
        name. This means their path doesn't match the one we expect for the
        patterns; so instead of matching on a path, we only consider intrinsics
        from their name. *)
-    if Charon_util.decl_has_attr f "rustc_intrinsic" then
+    if Common.Charon_util.decl_has_attr f "rustc_intrinsic" then
       let name, generics =
         match List.rev f.item_meta.name with
         | PeIdent (name, _) :: _ -> (name, generics)
@@ -200,17 +198,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
       match stub with
       | Some stub ->
           fun args ->
-            Rust_state_m.Poly.push_generics ~params:f.generics ~args:generics
+            StateM.Poly.push_generics ~params:f.generics ~args:generics
             @@ fn_to_stub f.signature name fun_exec stub args
       | None -> fun_exec (Real { id = f.def_id; generics })
-
-  let builtin_fun_eval (f : Types.builtin_fun_id) generics =
-    let open Std in
-    match f with
-    | ArrayRepeat -> array_repeat generics
-    | ArrayToSliceMut -> array_slice ~mut:true generics
-    | ArrayToSliceShared -> array_slice ~mut:false generics
-    | Index idx -> array_index idx generics
-    | BoxNew -> box_new generics
-    | PtrFromParts _ -> from_raw_parts
 end
