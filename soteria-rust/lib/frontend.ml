@@ -509,10 +509,6 @@ let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
     Cleaner.touched crate_file);
   crate
 
-let normalize_path path =
-  if Filename.is_relative path then Filename.concat (Sys.getcwd ()) path
-  else path
-
 let with_entry_points ~plugin (crate : Charon.UllbcAst.crate) =
   let entry_points =
     Charon.Types.FunDeclId.Map.values crate.fun_decls
@@ -523,7 +519,6 @@ let with_entry_points ~plugin (crate : Charon.UllbcAst.crate) =
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file file_name =
   let plugin = create_using_current_config () in
-  let file_name = normalize_path file_name in
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
   parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder ()
@@ -532,7 +527,6 @@ let parse_ullbc_of_file file_name =
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_crate crate_dir =
   let plugin = create_using_current_config () in
-  let crate_dir = normalize_path crate_dir in
   let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
   parse_ullbc ~mode:Cargo ~plugin ~output ~pwd:crate_dir ()
   |> with_entry_points ~plugin
@@ -541,7 +535,8 @@ let parse_ullbc_of_crate crate_dir =
     parse the ULLBC of that single file using rustc; otherwise will assume it's
     a path to a crate and use cargo. *)
 let parse_ullbc path =
-  if Filename.check_suffix path ".rs" then parse_ullbc_of_file path
-  else parse_ullbc_of_crate path
+  match path with
+  | `File file -> parse_ullbc_of_file file
+  | `Dir path -> parse_ullbc_of_crate path
 
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]

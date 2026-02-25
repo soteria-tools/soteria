@@ -1,3 +1,4 @@
+open Soteria.Soteria_std.Cmdliner_helpers
 open Cmdliner
 
 let exits =
@@ -11,7 +12,7 @@ let exits =
 let dir_arg =
   Arg.(
     required
-    & pos 0 (some path) None
+    & pos 0 (some file_or_dir_as_absolute) None
     & info [] ~doc:"The .rs file or the directory of the crate to analyse")
 
 module Exec = struct
