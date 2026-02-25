@@ -198,4 +198,8 @@ module Diagnostic = struct
     let msg = Fmt.str "%a in %s" pp error fname in
     Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges ~msg
       ~severity:(severity error)
+
+  let warn_trace_once ~id ((error, call_trace) : with_trace) =
+    let msg = Fmt.to_to_string pp error in
+    Soteria.Terminal.Warn.warn_trace_once ~id ~call_trace ~as_ranges msg
 end
