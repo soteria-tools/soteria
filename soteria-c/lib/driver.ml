@@ -96,7 +96,7 @@ module Frontend = struct
         in
         if Sys.file_exists filename then "-include " ^ filename ^ " "
         else (
-          warn_once (filename ^ " not found");
+          warn (filename ^ " not found");
           "")
       in
       let ( let* ) = Exception.except_bind in
@@ -194,7 +194,7 @@ let parse_and_link_ail ~includes files =
                       | `ParsingError s -> s
                       | _ -> "Unknown error"
                     in
-                    Fmt.kstr warn_once
+                    Fmt.kstr warn
                       "Ignoring file that did not parse correctly: %s@\n%s" file
                       msg;
                     None)
