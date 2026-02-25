@@ -1,4 +1,4 @@
-name: Cleanup PR Documentation
+name: Cleanup PR Artifacts
 
 on:
   pull_request:
@@ -9,8 +9,8 @@ permissions:
   pull-requests: write
 
 jobs:
-  cleanup-pr-doc:
-    name: Remove PR Documentation
+  cleanup-pr-artifacts:
+    name: Remove PR Artifacts
     runs-on: ubuntu-latest
     steps:
       - name: Checkout gh-pages branch
@@ -19,7 +19,7 @@ jobs:
           ref: gh-pages
 
       - name: Check if PR documentation exists
-        id: check
+        id: check-docs
         run: |
           PR_DIR="api/pr-${{ github.event.pull_request.number }}"
           if [ -d "$PR_DIR" ]; then
@@ -30,28 +30,50 @@ jobs:
             echo "No documentation found for PR #${{ github.event.pull_request.number }}"
           fi
 
-      - name: Remove PR documentation folder
-        if: steps.check.outputs.found == 'true'
+      - name: Check if PR benchmarks exist
+        id: check-benchmarks
         run: |
-          rm -rf "api/pr-${{ github.event.pull_request.number }}"
+          BENCH_FILE="benchmarks/pr-${{ github.event.pull_request.number }}.html"
+          if [ -f "$BENCH_FILE" ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "Benchmark file found: $BENCH_FILE"
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "No benchmarks found for PR #${{ github.event.pull_request.number }}"
+          fi
+
+      - name: Remove PR artifacts
+        if: steps.check-docs.outputs.found == 'true' || steps.check-benchmarks.outputs.found == 'true'
+        run: |
+          rm -rf "api/pr-${{ github.event.pull_request.number }}" 2>/dev/null || true
+          rm -f "benchmarks/pr-${{ github.event.pull_request.number }}.html" 2>/dev/null || true
 
       - name: Commit and push
-        if: steps.check.outputs.found == 'true'
+        if: steps.check-docs.outputs.found == 'true' || steps.check-benchmarks.outputs.found == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "Remove documentation for PR #${{ github.event.pull_request.number }}"
+          git commit -m "Cleanup artifacts for PR #${{ github.event.pull_request.number }}"
           git push
 
       - name: Post comment on PR
-        if: steps.check.outputs.found == 'true'
+        if: steps.check-docs.outputs.found == 'true' || steps.check-benchmarks.outputs.found == 'true'
         uses: actions/github-script@v7
         with:
           script: |
+            const docsRemoved = '${{ steps.check-docs.outputs.found }}' === 'true';
+            const benchmarksRemoved = '${{ steps.check-benchmarks.outputs.found }}' === 'true';
+            
+            const items = [];
+            if (docsRemoved) items.push('documentation');
+            if (benchmarksRemoved) items.push('benchmarks');
+            
+            const message = `Cleaned up ${items.join(' and ')} for this PR.`;
+            
             await github.rest.issues.createComment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.payload.pull_request.number,
-              body: 'Documentation for this PR has been removed.'
+              body: message
             });
