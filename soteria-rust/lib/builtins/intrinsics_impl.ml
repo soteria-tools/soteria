@@ -62,10 +62,13 @@ module M (Rust_state_m : Rust_state_m.S) :
   let assume ~b = assert_ b (`StdErr "core::intrinsics::assume with false")
 
   (* TODO: atomics are, for now, single-threaded *)
-  let atomic_warn () =
-    Soteria.Terminal.Warn.warn_once
-      "An atomic intrinsic was encountered; it will be executed as sequential \
-       code"
+  let atomic_warn =
+    let warning =
+      String.Interned.intern
+        "An atomic intrinsic was encountered; it will be executed as \
+         sequential code"
+    in
+    fun () -> Soteria.Terminal.Warn.warn_once warning
 
   let atomic_fence ~ord:_ =
     atomic_warn ();
