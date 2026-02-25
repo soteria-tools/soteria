@@ -295,7 +295,7 @@ let print_states result =
   let pp_state ft state =
     (Fmt.Dump.list SState.pp_serialized) ft (SState.serialize state)
   in
-  Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n@?"
+  Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@.@?@."
     Fmt.Dump.(
       list @@ fun ft (r, _) ->
       (Soteria.Symex.Compo_res.pp
@@ -349,7 +349,7 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
       let stats = Soteria.Stats.As_ctx.get_copy () in
       Soteria.Stats.get_int stats Soteria.Symex.StatKeys.steps
     in
-    Fmt.pr "@.Executed %d statements" steps_number;
+    Fmt.pr "Executed %d statements" steps_number;
     if success then (
       Fmt.pr "@.%a@.@?" pp_ok "Verification Success!";
       Error.Exit_code.Success)
@@ -440,8 +440,8 @@ let generate_summaries ~functions_to_analyse prog =
     let diag_json = Error.Diagnostic.to_json ~fid:fid_str ~call_trace ~error in
     diagnostics := diag_json :: !diagnostics;
     if (Config.current ()).show_manifest_summaries then
-      Fmt.pr "@\n@[Corresponding summary:@ %a@]" Summary.pp_raw raw;
-    Fmt.pr "@\n@?"
+      Fmt.pr "@[Corresponding summary:@ %a@]@\n" Summary.pp_raw raw;
+    Fmt.pr "@?"
   in
   dump_report !diagnostics;
   if !found_bugs then Error.Exit_code.Found_bug

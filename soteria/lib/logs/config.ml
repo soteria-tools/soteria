@@ -5,7 +5,7 @@ type log_kind = Stderr | Html
 [@@deriving subliner_enum, show { with_path = false }]
 
 type t = {
-  level : Level.t option; [@default Some Warn]
+  level : Level.t option; [@default None]
   kind : log_kind; [@default Stderr]
   always_log_smt : bool; [@default false]
   no_color : bool; [@default false]

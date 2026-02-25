@@ -13,20 +13,22 @@ exception ExecutionError of string
 let execution_err msg = raise (ExecutionError msg)
 
 module Outcome = struct
-  type t = Ok | Error | Fatal
+  type t = Ok | OkPartial | Error | Fatal
 
   let merge o1 o2 =
     match (o1, o2) with
     | Fatal, _ | _, Fatal -> Fatal
     | Error, _ | _, Error -> Error
+    | OkPartial, _ | _, OkPartial -> OkPartial
     | Ok, Ok -> Ok
 
   let merge_list = List.fold_left (fun o1 (_, o2) -> merge o1 o2) Ok
-  let as_status_code = function Ok -> 0 | Error -> 1 | Fatal -> 2
+  let as_status_code = function Ok | OkPartial -> 0 | Error -> 1 | Fatal -> 2
   let exit o = exit (as_status_code o)
 
   let pp ft = function
     | Ok -> pp_ok ft "ok"
+    | OkPartial -> Fmt.pf ft "%a %a" pp_ok "ok" (pp_clr `Yellow) "(partial)"
     | Error -> pp_err ft "error"
     | Fatal -> pp_fatal ft "unknown"
 end
@@ -42,25 +44,25 @@ let print_pcs pcs =
       let pp_pc = list ~sep:(any " /\\@, ") Typed.ppa in
       pf ft "%a @[<-1>%a@]" (pp_style `Bold) name pp_pc pc
   in
-  if not @@ (Soteria.Terminal.Config.get ()).compact then
+  if (Config.get ()).show_pcs then
     let pcs_indexed = List.mapi (fun i pc -> (pc, i + 1)) pcs in
-    (list ~sep:(any "@\n") pp_pc) Fmt.stdout pcs_indexed
+    Fmt.pr "%a@." (list ~sep:(any "@\n") pp_pc) pcs_indexed
 
 let print_outcomes entry_name f =
   let time = Unix.gettimeofday () in
   match f () with
-  | Ok (pcs, ntotal) ->
+  | Ok (pcs, ntotal, partial) ->
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (Diagnostic.print_diagnostic_simple ~severity:Note)
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
       print_pcs pcs;
-      Fmt.pr "@.@.";
-      (entry_name, Outcome.Ok)
+      Fmt.pr "@.";
+      (entry_name, if partial then Outcome.OkPartial else Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
       let err_branches =
-        List.map (fun (_, _, pcs) -> List.length pcs) errs
+        List.map (fun (_, pcs) -> List.length pcs) errs
         |> List.fold_left ( + ) 0
       in
       if (Config.get ()).fail_fast then
@@ -75,12 +77,10 @@ let print_outcomes entry_name f =
           "%s: found issues in %a, errors in %a (out of %d)" entry_name pp_time
           time pp_branches err_branches ntotal;
       let () =
-        let@ error, call_trace, pcs = Fun.flip List.iter errs in
-        Frontend.Diagnostic.print_diagnostic ~fname:entry_name ~call_trace
-          ~error;
-        Fmt.pr "@.";
+        let@ error, pcs = Fun.flip List.iter errs in
+        Error.Diagnostic.print_diagnostic ~fname:entry_name ~error;
         print_pcs pcs;
-        Fmt.pr "@.@."
+        Fmt.pr "@."
       in
       (entry_name, Outcome.Error)
   | exception e ->
@@ -122,6 +122,8 @@ let exec_crate
   (* execute! *)
   let entry_name = Fmt.to_to_string Crate.pp_name fun_decl.item_meta.name in
   let@ () = print_outcomes entry_name in
+  Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
+    ("Running " ^ entry_name ^ "...");
   let { res = branches; stats } : 'res Soteria.Stats.with_stats =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
@@ -165,10 +167,13 @@ let exec_crate
     Stats.get_int stats Soteria.Symex.StatKeys.unexplored_branches
   in
   if unexplored > 0 then
-    if Option.is_some (Config.get ()).branch_fuel then
+    if
+      Option.is_some (Config.get ()).branch_fuel
+      || Option.is_some (Config.get ()).step_fuel
+    then
       Fmt.kstr Soteria.Terminal.Warn.warn
-        "Note that %a were left unexplored due to branch fuel. Errors may have \
-         been missed."
+        "Note that at least %a were left unexplored due to fuel exhaustion. \
+         Errors may have been missed."
         pp_branches unexplored
     else Fmt.kstr execution_err "Missed %a" pp_branches unexplored
   else if List.exists Compo_res.is_missing outcomes then
@@ -176,27 +181,24 @@ let exec_crate
 
   if not (List.exists Compo_res.is_error outcomes) then
     let pcs = List.map snd branches in
-    Ok (pcs, nbranches)
+    Ok (pcs, nbranches, unexplored > 0)
   else
     (* join th errors by [error type * calltrace], and find all matching PCs *)
     let errors =
-      List.filter_map
-        (function Compo_res.Error (e, ct), pc -> Some (e, ct, pc) | _ -> None)
-        branches
+      branches
+      |> List.filter_map (function
+        | Compo_res.Error e, pc -> Some (e, pc)
+        | _ -> None)
     in
-    let errors =
-      List.map (fun (e, ct, _) -> (e, ct)) errors
+    let errors_joined =
+      List.map fst errors
       |> List.sort_uniq compare
-      |> List.map (fun (e, ct) ->
-          let pcs =
-            List.filter_map
-              (fun (e', ct', pc) ->
-                if e = e' && ct = ct' then Some pc else None)
-              errors
-          in
-          (e, ct, pcs))
+      |> List.map (fun e ->
+          errors
+          |> List.filter_map (fun (e', pc) -> if e = e' then Some pc else None)
+          |> Pair.make e)
     in
-    Error (errors, nbranches)
+    Error (errors_joined, nbranches)
 
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;

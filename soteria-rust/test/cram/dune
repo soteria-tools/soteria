@@ -2,7 +2,8 @@
  (_
   (env-vars
    (HIDE_UNSTABLE 1)
-   (SOTERIA_RUST_CLEANUP 1))))
+   (SOTERIA_RUST_CLEANUP 1)
+   (SHOW_PCS 1))))
 
 (cram
  (deps ../../bin/soteria_rust.exe)

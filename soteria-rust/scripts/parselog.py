@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-from common import *
-import sys
 import re
+import sys
 from typing import Iterable, Optional, Protocol, assert_never
+
+from common import *
 
 
 def file_str(file_name: str, tool: ToolName):
@@ -225,6 +226,7 @@ def categorise_miri(test: str, *, expect_failure: bool) -> LogCategorisation:
     if (
         "use of unresolved module or unlinked crate `kani`" in test
         or "can't find crate for `kani`" in test
+        or "error[E0277]" in test
     ):
         return Outcome.UNSUPPORTED()
 

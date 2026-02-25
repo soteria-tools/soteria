@@ -36,6 +36,17 @@ module T : sig
     (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a sseq -> unit
 
   val pp_any : Format.formatter -> any -> unit
+  val hash_sint : sint -> int
+  val hash_sint_ovf : sint_ovf -> int
+  val hash_nonzero : nonzero -> int
+  val hash_zero : zero -> int
+  val hash_sfloat : sfloat -> int
+  val hash_sbool : sbool -> int
+  val hash_sptr : sptr -> int
+  val hash_sloc : sloc -> int
+  val hash_cval : cval -> int
+  val hash_sseq : 'a sseq -> int
+  val hash_any : any -> int
 end
 
 open T
@@ -88,7 +99,8 @@ val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 val ppa : Format.formatter -> 'a t -> unit
 val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
-val hash : [< any ] t -> int
+val hash : ('a -> int) -> 'a t -> int
+val hasha : 'a t -> int
 val unique_tag : [< any ] t -> int
 
 (** Typed constructors *)

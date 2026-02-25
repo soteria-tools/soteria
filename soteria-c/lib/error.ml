@@ -103,9 +103,9 @@ module Diagnostic = struct
           l
 
   let print_diagnostic ~fid ~call_trace ~error =
-    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
-      ~error:(Fmt.to_to_string pp error)
-      ~severity:(severity error) ~fname:fid
+    let msg = Fmt.str "%a in %s" pp error fid in
+    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges ~msg
+      ~severity:(severity error)
 
   let extract_location (cerb_loc : Cerb_location.t) =
     match cerb_loc with

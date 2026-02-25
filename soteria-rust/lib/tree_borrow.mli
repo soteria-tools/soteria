@@ -2,7 +2,17 @@ open Rustsymex
 
 type tag
 and access = Read | Write
-and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
+
+and state =
+  | Reserved of bool
+  | Unique
+  | Frozen
+  | ReservedIM
+  | Cell
+  | Disabled
+  | UB
+
+and protector = Strong | Weak
 and t
 and tb_state
 
@@ -14,8 +24,12 @@ val pp_state : Format.formatter -> state -> unit
 val pp_tb_state : Format.formatter -> tb_state -> unit
 val init : state:state -> unit -> t * tag
 val ub_state : t
-val add_child : parent:tag -> ?protector:bool -> state:state -> t -> t * tag
+
+val add_child :
+  parent:tag -> ?protector:protector -> state:state -> t -> t * tag
+
 val unprotect : tag -> t -> t
+val strong_protector_exists : t -> bool
 val empty_state : tb_state
 val set_protector : protected:bool -> tag -> t -> tb_state -> tb_state
 

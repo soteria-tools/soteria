@@ -165,6 +165,7 @@
   charon
   (ppx_subliner
    (>= 0.2.1))
+  ppx_deriving_hash
   (odoc :with-doc)
   (alcotest :with-test)
   (yojson

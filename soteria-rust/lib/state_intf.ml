@@ -52,7 +52,12 @@ module type S = sig
     full_ptr list ret
 
   val free : full_ptr -> unit ret
-  val fake_read : full_ptr -> Types.ty -> Error.t option SM.t
+
+  val size_and_align_of_val :
+    Types.ty -> Sptr.t Rust_val.meta -> (T.sint Typed.t * T.nonzero Typed.t) ret
+
+  val fake_read : full_ptr -> Types.ty -> unit ret
+  val check_non_dangling : full_ptr -> Types.ty -> unit ret
   val check_ptr_align : full_ptr -> Types.ty -> unit ret
 
   val copy_nonoverlapping :
@@ -65,8 +70,7 @@ module type S = sig
   val store_global : Types.global_decl_id -> full_ptr -> unit ret
   val load_str_global : string -> full_ptr option ret
   val load_global : Types.global_decl_id -> full_ptr option ret
-  val borrow : full_ptr -> Types.ty -> Expressions.borrow_kind -> full_ptr ret
-  val protect : full_ptr -> Types.ty -> Types.ref_kind -> full_ptr ret
+  val borrow : ?protect:bool -> full_ptr -> Types.ty -> full_ptr ret
   val unprotect : full_ptr -> Types.ty -> unit ret
   val with_exposed : [< sint ] Typed.t -> full_ptr ret
   val leak_check : unit -> unit ret
