@@ -45,6 +45,7 @@ Symbolic execution of a simple program with symbolic values that fails because o
                    info = (Some err.c:5:12-24) }))]);
      Error: (Null pointer dereference with trace
              [• Invalid memory write: err.c:6:3-10 (cursor: 6:6)], None)]
+  
   error: Null pointer dereference in main
       ┌─ err.c:6:3
     6 │    *x = 12;
@@ -139,6 +140,7 @@ Checking that fuel gets exhausted properly
              [• Called from here: while_true.c:6:5-26;
               • Triggering operation: while_true.c:6:5-26],
              None)]
+  
   error: Failed assertion in main
       ┌─ while_true.c:6:5
     6 │      __soteria___assert(0);
@@ -1424,6 +1426,7 @@ Expected to fail because no main function is defined
   $ soteria-c exec harness.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
     [Error: (Parsing Error: Entry point "main" not found with trace [], None)]
+  
   error: Parsing Error: Entry point "main" not found in main
   Executed 0 statements
   Verification Failure!
@@ -1514,6 +1517,7 @@ Check that, without proper flag, undefined function calls are not-implemented
   $ soteria-c exec havoc_undef.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
     [Error: Gave up: Unsupported: Cannot call external function: nondet_int_559]
+  
   error: Analysis gave up: Unsupported: Cannot call external function: nondet_int_559 in main
   Executed 2 statements
   Verification Failure! (Unsupported features)

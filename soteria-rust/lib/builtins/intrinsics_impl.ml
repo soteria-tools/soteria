@@ -171,6 +171,159 @@ module M (Rust_state_m : Rust_state_m.S) :
                 ~f:(fun _ -> ok U32.(1s))
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
 
+  (* HACK: floating point intrinsics for complex float operations are heavily
+     approximated, à la CBMC.
+
+     See
+     https://github.com/diffblue/cbmc/blob/develop/src/ansi-c/library/math.c *)
+  let floating_inaccuracy_warn =
+    let msg =
+      String.Interned.intern
+        "A complex floating point intrinsic was encountered; it will be \
+         executed with a significant over-approximation."
+    in
+    fun () ->
+      match (Config.get ()).approx_floating_ops with
+      | Allow -> ok ()
+      | Warn ->
+          Soteria.Terminal.Warn.warn_once msg;
+          ok ()
+      | Deny -> vanish ()
+
+  let cos_ fp x =
+    let* () = floating_inaccuracy_warn () in
+    let* res = lift_symex @@ Rustsymex.nondet (Typed.t_float fp) in
+    let* to_assume =
+      if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
+        ok [ Typed.Float.is_nan res ]
+      else
+        ok
+          [
+            res <=.@ Typed.Float.mk_fp fp "1.0";
+            res >=.@ Typed.Float.mk_fp fp "-1.0";
+            Typed.not (x ==.@ Typed.Float.mk_fp fp "0.0")
+            ||@ (res ==.@ Typed.Float.mk_fp fp "1.0");
+          ]
+    in
+    let+^ () = Rustsymex.assume to_assume in
+    res
+
+  let cosf16 ~x = cos_ F16 x
+  let cosf32 ~x = cos_ F32 x
+  let cosf64 ~x = cos_ F64 x
+  let cosf128 ~x = cos_ F128 x
+
+  let sin_ fp x =
+    let* () = floating_inaccuracy_warn () in
+    let* res = lift_symex @@ Rustsymex.nondet (Typed.t_float fp) in
+    let* to_assume =
+      if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
+        ok [ Typed.Float.is_nan res ]
+      else
+        ok
+          [
+            res <=.@ Typed.Float.mk_fp fp "1.0";
+            res >=.@ Typed.Float.mk_fp fp "-1.0";
+            Typed.not (x ==.@ Typed.Float.mk_fp fp "0.0")
+            ||@ (res ==.@ Typed.Float.mk_fp fp "0.0");
+          ]
+    in
+    let+^ () = Rustsymex.assume to_assume in
+    res
+
+  let sinf16 ~x = sin_ F16 x
+  let sinf32 ~x = sin_ F32 x
+  let sinf64 ~x = sin_ F64 x
+  let sinf128 ~x = sin_ F128 x
+
+  let pow_ fp _x _y =
+    let* () = floating_inaccuracy_warn () in
+    lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
+
+  let powf16 ~a ~x = pow_ F16 a x
+  let powf32 ~a ~x = pow_ F32 a x
+  let powf64 ~a ~x = pow_ F64 a x
+  let powf128 ~a ~x = pow_ F128 a x
+
+  let powi_ fp x y =
+    let* () = floating_inaccuracy_warn () in
+    if%sat y ==@ U32.(0s) then ok (Typed.Float.mk_fp fp "1.0")
+    else if%sat y ==@ U32.(1s) then ok (x :> Typed.T.sfloat Typed.t)
+    else lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
+
+  let powif16 ~a ~x = powi_ F16 a x
+  let powif32 ~a ~x = powi_ F32 a x
+  let powif64 ~a ~x = powi_ F64 a x
+  let powif128 ~a ~x = powi_ F128 a x
+
+  let sqrt_ fp x =
+    let* () = floating_inaccuracy_warn () in
+    if%sat x <.@ Typed.Float.mk_fp fp "0.0" then ok (Typed.Float.mk_fp fp "NaN")
+    else if%sat
+      Typed.Float.is_infinite x
+      ||@ (x ==.@ Typed.Float.mk_fp fp "0.0")
+      ||@ Typed.Float.is_nan x
+    then ok (x :> Typed.T.sfloat Typed.t)
+    else lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
+
+  let sqrtf16 ~x = sqrt_ F16 x
+  let sqrtf32 ~x = sqrt_ F32 x
+  let sqrtf64 ~x = sqrt_ F64 x
+  let sqrtf128 ~x = sqrt_ F128 x
+
+  let expf_ fp x =
+    let* () = floating_inaccuracy_warn () in
+    if%sat
+      Typed.Float.is_nan x
+      ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.mk_fp fp "0.0"))
+    then ok (x :> Typed.T.sfloat Typed.t)
+    else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.mk_fp fp "0.0")
+    then ok (Typed.Float.mk_fp fp "0.0")
+    else
+      let*^ res = Rustsymex.nondet (Typed.t_float fp) in
+      let+^ () = Rustsymex.assume [ res >.@ Typed.Float.mk_fp fp "0.0" ] in
+      res
+
+  let expf16 ~x = expf_ F16 x
+  let expf32 ~x = expf_ F32 x
+  let expf64 ~x = expf_ F64 x
+  let expf128 ~x = expf_ F128 x
+
+  (* we also approximate 2^x as e^x *)
+  let exp2f16 ~x = expf_ F16 x
+  let exp2f32 ~x = expf_ F32 x
+  let exp2f64 ~x = expf_ F64 x
+  let exp2f128 ~x = expf_ F128 x
+
+  let logf_ ~exp fp x =
+    let* () = floating_inaccuracy_warn () in
+    let exp = Typed.Float.mk_fp fp exp in
+    if%sat x <.@ Typed.Float.mk_fp fp "0.0" then ok (Typed.Float.mk_fp fp "NaN")
+    else if%sat x ==.@ Typed.Float.mk_fp fp "0.0" then
+      ok (Typed.Float.mk_fp fp "-inf")
+    else if%sat Typed.Float.is_infinite x then ok (Typed.Float.mk_fp fp "inf")
+    else if%sat x ==.@ exp then ok (Typed.Float.mk_fp fp "1.0")
+    else
+      let*^ res = Rustsymex.nondet (Typed.t_float fp) in
+      let* to_assume =
+        if%sat x <.@ exp then ok [ res <.@ Typed.Float.mk_fp fp "1.0" ]
+        else ok [ res >.@ Typed.Float.mk_fp fp "1.0" ]
+      in
+      let+^ () = Rustsymex.assume to_assume in
+      res
+
+  let logf16 ~x = logf_ ~exp:"2.7182818" F16 x
+  let logf32 ~x = logf_ ~exp:"2.7182818" F32 x
+  let logf64 ~x = logf_ ~exp:"2.7182818" F64 x
+  let logf128 ~x = logf_ ~exp:"2.7182818" F128 x
+  let log10f16 ~x = logf_ ~exp:"10" F16 x
+  let log10f32 ~x = logf_ ~exp:"10" F32 x
+  let log10f64 ~x = logf_ ~exp:"10" F64 x
+  let log10f128 ~x = logf_ ~exp:"10" F128 x
+  let log2f16 ~x = logf_ ~exp:"2" F16 x
+  let log2f32 ~x = logf_ ~exp:"2" F32 x
+  let log2f64 ~x = logf_ ~exp:"2" F64 x
+  let log2f128 ~x = logf_ ~exp:"2" F128 x
   let[@inline] float_rounding rm x = ok (Typed.Float.round rm x)
   let ceilf16 ~x = float_rounding Ceil x
   let ceilf32 ~x = float_rounding Ceil x
@@ -198,18 +351,27 @@ module M (Rust_state_m : Rust_state_m.S) :
     let zero = Usize.(0s) in
     let one = Usize.(1s) in
     let byte = Types.TLiteral (TUInt U8) in
-    let rec aux ?(inc = one) l r len =
-      if%sat len ==@ zero then ok U32.(0s)
+    let rec aux ?res ?(inc = one) l r len =
+      if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
         let* l = Sptr.offset ~signed:false l inc in
         let* r = Sptr.offset ~signed:false r inc in
         let* bl = State.load (l, Thin) byte in
-        let bl = as_base_i U8 bl in
         let* br = State.load (r, Thin) byte in
-        let br = as_base_i U8 br in
-        if%sat bl ==@ br then aux l r (len -!@ one)
-        else if%sat bl <@ br then ok U32.(-1s)
-        else ok U32.(1s)
+        (* compare_bytes reads all bytes and mustn't short-circuit, so we must
+           keep reading; here we only modify the result if we haven't reached a
+           conclusion yet *)
+        let* res =
+          match res with
+          | Some _ -> ok res
+          | None ->
+              let bl = as_base_i U8 bl in
+              let br = as_base_i U8 br in
+              if%sat bl ==@ br then ok None
+              else if%sat bl <@ br then ok (Some U32.(-1s))
+              else ok (Some U32.(1s))
+        in
+        aux ?res l r (len -!@ one)
     in
     aux ~inc:zero l r (bytes :> T.sint Typed.t)
 
@@ -562,12 +724,11 @@ module M (Rust_state_m : Rust_state_m.S) :
       | _ -> failwith "Unexpected read array"
     in
     let rec aux = function
-      | [] -> ok Typed.v_true
-      | (Int l, Int r) :: rest ->
-          if%sat l ==@ r then aux rest else ok Typed.v_false
+      | [] -> Typed.v_true
+      | (Int l, Int r) :: rest -> l ==@ r &&@ aux rest
       | _ :: _ -> failwith "Unexpected read array"
     in
-    aux byte_pairs
+    ok (aux byte_pairs)
 
   let rotate_ ~(side : [ `Left | `Right ]) ~t ~x ~shift : rust_val ret =
     let t = TypesUtils.ty_as_literal t in
@@ -633,70 +794,12 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let size_of ~t = Layout.size_of t
 
-  let rec size_and_align_of_val ~t ~meta =
-    (* Takes inspiration from rustc, to calculate the size and alignment of
-       DSTs.
-       https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
-    if not (Layout.is_dst t) then
-      let+ layout = Layout.layout_of t in
-      (layout.size, layout.align)
-    else
-      match (t, meta) with
-      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), (Thin | VTable _) ->
-          failwith "size_and_align_of_val: Invalid metadata for slice type"
-      | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), Len meta ->
-          let sub_ty = Layout.dst_slice_ty t in
-          let* sub_ty =
-            of_opt_not_impl "size_of_val: missing a DST slice type" sub_ty
-          in
-          let* layout = Layout.layout_of sub_ty in
-          let len = Typed.cast_i Usize meta in
-          let size, ovf_mul = layout.size *?@ len in
-          let+ () = assert_not ovf_mul `Overflow in
-          (size, layout.align)
-      | TDynTrait _, (Thin | Len _) ->
-          failwith "size_and_align_of_val: Invalid metadata for dyn type"
-      | TDynTrait _, VTable vtable ->
-          let usize = Types.TLiteral (TUInt Usize) in
-          let* size_ptr =
-            Sptr.offset ~signed:true ~ty:usize vtable Usize.(1s)
-          in
-          let* align_ptr =
-            Sptr.offset ~signed:true ~ty:usize vtable Usize.(2s)
-          in
-          let* size = State.load (size_ptr, Thin) usize in
-          let+ align = State.load (align_ptr, Thin) usize in
-          let size = as_base_i Usize size in
-          let align = as_base_i Usize align in
-          (size, Typed.cast align)
-      | TAdt { id = TTuple | TAdtId _; _ }, _ ->
-          let field_tys =
-            match t with
-            | TAdt adt -> Crate.as_struct_or_tuple adt
-            | _ -> failwith "impossible"
-          in
-          let last_field_ty = List.last field_tys in
-          let* layout = Layout.layout_of t in
-          let last_field_ofs =
-            match layout.fields with
-            | Arbitrary (_, offsets) -> offsets.(Array.length offsets - 1)
-            | _ -> failwith "size_and_align_of_val: Unexpected layout for ADT"
-          in
-          let+ unsized_size, unsized_align =
-            size_and_align_of_val ~t:last_field_ty ~meta
-          in
-          let align = BV.max ~signed:false unsized_align layout.align in
-          let size = last_field_ofs +!!@ unsized_size in
-          let size = Layout.size_to_fit ~size ~align in
-          (size, align)
-      | _ -> not_impl "size_and_align_of_val: Unexpected type"
-
   let size_of_val ~t ~ptr:(_, meta) =
-    let+ size, _ = size_and_align_of_val ~t ~meta in
+    let+ size, _ = State.size_and_align_of_val t meta in
     size
 
   let align_of_val ~t ~ptr:(_, meta) =
-    let+ _, align = size_and_align_of_val ~t ~meta in
+    let+ _, align = State.size_and_align_of_val t meta in
     (align :> T.sint Typed.t)
 
   let transmute ~t_src ~dst ~src = Core.transmute ~from_ty:t_src ~to_ty:dst src

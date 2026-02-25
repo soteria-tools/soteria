@@ -19,12 +19,26 @@ end)
 
 type access = Read | Write
 and locality = Local | Foreign
-and state = Reserved of bool | Unique | Frozen | ReservedIM | Disabled | UB
+
+and state =
+  | Reserved of bool
+  | Unique
+  | Frozen
+  | ReservedIM
+  | Cell
+  | Disabled
+  | UB
+
+and protector = Strong | Weak
 
 (** Whether this node has a protector (this is distinct from having the
     protector toggled!), its parents (including this node's ID!), and its
     initial state if it doesn't exist in the state. *)
-and node = { protector : bool; parents : tag list; initial_state : state }
+and node = {
+  protector : protector option;
+  parents : tag list;
+  initial_state : state;
+}
 [@@deriving show { with_path = false }]
 
 let pp_state fmt = function
@@ -33,6 +47,7 @@ let pp_state fmt = function
   | Unique -> Fmt.string fmt "Uniq"
   | Frozen -> Fmt.string fmt "Froz"
   | ReservedIM -> Fmt.string fmt "ReIM"
+  | Cell -> Fmt.string fmt "Cell"
   | Disabled -> Fmt.string fmt "Dis "
   | UB -> Fmt.string fmt "UB  "
 
@@ -44,6 +59,8 @@ let[@inline] meet st1 st2 =
   | Unique, _ | _, Unique -> Unique
   | Reserved b1, Reserved b2 -> Reserved (b1 || b2)
   | ReservedIM, ReservedIM -> ReservedIM
+  | Cell, Cell -> Cell
+  | Cell, _ | _, Cell -> failwith "Can't compare Cell with non-Cell"
   | Reserved _, ReservedIM | ReservedIM, Reserved _ ->
       failwith "Can't compare Reserved and ReservedIM"
 
@@ -52,6 +69,7 @@ let[@inline] meet' (p1, st1) (p2, st2) = (p1 || p2, meet st1 st2)
 let transition =
   let transition st e =
     match (st, e) with
+    | Cell, _ -> Cell
     | Reserved b, (_, Read) -> Reserved b
     | Reserved _, (Local, Write) -> Unique
     | Reserved _, (Foreign, Write) -> Disabled
@@ -89,12 +107,12 @@ let pp ft t =
 
 let init ~state () =
   let tag = fresh_tag () in
-  let node = { protector = false; parents = [ tag ]; initial_state = state } in
+  let node = { protector = None; parents = [ tag ]; initial_state = state } in
   (TagMap.singleton tag node, tag)
 
 let ub_state = fst @@ init ~state:UB ()
 
-let add_child ~parent ?(protector = false) ~state st =
+let add_child ~parent ?protector ~state st =
   let tag = fresh_tag () in
   let node_parent = TagMap.find parent st in
   let node =
@@ -105,7 +123,11 @@ let add_child ~parent ?(protector = false) ~state st =
 let unprotect tag =
   TagMap.update tag (function
     | None -> raise Not_found
-    | Some n -> Some { n with protector = false })
+    | Some n -> Some { n with protector = None })
+
+let strong_protector_exists st =
+  (* Annoyingly, there is no [exists], only [for_all] *)
+  not (TagMap.for_all (fun _ { protector; _ } -> protector <> Some Strong) st)
 
 (** [tag -> (protected * state)], [protected] indicating the tag's protector
     (managed outside [tb_state]) was toggled. *)
@@ -145,7 +167,9 @@ let access accessed e (root : t) (st : tb_state) =
         in
         (* if the tag has a protector and is accessed, this toggles the
            protector! *)
-        let protected = (tag = accessed || protected) && protector in
+        let protected =
+          (tag = accessed || protected) && Option.is_some protector
+        in
         let st' = transition ~protected st (rel, e) in
         if st' = UB then (
           ub_happened := true;

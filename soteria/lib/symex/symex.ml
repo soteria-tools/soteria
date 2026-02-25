@@ -654,7 +654,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let give_up reason _f =
     (* The bind ensures that the side effect will not be enacted before the
        whole process is ran. *)
-    L.info (fun m -> m "%s" reason);
+    L.warn (fun m -> m "Gave up: %s" reason);
     Stats.As_ctx.push_str StatKeys.give_up_reasons reason;
     if
       Approx.As_ctx.is_ox ()
