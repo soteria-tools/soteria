@@ -1,10 +1,10 @@
 Ensure we fail when in polymorphic mode with Obol
-  $ soteria-rust rustc trivial.rs --frontend obol --poly
+  $ soteria-rust exec trivial.rs --frontend obol --poly
   error: Fatal (Config): Obol does not support polymorphic analyses; use --frontend charon
   [124]
 
 Simple polymorphic function with no polymorphic values
-  $ soteria-rust rustc trivial.rs --frontend charon --poly
+  $ soteria-rust exec trivial.rs --frontend charon --poly
   Compiling... done in <time>
   => Running trivial::trivial...
   note: trivial::trivial: done in <time>, ran 2 branches
@@ -22,14 +22,14 @@ Simple polymorphic function with no polymorphic values
         (V|1| <=u 0x00000000000003ff)
   
 Ensure generic args are passed through function calls and not lost
-  $ soteria-rust rustc subst_generics.rs --frontend charon --poly
+  $ soteria-rust exec subst_generics.rs --frontend charon --poly
   Compiling... done in <time>
   => Running subst_generics::wrap_stuff...
   note: subst_generics::wrap_stuff: done in <time>, ran 1 branch
   PC 1: empty
   
 Try creating a generic vec
-  $ soteria-rust rustc vec.rs --frontend charon --poly
+  $ soteria-rust exec vec.rs --frontend charon --poly
   Compiling... done in <time>
   => Running vec::with_vec...
   note: vec::with_vec: done in <time>, ran 2 branches
@@ -61,7 +61,7 @@ Try creating a generic vec
   [1]
 
 Try generics when moving them between argumen ts
-  $ soteria-rust rustc moving_generics.rs --frontend charon --poly
+  $ soteria-rust exec moving_generics.rs --frontend charon --poly
   Compiling... done in <time>
   => Running moving_generics::two_generics...
   note: moving_generics::two_generics: done in <time>, ran 3 branches
@@ -73,7 +73,7 @@ Try generics when moving them between argumen ts
         (V|2| <=u 0x00000000000003ff) /\ (V|1| == V|2|)
   
 Try const generics
-  $ soteria-rust rustc const_generics.rs --frontend charon --poly
+  $ soteria-rust exec const_generics.rs --frontend charon --poly
   Compiling... done in <time>
   => Running const_generics::test_concrete_const_generic...
   note: const_generics::test_concrete_const_generic: done in <time>, ran 1 branch
@@ -98,7 +98,7 @@ Try const generics
         (V|1| != 0x000000000000000f) /\ (V|1| != 0x00000000000000ff)
   
 Test generating nondeterministic values of type T
-  $ soteria-rust rustc nondet_t.rs --frontend charon --poly
+  $ soteria-rust exec nondet_t.rs --frontend charon --poly
   Compiling... done in <time>
   => Running nondet_t::nondet_t...
   note: nondet_t::nondet_t: done in <time>, ran 2 branches
@@ -106,7 +106,7 @@ Test generating nondeterministic values of type T
   PC 2: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff)
   
 Test linked lists, to ensure dropping the list works despite the generic type
-  $ soteria-rust rustc linked_list.rs --frontend charon --poly
+  $ soteria-rust exec linked_list.rs --frontend charon --poly
   Compiling... done in <time>
   => Running linked_list::test_linked_list...
   note: linked_list::test_linked_list: done in <time>, ran 3 branches

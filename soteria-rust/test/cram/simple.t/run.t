@@ -1,5 +1,5 @@
 Test memory leaks
-  $ soteria-rust rustc leak.rs
+  $ soteria-rust exec leak.rs
   Compiling... done in <time>
   => Running main...
   error: main: found issues in <time>, errors in 1 branch (out of 1)
@@ -24,28 +24,28 @@ Test memory leaks
   [1]
 
 Test reading the max and min chars (used to crash Charon-ML)
-  $ soteria-rust rustc char_min_max.rs
+  $ soteria-rust exec char_min_max.rs
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test casting between integer types
-  $ soteria-rust rustc int_casting.rs
+  $ soteria-rust exec int_casting.rs
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 Splitting and merging, via a union
-  $ soteria-rust rustc split_merges.rs
+  $ soteria-rust exec split_merges.rs
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test unwinding, and catching that unwind; we need to ignore leaks as this uses a Box.
-  $ soteria-rust rustc unwind.rs --ignore-leaks
+  $ soteria-rust exec unwind.rs --ignore-leaks
   Compiling... done in <time>
   => Running main...
   error: main: found issues in <time>, errors in 1 branch (out of 2)
@@ -63,7 +63,7 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   
   [1]
 Test that we properly handle the niche optimisation
-  $ soteria-rust rustc niche_optim.rs --ignore-leaks
+  $ soteria-rust exec niche_optim.rs --ignore-leaks
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 1 branch
@@ -74,7 +74,7 @@ Test that we properly handle the niche optimisation
         (0b00 == extract[0-1](V|3|))
   
 Test function calls on function pointers
-  $ soteria-rust rustc fn_ptr.rs
+  $ soteria-rust exec fn_ptr.rs
   Compiling... done in <time>
   => Running fn_ptr_call...
   note: fn_ptr_call: done in <time>, ran 1 branch
@@ -105,7 +105,7 @@ Test function calls on function pointers
   [1]
 
 Check strict provenance disables int to ptr casts
-  $ soteria-rust rustc provenance.rs --provenance strict
+  $ soteria-rust exec provenance.rs --provenance strict
   Compiling... done in <time>
   => Running main...
   error: main: found issues in <time>, errors in 1 branch (out of 1)
@@ -124,7 +124,7 @@ Check strict provenance disables int to ptr casts
   [1]
 
 Check permissive provenance allows int to ptr casts
-  $ soteria-rust rustc provenance.rs --provenance permissive
+  $ soteria-rust exec provenance.rs --provenance permissive
   Compiling... done in <time>
   => Running main...
   error: main: found issues in <time>, errors in 1 branch (out of 1)
@@ -140,7 +140,7 @@ Check permissive provenance allows int to ptr casts
   [1]
 
 Check corner cases with permissive provenance, around transmutes
-  $ soteria-rust rustc provenance_transmute.rs --provenance permissive
+  $ soteria-rust exec provenance_transmute.rs --provenance permissive
   Compiling... done in <time>
   => Running addr_doesnt_expose...
   error: addr_doesnt_expose: found issues in <time>, errors in 1 branch (out of 1)
@@ -167,7 +167,7 @@ Check corner cases with permissive provenance, around transmutes
   [1]
 
 Test transmutations keeping the bit-patterns the same
-  $ soteria-rust rustc transmute_roundtrip.rs
+  $ soteria-rust exec transmute_roundtrip.rs
   Compiling... done in <time>
   => Running one_way_u32_f32...
   note: one_way_u32_f32: done in <time>, ran 1 branch
@@ -188,7 +188,7 @@ Test transmutations keeping the bit-patterns the same
   PC 1: empty
   
 Test null and dangling pointers
-  $ soteria-rust rustc dangling_ptrs.rs
+  $ soteria-rust exec dangling_ptrs.rs
   Compiling... done in <time>
   => Running null_ptr_zst...
   note: null_ptr_zst: done in <time>, ran 1 branch
@@ -219,7 +219,7 @@ Test null and dangling pointers
   [1]
 
 Test exposing function pointers
-  $ soteria-rust rustc expose_fn_ptr.rs
+  $ soteria-rust exec expose_fn_ptr.rs
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 1 branch
@@ -227,7 +227,7 @@ Test exposing function pointers
         (extract[0-3](V|1|) == 0x0)
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
-  $ soteria-rust rustc thread_local.rs
+  $ soteria-rust exec thread_local.rs
   Compiling... done in <time>
   => Running pub_static_cell...
   note: pub_static_cell: done in <time>, ran 1 branch
@@ -243,14 +243,14 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   [2]
 
 Test cloning ZSTs works; in particular, this generates a function with an empty body that just returns, so if we don't handle the ZST case we get an uninit access.
-  $ soteria-rust rustc clone_zst.rs
+  $ soteria-rust exec clone_zst.rs
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 1 branch
   PC 1: empty
   
 --fail-fast should stop symbolic execution upon the first error encountered
-  $ soteria-rust rustc fail_fast.rs --fail-fast
+  $ soteria-rust exec fail_fast.rs --fail-fast
   Compiling... done in <time>
   => Running main...
   error: main: found an issue in <time> after exploring 1 branch -- stopped immediately (fail-fast)
@@ -269,7 +269,7 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   [1]
 
 Test recursive validity check for references; disabled
-  $ soteria-rust rustc ref_validity.rs --recursive-validity=allow
+  $ soteria-rust exec ref_validity.rs --recursive-validity=allow
   Compiling... done in <time>
   => Running test_uninit_ref...
   note: test_uninit_ref: done in <time>, ran 1 branch
@@ -303,7 +303,7 @@ Test recursive validity check for references; disabled
   [1]
 
 Test recursive validity check for references; enabled
-  $ soteria-rust rustc ref_validity.rs --recursive-validity=deny
+  $ soteria-rust exec ref_validity.rs --recursive-validity=deny
   Compiling... done in <time>
   => Running test_uninit_ref...
   error: test_uninit_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -344,7 +344,7 @@ Test recursive validity check for references; enabled
   [1]
 
 Test recursive validity check for references; warn
-  $ soteria-rust rustc ref_validity.rs --recursive-validity=warn
+  $ soteria-rust exec ref_validity.rs --recursive-validity=warn
   Compiling... done in <time>
   => Running test_uninit_ref...
   warning: Invalid reference: Uninitialized memory access
@@ -385,7 +385,7 @@ Test recursive validity check for references; warn
   [1]
 
 Test approximation of complex float operations -- warn (default)
-  $ soteria-rust rustc approx_float.rs
+  $ soteria-rust exec approx_float.rs
   Compiling... done in <time>
   => Running main...
   warning: A complex floating point intrinsic was encountered; it will be executed with a significant over-approximation.
@@ -396,7 +396,7 @@ Test approximation of complex float operations -- warn (default)
   
 
 Test approximation of complex float operations -- denied
-  $ soteria-rust rustc approx_float.rs --approx-floating-ops deny
+  $ soteria-rust exec approx_float.rs --approx-floating-ops deny
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 0 branches
@@ -404,7 +404,7 @@ Test approximation of complex float operations -- denied
   
 
 Test approximation of complex float operations -- allowed
-  $ soteria-rust rustc approx_float.rs --approx-floating-ops allow
+  $ soteria-rust exec approx_float.rs --approx-floating-ops allow
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 1 branch

@@ -1,3 +1,4 @@
+open Soteria.Soteria_std.Cmdliner_helpers
 open Cmdliner
 
 let exits =
@@ -8,47 +9,31 @@ let exits =
     Cmd.Exit.info ~doc:"on crash caused by Charon" 3;
   ]
 
-let file_arg =
-  let doc = "FILE" in
-  Arg.(required & pos 0 (some file) None & info [] ~docv:"FILE" ~doc)
-
 let dir_arg =
-  let doc = "DIR" in
-  Arg.(required & pos 0 (some dir) None & info [] ~docv:"DIR" ~doc)
+  Arg.(
+    required
+    & pos 0 (some file_or_dir_as_absolute) None
+    & info [] ~doc:"The .rs file or the directory of the crate to analyse")
 
-module Exec_rustc = struct
+module Exec = struct
   let term =
     Term.(
-      const Soteria_rust_lib.Driver.exec_rustc
-      $ Soteria_rust_lib.Config.global_term
-      $ file_arg)
-
-  let cmd =
-    Cmd.v
-      (Cmd.info ~exits
-         ~doc:
-           "Run Soteria Rust on the specified file; this will use Rustc to \
-            compile that file only (not the crate), and look for all \
-            entrypoints."
-         "rustc")
-      term
-end
-
-module Exec_cargo = struct
-  let term =
-    Term.(
-      const Soteria_rust_lib.Driver.exec_cargo
+      const Soteria_rust_lib.Driver.exec_wpst
       $ Soteria_rust_lib.Config.global_term
       $ dir_arg)
 
   let cmd =
-    Cmd.v
-      (Cmd.info ~exits
-         ~doc:
-           "Run Soteria Rust on the crate at the specified directory; this \
-            will use Cargo to compile that crate, and look for all \
-            entrypoints."
-         "cargo")
+    Cmd.make
+      (Cmd.info ~exits ~doc:"Run symbolic execution"
+         ~man:
+           [
+             `P
+               "Run Soteria Rust on the specified file or crate; this will \
+                either use Rustc to compile that file only, or use Cargo to \
+                compile the whole crate if it's a directory. It will then look \
+                for all entrypoints and execute them symbolically.";
+           ]
+         "exec")
       term
 end
 
@@ -59,20 +44,21 @@ module Build_plugins = struct
       $ Soteria_rust_lib.Config.global_term)
 
   let cmd =
-    Cmd.v
-      (Cmd.info ~exits
-         ~doc:
-           "Build the plugins for Soteria Rust; this is done automatically \
-            when running Soteria Rust except when --no-compile-plugins is \
-            used, so you should only need to run this command if you want to \
-            build the plugins separately."
+    Cmd.make
+      (Cmd.info ~exits ~doc:"Build plugins"
+         ~man:
+           [
+             `P
+               "Build the plugins for Soteria Rust; this is done automatically \
+                when running Soteria Rust except when --no-compile-plugins is \
+                used, so you should only need to run this command if you want \
+                to build the plugins separately.";
+           ]
          "build-plugins")
       term
 end
 
 let cmd =
-  Cmd.group
-    (Cmd.info ~exits "soteria-rust")
-    [ Exec_rustc.cmd; Exec_cargo.cmd; Build_plugins.cmd ]
+  Cmd.group (Cmd.info ~exits "soteria-rust") [ Exec.cmd; Build_plugins.cmd ]
 
 let () = exit @@ Cmd.eval cmd

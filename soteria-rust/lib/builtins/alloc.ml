@@ -1,9 +1,14 @@
+(** Builtins related to the default allocator.
+
+    See https://doc.rust-lang.org/src/alloc/alloc.rs.html *)
+
 open Rust_val
+open Typed
 open Typed.Infix
 open Typed.Syntax
 
-module M (Rust_state_m : Rust_state_m.S) = struct
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  open StateM
   open Syntax
 
   let alloc ?(zeroed = false) args =

@@ -1,5 +1,5 @@
 Test base functions
-  $ soteria-rust rustc lib-fns.rs
+  $ soteria-rust exec lib-fns.rs
   Compiling... done in <time>
   => Running main...
   note: main: done in <time>, ran 1 branch
@@ -7,7 +7,7 @@ Test base functions
   
 
 Test #[soteria::*] annotations
-  $ soteria-rust rustc annots.rs
+  $ soteria-rust exec annots.rs
   Compiling... done in <time>
   => Running test1...
   note: test1: done in <time>, ran 1 branch

@@ -1,5 +1,5 @@
 Test running Rusteria on a crate
-  $ soteria-rust cargo .
+  $ soteria-rust exec .
   Compiling... done in <time>
   => Running tests::tests::my_test...
   note: tests::tests::my_test: done in <time>, ran 2 branches

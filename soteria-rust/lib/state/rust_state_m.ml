@@ -2,6 +2,7 @@ module Compo_res = Soteria.Symex.Compo_res
 open Compo_res
 open Rustsymex
 open Charon
+open Common
 
 module Compo_resT2 (I : sig
   type fix
@@ -94,7 +95,7 @@ module type S = sig
     env:'env ->
     state:st ->
     (unit -> ('a, 'env) t) ->
-    ('a * st, Error.with_trace, serialized list) Result.t
+    ('a * st, Error.with_trace * st, serialized list) Compo_res.t Rustsymex.t
 
   val lift_symex : 'a Rustsymex.t -> ('a, 'env) t
 
@@ -281,8 +282,10 @@ module type S = sig
 end
 
 module Make (State : State_intf.S) :
-  S with type st = State.t option and type serialized = State.serialized =
-struct
+  S
+    with type st = State.t option
+     and type serialized = State.serialized
+     and type Sptr.t = State.Sptr.t = struct
   (* utilities *)
 
   type st = State.t option
@@ -407,13 +410,12 @@ struct
 
   (** Run the state monad, with the given initial state and environment; the
       environment is discarded at the end of the execution. *)
-  let run ~env ~state (f : unit -> ('a, 'env) t) :
-      ('a * st, Error.with_trace, serialized list) Result.t =
+  let run ~env ~state (f : unit -> ('a, 'env) t) =
     let open Rustsymex.Syntax in
-    let+ (res, _env), st = f () env state in
+    let+ (res, _env), state = f () env state in
     match res with
-    | Ok v -> Ok (v, st)
-    | Error e -> Error e
+    | Ok v -> Ok (v, state)
+    | Error e -> Error (e, state)
     | Missing f -> Missing f
 
   module Poly = struct
