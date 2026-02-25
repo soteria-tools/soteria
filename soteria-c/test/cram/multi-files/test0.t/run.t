@@ -134,18 +134,19 @@
     [Ok: (0x00000019,
           Some
             [(Ser_heap
-                (V|1|,
+                (0x0000000000000001,
                  { node =
                    MemVal {offset = 0x0000000000000000;
                      len = 0x0000000000000004; v = 0x0000000d : signed int};
                    info = None }));
              (Ser_heap
-                (V|2|,
+                (0x0000000000000002,
                  { node =
                    MemVal {offset = 0x0000000000000000;
                      len = 0x0000000000000004; v = 0x0000000c : signed int};
                    info = None }));
-             (Ser_globs (x_560, V|2|)); (Ser_globs (x_642, V|1|))])]
+             (Ser_globs (x_560, 0x0000000000000002));
+             (Ser_globs (x_642, 0x0000000000000001))])]
   
   Executed 7 statements
   Verification Success!

@@ -68,11 +68,10 @@ class soteria_lsp_server generate_errors =
        new state *)
     method private _on_doc ~(notify_back : Linol_eio.Jsonrpc2.notify_back)
         (uri : Lsp.Types.DocumentUri.t) (contents : string) =
-      let { Soteria.Stats.res = errors; stats } = generate_errors contents in
+      let errors = generate_errors contents in
       let diags = List.map (error_to_diagnostic_opt ~uri) errors in
-      let diags =
-        if debug_mode then get_abort_diagnostics stats @ diags else diags
-      in
+      (* FIXME: re-establish those when we want that. let diags = if debug_mode
+         then get_abort_diagnostics stats @ diags else diags in *)
       notify_back#send_diagnostic diags
 
     (* We now override the [on_notify_doc_did_open] method that will be called

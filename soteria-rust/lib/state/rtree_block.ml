@@ -77,6 +77,9 @@ module Make (Sptr : Sptr.S) = struct
                 BV.concat v v2
           in
           split_rval (Int v) at
+      | Float f ->
+          let* v = Encoder.float_to_bv_bits f in
+          split_rval (Int v) at
       | Int v ->
           (* get our starting size and unsigned integer *)
           let size = Typed.size_of_int v / 8 in
@@ -248,6 +251,10 @@ module Make (Sptr : Sptr.S) = struct
     match t.node with
     | NotOwned _ -> miss_no_fix ~reason:"as_owned" ()
     | Owned (v, tb) -> f (v, tb)
+
+  let check_owned (ofs : [< T.sint ] Typed.t) (size : [< T.nonzero ] Typed.t) =
+    let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
+    with_bound_check bound (fun t -> DecayMapMonad.Result.ok ((), t))
 
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
       (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) =

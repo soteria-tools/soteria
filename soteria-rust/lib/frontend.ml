@@ -78,10 +78,13 @@ module Exe = struct
   let exec ?(env = []) cmd args =
     (* let args = Array.of_list args in *)
     let current_env = Unix.environment () in
-    let env = Array.append current_env (Array.of_list env) in
     let cmd = String.concat " " (cmd :: args) in
     if (Config.get ()).log_compilation then
-      L.info (fun g -> g "Running command: %s" cmd);
+      L.info (fun g ->
+          g "Running command: %s@.With env:@.%a@." cmd
+            Fmt.(list ~sep:(any "@.") string)
+            env);
+    let env = Array.append current_env (Array.of_list env) in
     let out, inp, err = Unix.open_process_full cmd env in
     let output, error = read_both_nonblocking out err in
     let status = Unix.close_process_full (out, inp, err) in
@@ -315,7 +318,12 @@ let default =
         @ opaque_names
         @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
       ~obol:
-        ([ "--entry-names"; "main"; "--entry-attribs"; "rusteriatool::test" ]
+        ([
+           "--start-from";
+           "main";
+           "--start-from-attribute";
+           "rusteriatool::test";
+         ]
         @ opaque_names)
       ~features:[ "rusteria" ]
       ~rustc:
@@ -326,6 +334,7 @@ let default =
           "unstable-options";
           (* No warning *)
           "-Awarnings";
+          "--cap-lints=allow";
           (* include our std and rusteria crates *)
           "-Z";
           "crate-attr=feature(register_tool)";
@@ -354,7 +363,7 @@ let kani =
   let mk_cmd () =
     let@ _ = Lib.with_compiled Kani in
     Cmd.make ~features:[ "kani" ]
-      ~obol:[ "--entry-attribs"; "kanitool::proof" ]
+      ~obol:[ "--start-from-attribute"; "kanitool::proof" ]
       ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)"; "--extern"; "kani" ]
       ()
   in
@@ -375,7 +384,7 @@ let miri =
     let@ _ = Lib.with_compiled Miri in
     Cmd.make ~features:[ "miri" ]
       ~rustc:[ "--extern"; "miristd"; "--edition"; "2021" ]
-      ~obol:[ "--entry-names"; "miri_start" ]
+      ~obol:[ "--start-from"; "miri_start" ]
       ()
   in
   let get_entry_point (decl : fun_decl) =
@@ -412,6 +421,23 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
     List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
   in
+
+  let filter_name name =
+    let any_contains rs =
+      List.exists
+        (fun r ->
+          try Str.search_forward (Str.regexp r) name 0 >= 0
+          with Not_found -> false)
+        rs
+    in
+
+    let filters = (Config.get ()).filter in
+    let excludes = (Config.get ()).exclude in
+
+    (List.is_empty filters || any_contains filters)
+    && not (any_contains excludes)
+  in
+
   let get_entry_point crate (decl : fun_decl) =
     let rec aux acc rest =
       match (acc, rest) with
@@ -434,20 +460,9 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
       | None, (p : 'a plugin) :: rest -> aux (p.get_entry_point decl) rest
       | None, [] -> None
     in
-    let filters = (Config.get ()).filter in
-    let filter_ok =
-      match filters with
-      | [] -> true
-      | _ ->
-          let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-          let name = PrintTypes.name_to_string fmt_env decl.item_meta.name in
-          List.exists
-            (fun f ->
-              try Str.search_forward (Str.regexp f) name 0 >= 0
-              with Not_found -> false)
-            filters
-    in
-    if not filter_ok then None else aux None plugins
+    let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+    let name = PrintTypes.name_to_string fmt_env decl.item_meta.name in
+    if not (filter_name name) then None else aux None plugins
   in
   { mk_cmd; get_entry_point }
 
@@ -468,7 +483,7 @@ let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
       if res = WEXITED 2 then compilation_err (String.concat "\n" err)
       else
         Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
-          Fmt.(list string)
+          Fmt.(list ~sep:(any "\n") string)
           err;
     Cleaner.touched output);
   let crate =
@@ -530,41 +545,3 @@ let parse_ullbc path =
   else parse_ullbc_of_crate path
 
 let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
-
-module Diagnostic = struct
-  include Soteria.Terminal.Diagnostic
-
-  let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col - 1)
-
-  let as_ranges (span : Charon.Meta.span_data) =
-    match span.file.name with
-    | Local file when String.starts_with ~prefix:"/rustc/" file -> []
-    | Local file ->
-        let root = Lazy.force Lib.root in
-        let filename =
-          if String.starts_with ~prefix:root file then
-            let root_l = String.length root in
-            let rel_path =
-              String.sub file root_l (String.length file - root_l)
-            in
-            Some ("$SOTERIA-RUST" ^ rel_path)
-          else
-            let rustlib = Filename.concat "lib" "rustlib" in
-            match String.index_of ~sub_str:rustlib file with
-            | Some idx ->
-                let idx = idx + String.length rustlib in
-                let rel_path = String.sub file idx (String.length file - idx) in
-                Some ("$RUSTLIB" ^ rel_path)
-            | None -> None
-        in
-        [
-          mk_range_file ?filename ?content:span.file.contents file
-            (to_loc span.beg_loc) (to_loc span.end_loc);
-        ]
-    | Virtual _ | NotReal _ -> []
-
-  let print_diagnostic ~fname ~call_trace ~error =
-    print_diagnostic ~call_trace ~as_ranges
-      ~error:(Fmt.to_to_string Error.pp error)
-      ~severity:(Error.severity error) ~fname
-end

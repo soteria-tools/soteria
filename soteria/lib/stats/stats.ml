@@ -16,6 +16,15 @@ type stat_entry =
           both are not arrays, or concatenating the two arrays if they are. Use
           this as a last resort when no other type fits. *)
 
+let rec copy_stat_entry entry =
+  match entry with
+  | Int _ | Float _ | Yojson _ -> entry
+  | StrSeq arr -> StrSeq (Dynarray.copy arr)
+  | Map h ->
+      let copy = Hstring.create (Hstring.length h) in
+      Hstring.iter (fun k v -> Hstring.replace copy k (copy_stat_entry v)) h;
+      Map copy
+
 let rec stat_entry_to_yojson = function
   | Int n -> `Int n
   | Float f -> `Float f
@@ -42,6 +51,11 @@ let rec stat_entry_of_yojson : Yojson.Safe.t -> (stat_entry, string) result =
   | _ -> Error "Invalid format in stat_entry_of_yojson"
 
 type t = stat_entry Hstring.t [@@deriving yojson]
+
+let copy t =
+  let copy = Hstring.create (Hstring.length t) in
+  Hstring.iter (fun k v -> Hstring.replace copy k (copy_stat_entry v)) t;
+  copy
 
 exception Incompatible_entries
 
@@ -192,6 +206,11 @@ module As_ctx = struct
   let with_stats_ignored () f =
     try f () with effect Apply _, k -> Effect.Deep.continue k ()
 
+  let with_stats_dumped () f =
+    let { res; stats } = with_stats () f in
+    if Option.is_some (Config.get ()).output_stats then output stats;
+    res
+
   let[@inline] apply f = Effect.perform (Apply f)
 
   let push_entry key entry =
@@ -253,4 +272,9 @@ module As_ctx = struct
 
   let push_string_binding key subkey str =
     push_binding key subkey (StrSeq (Dynarray.of_list [ str ]))
+
+  let get_copy () : t =
+    let copy_ref = ref (Hstring.create 0) in
+    apply (fun stats -> copy_ref := copy stats);
+    !copy_ref
 end

@@ -53,6 +53,7 @@ module type S = sig
   val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
   val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
   val miss : serialized list list -> ('a, 'env) t
+  val vanish : unit -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
   val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
   val map : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
@@ -174,12 +175,7 @@ module type S = sig
       ?include_ptrs:bool -> rust_val -> Types.ty -> (full_ptr * Types.ty) list
 
     val update_ref_tys_in :
-      f:
-        ('acc ->
-        full_ptr ->
-        Types.ty ->
-        Types.ref_kind ->
-        (full_ptr * 'acc, 'env) monad) ->
+      f:('acc -> full_ptr -> Types.ty -> (full_ptr * 'acc, 'env) monad) ->
       init:'acc ->
       rust_val ->
       Types.ty ->
@@ -223,11 +219,7 @@ module type S = sig
     val uninit : full_ptr -> Types.ty -> (unit, 'env) t
     val free : full_ptr -> (unit, 'env) t
     val check_ptr_align : full_ptr -> Types.ty -> (unit, 'env) t
-
-    val borrow :
-      full_ptr -> Types.ty -> Expressions.borrow_kind -> (full_ptr, 'env) t
-
-    val protect : full_ptr -> Types.ty -> Types.ref_kind -> (full_ptr, 'env) t
+    val borrow : ?protect:bool -> full_ptr -> Types.ty -> (full_ptr, 'env) t
     val unprotect : full_ptr -> Types.ty -> (unit, 'env) t
     val with_exposed : [< Typed.T.sint ] Typed.t -> (full_ptr, 'env) t
     val tb_load : full_ptr -> Types.ty -> (unit, 'env) t
@@ -247,6 +239,12 @@ module type S = sig
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
+    val check_non_dangling : full_ptr -> Types.ty -> (unit, 'env) t
+
+    val size_and_align_of_val :
+      Types.ty ->
+      Sptr.t Rust_val.meta ->
+      (Typed.T.sint Typed.t * Typed.T.nonzero Typed.t, 'env) t
   end
 
   module Syntax : sig
@@ -323,6 +321,7 @@ module Make (State : State_intf.S) :
   let ok x : ('a, 'env) t = ESM.Result.ok x
   let error_raw err : ('a, 'env) t = ESM.Result.error err
   let error err : ('a, 'env) t = ESM.lift @@ State.SM.lift @@ error err
+  let vanish () _ = State.SM.vanish ()
 
   let lift_err (sym : ('a, Error.t, 'f) Rustsymex.Result.t) : ('a, 'env) t =
     ESM.lift
@@ -330,6 +329,7 @@ module Make (State : State_intf.S) :
          (let open Rustsymex.Syntax in
           let* trace = Rustsymex.get_trace () in
           let+- err = sym in
+          Error.log_at trace err;
           Error.decorate trace err)
 
   let assert_ cond err =
@@ -383,9 +383,9 @@ module Make (State : State_intf.S) :
     ESM.lift
       (let open State.SM.Syntax in
        let*- err = State.with_decay_map f in
-       let+^ where = get_trace () in
-
-       Compo_res.Error (Error.decorate where err))
+       let+^ trace = get_trace () in
+       Error.log_at trace err;
+       Compo_res.Error (Error.decorate trace err))
 
   let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
     ESM.lift (State.SM.map (State.with_decay_map f) Compo_res.ok)
@@ -468,19 +468,15 @@ module Make (State : State_intf.S) :
     (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
        without having to re-define. *)
     let update_ref_tys_in
-        ~(f :
-           'acc ->
-           full_ptr ->
-           Types.ty ->
-           Types.ref_kind ->
-           (full_ptr * 'acc, 'env) monad) ~(init : 'acc) (v : rust_val)
-        (ty : Types.ty) : (rust_val * 'acc, 'env) monad =
+        ~(f : 'acc -> full_ptr -> Types.ty -> (full_ptr * 'acc, 'env) monad)
+        ~(init : 'acc) (v : rust_val) (ty : Types.ty) :
+        (rust_val * 'acc, 'env) monad =
      fun env state ->
       let open Rustsymex.Syntax in
       (* The inner function operates in Rustsymex.Result.t, carrying (acc, env,
          state) as accumulator *)
-      let f_inner (acc, env, state) ptr ty rk =
-        let+ (res, new_env), new_state = f acc ptr ty rk env state in
+      let f_inner (acc, env, state) ptr ty =
+        let+ (res, new_env), new_state = f acc ptr ty env state in
         Compo_res.map res (fun (ptr, acc) -> (ptr, (acc, new_env, new_state)))
       in
       let+ res = update_ref_tys_in f_inner (init, env, state) v ty in
@@ -516,8 +512,7 @@ module Make (State : State_intf.S) :
     let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
     let[@inline] free ptr = ESM.lift (free ptr)
     let[@inline] check_ptr_align ptr ty = ESM.lift (check_ptr_align ptr ty)
-    let[@inline] borrow ptr ty mut = ESM.lift (borrow ptr ty mut)
-    let[@inline] protect ptr ty mut = ESM.lift (protect ptr ty mut)
+    let[@inline] borrow ?protect ptr ty = ESM.lift (borrow ?protect ptr ty)
     let[@inline] unprotect ptr ty = ESM.lift (unprotect ptr ty)
     let[@inline] with_exposed addr = ESM.lift (with_exposed addr)
     let[@inline] tb_load ptr ty = ESM.lift (tb_load ptr ty)
@@ -550,14 +545,13 @@ module Make (State : State_intf.S) :
       ESM.lift (register_thread_exit unlifted)
 
     let[@inline] run_thread_exits () = ESM.lift (run_thread_exits ())
+    let[@inline] fake_read ptr ty = ESM.lift (fake_read ptr ty)
 
-    let[@inline] fake_read ptr ty : (unit, 'env) monad =
-     fun env ->
-      let open SM.Syntax in
-      let* is_valid = fake_read ptr ty in
-      match is_valid with
-      | None -> SM.return (Compo_res.Ok (), env)
-      | Some err -> error err env
+    let[@inline] check_non_dangling ptr ty =
+      ESM.lift (check_non_dangling ptr ty)
+
+    let[@inline] size_and_align_of_val ty meta =
+      ESM.lift (size_and_align_of_val ty meta)
   end
 
   module Syntax = struct

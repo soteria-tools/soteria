@@ -96,7 +96,7 @@ module Frontend = struct
         in
         if Sys.file_exists filename then "-include " ^ filename ^ " "
         else (
-          warn_once (filename ^ " not found");
+          warn (filename ^ " not found");
           "")
       in
       let ( let* ) = Exception.except_bind in
@@ -194,7 +194,7 @@ let parse_and_link_ail ~includes files =
                       | `ParsingError s -> s
                       | _ -> "Unknown error"
                     in
-                    Fmt.kstr warn_once
+                    Fmt.kstr warn
                       "Ignoring file that did not parse correctly: %s@\n%s" file
                       msg;
                     None)
@@ -239,8 +239,7 @@ let exec_function ~includes ~fuel file_names function_name =
   let open Syntaxes.Result in
   let result =
     let* linked = parse_and_link_ail ~includes file_names in
-    if (Config.current ()).parse_only then
-      Ok (Soteria.Stats.with_empty_stats [])
+    if (Config.current ()).parse_only then Ok []
     else
       let* entry_point = resolve_function linked function_name in
       let open Wpst_interp.InterpM in
@@ -254,14 +253,13 @@ let exec_function ~includes ~fuel file_names function_name =
         Wpst_interp.exec_fun entry_point ~args:[]
       in
       let@ () = with_function_context linked in
-      Ok (Csymex.Result.run_with_stats ~mode:OX ~fuel symex)
+      Ok (Csymex.Result.run_needs_stats ~mode:OX ~fuel symex)
   in
   match result with
   | Ok v -> v
   | Error e ->
       let e = (e, SState.empty) in
-      Soteria.Stats.with_empty_stats
-        [ (Soteria.Symex.Compo_res.Error (Soteria.Symex.Or_gave_up.E e), []) ]
+      [ (Soteria.Symex.Compo_res.Error (Soteria.Symex.Or_gave_up.E e), []) ]
 
 let temp_file = lazy (Filename.temp_file "soteria_c" ".c")
 
@@ -273,33 +271,31 @@ let generate_errors content =
     close_out oc
   in
   match parse_and_link_ail ~includes:[] [ file_name ] with
-  | Error e -> Soteria.Stats.with_empty_stats [ e ]
+  | Error e -> [ e ]
   | Ok prog ->
       let@ () = with_function_context prog in
       Abductor.generate_all_summaries ~functions_to_analyse:None prog
-      |> Soteria.Stats.map_with_stats (fun summaries ->
-          summaries
-          |> List.concat_map (fun (fid, summaries) ->
-              let@ () =
-                L.with_section
-                  ("Analysing summaries for function" ^ Symbol.show_symbol fid)
-              in
-              List.concat_map (Summary.manifest_bugs ~fid) summaries)
-          |> List.sort_uniq Stdlib.compare)
+      |> List.concat_map (fun (fid, summaries) ->
+          let@ () =
+            L.with_section
+              ("Analysing summaries for function" ^ Symbol.show_symbol fid)
+          in
+          List.concat_map (Summary.manifest_bugs ~fid) summaries)
+      |> List.sort_uniq Stdlib.compare
 
 (** {2 Entry points} *)
 
 (* Helper for all main entry points *)
-let initialise ?soteria_config config f =
+let initialise ?soteria_config mode config f =
   Option.iter Soteria.Config.set_and_lock soteria_config;
-  Config.with_config ~config f
+  let@ () = Config.with_config ~config ~mode in
+  Soteria.Stats.As_ctx.with_stats_dumped () f
 
 let print_states result =
-  let open Soteria.Stats in
   let pp_state ft state =
     (Fmt.Dump.list SState.pp_serialized) ft (SState.serialize state)
   in
-  Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@\n@?"
+  Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@.@?@."
     Fmt.Dump.(
       list @@ fun ft (r, _) ->
       (Soteria.Symex.Compo_res.pp
@@ -309,7 +305,7 @@ let print_states result =
               (pair pp_err_and_call_trace (option SState.pp)))
          ~miss:Fmt.Dump.(list SState.pp_serialized))
         ft r)
-    result.res
+    result
 
 (* Entry point function *)
 let exec_and_print soteria_config config fuel includes file_names entry_point :
@@ -317,11 +313,10 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
   (* The following line is not set as an initialiser so that it is executed
      before initialising z3 *)
   let fuel = Soteria.Symex.Fuel_gauge.Cli.validate_or_exit fuel in
-  let@ () = initialise ~soteria_config config in
+  let@ () = initialise ~soteria_config Whole_program config in
   let result = exec_function ~includes ~fuel file_names entry_point in
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else (
-    Soteria.Stats.output result.stats;
     if (Config.current ()).print_states then print_states result;
     let errors_to_signal =
       List.filter_map
@@ -335,7 +330,7 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
             when not ((Config.current ()).ignore_ub && Error.is_ub e) ->
               Some (E err_with_trace)
           | _ -> None)
-        result.res
+        result
     in
 
     let has_found_bugs = ref false in
@@ -351,9 +346,10 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
                ~error:(`Gave_up msg));
     let success = List.is_empty errors_to_signal in
     let steps_number =
-      Soteria.Stats.get_int result.stats Soteria.Symex.StatKeys.steps
+      let stats = Soteria.Stats.As_ctx.get_copy () in
+      Soteria.Stats.get_int stats Soteria.Symex.StatKeys.steps
     in
-    Fmt.pr "@.Executed %d statements" steps_number;
+    Fmt.pr "Executed %d statements" steps_number;
     if success then (
       Fmt.pr "@.%a@.@?" pp_ok "Verification Success!";
       Error.Exit_code.Success)
@@ -363,6 +359,13 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
     else (
       Fmt.pr "@.%a@.@?" pp_err "Verification Failure! (Unsupported features)";
       Error.Exit_code.Tool_error))
+
+let dump_report diagnostics =
+  match (Config.current ()).dump_report with
+  | None -> ()
+  | Some file ->
+      let json = `List diagnostics in
+      Yojson.Safe.to_file file json
 
 let dump_summaries results =
   match (Config.current ()).dump_summaries_file with
@@ -386,6 +389,7 @@ let analyse_summaries results =
     |> Iter.map (fun (_, l) -> List.length l)
     |> Iter.fold ( + ) 0
   in
+  Soteria.Stats.As_ctx.add_int "soteria-c.num_summaries_generated" total;
   let open Syntaxes.List in
   let@ () =
     Soteria.Terminal.Progress_bar.run ~color:`Magenta
@@ -402,14 +406,23 @@ let analyse_summaries results =
 
 let generate_summaries ~functions_to_analyse prog =
   let@ () = with_function_context prog in
-  let { Soteria.Stats.res; stats } =
+  let res =
+    let@ () =
+      Soteria.Stats.As_ctx.add_time_of_to "soteria-c.time_summary_generation"
+    in
     Abductor.generate_all_summaries ~functions_to_analyse prog
   in
-  Soteria.Stats.output stats;
-  let results = analyse_summaries res in
+
+  let results =
+    let@ () =
+      Soteria.Stats.As_ctx.add_time_of_to "soteria-c.time_summary_analysis"
+    in
+    analyse_summaries res
+  in
   dump_summaries results;
   Fmt.pr "@\n@?";
   let found_bugs = ref false in
+  let diagnostics = ref [] in
   let list_iter r f = List.iter f r in
   let () =
     let@ fid, summaries = list_iter results in
@@ -421,13 +434,16 @@ let generate_summaries ~functions_to_analyse prog =
     already_signaled := remaining_to_signal @ !already_signaled;
     let@ error, call_trace = list_iter remaining_to_signal in
     found_bugs := true;
-    Error.Diagnostic.print_diagnostic
-      ~fid:(Fmt.to_to_string Ail_helpers.pp_sym_hum fid)
-      ~call_trace ~error;
+    let fid_str = Fmt.to_to_string Ail_helpers.pp_sym_hum fid in
+    Error.Diagnostic.print_diagnostic ~fid:fid_str ~call_trace ~error;
+    (* Collect diagnostic for JSON report *)
+    let diag_json = Error.Diagnostic.to_json ~fid:fid_str ~call_trace ~error in
+    diagnostics := diag_json :: !diagnostics;
     if (Config.current ()).show_manifest_summaries then
-      Fmt.pr "@\n@[Corresponding summary:@ %a@]" Summary.pp_raw raw;
-    Fmt.pr "@\n@?"
+      Fmt.pr "@[Corresponding summary:@ %a@]@\n" Summary.pp_raw raw;
+    Fmt.pr "@?"
   in
+  dump_report !diagnostics;
   if !found_bugs then Error.Exit_code.Found_bug
   else (
     Fmt.pr "%a@.@?" pp_ok "No bugs found";
@@ -435,12 +451,13 @@ let generate_summaries ~functions_to_analyse prog =
 
 (* Entry point function *)
 let lsp config () =
-  Config.with_config ~config @@ Soteria_c_lsp.run ~generate_errors
+  Config.with_config ~config ~mode:Compositional
+  @@ Soteria_c_lsp.run ~generate_errors
 
 (* Entry point function *)
 let show_ail soteria_config config (includes : string list)
     (files : string list) =
-  let@ () = initialise ~soteria_config config in
+  let@ () = initialise ~soteria_config Compositional config in
   match parse_and_link_ail ~includes files with
   | Ok { symmap = _; sigma; entry_point } ->
       Fmt.pr "%a@." Fmt_ail.pp_program_ast (entry_point, sigma);
@@ -456,7 +473,7 @@ let generate_all_summaries soteria_config config includes functions_to_analyse
      in this file. *)
   let@ () = with_tool_errors_caught () in
   let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  let@ () = initialise ~soteria_config config in
+  let@ () = initialise ~soteria_config Compositional config in
   let prog =
     let@ () = L.with_section "Parsing and Linking" in
     parse_and_link_ail ~includes file_names
@@ -467,12 +484,8 @@ let generate_all_summaries soteria_config config includes functions_to_analyse
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else generate_summaries ~functions_to_analyse prog
 
-(* Entry point function *)
-let capture_db soteria_config config json_file functions_to_analyse =
+let linked_prog_of_db json_file =
   let open Syntaxes.Result in
-  let@ () = with_tool_errors_caught () in
-  let functions_to_analyse = as_nonempty_list functions_to_analyse in
-  let@ () = initialise ~soteria_config config in
   let linked_prog =
     let@ () = L.with_section "Parsing and Linking from database" in
     let db = Compilation_database.from_file json_file in
@@ -487,11 +500,11 @@ let capture_db soteria_config config json_file functions_to_analyse =
         ~msg:"Parsing files       " ~total:db_size ()
     in
     let* ails =
-      let ails =
+      let ails_and_items =
         List.filter_map
           (fun item ->
             match parse_and_signal item with
-            | Ok ail -> Some ail
+            | Ok ail -> Some (ail, item)
             | Error (`ParsingError msg, _loc) ->
                 L.debug (fun m ->
                     m "Ignoring file that did not parse correctly: %s@\n%s"
@@ -500,32 +513,49 @@ let capture_db soteria_config config json_file functions_to_analyse =
           db
       in
       let () =
-        let parsed = List.length ails in
+        let parsed = List.length ails_and_items in
         if parsed < db_size then
           Fmt.kstr warn
             "Some files failed to parse, successfully parsed %d out of %d files"
             parsed db_size
       in
-      Ok ails
+      (* Write parsed compilation database if requested *)
+      let () =
+        match (Config.current ()).write_parsed_db with
+        | None -> ()
+        | Some output_file ->
+            let parsed_items = List.map snd ails_and_items in
+            Compilation_database.dump_originals output_file parsed_items;
+            Fmt.pr "Wrote parsed compilation database to %s@\n@?" output_file
+      in
+      Ok (List.map fst ails_and_items)
     in
     Ail_linking.link ails
   in
+  Result.get_or
+    ~err:(function
+      | `ParsingError msg, _ ->
+          Fmt.epr "%s@\n@?" msg;
+          tool_error "Failed to parse AIL"
+      | `LinkError msg, _ ->
+          let msg =
+            if (Config.current ()).no_ignore_parse_failures then msg
+            else "All files failed to parse, no analysis will be performed"
+          in
+          Fmt.pr "Error: %a@\n@?" pp_err msg;
+          if (Config.current ()).no_ignore_parse_failures then
+            tool_error "Failed to link AIL"
+          else Ail_tys.empty_linked_program)
+    linked_prog
+
+(* Entry point function *)
+let capture_db soteria_config config json_file functions_to_analyse =
+  let@ () = with_tool_errors_caught () in
+  let functions_to_analyse = as_nonempty_list functions_to_analyse in
+  let@ () = initialise ~soteria_config Compositional config in
   let linked_prog =
-    Result.get_or
-      ~err:(function
-        | `ParsingError msg, _ ->
-            Fmt.epr "%s@\n@?" msg;
-            tool_error "Failed to parse AIL"
-        | `LinkError msg, _ ->
-            let msg =
-              if (Config.current ()).no_ignore_parse_failures then msg
-              else "All files failed to parse, no analysis will be performed"
-            in
-            Fmt.pr "Error: %a@\n@?" pp_err msg;
-            if (Config.current ()).no_ignore_parse_failures then
-              tool_error "Failed to link AIL"
-            else Ail_tys.empty_linked_program)
-      linked_prog
+    let@ () = Soteria.Stats.As_ctx.add_time_of_to "soteria-c.time_parsing" in
+    linked_prog_of_db json_file
   in
   if (Config.current ()).parse_only then Error.Exit_code.Success
   else generate_summaries ~functions_to_analyse linked_prog

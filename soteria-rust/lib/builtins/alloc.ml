@@ -21,7 +21,7 @@ module M (Rust_state_m : State.State_M) = struct
     let max_size = Layout.max_value_z (TInt Isize) in
     let max_size = Typed.BitVec.usize max_size in
     let* () =
-      assert_ (Usize.(1s) <=@ align &&@ (size <@ max_size)) `InvalidAlloc
+      assert_ (Usize.(1s) <=@ align &&@ (size <=@ max_size)) `InvalidAlloc
     in
     let align = Typed.cast align in
     let+ ptr = State.alloc_untyped ~zeroed ~size ~align () in
@@ -61,11 +61,8 @@ module M (Rust_state_m : State.State_M) = struct
     let align = Typed.cast align in
     let size = Typed.cast_i Usize size in
     let* new_ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
-    let* () =
-      if%sat size >=@ prev_size then
-        State.copy_nonoverlapping ~src:ptr ~dst:new_ptr ~size:prev_size
-      else State.copy_nonoverlapping ~src:ptr ~dst:new_ptr ~size
-    in
+    let copy_size = BV.min ~signed:false size prev_size in
+    let* () = State.copy_nonoverlapping ~src:ptr ~dst:new_ptr ~size:copy_size in
     let+ () = State.free ptr in
     Ptr new_ptr
 

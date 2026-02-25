@@ -111,6 +111,7 @@ module BitVec = struct
     bv_to_z signed tag_size z
 
   let max ~signed l r = ite (gt ~signed l r) l r
+  let min ~signed l r = ite (lt ~signed l r) l r
 end
 
 module BV = BitVec
@@ -118,6 +119,7 @@ module BV = BitVec
 module Float = struct
   include Float
 
+  let mk_fp = mk
   let mk fty = mk (float_precision fty)
 end
 

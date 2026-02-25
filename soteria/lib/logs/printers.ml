@@ -11,6 +11,9 @@ let pp_time =
 let pp_percent ft (total, part) =
   Fmt.pf ft "%a%%" (Fmt.float_dfrac 2) (100. *. part /. total)
 
+let pp_percenti ft (total, part) =
+  pp_percent ft (Float.of_int total, Float.of_int part)
+
 let pp_plural ~sing ~plur ft n =
   Fmt.pf ft "%d %s" n (if n = 1 then sing else plur)
 

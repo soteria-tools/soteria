@@ -23,14 +23,12 @@ module StateKey = struct
   let pp = ppa
   let to_int = unique_tag
   let i = ref 0
-
-  let fresh_rsym () =
-    incr i;
-    return (Ptr.loc_of_int !i)
-
   let distinct _ = v_true
   let simplify = DecayMapMonad.simplify
-  let fresh () = DecayMapMonad.lift @@ fresh_rsym ()
+
+  let fresh () =
+    incr i;
+    DecayMapMonad.return @@ Ptr.loc_of_int !i
   (* The above only works in WPST -- otherwise, use:
    * let fresh () = nondet (Typed.t_sloc ()) *)
 end
@@ -116,55 +114,51 @@ module Block = struct
     let+ () = SM.set_state (to_opt (tree, tb)) in
     v
 
-  let borrow ((ptr : Sptr.t), meta) ty (kind : Expressions.borrow_kind) =
+  (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
+      being reborrowed. *)
+  let borrow ?(protect = false) ((ptr : Sptr.t), meta) (ty : Types.ty) ofs =
     let open SM in
     let open SM.Syntax in
-    let* tag_st =
-      match kind with
-      | BShared -> return Tree_borrow.Frozen
-      | (BTwoPhaseMut | BMut) when Layout.is_unsafe_cell ty ->
-          return Tree_borrow.ReservedIM
-      | BTwoPhaseMut | BMut -> return @@ Tree_borrow.Reserved false
-      | BUniqueImmutable -> return @@ Tree_borrow.Reserved false
-      | BShallow ->
-          SM.lift @@ DecayMapMonad.not_impl "Unhandled borrow kind: BShallow"
-    in
-    let* t_opt = SM.get_state () in
-    let block, tb = of_opt t_opt in
-    let parent = Option.get ptr.tag in
-    let tb', tag = Tree_borrow.add_child ~parent ~state:tag_st tb in
-    let ptr' = { ptr with tag = Some tag } in
-    L.debug (fun m ->
-        m "Borrowed pointer %a -> %a (%a)" Sptr.pp ptr Sptr.pp ptr'
-          Tree_borrow.pp_state tag_st);
-    let+ () = SM.set_state (to_opt (block, tb')) in
-    Ok (ptr', meta)
-
-  let protect ((ptr : Sptr.t), meta) (mut : Types.ref_kind) ofs size =
-    let open SM in
-    let open SM.Syntax in
+    let pointee = Charon_util.get_pointee ty in
     let state =
-      match mut with RMut -> Tree_borrow.Reserved false | RShared -> Frozen
+      match (ty, Layout.is_unsafe_cell pointee) with
+      | TRef (_, _, RShared), false -> Tree_borrow.Frozen
+      | TRef (_, _, RShared), true -> Tree_borrow.Cell
+      | _, false -> Tree_borrow.Reserved false
+      | _, true -> Tree_borrow.ReservedIM
+    in
+    let protector =
+      match (protect, ty) with
+      | false, _ -> None
+      | true, TRef _ -> Some Tree_borrow.Strong
+      | true, TAdt adt when Charon_util.adt_is_box adt -> Some Tree_borrow.Weak
+      | true, _ -> failwith "Non-ref or box in borrow?"
     in
     let* t_opt = SM.get_state () in
     let block, tb = of_opt t_opt in
     let parent = Option.get ptr.tag in
-    let tb', tag = Tree_borrow.add_child ~parent ~state ~protector:true tb in
+    let tb', tag = Tree_borrow.add_child ~parent ~state ?protector tb in
     let ptr' = { ptr with tag = Some tag } in
     L.debug (fun m ->
-        m "Protecting pointer %a -> %a, on [%a;%a]" Sptr.pp ptr Sptr.pp ptr'
-          Typed.ppa ofs Typed.ppa size);
-    if%sat size ==@ Usize.(0s) then
+        m "%s pointer %a -> %a (%a)"
+          (if protect then "Protecting" else "Borrowing")
+          Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state state);
+    if not protect then
       let+ () = SM.set_state (to_opt (block, tb')) in
       Ok (ptr', meta)
     else
-      let*^ res, block' = Tree_block.protect ofs size tag tb' block in
-      match res with
-      | Ok () ->
-          let+ () = SM.set_state (to_opt (block', tb')) in
-          Ok (ptr', meta)
-      | Error e -> Result.error e
-      | Missing f -> Result.miss f
+      let**^ size = DecayMapMonad.lift @@ Layout.size_of pointee in
+      if%sat size ==@ Usize.(0s) then
+        let+ () = SM.set_state (to_opt (block, tb')) in
+        Ok (ptr', meta)
+      else
+        let*^ res, block' = Tree_block.protect ofs size tag tb' block in
+        match res with
+        | Ok () ->
+            let+ () = SM.set_state (to_opt (block', tb')) in
+            Ok (ptr', meta)
+        | Error e -> Result.error e
+        | Missing f -> Result.miss f
 
   let unprotect ofs tag size =
     let open SM in
@@ -246,6 +240,15 @@ module Heap = struct
         if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
         else return miss
     | ok_or_err -> return ok_or_err
+
+  let is_freed loc =
+    wrap loc
+      (let open Freeable_block_with_meta in
+       let open SM.Syntax in
+       let* block = SM.get_state () in
+       match block with
+       | Some { node = Freed; _ } -> SM.Result.ok true
+       | _ -> SM.Result.ok false)
 
   module Decoder =
     Value_codec.Decoder
@@ -341,6 +344,7 @@ let[@inline] with_loc_err ?trace:msg ()
   let trace =
     Option.fold ~none:trace ~some:(fun t -> Trace.set_op t trace) msg
   in
+  Error.log_at trace err;
   Error (Error.decorate trace err)
 
 let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
@@ -387,17 +391,14 @@ let uninit ((ptr, _) : Sptr.t * 'a) (ty : Types.ty) :
   let@ ofs = with_ptr ptr in
   Block.with_tree_block @@ Tree_block.uninit_range ofs size
 
-let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
+let rec size_and_align_of_val ty meta =
+  let load = load ~ignore_borrow:true ~check_refs:false in
+  let* st = get_state () in
+  lift @@ Encoder.size_and_align_of_val ~load ~t:ty ~meta st
+
+and check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   (* The expected alignment of a dyn pointer is stored inside the VTable *)
-  let** exp_align =
-    match (ty, meta) with
-    | TDynTrait _, VTable vt ->
-        let usize = Types.TLiteral (TUInt Usize) in
-        let**^ ptr = Sptr.offset ~ty:usize ~signed:false vt Usize.(2s) in
-        let++ align = load (ptr, Thin) usize in
-        Typed.cast (as_base_i Usize align)
-    | _ -> SM.lift @@ Layout.align_of ty
-  in
+  let** _, exp_align = size_and_align_of_val ty meta in
   L.debug (fun m ->
       m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
         Typed.ppa exp_align Common.Charon_util.pp_ty ty);
@@ -408,17 +409,30 @@ let rec check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
     (Sptr.is_aligned exp_align ptr)
     (`MisalignedPointer (exp_align, align, ofs))
 
-and load ?ignore_borrow ?(ref_checks = true) ((ptr, meta) as fptr) ty :
+and check_non_dangling ((ptr : Sptr.t), meta) (ty : Types.ty) =
+  let** size, _ = size_and_align_of_val ty meta in
+  if%sat size ==@ Usize.(0s) then Result.ok ()
+  else
+    let open Block.SM.Syntax in
+    let@ ofs = with_ptr ptr in
+    let+- _ =
+      Block.with_tree_block (Tree_block.check_owned ofs (Typed.cast size))
+    in
+    `UBDanglingPointer
+
+and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
     (Sptr.t rust_val, Error.t, serialized list) Result.t =
   let** () = check_ptr_align fptr ty in
   let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
   let** value = apply_parser ?ignore_borrow ptr parser in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
-  if ref_checks then
-    let++ () = Encoder.check_valid ~fake_read value ty in
-    value
-  else Result.ok value
+  let check_ref =
+    if (Config.get ()).recursive_validity <> Allow && check_refs then fake_read
+    else check_non_dangling
+  in
+  let++ () = Encoder.check_valid ~check_ref value ty in
+  value
 
 and load_discriminant ((ptr, _) as fptr) ty =
   let** () = check_ptr_align fptr ty in
@@ -427,14 +441,14 @@ and load_discriminant ((ptr, _) as fptr) ty =
 
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns [Some error] if an error occurred, and [None]
-    otherwise *)
+    otherwise. Will wrap whatever error happened in [`InvalidRef]. *)
 (* We can't return a [Rustsymex.Result.t] here, because it's used in [load]
    which expects a [Tree_block.serialized_atom list] for the [Missing] case,
    while the external signature expects a [serialized]. This could be fixed by
    lifting all misses individually inside [handler] and [get_all] in
    [apply_parser], but that's kind of a mess to change and not really worth it I
    believe; I don't think these misses matter at all (TBD). *)
-and fake_read ((_, meta) as ptr) ty =
+and fake_read ((ptr, meta) as fptr) ty =
   let open Syntax in
   let is_uncheckable_dst =
     match meta with
@@ -446,32 +460,46 @@ and fake_read ((_, meta) as ptr) ty =
         (* FIXME: i am not certain how one checks for the validity of a &dyn *)
         true
   in
-  if is_uncheckable_dst then return None
+  if is_uncheckable_dst then Result.ok ()
   else (
     L.debug (fun m ->
-        m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) ptr
-          Common.Charon_util.pp_ty ty);
-    let+ res = load ~ignore_borrow:true ~ref_checks:false ptr ty in
-    match res with
-    | Ok _ -> None
-    | Error e -> Some e
-    | Missing _ -> failwith "Miss in fake_read")
+        m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) fptr
+          Charon_util.pp_ty ty);
+    let*- err =
+      let++ _ = load ~ignore_borrow:true ~check_refs:false fptr ty in
+      ()
+    in
+    match (Config.get ()).recursive_validity with
+    | Deny -> Result.error (`InvalidRef err)
+    | Warn ->
+        let*^ trace = get_trace () in
+        let err = Error.decorate trace (`InvalidRef err) in
+        let loc = Typed.Ptr.loc ptr.ptr in
+        Error.Diagnostic.warn_trace_once ~reason:(InvalidReference loc) err;
+        Result.ok ()
+    | Allow -> Result.ok ())
+
+(** Performs a load at the tree borrow level, by updating the borrow state,
+    without attempting to validate the values or checking uninitialised memory
+    accesses; all of these are ignored. *)
+let tb_load_untyped (ptr : Sptr.t) size =
+  let open SM in
+  match ptr.tag with
+  | None -> Result.ok ()
+  | Some tag ->
+      if%sat size ==@ Usize.(0s) then Result.ok ()
+      else
+        let* () = log "tb_load" ptr in
+        let@ ofs = with_ptr ptr in
+        Block.with_tree_block_read_tb (Tree_block.tb_access ofs size tag)
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
     accesses; all of these are ignored. *)
 let tb_load ((ptr : Sptr.t), _) ty =
   let@ () = with_loc_err ~trace:"Tree Borrow access" () in
-  let open SM in
-  match ptr.tag with
-  | None -> Result.ok ()
-  | Some tag ->
-      let**^ size = Layout.size_of ty in
-      if%sat size ==@ Usize.(0s) then Result.ok ()
-      else
-        let* () = log "tb_load" ptr in
-        let@ ofs = with_ptr ptr in
-        Block.with_tree_block_read_tb (Tree_block.tb_access ofs size tag)
+  let**^ size = Layout.size_of ty in
+  tb_load_untyped ptr size
 
 let store ((ptr, _) as fptr) ty sval :
     (unit, Error.with_trace, serialized list) Result.t =
@@ -496,6 +524,10 @@ let store ((ptr, _) as fptr) ty sval :
         Result.iter_iter parts ~f:(fun (value, offset) ->
             Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
 
+let size_and_align_of_val ty meta =
+  let@ () = with_loc_err ~trace:"Size and alignment check" () in
+  size_and_align_of_val ty meta
+
 let check_ptr_align ptr ty =
   let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
   check_ptr_align ptr ty
@@ -507,6 +539,14 @@ let load ?ignore_borrow ptr ty =
 let load_discriminant ptr ty =
   let@ () = with_loc_err ~trace:"Memory load (discriminant)" () in
   load_discriminant ptr ty
+
+let check_non_dangling ptr ty =
+  let@ () = with_loc_err ~trace:"Dangling check" () in
+  check_non_dangling ptr ty
+
+let fake_read ptr ty =
+  let@ () = with_loc_err ~trace:"Fake read" () in
+  fake_read ptr ty
 
 let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
     (unit, Error.with_trace, serialized list) Result.t =
@@ -617,19 +657,24 @@ let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
          let ptr : Sptr.t = { ptr; tag; align; size } in
          return ((ptr, Thin), block)))
 
-let free (({ ptr; _ } : Sptr.t), _) =
+let free ((ptr : Sptr.t), _) =
   let@ () = with_loc_err ~trace:"Freeing memory" () in
-  let** () = assert_or_error (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `InvalidFree in
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  let** () = assert_or_error (ofs ==@ Usize.(0s)) `InvalidFree in
+  (* Freeing encurs a write access on the whole allocation. *)
+  let** () = tb_load_untyped ptr ptr.size in
+  (* Freeing also requires there to be no strong protectors in the tree. See:
+     https://github.com/minirust/minirust/blob/master/spec/mem/tree_borrows/memory.md *)
+  let** () =
+    with_ptr ptr (fun _ ->
+        Block.with_tree_block_read_tb (fun tb ->
+            if Tree_borrow.strong_protector_exists tb then
+              Tree_block.SM.Result.error `InvalidFreeStrongProtector
+            else Tree_block.SM.Result.ok ()))
+  in
+  L.debug (fun m -> m "Freeing pointer %a" Sptr.pp ptr);
   with_heap
-    (L.trace (fun m -> m "Freeing pointer %a" Typed.ppa ptr);
-     (* TODO: freeing encurs a write access on the whole allocation, and also
-        requires there to be no strong protectors in the tree. We currently
-        don't have a notion of strong or weak protector.
-
-        See:
-        https://github.com/minirust/minirust/blob/master/spec/mem/tree_borrows/memory.md *)
-     Heap.wrap (Typed.Ptr.loc ptr)
-       (Freeable_block_with_meta.wrap (Freeable_block.free ())))
+    (Heap.wrap loc (Freeable_block_with_meta.wrap (Freeable_block.free ())))
 
 let zeros (ptr, _) size =
   let@ () = with_loc_err ~trace:"Memory store (0s)" () in
@@ -664,34 +709,26 @@ let load_global g =
   let ptr = GlobMap.find_opt (Global g) globals in
   (ptr, globals)
 
-let borrow ((ptr : Sptr.t), meta) (ty : Types.ty)
-    (kind : Expressions.borrow_kind) =
+let borrow ?protect (((ptr : Sptr.t), _) as fptr) (ty : Types.ty) =
   let@ () = with_loc_err ~trace:"Borrow" () in
   (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
-  if Option.is_none ptr.tag || (kind = BShared && Layout.is_unsafe_cell ty) then
-    Result.ok (ptr, meta)
+  if Option.is_none ptr.tag then Result.ok fptr
   else
-    let@ _ = with_ptr ptr in
-    Block.borrow (ptr, meta) ty kind
-
-let protect ((ptr : Sptr.t), meta) (ty : Types.ty) (mut : Types.ref_kind) =
-  let@ () = with_loc_err ~trace:"Reference protection" () in
-  if Option.is_none ptr.tag || Layout.is_unsafe_cell ty then
-    Result.ok (ptr, meta)
-  else
-    let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr ptr in
-    Block.protect (ptr, meta) mut ofs size
+    Block.borrow ?protect fptr ty ofs
 
 let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) =
   let@ () = with_loc_err ~trace:"Reference unprotection" () in
   match ptr.tag with
   | None -> Result.ok ()
   | Some tag ->
-      let**^ size = Layout.size_of ty in
-      let@ ofs = with_ptr ptr in
-      L.debug (fun m -> m "Unprotecting pointer %a" Sptr.pp ptr);
-      Block.unprotect ofs tag size
+      let** freed = with_heap @@ Heap.is_freed (Typed.Ptr.loc ptr.ptr) in
+      if freed then Result.ok ()
+      else
+        let**^ size = Layout.size_of ty in
+        let@ ofs = with_ptr ptr in
+        L.debug (fun m -> m "Unprotecting pointer %a" Sptr.pp ptr);
+        Block.unprotect ofs tag size
 
 let with_exposed addr =
   let@ () = with_loc_err ~trace:"Casting integer to pointer" () in

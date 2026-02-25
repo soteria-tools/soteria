@@ -78,6 +78,7 @@ module M (Rust_state_m : State.State_M) = struct
             args
     in
     (* make Result<NonNull<[u8]>, AllocError> *)
+    (* FIXME: the size of this zero is probably wrong *)
     let mk_res ptr len = Enum (zero, [ Tuple [ Ptr (ptr, Len len) ] ]) in
     if%sat size ==@ zero then
       let dangling = Sptr.null_ptr_of align in
@@ -89,7 +90,6 @@ module M (Rust_state_m : State.State_M) = struct
       let ptr =
         match ptr with Ptr (p, _) -> p | _ -> failwith "Expected Ptr"
       in
-      (* FIXME: the size of this zero is probably wrong *)
       mk_res ptr size
 
   let fixme_panic_cleanup _ =

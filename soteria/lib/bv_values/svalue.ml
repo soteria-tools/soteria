@@ -1413,6 +1413,14 @@ and BitVec : BitVec = struct
     | Unop (BvExtract (from1, to1), v1), Unop (BvExtract (from2, to2), v2)
       when to2 + 1 = from1 && equal v1 v2 ->
         extract from2 to1 v1
+    (* safeguard: to avoid infinite loops, we keep bv-concats of extracts
+       left-dominant *)
+    | ( Unop (BvExtract _, _),
+        Binop
+          ( BvConcat,
+            { node = { kind = Unop (BvExtract _, _); _ }; _ },
+            { node = { kind = Unop (BvExtract _, _); _ }; _ } ) ) ->
+        Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
     (* We re-order (extract A ++ (extract B ++ X)) to ((extract A ++ extract B)
        ++ X) *)
     | ( Unop (BvExtract _, x),
