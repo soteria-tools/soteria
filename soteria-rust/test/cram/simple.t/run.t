@@ -342,3 +342,31 @@ Test recursive validity check for references; enabled
         (extract[0-1](V|1|) == 0b00)
   
   [1]
+Test approximation of complex float operations -- warn (default)
+  $ soteria-rust rustc approx_float.rs
+  Compiling... done in <time>
+  => Running main...
+  warning: A complex floating point intrinsic was encountered; it will be executed with a significant over-approximation.
+  note: main: done in <time>, ran 1 branch
+  PC 1: !(fis(Infinite)(V|1|)) /\ !(fis(NaN)(V|1|)) /\
+        ((V|2| ==. 1.0f) || !((V|1| ==. 0.0f))) /\ (-1.0f <=. V|2|) /\
+        (V|2| <=. 1.0f) /\ (-1f <=. V|2|) /\ (V|2| <=. 1f)
+  
+
+Test approximation of complex float operations -- denied
+  $ soteria-rust rustc approx_float.rs --approx-floating-ops deny
+  Compiling... done in <time>
+  => Running main...
+  note: main: done in <time>, ran 0 branches
+  
+  
+
+Test approximation of complex float operations -- allowed
+  $ soteria-rust rustc approx_float.rs --approx-floating-ops allow
+  Compiling... done in <time>
+  => Running main...
+  note: main: done in <time>, ran 1 branch
+  PC 1: !(fis(Infinite)(V|1|)) /\ !(fis(NaN)(V|1|)) /\
+        ((V|2| ==. 1.0f) || !((V|1| ==. 0.0f))) /\ (-1.0f <=. V|2|) /\
+        (V|2| <=. 1.0f) /\ (-1f <=. V|2|) /\ (V|2| <=. 1f)
+  

@@ -176,13 +176,22 @@ module M (Rust_state_m : Rust_state_m.S) :
 
      See
      https://github.com/diffblue/cbmc/blob/develop/src/ansi-c/library/math.c *)
-  let floating_inaccuracy_warn () =
-    Soteria.Terminal.Warn.warn_once
-      "A complex floating point intrinsic was encountered; it will be executed \
-       with a significant over-approximation."
+  let floating_inaccuracy_warn =
+    let msg =
+      String.Interned.intern
+        "A complex floating point intrinsic was encountered; it will be \
+         executed with a significant over-approximation."
+    in
+    fun () ->
+      match (Config.get ()).approx_floating_ops with
+      | Allow -> ok ()
+      | Warn ->
+          Soteria.Terminal.Warn.warn_once msg;
+          ok ()
+      | Deny -> vanish ()
 
   let cos_ fp x =
-    floating_inaccuracy_warn ();
+    let* () = floating_inaccuracy_warn () in
     let* res = lift_symex @@ Rustsymex.nondet (Typed.t_float fp) in
     let* to_assume =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
@@ -205,7 +214,7 @@ module M (Rust_state_m : Rust_state_m.S) :
   let cosf128 ~x = cos_ F128 x
 
   let sin_ fp x =
-    floating_inaccuracy_warn ();
+    let* () = floating_inaccuracy_warn () in
     let* res = lift_symex @@ Rustsymex.nondet (Typed.t_float fp) in
     let* to_assume =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
@@ -228,7 +237,7 @@ module M (Rust_state_m : Rust_state_m.S) :
   let sinf128 ~x = sin_ F128 x
 
   let pow_ fp _x _y =
-    floating_inaccuracy_warn ();
+    let* () = floating_inaccuracy_warn () in
     lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
 
   let powf16 ~a ~x = pow_ F16 a x
@@ -237,7 +246,7 @@ module M (Rust_state_m : Rust_state_m.S) :
   let powf128 ~a ~x = pow_ F128 a x
 
   let powi_ fp x y =
-    floating_inaccuracy_warn ();
+    let* () = floating_inaccuracy_warn () in
     if%sat y ==@ U32.(0s) then ok (Typed.Float.mk_fp fp "1.0")
     else if%sat y ==@ U32.(1s) then ok (x :> Typed.T.sfloat Typed.t)
     else lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
@@ -248,7 +257,7 @@ module M (Rust_state_m : Rust_state_m.S) :
   let powif128 ~a ~x = powi_ F128 a x
 
   let sqrt_ fp x =
-    floating_inaccuracy_warn ();
+    let* () = floating_inaccuracy_warn () in
     if%sat x <.@ Typed.Float.mk_fp fp "0.0" then ok (Typed.Float.mk_fp fp "NaN")
     else if%sat
       Typed.Float.is_infinite x
@@ -263,7 +272,7 @@ module M (Rust_state_m : Rust_state_m.S) :
   let sqrtf128 ~x = sqrt_ F128 x
 
   let expf_ fp x =
-    floating_inaccuracy_warn ();
+    let* () = floating_inaccuracy_warn () in
     if%sat
       Typed.Float.is_nan x
       ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.mk_fp fp "0.0"))
@@ -287,7 +296,7 @@ module M (Rust_state_m : Rust_state_m.S) :
   let exp2f128 ~x = expf_ F128 x
 
   let logf_ ~exp fp x =
-    floating_inaccuracy_warn ();
+    let* () = floating_inaccuracy_warn () in
     let exp = Typed.Float.mk_fp fp exp in
     if%sat x <.@ Typed.Float.mk_fp fp "0.0" then ok (Typed.Float.mk_fp fp "NaN")
     else if%sat x ==.@ Typed.Float.mk_fp fp "0.0" then

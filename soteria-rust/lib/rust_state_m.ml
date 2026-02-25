@@ -52,6 +52,7 @@ module type S = sig
   val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
   val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
   val miss : serialized list list -> ('a, 'env) t
+  val vanish : unit -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
   val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
   val map : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
@@ -317,6 +318,7 @@ struct
   let ok x : ('a, 'env) t = ESM.Result.ok x
   let error_raw err : ('a, 'env) t = ESM.Result.error err
   let error err : ('a, 'env) t = ESM.lift @@ State.SM.lift @@ error err
+  let vanish () _ = State.SM.vanish ()
 
   let lift_err (sym : ('a, Error.t, 'f) Rustsymex.Result.t) : ('a, 'env) t =
     ESM.lift

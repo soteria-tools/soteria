@@ -6,6 +6,7 @@ type frontend = Charon | Obol
 [@@deriving subliner_enum, show { with_path = false }]
 
 type provenance = Strict | Permissive [@@deriving subliner_enum]
+type check_level = Deny | Warn | Allow [@@deriving subliner_enum]
 
 type t = {
   (* Compilation flags *)
@@ -34,7 +35,7 @@ type t = {
   output_crate : bool; [@make.default false] [@names [ "output-crate" ]]
       (** Pretty-print the compiled crate to a file *)
   rustc_flags : string list;
-      [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
+      [@default []] [@optall] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)
   frontend : (frontend[@conv frontend_cmdliner_conv ()]);
       [@default Obol] [@make.default Obol] [@names [ "frontend" ]]
@@ -62,14 +63,16 @@ type t = {
   with_miri : bool; [@make.default false] [@names [ "miri" ]]
       (** Use the Miri library *)
   (* Printing settings *)
-  filter : string list; [@default []] [@names [ "filter" ]]
+  filter : string list; [@default []] [@optall] [@names [ "filter" ]]
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
           run. Multiple filters can be provided, comma-separated; tests matching
-          any will be selected. The filters are treated as regexes. *)
-  exclude : string list; [@default []] [@names [ "exclude" ]]
+          any will be selected. The filters are treated as regexes. Opposite of
+          --exclude. *)
+  exclude : string list; [@default []] [@optall] [@names [ "exclude" ]]
       (** Filter the entrypoints to exclude, by name. If empty, no entrypoints
           are excluded. Multiple filters can be provided, comma-separated; tests
-          matching any will be excluded. The filters are treated as regexes. *)
+          matching any will be excluded. The filters are treated as regexes.
+          Opposite of --filter. *)
   print_summary : bool; [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
@@ -90,6 +93,11 @@ type t = {
       [@make.default false] [@names [ "recursive-validity" ]]
       (** Whether to check the validity of the addressed memory when obtaining a
           reference to it. We only go one level deep. *)
+  approx_floating_ops : (check_level[@conv check_level_cmdliner_conv ()]);
+      [@default Warn] [@names [ "approx-floating-ops" ]]
+      (** Whether to allow complex floating-point operations to be
+          over-approximated. Applies to e.g. sqrt, exp, pow and trigonometric
+          functions. If deny, will vanish execution when encountering them. *)
   step_fuel : int option; [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
       (** The default step fuel for each entrypoint -- every control flow jump
           counts as one fuel. Defaults to infinite fuel. *)
