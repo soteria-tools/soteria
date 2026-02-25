@@ -9,17 +9,17 @@ module T = Typed.T
 module BV = Typed.BV
 
 module Make (StateImpl : State.S) = struct
-  module Rust_state_m = State.Make_monad (StateImpl)
-  module Core = Builtins.Core.M (Rust_state_m)
-  module Std_funs = Builtins.Eval.M (Rust_state_m)
+  module StateM = State.StateM.Make (StateImpl)
+  module Core = Builtins.Core.M (StateM)
+  module Std_funs = Builtins.Eval.M (StateM)
 
   exception Unsupported of (string * Meta.span_data)
 
-  open Rust_state_m
-  open Rust_state_m.Syntax
+  open StateM
+  open Syntax
 
-  type 'a t = ('a, Sptr.t Store.t) Rust_state_m.t
-  type 'err fun_exec = rust_val list -> (rust_val, unit) Rust_state_m.t
+  type 'a t = ('a, Sptr.t Store.t) StateM.t
+  type 'err fun_exec = rust_val list -> (rust_val, unit) StateM.t
 
   type lazy_ptr = Store of Expressions.local_id | Heap of full_ptr
   [@@deriving show { with_path = false }]
@@ -1165,7 +1165,7 @@ module Make (StateImpl : State.S) = struct
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
-    let@ () = Rust_state_m.run ~env:() ~state in
+    let@ () = run ~env:() ~state in
     let@@ () =
       with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in

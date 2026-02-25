@@ -3,8 +3,8 @@
 
 open Rust_val
 
-module M (Rust_state_m : State.State_M) = struct
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  open StateM
   open Syntax
 
   (** Used on macOS to register thread local destructors; receives a function

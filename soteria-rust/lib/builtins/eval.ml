@@ -139,13 +139,13 @@ let std_fun_map =
   |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
   |> NameMatcherMap.of_list
 
-module M (Rust_state_m : State.State_M) = struct
-  module Alloc = Alloc.M (Rust_state_m)
-  module Intrinsics = Intrinsics.M (Rust_state_m)
-  module Miri = Miri.M (Rust_state_m)
-  module Rusteria = Rusteria.M (Rust_state_m)
-  module Std = Std.M (Rust_state_m)
-  module System = System.M (Rust_state_m)
+module M (StateM : State.StateM.S) = struct
+  module Alloc = Alloc.M (StateM)
+  module Intrinsics = Intrinsics.M (StateM)
+  module Miri = Miri.M (StateM)
+  module Rusteria = Rusteria.M (StateM)
+  module Std = Std.M (StateM)
+  module System = System.M (StateM)
 
   let fn_to_stub fn_sig fn_name fun_exec = function
     | Rusteria Assert -> Rusteria.assert_
@@ -198,7 +198,7 @@ module M (Rust_state_m : State.State_M) = struct
       match stub with
       | Some stub ->
           fun args ->
-            Rust_state_m.Poly.push_generics ~params:f.generics ~args:generics
+            StateM.Poly.push_generics ~params:f.generics ~args:generics
             @@ fn_to_stub f.signature name fun_exec stub args
       | None -> fun_exec (Real { id = f.def_id; generics })
 end

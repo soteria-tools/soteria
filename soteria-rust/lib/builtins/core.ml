@@ -8,8 +8,8 @@ open Typed.Infix
 open Rust_val
 open Syntaxes.FunctionWrap
 
-module M (Rust_state_m : State.State_M) = struct
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  open StateM
   open Syntax
 
   let cmp ~signed l r =
@@ -52,7 +52,7 @@ module M (Rust_state_m : State.State_M) = struct
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
   let eval_lit_binop (bop : Expressions.binop) ty (l : [< T.sint ] Typed.t)
-      (r : [< T.sint ] Typed.t) : ([> T.sint ] Typed.t, 'e) Rust_state_m.t =
+      (r : [< T.sint ] Typed.t) : ([> T.sint ] Typed.t, 'e) StateM.t =
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
     let r = normalise_shift_r bop l r in

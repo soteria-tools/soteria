@@ -6,10 +6,10 @@ open Typed.Syntax
 open Typed.Infix
 open Rust_val
 
-module M (Rust_state_m : State.State_M) = struct
-  module Core = Core.M (Rust_state_m)
-  module Alloc = Alloc.M (Rust_state_m)
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  module Core = Core.M (StateM)
+  module Alloc = Alloc.M (StateM)
+  open StateM
   open Syntax
 
   let nop _ = ok (Tuple [])

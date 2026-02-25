@@ -5,15 +5,14 @@ open Typed.Infix
 open Common.Charon_util
 open Rust_val
 
-module M (Rust_state_m : State.State_M) : Intrinsics_intf.M(Rust_state_m).Impl =
-struct
-  include Intrinsics_stubs.M (Rust_state_m)
-  module Core = Core.M (Rust_state_m)
-  open Rust_state_m
+module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
+  include Intrinsics_stubs.M (StateM)
+  module Core = Core.M (StateM)
+  open StateM
   open Syntax
 
   (* some utils *)
-  type 'a ret = ('a, unit) Rust_state_m.t
+  type 'a ret = ('a, unit) StateM.t
 
   let as_base ty (v : rust_val) = Rust_val.as_base ty v
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v

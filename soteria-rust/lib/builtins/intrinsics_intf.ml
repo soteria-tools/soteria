@@ -4,15 +4,12 @@
 open Charon
 open Common
 
-module M (Rust_state_m : State.State_M) = struct
+module M (StateM : State.StateM.S) = struct
   module type Impl = sig
-    type rust_val := Rust_state_m.Sptr.t Rust_val.t
-    type 'a ret := ('a, unit) Rust_state_m.t
-
-    type fun_exec :=
-      Fun_kind.t -> rust_val list -> (rust_val, unit) Rust_state_m.t
-
-    type full_ptr := Rust_state_m.Sptr.t Rust_val.full_ptr
+    type rust_val := StateM.Sptr.t Rust_val.t
+    type 'a ret := ('a, unit) StateM.t
+    type fun_exec := Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+    type full_ptr := StateM.Sptr.t Rust_val.full_ptr
 
     (** {@markdown[
           Aborts the execution of the process.
@@ -3179,11 +3176,9 @@ module M (Rust_state_m : State.State_M) = struct
   module type S = sig
     include Impl
 
-    type rust_val := Rust_state_m.Sptr.t Rust_val.t
-    type 'a ret := ('a, unit) Rust_state_m.t
-
-    type fun_exec :=
-      Fun_kind.t -> rust_val list -> (rust_val, unit) Rust_state_m.t
+    type rust_val := StateM.Sptr.t Rust_val.t
+    type 'a ret := ('a, unit) StateM.t
+    type fun_exec := Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
 
     val eval_fun :
       string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret
