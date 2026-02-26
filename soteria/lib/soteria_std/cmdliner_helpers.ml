@@ -42,3 +42,11 @@ let file_or_dir_as_absolute =
   in
   let completion = Arg.Completion.complete_paths in
   Arg.Conv.make ~docv:"PATH" ~parser ~pp ~completion ()
+
+let regex =
+  let parser s =
+    try Ok (Str.regexp s)
+    with Failure msg -> Error ("Invalid regular expression: " ^ msg)
+  in
+  let pp fmt _re = Format.fprintf fmt "<regex>" in
+  Arg.Conv.make ~docv:"REGEX" ~parser ~pp ()
