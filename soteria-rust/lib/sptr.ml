@@ -174,6 +174,11 @@ module type S = sig
   (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
 
+  (** Generates a nondeterministic pointer, that is valid for accesses to the
+      given type. The location of the pointer is nondeterministic; it could
+      point to any allocation. *)
+  val nondet : Types.ty -> (t, [> Error.t ], 'a) Result.t
+
   (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
       [off], interpreting [off] as a [signed] integer. [ty] defaults to u8. May
       result in a dangling pointer error if the pointer goes over the allocation
@@ -327,6 +332,15 @@ module ArithPtr : S with type t = arithptr_t = struct
       Typed.ite (Typed.Ptr.is_null_loc loc) exp_align (Typed.cast align)
     in
     ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
+
+  let nondet ty =
+    let** layout = Layout.layout_of ty in
+    let* loc = nondet (Typed.t_loc ()) in
+    let* ofs = nondet (Typed.t_usize ()) in
+    let ptr = Typed.Ptr.mk loc ofs in
+    let ptr = { ptr; tag = None; align = layout.align; size = layout.size } in
+    let* () = assume [ is_aligned layout.align ptr ] in
+    Result.ok ptr
 
   let iter_vars { ptr; align; size; tag = _ } f =
     Typed.iter_vars ptr f;

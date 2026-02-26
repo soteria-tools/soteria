@@ -362,7 +362,7 @@ module Make (StateImpl : State.S) = struct
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
         let* layout = Layout.layout_of place.ty in
-        if layout.uninhabited then error `RefToUninhabited
+        if layout.uninhabited then error (`RefToUninhabited place.ty)
         else if Layout.is_dst place.ty then ok (ptr', meta)
         else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
@@ -528,15 +528,15 @@ module Make (StateImpl : State.S) = struct
   and eval_operand (op : Expressions.operand) =
     match op with
     | Constant c -> resolve_constant c
-    | Move loc | Copy loc ->
+    | Move place | Copy place ->
         (* I don't think the operand being [Move] matters at all, aside from
            function calls. See:
            https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
-        let* layout = Layout.layout_of loc.ty in
-        if layout.uninhabited then error `RefToUninhabited
+        let* layout = Layout.layout_of place.ty in
+        if layout.uninhabited then error (`RefToUninhabited place.ty)
         else
-          let* ptr = resolve_place_lazy loc in
-          load_lazy ptr loc.ty
+          let* ptr = resolve_place_lazy place in
+          load_lazy ptr place.ty
 
   and eval_operand_list = map_list ~f:eval_operand
 

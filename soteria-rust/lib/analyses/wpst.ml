@@ -5,7 +5,7 @@ open Syntaxes.FunctionWrap
 module State = State.Tree_state
 module Interp = Interp.Make (State)
 open Error.Diagnostic
-open Common
+open Util
 
 (** An error happened at runtime during execution *)
 exception ExecutionError of string

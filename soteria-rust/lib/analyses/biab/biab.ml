@@ -30,8 +30,7 @@ let get_entry_points (crate : UllbcAst.crate) =
 
 let generate_summaries (crate : UllbcAst.crate) =
   let entry_points = get_entry_points crate in
-  if List.is_empty entry_points then
-    Common.fatal "no functions to analyse found";
+  if List.is_empty entry_points then Util.fatal "no functions to analyse found";
   let@ () = Crate.with_crate crate in
   let@ () = Layout.Session.with_layout_cache in
   let start = Unix.gettimeofday () in

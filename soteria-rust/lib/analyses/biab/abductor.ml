@@ -14,7 +14,7 @@ module Summaries = struct
 end
 
 let default_abductor_fuel =
-  Soteria.Symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
+  Soteria.Symex.Fuel_gauge.{ steps = Finite 200; branching = Finite 3 }
 
 (** Generates summaries for a function given a function definitions. Has to be
     run within {{!Soteria.Stats.As_ctx.with_stats}with_stats} and

@@ -29,7 +29,7 @@ type t =
     (** Binary shift that is less than 0 or that exceeds the bit size of the
         type *)
   | `Overflow  (** Arithmetic over or underflow *)
-  | `RefToUninhabited
+  | `RefToUninhabited of Types.ty
     (** Attempt to have a reference to an uninhabited value *)
   | `InvalidRef of t
     (** Attempt to have a reference that is not valid, e.g. because it points to
@@ -113,7 +113,7 @@ let rec pp ft : [> t ] -> unit = function
   | `Panic None -> Fmt.pf ft "Panic"
   | `RefInvalidatedEarly ->
       Fmt.string ft "Protected ref invalidated before function ended"
-  | `RefToUninhabited -> Fmt.string ft "Ref to uninhabited type"
+  | `RefToUninhabited ty -> Fmt.pf ft "Ref to uninhabited type: %a" pp_ty ty
   | `StdErr msg -> Fmt.pf ft "UB in std: %s" msg
   | `UninitializedMemoryAccess -> Fmt.string ft "Uninitialized memory access"
   | `UBAbort -> Fmt.string ft "UB: undefined behaviour trap reached"
