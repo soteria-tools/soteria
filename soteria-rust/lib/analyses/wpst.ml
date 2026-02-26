@@ -149,16 +149,9 @@ let exec_crate (crate : Charon.UllbcAst.crate)
       |> List.filter_map (function
         | Compo_res.Error (e, _st), pc -> Some (e, pc)
         | _ -> None)
+      |> List.group_by compare
     in
-    let errors_joined =
-      List.map fst errors
-      |> List.sort_uniq compare
-      |> List.map (fun e ->
-          errors
-          |> List.filter_map (fun (e', pc) -> if e = e' then Some pc else None)
-          |> Pair.make e)
-    in
-    Error (errors_joined, nbranches)
+    Error (errors, nbranches)
 
 let print_outcomes_summary outcomes =
   let open Fmt in
