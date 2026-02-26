@@ -400,6 +400,24 @@ type root_plugin = {
     UllbcAst.crate -> fun_decl -> Soteria.Symex.Fuel_gauge.t entry_point option;
 }
 
+(** Filters a name, according to the current {!Config.t.filter} and
+    {!Config.t.exclude} settings. If there are no filters, all names are
+    included; otherwise, a name is included if it matches any filter and doesn't
+    match any exclude. *)
+let filter_name crate name =
+  let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+  let name = PrintTypes.name_to_string fmt_env name in
+
+  let filters = (Config.get ()).filter in
+  let excludes = (Config.get ()).exclude in
+
+  let any_contains rs =
+    List.exists
+      (fun r -> try Str.search_forward r name 0 >= 0 with Not_found -> false)
+      rs
+  in
+  (List.is_empty filters || any_contains filters) && not (any_contains excludes)
+
 let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
     =
   let plugins =
@@ -420,22 +438,6 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
     in
     List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
     |> List.fold_left Cmd.concat_cmd init
-  in
-
-  let filter_name name =
-    let any_contains rs =
-      List.exists
-        (fun r ->
-          try Str.search_forward (Str.regexp r) name 0 >= 0
-          with Not_found -> false)
-        rs
-    in
-
-    let filters = (Config.get ()).filter in
-    let excludes = (Config.get ()).exclude in
-
-    (List.is_empty filters || any_contains filters)
-    && not (any_contains excludes)
   in
 
   let get_entry_point crate (decl : fun_decl) =
@@ -460,9 +462,8 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
       | None, (p : 'a plugin) :: rest -> aux (p.get_entry_point decl) rest
       | None, [] -> None
     in
-    let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-    let name = PrintTypes.name_to_string fmt_env decl.item_meta.name in
-    if not (filter_name name) then None else aux None plugins
+    if not (filter_name crate decl.item_meta.name) then None
+    else aux None plugins
   in
   { mk_cmd; get_entry_point }
 

@@ -63,12 +63,14 @@ type t = {
   with_miri : bool; [@make.default false] [@names [ "miri" ]]
       (** Use the Miri library *)
   (* Printing settings *)
-  filter : string list; [@default []] [@optall] [@names [ "filter" ]]
+  filter : (Str.regexp[@conv Cmdliner_helpers.regex]) list;
+      [@default []] [@optall] [@names [ "filter" ]]
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
           run. Multiple filters can be provided, comma-separated; tests matching
           any will be selected. The filters are treated as regexes. Opposite of
           --exclude. *)
-  exclude : string list; [@default []] [@optall] [@names [ "exclude" ]]
+  exclude : (Str.regexp[@conv Cmdliner_helpers.regex]) list;
+      [@default []] [@optall] [@names [ "exclude" ]]
       (** Filter the entrypoints to exclude, by name. If empty, no entrypoints
           are excluded. Multiple filters can be provided, comma-separated; tests
           matching any will be excluded. The filters are treated as regexes.
