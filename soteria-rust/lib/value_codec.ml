@@ -221,7 +221,7 @@ struct
     let* ty = normalise ty in
     let* layout = layout_of ty in
     match (layout.fields, ty) with
-    | _ when layout.uninhabited -> error `RefToUninhabited
+    | _ when layout.uninhabited -> error (`RefToUninhabited ty)
     | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
     | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Union [])
@@ -354,7 +354,7 @@ module Encoder (Sptr : Sptr.S) = struct
                 ok ()
           in
           let** layout = Layout.layout_of pointee in
-          if layout.uninhabited then error `RefToUninhabited
+          if layout.uninhabited then error (`RefToUninhabited pointee)
           else
             let+ res, st = check_ref p pointee st in
             Compo_res.map res (fun _ -> st)
@@ -493,6 +493,19 @@ module Encoder (Sptr : Sptr.S) = struct
     | TLiteral lit ->
         let+ i = Layout.nondet_literal_ty lit in
         Ok (Int (Typed.cast i))
+    | (TRef (_, pointee, _) | TRawPtr (pointee, _)) as ty
+      when not (Layout.is_dst pointee) ->
+        (* we can't have a reference to an uninhabited type. *)
+        let** layout = layout_of pointee in
+        let is_ref = match ty with TRef _ -> true | _ -> false in
+        if layout.uninhabited && is_ref then vanish ()
+        else
+          let** p = Sptr.nondet pointee in
+          let* () =
+            if is_ref then assume [ Typed.not (Sptr.is_at_null_loc p) ]
+            else return ()
+          in
+          Result.ok (Ptr (p, Thin))
     | TAdt { id = TTuple; generics = { types; _ } } ->
         let++ fields = nondets types in
         Tuple fields

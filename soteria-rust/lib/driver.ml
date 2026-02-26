@@ -2,7 +2,7 @@ module Stats = Soteria.Stats
 open Soteria.Terminal.Diagnostic
 open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap
-open Analyses.Common
+open Analyses.Util
 
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;
