@@ -2,6 +2,7 @@ open Syntaxes.FunctionWrap
 module T = Typed.T
 module Var = Soteria.Symex.Var
 module Bi_state = State.Bi_state
+open Util
 
 type after_exec = [ `After_exec ]
 type pruned = [ `Pruned ]
@@ -12,7 +13,7 @@ type raw = {
       (** List of arguments values, corresponding to the formal arguments in
           order. Really a form of [(x == a0) * (y == a1)] *)
   pre : Bi_state.serialized list;  (** Pre-condition as a list of fixes *)
-  pc : Typed.T.sbool Typed.t list;
+  pc : Typed.T.sbool Typed.t list; [@printer pp_pc]
       (** Path condition. Whether it is in the post or in the pre, it doesn't
           matter for UX. *)
   post : Bi_state.serialized list;  (** Post condition as a serialized heap *)
@@ -152,7 +153,7 @@ let rec analyse : type a. fn:Charon.UllbcAst.fun_decl -> a t -> analysed t =
           (L.with_section ~is_branch:false)
           "Analysing a summary for %a" Crate.pp_name name
       in
-      L.debug (fun m ->
+      L.info (fun m ->
           m "Analysing a summary for %a@\n%a" Crate.pp_name name pp_raw summary);
       match summary.ret with
       | Ok _ -> Analysed { raw = summary; manifest_bugs = [] }
@@ -188,9 +189,9 @@ let rec analyse : type a. fn:Charon.UllbcAst.fun_decl -> a t -> analysed t =
             let serialized_heap =
               List.map (Bi_state.subst_serialized subst) summary.post
             in
-            (* We don't need the produced heap, just its wf condition *)
-            (* We might want to use another symex monad, à la grisette,
-           that produces the condition as a writer monad in an \/ or something *)
+            (* We don't need the produced heap, just its wf condition. We might
+               want to use another symex monad, à la grisette, that produces the
+               condition as a writer monad in an \/ or something *)
             let* (), _ =
               Rustsymex.fold_list serialized_heap ~init:((), Bi_state.empty)
                 ~f:(fun ((), st) ser -> Bi_state.produce ser st)
