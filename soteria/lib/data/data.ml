@@ -33,4 +33,10 @@ module M (Symex : Symex.Base) = struct
 
     val sem_eq : t -> t -> sbool
   end
+
+  module type Simplifiable = sig
+    type t
+
+    val simplify : t -> t Symex.t
+  end
 end
