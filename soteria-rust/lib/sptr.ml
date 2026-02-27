@@ -45,29 +45,40 @@ module DecayMap : DecayMapS = struct
     include Typed
 
     type t = sloc Typed.t
+    type syn = Expr.t [@@deriving show { with_path = false }]
 
     let to_int = unique_tag
     let pp = ppa
+    let show = Fmt.to_to_string pp
     let simplify = Rustsymex.simplify
     let fresh () = failwith "Allocation is not valid for the decay map!"
+    let learn_eq (s : syn) (t : t) = Rustsymex.Consumer.learn_eq s t
+    let to_syn = Expr.of_value
+    let exprs_syn x = [ x ]
+    let subst vf (x : syn) : t = Typed.cast (vf x)
   end
 
   module Data = struct
-    type t = { address : sint Typed.t; exposed : bool }
+    type 'addr data = { address : 'addr; exposed : bool }
     [@@deriving show { with_path = false }]
+
+    type t = sint Typed.t data [@@deriving show { with_path = false }]
+    type syn = Expr.t data [@@deriving show { with_path = false }]
+
+    let to_syn d = { address = Expr.of_value d.address; exposed = d.exposed }
+    let exprs_syn (d : syn) = [ d.address ]
+
+    let learn_eq (s : syn) (d : t) =
+      if s.exposed = d.exposed then
+        Rustsymex.Consumer.learn_eq s.address d.address
+      else Rustsymex.Consumer.lfail (Typed.bool false)
 
     let fresh () =
       Rustsymex.not_impl "DecayMap.Data.fresh (cannot fix missing decay info)"
 
-    let sem_eq d1 d2 =
-      if d1.exposed == d2.exposed then d1.address ==@ d2.address
-      else Typed.bool false
-
-    let subst subst_var d =
-      let address = Typed.subst subst_var d.address in
+    let subst vf d =
+      let address = Typed.cast (vf d.address) in
       { d with address }
-
-    let iter_vars d f = Typed.iter_vars d.address f
   end
 
   module Excl_data = Soteria.Sym_states.Excl.Make (Rustsymex) (Data)
