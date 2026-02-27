@@ -32,6 +32,8 @@ struct
 
   type syn = (B.syn, Info.t) with_info [@@deriving show { with_path = false }]
 
+  let ins_outs (s : syn) = B.ins_outs s.node
+
   let to_syn (t : t) : syn list =
     B.to_syn t.node |> List.map (fun node -> { node; info = t.info })
 
@@ -49,12 +51,12 @@ struct
     let+ () = SM.set_state (lift ~info node') in
     Compo_res.map_missing res (List.map (fun fix -> { node = fix; info }))
 
-  let produce syn : unit SM.t =
-    let* t = SM.get_state () in
-    let t_opt, t_orig = lower t in
+  let produce syn st : t option Symex.Producer.t =
+    let open Symex.Producer.Syntax in
+    let t_opt, t_orig = lower st in
     let info = Option.merge (fun a _ -> a) t_orig syn.info in
-    let*^ (), node = B.produce syn.node t_opt in
-    SM.set_state (lift ~info node)
+    let+ node = B.produce syn.node t_opt in
+    lift ~info node
 
   (* let consume consume_inner serialized t =
    *   let node, info = of_opt t in
