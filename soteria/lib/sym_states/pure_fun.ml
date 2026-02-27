@@ -13,7 +13,7 @@ module Codom (Symex : Symex.Base) = struct
 
   module type S = sig
     include Data.Abstr_with_syn
-    include Data.Sem_eq with type t := t and type sbool := Symex.Value.(sbool t)
+    include Data.Sem_eq with type t := t
   end
 end
 

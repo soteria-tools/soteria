@@ -12,7 +12,9 @@ module Mk_concrete_key (Symex : Symex.Base) (K : Soteria_std.Ordered_type.S) :
 
   type syn = t
 
+  let show = Fmt.to_to_string pp
   let pp_syn = pp
+  let show_syn = show
   let to_syn t = t
   let sem_eq x y = Symex.Value.bool (K.compare x y = 0)
 

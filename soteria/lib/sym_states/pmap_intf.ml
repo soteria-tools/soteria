@@ -30,7 +30,7 @@ module Key (Symex : Symex.Base) = struct
   module type S = sig
     include Soteria_std.Ordered_type.S
     include Data.Abstr_with_syn with type t := t
-    include Data.Sem_eq with type t := t and type sbool := Value.(sbool t)
+    include Data.Sem_eq with type t := t
     include Data.Simplifiable with type t := t
 
     val distinct : t list -> Value.(sbool t)

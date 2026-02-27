@@ -5,7 +5,7 @@ module M (Symex : Symex.Base) = struct
     (** Module type describing a symbolic abstraction. That is, some object that
         contains symbolic variables. *)
 
-    type t
+    type t [@@deriving show]
 
     val pp : Format.formatter -> t -> unit
     val fresh : unit -> t Symex.t
@@ -18,9 +18,8 @@ module M (Symex : Symex.Base) = struct
 
     include Abstr
 
-    type syn
+    type syn [@@deriving show]
 
-    val pp_syn : Format.formatter -> syn -> unit
     val to_syn : t -> syn
     val subst : (Value.Expr.t -> 'a Value.t) -> syn -> t
     val learn_eq : syn -> t -> (unit, 'a) Symex.Consumer.t
@@ -29,9 +28,8 @@ module M (Symex : Symex.Base) = struct
 
   module type Sem_eq = sig
     type t
-    type sbool
 
-    val sem_eq : t -> t -> sbool
+    val sem_eq : t -> t -> Symex.Value.(sbool t)
   end
 
   module type Simplifiable = sig

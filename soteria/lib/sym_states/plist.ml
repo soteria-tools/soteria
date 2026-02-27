@@ -10,7 +10,7 @@ module SInt_sig (Symex : Symex.Base) = struct
 
     include Data.Abstr_with_syn
     include Stdlib.Map.OrderedType with type t := t
-    include Data.Sem_eq with type t := t and type sbool := Value.(sbool t)
+    include Data.Sem_eq with type t := t
 
     val of_int : int -> t
     val in_range : t -> t * t -> Value.(sbool t)
