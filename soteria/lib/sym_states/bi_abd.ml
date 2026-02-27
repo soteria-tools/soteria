@@ -52,7 +52,17 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
               (List.map
                  (fun fix ->
                    fun () ->
-                    let*^ (), st'' = B.SM.iter_list fix ~f:B.produce st in
+                    let*^ (), st'' =
+                      B.SM.iter_list fix
+                        ~f:(fun fix st ->
+                          let open Symex.Syntax in
+                          let+ st' =
+                            Symex.Producer.run_identity_producer
+                              (B.produce fix st)
+                          in
+                          ((), st'))
+                        st
+                    in
                     let* () = SM.set_state (to_opt (st'', fix @ fixes)) in
                     with_fuel (fuel - 1))
                  fix_choices)
@@ -66,11 +76,11 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
     let+ v, st = f st in
     (v, to_opt (st, fixes))
 
-  let produce inner_ser : unit SM.t =
-    let* st = SM.get_state () in
+  let produce syn st : t option Symex.Producer.t =
+    let open Symex.Producer.Syntax in
     let st, fixes = of_opt st in
-    let*^ (), st = B.produce inner_ser st in
-    SM.set_state (to_opt (st, fixes))
+    let+ st = B.produce syn st in
+    to_opt (st, fixes)
 
   (* let consume ?(fuel = 1) ~(produce : 'ser -> 't -> 't Symex.t)
    *    (cons : 'ser -> 't -> ('t, 'err, 'ser) Symex.Result.t) (inner_ser : 'ser)
