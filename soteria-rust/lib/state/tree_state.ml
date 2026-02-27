@@ -458,25 +458,21 @@ and load_discriminant ((ptr, _) as fptr) ty =
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns [Some error] if an error occurred, and [None]
     otherwise. Will wrap whatever error happened in [`InvalidRef]. *)
-(* We can't return a [Rustsymex.Result.t] here, because it's used in [load]
-   which expects a [Tree_block.serialized_atom list] for the [Missing] case,
-   while the external signature expects a [serialized]. This could be fixed by
-   lifting all misses individually inside [handler] and [get_all] in
-   [apply_parser], but that's kind of a mess to change and not really worth it I
-   believe; I don't think these misses matter at all (TBD). *)
 and fake_read ((ptr, meta) as fptr) ty =
   let open Syntax in
-  let is_uncheckable_dst =
-    match meta with
-    | Thin -> false
-    | Len l ->
+  let skip_check =
+    match (meta, (Config.get ()).recursive_validity) with
+    | _, Allow -> true
+    | _, Warn when Config.get_mode () = Compositional -> true
+    | Thin, _ -> false
+    | Len l, _ ->
         (* TODO: we don't support symbolic slices *)
         Option.is_none (Typed.BitVec.to_z l)
-    | VTable _ ->
+    | VTable _, _ ->
         (* FIXME: i am not certain how one checks for the validity of a &dyn *)
         true
   in
-  if is_uncheckable_dst then Result.ok ()
+  if skip_check then Result.ok ()
   else (
     L.debug (fun m ->
         m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) fptr
@@ -486,9 +482,8 @@ and fake_read ((ptr, meta) as fptr) ty =
       ()
     in
     match (Config.get ()).recursive_validity with
+    | Allow -> failwith "Unreachable, handled above"
     | Deny -> Result.error (`InvalidRef err)
-    | Allow -> Result.ok ()
-    | Warn when Config.get_mode () = Compositional -> Result.ok ()
     | Warn ->
         let*^ trace = get_trace () in
         let err = Error.decorate trace (`InvalidRef err) in

@@ -44,7 +44,9 @@ let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
         | NoneKind -> failwith "invalid iter_fields: no metadata"
         | LenKind -> Iter.of_list [ unit_ptr; TLiteral (TInt Isize) ]
         | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
-    | _ -> Fmt.failwith "invalid iter_fields: %a" pp_ty ty
+    | TLiteral _ | TNever | TVar _ | TTraitType _ | TDynTrait _ | TFnPtr _
+    | TFnDef _ | TPtrMetadata _ | TError _ ->
+        Fmt.failwith "invalid iter_fields: %a" pp_ty ty
   in
   match layout.fields with
   | Primitive -> Iter.singleton (ty, Usize.(0s))
