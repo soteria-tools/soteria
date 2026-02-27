@@ -888,11 +888,11 @@ module Base_extension (Core : Core) = struct
     type subst = Value.Expr.Subst.t
     type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
 
-    let learn_eq syn v : (unit, 'fix) t =
+    let learn_eq expr v : (unit, 'fix) t =
       let open Syntax in
       fun subst ->
         let subst =
-          match Value.Expr.Subst.learn subst syn v with
+          match Value.Expr.Subst.learn subst expr v with
           | Some s -> s
           | None ->
               failwith
@@ -905,7 +905,7 @@ module Base_extension (Core : Core) = struct
               failwith
                 "Tool Bug: learned substitution does not cover expression's \
                  free variables.")
-            subst syn
+            subst expr
         in
         let++ () = consume_pure (Value.sem_eq_untyped v v') in
         ((), subst)
