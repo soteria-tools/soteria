@@ -133,6 +133,15 @@ module Make (Sptr : Sptr.S) = struct
       | Any -> Some (Seq.return SAny)
       | Lazy | Uninit Partially -> None
 
+    let mk_fix_typed ty () =
+      let+^ v = Encoder.nondet ty in
+      (* we're basically guaranteed this won't error (ie. layout error) by now,
+         so we can safely unwrap. *)
+      let v = get_ok v in
+      [ SInit v ]
+
+    let mk_fix_any () = [ Any ]
+
     type tree = (t, T.sint Typed.t) TB.tree
 
     let not_owned (t : tree) : tree =
@@ -247,10 +256,22 @@ module Make (Sptr : Sptr.S) = struct
 
   let zeros range tb : Tree.t = Tree.make ~node:(Owned (Zeros, tb)) ~range ()
 
-  let as_owned t f =
-    match t.node with
-    | NotOwned _ -> miss_no_fix ~reason:"as_owned" ()
-    | Owned (v, tb) -> f (v, tb)
+  let mk_fix_typed ofs ty () =
+    let*^ len = Layout.size_of ty in
+    let len = get_ok len in
+    let+ fixes = mk_fix_typed ty () in
+    List.map (fun v -> [ MemVal { offset = ofs; len; v } ]) fixes
+
+  let mk_fix_any ofs len () = [ [ MemVal { offset = ofs; len; v = SAny } ] ]
+  let mk_fix_any_s ofs len () = return (mk_fix_any ofs len ())
+
+  let as_owned ?mk_fixes t f =
+    match (t.node, mk_fixes) with
+    | Owned (v, tb), _ -> f (v, tb)
+    | NotOwned _, None -> miss_no_fix ~reason:"as_owned" ()
+    | NotOwned _, Some mk_fixes ->
+        let+ fixes = mk_fixes () in
+        Missing fixes
 
   let check_owned (ofs : [< T.sint ] Typed.t) (size : [< T.nonzero ] Typed.t) =
     let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
@@ -261,18 +282,11 @@ module Make (Sptr : Sptr.S) = struct
     let open SM.Syntax in
     let** size = lift_symex @@ Layout.size_of ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    let mk_fixes () =
-      let open DecayMapMonad.Syntax in
-      let+^ v = Encoder.nondet ty in
-      (* we're basically guaranteed this won't error (ie. layout error) by now,
-         so we can safely unwrap. *)
-      let v = get_ok v in
-      [ [ MemVal { offset = ofs; len = size; v = SInit v } ] ]
-    in
+    let mk_fixes = mk_fix_typed ofs ty in
     with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
-          let@ v, tb_st = as_owned t in
+          let@ v, tb_st = as_owned ~mk_fixes t in
           let++^ tb_st' =
             match (ignore_borrow, tag) with
             | false, Some tag -> Tree_borrow.access tag Read tb tb_st
@@ -293,10 +307,11 @@ module Make (Sptr : Sptr.S) = struct
     let open SM.Syntax in
     let** size = lift_symex @@ Value_codec.size_of value in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
+    let mk_fixes = mk_fix_any_s ofs size in
+    with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
-          let@ _, tb_st = as_owned t in
+          let@ _, tb_st = as_owned ~mk_fixes t in
           let++^ tb_st' =
             match tag with
             | Some tag -> Tree_borrow.access tag Write tb tb_st
@@ -332,10 +347,11 @@ module Make (Sptr : Sptr.S) = struct
   let uninit_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
       (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
+    let mk_fixes = mk_fix_any_s ofs size in
+    with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
-          let@ _ = as_owned t in
+          let@ _ = as_owned ~mk_fixes t in
           Tree.map_leaves t @@ fun tt ->
           match tt.node with
           | Owned (_, tb) -> Result.ok (uninit tt.range tb)
@@ -350,10 +366,11 @@ module Make (Sptr : Sptr.S) = struct
   let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
       (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
+    let mk_fixes = mk_fix_any_s ofs size in
+    with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
-          let@ _, tb = as_owned t in
+          let@ _, tb = as_owned ~mk_fixes t in
           (* Is there something to do with the tree borrow here? *)
           Result.ok @@ zeros range tb
         in
