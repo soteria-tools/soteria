@@ -38,6 +38,8 @@ struct
     | Freed -> [ Freed ]
     | Alive a -> List.map (fun x -> Alive x) (I.to_syn a)
 
+  let ins_outs = function Freed -> ([], []) | Alive s -> I.ins_outs s
+
   type f = t
 
   open SM
