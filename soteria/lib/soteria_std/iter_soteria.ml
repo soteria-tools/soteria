@@ -36,3 +36,21 @@ let[@inline] repeatz n x k =
     i := Z.succ !i;
     k x
   done
+
+let group_pairs_by (type k) ?(hash = Hashtbl.hash) ?(eq = ( = )) seq =
+  let module Tbl = Hashtbl.Make (struct
+    type t = k
+
+    let equal = eq
+    let hash = hash
+  end) in
+  (* compute group table *)
+  let tbl =
+    lazy
+      (let tbl = Tbl.create 32 in
+       seq (fun (k, v) ->
+           let l = try Tbl.find tbl k with Not_found -> [] in
+           Tbl.replace tbl k (v :: l));
+       tbl)
+  in
+  fun yield -> Tbl.iter (fun k vs -> yield (k, vs)) (Lazy.force tbl)
