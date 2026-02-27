@@ -14,7 +14,6 @@ module SM =
       type nonrec t = t option
     end)
 
-let pp ft t = pp ft t
 let empty : t option = None
 let load addr = wrap addr (Freeable_excl.wrap (Excl_val.load ()))
 let store addr value = wrap addr (Freeable_excl.wrap (Excl_val.store value))

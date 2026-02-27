@@ -37,9 +37,8 @@ module Build_from_find_opt_sym
       val f : Key.t -> 'a Map.t -> (Key.t * 'a option) Symex.t
     end)
     (Codom : Base.M(Symex).S) :
-  S(Symex)(Key).S
-    with type codom := Codom.t
-     and type codom_serialized := Codom.syn = struct
+  S(Symex)(Key).S with type codom := Codom.t and type codom_syn := Codom.syn =
+struct
   module M = Map
 
   type t = Codom.t M.t

@@ -52,9 +52,9 @@ module M
 struct
   module type S = sig
     type codom
-    type t
-    type codom_serialized
-    type syn = Key.syn * codom_serialized
+    type codom_syn
+
+    include Base.M(Symex).S with type syn = Key.syn * codom_syn
 
     module SM :
       State_monad.S
@@ -66,7 +66,7 @@ struct
 
     type ('a, 'err) codom_res :=
       codom option ->
-      (('a, 'err, codom_serialized list) Compo_res.t * codom option) Symex.t
+      (('a, 'err, codom_syn list) Compo_res.t * codom option) Symex.t
 
     val empty : t
     val syntactic_bindings : t -> (Key.t * codom) Seq.t
@@ -83,7 +83,6 @@ struct
     val pp : Format.formatter -> t -> unit
     val show : t -> string
     val pp_syn : Format.formatter -> syn -> unit
-    val show_serialized : syn -> string
     val show_syn : syn -> string
     val to_syn : t -> syn list
     val of_opt : t option -> t

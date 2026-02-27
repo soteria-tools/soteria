@@ -9,7 +9,10 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
       {!Symex.Approx.UX}-mode. *)
 
   type t = B.t option * B.syn list
-  type syn = B.syn
+  type syn = B.syn [@@deriving show { with_path = false }]
+
+  let to_syn _ = failwith "Bi_abd.to_syn: not implemented"
+  let ins_outs syn = B.ins_outs syn
 
   module SM =
     State_monad.Make

@@ -1,17 +1,9 @@
 open Aux
 
 module type S = sig
-  type t [@@deriving show]
-  type serialized
+  include Soteria.Sym_states.Base.M(Symex).S
 
-  module SM :
-    Soteria.Sym_states.State_monad.S
-      with type 'a Symex.t = 'a Symex.t
-       and type st = t option
-       and module Symex.Value = Symex.Value
-       and module Value = Symex.Value
-
-  type 'a res := ('a, Error.t, serialized list) SM.Result.t
+  type 'a res := ('a, Error.t, syn list) SM.Result.t
 
   val load : S_int.t -> S_val.t res
   val store : S_int.t -> S_val.t -> unit res
