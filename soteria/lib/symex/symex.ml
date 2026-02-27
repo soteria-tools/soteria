@@ -270,6 +270,13 @@ module type Base = sig
     val produce_pure : Value.Expr.t -> unit t
     val run_producer : subst:subst -> 'a t -> ('a * subst) symex
     val run_identity_producer : 'a t -> 'a symex
+
+    module Syntax : sig
+      include module type of Syntax
+
+      val ( let*^ ) : 'a symex -> ('a -> 'b t) -> 'b t
+      val ( let+^ ) : 'a symex -> ('a -> 'b) -> 'b t
+    end
   end
 
   module Consumer : sig
@@ -314,6 +321,9 @@ module type Base = sig
         ('a, 'fix) t ->
         (('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) ->
         ('b, 'fix2) t
+
+      val ( let*^ ) : 'a symex -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+      val ( let+^ ) : 'a symex -> ('a -> 'b) -> ('b, 'fix) t
     end
   end
 end
@@ -818,6 +828,13 @@ module Base_extension (Core : Core) = struct
     include P
     include Monad.Extend (P)
 
+    module Syntax = struct
+      include Syntax
+
+      let ( let*^ ) x f = bind (lift x) f
+      let ( let+^ ) x f = map (lift x) f
+    end
+
     let vanish () = lift (vanish ())
 
     let apply_subst (sf : (Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem)
@@ -936,6 +953,8 @@ module Base_extension (Core : Core) = struct
       let ( let+ ) = map
       let ( let+? ) = map_missing
       let ( let*! ) = bind_res
+      let ( let*^ ) m k = bind (lift_symex m) k
+      let ( let+^ ) m k = map (lift_symex m) k
     end
 
     let apply_subst (sf : (Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem)
