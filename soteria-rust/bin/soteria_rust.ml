@@ -61,4 +61,6 @@ end
 let cmd =
   Cmd.group (Cmd.info ~exits "soteria-rust") [ Exec.cmd; Build_plugins.cmd ]
 
-let () = exit @@ Cmd.eval cmd
+let () =
+  Printexc.record_backtrace true;
+  exit @@ Cmd.eval cmd
