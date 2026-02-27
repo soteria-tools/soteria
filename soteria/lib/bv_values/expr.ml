@@ -32,11 +32,11 @@ module Subst = struct
             (Ptr.mk loc ofs, s)
         | Unop (unop, v1) ->
             let v1, s = apply ~missing_var s v1 in
-            (Svalue.mk_unop unop v1, s)
+            (Eval.eval_unop unop v1, s)
         | Binop (binop, v1, v2) ->
             let v1, s = apply ~missing_var s v1 in
             let v2, s = apply ~missing_var s v2 in
-            (Svalue.mk_binop binop v1 v2, s)
+            (Eval.eval_binop binop v1 v2, s)
         | Ite (cond, v1, v2) ->
             let cond, s = apply ~missing_var s cond in
             let v1, s = apply ~missing_var s v1 in
@@ -44,7 +44,7 @@ module Subst = struct
             (Svalue.Bool.ite cond v1 v2, s)
         | Nop (nop, vs) ->
             let vs, s = apply_list ~missing_var s vs in
-            (Svalue.mk_nop nop vs, s))
+            (Eval.eval_nop nop vs, s))
 
   and apply_list ~missing_var s vs =
     match vs with

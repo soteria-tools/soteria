@@ -49,6 +49,8 @@ let eval_unop : Unop.t -> t -> t = function
   | FIs fc -> Float.is_floatclass fc
   | FRound rm -> Float.round rm
 
+let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct
+
 let rec eval ~force ~eval_var (x : t) : t =
   let eval = eval ~force ~eval_var in
   match x.node.kind with
@@ -69,10 +71,9 @@ let rec eval ~force ~eval_var (x : t) : t =
       let nv2 = eval v2 in
       if (not force) && v1 == nv1 && v2 == nv2 then x
       else eval_binop binop nv1 nv2
-  | Nop (nop, l) -> (
+  | Nop (nop, l) ->
       let l, changed = List.map_changed eval l in
-      if (not force) && not changed then x
-      else match nop with Distinct -> Bool.distinct l)
+      if (not force) && not changed then x else eval_nop nop l
   | Ite (guard, then_, else_) ->
       let guard = eval guard in
       if equal guard Bool.v_true then eval then_
