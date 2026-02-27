@@ -16,6 +16,9 @@ module type Expr = sig
       types? *)
   val ty : t -> 'a ty
 
+  (** Convenience function *)
+  val subst : (t -> 'a v) -> t -> 'b v
+
   (** A susbtitution projects the syntactic to the semantic world. *)
   module Subst : sig
     type expr := t

@@ -57,3 +57,5 @@ module Subst = struct
   let learn (_s : t) (_syn : Svalue.t) (_v : Svalue.t) : t option =
     failwith "TODO: bv_values.syn.learn"
 end
+
+let subst (f : t -> t) (s : t) : t = f s

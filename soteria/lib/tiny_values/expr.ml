@@ -5,6 +5,7 @@ type t = Svalue.t [@@deriving show { with_path = false }]
 
 let ty (s : t) : ty = s.node.ty
 let[@inline] of_value v = v
+let subst f v = f v
 
 module Subst = struct
   (* TODO: make this a Patricia Tree *)
