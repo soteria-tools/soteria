@@ -40,6 +40,6 @@ module Concrete
     (Symex : Symex.Base)
     (Key : Soteria_std.Ordered_type.S)
     (Codom : Base.M(Symex).S) :
-  S(Symex)(Key).S
+  S(Symex)(Pmap_intf.Ckey(Key)).S
     with type codom := Codom.t
      and type codom_serialized := Codom.syn

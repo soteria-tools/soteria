@@ -15,21 +15,25 @@ module type MapS = sig
   val to_seq : 'a t -> (key * 'a) Seq.t
 end
 
+module Ckey (K : sig
+  type t
+end) =
+struct
+  type t = K.t
+  type syn = K.t
+end
+
 module Key (Symex : Symex.Base) = struct
+  open Symex
+  module Data = Data.M (Symex)
+
   module type S = sig
-    type t
+    include Soteria_std.Ordered_type.S
+    include Data.Abstr_with_syn with type t := t
+    include Data.Sem_eq with type t := t and type sbool := Value.(sbool t)
+    include Data.Simplifiable with type t := t
 
-    include Stdlib.Map.OrderedType with type t := t
-
-    type sbool_v := Symex.Value.(sbool t)
-
-    val pp : Format.formatter -> t -> unit
-    val sem_eq : t -> t -> sbool_v
-    val fresh : unit -> t Symex.t
-    val simplify : t -> t Symex.t
-    val distinct : t list -> sbool_v
-    val subst : (Var.t -> Var.t) -> t -> t
-    val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+    val distinct : t list -> Value.(sbool t)
   end
 
   module type S_patricia_tree = sig
@@ -43,13 +47,14 @@ module M
     (Symex : Symex.Base)
     (Key : sig
       type t
+      type syn
     end) =
 struct
   module type S = sig
     type codom
     type t
     type codom_serialized
-    type syn = Key.t * codom_serialized
+    type syn = Key.syn * codom_serialized
 
     module SM :
       State_monad.S
@@ -79,9 +84,11 @@ struct
     val show : t -> string
     val pp_syn : Format.formatter -> syn -> unit
     val show_serialized : syn -> string
+    val show_syn : syn -> string
     val to_syn : t -> syn list
     val of_opt : t option -> t
     val to_opt : t -> t option
+    val ins_outs : syn -> Symex.Value.Expr.t list * Symex.Value.Expr.t list
     val alloc : new_codom:codom -> (Key.t, 'err) res
 
     val allocs :
@@ -97,7 +104,7 @@ struct
       t option ->
       'acc Symex.t
 
-    val produce : syn -> t option -> (unit * t option) Symex.t
+    val produce : syn -> t option -> t option Symex.Producer.t
 
     (* val consume :
      *  ('inner_serialized ->

@@ -6,15 +6,25 @@ module Key = Pmap_intf.Key
 module type MapS = Pmap_intf.MapS
 
 module Mk_concrete_key (Symex : Symex.Base) (K : Soteria_std.Ordered_type.S) :
-  Key(Symex).S with type t = K.t = struct
+  Key(Symex).S with type t = K.t and type syn = K.t = struct
+  open Symex
   include K
 
+  type syn = t
+
+  let pp_syn = pp
+  let to_syn t = t
   let sem_eq x y = Symex.Value.bool (K.compare x y = 0)
+
+  let learn_eq syn t =
+    if compare syn t = 0 then Symex.Consumer.ok ()
+    else Symex.Consumer.lfail (Value.bool false)
+
   let fresh () = failwith "Fresh not implemented for concrete keys"
-  let simplify = Symex.return
-  let distinct _ = Symex.Value.bool true
+  let simplify t = Symex.return t
+  let distinct _ = Value.bool true
   let subst _ x = x
-  let iter_vars _ = fun _ -> ()
+  let exprs_syn _ = []
 end
 
 module Build_from_find_opt_sym
@@ -31,7 +41,7 @@ module Build_from_find_opt_sym
   module M = Map
 
   type t = Codom.t M.t
-  type syn = Key.t * Codom.syn
+  type syn = Key.syn * Codom.syn
 
   module SM =
     State_monad.Make
@@ -45,20 +55,27 @@ module Build_from_find_opt_sym
   let syntactic_mem = M.mem
 
   let lift_fixes ~key (fix : Codom.syn list list) : syn list list =
-    List.map (List.map (fun v_ser -> (key, v_ser))) fix
+    List.map (List.map (fun v_ser -> (Key.to_syn key, v_ser))) fix
 
   open SM
   open SM.Syntax
 
   let pp_syn : Format.formatter -> syn -> unit =
-    Fmt.Dump.(pair Key.pp Codom.pp_syn)
+    Fmt.Dump.(pair Key.pp_syn Codom.pp_syn)
 
   let show_serialized = Fmt.to_to_string pp_syn
+  let show_syn = show_serialized
+
+  let ins_outs ((k, c) : syn) =
+    let k_ins = Key.exprs_syn k in
+    let codom_ins, codom_outs = Codom.ins_outs c in
+    (k_ins @ codom_ins, codom_outs)
 
   let to_syn m =
     M.to_seq m
     |> Seq.concat_map (fun (k, v) ->
-        List.to_seq (Codom.to_syn v) |> Seq.map (fun v_ser -> (k, v_ser)))
+        List.to_seq (Codom.to_syn v)
+        |> Seq.map (fun v_ser -> (Key.to_syn k, v_ser)))
     |> List.of_seq
 
   let pp' ?(key = Key.pp) ?(codom = Codom.pp) ?(ignore = fun _ -> false) =
@@ -121,14 +138,18 @@ module Build_from_find_opt_sym
     | Error e -> SM.Result.error e
     | Missing fixes -> SM.Result.miss (lift_fixes ~key fixes)
 
-  let produce (syn : syn) : unit SM.t =
-    let* st = SM.get_state () in
+  open Symex
+
+  let produce (syn : syn) (st : Codom.t M.t option) :
+      Codom.t M.t option Producer.t =
+    let open Producer in
+    let open Producer.Syntax in
     let st = of_opt st in
     let key, inner_ser = syn in
+    let* key = Producer.apply_subst Key.subst key in
     let* key, codom = lift @@ Find_opt_sym.f key st in
-    let* (), codom = lift @@ Codom.produce inner_ser codom in
-    let st = add_opt key codom st in
-    SM.set_state (to_opt st)
+    let+ codom = Codom.produce inner_ser codom in
+    to_opt (add_opt key codom st)
 
   (* let consume
    *    (cons :
