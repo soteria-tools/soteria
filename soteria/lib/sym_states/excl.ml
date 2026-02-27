@@ -1,21 +1,6 @@
 open Symex
 
-module Elem (Symex : Symex.Base) = struct
-  open Symex
-
-  module type S = sig
-    type t [@@deriving show]
-    type syn [@@deriving show]
-
-    val fresh : unit -> t Symex.t
-    val to_syn : t -> syn
-    val subst : (Value.Expr.t -> 'a Value.t) -> syn -> t
-    val learn_eq : syn -> t -> (unit, 'a) Symex.Consumer.t
-    val exprs_syn : syn -> Symex.Value.Expr.t list
-  end
-end
-
-module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
+module Make (Symex : Symex.Base) (E : Data.M(Symex).Abstr_with_syn) = struct
   type t = E.t [@@deriving show { with_path = false }]
   type syn = E.syn [@@deriving show { with_path = false }]
 
@@ -48,11 +33,14 @@ module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
     let** _ = unwrap () in
     SM.Result.set_state (Some x)
 
-  let to_syn s = [ s ]
+  let to_syn (s : E.t) : syn list = [ E.to_syn s ]
+  let ins_outs (s : syn) = ([], E.exprs_syn s)
 
   (* let consume x : (unit, [> Symex.lfail ], syn list) SM.Result.t = let** y =
      unwrap () in let** () = SM.consume_pure (E.sem_eq x y) in
      SM.Result.set_state None *)
+
+  open Symex
 
   let produce (s : syn) (t : E.t option) : E.t option Producer.t =
     let open Producer.Syntax in
