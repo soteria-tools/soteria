@@ -277,6 +277,8 @@ module Make (Sptr : Sptr.S) = struct
     let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
     with_bound_check bound (fun t -> DecayMapMonad.Result.ok ((), t))
 
+  (* Memory operations *)
+
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
       (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) =
     let open SM.Syntax in
@@ -380,19 +382,21 @@ module Make (Sptr : Sptr.S) = struct
         in
         ((), tree))
 
+  let alloc ?(zeroed = false) size =
+    let st = if zeroed then Zeros else Uninit Totally in
+    alloc (st, Tree_borrow.empty_state) size
+
   (* Tree borrow updates *)
 
-  let protect ofs size tag tb =
+  let with_tb_access (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) f
+      =
+    (* TODO: figure out [mk_fixes] for tree borrows state! *)
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     with_bound_check bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ v, tb_st = as_owned t in
-          (* We need to do two things: protect this tag for the block, and
-             perform a read, as all function calls perform one on the
-             parameters. *)
-          let tb_st' = Tree_borrow.set_protector ~protected:true tag tb tb_st in
-          let++^ tb_st' = Tree_borrow.access tag Read tb tb_st' in
+          let++^ tb_st' = f tb_st in
           { t with node = Owned (v, tb_st') }
         in
         let rebuild_parent = Tree.of_children in
@@ -401,48 +405,20 @@ module Make (Sptr : Sptr.S) = struct
         in
         ((), tree))
 
+  let protect ofs size tag tb =
+    with_tb_access ofs size (fun tb_st ->
+        (* We need to do two things: protect this tag for the block, and perform
+           a read, as all function calls perform one on the parameters. *)
+        Tree_borrow.set_protector ~protected:true tag tb tb_st
+        |> Tree_borrow.access tag Read tb)
+
   let unprotect ofs size tag tb =
-    let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
-        let open DecayMapMonad.Syntax in
-        let replace_node t =
-          let@ v, tb_st = as_owned t in
-          (* We need to do two things: protect this tag for the block, and
-             perform a read, as all function calls perform one on the
-             parameters. *)
-          let tb_st' =
-            Tree_borrow.set_protector ~protected:false tag tb tb_st
-          in
-          Result.ok { t with node = Owned (v, tb_st') }
-        in
-        let rebuild_parent = Tree.of_children in
-        let++ _, tree =
-          Tree.frame_range t ~replace_node ~rebuild_parent range
-        in
-        ((), tree))
+    with_tb_access ofs size (fun tb_st ->
+        Rustsymex.Result.ok
+        @@ Tree_borrow.set_protector ~protected:false tag tb tb_st)
 
   let tb_access (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
       (tag : Tree_borrow.tag) (tb : Tree_borrow.t) :
       (unit, 'err, 'fix) SM.Result.t =
-    let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
-        let open DecayMapMonad.Syntax in
-        let replace_node t =
-          let@ _ = as_owned t in
-          Tree.map_leaves t @@ fun tt ->
-          match tt.node with
-          | Owned (v, tb_st) ->
-              let++^ tb_st' = Tree_borrow.access tag Read tb tb_st in
-              { tt with node = Owned (v, tb_st') }
-          | _ -> assert false
-        in
-        let rebuild_parent = Tree.with_children in
-        let++ _, tree =
-          Tree.frame_range t ~replace_node ~rebuild_parent range
-        in
-        ((), tree))
-
-  let alloc ?(zeroed = false) size =
-    let st = if zeroed then Zeros else Uninit Totally in
-    alloc (st, Tree_borrow.empty_state) size
+    with_tb_access ofs size (Tree_borrow.access tag Read tb)
 end
