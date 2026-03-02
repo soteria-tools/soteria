@@ -586,7 +586,7 @@ module Make (StateImpl : State.S) = struct
             | (TRef _ | TRawPtr _ | TFnPtr _), TLiteral to_ty ->
                 (* expose provenance *)
                 let v, _ = as_ptr v in
-                let* v' = Sptr.expose v in
+                let+ v' = Sptr.expose v in
                 Encoder.cast_literal ~from_ty:(TUInt Usize) ~to_ty v'
             | TLiteral _, (TRef _ | TRawPtr _ | TFnPtr _) ->
                 (* with provenance *)
@@ -604,7 +604,7 @@ module Make (StateImpl : State.S) = struct
         | Cast (CastTransmute (from_ty, to_ty)) ->
             Core.transmute ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
-            let* v =
+            let+ v =
               match v with
               | Int i -> ok (i :> T.cval Typed.t)
               | Float f -> ok (f :> T.cval Typed.t)

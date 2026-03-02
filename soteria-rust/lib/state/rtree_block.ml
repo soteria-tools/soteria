@@ -210,12 +210,15 @@ module Make (Sptr : Sptr.S) = struct
             failwith "Iterating over an intermediate node?")
 
   let decode_mem_val ~ty = function
-    | Init value -> Encoder.transmute_one ~to_ty:ty value
+    | Init value ->
+        let+ res = Encoder.transmute_one ~to_ty:ty value in
+        Ok res
     | Zeros ->
         let**^ size = Layout.size_of ty in
         let* size = sint_to_int size in
         let zero = BV.zero (size * 8) in
-        Encoder.transmute_one ~to_ty:ty (Int zero)
+        let+ res = Encoder.transmute_one ~to_ty:ty (Int zero) in
+        Ok res
     | Uninit _ -> Result.error `UninitializedMemoryAccess
     | Any ->
         (* We don't know if this read is valid, as memory could be
@@ -242,7 +245,8 @@ module Make (Sptr : Sptr.S) = struct
     match List.rev leaves with
     | hd :: tl ->
         let bv = List.fold_left BV.concat hd tl in
-        Encoder.transmute_one ~to_ty:ty (Int bv)
+        let+ res = Encoder.transmute_one ~to_ty:ty (Int bv) in
+        Ok res
     | _ -> failwith "Impossible"
 
   let decode_tree ~ty (t : Tree.t) =

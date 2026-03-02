@@ -166,7 +166,7 @@ module type S = sig
       from_ty:Values.literal_type ->
       to_ty:Values.literal_type ->
       [< Typed.T.cval ] Typed.t ->
-      (rust_val, 'env) monad
+      rust_val
 
     val nondet : Types.ty -> (rust_val, 'env) monad
     val apply_attributes : rust_val -> Meta.attribute list -> (unit, 'env) monad
@@ -377,16 +377,6 @@ module Make (State : State_intf.S) :
     let+ res, _ = f env in
     (res, old_env)
 
-  let[@inline] with_decay_map_res
-      (f : ('a, Error.t, serialized list) Sptr.DecayMapMonad.Result.t) :
-      ('a, 'env) t =
-    ESM.lift
-      (let open State.SM.Syntax in
-       let*- err = State.with_decay_map f in
-       let+^ trace = get_trace () in
-       Error.log_at trace err;
-       Compo_res.Error (Error.decorate trace err))
-
   let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
     ESM.lift (State.SM.map (State.with_decay_map f) Compo_res.ok)
 
@@ -458,10 +448,6 @@ module Make (State : State_intf.S) :
     include Value_codec.Encoder (State.Sptr)
 
     let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
-
-    let[@inline] cast_literal ~from_ty ~to_ty cval =
-      with_decay_map_res (cast_literal ~from_ty ~to_ty cval)
-
     let[@inline] nondet ty = lift_err (nondet ty)
     let[@inline] apply_attributes v attrs = lift_err (apply_attributes v attrs)
 

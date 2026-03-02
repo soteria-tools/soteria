@@ -443,7 +443,7 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
     if (Config.get ()).recursive_validity <> Allow && check_refs then fake_read
     else check_non_dangling
   in
-  let++ () = Encoder.check_valid ~check_ref value ty in
+  let++ () = Encoder.check_validity ~check_ref value ty in
   value
 
 and load_discriminant ((ptr, _) as fptr) ty =
