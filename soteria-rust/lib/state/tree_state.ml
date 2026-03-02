@@ -443,7 +443,7 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
     if (Config.get ()).recursive_validity <> Allow && check_refs then fake_read
     else check_non_dangling
   in
-  let++ () = Encoder.check_validity ~check_ref value ty in
+  let++ () = Encoder.check_validity ~check_ref ty value in
   value
 
 and load_discriminant ((ptr, _) as fptr) ty =
@@ -897,7 +897,7 @@ let lookup_const_generic id ty =
   match Types.ConstGenericVarId.Map.find_opt id st.const_generics with
   | Some v -> Result.ok v
   | None ->
-      let**^ v = Encoder.nondet ty in
+      let**^ v = Encoder.nondet_valid ty in
       let const_generics =
         Types.ConstGenericVarId.Map.add id v st.const_generics
       in

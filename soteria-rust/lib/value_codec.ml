@@ -105,16 +105,18 @@ struct
   module ParserMonad = struct
     open State_tys
 
-    type query = Types.ty * T.sint Typed.t
+    type query = Types.ty * Typed.(T.sint t)
     type 'a res = ('a, Error.t, fix) SM.Result.t
 
     (* size * offset *)
-    type get_all_query = T.nonzero Typed.t * T.sint Typed.t
+    type get_all_query = Typed.(T.nonzero t) * Typed.(T.sint t)
 
     (* The following is just query -> (rust_val, 'err, 'fix) StateResult.t where
        StateResult = StateT (Result), but I need StateT1of3 urgh. *)
     type handler = query -> rust_val res
-    type get_all_handler = get_all_query -> (rust_val * T.sint Typed.t) list res
+
+    type get_all_handler =
+      get_all_query -> (rust_val * Typed.(T.sint t)) list res
 
     (* A parser monad is an object such that, given a query handler with state
        ['state], returns a state monad-ish for that state which may fail or
@@ -297,7 +299,7 @@ module Encoder (Sptr : Sptr.S) = struct
       iterator over its sub values, along with their offset. Offsets all blocks
       by [offset] if specified *)
   let rec encode ~offset (value : rust_val) (ty : Types.ty) :
-      ((rust_val * T.sint Typed.t) Iter.t, 'e, 'f) Rustsymex.Result.t =
+      ((rust_val * Typed.(T.sint t)) Iter.t, 'e, 'f) Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
     let open Result in
@@ -364,7 +366,7 @@ module Encoder (Sptr : Sptr.S) = struct
       Reference:
       https://doc.rust-lang.org/reference/behavior-considered-undefined.html#r-undefined.validity
   *)
-  let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) v ty =
+  let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v =
     (* We annotate each relevant helper function or match branch with the
        matching rule in the above-referenced document. *)
     let open Rustsymex in
@@ -404,6 +406,7 @@ module Encoder (Sptr : Sptr.S) = struct
       in
       pointee_constraints @ metadata_validity ~is_raw_ptr:false pointee meta
     in
+    let** ty = Layout.normalise ty in
     match (v, (ty : Types.ty)) with
     (* undefined.validity.bool *)
     | Int v, TLiteral TBool ->
@@ -428,17 +431,17 @@ module Encoder (Sptr : Sptr.S) = struct
         let* _, variant = variant_for_discr discr adt in
         List.combine vs (field_tys variant.fields)
         |> fold_list ~init:[] ~f:(fun acc (v, ty) ->
-            let++ constraints = validity ~check_ref v ty in
+            let++ constraints = validity ~check_ref ty v in
             constraints @ acc)
     (* undefined.validity.struct *)
     | Tuple vs, TAdt adt ->
         List.combine vs (Crate.as_struct_or_tuple adt)
         |> fold_list ~init:[] ~f:(fun acc (v, ty) ->
-            let++ constraints = validity ~check_ref v ty in
+            let++ constraints = validity ~check_ref ty v in
             constraints @ acc)
     | Tuple vs, (TArray (ty, _) | TSlice ty) ->
         fold_list vs ~init:[] ~f:(fun acc v ->
-            let++ constraints = validity ~check_ref v ty in
+            let++ constraints = validity ~check_ref ty v in
             constraints @ acc)
     (* undefined.validity.union *)
     | Union _, TAdt _ -> ok []
@@ -461,7 +464,7 @@ module Encoder (Sptr : Sptr.S) = struct
   (** Applies a validity check for a value, given a [check_ref] state monad
       operation. This assumes [check_ref] is effect-free: the returned state is
       the input state. See {!validity}. *)
-  let check_validity ~check_ref value ty st =
+  let check_validity ~check_ref ty value st =
     let open Rustsymex in
     let open Syntax in
     (* we need to "unlift" [check_ref] *)
@@ -472,7 +475,7 @@ module Encoder (Sptr : Sptr.S) = struct
     in
     (* and then lift the result *)
     let+ res =
-      let** constraints = validity ~check_ref value ty in
+      let** constraints = validity ~check_ref ty value in
       Result.iter_list constraints ~f:(fun (cond, err) ->
           assert_or_error cond err)
     in
@@ -486,7 +489,7 @@ module Encoder (Sptr : Sptr.S) = struct
       https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
   *)
   let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
-      (v : [< T.cval ] Typed.t) =
+      (v : Typed.([< T.cval ] t)) =
     match (from_ty, to_ty) with
     | _, TFloat _ when from_ty = to_ty -> Float (Typed.cast v)
     | _, (TInt _ | TUInt _ | TBool | TChar) when from_ty = to_ty ->
@@ -525,8 +528,8 @@ module Encoder (Sptr : Sptr.S) = struct
 
       See https://smt-lib.org/theories-FloatingPoint.shtml, "Conversions to
       other sorts" *)
-  let float_to_bv_bits (f : [< T.sfloat ] Typed.t) :
-      [> T.sint ] Typed.t DecayMapMonad.t =
+  let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
+      Typed.([> T.sint ] t) DecayMapMonad.t =
     let fp = Typed.Float.fp_of f in
     let size = Svalue.FloatPrecision.size fp in
     let* bv = nondet (Typed.t_int size) in
@@ -569,78 +572,83 @@ module Encoder (Sptr : Sptr.S) = struct
         Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" pp_rust_val v
           pp_ty to_ty
 
-  (** [nondet ~extern ~init ty] returns a nondeterministic value for [ty], along
-      with some "state". It receives a function [extern] to get an optional
-      external function that computes the arbitrary value; it tries using it,
-      and otherwise guesses the valid values. [init] is the initial "state",
-      that is modified and returned by [extern]. *)
-  let rec nondet : Types.ty -> (rust_val, 'e, 'f) Rustsymex.Result.t =
+  (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
+      [ty]: the returned value will have the right structure, and any required
+      nondet variable will have been created. Importantly,
+      {b the returned value may not uphold the validity invariant of [ty]}*. To
+      ensure the value is also valid, use {!validity}, [assume]-ing the
+      constraints it returns.
+
+      * Much like in {!validity}, this function actually assumes two validity
+      invariants: the data is initialised, and the discriminant of enums
+      corresponds to that a variant. *)
+  let rec nondet_raw : Types.ty -> (rust_val, 'e, 'f) Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
     let open Soteria.Symex.Compo_res in
+    let nondets_raw tys = Rustsymex.Result.map_list tys ~f:nondet_raw in
     function
-    | TLiteral (TFloat _ as lit) ->
-        let+ f = Layout.nondet_literal_ty lit in
-        Ok (Float (Typed.cast f))
+    | TLiteral (TFloat fp) ->
+        let+ f = nondet (Typed.t_float fp) in
+        Ok (Float f)
     | TLiteral lit ->
-        let+ i = Layout.nondet_literal_ty lit in
+        let+ i = nondet (Typed.t_lit lit) in
         Ok (Int (Typed.cast i))
-    | (TRef (_, pointee, _) | TRawPtr (pointee, _)) as ty
+    | (TRef (_, pointee, _) | TRawPtr (pointee, _))
       when not (Layout.is_dst pointee) ->
-        (* we can't have a reference to an uninhabited type. *)
-        let** layout = layout_of pointee in
-        let is_ref = match ty with TRef _ -> true | _ -> false in
-        if layout.uninhabited && is_ref then vanish ()
-        else
-          let** p = Sptr.nondet pointee in
-          let* () =
-            if is_ref then assume [ Typed.not (Sptr.is_at_null_loc p) ]
-            else return ()
-          in
-          Result.ok (Ptr (p, Thin))
+        let++ p = Sptr.nondet pointee in
+        Ptr (p, Thin)
     | TAdt { id = TTuple; generics = { types; _ } } ->
-        let++ fields = nondets types in
+        let++ fields = nondets_raw types in
         Tuple fields
     | TArray (ty, len) ->
         let size = int_of_constant_expr len in
-        let++ fields = nondets @@ List.init size (fun _ -> ty) in
+        let++ fields = nondets_raw @@ List.init size (fun _ -> ty) in
         Tuple fields
     | TAdt adt as ty -> (
         let type_decl = Crate.get_adt adt in
         match type_decl.kind with
-        | Enum variants -> (
-            let** layout = layout_of ty in
-            let tag_layout =
-              match layout.fields with
-              | Fields_shape.Enum (tag_layout, _) -> tag_layout
-              | _ -> failwith "Expected enum layout"
-            in
-            let* d = nondet_literal_ty tag_layout.ty in
-            let* res =
+        | Enum [] -> vanish ()
+        | Enum (v :: _ as variants) ->
+            let* discr = nondet (Typed.t_lit (lit_ty_of_lit v.discriminant)) in
+            let discr : Typed.(T.sint t) = Typed.cast discr in
+            let* variant =
               match_on variants ~constr:(fun v ->
-                  BV.of_literal v.discriminant ==@ d)
+                  BV.of_literal v.discriminant ==@ discr)
             in
-            match (res, tag_layout.encoding) with
-            | Some variant, _ ->
-                let discr = BV.of_literal variant.discriminant in
-                let++ fields = nondets @@ field_tys variant.fields in
-                Enum (discr, fields)
-            | None, Direct -> vanish ()
-            | None, Niche untagged ->
-                let variant = Types.VariantId.nth variants untagged in
-                let discr = BV.of_literal variant.discriminant in
-                let++ fields = nondets @@ field_tys variant.fields in
-                Enum (discr, fields))
+            let* variant =
+              match variant with Some v -> return v | None -> vanish ()
+            in
+            let++ fields = nondets_raw @@ field_tys variant.fields in
+            Enum (BV.of_literal variant.discriminant, fields)
         | Struct fields ->
-            let++ fields = nondets @@ field_tys fields in
+            let++ fields = nondets_raw @@ field_tys fields in
             Tuple fields
+        | Union _ ->
+            let** size = Layout.size_of ty in
+            let* sizei =
+              match BV.to_z size with
+              | Some s -> return (Z.to_int s)
+              | None -> vanish ()
+            in
+            let+ bytes = nondet (Typed.t_int (sizei * 8)) in
+            Ok (Union [ (Int bytes, size) ])
         | ty ->
             Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
               Types.pp_type_decl_kind ty)
     | TVar (Free id) -> Result.ok (PolyVal id)
     | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
 
-  and nondets tys = Rustsymex.Result.map_list tys ~f:nondet
+  (** Much like {!nondet_raw}, but also assumes validity invariants for the
+      value, with {!validity}. Note this uses "stateless" validity: references
+      are not checked to be e.g. non-dangling. *)
+  let nondet_valid ty =
+    let open Rustsymex in
+    let open Syntax in
+    let** v = nondet_raw ty in
+    let** constraints = validity ty v in
+    let+ () = assume (List.map fst constraints) in
+    Compo_res.Ok v
 
   (** Apply the compiler-attribute to the given value *)
   let apply_attribute v attr =

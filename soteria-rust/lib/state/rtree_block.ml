@@ -134,7 +134,7 @@ module Make (Sptr : Sptr.S) = struct
       | Lazy | Uninit Partially -> None
 
     let mk_fix_typed ty () =
-      let+^ v = Encoder.nondet ty in
+      let+^ v = Encoder.nondet_valid ty in
       (* we're basically guaranteed this won't error (ie. layout error) by now,
          so we can safely unwrap. *)
       let v = get_ok v in
