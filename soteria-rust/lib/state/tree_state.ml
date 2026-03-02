@@ -281,7 +281,6 @@ type t = {
   functions : FunBiMap.t;
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.with_trace list;
-      [@printer Fmt.list Error.pp_err_and_call_trace]
   pointers : DecayMap.t option;
   thread_destructor :
     unit ->

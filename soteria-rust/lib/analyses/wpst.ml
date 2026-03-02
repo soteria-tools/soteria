@@ -149,7 +149,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
       |> List.filter_map (function
         | Compo_res.Error (e, _st), pc -> Some (e, pc)
         | _ -> None)
-      |> List.group_by compare
+      |> List.group_by ~compare:Error.compare_with_trace
     in
     Error (errors, nbranches)
 

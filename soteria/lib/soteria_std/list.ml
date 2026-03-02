@@ -125,7 +125,8 @@ let sub ~from ~len l = l |> drop from |> take len
     comparison function to determine equality of keys. The resulting list
     contains pairs of keys and lists of corresponding values. The complexity is
     O(n log n), the list is traversed only once. *)
-let group_by (type a) (compare : a -> a -> int) (l : (a * 'b) list) =
+let group_by (type a) ?(compare : a -> a -> int = Stdlib.compare)
+    (l : (a * 'b) list) =
   let module Map = Map.Make (struct
     type t = a
 

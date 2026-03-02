@@ -129,11 +129,6 @@ let rec pp ft : [> t ] -> unit = function
   | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
   | `UseAfterFree -> Fmt.string ft "Use after free"
 
-let pp_err_and_call_trace ft (err, call_trace) =
-  Fmt.pf ft "@[%a with trace@ %a@]" pp err
-    (Soteria.Terminal.Call_trace.pp pp_span_data)
-    call_trace
-
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `MemoryLeak -> Warning
   | e when is_unwindable e -> Error
@@ -141,7 +136,15 @@ let severity : t -> Soteria.Terminal.Diagnostic.severity = function
 
 type with_trace = t * Meta.span_data Soteria.Terminal.Call_trace.t
 
-let pp_with_trace ft (err, _) = pp ft err
+let pp_with_trace ft (err, call_trace) =
+  Fmt.pf ft "@[%a with trace@ %a@]" pp err
+    (Soteria.Terminal.Call_trace.pp pp_span_data)
+    call_trace
+
+let compare_with_trace (e1, t1) (e2, t2) =
+  let str1 = Fmt.to_to_string pp e1 in
+  let str2 = Fmt.to_to_string pp e2 in
+  match String.compare str1 str2 with 0 -> compare t1 t2 | x -> x
 
 let add_to_call_trace ((err, trace_elem) : with_trace) trace_elem' =
   (err, trace_elem' :: trace_elem)
