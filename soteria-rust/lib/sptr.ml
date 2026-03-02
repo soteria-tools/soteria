@@ -213,8 +213,8 @@ module type S = sig
   val as_id : t -> [> sint ] Typed.t
 
   (** Returns a symbolic boolean to check whether this pointer has the given
-      alignment *)
-  val is_aligned : [< nonzero ] Typed.t -> t -> [> sbool ] Typed.t
+      alignment, along with the error to raise otherwise. *)
+  val is_aligned : nonzero Typed.t -> t -> [> sbool ] Typed.t * Error.t
 
   (** Get the allocation info for this pointer: its size and alignment *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
@@ -331,7 +331,10 @@ module ArithPtr : S with type t = arithptr_t = struct
     let align =
       Typed.ite (Typed.Ptr.is_null_loc loc) exp_align (Typed.cast align)
     in
-    ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
+    let is_aligned =
+      ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
+    in
+    (is_aligned, `MisalignedPointer (exp_align, align, ofs))
 
   let nondet ty =
     let** layout = Layout.layout_of ty in
@@ -339,7 +342,8 @@ module ArithPtr : S with type t = arithptr_t = struct
     let* ofs = nondet (Typed.t_usize ()) in
     let ptr = Typed.Ptr.mk loc ofs in
     let ptr = { ptr; tag = None; align = layout.align; size = layout.size } in
-    let* () = assume [ is_aligned layout.align ptr ] in
+    let aligned, _ = is_aligned layout.align ptr in
+    let* () = assume [ aligned ] in
     Result.ok ptr
 
   let iter_vars { ptr; align; size; tag = _ } f =

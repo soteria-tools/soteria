@@ -418,12 +418,8 @@ and check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   L.debug (fun m ->
       m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
         Typed.ppa exp_align Common.Charon_util.pp_ty ty);
-  (* 0-based pointers are aligned up to their offset *)
-  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-  let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
-  assert_or_error
-    (Sptr.is_aligned exp_align ptr)
-    (`MisalignedPointer (exp_align, align, ofs))
+  let aligned, err = Sptr.is_aligned exp_align ptr in
+  assert_or_error aligned err
 
 and check_non_dangling ((ptr : Sptr.t), meta) (ty : Types.ty) =
   let** size, _ = size_and_align_of_val ty meta in
