@@ -44,7 +44,9 @@ def exec_test(
         cmd = cmd + test_conf["dyn_flags"](file)
 
     if log:
-        log.write(f"[TEST] Running {file} - {datetime.datetime.now()}:\n")
+        log.write(
+            f"[TEST] Running {' '.join(cmd)} {file} - {datetime.datetime.now()}:\n"
+        )
 
     before = time.time()
 
@@ -112,7 +114,8 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
     oks = 0
     errs = 0
     tool_errs = 0
-    before = time.time()
+    results: dict[Path, tuple[Outcome, Optional[str]]] = {}
+    total_elapsed = 0
     with log.open("a") as logfile:
         for path in tests:
             relative = path.relative_to(test_conf["root"])
@@ -133,7 +136,9 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                         test_conf=test_conf,
                         timeout=opts["timeout"],
                     )
+                    results[relative] = (outcome, reason)
                 except KeyboardInterrupt as e:
+                    results[relative] = (Outcome.TIME_OUT, "User interrupt")
                     interrupts += 1
                     print(
                         f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
@@ -142,6 +147,7 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                         raise e
                     continue
 
+                total_elapsed += elapsed
                 txt = f"{outcome} in {elapsed:.3f}s"
                 if elapsed > 1:
                     txt += " 🐌"
@@ -172,14 +178,21 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                 errs += 1
             elif outcome.is_tool():
                 tool_errs += 1
-    elapsed = time.time() - before
     pprint(
-        f"{BOLD}Finished in {elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)} ({PURPLE}{tool_errs}{RESET})",
+        f"{BOLD}Finished in {total_elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)} ({PURPLE}{tool_errs}{RESET})",
     )
     if len(end_msgs) > 0:
         pprint(f"{BOLD}Closing remarks:")
         for msg in end_msgs:
             pprint(f"{ORANGE}✭{RESET} {msg}")
+    if opts["output_file"] is not None:
+        # output as CSV with columns: test path, outcome, reason
+        output_path = Path(opts["output_file"])
+        output_path.touch()
+        with output_path.open("w") as output_io:
+            output_io.write("test_path,outcome,reason\n")
+            for path, (outcome, reason) in results.items():
+                output_io.write(f"{path},{outcome.name},{reason or ''}\n")
 
 
 def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
