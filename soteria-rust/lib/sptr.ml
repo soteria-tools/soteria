@@ -163,14 +163,12 @@ end
 
 module type S = sig
   (** pointer type *)
-  type t
+  include Soteria.Data.M(DecayMapMonad).Abstr_with_syn
 
-  val pp : t Fmt.t
+  include Soteria.Data.M(DecayMapMonad).Sem_eq with type t := t
+
   val null_ptr : unit -> t
   val null_ptr_of : [< sint ] Typed.t -> t
-
-  (** Pointer equality *)
-  val sem_eq : t -> t -> sbool Typed.t
 
   (** If this pointer is at a null location, i.e. has no provenance *)
   val is_at_null_loc : t -> sbool Typed.t
@@ -229,27 +227,50 @@ module type S = sig
   val subst : (Svalue.Var.t -> Svalue.Var.t) -> t -> t
 end
 
-type arithptr_t = {
-  ptr : sptr Typed.t;
+type ('sptr, 'snonzero, 'sint) arithptr = {
+  ptr : 'sptr;
   tag : Tree_borrow.tag option;
-  align : nonzero Typed.t;
-  size : sint Typed.t;
+  align : 'snonzero;
+  size : 'sint;
 }
 
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
     location and offset, along with an optional metadata. *)
-module ArithPtr : S with type t = arithptr_t = struct
-  type t = arithptr_t = {
-    ptr : sptr Typed.t;
-    tag : Tree_borrow.tag option;
-    align : nonzero Typed.t;
-    size : sint Typed.t;
-  }
+module ArithPtr :
+  S
+    with type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t) arithptr
+     and type syn = (Expr.t, Expr.t, Expr.t) arithptr = struct
+  type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t) arithptr
+  type syn = (Expr.t, Expr.t, Expr.t) arithptr
 
-  let pp fmt { ptr; tag; _ } =
-    Fmt.pf fmt "%a[%a]" Typed.ppa ptr
+  let pp' pp_v fmt { ptr; tag; _ } =
+    Fmt.pf fmt "%a[%a]" pp_v ptr
       Fmt.(option ~none:(any "*") Tree_borrow.pp_tag)
       tag
+
+  let pp : t Fmt.t = pp' Typed.ppa
+  let show = Fmt.to_to_string pp
+  let pp_syn : syn Fmt.t = pp' Expr.pp
+  let show_syn = Fmt.to_to_string pp_syn
+
+  let to_syn { ptr; tag; align; size } =
+    {
+      ptr = Expr.of_value ptr;
+      align = Expr.of_value align;
+      size = Expr.of_value size;
+      tag;
+    }
+
+  let learn_eq syn t =
+    let open DecayMapMonad.Consumer in
+    let open Syntax in
+    let* () = if syn.tag = t.tag then ok () else lfail Typed.v_false in
+    let* () = learn_eq syn.ptr t.ptr in
+    let* () = learn_eq syn.align t.align in
+    learn_eq syn.size t.size
+
+  let exprs_syn { ptr; align; size; _ } = [ ptr; align; size ]
+  let fresh () = failwith "Fresh unimplemented for sptr (for now)"
 
   let null_ptr () =
     {
