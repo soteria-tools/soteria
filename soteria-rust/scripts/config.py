@@ -144,9 +144,7 @@ def miri(opts: CliOpts) -> TestConfig:
             if "-Zmiri-disable-stacked-borrows" in config:
                 flags.append("--ignore-aliasing")
             if "-Zmiri-recursive-validation" in config:
-                flags.append("--recursive-validity=deny")
-            if "-Zmiri-disable-validation" in config:
-                flags.append("--validity=allow")
+                flags.append("--recursive-validity")
         return flags
 
     @with_cache

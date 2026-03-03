@@ -91,10 +91,6 @@ type t = {
       [@default Permissive] [@names [ "provenance" ]]
       (** The provenance model to use for pointers. If not provided, the default
           is permissive. *)
-  validity : (check_level[@conv check_level_cmdliner_conv ()]);
-      [@default Deny] [@names [ "validity" ]]
-      (** Whether to check the validity of values (e.g. a bool must be 0 or 1).
-      *)
   recursive_validity : (check_level[@conv check_level_cmdliner_conv ()]);
       [@default Warn] [@names [ "recursive-validity" ]]
       (** Whether to check the validity of the addressed memory when obtaining a
@@ -137,18 +133,10 @@ type global = {
 
 let global_term = global_cmdliner_term ()
 
-let set_and_lock_global (mode : mode) ({ soteria; soteria_rust } : global) =
-  Soteria.Config.set_and_lock soteria;
-
-  if soteria_rust.polymorphic && soteria_rust.frontend = Obol then
+let set_and_lock_global (mode : mode) (config : global) =
+  Soteria.Config.set_and_lock config.soteria;
+  if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
     Exn.config_error
       "Obol does not support polymorphic analyses; use --frontend charon";
-
-  if soteria_rust.validity = Allow && soteria_rust.recursive_validity = Deny
-  then
-    Exn.config_error
-      "Cannot allow invalid values but deny recursive validity; use \
-       --recursive-validity allow";
-
   set_mode_and_lock mode;
-  set_and_lock soteria_rust
+  set_and_lock config.soteria_rust
