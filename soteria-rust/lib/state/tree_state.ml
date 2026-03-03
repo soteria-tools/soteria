@@ -438,11 +438,18 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
   let** value = apply_parser ?ignore_borrow ptr parser in
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
-  let check_ref =
-    if (Config.get ()).recursive_validity <> Allow && check_refs then fake_read
-    else check_non_dangling
+  let++ () =
+    match (Config.get ()).validity with
+    | Allow -> Result.ok ()
+    | Deny | Warn ->
+        (* TODO: warn *)
+        let check_ref =
+          if (Config.get ()).recursive_validity <> Allow && check_refs then
+            fake_read
+          else check_non_dangling
+        in
+        Encoder.check_validity ~check_ref ty value
   in
-  let++ () = Encoder.check_validity ~check_ref ty value in
   value
 
 and load_discriminant ((ptr, _) as fptr) ty =
