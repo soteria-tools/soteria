@@ -92,6 +92,26 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     let+ () = State.store dst t src in
     old
 
+  let atomic_cxchgweak ~t ~ord_succ:_ ~ord_fail:_ ~_dst ~_old ~_src =
+    atomic_warn ();
+    let* curr = State.load _dst t in
+    let are_equal =
+      match t with
+      | TRawPtr _ | TRef _ ->
+          let old, _ = as_ptr _old in
+          let curr, _ = as_ptr curr in
+          Sptr.sem_eq old curr
+      | TLiteral lit ->
+          let old = as_base lit _old in
+          let curr = as_base lit curr in
+          old ==@ curr
+      | _ -> failwith "atomic_cxchgweak: invalid type, expects ptr or integer"
+    in
+    if%sat are_equal then
+      let* () = State.store _dst t _src in
+      ok (Tuple [ curr; Int (BV.of_bool Typed.v_true) ])
+    else ok (Tuple [ curr; Int (BV.of_bool Typed.v_false) ])
+
   let black_box ~t:_ ~dummy = ok dummy
   let breakpoint : unit ret = error `Breakpoint
 
