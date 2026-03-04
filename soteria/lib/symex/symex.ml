@@ -313,6 +313,8 @@ module type Base = sig
     val fold_list :
       'a list -> init:'b -> f:('b -> 'a -> ('b, 'fix) t) -> ('b, 'fix) t
 
+    val iter_list : 'a list -> f:('a -> (unit, 'fix) t) -> (unit, 'fix) t
+
     val bind_res :
       ('a, 'fix) t ->
       (('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) ->
@@ -978,6 +980,7 @@ module Base_extension (Core : Core) = struct
     let fold_list x ~init ~f =
       Monad.foldM ~return:ok ~bind ~fold:Foldable.List.fold x ~init ~f
 
+    let iter_list x ~f = fold_list x ~init:() ~f:(fun () a -> f a)
     let run_consumer ~subst p = p subst
 
     module Syntax = struct

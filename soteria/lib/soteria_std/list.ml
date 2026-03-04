@@ -26,6 +26,9 @@ let take_count n l =
 let combine_opt l1 l2 =
   try Some (combine l1 l2) with Invalid_argument _ -> None
 
+let combine_or ~ok ~err l1 l2 =
+  try ok (combine l1 l2) with Invalid_argument _ -> err ()
+
 (** Aggregates results, returning all errors if any, otherwise all successful
     values. *)
 let join_results outcomes =
