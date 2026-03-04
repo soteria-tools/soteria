@@ -99,9 +99,7 @@
   (odoc :with-doc)
   (alcotest :with-test)
   (ppx_blob
-   (and
-    :build
-    (>= 0.9.0)))
+    (>= 0.9.0))
   (yojson
    (< 3.0))
   (dune
