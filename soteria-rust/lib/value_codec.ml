@@ -342,7 +342,7 @@ module Encoder (Sptr : Sptr.S) = struct
           Fmt.kstr not_impl "encode: expected enum value for enum type %a" pp_ty
             ty
 
-  (** Returns an list of the validity constraints of this particular value for a
+  (** Iterates over the validity constraints of this particular value for a
       given type, traversing it recursively. For every requirement, this
       associates to it the error to be raised if the requirement is not met.
 
@@ -366,7 +366,7 @@ module Encoder (Sptr : Sptr.S) = struct
       Reference:
       https://doc.rust-lang.org/reference/behavior-considered-undefined.html#r-undefined.validity
   *)
-  let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v =
+  let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
     (* We annotate each relevant helper function or match branch with the
        matching rule in the above-referenced document. *)
     let open Rustsymex in
@@ -375,76 +375,66 @@ module Encoder (Sptr : Sptr.S) = struct
     (* undefined.validity.wide *)
     let metadata_validity ~is_raw_ptr pointee meta =
       match (meta, Layout.dst_kind pointee) with
-      | Thin, NoneKind -> []
-      | Thin, _ -> [ (Typed.v_false, `UBTransmute "Thin pointer to DST") ]
-      | (Len _ | VTable _), NoneKind ->
-          [ (Typed.v_false, `UBTransmute "Metadata for non-DST pointee") ]
-      | Len _, LenKind when is_raw_ptr -> []
+      | Thin, NoneKind -> ok ()
       | Len len, LenKind ->
-          [ (Usize.(0s) <=@ len, `UBTransmute "Negative slice length") ]
+          if is_raw_ptr then ok ()
+          else f Usize.(0s <=$@ len) (`UBTransmute "Negative slice length")
       | VTable _, VTableKind ->
-          (* The vtable must always match the trait type of the pointee; this
-             check must be carried out in [validity_stateful]. *)
-          []
+          (* TODO: the vtable must always match the trait type of the pointee.
+             Will require a new input to this function (?) *)
+          ok ()
+      | Thin, (LenKind | VTableKind) ->
+          f Typed.v_false (`UBTransmute "Thin pointer to DST")
+      | (Len _ | VTable _), NoneKind ->
+          f Typed.v_false (`UBTransmute "Metadata for non-DST pointee")
       | Len _, VTableKind ->
-          [
-            (Typed.v_false, `UBTransmute "Length metadata when VTable expected");
-          ]
+          f Typed.v_false (`UBTransmute "Length metadata when VTable expected")
       | VTable _, LenKind ->
-          [
-            (Typed.v_false, `UBTransmute "VTable metadata when length expected");
-          ]
+          f Typed.v_false (`UBTransmute "VTable metadata when length expected")
     in
     (* undefined.validity.reference-box *)
     let ref_box_validity ((ptr, meta) as fptr) pointee =
-      let** () = check_ref fptr pointee in
-      let++ layout = Layout.layout_of pointee in
-      let pointee_constraints =
-        if layout.uninhabited then
-          [ (Typed.v_false, `RefToUninhabited pointee) ]
-        else [ Sptr.is_aligned layout.align ptr ]
-      in
-      pointee_constraints @ metadata_validity ~is_raw_ptr:false pointee meta
+      let** () = metadata_validity ~is_raw_ptr:false pointee meta in
+      let** layout = Layout.layout_of pointee in
+      if layout.uninhabited then f Typed.v_false (`RefToUninhabited pointee)
+      else
+        let** () = check_ref fptr pointee in
+        let aligned, err = Sptr.is_aligned layout.align ptr in
+        f aligned err
     in
     let** ty = Layout.normalise ty in
     match (v, (ty : Types.ty)) with
     (* undefined.validity.bool *)
     | Int v, TLiteral TBool ->
-        ok [ U8.(0s <=@ v &&@ (v <=@ 1s), `UBTransmute "Invalid bool value") ]
+        f U8.(0s <=@ v &&@ (v <=@ 1s)) (`UBTransmute "Invalid bool value")
     (* undefined.validity.fn-pointer *)
     | Ptr (p, _), TFnPtr _ ->
-        ok [ (Typed.not Sptr.(sem_eq (null_ptr ()) p), `UBDanglingPointer) ]
+        f (Typed.not Sptr.(sem_eq (null_ptr ()) p)) `UBDanglingPointer
     (* undefined.validity.char *)
     | Int v, TLiteral TChar ->
         let is_surrogate = U32.(0xD800s <=@ v &&@ (v <=@ 0xDFFFs)) in
         let is_valid = U32.(v <=@ 0x10FFFFs) &&@ Typed.not is_surrogate in
-        ok [ (is_valid, `UBTransmute "Invalid char value") ]
+        f is_valid (`UBTransmute "Invalid char value")
     (* undefined.validity.never *)
-    | _, TNever -> ok [ (Typed.v_false, `RefToUninhabited ty) ]
+    | _, TNever -> f Typed.v_false (`RefToUninhabited ty)
     (* undefined.validity.scalar *)
-    | Int _, TLiteral (TInt _ | TUInt _) -> ok []
-    | Float _, TLiteral (TFloat _) -> ok []
+    | Int _, TLiteral (TInt _ | TUInt _) -> ok ()
+    | Float _, TLiteral (TFloat _) -> ok ()
     (* undefined.validity.str *)
-    | Tuple _, TAdt { id = TBuiltin TStr; _ } -> ok []
+    | Tuple _, TAdt { id = TBuiltin TStr; _ } -> ok ()
     (* undefined.validity.enum *)
     | Enum (discr, vs), TAdt adt ->
         let* _, variant = variant_for_discr discr adt in
-        List.combine vs (field_tys variant.fields)
-        |> fold_list ~init:[] ~f:(fun acc (v, ty) ->
-            let++ constraints = validity ~check_ref ty v in
-            constraints @ acc)
+        List.combine (field_tys variant.fields) vs
+        |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
     (* undefined.validity.struct *)
     | Tuple vs, TAdt adt ->
-        List.combine vs (Crate.as_struct_or_tuple adt)
-        |> fold_list ~init:[] ~f:(fun acc (v, ty) ->
-            let++ constraints = validity ~check_ref ty v in
-            constraints @ acc)
+        List.combine (Crate.as_struct_or_tuple adt) vs
+        |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
     | Tuple vs, (TArray (ty, _) | TSlice ty) ->
-        fold_list vs ~init:[] ~f:(fun acc v ->
-            let++ constraints = validity ~check_ref ty v in
-            constraints @ acc)
+        iter_list vs ~f:(fun v -> validity ~check_ref ty v f)
     (* undefined.validity.union *)
-    | Union _, TAdt _ -> ok []
+    | Union _, TAdt _ -> ok ()
     (* undefined.validity.reference-box *)
     | Ptr ptr, TRef (_, pointee, _) -> ref_box_validity ptr pointee
     | _, TAdt adt when adt_is_box adt ->
@@ -453,11 +443,11 @@ module Encoder (Sptr : Sptr.S) = struct
         ref_box_validity (ptr, meta) pointee
     (* undefined.validity.wide *)
     | Ptr (_, meta), TRawPtr (pointee, _) ->
-        ok (metadata_validity ~is_raw_ptr:true pointee meta)
+        metadata_validity ~is_raw_ptr:true pointee meta
     (* fndefs are ZSTs *)
-    | Tuple [], TFnDef _ -> ok []
+    | Tuple [], TFnDef _ -> ok ()
     (* we assume polymorphic data has no validity requirement *)
-    | PolyVal _, TVar (Free _) -> ok []
+    | PolyVal _, TVar (Free _) -> ok ()
     (* we fail loudly to avoid missing cases *)
     | _ -> Fmt.failwith "validity: unhandled %a/%a" pp_rust_val v pp_ty ty
 
@@ -474,11 +464,7 @@ module Encoder (Sptr : Sptr.S) = struct
       res
     in
     (* and then lift the result *)
-    let+ res =
-      let** constraints = validity ~check_ref ty value in
-      Result.iter_list constraints ~f:(fun (cond, err) ->
-          assert_or_error cond err)
-    in
+    let+ res = validity ~check_ref ty value assert_or_error in
     (res, st)
 
   (** Cast between literals; perform validation of the type's constraints. This
@@ -646,9 +632,12 @@ module Encoder (Sptr : Sptr.S) = struct
     let open Rustsymex in
     let open Syntax in
     let** v = nondet_raw ty in
-    let** constraints = validity ty v in
-    let+ () = assume (List.map fst constraints) in
-    Compo_res.Ok v
+    let++ () =
+      validity ty v (fun c _err ->
+          let+ () = assume [ c ] in
+          Compo_res.Ok ())
+    in
+    v
 
   (** Apply the compiler-attribute to the given value *)
   let apply_attribute v attr =
