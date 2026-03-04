@@ -5,29 +5,29 @@ pub mod process {
 
     #[inline(always)]
     pub fn abort() -> ! {
-        rusteria::panic("Function abort() was invoked")
+        soteria::panic("Function abort() was invoked")
     }
 
     #[inline(always)]
     pub fn exit(_code: i32) -> ! {
-        rusteria::panic("Function exit() was invoked")
+        soteria::panic("Function exit() was invoked")
     }
 }
 
 #[macro_export]
 macro_rules! assert {
     ($cond:expr $(,)?) => {
-        rusteria::assert(!!$cond, concat!("assertion failed: ", stringify!($cond)));
+        soteria::assert(!!$cond, concat!("assertion failed: ", stringify!($cond)));
     };
     ($cond:expr, $($arg:tt)+) => {{
-        rusteria::assert(!!$cond, concat!(stringify!($($arg)+)));
+        soteria::assert(!!$cond, concat!(stringify!($($arg)+)));
     }};
 }
 
 #[macro_export]
 macro_rules! assert_eq {
     ($left:expr, $right:expr $(,)?) => ({
-        rusteria::assert(($left) == ($right), concat!("assertion failed: ", stringify!($left == $right)));
+        soteria::assert(($left) == ($right), concat!("assertion failed: ", stringify!($left == $right)));
     });
     ($left:expr, $right:expr, $($arg:tt)+) => ({
         assert!(($left) == ($right), $($arg)+);
@@ -37,7 +37,7 @@ macro_rules! assert_eq {
 #[macro_export]
 macro_rules! assert_ne {
     ($left:expr, $right:expr $(,)?) => ({
-        rusteria::assert(($left) != ($right), concat!("assertion failed: ", stringify!($left != $right)));
+        soteria::assert(($left) != ($right), concat!("assertion failed: ", stringify!($left != $right)));
     });
     ($left:expr, $right:expr, $($arg:tt)+) => ({
         assert!(($left) != ($right), $($arg)+);
@@ -84,28 +84,28 @@ macro_rules! eprintln {
 #[macro_export]
 macro_rules! unreachable {
     ($($msg:literal)? $(,)?) => (
-        rusteria::panic(concat!("internal error: entered unreachable code: ", $($msg)?))
+        soteria::panic(concat!("internal error: entered unreachable code: ", $($msg)?))
     );
     ($($msg:expr)? $(,)?) => (
-        rusteria::panic(concat!("internal error: entered unreachable code: ", stringify!($($msg)?)))
+        soteria::panic(concat!("internal error: entered unreachable code: ", stringify!($($msg)?)))
     );
     ($fmt:expr, $($arg:tt)*) => {{
-        rusteria::panic(concat!("internal error: entered unreachable code: ",
+        soteria::panic(concat!("internal error: entered unreachable code: ",
         stringify!($fmt, $($arg)*)))}};
 }
 
 #[macro_export]
 macro_rules! panic {
     () => (
-        rusteria::panic("explicit panic")
+        soteria::panic("explicit panic")
     );
     ($msg:literal $(,)?) => ({
-        rusteria::panic(concat!($msg))
+        soteria::panic(concat!($msg))
     });
     ($msg:expr $(,)?) => ({
-        rusteria::panic(stringify!($msg));
+        soteria::panic(stringify!($msg));
     });
     ($($arg:tt)+) => {{
-        rusteria::panic(stringify!($($arg)+));
+        soteria::panic(stringify!($($arg)+));
     }};
 }

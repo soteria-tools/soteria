@@ -1,4 +1,4 @@
-Test running Rusteria on a crate
+Test running Soteria Rust on a crate
   $ soteria-rust exec .
   Compiling... done in <time>
   => Running tests::tests::my_test...

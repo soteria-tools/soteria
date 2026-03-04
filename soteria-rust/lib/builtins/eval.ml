@@ -43,10 +43,10 @@ type fn =
 let std_fun_pair_list =
   [
     (* Rusteria builtins *)
-    ("rusteria::assert", Rusteria Assert);
-    ("rusteria::assume", Rusteria Assume);
-    ("rusteria::nondet_bytes", Rusteria NondetBytes);
-    ("rusteria::panic", Rusteria Panic);
+    ("soteria::assert", Rusteria Assert);
+    ("soteria::assume", Rusteria Assume);
+    ("soteria::nondet_bytes", Rusteria NondetBytes);
+    ("soteria::panic", Rusteria Panic);
     (* Kani builtins -- we re-define these for nicer call traces *)
     ("kani::assert", Rusteria Assert);
     ("kani::assume", Rusteria Assume);

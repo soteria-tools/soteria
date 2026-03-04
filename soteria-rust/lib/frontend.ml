@@ -319,13 +319,10 @@ let default =
         @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
       ~obol:
         ([
-           "--start-from";
-           "main";
-           "--start-from-attribute";
-           "rusteriatool::test";
+           "--start-from"; "main"; "--start-from-attribute"; "soteriatool::test";
          ]
         @ opaque_names)
-      ~features:[ "rusteria" ]
+      ~features:[ "soteria" ]
       ~rustc:
         [
           (* i.e. not always a binary! *)
@@ -335,13 +332,13 @@ let default =
           (* No warning *)
           "-Awarnings";
           "--cap-lints=allow";
-          (* include our std and rusteria crates *)
+          (* include our std and soteria crates *)
           "-Z";
           "crate-attr=feature(register_tool)";
           "-Z";
-          "crate-attr=register_tool(rusteriatool)";
+          "crate-attr=register_tool(soteriatool)";
           "--extern";
-          "rusteria";
+          "soteria";
           (* include the std *)
           "--extern";
           Fmt.str "noprelude:std=%s/target/%s/debug/libstd.rlib" std_lib_path
@@ -352,8 +349,8 @@ let default =
   let get_entry_point (decl : fun_decl) =
     match List.last_opt decl.item_meta.name with
     | Some (PeIdent ("main", _)) -> mk_entry_point decl
-    | _ when decl_has_attr decl "rusteriatool::test" ->
-        let expect_error = decl_has_attr decl "rusteriatool::expect_fail" in
+    | _ when decl_has_attr decl "soteriatool::test" ->
+        let expect_error = decl_has_attr decl "soteriatool::expect_fail" in
         mk_entry_point ~expect_error decl
     | _ -> None
   in
@@ -451,9 +448,9 @@ let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
               | None, None -> Infinite
             in
             {
-              steps = get_or "rusteriatool::step_fuel" (Config.get ()).step_fuel;
+              steps = get_or "soteriatool::step_fuel" (Config.get ()).step_fuel;
               branching =
-                get_or "rusteriatool::branch_fuel" (Config.get ()).branch_fuel;
+                get_or "soteriatool::branch_fuel" (Config.get ()).branch_fuel;
             }
           in
           Some { ep with fuel }
