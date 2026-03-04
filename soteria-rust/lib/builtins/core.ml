@@ -32,8 +32,8 @@ module M (StateM : State.StateM.S) = struct
         else error `UBPointerComparison
     | TBitVector _, TPointer _ -> equality_check v2 v1
     | _ ->
-        Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a" ppa v1
-          ppa v2
+        Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
+          Typed.ppa v1 Typed.ppa v2
 
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
@@ -138,7 +138,9 @@ module M (StateM : State.StateM.S) = struct
     | Eq, Ptr (p, _), Int v | Eq, Int v, Ptr (p, _) ->
         let v = cast_i Usize v in
         if%sat v ==@ Usize.(0s) then ok (BV.of_bool (Sptr.is_at_null_loc p))
-        else Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p ppa v
+        else
+          Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p
+            Typed.ppa v
     | Eq, Int v1, Int v2 -> ok (BV.of_bool (v1 ==@ v2))
     | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
         if%sat Sptr.is_same_loc l r then

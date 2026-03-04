@@ -21,7 +21,7 @@ module type S = sig
        and module Symex.Value = Rustsymex.Value
        and module Value = Rustsymex.Value
 
-  type 'a ret := ('a, Error.with_trace, serialized list) SM.Result.t
+  type 'a ret := ('a, Error.with_trace, syn list) SM.Result.t
 
   val pp : t Fmt.t
 

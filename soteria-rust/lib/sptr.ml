@@ -122,17 +122,18 @@ module DecayMap : DecayMapS = struct
       in
       Soteria.Symex.Compo_res.get_ok res
 
-  let from_exposed (loc_int : [< sint ] Typed.t) =
+  let from_exposed (_loc_int : [< sint ] Typed.t) =
     (* UX: we only consider the first one; this is more or less correct, as per
        the documentation of [with_exposed_provenance]: "The provenance of the
        returned pointer is that of some pointer that was previously exposed"
 
        See
        https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html *)
-    let usize_ty = Typed.t_usize () in
+    let _usize_ty = Typed.t_usize () in
     let* st = SM.get_state () in
-    let bindings = syntactic_bindings (of_opt st) in
-    let binding =
+    let _bindings = syntactic_bindings (of_opt st) in
+    (* FIXME: AAAAAAAAAAAA. iter_vars doesn't exist anymore! *)
+    (* let binding =
       Typed.iter_vars loc_int
       |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
       |> Iter.filter_map (fun (var, ty) ->
@@ -143,8 +144,9 @@ module DecayMap : DecayMapS = struct
             bindings)
       |> Iter.map (fun (loc, Data.{ address; _ }) -> (loc, address))
       |> Iter.to_opt
-    in
-    SM.return binding
+    in *)
+    (* SM.return binding *)
+    SM.return None
 end
 
 module DecayMapMonad = struct
@@ -222,9 +224,6 @@ module type S = sig
 
   (** Get the allocation info for this pointer: its size and alignment *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
-
-  val iter_vars : t -> (Svalue.Var.t * 'b ty -> unit) -> unit
-  val subst : (Svalue.Var.t -> Svalue.Var.t) -> t -> t
 end
 
 type ('sptr, 'snonzero, 'sint) arithptr = {
@@ -360,14 +359,14 @@ module ArithPtr :
     in
     ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
 
-  let iter_vars { ptr; align; size; tag = _ } f =
-    Typed.iter_vars ptr f;
-    Typed.iter_vars align f;
-    Typed.iter_vars size f
-
-  let subst subst_var p =
-    let ptr = Typed.subst subst_var p.ptr in
-    let align = Typed.subst subst_var p.align in
-    let size = Typed.subst subst_var p.size in
+  let subst subst_val p =
+    let se = Expr.subst subst_val in
+    let ptr = se p.ptr in
+    let align = se p.align in
+    let size = se p.size in
     { p with ptr; align; size }
+
+  (* let subst subst_var p = let ptr = Typed.subst subst_var p.ptr in let align
+     = Typed.subst subst_var p.align in let size = Typed.subst subst_var p.size
+     in { p with ptr; align; size } *)
 end

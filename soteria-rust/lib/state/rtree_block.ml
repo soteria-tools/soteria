@@ -42,19 +42,48 @@ module Make (Sptr : Sptr.S) = struct
     end
 
     type qty = Totally | Partially [@@deriving show { with_path = false }]
-    type value = Init of rust_val | Zeros | Uninit of qty | Any | Lazy
+    type 'a value_raw = Init of 'a | Zeros | Uninit of qty | Any | Lazy
+    type value = rust_val value_raw
+    type value_syn = Sptr.syn Rust_val.syn value_raw
     type t = value * Tree_borrow.tb_state
+    type syn = value_syn
+    (* FIXME: we need to serialize the [tb_state]. Could also define it as a
+       separate type to avoid Uninit Partially and Lazy *)
 
-    let pp_value ft =
+    let ins_outs x =
+      let outs =
+        match x with
+        | Init v -> Rust_val.exprs_syn Sptr.exprs_syn v
+        | Zeros | Uninit _ | Any | Lazy -> []
+      in
+      ([], outs)
+
+    let value_to_syn v =
+      let open Syntaxes.Option in
+      let+ res =
+        match v with
+        | Init v -> Some (Init ((Rust_val.to_syn Sptr.to_syn) v))
+        | Zeros -> Some Zeros
+        | Uninit q -> Some (Uninit q)
+        | Any | Lazy -> None
+      in
+      Seq.singleton res
+
+    let to_syn ((v, _) : t) : syn Seq.t option = value_to_syn v
+
+    let pp_value_raw pp_rv ft =
       let open Fmt in
       function
       | Zeros -> pf ft "Zeros"
       | Uninit qty -> pf ft "Uninit %a" pp_qty qty
       | Lazy -> pf ft "Lazy"
-      | Init mv -> pp_rust_val ft mv
+      | Init mv -> pp_rv ft mv
       | Any -> pf ft "Any"
 
+    let pp_value = pp_value_raw pp_rust_val
     let pp ft (v, _) = pp_value ft v
+    let pp_value_syn = pp_value_raw (Rust_val.pp_syn Sptr.pp_syn)
+    let pp_syn ft v = pp_value_syn ft v
 
     let merge ~left:(v1, tb1) ~right:(v2, tb2) =
       let tb = Tree_borrow.merge tb1 tb2 in
@@ -114,25 +143,6 @@ module Make (Sptr : Sptr.S) = struct
       | Lazy | Uninit Partially ->
           failwith "Should never split an intermediate node"
 
-    type serialized = SInit of rust_val | SUninit | SZeros | SAny
-    [@@deriving show { with_path = false }]
-
-    let subst_serialized f = function
-      | SInit v -> SInit (Rust_val.subst Sptr.subst f v)
-      | v -> v
-
-    let iter_vars_serialized v f =
-      match v with SInit v -> Rust_val.iter_vars Sptr.iter_vars v f | _ -> ()
-
-    (* TODO: serialize tree borrow information! *)
-    let serialize ((t, _) : t) : serialized Seq.t option =
-      match t with
-      | Init v -> Some (Seq.return (SInit v))
-      | Uninit Totally -> Some (Seq.return SUninit)
-      | Zeros -> Some (Seq.return SZeros)
-      | Any -> Some (Seq.return SAny)
-      | Lazy | Uninit Partially -> None
-
     type tree = (t, T.sint Typed.t) TB.tree
 
     let not_owned (t : tree) : tree =
@@ -146,28 +156,26 @@ module Make (Sptr : Sptr.S) = struct
       in
       { t with node = Owned (v, tb); children = None }
 
-    let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t =
-      match (s, t.node) with
-      | _, NotOwned _ -> miss []
-      (* init *)
-      | SInit _, _ -> not_impl "Consume typed value on rust_val equality."
-      (* any *)
-      | SAny, Owned _ -> ok (not_owned t)
-      (* uninit *)
-      | SUninit, Owned (Uninit Totally, _) -> ok (not_owned t)
-      | SUninit, _ -> vanish ()
-      (* zeros *)
-      | SZeros, Owned (Zeros, _) -> ok (not_owned t)
-      | SZeros, Owned (Init _, _) -> not_impl "Assume rust_val == 0s"
-      | SZeros, _ -> vanish ()
+    (* let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t = match
+       (s, t.node) with | _, NotOwned _ -> miss [] (* init *) | SInit _, _ ->
+       not_impl "Consume typed value on rust_val equality." (* any *) | SAny,
+       Owned _ -> ok (not_owned t) (* uninit *) | SUninit, Owned (Uninit
+       Totally, _) -> ok (not_owned t) | SUninit, _ -> vanish () (* zeros *) |
+       SZeros, Owned (Zeros, _) -> ok (not_owned t) | SZeros, Owned (Init _, _)
+       -> not_impl "Assume rust_val == 0s" | SZeros, _ -> vanish () *)
 
-    let produce (s : serialized) (t : tree) : tree DecayMapMonad.t =
-      match (s, t.node) with
+    let produce (syn : syn) (tree : tree) : tree DecayMapMonad.Producer.t =
+      let open DecayMapMonad.Producer in
+      let open Syntax in
+      match (syn, tree.node) with
       | _, (Owned _ | NotOwned Partially) -> vanish ()
-      | SInit v, NotOwned Totally -> return (owned t (Init v))
-      | SZeros, NotOwned Totally -> return (owned t Zeros)
-      | SUninit, NotOwned Totally -> return (owned t (Uninit Totally))
-      | SAny, NotOwned Totally -> return (owned t Any)
+      | Init v, NotOwned Totally ->
+          let+ v = Producer.apply_subst (Rust_val.subst Sptr.subst) v in
+          owned tree (Init v)
+      | Zeros, NotOwned Totally -> return (owned tree Zeros)
+      | Uninit Totally, NotOwned Totally -> return (owned tree (Uninit Totally))
+      | Any, NotOwned Totally -> return (owned tree Any)
+      | (Uninit Partially | Lazy), _ -> failwith "Unreachable!"
 
     let assert_exclusively_owned _ = Result.ok ()
   end
@@ -266,8 +274,11 @@ module Make (Sptr : Sptr.S) = struct
       let+^ v = Encoder.nondet ty in
       (* we're basically guaranteed this won't error (ie. layout error) by now,
          so we can safely unwrap. *)
-      let v = get_ok v in
-      [ [ MemVal { offset = ofs; len = size; v = SInit v } ] ]
+      let v = Rust_val.to_syn Sptr.to_syn (get_ok v) in
+      let v = MemVal.Init v in
+      let offset = Expr.of_value ofs in
+      let len = Expr.of_value size in
+      [ [ MemVal { offset; len; v } ] ]
     in
     with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
