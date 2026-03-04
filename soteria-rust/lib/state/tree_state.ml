@@ -439,7 +439,11 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   let check_ref =
-    if (Config.get ()).recursive_validity <> Allow && check_refs then fake_read
+    if (Config.get ()).recursive_validity <> Allow && check_refs then
+      fun ptr ty ->
+      (* we still need to check it's non-dangling! *)
+      let** () = check_non_dangling ptr ty in
+      fake_read ptr ty
     else check_non_dangling
   in
   let++ () = Encoder.check_validity ~check_ref ty value in
