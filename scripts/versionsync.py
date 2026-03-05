@@ -25,7 +25,8 @@ from pathlib import Path
 
 # Files to scan for versionsync tags
 FILES_TO_SCAN = [
-    ".github/workflows/ci.yml",
+    ".github/workflows/build.yml",
+    ".github/workflows/test-packages.yml",
     "soteria-rust.opam.template",
     "dune-project",
     ".ocamlformat",
