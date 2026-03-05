@@ -67,7 +67,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let@ () = Crate.with_crate crate in
 
   (* get entry points to the crate *)
-  if List.is_empty entry_points then execution_err "No entry points found";
+  if List.is_empty entry_points then fatal "No entry points found";
 
   (* prepare executing the entry points *)
   let exec_fun = Interp.exec_fun ~args:[] ~state:State.empty in

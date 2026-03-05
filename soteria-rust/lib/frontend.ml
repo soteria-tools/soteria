@@ -153,7 +153,7 @@ module Cmd = struct
             with features)? *)
     entry_points : entry list; [@default []]
         (** Functions to mark as entry points, e.g.
-            [Attrib "rusteriatool::test"], when we are interested in filtering
+            [Attrib "soteriatool::test"], when we are interested in filtering
             the entry-points. *)
     expect_error : entry list; [@default []]
         (** Markers to know that an entry point is expected to fail. This is
@@ -204,6 +204,7 @@ module Cmd = struct
   let is_edition_flag = String.starts_with ~prefix:"--edition"
 
   let flags_for_cargo =
+    (* Cargo already specifies the edition and the crate type! *)
     List.filter (fun s -> not (is_edition_flag s || is_crate_type_flag s))
 
   let flags_as_rustc_env args =
@@ -261,10 +262,14 @@ module Cmd = struct
         in
         (cmd, ("rustc" :: args) @ [ "--" ] @ rustc, [])
     | Cargo ->
-        (* Cargo already specifies the edition *)
+        let cargo =
+          match (Config.get ()).test with
+          | Some test -> [ "--test"; test ]
+          | None -> []
+        in
         let rustc = flags_for_cargo rustc in
         let env = rustc_as_env () @ flags_as_rustc_env rustc in
-        (cmd, "cargo" :: args, env)
+        (cmd, ("cargo" :: args) @ [ "--" ] @ cargo, env)
 
   let exec_in ~mode folder cmd =
     let cmd, args, env = build_cmd ~mode cmd in
@@ -331,13 +336,18 @@ module Lib = struct
     { config with rustc = config.rustc @ lib_imports }
 end
 
-type fun_decl = UllbcAst.fun_decl
+type entry_point_filter = {
+  filter : Cmd.entry list;
+  expect_error : Cmd.entry list;
+}
 
 type entry_point = {
-  fun_decl : fun_decl;
+  fun_decl : UllbcAst.fun_decl;
   expect_error : bool;
   fuel : Soteria.Symex.Fuel_gauge.t;
 }
+
+type mk_cmd = ?input:string -> output:string -> unit -> Cmd.t
 
 let default () =
   let@ std_lib_path, target = Lib.with_compiled Std in
@@ -398,10 +408,75 @@ let miri () =
     ~rustc:[ "--extern"; "miristd"; "--edition"; "2021" ]
     ~entry_points:[ Attrib "miri_start" ] ()
 
-let merge_commands (cmds : Cmd.t list) =
-  let base_cmd = List.fold_left Cmd.concat_cmd Cmd.empty cmds in
+let filter_name name =
+  let any_contains rs =
+    List.exists
+      (fun r ->
+        try Str.search_forward (Str.regexp r) name 0 >= 0
+        with Not_found -> false)
+      rs
+  in
 
-  let mk_cmd ?input ~output () =
+  let filters = (Config.get ()).filter in
+  let excludes = (Config.get ()).exclude in
+
+  (List.is_empty filters || any_contains filters) && not (any_contains excludes)
+
+let get_entry_point (filter : entry_point_filter) crate
+    (decl : UllbcAst.fun_decl) =
+  let ( let*! ) b f = if b then f () else None in
+  (* check it's a valid entry-point *)
+  let*! () =
+    List.is_empty filter.filter
+    || List.exists (Cmd.entry_matches_fn decl) filter.filter
+  in
+  (* check it's filtered *)
+  let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+  let name = PrintTypes.name_to_string fmt_env decl.item_meta.name in
+  let*! () = filter_name name in
+  (* build the entry point *)
+  let expect_error =
+    List.exists (Cmd.entry_matches_fn decl) filter.expect_error
+  in
+  let open Soteria.Symex in
+  let fuel : Fuel_gauge.t =
+    let get_or name default : Fuel_gauge.Fuel_value.t =
+      match (decl_get_attr decl name, default) with
+      | Some fuel, _ -> Finite (int_of_string fuel)
+      | None, Some fuel -> Finite fuel
+      | None, None -> Infinite
+    in
+    {
+      steps = get_or "soteriatool::step_fuel" (Config.get ()).step_fuel;
+      branching = get_or "soteriatool::branch_fuel" (Config.get ()).branch_fuel;
+    }
+  in
+  Some { fun_decl = decl; expect_error; fuel }
+
+let create_using_current_config () =
+  let config = Config.get () in
+  let cmd_parts =
+    [ default () ]
+    @ (if config.with_kani then [ kani () ] else [])
+    @ if config.with_miri then [ miri () ] else []
+  in
+  let cmd = List.fold_left Cmd.concat_cmd Cmd.empty cmd_parts in
+  let cmd =
+    match config.test with
+    | None -> cmd
+    | Some _ ->
+        (* HACK: if we're in test mode, we want to ignore main because Rust will
+           compile it in a quirky way and it requires having a sysroot. Instead
+           we want to look for the tests directly! So we add #[test] *)
+        let entry_points =
+          Cmd.Attrib "test" :: cmd.entry_points
+          |> List.filter (function Cmd.Pub | Name "main" -> false | _ -> true)
+        in
+        let expect_error = Cmd.Attrib "should_panic" :: cmd.expect_error in
+        { cmd with entry_points; expect_error }
+  in
+  let mk_cmd =
+   fun ?input ~output () ->
     let input =
       Option.fold ~none:[] ~some:(fun s -> [ Filename.quote s ]) input
     in
@@ -409,63 +484,9 @@ let merge_commands (cmds : Cmd.t list) =
       ~charon:[ "--dest-file"; Filename.quote output ]
       ~obol:[ "--dest-file"; Filename.quote output ]
       ~rustc:input ()
-    |> Cmd.concat_cmd base_cmd
+    |> Cmd.concat_cmd cmd
   in
-
-  let filter_name name =
-    let any_contains rs =
-      List.exists
-        (fun r ->
-          try Str.search_forward (Str.regexp r) name 0 >= 0
-          with Not_found -> false)
-        rs
-    in
-
-    let filters = (Config.get ()).filter in
-    let excludes = (Config.get ()).exclude in
-
-    (List.is_empty filters || any_contains filters)
-    && not (any_contains excludes)
-  in
-
-  let get_entry_point crate (decl : fun_decl) =
-    let ( let*! ) b f = if b then f () else None in
-    (* check it's a valid entry-point *)
-    let*! () =
-      List.is_empty base_cmd.entry_points
-      || List.exists (Cmd.entry_matches_fn decl) base_cmd.entry_points
-    in
-    (* check it's filtered *)
-    let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-    let name = PrintTypes.name_to_string fmt_env decl.item_meta.name in
-    let*! () = filter_name name in
-    (* build the entry point *)
-    let expect_error =
-      List.exists (Cmd.entry_matches_fn decl) base_cmd.expect_error
-    in
-    let open Soteria.Symex in
-    let fuel : Fuel_gauge.t =
-      let get_or name default : Fuel_gauge.Fuel_value.t =
-        match (decl_get_attr decl name, default) with
-        | Some fuel, _ -> Finite (int_of_string fuel)
-        | None, Some fuel -> Finite fuel
-        | None, None -> Infinite
-      in
-      {
-        steps = get_or "rusteriatool::step_fuel" (Config.get ()).step_fuel;
-        branching =
-          get_or "rusteriatool::branch_fuel" (Config.get ()).branch_fuel;
-      }
-    in
-    Some { fun_decl = decl; expect_error; fuel }
-  in
-  (mk_cmd, get_entry_point)
-
-let create_using_current_config () =
-  ([ default () ]
-  @ (if (Config.get ()).with_kani then [ kani () ] else [])
-  @ if (Config.get ()).with_miri then [ miri () ] else [])
-  |> merge_commands
+  (mk_cmd, { filter = cmd.entry_points; expect_error = cmd.expect_error })
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc ~mode ~cmd ~output ~pwd () =
@@ -504,11 +525,9 @@ let parse_ullbc ~mode ~cmd ~output ~pwd () =
 let with_entry_points ~filter (crate : Charon.UllbcAst.crate) =
   let entry_points =
     Charon.Types.FunDeclId.Map.values crate.fun_decls
-    |> List.filter_map (filter crate)
+    |> List.filter_map (get_entry_point filter crate)
   in
   (crate, entry_points)
-
-type mk_cmd = ?input:string -> output:string -> unit -> Cmd.t
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~(mk_cmd : mk_cmd) file_name =
@@ -519,7 +538,12 @@ let parse_ullbc_of_file ~(mk_cmd : mk_cmd) file_name =
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_crate ~(mk_cmd : mk_cmd) crate_dir =
-  let output = Filename.concat crate_dir "crate.llbc.json" in
+  let filename =
+    match (Config.get ()).test with
+    | Some test -> "test-" ^ test ^ ".llbc.json"
+    | None -> "crate.llbc.json"
+  in
+  let output = Filename.concat crate_dir filename in
   let cmd = mk_cmd ~output () in
   parse_ullbc ~mode:Cargo ~cmd ~output ~pwd:crate_dir ()
 
