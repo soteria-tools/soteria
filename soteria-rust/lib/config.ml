@@ -57,6 +57,10 @@ type t = {
   sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
       (** The sysroot to use for compilation. If not provided, the default
           sysroot is used. *)
+  test : string option; [@names [ "test" ]]
+      (** The test profile to use to compile the crate; this only has an effect
+          if analysing a crate. By default, the crate's source is analysed, not
+          the tests. *)
   (* Plugins *)
   with_kani : bool; [@make.default false] [@names [ "kani" ]]
       (** Use the Kani library *)

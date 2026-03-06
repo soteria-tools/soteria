@@ -15,8 +15,8 @@ type optim_fn =
   | AllocImpl
   | Panic
 
-(* Rusteria builtin functions *)
-type rusteria_fn = Assert | Assume | NondetBytes | Panic
+(* Soteria builtin functions *)
+type soteria_fn = Assert | Assume | NondetBytes | Panic
 
 (* Miri builtin functions *)
 type miri_fn = AllocId | PromiseAlignement | Nop
@@ -36,21 +36,21 @@ type fn =
   | Fixme of fixme_fn
   | Miri of miri_fn
   | Optim of optim_fn
-  | Rusteria of rusteria_fn
+  | Soteria of soteria_fn
   | System of system_fn
   | DropInPlace
 
 let std_fun_pair_list =
   [
-    (* Rusteria builtins *)
-    ("rusteria::assert", Rusteria Assert);
-    ("rusteria::assume", Rusteria Assume);
-    ("rusteria::nondet_bytes", Rusteria NondetBytes);
-    ("rusteria::panic", Rusteria Panic);
+    (* Soteria builtins *)
+    ("soteria::assert", Soteria Assert);
+    ("soteria::assume", Soteria Assume);
+    ("soteria::nondet_bytes", Soteria NondetBytes);
+    ("soteria::panic", Soteria Panic);
     (* Kani builtins -- we re-define these for nicer call traces *)
-    ("kani::assert", Rusteria Assert);
-    ("kani::assume", Rusteria Assume);
-    ("kani::panic", Rusteria Panic);
+    ("kani::assert", Soteria Assert);
+    ("kani::assume", Soteria Assume);
+    ("kani::panic", Soteria Panic);
     (* Miri builtins *)
     ("miristd::miri_get_alloc_id", Miri AllocId);
     ("miristd::miri_pointer_name", Miri Nop);
@@ -143,21 +143,21 @@ module M (StateM : State.StateM.S) = struct
   module Alloc = Alloc.M (StateM)
   module Intrinsics = Intrinsics.M (StateM)
   module Miri = Miri.M (StateM)
-  module Rusteria = Rusteria.M (StateM)
+  module Soteria_lib = Soteria_lib.M (StateM)
   module Std = Std.M (StateM)
   module System = System.M (StateM)
 
   let fn_to_stub fn_sig fn_name fun_exec = function
-    | Rusteria Assert -> Rusteria.assert_
-    | Rusteria Assume -> Rusteria.assume
-    | Rusteria NondetBytes -> Rusteria.nondet_bytes fn_sig
-    | Rusteria Panic -> Rusteria.panic ?msg:None
+    | Soteria Assert -> Soteria_lib.assert_
+    | Soteria Assume -> Soteria_lib.assume
+    | Soteria NondetBytes -> Soteria_lib.nondet_bytes fn_sig
+    | Soteria Panic -> Soteria_lib.panic ?msg:None
     | Miri AllocId -> Miri.alloc_id
     | Miri PromiseAlignement -> Miri.promise_alignement
     | Miri Nop -> Std.nop
     | Optim AllocImpl -> Std.alloc_impl
     | Optim Panic ->
-        Rusteria.panic ~msg:(Fmt.to_to_string Crate.pp_name fn_name)
+        Soteria_lib.panic ~msg:(Fmt.to_to_string Crate.pp_name fn_name)
     | Optim (FloatIs fc) -> Std.float_is fc
     | Optim FloatIsFinite -> Std.float_is_finite
     | Optim (FloatIsSign { positive }) -> Std.float_is_sign positive

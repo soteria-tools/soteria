@@ -8,7 +8,7 @@ where
     assert!(predicate(size));
 }
 
-#[rusteria::test]
+#[soteria::test]
 fn two_generics<T, U>() {
     let size_t = std::intrinsics::size_of::<T>();
     let size_u = std::intrinsics::size_of::<U>();

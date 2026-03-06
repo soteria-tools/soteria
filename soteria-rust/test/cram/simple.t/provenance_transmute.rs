@@ -1,4 +1,4 @@
-#[rusteria::test]
+#[soteria::test]
 fn addr_doesnt_expose() {
     let mut x: u8 = 0;
     let p = &mut x as *mut u8;
@@ -11,7 +11,7 @@ fn addr_doesnt_expose() {
     }
 }
 
-#[rusteria::test]
+#[soteria::test]
 fn transmute_doesnt_restore_provenance() {
     let mut x: u8 = 0;
     let p = &mut x as *mut u8;
