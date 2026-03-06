@@ -271,7 +271,7 @@ type t = {
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.with_trace list;
       [@printer Fmt.list Error.pp_err_and_call_trace]
-  pointers : DecayMap.t option;
+  pointers : DecayMap.t;
   thread_destructor :
     unit ->
     t option ->
@@ -317,7 +317,7 @@ let empty_state =
     functions = FunBiMap.empty;
     globals = GlobMap.empty;
     errors = [];
-    pointers = None;
+    pointers = DecayMap.empty;
     thread_destructor = (fun () -> SM.Result.ok ());
     const_generics = Types.ConstGenericVarId.Map.empty;
   }
