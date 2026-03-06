@@ -370,8 +370,8 @@ let rec subst subst_var sv =
 module type Bool = sig
   val v_true : t
   val v_false : t
-  val as_bool : t -> bool option
-  val bool : bool -> t
+  val to_bool : t -> bool option
+  val of_bool : bool -> t
   val and_ : t -> t -> t
   val and_lazy : t -> (unit -> t) -> t
   val or_ : t -> t -> t
@@ -487,12 +487,12 @@ module rec Bool : Bool = struct
   let v_true = Bool true <| TBool
   let v_false = Bool false <| TBool
 
-  let as_bool t =
+  let to_bool t =
     if equal t v_true then Some true
     else if equal t v_false then Some false
     else None
 
-  let bool b =
+  let of_bool b =
     (* avoid re-alloc and re-hashconsing *)
     if b then v_true else v_false
 
@@ -572,9 +572,9 @@ module rec Bool : Bool = struct
       (v1.node.kind, v2.node.kind)
     with
     | _ when equal v1 v2 -> v_true
-    | Bool b1, Bool b2 -> bool (b1 = b2)
+    | Bool b1, Bool b2 -> of_bool (b1 = b2)
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
-    | BitVec b1, BitVec b2 -> bool (Z.equal b1 b2)
+    | BitVec b1, BitVec b2 -> of_bool (Z.equal b1 b2)
     (* Arithmetics *)
     | BitVec _, Unop (Neg, v2) -> sem_eq (BitVec.neg v1) v2
     | Unop (Neg, v1), BitVec _ -> sem_eq v1 (BitVec.neg v2)
@@ -594,16 +594,16 @@ module rec Bool : Bool = struct
         sem_eq (BitVec.sub l v2) r
     | _, Binop (Add _, v2, { node = { kind = BitVec bv; _ }; _ })
       when equal v1 v2 ->
-        bool Z.(equal bv zero)
+        of_bool Z.(equal bv zero)
     | _, Binop (Add _, { node = { kind = BitVec bv; _ }; _ }, v2)
       when equal v1 v2 ->
-        bool Z.(equal bv zero)
+        of_bool Z.(equal bv zero)
     | Binop (Add _, { node = { kind = BitVec bv; _ }; _ }, v1), _
       when equal v1 v2 ->
-        bool Z.(equal bv zero)
+        of_bool Z.(equal bv zero)
     | Binop (Add _, v1, { node = { kind = BitVec bv; _ }; _ }), _
       when equal v1 v2 ->
-        bool Z.(equal bv zero)
+        of_bool Z.(equal bv zero)
     | ( ( Binop (Add _, ({ node = { kind = BitVec bv_l; _ }; _ } as l), y)
         | Binop (Add _, y, ({ node = { kind = BitVec bv_l; _ }; _ } as l)) ),
         ( Binop (Add _, ({ node = { kind = BitVec bv_r; _ }; _ } as r), x)
@@ -623,7 +623,7 @@ module rec Bool : Bool = struct
         | Binop (Mul { checked = true }, x, { node = { kind = BitVec m; _ }; _ })
           ),
         BitVec n ) ->
-        if Z.(equal m zero) then bool (Z.equal n Z.zero)
+        if Z.(equal m zero) then of_bool (Z.equal n Z.zero)
         else if Z.(equal n zero) then sem_eq x (BitVec.zero (size_of x.node.ty))
         else if Z.(divisible n m) then
           sem_eq x (BitVec.mk (size_of x.node.ty) Z.(n / m))
@@ -830,7 +830,7 @@ and BitVec : BitVec = struct
     let res = op l r in
     Z.Compare.(res < minz || res > maxz)
 
-  let ovf_check ~signed n l r op = Bool.bool @@ overflows ~signed n l r op
+  let ovf_check ~signed n l r op = Bool.of_bool @@ overflows ~signed n l r op
 
   let of_bool n b =
     if equal Bool.v_true b then one n
@@ -839,7 +839,7 @@ and BitVec : BitVec = struct
 
   let to_bool v =
     match v.node.kind with
-    | BitVec z -> Bool.bool (Stdlib.not (Z.equal z Z.zero))
+    | BitVec z -> Bool.of_bool (Stdlib.not (Z.equal z Z.zero))
     | Unop (BvOfBool _, sv') -> sv'
     | _ -> Bool.not (Bool.sem_eq v (zero (size_of v.node.ty)))
 
@@ -1593,7 +1593,7 @@ and BitVec : BitVec = struct
     let bits = size_of v1.node.ty in
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
-        Bool.bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
+        Bool.of_bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
     | _ when equal v1 v2 -> Bool.v_false
     | ( BitVec bv_v1,
         ( Binop
@@ -1794,7 +1794,7 @@ and BitVec : BitVec = struct
     match (v1.node.kind, v2.node.kind) with
     | _ when equal v1 v2 -> Bool.v_true
     | BitVec l, BitVec r ->
-        Bool.bool @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
+        Bool.of_bool @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
     | ( BitVec bv_v1,
         ( Binop
             ( Add { checked = true },
@@ -2106,7 +2106,8 @@ and Float : Float = struct
   let[@inline] is_floatclass fc =
    fun sv ->
     match sv.node.kind with
-    | Float f -> Bool.bool (FloatClass.as_fpclass fc = classify_float (str2f f))
+    | Float f ->
+        Bool.of_bool (FloatClass.as_fpclass fc = classify_float (str2f f))
     | _ -> Unop (FIs fc, sv) <| TBool
 
   let is_normal = is_floatclass Normal
@@ -2121,12 +2122,12 @@ and Float : Float = struct
 
   let lt v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | Float f1, Float f2 -> Bool.bool (str2f f1 < str2f f2)
+    | Float f1, Float f2 -> Bool.of_bool (str2f f1 < str2f f2)
     | _ -> Binop (FLt, v1, v2) <| TBool
 
   let leq v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | Float f1, Float f2 -> Bool.bool (str2f f1 <= str2f f2)
+    | Float f1, Float f2 -> Bool.of_bool (str2f f1 <= str2f f2)
     | _ -> Binop (FLeq, v1, v2) <| TBool
 
   let gt v1 v2 = lt v2 v1

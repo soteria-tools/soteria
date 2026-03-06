@@ -474,7 +474,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
           f ()
       | l :: ls -> (
           let l = Solver.simplify l in
-          match Value.as_bool l with
+          match Value.to_bool l with
           | Some true -> aux acc ls
           | Some false ->
               L.trace (fun m -> m "Assuming false, stopping this branch")
@@ -487,7 +487,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       side-effects at the wrong time. *)
   let assert_raw value : bool =
     let value = Solver.simplify value in
-    match Value.as_bool value with
+    match Value.to_bool value with
     | Some true -> true
     | Some false -> false
     | None ->
@@ -519,7 +519,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
 
   let consume_false () f =
     if Approx.As_ctx.is_ux () then ()
-    else f (Compo_res.Error (`Lfail (Value.bool false)))
+    else f (Compo_res.Error (`Lfail (Value.of_bool false)))
 
   let nondet ty f =
     let v = Solver.fresh_var ty in
@@ -535,7 +535,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
    fun f ->
     Stats.As_ctx.incr StatKeys.branch_on_calls;
     let guard = Solver.simplify guard in
-    match Value.as_bool guard with
+    match Value.to_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
        remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
@@ -572,7 +572,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       ~(then_ : unit -> 'a Iter.t) ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
-    match Value.as_bool guard with
+    match Value.to_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
        remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
@@ -593,7 +593,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       ~then_ ~else_ : 'a Iter.t =
    fun f ->
     let guard = Solver.simplify guard in
-    match Value.as_bool guard with
+    match Value.to_bool guard with
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->

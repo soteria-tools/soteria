@@ -194,7 +194,7 @@ module Make (StateImpl : State.S) = struct
     let* const = Poly.subst_constant_expr const in
     match const.kind with
     | CLiteral (VScalar scalar) -> ok (Int (BV.of_scalar scalar))
-    | CLiteral (VBool b) -> ok (Int (BV.of_bool (Typed.bool b)))
+    | CLiteral (VBool b) -> ok (Int (BV.of_bool (Typed.of_bool b)))
     | CLiteral (VChar c) -> ok (Int (BV.u32i (Uchar.to_int c)))
     | CLiteral (VFloat { float_value; float_ty }) ->
         ok (Float (Typed.Float.mk float_ty float_value))

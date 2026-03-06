@@ -1,33 +1,11 @@
 open Symex
-
-module type MapS = sig
-  type key
-  type 'a t
-
-  val empty : 'a t
-  val is_empty : 'a t -> bool
-  val add : key -> 'a -> 'a t -> 'a t
-  val add_seq : (key * 'a) Seq.t -> 'a t -> 'a t
-  val update : key -> ('a option -> 'a option) -> 'a t -> 'a t
-  val mem : key -> 'a t -> bool
-  val find_opt : key -> 'a t -> 'a option
-  val iter : (key -> 'a -> unit) -> 'a t -> unit
-  val to_seq : 'a t -> (key * 'a) Seq.t
-end
+open Data
 
 module Key (Symex : Symex.Base) = struct
   module type S = sig
-    type t
+    include S_map.Key(Symex).S
 
-    include Stdlib.Map.OrderedType with type t := t
-
-    type sbool_v := Symex.Value.(sbool t)
-
-    val pp : Format.formatter -> t -> unit
-    val sem_eq : t -> t -> sbool_v
     val fresh : unit -> t Symex.t
-    val simplify : t -> t Symex.t
-    val distinct : t list -> sbool_v
     val subst : (Var.t -> Var.t) -> t -> t
     val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
   end
@@ -68,8 +46,8 @@ struct
     val syntactic_mem : Key.t -> t -> bool
 
     val pp' :
-      ?key:(Format.formatter -> Key.t -> unit) ->
       ?codom:(Format.formatter -> codom -> unit) ->
+      ?key:(Format.formatter -> Key.t -> unit) ->
       ?ignore:(Key.t * codom -> bool) ->
       Format.formatter ->
       t ->
