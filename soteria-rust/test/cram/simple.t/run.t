@@ -127,17 +127,9 @@ Check permissive provenance allows int to ptr casts
   $ soteria-rust exec provenance.rs --provenance permissive
   Compiling... done in <time>
   => Running main...
-  error: main: found issues in <time>, errors in 1 branch (out of 1)
-  bug: Dangling pointer in main
-      ┌─ $TESTCASE_ROOT/provenance.rs:7:9
-    1 │  fn main() {
-      │  --------- 1: Entry point
-      ·  
-    7 │          *p_back = 1;
-      │          ^^^^^^^^^^^ Memory store
+  note: main: done in <time>, ran 1 branch
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
-  [1]
 
 Check corner cases with permissive provenance, around transmutes
   $ soteria-rust exec provenance_transmute.rs --provenance permissive
