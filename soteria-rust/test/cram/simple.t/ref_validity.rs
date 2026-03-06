@@ -1,6 +1,6 @@
 use std::mem::MaybeUninit;
 
-#[rusteria::test]
+#[soteria::test]
 fn test_uninit_ref() {
     let b32 = Box::new(MaybeUninit::<u32>::uninit());
     let as_ptr = b32.as_ptr() as *const u32;
@@ -10,7 +10,7 @@ fn test_uninit_ref() {
     // see: https://github.com/rust-lang/unsafe-code-guidelines/issues/346
 }
 
-#[rusteria::test]
+#[soteria::test]
 fn test_dangling_ref() {
     let b32 = Box::new(MaybeUninit::<u32>::uninit());
     let as_ptr = b32.as_ptr() as *const u32 as *const [u32; 2];
@@ -18,7 +18,7 @@ fn test_dangling_ref() {
     // dangling! this must always be caught
 }
 
-#[rusteria::test]
+#[soteria::test]
 fn test_unaligned_ref() {
     let b32 = Box::new(MaybeUninit::<[u32; 2]>::uninit());
     let as_ptr = b32.as_ptr() as *const [u32; 2] as *const u64;

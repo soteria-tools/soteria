@@ -43,13 +43,13 @@ Try creating a generic vec
   error: vec::with_vec_wrong: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: assertion failed: my_vec.capacity() == 10 in vec::with_vec_wrong
       ┌─ $SOTERIA-RUST/std/src/lib.rs:20:8
-   20 │            rusteria::assert(!!$cond, concat!("assertion failed: ", stringify!($cond)));
-      │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   20 │            soteria::assert(!!$cond, concat!("assertion failed: ", stringify!($cond)));
+      │           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       │           │
       │           Triggering operation
       │           2: Call trace
       ┌─ $TESTCASE_ROOT/vec.rs:14:1
-   13 │    #[rusteria::test]
+   13 │    #[soteria::test]
    14 │ ╭  fn with_vec_wrong<T>() {
    15 │ │      let my_vec: Vec<T> = Vec::with_capacity(10);
    16 │ │      assert!(my_vec.capacity() == 10);

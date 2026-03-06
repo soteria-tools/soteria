@@ -1,9 +1,9 @@
 #![feature(register_tool)]
-#![register_tool(rusteriatool)]
+#![register_tool(soteriatool)]
 
-extern crate self as rusteria;
+extern crate self as soteria;
 
-pub use rusteria_macros::*;
+pub use soteria_macros::*;
 
 #[inline(never)]
 pub const fn panic(_message: &'static str) -> ! {

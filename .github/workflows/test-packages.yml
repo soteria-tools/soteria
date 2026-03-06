@@ -6,8 +6,8 @@ on:
 env:
   # [versionsync: OBOL_REPO=soteria-tools/obol]
   OBOL_REPO: soteria-tools/obol
-  # [versionsync: OBOL_COMMIT_HASH=964dfb47ca74d88262da821c258efb04e4e4fb5a]
-  OBOL_COMMIT_HASH: 964dfb47ca74d88262da821c258efb04e4e4fb5a
+  # [versionsync: OBOL_COMMIT_HASH=745a7e8f59596f4e656169e5b1b4f9e834c4c671]
+  OBOL_COMMIT_HASH: 745a7e8f59596f4e656169e5b1b4f9e834c4c671
 
 jobs:
   test-soteria-c-package:
@@ -133,14 +133,14 @@ jobs:
           echo "Testing assume.rs (Kani plugin)"
           $SOTERIA_RUST exec assume.rs --kani
           echo "✓ assume.rs test passed"
-      - name: Test Rusteria plugin (rusteria-lib.t tests)
-        working-directory: soteria-rust/test/cram/rusteria-lib.t
+      - name: Test Soteria plugin (soteria-lib.t tests)
+        working-directory: soteria-rust/test/cram/soteria-lib.t
         run: |
-          echo "Testing lib-fns.rs (Rusteria plugin)"
+          echo "Testing lib-fns.rs (Soteria plugin)"
           $SOTERIA_RUST exec lib-fns.rs
           echo "✓ lib-fns.rs test passed"
 
-          echo "Testing annots.rs (Rusteria annotations)"
+          echo "Testing annots.rs (Soteria annotations)"
           $SOTERIA_RUST exec annots.rs
           echo "✓ annots.rs test passed"
       - name: Test polymorphic support (poly.t tests)

@@ -183,6 +183,11 @@
              x86_64-unknown-linux-gnu. If not provided, the default target for
              the current machine is used.
   
+         --test=VAL
+             The test profile to use to compile the crate; this only has an
+             effect if analysing a crate. By default, the crate's source is
+             analysed, not the tests.
+  
          -v, --verbose
              Verbosity level, clashes with -q
   
@@ -412,6 +417,11 @@
              The compilation target triple to use, e.g.
              x86_64-unknown-linux-gnu. If not provided, the default target for
              the current machine is used.
+  
+         --test=VAL
+             The test profile to use to compile the crate; this only has an
+             effect if analysing a crate. By default, the crate's source is
+             analysed, not the tests.
   
          -v, --verbose
              Verbosity level, clashes with -q
