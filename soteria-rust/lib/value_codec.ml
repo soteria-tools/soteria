@@ -9,6 +9,22 @@ module DecayMapMonad = Sptr.DecayMapMonad
 open DecayMapMonad
 open DecayMapMonad.Syntax
 
+(** Returns the variant id and variant matching the given discriminant. *)
+let variant_for_discr discr adt =
+  let open Rustsymex in
+  let open Syntax in
+  let variants = Crate.as_enum adt in
+  let variants = List.mapi (fun i v -> (i, v)) variants in
+  let* variant =
+    match_on variants ~constr:(fun (_, v) ->
+        BV.of_literal v.discriminant ==@ discr)
+  in
+  let+ i, variant =
+    of_opt_not_impl "no matching variant for enum discriminant" variant
+  in
+  let vid = Types.VariantId.of_int i in
+  (vid, variant)
+
 (** Iterator over the fields and offsets of a type; for primitive types, returns
     a singleton iterator for that value. *)
 let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
@@ -44,7 +60,9 @@ let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
         | NoneKind -> failwith "invalid iter_fields: no metadata"
         | LenKind -> Iter.of_list [ unit_ptr; TLiteral (TInt Isize) ]
         | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
-    | _ -> Fmt.failwith "invalid iter_fields: %a" pp_ty ty
+    | TLiteral _ | TNever | TVar _ | TTraitType _ | TDynTrait _ | TFnPtr _
+    | TFnDef _ | TPtrMetadata _ | TError _ ->
+        Fmt.failwith "invalid iter_fields: %a" pp_ty ty
   in
   match layout.fields with
   | Primitive -> Iter.singleton (ty, Usize.(0s))
@@ -87,16 +105,18 @@ struct
   module ParserMonad = struct
     open State_tys
 
-    type query = Types.ty * T.sint Typed.t
+    type query = Types.ty * Typed.(T.sint t)
     type 'a res = ('a, Error.t, fix) SM.Result.t
 
     (* size * offset *)
-    type get_all_query = T.nonzero Typed.t * T.sint Typed.t
+    type get_all_query = Typed.(T.nonzero t) * Typed.(T.sint t)
 
     (* The following is just query -> (rust_val, 'err, 'fix) StateResult.t where
        StateResult = StateT (Result), but I need StateT1of3 urgh. *)
     type handler = query -> rust_val res
-    type get_all_handler = get_all_query -> (rust_val * T.sint Typed.t) list res
+
+    type get_all_handler =
+      get_all_query -> (rust_val * Typed.(T.sint t)) list res
 
     (* A parser monad is an object such that, given a query handler with state
        ['state], returns a state monad-ish for that state which may fail or
@@ -221,7 +241,7 @@ struct
     let* ty = normalise ty in
     let* layout = layout_of ty in
     match (layout.fields, ty) with
-    | _ when layout.uninhabited -> error `RefToUninhabited
+    | _ when layout.uninhabited -> error (`RefToUninhabited ty)
     | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
     | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Union [])
@@ -279,7 +299,7 @@ module Encoder (Sptr : Sptr.S) = struct
       iterator over its sub values, along with their offset. Offsets all blocks
       by [offset] if specified *)
   let rec encode ~offset (value : rust_val) (ty : Types.ty) :
-      ((rust_val * T.sint Typed.t) Iter.t, 'e, 'f) Rustsymex.Result.t =
+      ((rust_val * Typed.(T.sint t)) Iter.t, 'e, 'f) Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
     let open Result in
@@ -310,16 +330,8 @@ module Encoder (Sptr : Sptr.S) = struct
       | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
       | Enum (tag_layout, _), Enum (disc, _) -> (
           let adt = ty_as_adt ty in
-          let variants = Crate.as_enum adt in
-          let variants = List.mapi (fun i v -> (i, v)) variants in
-          let* variant =
-            match_on variants ~constr:(fun (_, v) ->
-                BV.of_literal v.discriminant ==@ disc)
-          in
-          let* i, _ =
-            of_opt_not_impl "no matching variant for enum discriminant" variant
-          in
-          let variant = Types.VariantId.of_int i in
+          let* variant, _ = variant_for_discr disc adt in
+          let i = Types.VariantId.to_int variant in
           let++ fields = chain (iter_fields ~variant layout ty) in
           match tag_layout.tags.(i) with
           | None -> fields
@@ -330,53 +342,130 @@ module Encoder (Sptr : Sptr.S) = struct
           Fmt.kstr not_impl "encode: expected enum value for enum type %a" pp_ty
             ty
 
-  (** Ensures this value is valid for the given type. This includes checking
-      pointer metadata, e.g. slice lengths and vtables. The [fake_read] function
-      is used to simulate reading from memory to check the validity of a pointee
-      type. *)
-  let check_valid ~check_ref v ty st =
+  (** Iterates over the validity constraints of this particular value for a
+      given type, traversing it recursively. For every requirement, this
+      associates to it the error to be raised if the requirement is not met.
+
+      An optional [check_refs] function can be provided, to further check the
+      validity of references and boxes relative to some state; this allows
+      checking that references are not dangling, and that their pointees are
+      valid. By default this function already checks references are well-aligned
+      and non-null. Note that this check will raise errors in the outside monad,
+      rather than in the returned list, since it is not possible to represent
+      constraints in the state in first order logic. We provide this possibility
+      here, to avoid re-implementing value traversal elsewhere.
+
+      This doesn't check:
+      - the fact the bytes of the value cannot be undefined, as that is checked
+        when the memory is read; once we have a [Rust_val.t], we are guaranteed
+        the data is initialised.
+      - the validity of the discriminant of an enum, as that is checked when the
+        memory is read (otherwise it would be impossible to even decode the
+        value in the first place).
+
+      Reference:
+      https://doc.rust-lang.org/reference/behavior-considered-undefined.html#r-undefined.validity
+  *)
+  let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
+    (* We annotate each relevant helper function or match branch with the
+       matching rule in the above-referenced document. *)
     let open Rustsymex in
     let open Syntax in
-    let open Compo_res in
     let open Result in
+    (* undefined.validity.wide *)
+    let metadata_validity ~is_raw_ptr pointee meta =
+      match (meta, Layout.dst_kind pointee) with
+      | Thin, NoneKind -> ok ()
+      | Len len, LenKind ->
+          if is_raw_ptr then ok ()
+          else f Usize.(0s <=$@ len) (`UBTransmute "Negative slice length")
+      | VTable _, VTableKind ->
+          (* TODO: the vtable must always match the trait type of the pointee.
+             Will require a new input to this function (?) *)
+          ok ()
+      | Thin, (LenKind | VTableKind) ->
+          f Typed.v_false (`UBTransmute "Thin pointer to DST")
+      | (Len _ | VTable _), NoneKind ->
+          f Typed.v_false (`UBTransmute "Metadata for non-DST pointee")
+      | Len _, VTableKind ->
+          f Typed.v_false (`UBTransmute "Length metadata when VTable expected")
+      | VTable _, LenKind ->
+          f Typed.v_false (`UBTransmute "VTable metadata when length expected")
+    in
+    (* undefined.validity.reference-box *)
+    let ref_box_validity ((ptr, meta) as fptr) pointee =
+      let** () = metadata_validity ~is_raw_ptr:false pointee meta in
+      let** layout = Layout.layout_of pointee in
+      if layout.uninhabited then f Typed.v_false (`RefToUninhabited pointee)
+      else
+        let** () = check_ref fptr pointee in
+        let aligned, err = Sptr.is_aligned layout.align ptr in
+        f aligned err
+    in
+    let** ty = Layout.normalise ty in
     match (v, (ty : Types.ty)) with
-    | Ptr ((_, meta) as p), TRef (_, pointee, _) -> (
-        let+ res =
-          let** () =
-            match meta with
-            | Thin -> ok ()
-            | Len len ->
-                assert_or_error
-                  (Usize.(0s) <=$@ len)
-                  (`UBTransmute "Negative slice length")
-            | VTable _ ->
-                (* TODO: check the vtable pointer is of the right trait kind *)
-                ok ()
-          in
-          let** layout = Layout.layout_of pointee in
-          if layout.uninhabited then error `RefToUninhabited
-          else
-            let+ res, st = check_ref p pointee st in
-            Compo_res.map res (fun _ -> st)
-        in
-        match res with
-        | Ok st -> (Ok (), st)
-        | Error e -> (Error e, st)
-        | Missing f -> (Missing f, st))
+    (* undefined.validity.bool *)
+    | Int v, TLiteral TBool ->
+        f U8.(0s <=@ v &&@ (v <=@ 1s)) (`UBTransmute "Invalid bool value")
+    (* undefined.validity.fn-pointer *)
     | Ptr (p, _), TFnPtr _ ->
-        let+ res =
-          assert_or_error
-            (Typed.not (Sptr.sem_eq (Sptr.null_ptr ()) p))
-            `UBDanglingPointer
-        in
-        (res, st)
-    | _ -> return (Ok (), st)
+        f (Typed.not Sptr.(sem_eq (null_ptr ()) p)) `UBDanglingPointer
+    (* undefined.validity.char *)
+    | Int v, TLiteral TChar ->
+        let is_surrogate = U32.(0xD800s <=@ v &&@ (v <=@ 0xDFFFs)) in
+        let is_valid = U32.(v <=@ 0x10FFFFs) &&@ Typed.not is_surrogate in
+        f is_valid (`UBTransmute "Invalid char value")
+    (* undefined.validity.never *)
+    | _, TNever -> f Typed.v_false (`RefToUninhabited ty)
+    (* undefined.validity.scalar *)
+    | Int _, TLiteral (TInt _ | TUInt _) -> ok ()
+    | Float _, TLiteral (TFloat _) -> ok ()
+    (* undefined.validity.str *)
+    | Tuple _, TAdt { id = TBuiltin TStr; _ } -> ok ()
+    (* undefined.validity.enum *)
+    | Enum (discr, vs), TAdt adt ->
+        let* _, variant = variant_for_discr discr adt in
+        List.combine (field_tys variant.fields) vs
+        |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
+    (* undefined.validity.struct *)
+    | Tuple vs, TAdt adt ->
+        List.combine (Crate.as_struct_or_tuple adt) vs
+        |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
+    | Tuple vs, (TArray (ty, _) | TSlice ty) ->
+        iter_list vs ~f:(fun v -> validity ~check_ref ty v f)
+    (* undefined.validity.union *)
+    | Union _, TAdt _ -> ok ()
+    (* undefined.validity.reference-box *)
+    | Ptr ptr, TRef (_, pointee, _) -> ref_box_validity ptr pointee
+    | _, TAdt adt when adt_is_box adt ->
+        let pointee = get_pointee ty in
+        let ptr, meta = as_ptr @@ List.hd @@ flatten v in
+        ref_box_validity (ptr, meta) pointee
+    (* undefined.validity.wide *)
+    | Ptr (_, meta), TRawPtr (pointee, _) ->
+        metadata_validity ~is_raw_ptr:true pointee meta
+    (* fndefs are ZSTs *)
+    | Tuple [], TFnDef _ -> ok ()
+    (* we assume polymorphic data has no validity requirement *)
+    | PolyVal _, TVar (Free _) -> ok ()
+    (* we fail loudly to avoid missing cases *)
+    | _ -> Fmt.failwith "validity: unhandled %a/%a" pp_rust_val v pp_ty ty
 
-  let with_constraints ~ty v =
-    let constraints = Typed.conj @@ Layout.constraints ty v in
-    let msg = Fmt.str "Constraints of %a unsatisfied" pp_literal_ty ty in
-    let++ () = assert_or_error constraints (`UBTransmute msg) in
-    Int v
+  (** Applies a validity check for a value, given a [check_ref] state monad
+      operation. This assumes [check_ref] is effect-free: the returned state is
+      the input state. See {!validity}. *)
+  let check_validity ~check_ref ty value st =
+    let open Rustsymex in
+    let open Syntax in
+    (* we need to "unlift" [check_ref] *)
+    let check_ref ptr ty : (unit, 'e, 'b) Rustsymex.Result.t =
+      let open Rustsymex.Syntax in
+      let+ res, _st = check_ref ptr ty st in
+      res
+    in
+    (* and then lift the result *)
+    let+ res = validity ~check_ref ty value assert_or_error in
+    (res, st)
 
   (** Cast between literals; perform validation of the type's constraints. This
       is different from a transmute! It doesn't simply reinterpret the bits, but
@@ -386,41 +475,38 @@ module Encoder (Sptr : Sptr.S) = struct
       https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
   *)
   let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
-      (v : [< T.cval ] Typed.t) =
-    let open DecayMapMonad.Result in
+      (v : Typed.([< T.cval ] t)) =
     match (from_ty, to_ty) with
-    | _, TFloat _ when from_ty = to_ty -> ok (Float (Typed.cast v))
+    | _, TFloat _ when from_ty = to_ty -> Float (Typed.cast v)
     | _, (TInt _ | TUInt _ | TBool | TChar) when from_ty = to_ty ->
-        ok (Int (Typed.cast v))
+        Int (Typed.cast v)
     | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
         let sv = Typed.cast_f fty v in
         let signed = Layout.is_signed lit_ty in
         let size = 8 * size_of_literal_ty lit_ty in
         let sv' = BV.of_float ~rounding:Truncate ~signed ~size sv in
-        Result.ok (Int sv')
+        Int sv'
     | (TInt _ | TUInt _), TFloat fp ->
         let sv = Typed.cast_lit from_ty v in
         let fp = float_precision fp in
         let signed = Layout.is_signed from_ty in
         let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
-        Result.ok (Float sv')
+        Float sv'
     | TFloat _, _ | _, TFloat _ ->
-        Fmt.kstr not_impl "Unhandled float transmute: %a -> %a" pp_literal_ty
-          from_ty pp_literal_ty to_ty
+        Fmt.failwith "Unhandled float transmute: %a -> %a" pp_literal_ty from_ty
+          pp_literal_ty to_ty
     (* here we know we're only handling scalars: bool, char, or int/uint, so we
        can just resize the value as needed! *)
-    | _ ->
+    | (TInt _ | TUInt _ | TBool | TChar), (TInt _ | TUInt _ | TBool | TChar) ->
         let from_bits = 8 * Layout.size_of_literal_ty from_ty in
         let from_signed = Layout.is_signed from_ty in
         let to_bits = 8 * Layout.size_of_literal_ty to_ty in
         let v = Typed.cast_lit from_ty v in
-        let v =
-          if from_bits = to_bits then v
-          else if from_bits < to_bits then
-            BV.extend ~signed:from_signed (to_bits - from_bits) v
-          else BV.extract 0 (to_bits - 1) v
-        in
-        with_constraints ~ty:to_ty v
+
+        if from_bits = to_bits then Int v
+        else if from_bits < to_bits then
+          Int (BV.extend ~signed:from_signed (to_bits - from_bits) v)
+        else Int (BV.extract 0 (to_bits - 1) v)
 
   (** Converts a floating value to a bitvector, preserving it's bit
       representation. This is a symbolic process, because SMT-Lib has no
@@ -428,8 +514,8 @@ module Encoder (Sptr : Sptr.S) = struct
 
       See https://smt-lib.org/theories-FloatingPoint.shtml, "Conversions to
       other sorts" *)
-  let float_to_bv_bits (f : [< T.sfloat ] Typed.t) :
-      [> T.sint ] Typed.t DecayMapMonad.t =
+  let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
+      Typed.([> T.sint ] t) DecayMapMonad.t =
     let fp = Typed.Float.fp_of f in
     let size = Svalue.FloatPrecision.size fp in
     let* bv = nondet (Typed.t_int size) in
@@ -443,31 +529,26 @@ module Encoder (Sptr : Sptr.S) = struct
       assumption that [size_of to_ty = size_of v], and both are primitives
       (literal or pointer). *)
   let transmute_one ~(to_ty : Types.ty) (v : rust_val) =
-    let open DecayMapMonad.Result in
     match (to_ty, v) with
-    | TLiteral (TFloat _), Float _ -> ok v
-    | TLiteral (TFloat _), Int v -> ok (Float (BV.to_float_raw v))
-    | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty), Int v ->
-        with_constraints ~ty v
-    | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty), Ptr (p, Thin) ->
-        let* p = Sptr.decay p in
-        with_constraints ~ty p
-    | TLiteral ((TInt _ | TUInt _ | TBool | TChar) as ty), Float f ->
-        let* v = float_to_bv_bits f in
-        with_constraints ~ty v
-    | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> ok v
-    | TRef _, Int _ -> error `UBDanglingPointer
-    | TFnPtr _, Int v ->
-        if%sat v ==@ Usize.(0s) then error `UBDanglingPointer
-        else ok (Ptr (Sptr.null_ptr_of v, Thin))
-    | TRawPtr _, Int v -> ok (Ptr (Sptr.null_ptr_of v, Thin))
+    | TLiteral (TFloat _), Float _ -> return v
+    | TLiteral (TFloat _), Int v -> return (Float (BV.to_float_raw v))
+    | TLiteral (TInt _ | TUInt _ | TBool | TChar), Int _ -> return v
+    | TLiteral (TInt _ | TUInt _ | TBool | TChar), Ptr (p, Thin) ->
+        let+ p = Sptr.decay p in
+        Int p
+    | TLiteral (TInt _ | TUInt _ | TBool | TChar), Float f ->
+        let+ v = float_to_bv_bits f in
+        Int v
+    | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> return v
+    | (TRawPtr _ | TRef _ | TFnPtr _), Int v ->
+        return (Ptr (Sptr.null_ptr_of v, Thin))
     | TVar (Free type_var_id), (PolyVal tid as v) ->
-        if Types.TypeVarId.equal_id type_var_id tid then ok v
+        if Types.TypeVarId.equal_id type_var_id tid then return v
         else
           Fmt.kstr not_impl "transmute_one: mismatched type variables %a -> %a"
             Types.pp_type_var_id type_var_id Types.pp_type_var_id tid
     | TVar (Bound _), _ ->
-        not_impl "transmute_one: cannot handle bound type variables"
+        failwith "transmute_one: bound type variable encountered?"
     | TVar _, _ ->
         Fmt.kstr not_impl
           "losing concrete value in %a -> %a; somewhere we lost track of \
@@ -477,65 +558,86 @@ module Encoder (Sptr : Sptr.S) = struct
         Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" pp_rust_val v
           pp_ty to_ty
 
-  (** [nondet ~extern ~init ty] returns a nondeterministic value for [ty], along
-      with some "state". It receives a function [extern] to get an optional
-      external function that computes the arbitrary value; it tries using it,
-      and otherwise guesses the valid values. [init] is the initial "state",
-      that is modified and returned by [extern]. *)
-  let rec nondet : Types.ty -> (rust_val, 'e, 'f) Rustsymex.Result.t =
+  (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
+      [ty]: the returned value will have the right structure, and any required
+      nondet variable will have been created. Importantly,
+      {b the returned value may not uphold the validity invariant of [ty]}*. To
+      ensure the value is also valid, use {!validity}, [assume]-ing the
+      constraints it returns.
+
+      * Much like in {!validity}, this function actually assumes two validity
+      invariants: the data is initialised, and the discriminant of enums
+      corresponds to that a variant. *)
+  let rec nondet_raw : Types.ty -> (rust_val, 'e, 'f) Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
     let open Soteria.Symex.Compo_res in
+    let nondets_raw tys = Rustsymex.Result.map_list tys ~f:nondet_raw in
     function
-    | TLiteral (TFloat _ as lit) ->
-        let+ f = Layout.nondet_literal_ty lit in
-        Ok (Float (Typed.cast f))
+    | TLiteral (TFloat fp) ->
+        let+ f = nondet (Typed.t_float fp) in
+        Ok (Float f)
     | TLiteral lit ->
-        let+ i = Layout.nondet_literal_ty lit in
+        let+ i = nondet (Typed.t_lit lit) in
         Ok (Int (Typed.cast i))
+    | (TRef (_, pointee, _) | TRawPtr (pointee, _))
+      when not (Layout.is_dst pointee) ->
+        let++ p = Sptr.nondet pointee in
+        Ptr (p, Thin)
     | TAdt { id = TTuple; generics = { types; _ } } ->
-        let++ fields = nondets types in
+        let++ fields = nondets_raw types in
         Tuple fields
     | TArray (ty, len) ->
         let size = int_of_constant_expr len in
-        let++ fields = nondets @@ List.init size (fun _ -> ty) in
+        let++ fields = nondets_raw @@ List.init size (fun _ -> ty) in
         Tuple fields
     | TAdt adt as ty -> (
         let type_decl = Crate.get_adt adt in
         match type_decl.kind with
-        | Enum variants -> (
-            let** layout = layout_of ty in
-            let tag_layout =
-              match layout.fields with
-              | Fields_shape.Enum (tag_layout, _) -> tag_layout
-              | _ -> failwith "Expected enum layout"
-            in
-            let* d = nondet_literal_ty tag_layout.ty in
-            let* res =
+        | Enum [] -> vanish ()
+        | Enum (v :: _ as variants) ->
+            let* discr = nondet (Typed.t_lit (lit_ty_of_lit v.discriminant)) in
+            let discr : Typed.(T.sint t) = Typed.cast discr in
+            let* variant =
               match_on variants ~constr:(fun v ->
-                  BV.of_literal v.discriminant ==@ d)
+                  BV.of_literal v.discriminant ==@ discr)
             in
-            match (res, tag_layout.encoding) with
-            | Some variant, _ ->
-                let discr = BV.of_literal variant.discriminant in
-                let++ fields = nondets @@ field_tys variant.fields in
-                Enum (discr, fields)
-            | None, Direct -> vanish ()
-            | None, Niche untagged ->
-                let variant = Types.VariantId.nth variants untagged in
-                let discr = BV.of_literal variant.discriminant in
-                let++ fields = nondets @@ field_tys variant.fields in
-                Enum (discr, fields))
+            let* variant =
+              match variant with Some v -> return v | None -> vanish ()
+            in
+            let++ fields = nondets_raw @@ field_tys variant.fields in
+            Enum (BV.of_literal variant.discriminant, fields)
         | Struct fields ->
-            let++ fields = nondets @@ field_tys fields in
+            let++ fields = nondets_raw @@ field_tys fields in
             Tuple fields
+        | Union _ ->
+            let** size = Layout.size_of ty in
+            let* sizei =
+              match BV.to_z size with
+              | Some s -> return (Z.to_int s)
+              | None -> vanish ()
+            in
+            let+ bytes = nondet (Typed.t_int (sizei * 8)) in
+            Ok (Union [ (Int bytes, size) ])
         | ty ->
             Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
               Types.pp_type_decl_kind ty)
     | TVar (Free id) -> Result.ok (PolyVal id)
     | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
 
-  and nondets tys = Rustsymex.Result.map_list tys ~f:nondet
+  (** Much like {!nondet_raw}, but also assumes validity invariants for the
+      value, with {!validity}. Note this uses "stateless" validity: references
+      are not checked to be e.g. non-dangling. *)
+  let nondet_valid ty =
+    let open Rustsymex in
+    let open Syntax in
+    let** v = nondet_raw ty in
+    let++ () =
+      validity ty v (fun c _err ->
+          let+ () = assume [ c ] in
+          Compo_res.Ok ())
+    in
+    v
 
   (** Apply the compiler-attribute to the given value *)
   let apply_attribute v attr =

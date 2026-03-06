@@ -66,6 +66,7 @@ KNOWN_ISSUES = {
     "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
     "pass/dyn-traits.rs": "VTable addresses should be randomised",
+    "pass/enum_discriminant_ptr_value.rs": "We don't support disabling validation",
     "pass/extern_types.rs": "We don't handle extern types",
     "pass/function_calls/abi_compat.rs": "We are too restrictive on fn pointer casts",
     "pass/issues/issue-120337-irrefutable-let-ice.rs": "Weird ! type in a union?",

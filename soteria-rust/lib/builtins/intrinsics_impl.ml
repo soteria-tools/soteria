@@ -92,6 +92,26 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     let+ () = State.store dst t src in
     old
 
+  let atomic_cxchgweak ~t ~ord_succ:_ ~ord_fail:_ ~_dst ~_old ~_src =
+    atomic_warn ();
+    let* curr = State.load _dst t in
+    let are_equal =
+      match t with
+      | TRawPtr _ | TRef _ ->
+          let old, _ = as_ptr _old in
+          let curr, _ = as_ptr curr in
+          Sptr.sem_eq old curr
+      | TLiteral lit ->
+          let old = as_base lit _old in
+          let curr = as_base lit curr in
+          old ==@ curr
+      | _ -> failwith "atomic_cxchgweak: invalid type, expects ptr or integer"
+    in
+    if%sat are_equal then
+      let* () = State.store _dst t _src in
+      ok (Tuple [ curr; Int (BV.of_bool Typed.v_true) ])
+    else ok (Tuple [ curr; Int (BV.of_bool Typed.v_false) ])
+
   let black_box ~t:_ ~dummy = ok dummy
   let breakpoint : unit ret = error `Breakpoint
 
@@ -199,10 +219,10 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
       else
         ok
           [
-            res <=.@ Typed.Float.mk_fp fp "1.0";
-            res >=.@ Typed.Float.mk_fp fp "-1.0";
-            Typed.not (x ==.@ Typed.Float.mk_fp fp "0.0")
-            ||@ (res ==.@ Typed.Float.mk_fp fp "1.0");
+            res <=.@ Typed.Float.mk fp "1.0";
+            res >=.@ Typed.Float.mk fp "-1.0";
+            Typed.not (x ==.@ Typed.Float.mk fp "0.0")
+            ||@ (res ==.@ Typed.Float.mk fp "1.0");
           ]
     in
     let+^ () = Rustsymex.assume to_assume in
@@ -222,10 +242,10 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
       else
         ok
           [
-            res <=.@ Typed.Float.mk_fp fp "1.0";
-            res >=.@ Typed.Float.mk_fp fp "-1.0";
-            Typed.not (x ==.@ Typed.Float.mk_fp fp "0.0")
-            ||@ (res ==.@ Typed.Float.mk_fp fp "0.0");
+            res <=.@ Typed.Float.mk fp "1.0";
+            res >=.@ Typed.Float.mk fp "-1.0";
+            Typed.not (x ==.@ Typed.Float.mk fp "0.0")
+            ||@ (res ==.@ Typed.Float.mk fp "0.0");
           ]
     in
     let+^ () = Rustsymex.assume to_assume in
@@ -247,7 +267,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let powi_ fp x y =
     let* () = floating_inaccuracy_warn () in
-    if%sat y ==@ U32.(0s) then ok (Typed.Float.mk_fp fp "1.0")
+    if%sat y ==@ U32.(0s) then ok (Typed.Float.mk fp "1.0")
     else if%sat y ==@ U32.(1s) then ok (x :> Typed.T.sfloat Typed.t)
     else lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
 
@@ -258,10 +278,10 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let sqrt_ fp x =
     let* () = floating_inaccuracy_warn () in
-    if%sat x <.@ Typed.Float.mk_fp fp "0.0" then ok (Typed.Float.mk_fp fp "NaN")
+    if%sat x <.@ Typed.Float.mk fp "0.0" then ok (Typed.Float.mk fp "NaN")
     else if%sat
       Typed.Float.is_infinite x
-      ||@ (x ==.@ Typed.Float.mk_fp fp "0.0")
+      ||@ (x ==.@ Typed.Float.mk fp "0.0")
       ||@ Typed.Float.is_nan x
     then ok (x :> Typed.T.sfloat Typed.t)
     else lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
@@ -275,13 +295,13 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     let* () = floating_inaccuracy_warn () in
     if%sat
       Typed.Float.is_nan x
-      ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.mk_fp fp "0.0"))
+      ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.mk fp "0.0"))
     then ok (x :> Typed.T.sfloat Typed.t)
-    else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.mk_fp fp "0.0")
-    then ok (Typed.Float.mk_fp fp "0.0")
+    else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.mk fp "0.0")
+    then ok (Typed.Float.mk fp "0.0")
     else
       let*^ res = Rustsymex.nondet (Typed.t_float fp) in
-      let+^ () = Rustsymex.assume [ res >.@ Typed.Float.mk_fp fp "0.0" ] in
+      let+^ () = Rustsymex.assume [ res >.@ Typed.Float.mk fp "0.0" ] in
       res
 
   let expf16 ~x = expf_ F16 x
@@ -297,17 +317,17 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let logf_ ~exp fp x =
     let* () = floating_inaccuracy_warn () in
-    let exp = Typed.Float.mk_fp fp exp in
-    if%sat x <.@ Typed.Float.mk_fp fp "0.0" then ok (Typed.Float.mk_fp fp "NaN")
-    else if%sat x ==.@ Typed.Float.mk_fp fp "0.0" then
-      ok (Typed.Float.mk_fp fp "-inf")
-    else if%sat Typed.Float.is_infinite x then ok (Typed.Float.mk_fp fp "inf")
-    else if%sat x ==.@ exp then ok (Typed.Float.mk_fp fp "1.0")
+    let exp = Typed.Float.mk fp exp in
+    if%sat x <.@ Typed.Float.mk fp "0.0" then ok (Typed.Float.mk fp "NaN")
+    else if%sat x ==.@ Typed.Float.mk fp "0.0" then
+      ok (Typed.Float.mk fp "-inf")
+    else if%sat Typed.Float.is_infinite x then ok (Typed.Float.mk fp "inf")
+    else if%sat x ==.@ exp then ok (Typed.Float.mk fp "1.0")
     else
       let*^ res = Rustsymex.nondet (Typed.t_float fp) in
       let* to_assume =
-        if%sat x <.@ exp then ok [ res <.@ Typed.Float.mk_fp fp "1.0" ]
-        else ok [ res >.@ Typed.Float.mk_fp fp "1.0" ]
+        if%sat x <.@ exp then ok [ res <.@ Typed.Float.mk fp "1.0" ]
+        else ok [ res >.@ Typed.Float.mk fp "1.0" ]
       in
       let+^ () = Rustsymex.assume to_assume in
       res

@@ -71,7 +71,7 @@
          --dump-smt-to=VAL, --dump-smt=VAL
              Dump the SMT queries to the given file
   
-         --exclude=[,…]
+         --exclude=REGEX[,…]
              Filter the entrypoints to exclude, by name. If empty, no
              entrypoints are excluded. Multiple filters can be provided,
              comma-separated; tests matching any will be excluded. The filters
@@ -80,7 +80,7 @@
          --fail-fast (absent FAIL_FAST env)
              Stop symbolic execution upon the first error encountered.
   
-         --filter=[,…]
+         --filter=REGEX[,…]
              Filter the entrypoints to run, by name. If empty, all entrypoints
              are run. Multiple filters can be provided, comma-separated; tests
              matching any will be selected. The filters are treated as regexes.
@@ -306,7 +306,7 @@
          --dump-smt-to=VAL, --dump-smt=VAL
              Dump the SMT queries to the given file
   
-         --exclude=[,…]
+         --exclude=REGEX[,…]
              Filter the entrypoints to exclude, by name. If empty, no
              entrypoints are excluded. Multiple filters can be provided,
              comma-separated; tests matching any will be excluded. The filters
@@ -315,7 +315,7 @@
          --fail-fast (absent FAIL_FAST env)
              Stop symbolic execution upon the first error encountered.
   
-         --filter=[,…]
+         --filter=REGEX[,…]
              Filter the entrypoints to run, by name. If empty, all entrypoints
              are run. Multiple filters can be provided, comma-separated; tests
              matching any will be selected. The filters are treated as regexes.

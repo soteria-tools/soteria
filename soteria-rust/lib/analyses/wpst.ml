@@ -5,7 +5,7 @@ open Syntaxes.FunctionWrap
 module State = State.Tree_state
 module Interp = Interp.Make (State)
 open Error.Diagnostic
-open Common
+open Util
 
 (** An error happened at runtime during execution *)
 exception ExecutionError of string
@@ -144,22 +144,14 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     let pcs = List.map snd branches in
     Ok (pcs, nbranches, unexplored > 0)
   else
-    (* join th errors by [error type * calltrace], and find all matching PCs *)
     let errors =
       branches
       |> List.filter_map (function
-        | Compo_res.Error (e, _), pc -> Some (e, pc)
+        | Compo_res.Error (e, _st), pc -> Some (e, pc)
         | _ -> None)
+      |> List.group_by ~compare:Error.compare_with_trace
     in
-    let errors_joined =
-      List.map fst errors
-      |> List.sort_uniq compare
-      |> List.map (fun e ->
-          errors
-          |> List.filter_map (fun (e', pc) -> if e = e' then Some pc else None)
-          |> Pair.make e)
-    in
-    Error (errors_joined, nbranches)
+    Error (errors, nbranches)
 
 let print_outcomes_summary outcomes =
   let open Fmt in

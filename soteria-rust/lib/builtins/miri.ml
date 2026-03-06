@@ -18,7 +18,7 @@ module M (StateM : State.StateM.S) = struct
     match args with
     | [ Ptr (ptr, _); Int align ] ->
         let align = Typed.cast @@ Typed.cast_i Usize align in
-        let is_aligned = Sptr.is_aligned align ptr in
+        let is_aligned, _err = Sptr.is_aligned align ptr in
         let+ () = assume [ is_aligned ] in
         Tuple []
     | _ -> not_impl "miri_promise_symbolic_alignment: invalid arguments"
