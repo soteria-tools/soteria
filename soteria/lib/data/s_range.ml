@@ -1,0 +1,41 @@
+(** Symbolic abstractions over ranges. *)
+
+module Make
+    (Symex : Symex.Base)
+    (S_bool : S_bool.S(Symex).S)
+    (S_int : S_int.S(Symex)(S_bool).S) =
+struct
+  (** A value [(a, b)] of type [t] represents the interval starting at [a]
+      {e included} and ending at [b] {e excluded}. Often denoted {m [a, b)} or
+      {m [a, b[}*)
+  type t = S_int.t Symex.Value.t * S_int.t Symex.Value.t
+
+  open S_int
+
+  let sem_eq (a1, b1) (a2, b2) =
+    S_bool.and_ (S_int.sem_eq a1 a2) (S_int.sem_eq b1 b2)
+
+  (** [size (a, b)] is [b - a] *)
+  let size (a, b) = sub b a
+
+  (** [split_at (a, b) x] is [(a, x), (x, b)] *)
+  let split_at (l, h) x = ((l, x), (x, h))
+
+  (** [offset (a, b) x] is [(a + x, b + x)] *)
+  let offset (l, h) x = (add l x, add h x)
+
+  (** [subseteq r1 r2] is a symbolic boolean characterising whether [r1] is a
+      subset of [r2] *)
+  let subset_eq (a1, b1) (a2, b2) = S_bool.and_ (leq a2 a1) (leq b1 b2)
+
+  (** [strictly_inside (a, b) r] is [a < r < b] *)
+  let strictly_inside x (a, b) = S_bool.and_ (lt a x) (lt x b)
+
+  (** [inside (a, b) r] is [a <= r < b] *)
+  let inside x (a, b) = S_bool.and_ (leq a x) (lt x b)
+
+  (** [of_low_and_size a b] is [(a, a + b)]*)
+  let of_low_and_size low size = (low, add low size)
+
+  let pp fmt (a, b) = Fmt.pf fmt "[%a, %a[" Symex.Value.ppa a Symex.Value.ppa b
+end
