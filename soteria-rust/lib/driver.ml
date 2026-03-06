@@ -1,4 +1,3 @@
-module Stats = Soteria.Stats
 open Soteria.Terminal.Diagnostic
 open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap

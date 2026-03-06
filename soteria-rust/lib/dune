@@ -1,8 +1,8 @@
 (include_subdirs qualified)
 
 (library
- (package soteria-rust)
  (name soteria_rust_lib)
+ (public_name soteria-rust)
  (libraries
   charon
   cmdliner
