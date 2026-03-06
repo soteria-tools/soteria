@@ -1,7 +1,7 @@
-(** @canonical *)
+(** @canonical Pmap_intf.Key *)
 module Key = Pmap_intf.Key
 
-(** @canonical *)
+(** @canonical Pmap_intf.M *)
 module S = Pmap_intf.M
 
 module Make
