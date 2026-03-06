@@ -61,7 +61,7 @@ module DecayMap : DecayMapS = struct
 
     let sem_eq d1 d2 =
       if d1.exposed == d2.exposed then d1.address ==@ d2.address
-      else Typed.bool false
+      else Typed.v_false
 
     let subst subst_var d =
       let address = Typed.subst subst_var d.address in

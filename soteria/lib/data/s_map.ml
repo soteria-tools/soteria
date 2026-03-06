@@ -7,9 +7,9 @@ module Mk_concrete_key (Symex : Symex.Base) (K : Soteria_std.Ordered_type.S) =
 struct
   include K
 
-  let sem_eq x y = Symex.Value.bool (x = y)
+  let sem_eq x y = Symex.Value.of_bool (x = y)
   let simplify = Symex.return
-  let distinct _ = Symex.Value.bool true
+  let distinct _ = Symex.Value.of_bool true
 end
 
 module Build
