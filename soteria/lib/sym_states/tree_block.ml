@@ -133,7 +133,8 @@ struct
   open Compo_res
   open Symex.Syntax
   open Symex
-  open MemVal.SBoundedInt
+  open Data.S_bool.Make_syntax (Symex) (MemVal.S_bool)
+  open Data.S_int.Make_syntax (Symex) (MemVal.S_bool) (MemVal.S_bounded_int)
 
   module Sym_int_syntax = struct
     let zero = MemVal.SBoundedInt.zero
