@@ -55,8 +55,11 @@ struct
   let syntactic_bindings (x : t) = M.to_seq x
   let syntactic_mem = M.mem
 
+  let lift_fix ~key (fix : Codom.syn list) : syn list =
+    List.map (fun v_ser -> (Key.to_syn key, v_ser)) fix
+
   let lift_fixes ~key (fix : Codom.syn list list) : syn list list =
-    List.map (List.map (fun v_ser -> (Key.to_syn key, v_ser))) fix
+    List.map (lift_fix ~key) fix
 
   open SM
   open SM.Syntax
@@ -143,33 +146,26 @@ struct
 
   let produce (syn : syn) (st : Codom.t M.t option) :
       Codom.t M.t option Producer.t =
-    let open Producer in
     let open Producer.Syntax in
     let st = of_opt st in
     let key, inner_ser = syn in
     let* key = Producer.apply_subst Key.subst key in
-    let* key, codom = lift @@ Find_opt_sym.f key st in
+    let*^ key, codom = Find_opt_sym.f key st in
     let+ codom = Codom.produce inner_ser codom in
     to_opt (add_opt key codom st)
 
-  (* let consume
-   *    (cons :
-   *      'inner_serialized ->
-   *      'inner_st option ->
-   *      ('inner_st option, [> Symex.lfail ], 'inner_serialized) Symex.Result.t)
-   *    (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-   *    ( 'inner_st t option,
-   *      [> Symex.lfail ],
-   *      'inner_serialized serialized )
-   *    Symex.Result.t =
-   *  let st = of_opt st in
-   *  let++ st =
-   *    Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
-   *        let* key, codom = Find_opt_sym.f key st in
-   *        let++ codom = cons inner_ser codom |> lift_fix_s ~key in
-   *        add_opt key codom st)
-   *  in
-   *  to_opt st *)
+  let consume (syn : syn) (st : st) : (st, syn list) Symex.Consumer.t =
+    let open Consumer.Syntax in
+    let st = of_opt st in
+    let key, inner_ser = syn in
+    let* key = Consumer.apply_subst Key.subst key in
+    let*^ key, codom = Find_opt_sym.f key st in
+    let+ codom =
+      let+? fix = Codom.consume inner_ser codom in
+      lift_fix ~key fix
+    in
+    let st = add_opt key codom st in
+    to_opt st
 
   let fold (type acc) (f : acc -> Key.t * Codom.t -> acc Symex.t) (init : acc)
       st : acc Symex.t =

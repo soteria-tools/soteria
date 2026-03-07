@@ -43,12 +43,21 @@ module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
     match st with
     | Some x -> Result.ok x
     | None ->
-        let* x = lift @@ fresh () in
+        let*^ x = fresh () in
         let+ () = SM.set_state (Some x) in
         Ok x
 
-  (* let consume (syn : syn) = let** t = load () in lift @@ Symex.consume_pure
-     (sem_eq t syn) *)
+  let consume (s : syn) (t : st) : (st, syn list) Symex.Consumer.t =
+    let open Symex.Consumer.Syntax in
+    match t with
+    | None ->
+        let*^ x = C.fresh () in
+        let+ () = C.learn_eq s x in
+        Some x
+    | Some x ->
+        let+ () = C.learn_eq s x in
+        Some x
+
   open Symex
 
   let produce (s : syn) (t : st) : st Producer.t =

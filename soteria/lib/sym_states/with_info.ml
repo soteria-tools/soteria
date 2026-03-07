@@ -51,6 +51,16 @@ struct
     let+ () = SM.set_state (lift ~info node') in
     Compo_res.map_missing res (List.map (fun fix -> { node = fix; info }))
 
+  let consume (syn : syn) (st : t option) :
+      (t option, syn list) Symex.Consumer.t =
+    let open Symex.Consumer.Syntax in
+    let node_opt, info = lower st in
+    let+ node_opt' =
+      let+? fix = B.consume syn.node node_opt in
+      List.map (fun fix -> { node = fix; info }) fix
+    in
+    lift ~info node_opt'
+
   let produce syn st : t option Symex.Producer.t =
     let open Symex.Producer.Syntax in
     let t_opt, t_orig = lower st in

@@ -85,29 +85,35 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
     let+ st = B.produce syn st in
     to_opt (st, fixes)
 
-  (* let consume ?(fuel = 1) ~(produce : 'ser -> 't -> 't Symex.t)
-   *    (cons : 'ser -> 't -> ('t, 'err, 'ser) Symex.Result.t) (inner_ser : 'ser)
-   *    (bi_st : ('t, 'ser) t) :
-   *    (('t, 'ser) t, 'err * ('t, 'ser) t, 'ser) Symex.Result.t =
-   *  let () = if fuel <= 0 then failwith "Bi_abd.wrap: fuel must be positive" in
-   *  let rec with_fuel fuel bi_st =
-   *    let st, fixes = bi_st in
-   *    let* res = cons inner_ser st in
-   *    match res with
-   *    | Ok st -> Result.ok (st, fixes)
-   *    | Error _e ->
-   *        L.info (fun m -> m "Bi_abd.consume: vanishing an error");
-   *        Symex.vanish ()
-   *    | Missing fix_choices ->
-   *        if fuel <= 0 then Symex.vanish ()
-   *        else
-   *          Symex.branches
-   *            (List.map
-   *               (fun fix ->
-   *                 fun () ->
-   *                  let* st = produce fix st in
-   *                  with_fuel (fuel - 1) (st, fix :: fixes))
-   *               fix_choices)
-   *  in
-   *  with_fuel fuel bi_st *)
+  let consume (syn : syn) (bi_st : t option) :
+      (t option, syn list) Symex.Consumer.t =
+    let open Symex.Consumer in
+    let open Syntax in
+    let max_fuel = 1 in
+    let rec with_fuel fuel (bi_st : SM.st) : (SM.st, syn list) Symex.Consumer.t
+        =
+      let st, fixes = of_opt bi_st in
+      let*! res = B.consume syn st in
+      match res with
+      | Ok st' -> ok (to_opt (st', fixes))
+      | Error _ -> lift_symex (Symex.vanish ())
+      | Missing fix_choices ->
+          if fuel <= 0 then lift_symex (Symex.vanish ())
+          else
+            branches
+              (List.map
+                 (fun fix () ->
+                   let*^ st' =
+                     let open Symex.Syntax in
+                     let* st =
+                       Symex.fold_list fix ~init:st ~f:(fun st syn ->
+                           Symex.Producer.run_identity_producer
+                             (B.produce syn st))
+                     in
+                     Symex.return st
+                   in
+                   with_fuel (fuel - 1) (to_opt (st', fix @ fixes)))
+                 fix_choices)
+    in
+    with_fuel max_fuel bi_st
 end

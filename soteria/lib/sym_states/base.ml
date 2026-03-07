@@ -15,6 +15,6 @@ module M (Symex : Symex.Base) = struct
     val to_syn : t -> syn list
     val ins_outs : syn -> Symex.Value.Expr.(t list * t list)
     val produce : syn -> t option -> t option Symex.Producer.t
-    (* val consume : syn -> t option -> (t option, syn list) Symex.Consumer.t *)
+    val consume : syn -> t option -> (t option, syn list) Symex.Consumer.t
   end
 end
