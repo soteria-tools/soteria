@@ -100,7 +100,7 @@ struct
   let alloc ~(new_codom : Codom.t) : (Key.t, 'err, syn list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in
-    let* key = lift @@ Key.fresh () in
+    let*^ key = Key.fresh () in
     let* () =
       SM.assume
         [ Key.distinct (key :: (M.to_seq st |> Seq.map fst |> List.of_seq)) ]
@@ -132,8 +132,8 @@ struct
       (a, err, syn list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in
-    let* key, codom = lift @@ Find_opt_sym.f key st in
-    let* res, codom = lift @@ f codom in
+    let*^ key, codom = Find_opt_sym.f key st in
+    let*^ res, codom = f codom in
     match res with
     | Ok v ->
         (* Only update the state in case of success! *)
