@@ -163,28 +163,14 @@ def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
 
 
 def build_soteria():
-    charon_path = PWD / ".." / ".." / ".." / "charon"
     miri_sysroot = (
         subprocess.check_output(
-            f"cd {charon_path} && cargo miri setup --print-sysroot", shell=True
+            "$(obol toolchain-path)/bin/cargo miri setup --print-sysroot", shell=True
         )
         .decode()
         .strip()
     )
     os.environ["RUST_SYSROOT"] = miri_sysroot
-
-    env = (
-        subprocess.check_output(
-            "opam exec -- dune exec -- env 2> /dev/null", shell=True
-        )
-        .decode()
-        .split("\n")
-    )
-    for line in env:
-        if "=" not in line:
-            continue
-        name, value = line.split("=", 1)
-        os.environ[name] = value
 
     # find line starting with "host: "
     targets = (
@@ -197,10 +183,8 @@ def build_soteria():
             os.environ["TARGET"] = line[6:]
             break
 
-    os.environ["SOTERIA_RUST_PLUGINS"] = str((PWD / ".." / "plugins").resolve())
     try:
-        subprocess.check_call("dune build > /dev/null 2> /dev/null", shell=True)
-        subprocess.check_call("soteria-rust build-plugins > /dev/null", shell=True)
+        subprocess.check_call("soteria-rust build-plugins", shell=True)
     except subprocess.CalledProcessError:
         print(f"{RED}Soteria couldn't build")
         exit(1)

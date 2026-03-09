@@ -201,7 +201,6 @@ def opts_for_soteria(
         "tool_cmd": [
             "soteria-rust",
             "exec",
-            "--log-compilation",
             "--compact",
             "--no-color",
             *(["--solver-timeout", str(timeout * 1000)] if timeout is not None else []),
