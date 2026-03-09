@@ -333,7 +333,6 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
     log = log.open("a")
 
     results: dict[tuple[Path, SuiteName], Benchmark] = {}  # type: ignore
-    end_msgs: set[str] = set()
     interrupts = 0
     timeout = opts["timeout"] or 5
 
@@ -401,6 +400,7 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
     except Exception as e:
         print(e)
 
+    # Make the main CSV file
     rows: list[list[tuple[str, Optional[str]]]] = [
         [
             ("Suite", BOLD),
@@ -425,13 +425,100 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
     csv_file.touch()
     with csv_file.open("w") as csv_io:
         csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in rows)
-    pprint()
-    pptable(rows)
+    pprint(f"{BOLD}Benchmark results stored in {csv_file}{RESET}")
 
-    if len(end_msgs) > 0:
-        pprint(f"{BOLD}Closing remarks:")
-        for end_msg in end_msgs:
-            pprint(f"{ORANGE}✭{RESET} {end_msg}")
+    # Make the tables for the survival charts:
+    def survival_for(suite: str):
+        tools: list[ToolName] = ["Soteria", "Kani", "Miri"]
+        rows: list[list[str]] = [
+            ["", *(tools), "Total"],
+        ]
+        results_suite = [res for (_, s), res in results.items() if s == suite]
+        timestamps = sorted(
+            list(
+                set(
+                    # round times to 2 decimal places to avoid too many unique timestamps
+                    str(int(res[tool][1] * 100) / 100)
+                    for res in results_suite
+                    for tool in tools
+                    if res[tool][0].is_pass()
+                )
+            )
+        )
+        total_tests = len(results_suite)
+        for t in timestamps:
+            row = [t]
+            time_f = float(t)
+            for tool in tools:
+                count = sum(
+                    1
+                    for res in results_suite
+                    if res[tool][0].is_pass() and res[tool][1] <= time_f
+                )
+                row.append(str(count))
+            row.append(str(total_tests))
+            rows.append(row)
+        csv_file = PWD / f"survival-{suite}.csv"
+        csv_file.touch()
+        with csv_file.open("w") as csv_io:
+            csv_io.writelines(",".join(c for c in row) + "\n" for row in rows)
+        pprint(f"{BOLD}Survival data for {suite} stored in {csv_file}{RESET}")
+
+    survival_for("kani")
+    survival_for("miri")
+
+    # Make the table for console output
+    pretty_table = [
+        [
+            ("Tool", BOLD),
+            ("Kani", BOLD),
+            ("Suite", BOLD),
+            ("", None),
+            ("", None),
+            ("Miri", BOLD),
+            ("Suite", BOLD),
+            ("", None),
+            ("", None),
+            ("Total", BOLD),
+        ],
+        [
+            ("", None),
+            ("Pass", GREEN),
+            ("Fail", RED),
+            ("Unsup", ORANGE),
+            ("Timeout", YELLOW),
+            ("Pass", GREEN),
+            ("Fail", RED),
+            ("Unsup", ORANGE),
+            ("Timeout", YELLOW),
+            ("% Pass", BOLD),
+        ],
+    ]
+
+    for tool in cast(list[ToolName], ["Kani", "Miri", "Soteria"]):
+        total_passes = 0
+        total = 0
+        row: list[tuple[str, Optional[str]]] = [(tool, BOLD)]
+        for suite in ["kani", "miri"]:
+            entries = [res[tool][0] for (_, s), res in results.items() if s == suite]
+            passes = sum(1 for e in entries if e.is_pass())
+            fails = sum(1 for e in entries if e.is_fail())
+            unsupported = sum(1 for e in entries if e.is_unsupported())
+            timeouts = sum(1 for e in entries if e.is_timeout())
+            total_passes += passes
+            total += len(entries)
+            row += [
+                (str(passes), None),
+                (str(fails), None),
+                (str(unsupported), None),
+                (str(timeouts), None),
+            ]
+        pass_rate = total_passes / total * 100 if total > 0 else 0
+        row.append((f"{pass_rate:.1f}%", BOLD))
+        pretty_table.append(row)
+
+    pprint()
+    pptable(pretty_table)
 
 
 def kani_comparison(opts: CliOpts, path: Path, cached: bool):
