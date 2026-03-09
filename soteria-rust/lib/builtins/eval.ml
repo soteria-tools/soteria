@@ -29,7 +29,7 @@ type alloc_fn =
   | Realloc
   | NoAllocShimIsUnstable
 
-type system_fn = TlvAtexit
+type system_fn = HashmapRandomKeys | TlvAtexit
 
 type fn =
   | Alloc of alloc_fn
@@ -82,6 +82,7 @@ let std_fun_pair_list =
        is unsatisfactory (checking if the name starts with "__rust"). *)
     ( "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
       System TlvAtexit );
+    ("std::sys::random::hashmap_random_keys", System HashmapRandomKeys);
     (* Panic Builtins *)
     ("__rust_panic_cleanup", Fixme PanicCleanup);
     (* Dropping, in particular for the generic case, does nothing. *)
@@ -177,6 +178,7 @@ module M (StateM : State.StateM.S) = struct
     | Alloc Realloc -> Alloc.realloc
     | Fixme PanicCleanup -> Std.fixme_panic_cleanup
     | Fixme CatchUnwindCleanup -> Std.fixme_catch_unwind_cleanup
+    | System HashmapRandomKeys -> System.hashmap_random_keys
     | System TlvAtexit -> System.tlv_atexit fun_exec
     | DropInPlace -> Std.nop
 
