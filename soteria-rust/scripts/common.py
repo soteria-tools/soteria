@@ -118,6 +118,9 @@ class Outcome(enum.Enum):
     def is_fail(self) -> bool:
         return self == Outcome.FAIL
 
+    def is_unsupported(self) -> bool:
+        return self == Outcome.UNSUPPORTED
+
     def is_expected(self) -> bool:
         return self in (Outcome.PASS, Outcome.FAIL)
 
@@ -128,14 +131,19 @@ class Outcome(enum.Enum):
         return self == Outcome.TOOL
 
     def is_simple(self) -> bool:
-        return self in (Outcome.PASS, Outcome.FAIL, Outcome.TIME_OUT, Outcome.CRASH)
+        return self in (
+            Outcome.PASS,
+            Outcome.FAIL,
+            Outcome.TIME_OUT,
+            Outcome.UNSUPPORTED,
+        )
 
     def simplify(self) -> "Outcome":
         return {
             Outcome.PASS: Outcome.PASS,
             Outcome.FAIL: Outcome.FAIL,
             Outcome.TIME_OUT: Outcome.TIME_OUT,
-        }.get(self, Outcome.CRASH)
+        }.get(self, Outcome.UNSUPPORTED)
 
     txt: str
     clr: str
