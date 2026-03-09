@@ -9,7 +9,7 @@ from common import *
 
 def file_str(file_name: str, tool: ToolName):
     issue = KNOWN_ISSUES.get(file_name, None)
-    if issue and tool == "Rusteria":
+    if issue and tool == "Soteria":
         return f"{GRAY}{file_name} {YELLOW}✦{RESET} {BOLD}{issue}{RESET} {GRAY}{tool}{RESET}"
     return f"{file_name} {GRAY}{tool}{RESET}"
 
@@ -24,7 +24,7 @@ class TestCategoriser(Protocol):
     def __call__(self, test: str, *, expect_failure: bool) -> LogCategorisation: ...
 
 
-def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation:
+def categorise_soteria(test: str, *, expect_failure: bool) -> LogCategorisation:
 
     if "error: Compilation error" in test:
         if expect_failure:
@@ -286,7 +286,7 @@ def analyse(file: str) -> LogInfo:
     file_filters = [arg[3:] for arg in sys.argv if arg.startswith("-f=")]
 
     stats: LogInfo = {}
-    tool: ToolName = "Rusteria"
+    tool: ToolName = "Soteria"
 
     def log(tool: ToolName, test: str, outcome: Outcome, reason: Optional[str] = None):
         if outcome not in stats:
@@ -335,8 +335,8 @@ def analyse(file: str) -> LogInfo:
         # categorise appropriately
         if tool == "Kani":
             categories = categorise_kani(test, expect_failure=expect_failure)
-        elif tool == "Rusteria":
-            categories = categorise_rusteria(test, expect_failure=expect_failure)
+        elif tool == "Soteria":
+            categories = categorise_soteria(test, expect_failure=expect_failure)
         elif tool == "Miri":
             categories = categorise_miri(test, expect_failure=expect_failure)
         else:
@@ -598,7 +598,7 @@ def diff(f1: str, f2: str):
 
 
 # Returns, for each tests found in the file: (tool, test, outcome, time)
-# only works for Rusteria and Kani
+# only works for Soteria and Kani
 def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]]]:
     try:
         content = open(file, "r").read()
@@ -625,8 +625,8 @@ def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]
         file_path = file_path.group(1)
         file_name = file_path.split("/")[-1]
 
-        tool: ToolName = "Rusteria" if "Compiling... done" in test else "Kani"
-        if tool == "Rusteria":
+        tool: ToolName = "Soteria" if "Compiling... done" in test else "Kani"
+        if tool == "Soteria":
             # two options:
             # - error: <name>: found issues in <time>, errors in N branches (out of M)
             # - note: <name>: done in <time>, ran N branches
