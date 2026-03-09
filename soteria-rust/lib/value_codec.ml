@@ -214,6 +214,7 @@ struct
         in
         match (tag_layout.encoding, res) with
         | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
+        | Niche untagged, None -> ok untagged
         | Direct, None ->
             let adt = ty_as_adt ty in
             let adt = Crate.get_adt adt in
@@ -221,8 +222,7 @@ struct
               Fmt.str "Unmatched discriminant for enum %a: %a" Crate.pp_name
                 adt.item_meta.name Typed.ppa tag
             in
-            error (`UBTransmute msg)
-        | Niche untagged, None -> ok untagged)
+            error (`UBTransmute msg))
     | Array _ | Primitive -> failwith "Unexpected layout for enum"
 
   (** [decode ~meta ~offset ty] Parses a rust value of type [ty] at the given
