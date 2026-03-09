@@ -14,7 +14,7 @@ from cliopts import (
     SuiteName,
     opts_for_kani,
     opts_for_miri,
-    opts_for_rusteria,
+    opts_for_soteria,
     parse_flags,
 )
 from common import *
@@ -24,7 +24,7 @@ from parselog import (
     TestCategoriser,
     parse_per_test,
 )
-from test_exclusions import KNOWN_ISSUES, SKIPPED_TESTS
+from test_exclusions import KNOWN_ISSUES
 
 
 # Execute a test, return the categorisation and the elapsed time
@@ -65,7 +65,7 @@ def exec_test(
         # Kani tends to leave a kani-compiler process behind
         if tool == "Kani":
             subprocess.run(["pkill", "-f", "kani-compiler"])
-        if tool == "Rusteria":
+        if tool == "Soteria":
             subprocess.run(["pkill", "-f", "z3"])
 
         return ((Outcome.TIME_OUT, None), timeout or 0)
@@ -90,9 +90,9 @@ def build():
     if _built:
         return
     _built = True
-    pprint(f"Building {BOLD}Rusteria{RESET} ... ", flush=True, end="")
+    pprint(f"Building {BOLD}Soteria{RESET} ... ", flush=True, end="")
     before = time.time()
-    build_rusteria()
+    build_soteria()
     elapsed = time.time() - before
     print(f"took {BOLD}{elapsed:.3f}s{RESET}")
 
@@ -121,56 +121,38 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
             relative = path.relative_to(test_conf["root"])
             pprint(f"Running {relative} ... ", end="", flush=True)
 
-            if str(relative) in SKIPPED_TESTS and not opts["no_skips"]:
-                (outcome, reason) = SKIPPED_TESTS[str(relative)]
-                msg = "" if reason is None else f": {BOLD}{reason}{RESET}"
-                print(f"{outcome} {YELLOW}✦{RESET} {GRAY}{BOLD}Skipped{RESET}{msg}")
-            else:
-                try:
-                    (outcome, reason), elapsed = exec_test(
-                        path,
-                        cmd=cmd,
-                        log=logfile,
-                        tool=opts["tool"],
-                        categoriser=opts["categorise"],
-                        test_conf=test_conf,
-                        timeout=opts["timeout"],
-                    )
-                    results[relative] = (outcome, reason)
-                except KeyboardInterrupt as e:
-                    results[relative] = (Outcome.TIME_OUT, "User interrupt")
-                    interrupts += 1
-                    print(
-                        f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
-                    )
-                    if interrupts >= 3:
-                        raise e
-                    continue
+            try:
+                (outcome, reason), elapsed = exec_test(
+                    path,
+                    cmd=cmd,
+                    log=logfile,
+                    tool=opts["tool"],
+                    categoriser=opts["categorise"],
+                    test_conf=test_conf,
+                    timeout=opts["timeout"],
+                )
+                results[relative] = (outcome, reason)
+            except KeyboardInterrupt as e:
+                results[relative] = (Outcome.TIME_OUT, "User interrupt")
+                interrupts += 1
+                print(
+                    f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
+                )
+                if interrupts >= 3:
+                    raise e
+                continue
 
-                total_elapsed += elapsed
-                txt = f"{outcome} in {elapsed:.3f}s"
-                if elapsed > 1:
-                    txt += " 🐌"
-                if not outcome.is_expected() and reason:
-                    txt += f" ({GRAY}{reason}{RESET})"
-                if issue := dict_get_suffix(KNOWN_ISSUES, str(relative)):
-                    txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
-                    if outcome.is_pass():
-                        end_msgs.append(f'Fixed {relative}, for "{BOLD}{issue}{RESET}"')
-                if issue := dict_get_suffix(SKIPPED_TESTS, str(relative)):
-                    _, issue = issue
-                    txt += f" {YELLOW}✦{RESET} {BOLD}(not skipped){RESET}"
-                    if not outcome.is_timeout():
-                        end_msgs.append(
-                            f"Fixed timeout {relative} ({elapsed:.3f}s)"
-                            + (
-                                f", for {BOLD}{issue}{RESET}"
-                                if issue is not None
-                                else ""
-                            )
-                        )
-
-                print(txt)
+            total_elapsed += elapsed
+            txt = f"{outcome} in {elapsed:.3f}s"
+            if elapsed > 1:
+                txt += " 🐌"
+            if not outcome.is_expected() and reason:
+                txt += f" ({GRAY}{reason}{RESET})"
+            if issue := dict_get_suffix(KNOWN_ISSUES, str(relative)):
+                txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
+                if outcome.is_pass():
+                    end_msgs.append(f'Fixed {relative}, for "{BOLD}{issue}{RESET}"')
+            print(txt)
 
             if outcome.is_pass():
                 oks += 1
@@ -210,9 +192,6 @@ def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
     for path in tests:
         relative = path.relative_to(test_conf["root"])
         txt = f"Running {relative} ..."
-        if str(relative) in SKIPPED_TESTS and not opts["no_skips"]:
-            pprint(f"{txt} {GRAY}{BOLD}skipped")
-            continue
 
         times = test_times[relative] = []
 
@@ -361,7 +340,7 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
     def run_benchmark(opts: CliOpts):
         if tool is not None and opts["tool"] != tool:
             return
-        if tool == "Rusteria":
+        if tool == "Soteria":
             build()
         for name, callback in TEST_SUITES.items():
             if name == "custom":
@@ -416,7 +395,7 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
 
     pprint(f"{BOLD}Running benchmark{RESET}")
     try:
-        run_benchmark(opts_for_rusteria(opts, force_obol=True, timeout=timeout))
+        run_benchmark(opts_for_soteria(opts, force_obol=True, timeout=timeout))
         run_benchmark(opts_for_kani(opts, timeout=timeout))
         run_benchmark(opts_for_miri(opts))
     except Exception as e:
@@ -426,7 +405,7 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
         [
             ("Suite", BOLD),
             ("File", BOLD),
-            ("Rusteria", BOLD),
+            ("Soteria", BOLD),
             ("(s)", None),
             ("Kani", BOLD),
             ("(s)", None),
@@ -532,9 +511,9 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
 
         return WithEnv()
 
-    rusteria = opts_for_rusteria(opts, force_obol=True)
-    rusteria["tool_cmd"] += ["--kani"]
-    res_rusteria = run_with(rusteria, "rusteria")
+    soteria = opts_for_soteria(opts, force_obol=True)
+    soteria["tool_cmd"] += ["--kani"]
+    res_soteria = run_with(soteria, "soteria")
     kani = opts_for_kani(opts)
     kani["tool_cmd"] = [
         f for f in kani["tool_cmd"] if not f.startswith("--harness-timeout=5s")
@@ -550,7 +529,7 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
         [
             ("Suite", BOLD),
             ("Test", BOLD),
-            ("Rusteria", BOLD),
+            ("Soteria", BOLD),
             ("(s)", None),
             ("Kani", BOLD),
             ("(s)", None),
@@ -558,8 +537,8 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
             ("(s)", None),
         ]
     ]
-    for test in res_rusteria.keys():
-        r_out, r_time = res_rusteria.get(test, (Outcome.UNKNOWN, -2))
+    for test in res_soteria.keys():
+        r_out, r_time = res_soteria.get(test, (Outcome.UNKNOWN, -2))
         k_out, k_time = res_kani.get(test, (Outcome.UNKNOWN, -2))
         ku_out, ku_time = res_kani_unwind.get(test, (Outcome.UNKNOWN, -2))
 
@@ -597,7 +576,7 @@ def finetime(opts: CliOpts):
 
     # to find the tests, we run the crate with a 0 step fuel
     def get_tests() -> list[str]:
-        ropts = opts_for_rusteria(opts, force_obol=True, timeout=None)
+        ropts = opts_for_soteria(opts, force_obol=True, timeout=None)
         tool_cmd = ropts["tool_cmd"].copy()
         tool_cmd[1] = "cargo"
         data = subprocess_run(
@@ -620,12 +599,12 @@ def finetime(opts: CliOpts):
 
     interrupts = 0
 
-    def run_with_rusteria() -> dict[str, tuple[Outcome, float]]:
-        ropts = opts_for_rusteria(opts, force_obol=True, timeout=None)
+    def run_with_soteria() -> dict[str, tuple[Outcome, float]]:
+        ropts = opts_for_soteria(opts, force_obol=True, timeout=None)
         tool_cmd = ropts["tool_cmd"].copy()
         tool_cmd[1] = "cargo"
         tool_cmd += ["--kani", "--no-compile"]
-        log_path = PWD / "finetime-comparison-rusteria.log"
+        log_path = PWD / "finetime-comparison-soteria.log"
         log_path.touch()
         log_path.write_text(
             f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n"
@@ -633,9 +612,9 @@ def finetime(opts: CliOpts):
         log = log_path.open("a")
 
         pprint(
-            f"{CYAN}{BOLD}==>{RESET} Running with {BOLD}Rusteria{RESET}",
+            f"{CYAN}{BOLD}==>{RESET} Running with {BOLD}Soteria{RESET}",
         )
-        log.write("Running tests with Rusteria\n\n")
+        log.write("Running tests with Soteria\n\n")
 
         before = time.time()
         for test in tests:
@@ -647,7 +626,7 @@ def finetime(opts: CliOpts):
                     cmd=tool_cmd + filter,
                     log=log,
                     categoriser=ropts["categorise"],
-                    tool="Rusteria",
+                    tool="Soteria",
                     timeout=ropts["timeout"],
                 )
             except KeyboardInterrupt:
@@ -671,7 +650,7 @@ def finetime(opts: CliOpts):
 
         results = parse_per_test(log_path)
         results = {
-            (k if "finetime::" not in k else k.replace("finetime::", "")): v["Rusteria"]
+            (k if "finetime::" not in k else k.replace("finetime::", "")): v["Soteria"]
             for k, v in results.items()
         }
         return results
@@ -733,7 +712,7 @@ def finetime(opts: CliOpts):
         results = {k: v["Kani"] for k, v in results.items()}
         return results
 
-    res_rusteria = run_with_rusteria()
+    res_soteria = run_with_soteria()
     res_kani = run_with_kani(cached=True)
 
     table: list[list[tuple[str, Optional[str]]]] = []
@@ -741,16 +720,16 @@ def finetime(opts: CliOpts):
         [
             ("Suite", BOLD),
             ("Test", BOLD),
-            ("Rusteria", BOLD),
+            ("Soteria", BOLD),
             ("(s)", None),
             ("Kani", BOLD),
             ("(s)", None),
         ]
     ]
-    keys = list(set(res_rusteria.keys()).union(set(res_kani.keys())))
+    keys = list(set(res_soteria.keys()).union(set(res_kani.keys())))
     keys.sort()
     for test in keys:
-        r_out, r_time = res_rusteria.get(test, (Outcome.UNKNOWN, -2))
+        r_out, r_time = res_soteria.get(test, (Outcome.UNKNOWN, -2))
         k_out, k_time = res_kani.get(test, (Outcome.UNKNOWN, -2))
 
         if k_time == -1:

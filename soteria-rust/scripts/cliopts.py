@@ -6,7 +6,7 @@ from parselog import (
     TestCategoriser,
     categorise_kani,
     categorise_miri,
-    categorise_rusteria,
+    categorise_soteria,
 )
 
 CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
@@ -35,7 +35,6 @@ class CliOpts(TypedDict):
     filters: list[str]
     exclusions: list[str]
     tag: Optional[str]
-    no_skips: bool
     timeout: Optional[int]
     test_folder: Optional[Path]
     test_file: Optional[Path]
@@ -60,18 +59,17 @@ class FakeCliOpts:
 def parse_flags() -> CliOpts:
     opts: CliOpts = {
         "cmd": cast(Cmd, None),
-        "tool": "Rusteria",
+        "tool": "Soteria",
         "tool_cmd": [],
         "cli_extra_flags": [],
         "filters": [],
         "exclusions": [],
         "tag": None,
-        "no_skips": False,
         "timeout": None,
         "test_folder": None,
         "test_file": None,
         "output_file": None,
-        "categorise": categorise_rusteria,
+        "categorise": categorise_soteria,
     }
 
     sys.argv.pop(0)  # remove script name
@@ -163,8 +161,6 @@ def parse_flags() -> CliOpts:
             if not file.is_file():
                 raise ArgError(f"{RED}The file {file} does not exist or is not a file.")
             opts["test_file"] = file
-        elif arg == "--no-skip" or arg == "--no-skips":
-            opts["no_skips"] = True
         elif arg == "--timeout":
             opts["timeout"] = int(pop())
         elif arg == "--miri":
@@ -189,19 +185,19 @@ def parse_flags() -> CliOpts:
         opts = opts_for_miri(opts)
 
     else:
-        opts = opts_for_rusteria(opts, force_obol=(not with_charon))
+        opts = opts_for_soteria(opts, force_obol=(not with_charon))
 
     opts["tool_cmd"] += cmd_flags
     opts["cli_extra_flags"] = cmd_flags
     return opts
 
 
-def opts_for_rusteria(
+def opts_for_soteria(
     opts: CliOpts, *, force_obol: bool = True, timeout: Optional[float] = 5
 ) -> CliOpts:
     opts = {
         **opts,
-        "tool": "Rusteria",
+        "tool": "Soteria",
         "tool_cmd": [
             "soteria-rust",
             "exec",
@@ -211,7 +207,7 @@ def opts_for_rusteria(
             *(["--solver-timeout", str(timeout * 1000)] if timeout is not None else []),
             "--no-compile-plugins",
         ],
-        "categorise": categorise_rusteria,
+        "categorise": categorise_soteria,
     }
     if force_obol:
         opts["tool_cmd"].append("--frontend=obol")

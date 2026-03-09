@@ -76,8 +76,8 @@ def pptable(rows: list[list[tuple[str, Optional[str]]]]):
 
 PWD = Path(os.path.dirname(os.path.abspath(__file__)))
 
-ToolName = Literal["Rusteria", "Kani", "Miri"]
-TOOL_NAMES: list[ToolName] = ["Rusteria", "Kani", "Miri"]
+ToolName = Literal["Soteria", "Kani", "Miri"]
+TOOL_NAMES: list[ToolName] = ["Soteria", "Kani", "Miri"]
 SuiteName = Literal["kani", "miri", "custom"]
 SUITE_NAMES: list[SuiteName] = ["miri", "kani", "custom"]
 
@@ -162,7 +162,7 @@ def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
     return None
 
 
-def build_rusteria():
+def build_soteria():
     charon_path = PWD / ".." / ".." / ".." / "charon"
     miri_sysroot = (
         subprocess.check_output(
@@ -197,12 +197,12 @@ def build_rusteria():
             os.environ["TARGET"] = line[6:]
             break
 
-    os.environ["RUSTERIA_PLUGINS"] = str((PWD / ".." / "plugins").resolve())
+    os.environ["SOTERIA_RUST_PLUGINS"] = str((PWD / ".." / "plugins").resolve())
     try:
         subprocess.check_call("dune build > /dev/null 2> /dev/null", shell=True)
         subprocess.check_call("soteria-rust build-plugins > /dev/null", shell=True)
     except subprocess.CalledProcessError:
-        print(f"{RED}Rusteria couldn't build")
+        print(f"{RED}Soteria couldn't build")
         exit(1)
 
 
