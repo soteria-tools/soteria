@@ -226,9 +226,7 @@ module Heap = struct
     let open SM in
     let open SM.Syntax in
     let** () =
-      assert_or_error
-        Typed.(not (Sptr.sem_eq ptr (Sptr.null_ptr ())))
-        `NullDereference
+      assert_or_error Typed.(not (Typed.Ptr.is_null ptr.ptr)) `NullDereference
     in
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     let* res =
@@ -759,7 +757,10 @@ let with_exposed addr =
                Heap.wrap loc @@ Freeable_block_with_meta.SM.Result.get_state ()
              in
              match (block : Freeable_block_with_meta.t option) with
-             | None | Some { info = None; _ } -> Result.miss []
+             | None | Some { info = None; _ } ->
+                 Result.miss_no_fix ()
+                   ~reason:
+                     "Get a pointer from exposed with no matching allocation?"
              | Some { info = Some { size; align; _ }; _ } ->
                  let ptr : Sptr.t = { ptr; tag = None; align; size } in
                  Result.ok (ptr, Thin)))

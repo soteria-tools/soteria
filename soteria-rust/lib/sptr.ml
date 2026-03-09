@@ -96,18 +96,18 @@ module DecayMap : DecayMapS = struct
                in
                Result.ok address
            | None ->
-               let* addr = nondet (Typed.t_usize ()) in
+               let* address = nondet (Typed.t_usize ()) in
                let isize_max = Layout.max_value_z (TInt Isize) in
                let* () =
                  assume
                    [
-                     (addr %@ align ==@ Usize.(0s));
-                     align <=@ addr;
-                     addr <@ Typed.BitVec.usize isize_max -!@ size;
+                     (address %@ align ==@ Usize.(0s));
+                     align <=@ address;
+                     address <@ Typed.BitVec.usize isize_max -!@ size;
                    ]
                in
-               let* () = set_state (Some { address = addr; exposed = false }) in
-               Result.ok addr)
+               let* () = set_state (Some { address; exposed = expose }) in
+               Result.ok address)
       in
       Soteria.Symex.Compo_res.get_ok res
 
@@ -158,7 +158,12 @@ module type S = sig
   val null_ptr : unit -> t
   val null_ptr_of : [< sint ] Typed.t -> t
 
-  (** Pointer equality *)
+  (** Pointer equality. This comparison is structural, i.e. it is aware of
+      provenance.
+
+      In other words, given [addr = decay ptr] and [ptr' = of_exposed addr],
+      [sem_eq ptr ptr'] will be false, even though they would have the same
+      address, as [ptr] has provenance and [ptr'] does not. *)
   val sem_eq : t -> t -> sbool Typed.t
 
   (** If this pointer is at a null location, i.e. has no provenance *)
