@@ -361,10 +361,7 @@ module Make (StateImpl : State.S) = struct
             f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
-        let* layout = Layout.layout_of place.ty in
-        if layout.uninhabited then error (`RefToUninhabited place.ty)
-        else if Layout.is_dst place.ty then ok (ptr', meta)
-        else ok (ptr', Thin)
+        if Layout.is_dst place.ty then ok (ptr', meta) else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
         let* len =
@@ -611,7 +608,7 @@ module Make (StateImpl : State.S) = struct
               | _ -> not_impl "Invalid value for CastScalar"
             in
             Encoder.cast_literal ~from_ty ~to_ty v
-        | Cast (CastUnsize (_, _, meta)) ->
+        | Cast (CastUnsize (from_ty, to_ty, meta)) ->
             let update_meta prev =
               match meta with
               | MetaLength length ->
@@ -641,8 +638,8 @@ module Make (StateImpl : State.S) = struct
                       in
                       VTable vt')
               | MetaUnknown ->
-                  Fmt.kstr not_impl "Unsupported metadata in CastUnsize: %a"
-                    Types.pp_unsizing_metadata meta
+                  Fmt.kstr not_impl "Unknown metadata for %a -> %a" pp_ty
+                    from_ty pp_ty to_ty
             in
             let rec with_ptr_meta : rust_val -> rust_val t = function
               | Ptr (v, prev) ->
@@ -966,8 +963,8 @@ module Make (StateImpl : State.S) = struct
         in
         ok ()
     | PlaceMention place ->
-        let* ptr = resolve_place place in
-        State.check_non_dangling ptr place.ty
+        let+ _ = resolve_place place in
+        ()
     | SetDiscriminant (_, _) ->
         not_impl "Unsupported statement: SetDiscriminant"
 
