@@ -19,7 +19,7 @@ type optim_fn =
 type soteria_fn = Assert | Assume | NondetBytes | Panic
 
 (* Miri builtin functions *)
-type miri_fn = AllocId | PromiseAlignement | Nop
+type miri_fn = Alloc | AllocId | Dealloc | PromiseAlignement | Nop
 
 (* Functions related to the allocator, see
    https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
@@ -52,15 +52,23 @@ let std_fun_pair_list =
     ("kani::assume", Soteria Assume);
     ("kani::panic", Soteria Panic);
     (* Miri builtins *)
+    ("std::intrinsics::miri_promise_symbolic_alignment", Miri PromiseAlignement);
     ("miristd::miri_get_alloc_id", Miri AllocId);
     ("miristd::miri_pointer_name", Miri Nop);
     ("miristd::miri_print_borrow_state", Miri Nop);
-    ("std::intrinsics::miri_promise_symbolic_alignment", Miri PromiseAlignement);
+    ("miristd::miri_run_provenance_gc", Miri Nop);
+    ("miristd::miri_write_to_stdout", Miri Nop);
+    ("miristd::miri_alloc", Miri Alloc);
+    ("miristd::miri_dealloc", Miri Dealloc);
     (* Obol is quite bad at parsing names so this is how they're called
        there... *)
     ("utils::miri_extern::miri_get_alloc_id", Miri AllocId);
     ("utils::miri_extern::miri_pointer_name", Miri Nop);
     ("utils::miri_extern::miri_print_borrow_state", Miri Nop);
+    ("utils::miri_extern::miri_run_provenance_gc", Miri Nop);
+    ("utils::miri_extern::miri_write_to_stdout", Miri Nop);
+    ("utils::miri_extern::miri_alloc", Miri Alloc);
+    ("utils::miri_extern::miri_dealloc", Miri Dealloc);
     (* Allocator *)
     ("__rust_alloc", Alloc (Alloc { zeroed = false }));
     ("__rust_alloc_zeroed", Alloc (Alloc { zeroed = true }));
@@ -152,7 +160,9 @@ module M (StateM : State.StateM.S) = struct
     | Soteria Assume -> Soteria_lib.assume
     | Soteria NondetBytes -> Soteria_lib.nondet_bytes fn_sig
     | Soteria Panic -> Soteria_lib.panic ?msg:None
+    | Miri Alloc -> Miri.alloc
     | Miri AllocId -> Miri.alloc_id
+    | Miri Dealloc -> Miri.dealloc
     | Miri PromiseAlignement -> Miri.promise_alignement
     | Miri Nop -> Std.nop
     | Optim AllocImpl -> Std.alloc_impl

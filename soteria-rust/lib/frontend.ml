@@ -406,7 +406,7 @@ let miri () =
   let@ _ = Lib.with_compiled Miri in
   Cmd.make ~features:[ "miri" ]
     ~rustc:[ "--extern"; "miristd"; "--edition"; "2021" ]
-    ~entry_points:[ Attrib "miri_start" ] ()
+    ~entry_points:[ Name "miri_start" ] ()
 
 (** Filters a name, according to the current {!Config.t.filter} and
     {!Config.t.exclude} settings. If there are no filters, all names are

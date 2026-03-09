@@ -70,7 +70,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   if List.is_empty entry_points then fatal "No entry points found";
 
   (* prepare executing the entry points *)
-  let exec_fun = Interp.exec_fun ~args:[] ~state:State.empty in
+  let exec_fun = Interp.exec_fun ~state:State.empty in
 
   let@ { fuel; fun_decl; expect_error } : Frontend.entry_point =
     (Fun.flip List.map) entry_points
@@ -80,6 +80,14 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let@ () = print_outcomes entry_name in
   Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
     ("Running " ^ entry_name ^ "...");
+  let args =
+    if entry_name = "miri_start" then
+      [
+        Rust_val.Int (Typed.BV.usizei 0);
+        Rust_val.Ptr (State.Sptr.null_ptr (), Thin);
+      ]
+    else []
+  in
   let { res = branches; stats } : 'res Soteria.Stats.with_stats =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
@@ -87,7 +95,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
       Rustsymex.Result.run_with_stats ~mode:OX ~fuel
         ~fail_fast:(Config.get ()).fail_fast
     in
-    exec_fun fun_decl
+    exec_fun fun_decl ~args
   in
   Soteria.Stats.output stats;
 
