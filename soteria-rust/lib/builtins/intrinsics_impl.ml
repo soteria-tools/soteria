@@ -185,8 +185,10 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     |> unwind_with
          ~f:(fun _ -> ok U32.(0s))
          ~fe:(fun _ ->
+           (* We can't use [null] here because this messes up with the niche of
+              the return type, which checks if the pointer is 0! *)
            exec_fun "catch_unwind catch" catch_fn
-             [ Ptr data; Ptr (Sptr.null_ptr (), Thin) ]
+             [ Ptr data; Ptr (Sptr.null_ptr_of Usize.(1s), Thin) ]
            |> unwind_with
                 ~f:(fun _ -> ok U32.(1s))
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))

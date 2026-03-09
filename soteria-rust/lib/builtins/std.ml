@@ -5,6 +5,7 @@
 open Typed.Syntax
 open Typed.Infix
 open Rust_val
+open Common
 
 module M (StateM : State.StateM.S) = struct
   module Core = Core.M (StateM)
@@ -96,7 +97,31 @@ module M (StateM : State.StateM.S) = struct
     (* TODO: whas is __rust_panic_cleanup meant to do and return? *)
     ok (Ptr (Sptr.null_ptr (), VTable (Sptr.null_ptr ())))
 
-  let fixme_catch_unwind_cleanup _ =
-    (* We return a null dyn box, like above *)
-    ok @@ _mk_box (Ptr (Sptr.null_ptr (), VTable (Sptr.null_ptr ())))
+  let fixme_catch_unwind_cleanup args =
+    (* We need to make a [&dyn Any] to emulate a trait object, how nightmareish.
+       https://doc.rust-lang.org/src/std/panicking.rs.html#557-565 *)
+    let ptr =
+      match args with
+      | [ Ptr (p, _) ] -> p
+      | _ -> failwith "fixme_catch_unwind_cleanup: invalid arguments"
+    in
+    let* usize_size = Layout.size_of (TLiteral (TUInt Usize)) in
+    let* vtable, _ =
+      State.alloc_untyped ~kind:(VTable Charon.TypesUtils.mk_unit_ty)
+        ~zeroed:true
+        ~size:Usize.(usize_size *!!@ 3s)
+        ~align:(Typed.cast usize_size) ()
+    in
+    (* We say the drop function is a drop in place to anything, which is
+       implemented as a no-op. *)
+    let* drop_fn = State.declare_fn (Synthetic GenericDropInPlace) in
+    let* () = State.store (vtable, Thin) Charon_util.unit_ptr (Ptr drop_fn) in
+    (* We also need the alignment to be 1 *)
+    let* align_ptr =
+      Sptr.offset ~ty:(TLiteral (TUInt Usize)) ~signed:false vtable Usize.(2s)
+    in
+    let+ () =
+      State.store (align_ptr, Thin) Charon_util.unit_ptr (Int Usize.(1s))
+    in
+    _mk_box (Ptr (ptr, VTable vtable))
 end

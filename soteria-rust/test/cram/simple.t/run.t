@@ -48,20 +48,11 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   $ soteria-rust exec unwind.rs --ignore-leaks
   Compiling... done in <time>
   => Running main...
-  error: main: found issues in <time>, errors in 1 branch (out of 2)
-  error: Failed assertion: assertion failed: result.is_err() in main
-      ┌─ $TESTCASE_ROOT/unwind.rs:9:9
-    1 │  fn main() {
-      │  --------- 1: Entry point
-      ·  
-    9 │          assert!(result.is_err());
-      │          ^^^^^^^^^^^^^^^^^^^^^^^^
-      │          │
-      │          Triggering operation
-      │          2: Call trace
-  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
+  note: main: done in <time>, ran 2 branches
+  PC 1: (V|1| == 0x01) /\ (0x0000000000000001 <=u V|2|) /\
+        (V|2| <=u 0x7ffffffffffffffd) /\ (V|1| == 0x01)
+  PC 2: (0x00 == V|1|) /\ (0x00 == V|1|)
   
-  [1]
 Test that we properly handle the niche optimisation
   $ soteria-rust exec niche_optim.rs --ignore-leaks
   Compiling... done in <time>
