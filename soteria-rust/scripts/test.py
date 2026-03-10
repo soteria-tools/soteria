@@ -45,7 +45,7 @@ def exec_test(
 
     if log:
         log.write(
-            f"[TEST] Running {' '.join(cmd)} {file} - {datetime.datetime.now()}:\n"
+            f"[TEST] Running {' '.join(cmd)} {file or ''} - {datetime.datetime.now()}:\n"
         )
 
     before = time.time()
@@ -533,7 +533,7 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
         key = opts["tool"]
         log_path = PWD / f"kani-comparison-{id}.log"
         if cached:
-            results = parse_per_test(log_path)
+            results = parse_per_test(log_path, is_crate=False)
             results = {k: v[key] for k, v in results.items()}
             return results
 
@@ -580,7 +580,7 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
         )
         log.close()
 
-        results = parse_per_test(log_path)
+        results = parse_per_test(log_path, is_crate=False)
         results = {k: v[key] for k, v in results.items()}
         return results
 
@@ -656,32 +656,34 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
     pptable(table)
 
 
-def finetime(opts: CliOpts):
+def kani_comparison_cargo(opts: CliOpts, crate: Path):
     build()
-
-    finetime = (PWD / ".." / ".." / ".." / "finetime").resolve()
 
     # to find the tests, we run the crate with a 0 step fuel
     def get_tests() -> list[str]:
         ropts = opts_for_soteria(opts, force_obol=True, timeout=None)
         tool_cmd = ropts["tool_cmd"].copy()
-        tool_cmd[1] = "cargo"
         data = subprocess_run(
-            tool_cmd + ["--kani", "--step-fuel=0", str(finetime)],
+            tool_cmd + ["--kani", "--step-fuel=0", str(crate)],
             capture_output=True,
             text=True,
         )
         tests: list[str] = []
         for line in data.stdout.splitlines():
             # look for
-            # warning: <test> (0.01ms): runtime error, Missed 1 branches
-            if line.startswith("warning: "):
-                tests.append(line.split(" ")[1])
+            # note: time_scale::utc::proof_harness::roundtrip_near_leap_seconds: done in 0.33ms, ran 0 branches
+            if line.startswith("note: "):
+                test = line.split(" ")[1]
+                if test.endswith(":"):
+                    test = test[:-1]
+                tests.append(test)
         if len(tests) == 0:
-            raise RuntimeError(f"Could not find any tests in Finetime: {data.stdout}")
+            raise RuntimeError(f"Could not find any tests in the Crate: {data.stdout}")
         return tests
 
-    tests = get_tests()
+    tests_raw = get_tests()
+    tests = filter_tests(opts, tests_raw)
+    do_filter_tests = len(tests_raw) != len(tests)
     pprint(f"{BOLD}Running {len(tests)} tests{RESET}")
 
     interrupts = 0
@@ -689,9 +691,8 @@ def finetime(opts: CliOpts):
     def run_with_soteria() -> dict[str, tuple[Outcome, float]]:
         ropts = opts_for_soteria(opts, force_obol=True, timeout=None)
         tool_cmd = ropts["tool_cmd"].copy()
-        tool_cmd[1] = "cargo"
         tool_cmd += ["--kani", "--no-compile"]
-        log_path = PWD / "finetime-comparison-soteria.log"
+        log_path = PWD / "crate-comparison-soteria.log"
         log_path.touch()
         log_path.write_text(
             f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n"
@@ -709,7 +710,7 @@ def finetime(opts: CliOpts):
             try:
                 filter = ["--filter", test]
                 (outcome, _), elapsed = exec_test(
-                    finetime,
+                    crate,
                     cmd=tool_cmd + filter,
                     log=log,
                     categoriser=ropts["categorise"],
@@ -735,26 +736,20 @@ def finetime(opts: CliOpts):
         )
         log.close()
 
-        results = parse_per_test(log_path)
-        results = {
-            (k if "finetime::" not in k else k.replace("finetime::", "")): v["Soteria"]
-            for k, v in results.items()
-        }
+        results = parse_per_test(log_path, is_crate=True)
+        results = {k: v["Soteria"] for k, v in results.items()}
         return results
 
     def run_with_kani(*, cached=False) -> dict[str, tuple[Outcome, float]]:
         kopts = opts_for_kani(opts, timeout=None)
         kopts["tool_cmd"] = ["cargo", "kani"] + kopts["tool_cmd"][1:]
-        log_path = PWD / "finetime-comparison-kani.log"
+        if do_filter_tests:
+            kopts["tool_cmd"] += ["--harness=" + test for test in tests]
+        log_path = PWD / "crate-comparison-kani.log"
 
         if cached:
-            results = parse_per_test(log_path)
-            results = {
-                (k if not k.startswith("None::") else k.replace("None::", "")): v[
-                    "Kani"
-                ]
-                for k, v in results.items()
-            }
+            results = parse_per_test(log_path, is_crate=True)
+            results = {k: v["Kani"] for k, v in results.items()}
             return results
 
         log_path.touch()
@@ -779,7 +774,7 @@ def finetime(opts: CliOpts):
                 categoriser=kopts["categorise"],
                 tool="Kani",
                 timeout=kopts["timeout"],
-                cwd=finetime,
+                cwd=crate,
             )
         except KeyboardInterrupt:
             nonlocal interrupts
@@ -795,17 +790,16 @@ def finetime(opts: CliOpts):
         )
         log.close()
 
-        results = parse_per_test(log_path)
+        results = parse_per_test(log_path, is_crate=True)
         results = {k: v["Kani"] for k, v in results.items()}
         return results
 
     res_soteria = run_with_soteria()
-    res_kani = run_with_kani(cached=True)
+    res_kani = run_with_kani()
 
     table: list[list[tuple[str, Optional[str]]]] = []
     table += [
         [
-            ("Suite", BOLD),
             ("Test", BOLD),
             ("Soteria", BOLD),
             ("(s)", None),
@@ -821,12 +815,10 @@ def finetime(opts: CliOpts):
 
         if k_time == -1:
             k_time = 10
-        suite, test_name = test.split("::", 1)
 
         table.append(
             [
-                (suite, BOLD),
-                (test_name, None),
+                (test, None),
                 (r_out.txt, r_out.clr),
                 (f"{r_time:.3f}", None) if r_time >= 0 else ("-", GRAY),
                 (k_out.txt, k_out.clr),
@@ -834,7 +826,7 @@ def finetime(opts: CliOpts):
             ]
         )
 
-    csv_file = PWD / "finetime-comparison.csv"
+    csv_file = PWD / "crate-comparison.csv"
     csv_file.touch()
     with csv_file.open("w") as csv_io:
         csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in table)
@@ -875,8 +867,9 @@ def main():
     elif cmd[0] == "comp-kani":
         (compare_path, cached) = cmd[1]
         kani_comparison(opts, compare_path, cached)
-    elif cmd[0] == "finetime":
-        finetime(opts)
+    elif cmd[0] == "comp-kani-cargo":
+        (crate,) = cmd[1]
+        kani_comparison_cargo(opts, crate)
     else:
         assert_never(cmd)
 

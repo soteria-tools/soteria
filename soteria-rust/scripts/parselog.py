@@ -599,7 +599,9 @@ def diff(f1: str, f2: str):
 
 # Returns, for each tests found in the file: (tool, test, outcome, time)
 # only works for Soteria and Kani
-def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]]]:
+def parse_per_test(
+    file: Path, *, is_crate: bool
+) -> dict[str, dict[ToolName, tuple[Outcome, float]]]:
     try:
         content = open(file, "r").read()
     except FileNotFoundError:
@@ -607,10 +609,17 @@ def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]
     tests = content.split("[TEST] Running ")[1:]
     result: dict[str, dict[ToolName, tuple[Outcome, float]]] = {}
 
-    def push(tool: ToolName, filename: str, test: str, outcome: Outcome, time: float):
-        if filename.endswith(".rs"):
-            filename = filename[:-3]
-        test = f"{filename}::{test}"
+    def push(
+        tool: ToolName,
+        filename: Optional[str],
+        test: str,
+        outcome: Outcome,
+        time: float,
+    ):
+        if not is_crate and filename:
+            if filename.endswith(".rs"):
+                filename = filename[:-3]
+            test = f"{filename}::{test}"
         if test not in result:
             result[test] = {}
         if tool in result[test]:
@@ -618,12 +627,15 @@ def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]
         result[test][tool] = (outcome, time)
 
     for test in tests:
-        # get file name
-        file_path = re.search(r"(.+) - .*\n", test)
-        if not file_path:
-            exit(f"No file found in {test}")
-        file_path = file_path.group(1)
-        file_name = file_path.split("/")[-1]
+        if not is_crate:
+            # get file name
+            file_path = re.search(r"(.+) - .*\n", test)
+            if not file_path:
+                exit(f"No file found in {test}")
+            file_path = file_path.group(1)
+            file_name = file_path.split("/")[-1]
+        else:
+            file_name = None
 
         tool: ToolName = "Soteria" if "Compiling... done" in test else "Kani"
         if tool == "Soteria":
@@ -683,7 +695,7 @@ def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]
 
 
 def parse_per_test_cmd(file: Path):
-    results = parse_per_test(file)
+    results = parse_per_test(file, is_crate=False)
     table: list[list[tuple[str, Optional[str]]]] = []
     table += [
         [
