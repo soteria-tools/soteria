@@ -908,8 +908,6 @@ module Make (StateImpl : State.S) = struct
 
   and exec_stmt (stmt : UllbcAst.statement) : unit t =
     L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
-    L.trace (fun m ->
-        m "Statement full:@.%a" UllbcAst.pp_statement_kind stmt.kind);
     let@ () = with_loc ~loc:stmt.span.data in
     match stmt.kind with
     | Nop -> ok ()
@@ -973,8 +971,6 @@ module Make (StateImpl : State.S) = struct
     let*^ () = Rustsymex.consume_fuel_steps 1 in
     let* () = iter_list statements ~f:exec_stmt in
     L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
-    L.trace (fun m ->
-        m "Terminator full:@.%a" UllbcAst.pp_terminator_kind terminator.kind);
     let@ () = with_loc ~loc:terminator.span.data in
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
