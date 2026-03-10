@@ -14,6 +14,7 @@ exception CompilationError of string
 let plugin_err msg = raise (PluginError msg)
 let frontend_err msg = raise (FrontendError msg)
 let compilation_err msg = raise (CompilationError msg)
+let ( / ) = Filename.concat
 
 (** Utilities to run commands *)
 module Exe = struct
@@ -187,8 +188,8 @@ module Cmd = struct
       (let cmd = frontend_cmd () in
        Exe.exec_exn cmd [ "toolchain-path" ] |> List.hd)
 
-  let cargo () = Lazy.force toolchain_path ^ "/bin/cargo"
-  let rustc () = Lazy.force toolchain_path ^ "/bin/rustc"
+  let cargo () = Lazy.force toolchain_path / "bin" / "cargo"
+  let rustc () = Lazy.force toolchain_path / "bin" / "rustc"
   let rustc_as_env () = [ "RUSTC=" ^ rustc () ]
 
   let current_rustc_flags () =
@@ -329,8 +330,8 @@ module Lib = struct
     let config : Cmd.t = f (path, target) in
     let lib_imports =
       [
-        Fmt.str "-L%s/target/%s/debug/deps" path target;
-        Fmt.str "-L%s/target/debug/deps" path;
+        "-L" ^ (path / "target" / target / "debug" / "deps");
+        "-L" ^ (path / "target" / "debug" / "deps");
       ]
     in
     { config with rustc = config.rustc @ lib_imports }
@@ -389,8 +390,8 @@ let default () =
         "soteria";
         (* include the std *)
         "--extern";
-        Fmt.str "noprelude:std=%s/target/%s/debug/libstd.rlib" std_lib_path
-          target;
+        "noprelude:std="
+        ^ (std_lib_path / "target" / target / "debug" / "libstd.rlib");
       ]
     ()
 
@@ -547,7 +548,7 @@ let parse_ullbc_of_crate ~(mk_cmd : mk_cmd) crate_dir =
     | Some test -> "test-" ^ test ^ ".llbc.json"
     | None -> "crate.llbc.json"
   in
-  let output = Filename.concat crate_dir filename in
+  let output = crate_dir / filename in
   let cmd = mk_cmd ~output () in
   parse_ullbc ~mode:Cargo ~cmd ~output ~pwd:crate_dir ()
 
