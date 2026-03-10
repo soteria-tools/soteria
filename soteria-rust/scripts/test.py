@@ -603,7 +603,7 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
     res_soteria = run_with(soteria, "soteria")
     kani = opts_for_kani(opts)
     kani["tool_cmd"] = [
-        f for f in kani["tool_cmd"] if not f.startswith("--harness-timeout=5s")
+        f for f in kani["tool_cmd"] if not f.startswith("--harness-timeout")
     ]
     kani["tool_cmd"] += ["--harness-timeout=10s"]
     res_kani = run_with(kani, "kani")
