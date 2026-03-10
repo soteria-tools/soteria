@@ -292,36 +292,50 @@ module Lib = struct
 
   let root =
     lazy
-      (match (Config.get ()).plugin_directory with
-      | Some root -> root
-      | None -> List.hd Runtime_sites.Sites.plugins)
+      (match
+         ((Config.get ()).plugin_directory, Runtime_sites.Sites.plugins)
+       with
+      | Some root, _ -> root
+      | None, root :: _ -> root
+      | None, [] -> plugin_err "Couldn't find plugin directory")
 
   type t = Std | Kani | Miri
 
   let name = function Std -> "std" | Kani -> "kani" | Miri -> "miri"
-  let path lib = Filename.concat (Lazy.force root) (name lib)
+  let path lib = Lazy.force root / name lib
+
+  (** [exec_cargo ?env lib args] executes the command [cargo <args>] for the
+      library [lib].
+
+      @raise PluginError
+        if the command fails, with the error message from Cargo. *)
+  let exec_cargo ?(env = []) lib args =
+    let path = path lib in
+    let env = Cmd.rustc_as_env () @ env in
+    let _, err, status =
+      let@ () = Exe.run_in path in
+      Exe.exec ~env (Cmd.cargo ()) args
+    in
+    match status with
+    | WEXITED (0 | 255) -> ()
+    | _ ->
+        Fmt.kstr plugin_err "Couldn't compile lib at %s@.%a" path
+          Fmt.(list string)
+          err
+
+  (** Deletes the target directory of a target, to avoid duplicate builds *)
+  let clean lib = exec_cargo lib [ "clean" ]
 
   let compile lib =
     if not (Config.get ()).no_compile_plugins then
-      let path = path lib in
-      let verbosity =
-        if (Config.get ()).log_compilation then [ "--verbose" ] else []
-      in
       let env =
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
       in
-      let env = Cmd.rustc_as_env () @ env in
-      let _, err, status =
-        let@ () = Exe.run_in path in
-        Exe.exec ~env (Cmd.cargo ())
-          ([ "build"; "--lib"; "--target"; Lazy.force target ] @ verbosity)
+      let args =
+        [ "build"; "--lib"; "--target"; Lazy.force target ]
+        @ if (Config.get ()).log_compilation then [ "--verbose" ] else []
       in
-      match status with
-      | WEXITED (0 | 255) -> ()
-      | _ ->
-          Fmt.kstr plugin_err "Couldn't compile lib at %s@.%a" path
-            Fmt.(list string)
-            err
+      exec_cargo ~env lib args
 
   let with_compiled lib f =
     let path = path lib in
@@ -575,4 +589,9 @@ let parse_ullbc_with_entry_points path =
   let mk_cmd, filter = create_using_current_config () in
   parse_ullbc_raw path ~mk_cmd |> with_entry_points ~filter
 
-let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
+let compile_all_plugins () =
+  List.iter
+    (fun l ->
+      Lib.clean l;
+      Lib.compile l)
+    [ Std; Kani; Miri ]
