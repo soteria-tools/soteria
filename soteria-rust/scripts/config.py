@@ -240,7 +240,7 @@ def miri(opts: CliOpts) -> TestConfig:
         args = ["-Z=uninit-checks", "-Z=valid-value-checks"]
         dyn_flags = None
     elif opts["tool"] == "Miri":
-        args = []
+        args = ["--edition", "2021"]
         dyn_flags = miri_dyn_flags
     elif opts["tool"] == "Soteria":
         args = ["--miri"]

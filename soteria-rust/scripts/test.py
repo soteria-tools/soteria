@@ -11,7 +11,6 @@ from typing import assert_never
 from cliopts import (
     ArgError,
     CliOpts,
-    SuiteName,
     opts_for_kani,
     opts_for_miri,
     opts_for_soteria,
@@ -325,7 +324,7 @@ def diff_evaluation(path1: Path, path2: Path):
 Benchmark = dict[ToolName, tuple[Outcome, float]]
 
 
-def benchmark(tool: Optional[ToolName], opts: CliOpts):
+def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpts):
     log = PWD / "benchmark.log"
     log.touch()
     log.write_text(f"Running benchmark - {datetime.datetime.now()}:\n\n")
@@ -334,7 +333,6 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
 
     results: dict[tuple[Path, SuiteName], Benchmark] = {}  # type: ignore
     interrupts = 0
-    timeout = opts["timeout"] or 5
 
     def run_benchmark(opts: CliOpts):
         if tool is not None and opts["tool"] != tool:
@@ -344,6 +342,19 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
         for name, callback in TEST_SUITES.items():
             if name == "custom":
                 continue
+            if suite is not None and name != suite:
+                continue
+
+            timeout: int
+            if opts["timeout"]:
+                timeout = opts["timeout"]
+            elif name == "kani":
+                timeout = 23
+            elif name == "miri":
+                timeout = 9
+            else:
+                raise ValueError(f"Unknown suite {name} for timeout defaults")
+
             test_conf = callback(opts)
             if len(test_conf["tests"]) == 0:
                 continue
@@ -394,8 +405,8 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
 
     pprint(f"{BOLD}Running benchmark{RESET}")
     try:
-        run_benchmark(opts_for_soteria(opts, force_obol=True, timeout=timeout))
-        run_benchmark(opts_for_kani(opts, timeout=timeout))
+        run_benchmark(opts_for_soteria(opts, force_obol=True))
+        run_benchmark(opts_for_kani(opts, timeout=None))
         run_benchmark(opts_for_miri(opts))
     except Exception as e:
         print(e)
@@ -499,8 +510,10 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
         total_passes = 0
         total = 0
         row: list[tuple[str, Optional[str]]] = [(tool, BOLD)]
-        for suite in ["kani", "miri"]:
-            entries = [res[tool][0] for (_, s), res in results.items() if s == suite]
+        for suite_name in ["kani", "miri"]:
+            entries = [
+                res[tool][0] for (_, s), res in results.items() if s == suite_name
+            ]
             passes = sum(1 for e in entries if e.is_pass())
             fails = sum(1 for e in entries if e.is_fail())
             unsupported = sum(1 for e in entries if e.is_unsupported())
@@ -661,7 +674,7 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
 
     # to find the tests, we run the crate with a 0 step fuel
     def get_tests() -> list[str]:
-        ropts = opts_for_soteria(opts, force_obol=True, timeout=None)
+        ropts = opts_for_soteria(opts, force_obol=True)
         tool_cmd = ropts["tool_cmd"].copy()
         data = subprocess_run(
             tool_cmd + ["--kani", "--step-fuel=0", str(crate)],
@@ -689,7 +702,7 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
     interrupts = 0
 
     def run_with_soteria() -> dict[str, tuple[Outcome, float]]:
-        ropts = opts_for_soteria(opts, force_obol=True, timeout=None)
+        ropts = opts_for_soteria(opts, force_obol=True)
         tool_cmd = ropts["tool_cmd"].copy()
         tool_cmd += ["--kani", "--no-compile"]
         log_path = PWD / "crate-comparison-soteria.log"
@@ -862,8 +875,8 @@ def main():
         (file1, file2) = cmd[1]
         diff_evaluation(file1, file2)
     elif cmd[0] == "benchmark":
-        (tool,) = cmd[1]
-        benchmark(tool, opts)
+        (tool, suite) = cmd[1]
+        benchmark(tool, suite, opts)
     elif cmd[0] == "comp-kani":
         (compare_path, cached) = cmd[1]
         kani_comparison(opts, compare_path, cached)

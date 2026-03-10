@@ -13,7 +13,9 @@ CmdExec = tuple[Literal["exec"], tuple[SuiteName]]
 CmdAll = tuple[Literal["all"], tuple]
 CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
-CmdBenchmark = tuple[Literal["benchmark"], tuple[Optional[ToolName]]]
+CmdBenchmark = tuple[
+    Literal["benchmark"], tuple[Optional[ToolName], Optional[SuiteName]]
+]
 CmdCompKani = tuple[Literal["comp-kani"], tuple[Path, bool]]
 CmdCompKaniCargo = tuple[Literal["comp-kani-cargo"], tuple[Path]]
 Cmd = (
@@ -94,11 +96,21 @@ def parse_flags() -> CliOpts:
         file2 = Path(sys.argv.pop(0))
         opts["cmd"] = ("eval-diff", (file1, file2))
     elif arg == "benchmark":
-        if sys.argv and sys.argv[0] in TOOL_NAMES:
-            tool = cast(ToolName, sys.argv.pop(0))
-            opts["cmd"] = ("benchmark", (tool,))
+        if sys.argv and sys.argv[0].capitalize() in TOOL_NAMES:
+            tool = cast(ToolName, sys.argv.pop(0).capitalize())
+        elif sys.argv and sys.argv[0] == "all":
+            sys.argv.pop(0)
+            tool = None
         else:
-            opts["cmd"] = ("benchmark", (None,))
+            tool = None
+        if sys.argv and sys.argv[0].lower() in SUITE_NAMES:
+            suite = cast(SuiteName, sys.argv.pop(0).lower())
+        elif sys.argv and sys.argv[0].lower() == "all":
+            sys.argv.pop(0)
+            suite = None
+        else:
+            suite = None
+        opts["cmd"] = ("benchmark", (tool, suite))
     elif arg == "comp-kani":
         if len(sys.argv) < 1:
             raise ArgError("missing path to path with tests")
@@ -195,9 +207,7 @@ def parse_flags() -> CliOpts:
     return opts
 
 
-def opts_for_soteria(
-    opts: CliOpts, *, force_obol: bool = True, timeout: Optional[float] = 5
-) -> CliOpts:
+def opts_for_soteria(opts: CliOpts, *, force_obol: bool = True) -> CliOpts:
     opts = {
         **opts,
         "tool": "Soteria",
@@ -206,7 +216,6 @@ def opts_for_soteria(
             "exec",
             "--compact",
             "--no-color",
-            *(["--solver-timeout", str(timeout * 1000)] if timeout is not None else []),
             "--no-compile-plugins",
         ],
         "categorise": categorise_soteria,
@@ -234,14 +243,16 @@ def opts_for_kani(opts: CliOpts, *, timeout: Optional[float] = 5) -> CliOpts:
 
 
 def opts_for_miri(opts: CliOpts) -> CliOpts:
+    # corresponds to the version of the Miri suite we use
+    toolchain = "+nightly-2025-08-15"
     sysroot = subprocess.run(
-        ["cargo", "+nightly", "miri", "setup", "--print-sysroot"],
+        ["cargo", toolchain, "miri", "setup", "--print-sysroot"],
         capture_output=True,
         text=True,
         check=True,
     ).stdout.strip()
     miri = subprocess.run(
-        ["rustup", "+nightly", "which", "miri"],
+        ["rustup", toolchain, "which", "miri"],
         capture_output=True,
         text=True,
         check=True,

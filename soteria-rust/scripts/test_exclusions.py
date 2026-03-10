@@ -196,6 +196,7 @@ MIRI_EXCLUSIONS = [
     "fail/panic/unwind_panic_abort.rs",
     "fail/unaligned_pointers/promise_alignment.rs",
     "fail/unaligned_pointers/promise_alignment_zero.rs",
+    "pass/no_std_miri_start.rs",
     # unsupported: builtin unwind handlers
     "pass/panic/unwind_dwarf.rs",
     # unsupported: OS builtins
@@ -218,8 +219,6 @@ MIRI_EXCLUSIONS = [
     "fail/intrinsics/typed-swap-invalid-scalar.rs",
     # ignored: tests Miri fails
     "fail/no_main.rs",
-    "pass/provenance.rs",
-    "pass/transmute_ptr.rs",
     # ignored: tests with dependencies
     "/deps/",
     "/fail-dep/",
