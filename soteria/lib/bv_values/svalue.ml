@@ -944,9 +944,14 @@ and BitVec : BitVec = struct
     | BitVec _, Binop (Add _, ({ node = { kind = BitVec _; _ }; _ } as r), c)
     | BitVec _, Binop (Add _, c, ({ node = { kind = BitVec _; _ }; _ } as r)) ->
         sub ~checked (sub v1 r) c
-    | Binop (Add _, ({ node = { kind = BitVec _; _ }; _ } as r), c), BitVec _
-    | Binop (Add _, c, ({ node = { kind = BitVec _; _ }; _ } as r)), BitVec _ ->
-        add ~checked c (sub r v2)
+    | ( Binop (Add _, ({ node = { kind = BitVec bv1; _ }; _ } as r), c),
+        BitVec bv2 )
+    | ( Binop (Add _, c, ({ node = { kind = BitVec bv1; _ }; _ } as r)),
+        BitVec bv2 ) ->
+        (* if bv1 < bv2 there would be an overflow which causes problems since
+           the operation can't be deemed checked anymore. *)
+        if Z.lt bv1 bv2 then sub ~checked c (neg (sub r v2))
+        else add ~checked c (sub r v2)
     | Binop (Add _, l, r), _ when equal l v2 -> r
     | Binop (Add _, l, r), _ when equal r v2 -> l
     | Binop (Add _, l1, r1), Binop (Add _, l2, r2) when equal l1 l2 ->
