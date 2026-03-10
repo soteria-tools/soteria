@@ -222,7 +222,7 @@ def opts_for_kani(opts: CliOpts, *, timeout: Optional[float] = 5) -> CliOpts:
         "tool_cmd": [
             "kani",
             "-Z=unstable-options",
-            *(["--harness-timeout", f"{timeout}s"] if timeout is not None else []),
+            *([f"--harness-timeout={timeout}s"] if timeout is not None else []),
             "--output-format",
             "terse",
         ],
