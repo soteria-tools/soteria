@@ -87,6 +87,11 @@ module Interval : S = struct
     let ( > ) = Z.gt
     let pow2 n = Z.shift_left Z.one n
     let ( ~- ) size x = pow2 size - x
+
+    (** [to_bv size x] if [x < 0], returns the corresponding unsigned bitvector
+        representation of [x] with size [size]. E.g. for [size = 8], [-1] would
+        be represented as [255]. *)
+    let to_bv n x = Z.(x land pred (one lsl n))
   end
 
   let mk_var n v : Svalue.t = Svalue.mk_var v (TBitVector n)
@@ -333,8 +338,11 @@ module Interval : S = struct
               c2
           | _ -> failwith "unreachable"
         in
-        if c1 < c2 then Some (v, size, (Neg, (~-size c2, c1 - c2 - one)))
-        else Some (v, size, (Pos, (c1 - c2, ~-size c2 - one)))
+        (* We need to be careful and use [to_bv] to ensure we don't end up with
+           ranges with negative number (BAD!) *)
+        if c1 < c2 then
+          Some (v, size, (Neg, (~-size c2, to_bv size (c1 - c2 - one))))
+        else Some (v, size, (Pos, (c1 - c2, to_bv size (~-size c2 - one))))
     (*
      *  Case 3: c1 + x <=u c2
      *  • c1 <= c2 => ~[ c2 - c1 + 1; -c1 - 1 ]
