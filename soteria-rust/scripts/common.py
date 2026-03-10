@@ -170,11 +170,15 @@ def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
     return None
 
 
-def build_soteria():
+def get_toolchain() -> str:
     toolchain_path = (
         subprocess.check_output("obol toolchain-path", shell=True).decode().strip()
     )
-    toolchain = "-".join(os.path.basename(toolchain_path).split("-")[0:4])
+    return "-".join(os.path.basename(toolchain_path).split("-")[0:4])
+
+
+def build_soteria():
+    toolchain = get_toolchain()
 
     miri_sysroot = (
         subprocess.check_output(
