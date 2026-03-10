@@ -117,8 +117,8 @@ KANI_EXCLUSIONS = [
     "Serde/main.rs",
     "Slice/drop_in_place.rs",
     "Slice/extra_checks_fail.rs",
-    # utils
     "fixme",
+    # utils
     "/Helpers/",
     "/UnsizedCoercion/defs.rs",
 ]
