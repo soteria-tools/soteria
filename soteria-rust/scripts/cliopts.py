@@ -15,7 +15,7 @@ CmdEval = tuple[Literal["eval"], tuple[SuiteName, int]]
 CmdEvalDiff = tuple[Literal["eval-diff"], tuple[Path, Path]]
 CmdBenchmark = tuple[Literal["benchmark"], tuple[Optional[ToolName]]]
 CmdCompKani = tuple[Literal["comp-kani"], tuple[Path, bool]]
-CmdCompFinetime = tuple[Literal["finetime"], tuple]
+CmdCompKaniCargo = tuple[Literal["comp-kani-cargo"], tuple[Path]]
 Cmd = (
     CmdExec
     | CmdAll
@@ -23,7 +23,7 @@ Cmd = (
     | CmdEvalDiff
     | CmdBenchmark
     | CmdCompKani
-    | CmdCompFinetime
+    | CmdCompKaniCargo
 )
 
 
@@ -112,11 +112,14 @@ def parse_flags() -> CliOpts:
             opts["cmd"] = ("comp-kani", (path.resolve(), True))
         else:
             opts["cmd"] = ("comp-kani", (path.resolve(), False))
-    elif arg == "finetime":
-        opts["cmd"] = ("finetime", ())
+    elif arg == "comp-kani-cargo":
+        if len(sys.argv) < 1:
+            raise ArgError("missing path to crate with tests")
+        path = Path(sys.argv.pop(0))
+        opts["cmd"] = ("comp-kani-cargo", (path,))
     else:
         raise ArgError(
-            f"Unknown command, expected {', '.join(SUITE_NAMES)}, all, eval or eval-diff"
+            f"Unknown command, expected {', '.join(SUITE_NAMES)}, all, eval, eval-diff, benchmark, comp-kani or comp-kani-cargo"
         )
 
     prev = None

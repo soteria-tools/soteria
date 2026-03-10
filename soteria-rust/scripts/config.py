@@ -18,15 +18,20 @@ class TestConfig(TypedDict):
 KANI_PATH = (PWD / ".." / ".." / ".." / "kani" / "tests" / "kani").resolve()
 MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()
 
+T = TypeVar("T")
 
-def filter_tests(opts: CliOpts, tests: Iterable[Path]) -> list[Path]:
+
+def filter_tests(opts: CliOpts, tests: Iterable[T]) -> list[T]:
     exclusions = opts["exclusions"]
     filters = opts["filters"]
     tests = sorted(
-        t
-        for t in tests
-        if (not any(e in str(t) for e in exclusions))
-        and (filters == [] or all(f in str(t) for f in filters))
+        (
+            t
+            for t in tests
+            if (not any(e in str(t) for e in exclusions))
+            and (filters == [] or all(f in str(t) for f in filters))
+        ),
+        key=lambda t: str(t).lower(),
     )
     return tests
 
