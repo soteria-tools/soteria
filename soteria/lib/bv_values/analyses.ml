@@ -674,7 +674,13 @@ module Equality : S = struct
     | None -> vs
     | Some v_repr -> Iter.singleton v_repr
 
-  let encode ?vars (uf, refs) =
+  let encode ?vars (uf, refs) f =
+    let module URefTbl = Hashtbl.Make (struct
+      type t = Svalue.t UnionFind.rref
+
+      let equal r1 r2 = UnionFind.eq uf r1 r2
+      let hash = Hashtbl.hash
+    end) in
     let is_relevant =
       match vars with
       | None -> fun _ -> true
@@ -683,13 +689,25 @@ module Equality : S = struct
             Svalue.iter_vars v
             |> Iter.exists (fun (v, _) -> Var.Hashset.mem vars v)
     in
-    fun f ->
+    let relevant_refs = URefTbl.create 8 in
+    VMap.iter
+      (fun v ufref ->
+        if is_relevant v then
+          let repr = UnionFind.find uf ufref in
+          let repr_v = UnionFind.get uf repr in
+          URefTbl.add relevant_refs repr repr_v)
+      refs;
+    (* When encoding we need to be careful; e.g. if we know A = X and A = Y, and
+       X is relevant, we must also encode A = Y, as maybe X != Y; we don't have
+       the capacity to check that here, it is discharged to the solver. *)
+    VMap.iter
+      (fun v ufref ->
+        let ufref = UnionFind.find uf ufref in
+        match URefTbl.find_opt relevant_refs ufref with
+        | None -> ()
+        | Some repr when Svalue.equal v repr -> ()
+        | Some repr -> f (Typed.sem_eq (Typed.type_ v) (Typed.type_ repr)))
       refs
-      |> VMap.iter @@ fun v ufref ->
-         if is_relevant v then
-           let v_repr = UnionFind.get uf ufref in
-           if not (Svalue.equal v v_repr) then
-             f (Typed.sem_eq (Typed.type_ v) (Typed.type_ v_repr))
 
   let simplify st v = wrap_read (simplify v) st
   let add_constraint st v = wrap (add_constraint v) st
