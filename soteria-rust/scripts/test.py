@@ -6,7 +6,7 @@ import math
 import time
 from io import TextIOWrapper
 from pathlib import Path
-from typing import assert_never
+from typing import Sequence, Union, assert_never
 
 from cliopts import (
     ArgError,
@@ -321,6 +321,23 @@ def diff_evaluation(path1: Path, path2: Path):
     pptable(rows)
 
 
+def store_csv(
+    path: Path,
+    data: Sequence[Sequence[Union[str, tuple[str, Optional[str]]]]],
+    *,
+    name: str = "Benchmark results",
+):
+    def cell_str(cell: Union[str, tuple[str, Optional[str]]]) -> str:
+        if isinstance(cell, str):
+            return cell
+        return cell[0]
+
+    path.touch()
+    with path.open("w") as csv_io:
+        csv_io.writelines(",".join(cell_str(c) for c in row) + "\n" for row in data)
+    pprint(f"{BOLD}{name} stored in {path}{RESET}")
+
+
 Benchmark = dict[ToolName, tuple[Outcome, float]]
 
 
@@ -433,10 +450,7 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
         rows.append(row)
 
     csv_file = PWD / "benchmark.csv"
-    csv_file.touch()
-    with csv_file.open("w") as csv_io:
-        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in rows)
-    pprint(f"{BOLD}Benchmark results stored in {csv_file}{RESET}")
+    store_csv(csv_file, rows)
 
     # Make the tables for the survival charts:
     def survival_for(suite: str):
@@ -445,35 +459,28 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
             ["", *(tools), "Total"],
         ]
         results_suite = [res for (_, s), res in results.items() if s == suite]
-        timestamps = sorted(
-            list(
-                set(
-                    # round times to 2 decimal places to avoid too many unique timestamps
-                    str(int(res[tool][1] * 100) / 100)
-                    for res in results_suite
-                    for tool in tools
-                    if res[tool][0].is_pass()
-                )
-            )
-        )
+        max_timestamp = max(res[tool][1] for res in results_suite for tool in tools)
+        max_rows = 1000
+        increment = round(max_timestamp / max_rows, 2)
+        if increment == 0:
+            increment = 0.01
         total_tests = len(results_suite)
-        for t in timestamps:
-            row = [t]
-            time_f = float(t)
+        t = 0.00
+        while t <= max_timestamp:
+            row = [str(round(t, 2))]
             for tool in tools:
                 count = sum(
                     1
                     for res in results_suite
-                    if res[tool][0].is_pass() and res[tool][1] <= time_f
+                    if res[tool][0].is_pass() and res[tool][1] <= t
                 )
                 row.append(str(count))
             row.append(str(total_tests))
             rows.append(row)
+            t += increment
+
         csv_file = PWD / f"survival-{suite}.csv"
-        csv_file.touch()
-        with csv_file.open("w") as csv_io:
-            csv_io.writelines(",".join(c for c in row) + "\n" for row in rows)
-        pprint(f"{BOLD}Survival data for {suite} stored in {csv_file}{RESET}")
+        store_csv(csv_file, rows, name=f"Survival data for {suite}")
 
     survival_for("kani")
     survival_for("miri")
@@ -663,10 +670,76 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
         )
 
     csv_file = PWD / "kani-comparison.csv"
-    csv_file.touch()
-    with csv_file.open("w") as csv_io:
-        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in table)
+    store_csv(csv_file, table)
+
+    # Make the table for the survival chart
+    s_rows: list[list[str]] = [
+        ["", "Soteria", "Kani", "Kani (Unwinding)", "Total"],
+    ]
+    max_timestamp = 10.0
+    max_rows = 1000
+    increment = round(max_timestamp / max_rows, 2)
+    if increment == 0:
+        increment = 0.01
+    total_tests = len(res_soteria)
+    t = 0.00
+    while t <= max_timestamp:
+
+        def count(res: dict[str, tuple[Outcome, float]]):
+            x = sum(1 for (o, t_res) in res.values() if o.is_pass() and t_res <= t)
+            return str(x)
+
+        s_rows.append(
+            [
+                str(round(t, 2)),
+                count(res_soteria),
+                count(res_kani),
+                count(res_kani_unwind),
+                str(total_tests),
+            ]
+        )
+        t += increment
+
+    csv_file = PWD / "survival-kani-comparison.csv"
+    store_csv(csv_file, s_rows, name="Survival data for Kani comparison")
+
+    table_small: list[list[tuple[str, Optional[str]]]] = []
+    suites = list(set(test.split("::")[0] for test in res_soteria.keys()))
+    suites.sort()
+    table_small.append(
+        [
+            ("Tool", BOLD),
+            *((suite, BOLD) for suite in suites),
+            ("Total", BOLD),
+        ]
+    )
+
+    def add_for(name: str, res: dict[str, tuple[Outcome, float]]):
+        row: list[tuple[str, Optional[str]]] = [(name, BOLD)]
+        total = 0
+        for suite in suites:
+            suite_res = [v for k, v in res.items() if k.startswith(suite + "::")]
+            passes = sum(1 for r, _ in suite_res if r.is_pass())
+            total += passes
+            row.append((str(passes), None))
+        row.append((str(total), None))
+        table_small.append(row)
+
+    add_for("Kani", res_kani)
+    add_for("Kani (unwinding)", res_kani_unwind)
+    add_for("Soteria", res_soteria)
+
+    row: list[tuple[str, Optional[str]]] = [("Total Tests", BOLD)]
+    for suite in suites:
+        suite_res = [v for k, v in res_soteria.items() if k.startswith(suite + "::")]
+        row.append((str(len(suite_res)), None))
+    row.append((str(len(res_soteria)), None))
+    table_small.append(row)
+
     pptable(table)
+    pprint()
+    pprint("Results summary: ")
+    pptable(table_small)
 
 
 def kani_comparison_cargo(opts: CliOpts, crate: Path):
