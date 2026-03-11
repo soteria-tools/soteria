@@ -163,6 +163,13 @@ class Outcome(enum.Enum):
 T = TypeVar("T")
 
 
+def get_env_path_or(key: str, fallback: Path) -> Path:
+    e = os.environ.get(key)
+    if e:
+        return Path(e).resolve()
+    return fallback.resolve()
+
+
 def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
     for k in d:
         if key.endswith(k):

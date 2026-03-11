@@ -25,6 +25,8 @@ from parselog import (
 )
 from test_exclusions import KNOWN_ISSUES
 
+OUTPUT_DIR = get_env_path_or("OUTPUT_DIR", PWD / "output")
+
 
 # Execute a test, return the categorisation and the elapsed time
 def exec_test(
@@ -101,7 +103,7 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
     cmd = opts["tool_cmd"] + test_conf["args"]
     tests = test_conf["tests"]
 
-    log = PWD / f"{test_conf['name'].lower()}.log"
+    log = OUTPUT_DIR / f"{test_conf['name'].lower()}.log"
     log.touch()
     log.write_text(f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n")
     pprint(f"{BOLD}Running {len(tests)} tests{RESET}")
@@ -182,7 +184,7 @@ def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
     tests = test_conf["tests"]
     cmd = opts["tool_cmd"] + test_conf["args"]
     csv_suffix = opts.get("tag") or f"{iters}-{int(time.time())}"
-    csv_file = PWD / f"eval-{csv_suffix}.csv"
+    csv_file = OUTPUT_DIR / f"eval-{csv_suffix}.csv"
 
     pprint(f"{BOLD}Running {len(tests)} tests, {iters} times{RESET}")
 
@@ -342,7 +344,7 @@ Benchmark = dict[ToolName, tuple[Outcome, float]]
 
 
 def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpts):
-    log = PWD / "benchmark.log"
+    log = OUTPUT_DIR / "benchmark.log"
     log.touch()
     log.write_text(f"Running benchmark - {datetime.datetime.now()}:\n\n")
 
@@ -449,7 +451,7 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
             row.append((f"{elapsed:.3f}", None) if elapsed >= 0 else ("", None))
         rows.append(row)
 
-    csv_file = PWD / "benchmark.csv"
+    csv_file = OUTPUT_DIR / "benchmark.csv"
     store_csv(csv_file, rows)
 
     # Make the tables for the survival charts:
@@ -479,7 +481,7 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
             rows.append(row)
             t += increment
 
-        csv_file = PWD / f"survival-{suite}.csv"
+        csv_file = OUTPUT_DIR / f"survival-{suite}.csv"
         store_csv(csv_file, rows, name=f"Survival data for {suite}")
 
     survival_for("kani")
@@ -551,7 +553,7 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
 
     def run_with(opts: CliOpts, id: str) -> dict[str, tuple[Outcome, float]]:
         key = opts["tool"]
-        log_path = PWD / f"kani-comparison-{id}.log"
+        log_path = OUTPUT_DIR / f"kani-comparison-{id}.log"
         if cached:
             results = parse_per_test(log_path, is_crate=False)
             results = {k: v[key] for k, v in results.items()}
@@ -669,7 +671,7 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
             ]
         )
 
-    csv_file = PWD / "kani-comparison.csv"
+    csv_file = OUTPUT_DIR / "kani-comparison.csv"
     store_csv(csv_file, table)
 
     # Make the table for the survival chart
@@ -700,7 +702,7 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
         )
         t += increment
 
-    csv_file = PWD / "survival-kani-comparison.csv"
+    csv_file = OUTPUT_DIR / "survival-kani-comparison.csv"
     store_csv(csv_file, s_rows, name="Survival data for Kani comparison")
 
     table_small: list[list[tuple[str, Optional[str]]]] = []
@@ -778,7 +780,7 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
         ropts = opts_for_soteria(opts, force_obol=True)
         tool_cmd = ropts["tool_cmd"].copy()
         tool_cmd += ["--kani", "--no-compile"]
-        log_path = PWD / "crate-comparison-soteria.log"
+        log_path = OUTPUT_DIR / "crate-comparison-soteria.log"
         log_path.touch()
         log_path.write_text(
             f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n"
@@ -831,7 +833,7 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
         kopts["tool_cmd"] = ["cargo", "kani"] + kopts["tool_cmd"][1:]
         if do_filter_tests:
             kopts["tool_cmd"] += ["--harness=" + test for test in tests]
-        log_path = PWD / "crate-comparison-kani.log"
+        log_path = OUTPUT_DIR / "crate-comparison-kani.log"
 
         if cached:
             results = parse_per_test(log_path, is_crate=True)
