@@ -578,6 +578,8 @@ module rec Bool : Bool = struct
     (* Arithmetics *)
     | BitVec _, Unop (Neg, v2) -> sem_eq (BitVec.neg v1) v2
     | Unop (Neg, v1), BitVec _ -> sem_eq v1 (BitVec.neg v2)
+    | BitVec _, Unop (BvNot, v2) -> sem_eq (BitVec.not v1) v2
+    | Unop (BvNot, v1), BitVec _ -> sem_eq v1 (BitVec.not v2)
     | BitVec _, Binop (Add _, ({ node = { kind = BitVec _; _ }; _ } as l), r)
     | BitVec _, Binop (Add _, r, ({ node = { kind = BitVec _; _ }; _ } as l)) ->
         sem_eq (BitVec.sub v1 l) r
