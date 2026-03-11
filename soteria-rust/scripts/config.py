@@ -15,8 +15,19 @@ class TestConfig(TypedDict):
     tests: list[Path]
 
 
-KANI_PATH = (PWD / ".." / ".." / ".." / "kani" / "tests" / "kani").resolve()
-MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()
+def get_env_path_or(key: str, fallback: Path) -> Path:
+    e = os.environ.get(key)
+    if e:
+        return Path(e).resolve()
+    return fallback.resolve()
+
+
+KANI_PATH = get_env_path_or(
+    "KANI_SUITE_PATH", (PWD / ".." / ".." / ".." / "kani" / "tests" / "kani")
+)
+MIRI_PATH = get_env_path_or(
+    "MIRI_SUITE_PATH", (PWD / ".." / ".." / ".." / "miri" / "tests")
+)
 
 T = TypeVar("T")
 

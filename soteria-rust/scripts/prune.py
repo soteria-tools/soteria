@@ -4,8 +4,9 @@
 # KANI_PATH to remove excluded tests
 
 from os import remove
+from pathlib import Path
 
-from common import RED
+from common import RED, pprint
 from config import KANI_PATH, MIRI_PATH
 from test_exclusions import KANI_EXCLUSIONS, MIRI_EXCLUSIONS
 
@@ -22,19 +23,21 @@ MIRI_KEEPS = [
     "/utils/",
 ]
 
-if __name__ == "__main__":
-    for path in MIRI_PATH.rglob("*.rs"):
-        print(path)
-        if any(e in str(path) for e in MIRI_EXCLUSIONS) and not any(
-            k in str(path) for k in MIRI_KEEPS
+
+# Remove all files in dir that are not .rs files or are .rs files that match the exclusions but not the keeps
+def clear(dir: Path, exclusions: list[str], keeps: list[str]):
+    for path in dir.rglob("*"):
+        if path.is_dir():
+            continue
+
+        if path.suffix != ".rs" or (
+            any(e in str(path) for e in exclusions)
+            and not any(k in str(path) for k in keeps)
         ):
-            print(f"{RED}Removing {path}")
+            pprint(f"{RED}Removing {path}")
             remove(path)
 
-    for path in KANI_PATH.rglob("*.rs"):
-        print(path)
-        if any(e in str(path) for e in KANI_EXCLUSIONS) and not any(
-            k in str(path) for k in KANI_KEEPS
-        ):
-            print(f"{RED}Removing {path}")
-            remove(path)
+
+if __name__ == "__main__":
+    clear(MIRI_PATH, MIRI_EXCLUSIONS, MIRI_KEEPS)
+    clear(KANI_PATH, KANI_EXCLUSIONS, KANI_KEEPS)
