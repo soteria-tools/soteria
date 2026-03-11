@@ -461,7 +461,10 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
             ["", *(tools), "Total"],
         ]
         results_suite = [res for (_, s), res in results.items() if s == suite]
-        max_timestamp = max(res[tool][1] for res in results_suite for tool in tools)
+        try:
+            max_timestamp = max(res[tool][1] for res in results_suite for tool in tools)
+        except ValueError:
+            return
         max_rows = 1000
         increment = round(max_timestamp / max_rows, 2)
         if increment == 0:
