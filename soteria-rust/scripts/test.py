@@ -775,6 +775,7 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
     pprint(f"{BOLD}Running {len(tests)} tests{RESET}")
 
     interrupts = 0
+    timeout = opts["timeout"] or 60
 
     def run_with_soteria() -> dict[str, tuple[Outcome, float]]:
         ropts = opts_for_soteria(opts, force_obol=True)
@@ -803,7 +804,7 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
                     log=log,
                     categoriser=ropts["categorise"],
                     tool="Soteria",
-                    timeout=ropts["timeout"],
+                    timeout=timeout,
                 )
             except KeyboardInterrupt:
                 nonlocal interrupts
@@ -829,7 +830,7 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
         return results
 
     def run_with_kani(*, cached=False) -> dict[str, tuple[Outcome, float]]:
-        kopts = opts_for_kani(opts, timeout=None)
+        kopts = opts_for_kani(opts, timeout=timeout)
         kopts["tool_cmd"] = ["cargo", "kani"] + kopts["tool_cmd"][1:]
         if do_filter_tests:
             kopts["tool_cmd"] += ["--harness=" + test for test in tests]
@@ -861,7 +862,8 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
                 log=log,
                 categoriser=kopts["categorise"],
                 tool="Kani",
-                timeout=kopts["timeout"],
+                # no timeout because included in the command
+                timeout=None,
                 cwd=crate,
             )
         except KeyboardInterrupt:
@@ -897,12 +899,19 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
     ]
     keys = list(set(res_soteria.keys()).union(set(res_kani.keys())))
     keys.sort()
+
     for test in keys:
-        r_out, r_time = res_soteria.get(test, (Outcome.UNKNOWN, -2))
-        k_out, k_time = res_kani.get(test, (Outcome.UNKNOWN, -2))
+        if test not in res_soteria:
+            res_soteria[test] = (Outcome.TIME_OUT, timeout)
+        if test not in res_kani:
+            res_kani[test] = (Outcome.TIME_OUT, timeout)
+
+    for test in keys:
+        r_out, r_time = res_soteria[test]
+        k_out, k_time = res_kani[test]
 
         if k_time == -1:
-            k_time = 10
+            k_time = timeout
 
         table.append(
             [
@@ -914,11 +923,67 @@ def kani_comparison_cargo(opts: CliOpts, crate: Path):
             ]
         )
 
-    csv_file = PWD / "crate-comparison.csv"
-    csv_file.touch()
-    with csv_file.open("w") as csv_io:
-        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in table)
+    csv_file = OUTPUT_DIR / "crate-comparison.csv"
+    store_csv(csv_file, table, name="Kani comparison for Crate")
+
+    # Make the table for the survival chart
+    s_rows: list[list[str]] = [
+        ["", "Soteria", "Kani", "Total"],
+    ]
+    max_timestamp = timeout
+    max_rows = 1000
+    increment = round(max_timestamp / max_rows, 2)
+    if increment == 0:
+        increment = 0.01
+    total_tests = len(keys)
+    t = 0.00
+    while t <= max_timestamp:
+
+        def count(res: dict[str, tuple[Outcome, float]]):
+            x = sum(1 for (o, t_res) in res.values() if o.is_pass() and t_res <= t)
+            return str(x)
+
+        s_rows.append(
+            [
+                str(round(t, 2)),
+                count(res_soteria),
+                count(res_kani),
+                str(total_tests),
+            ]
+        )
+        t += increment
+
+    csv_file = OUTPUT_DIR / "survival-crate-comparison.csv"
+    store_csv(csv_file, s_rows, name="Survival data for Cargo Kani comparison")
+
+    pretty_table: list[list[tuple[str, Optional[str]]]] = [
+        [
+            ("Tool", BOLD),
+            ("Pass", GREEN),
+            ("Fail", RED),
+            ("Unsup", ORANGE),
+            ("Timeout", YELLOW),
+        ],
+    ]
+    for name, res in [("Soteria", res_soteria), ("Kani", res_kani)]:
+        passes = sum(1 for r, _ in res.values() if r.is_pass())
+        fails = sum(1 for r, _ in res.values() if r.is_fail())
+        unsupported = sum(1 for r, _ in res.values() if r.is_unsupported())
+        timeouts = sum(1 for r, _ in res.values() if r.is_timeout())
+        pretty_table.append(
+            [
+                (name, BOLD),
+                (str(passes), None),
+                (str(fails), None),
+                (str(unsupported), None),
+                (str(timeouts), None),
+            ]
+        )
+
     pptable(table)
+    pprint()
+    pprint("Results summary: ")
+    pptable(pretty_table)
 
 
 def main():
