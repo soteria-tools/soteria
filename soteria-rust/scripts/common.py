@@ -214,19 +214,6 @@ def build_soteria():
         exit(1)
 
 
-def determine_failure_expect(filepath: str) -> bool:
-    if "kani" in filepath:
-        try:
-            with open(filepath, "r") as f:
-                content = f.read()
-                return "kani-verify-fail" in content
-        except Exception:
-            ...
-    elif "miri" in filepath:
-        return "/tests/fail/" in filepath or "/tests/panic/" in filepath
-    return False
-
-
 def subprocess_run(
     *popenargs, input=None, capture_output=False, timeout=None, check=False, **kwargs
 ):

@@ -17,7 +17,12 @@ from cliopts import (
     parse_flags,
 )
 from common import *
-from config import TEST_SUITES, TestConfig, filter_tests
+from config import (
+    TEST_SUITES,
+    TestConfig,
+    determine_failure_expect,
+    filter_tests,
+)
 from parselog import (
     LogCategorisation_,
     TestCategoriser,
@@ -40,7 +45,9 @@ def exec_test(
     timeout: Optional[int] = None,
     cwd: Optional[Path] = None,
 ) -> tuple[LogCategorisation_, float]:
-    expect_failure = determine_failure_expect(str(file))
+    expect_failure = False
+    if file is not None:
+        expect_failure = determine_failure_expect(str(file.resolve()))
     if test_conf and file and test_conf["dyn_flags"]:
         cmd = cmd + test_conf["dyn_flags"](file)
 
