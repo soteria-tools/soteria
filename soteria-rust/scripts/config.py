@@ -25,6 +25,23 @@ MIRI_PATH = get_env_path_or(
 T = TypeVar("T")
 
 
+def determine_failure_expect(filepath: str) -> bool:
+    if "kani" in filepath or str(KANI_PATH) in filepath:
+        try:
+            with open(filepath, "r") as f:
+                content = f.read()
+                return "kani-verify-fail" in content
+        except Exception:
+            return False
+
+    if "miri" in filepath or str(MIRI_PATH) in filepath:
+        if "/pass/" in filepath:
+            return False
+        return "/fail/" in filepath or "/panic/" in filepath
+
+    return False
+
+
 def filter_tests(opts: CliOpts, tests: Iterable[T]) -> list[T]:
     exclusions = opts["exclusions"]
     filters = opts["filters"]
