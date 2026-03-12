@@ -160,7 +160,7 @@ compare_parser.add_argument(
     type=str,
     nargs="*",
     default=default_experiments_to_run,
-    help=f"List of experiment names to run (default: all)",
+    help="List of experiment names to run (default: all)",
 )
 
 
@@ -301,7 +301,7 @@ class Experiment(PrintersMixin):
         new_dir = global_config.experiment_folder / self.config.path
         if self.compile_commands.exists():
             self.print_info(
-                f"compile_commands.json already exists, skipping generation."
+                "compile_commands.json already exists, skipping generation."
             )
             # Still apply filtering if needed
             if (
@@ -328,7 +328,7 @@ class Experiment(PrintersMixin):
             )
             self.run_command(cmd)
             if self.compile_commands.exists():
-                self.print_success(f"Successfully generated compile_commands.json")
+                self.print_success("Successfully generated compile_commands.json")
 
                 # Apply filtering if needed
                 if self.config.exclude_folders:
@@ -422,7 +422,7 @@ class Experiment(PrintersMixin):
             with open(compile_db, "r") as f:
                 db = json.load(f)
                 total_files = len(db)
-        except:
+        except Exception:
             self.print_error(f"Failed to read {compile_db}")
 
         # Step 1: Generate parsed compilation database with --parse-only (not timed)
@@ -456,7 +456,7 @@ class Experiment(PrintersMixin):
                     with open(self.compile_commands_parsed, "r") as f:
                         db = json.load(f)
                         parsed_files = len(db)
-                except:
+                except Exception:
                     self.print_error(f"Failed to read {self.compile_commands_parsed}")
 
         if not self.compile_commands_parsed.exists():
@@ -466,7 +466,7 @@ class Experiment(PrintersMixin):
             return (0.0, 0, 0, 0, {})
 
         # Step 2: Run analysis on parsed database and time this part
-        self.print_info(f"Running Soteria-C analysis on parsed database")
+        self.print_info("Running Soteria-C analysis on parsed database")
         analysis_cmd = [
             "soteria-c",
             "capture-db",
@@ -491,7 +491,7 @@ class Experiment(PrintersMixin):
                 with open(report_file, "r") as f:
                     bugs = json.load(f)
                     bug_count = len(bugs)
-            except:
+            except Exception:
                 self.print_error(f"Failed to read {report_file}")
 
         # Extract stats from stats.json
@@ -516,7 +516,7 @@ class Experiment(PrintersMixin):
                             "soteria-c.num_summaries_generated", 0
                         ),
                     }
-            except:
+            except Exception:
                 self.print_error(f"Failed to read {stats_file}")
 
         return (elapsed_time, bug_count, total_files, parsed_files, stats_dict)
@@ -568,7 +568,7 @@ class Experiment(PrintersMixin):
                 with open(infer_report, "r") as f:
                     bugs = json.load(f)
                     bug_count = len(bugs)
-            except:
+            except Exception:
                 self.print_error(f"Failed to read {infer_report}")
 
         return (elapsed_time, bug_count)
@@ -576,9 +576,13 @@ class Experiment(PrintersMixin):
 
 ########## List experiments ##########
 
-simple_config = lambda name: ExperimentConfig(
-    name=name, path=Path(name), cmake_args=["-DBUILD_TESTING=OFF"]
-)
+
+def simple_config(name):
+    return ExperimentConfig(
+        name=name, path=Path(name), cmake_args=["-DBUILD_TESTING=OFF"]
+    )
+
+
 configs = [
     ExperimentConfig(
         name="Collections-C",
@@ -618,8 +622,8 @@ def run_experiments(experiments: list[Experiment]):
     for experiment in experiments:
         try:
             experiment.run()
-        except ExperimentException as e:
-            experiment.print_error(f"Experiment Failed")
+        except ExperimentException:
+            experiment.print_error("Experiment Failed")
         print("\n")
 
 
@@ -676,7 +680,7 @@ def aggregate_results():
         with open(file, "r") as f:
             try:
                 j = json.load(f)
-            except:
+            except Exception:
                 global_printer.print_error(f"Failed to read json from {file}")
                 continue
             try:
@@ -729,7 +733,7 @@ def run_infer_on_experiment(experiment_name: str):
     # Check if compile_commands.parsed.json exists, if not run soteria-c first
     if not experiment.compile_commands_parsed.exists():
         global_printer.print_info(
-            f"Parsed compilation database not found. Running Soteria-C in parse-only mode to generate it..."
+            "Parsed compilation database not found. Running Soteria-C in parse-only mode to generate it..."
         )
         # Make sure compile_commands.json exists
         if not experiment.compile_commands.exists():
