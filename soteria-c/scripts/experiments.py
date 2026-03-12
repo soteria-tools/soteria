@@ -50,7 +50,13 @@ def filter_compile_commands(
 
 ####### GLOBAL CONFIGURATION ########
 
-default_experiment_folder: Path = Path("../soteria-c-experiments")
+default_experiment_folder: Path
+if os.environ.get("SOTERIA_C_EXPERIMENT_FOLDER"):
+    default_experiment_folder = Path(
+        os.environ["SOTERIA_C_EXPERIMENT_FOLDER"]
+    ).resolve()
+else:
+    default_experiment_folder = Path("../soteria-c-experiments").resolve()
 default_solver_timeout = 2  # ms
 default_experiments_to_run: Optional[list[str]] = None
 
