@@ -1000,7 +1000,7 @@ def main():
     try:
         opts = parse_flags()
     except ArgError as e:
-        print(f"{RED}Error: {YELLOW}{e}")
+        print(f"{RED}Error: {YELLOW}{e}{RESET}")
         exit(1)
 
     cmd = opts["cmd"]

@@ -184,17 +184,21 @@ def get_toolchain() -> str:
     return "-".join(os.path.basename(toolchain_path).split("-")[0:4])
 
 
+def get_sysroot(toolchain: str) -> str:
+    if not toolchain.startswith("+"):
+        toolchain = "+" + toolchain
+    return subprocess.run(
+        ["cargo", toolchain, "miri", "setup", "--print-sysroot"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
 def build_soteria():
     toolchain = get_toolchain()
-
-    miri_sysroot = (
-        subprocess.check_output(
-            f"cargo +{toolchain} miri setup --print-sysroot", shell=True
-        )
-        .decode()
-        .strip()
-    )
-    os.environ["RUST_SYSROOT"] = miri_sysroot
+    sysroot = get_sysroot(toolchain)
+    os.environ["RUST_SYSROOT"] = sysroot
 
     # find line starting with "host: "
     targets = (
@@ -208,7 +212,9 @@ def build_soteria():
             break
 
     try:
-        subprocess.check_call("soteria-rust build-plugins", shell=True)
+        subprocess.check_call(
+            "soteria-rust build-plugins", shell=True, stdout=subprocess.DEVNULL
+        )
     except subprocess.CalledProcessError:
         print(f"{RED}Soteria couldn't build")
         exit(1)

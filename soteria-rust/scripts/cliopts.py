@@ -245,12 +245,7 @@ def opts_for_kani(opts: CliOpts, *, timeout: Optional[float] = 5) -> CliOpts:
 def opts_for_miri(opts: CliOpts) -> CliOpts:
     # corresponds to the version of the Miri suite we use
     toolchain = "+nightly-2025-08-15"
-    sysroot = subprocess.run(
-        ["cargo", toolchain, "miri", "setup", "--print-sysroot"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
+    sysroot = get_sysroot(toolchain)
     miri = subprocess.run(
         ["rustup", toolchain, "which", "miri"],
         capture_output=True,
