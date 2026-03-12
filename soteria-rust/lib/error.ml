@@ -29,7 +29,7 @@ type t =
     (** Binary shift that is less than 0 or that exceeds the bit size of the
         type *)
   | `Overflow  (** Arithmetic over or underflow *)
-  | `RefToUninhabited
+  | `RefToUninhabited of Types.ty
     (** Attempt to have a reference to an uninhabited value *)
   | `InvalidRef of t
     (** Attempt to have a reference that is not valid, e.g. because it points to
@@ -113,7 +113,7 @@ let rec pp ft : [> t ] -> unit = function
   | `Panic None -> Fmt.pf ft "Panic"
   | `RefInvalidatedEarly ->
       Fmt.string ft "Protected ref invalidated before function ended"
-  | `RefToUninhabited -> Fmt.string ft "Ref to uninhabited type"
+  | `RefToUninhabited ty -> Fmt.pf ft "Ref to uninhabited type: %a" pp_ty ty
   | `StdErr msg -> Fmt.pf ft "UB in std: %s" msg
   | `UninitializedMemoryAccess -> Fmt.string ft "Uninitialized memory access"
   | `UBAbort -> Fmt.string ft "UB: undefined behaviour trap reached"
@@ -129,17 +129,22 @@ let rec pp ft : [> t ] -> unit = function
   | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
   | `UseAfterFree -> Fmt.string ft "Use after free"
 
-let pp_err_and_call_trace ft (err, call_trace) =
-  Fmt.pf ft "@[%a with trace@ %a@]" pp err
-    (Soteria.Terminal.Call_trace.pp pp_span_data)
-    call_trace
-
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `MemoryLeak -> Warning
   | e when is_unwindable e -> Error
   | _ -> Bug
 
 type with_trace = t * Meta.span_data Soteria.Terminal.Call_trace.t
+
+let pp_with_trace ft (err, call_trace) =
+  Fmt.pf ft "@[%a with trace@ %a@]" pp err
+    (Soteria.Terminal.Call_trace.pp pp_span_data)
+    call_trace
+
+let compare_with_trace (e1, t1) (e2, t2) =
+  let str1 = Fmt.to_to_string pp e1 in
+  let str2 = Fmt.to_to_string pp e2 in
+  match String.compare str1 str2 with 0 -> compare t1 t2 | x -> x
 
 let add_to_call_trace ((err, trace_elem) : with_trace) trace_elem' =
   (err, trace_elem' :: trace_elem)

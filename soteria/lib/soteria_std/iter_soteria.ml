@@ -36,3 +36,24 @@ let[@inline] repeatz n x k =
     i := Z.succ !i;
     k x
   done
+
+(** Groups an iterator over pairs, using the provided comparison function for
+    sorting the keys. Eagerly traverses the provided iterator. *)
+let group_pairs_by (type k) ?(compare = compare) seq =
+  let module Map = Map.Make (struct
+    type t = k
+
+    let compare = compare
+  end) in
+  (* compute group table *)
+  let map =
+    lazy
+      (let map = ref Map.empty in
+       seq (fun (k, v) ->
+           map :=
+             Map.update k
+               (function None -> Some [ v ] | Some l -> Some (v :: l))
+               !map);
+       !map)
+  in
+  fun yield -> Map.iter (fun k vs -> yield (k, vs)) (Lazy.force map)

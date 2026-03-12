@@ -67,12 +67,14 @@ type t = {
   with_miri : bool; [@make.default false] [@names [ "miri" ]]
       (** Use the Miri library *)
   (* Printing settings *)
-  filter : string list; [@default []] [@optall] [@names [ "filter" ]]
+  filter : (Str.regexp[@conv Cmdliner_helpers.regex]) list;
+      [@default []] [@optall] [@names [ "filter" ]]
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
           run. Multiple filters can be provided, comma-separated; tests matching
           any will be selected. The filters are treated as regexes. Opposite of
           --exclude. *)
-  exclude : string list; [@default []] [@optall] [@names [ "exclude" ]]
+  exclude : (Str.regexp[@conv Cmdliner_helpers.regex]) list;
+      [@default []] [@optall] [@names [ "exclude" ]]
       (** Filter the entrypoints to exclude, by name. If empty, no entrypoints
           are excluded. Multiple filters can be provided, comma-separated; tests
           matching any will be excluded. The filters are treated as regexes.
@@ -115,11 +117,17 @@ type t = {
 }
 [@@deriving make, subliner]
 
+type mode = Compositional | Whole_program
+
 let term = cmdliner_term ()
 let default = make ()
 
 let get, set_and_lock =
   Soteria.Soteria_std.Write_once.make ~name:"Soteria-Rust" ~default ()
+
+let get_mode, set_mode_and_lock =
+  Soteria.Soteria_std.Write_once.make ~name:"Soteria-Rust mode"
+    ~default:Whole_program ()
 
 type global = {
   soteria : Soteria.Config.t; [@term Soteria.Config.cmdliner_term ()]
@@ -129,9 +137,10 @@ type global = {
 
 let global_term = global_cmdliner_term ()
 
-let set_and_lock_global (config : global) =
+let set_and_lock_global (mode : mode) (config : global) =
   Soteria.Config.set_and_lock config.soteria;
   if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
     Exn.config_error
       "Obol does not support polymorphic analyses; use --frontend charon";
+  set_mode_and_lock mode;
   set_and_lock config.soteria_rust
