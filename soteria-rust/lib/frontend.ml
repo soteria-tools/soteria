@@ -489,6 +489,9 @@ let create_using_current_config () : mk_cmd * entry_point_filter =
   in
   (mk_cmd, { filter = cmd.entry_points; expect_error = cmd.expect_error })
 
+let modify_mk_cmd f mk_cmd =
+ fun ?input ~output () -> f @@ mk_cmd ?input ~output ()
+
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc ~mode ~cmd ~output ~pwd () =
   if not (Config.get ()).no_compile then (
@@ -558,6 +561,9 @@ let parse_ullbc_raw ~mk_cmd = function
        entry-points.} *)
 let parse_ullbc path =
   let mk_cmd, _filter = create_using_current_config () in
+  let mk_cmd =
+    modify_mk_cmd (fun c -> Cmd.{ c with entry_points = [] }) mk_cmd
+  in
   parse_ullbc_raw ~mk_cmd path
 
 (** Given a path, will check if it has a [.rs] extension, in which case it will
