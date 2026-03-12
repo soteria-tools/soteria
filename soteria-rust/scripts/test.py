@@ -363,7 +363,7 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
     def run_benchmark(opts: CliOpts):
         if tool is not None and opts["tool"] != tool:
             return
-        if tool == "Soteria":
+        if opts["tool"] == "Soteria":
             build()
         for name, callback in TEST_SUITES.items():
             if name == "custom":
