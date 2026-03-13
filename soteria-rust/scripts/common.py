@@ -196,9 +196,10 @@ def get_sysroot(toolchain: str) -> str:
 
 
 def build_soteria():
-    toolchain = get_toolchain()
-    sysroot = get_sysroot(toolchain)
-    os.environ["RUST_SYSROOT"] = sysroot
+    if not os.environ.get("RUST_SYSROOT"):
+        toolchain = get_toolchain()
+        sysroot = get_sysroot(toolchain)
+        os.environ["RUST_SYSROOT"] = sysroot
 
     # find line starting with "host: "
     targets = (
