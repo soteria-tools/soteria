@@ -4,7 +4,7 @@ module Symex = Soteria.Symex.Make (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 module Data = Soteria.Data.M (Symex)
 
 module Error = struct
-  type t = [ `Interp of string | `UseAfterFree ]
+  type t = [ `Interp of string | `UseAfterFree | Symex.cons_fail ]
 end
 
 module S_int = struct

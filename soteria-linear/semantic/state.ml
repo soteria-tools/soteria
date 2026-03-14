@@ -1,6 +1,6 @@
 open Aux
 
-type err = [ `UseAfterFree | `Interp of string ]
+type err = [ `UseAfterFree | `Interp of string | Symex.cons_fail ]
 [@@deriving show { with_path = false }]
 
 module Excl_val = Soteria.Sym_states.Excl.Make (Symex) (S_val)
