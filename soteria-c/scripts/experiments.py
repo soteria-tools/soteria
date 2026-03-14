@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 
-import os, json, contextlib, argparse, time
+import argparse
+import contextlib
+import json
+import os
+import shutil
+import subprocess
+import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
-from dataclasses import dataclass, field
+
 from utils import *
-import shutil
 
 
 class ExperimentException(Exception):
@@ -44,7 +50,13 @@ def filter_compile_commands(
 
 ####### GLOBAL CONFIGURATION ########
 
-default_experiment_folder: Path = Path("../soteria-c-experiments")
+default_experiment_folder: Path
+if os.environ.get("SOTERIA_C_EXPERIMENT_FOLDER"):
+    default_experiment_folder = Path(
+        os.environ["SOTERIA_C_EXPERIMENT_FOLDER"]
+    ).resolve()
+else:
+    default_experiment_folder = Path("../soteria-c-experiments").resolve()
 default_solver_timeout = 2  # ms
 default_experiments_to_run: Optional[list[str]] = None
 
@@ -154,7 +166,7 @@ compare_parser.add_argument(
     type=str,
     nargs="*",
     default=default_experiments_to_run,
-    help=f"List of experiment names to run (default: all)",
+    help="List of experiment names to run (default: all)",
 )
 
 
@@ -209,33 +221,6 @@ class GlobalConfig:
 
 
 global_config = GlobalConfig()
-
-
-######### Normalising current folder to project root #########
-
-
-def current_folder_is_root():
-    """Check if the current folder is the root of the Soteria project."""
-    if not Path("dune-project").exists():
-        return False
-
-    with open("dune-project", "r") as f:
-        content = f.read()
-        return "(name soteria)" in content
-
-
-def go_to_dune_root():
-    previous = None
-    cwd = Path.cwd()
-    while cwd != previous and not current_folder_is_root():
-        previous = cwd
-        cwd = Path.cwd().parent
-        os.chdir(cwd)
-    if previous == cwd:
-        print(
-            f"{RED}Error: This script must be run from within the Soteria project directory.{RESET}"
-        )
-        exit(2)
 
 
 ########## Experiment running ##########
@@ -297,7 +282,7 @@ class Experiment(PrintersMixin):
 
     def run_command(self, cmd: str):
         self.print_message(f"{MAGENTA}Running:\n{cmd}{RESET}")
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
 
     def cleanup_build(self):
         """Remove build directory and infer-out directory."""
@@ -322,7 +307,7 @@ class Experiment(PrintersMixin):
         new_dir = global_config.experiment_folder / self.config.path
         if self.compile_commands.exists():
             self.print_info(
-                f"compile_commands.json already exists, skipping generation."
+                "compile_commands.json already exists, skipping generation."
             )
             # Still apply filtering if needed
             if (
@@ -349,7 +334,7 @@ class Experiment(PrintersMixin):
             )
             self.run_command(cmd)
             if self.compile_commands.exists():
-                self.print_success(f"Successfully generated compile_commands.json")
+                self.print_success("Successfully generated compile_commands.json")
 
                 # Apply filtering if needed
                 if self.config.exclude_folders:
@@ -376,7 +361,7 @@ class Experiment(PrintersMixin):
         self.print_info(f"Running Soteria-C with compile_commands: {compile_db}")
         os.makedirs(self.result_folder, exist_ok=True)
         cmd = (
-            "dune exec -- time soteria-c capture-db "
+            "soteria-c capture-db "
             f"{compile_db} "
             f"--solver-timeout {global_config.solver_timeout} "
             "--dump-stats "
@@ -393,7 +378,10 @@ class Experiment(PrintersMixin):
                 )
                 exit(4)
             cmd = f"hyperfine '{cmd}' --warmup 1 --runs 10 -i"
+        elapsed = time.time()
         self.run_command(cmd)
+        elapsed = time.time() - elapsed
+        self.print_success(f"Soteria-C analysis complete! Took {elapsed:.2f} seconds.")
 
     def generate_parsed_db_only(self):
         """Generate the parsed compilation database without running full analysis."""
@@ -403,7 +391,7 @@ class Experiment(PrintersMixin):
             exit(3)
         self.print_info(f"Generating parsed compilation database from: {compile_db}")
         cmd = (
-            "dune exec -- soteria-c capture-db "
+            "soteria-c capture-db "
             f"{compile_db} "
             "--parse-only "
             f"--write-parsed-db {self.compile_commands_parsed} "
@@ -423,8 +411,8 @@ class Experiment(PrintersMixin):
         then runs the actual analysis on the parsed database and times only that.
         The stats_dict contains additional stats extracted from stats.json.
         """
-        import subprocess
         import re
+        import subprocess
 
         self.make_compile_commands()
         compile_db = self.get_compile_commands_for_soteria()
@@ -440,15 +428,12 @@ class Experiment(PrintersMixin):
             with open(compile_db, "r") as f:
                 db = json.load(f)
                 total_files = len(db)
-        except:
+        except Exception:
             self.print_error(f"Failed to read {compile_db}")
 
         # Step 1: Generate parsed compilation database with --parse-only (not timed)
         self.print_info(f"Parsing compilation database: {compile_db}")
         parse_cmd = [
-            "dune",
-            "exec",
-            "--",
             "soteria-c",
             "capture-db",
             str(compile_db),
@@ -477,7 +462,7 @@ class Experiment(PrintersMixin):
                     with open(self.compile_commands_parsed, "r") as f:
                         db = json.load(f)
                         parsed_files = len(db)
-                except:
+                except Exception:
                     self.print_error(f"Failed to read {self.compile_commands_parsed}")
 
         if not self.compile_commands_parsed.exists():
@@ -487,11 +472,8 @@ class Experiment(PrintersMixin):
             return (0.0, 0, 0, 0, {})
 
         # Step 2: Run analysis on parsed database and time this part
-        self.print_info(f"Running Soteria-C analysis on parsed database")
+        self.print_info("Running Soteria-C analysis on parsed database")
         analysis_cmd = [
-            "dune",
-            "exec",
-            "--",
             "soteria-c",
             "capture-db",
             str(self.compile_commands_parsed),
@@ -515,7 +497,7 @@ class Experiment(PrintersMixin):
                 with open(report_file, "r") as f:
                     bugs = json.load(f)
                     bug_count = len(bugs)
-            except:
+            except Exception:
                 self.print_error(f"Failed to read {report_file}")
 
         # Extract stats from stats.json
@@ -540,7 +522,7 @@ class Experiment(PrintersMixin):
                             "soteria-c.num_summaries_generated", 0
                         ),
                     }
-            except:
+            except Exception:
                 self.print_error(f"Failed to read {stats_file}")
 
         return (elapsed_time, bug_count, total_files, parsed_files, stats_dict)
@@ -592,7 +574,7 @@ class Experiment(PrintersMixin):
                 with open(infer_report, "r") as f:
                     bugs = json.load(f)
                     bug_count = len(bugs)
-            except:
+            except Exception:
                 self.print_error(f"Failed to read {infer_report}")
 
         return (elapsed_time, bug_count)
@@ -600,9 +582,13 @@ class Experiment(PrintersMixin):
 
 ########## List experiments ##########
 
-simple_config = lambda name: ExperimentConfig(
-    name=name, path=Path(name), cmake_args=["-DBUILD_TESTING=OFF"]
-)
+
+def simple_config(name):
+    return ExperimentConfig(
+        name=name, path=Path(name), cmake_args=["-DBUILD_TESTING=OFF"]
+    )
+
+
 configs = [
     ExperimentConfig(
         name="Collections-C",
@@ -642,8 +628,8 @@ def run_experiments(experiments: list[Experiment]):
     for experiment in experiments:
         try:
             experiment.run()
-        except ExperimentException as e:
-            experiment.print_error(f"Experiment Failed")
+        except ExperimentException:
+            experiment.print_error("Experiment Failed")
         print("\n")
 
 
@@ -657,8 +643,6 @@ def selected_experiments():
 
 
 def at_start():
-    go_to_dune_root()
-
     # Check if user is trying to run without subcommand (backwards compatibility)
     # If first arg is not a subcommand, treat it as 'run' command
     import sys
@@ -702,7 +686,7 @@ def aggregate_results():
         with open(file, "r") as f:
             try:
                 j = json.load(f)
-            except:
+            except Exception:
                 global_printer.print_error(f"Failed to read json from {file}")
                 continue
             try:
@@ -755,7 +739,7 @@ def run_infer_on_experiment(experiment_name: str):
     # Check if compile_commands.parsed.json exists, if not run soteria-c first
     if not experiment.compile_commands_parsed.exists():
         global_printer.print_info(
-            f"Parsed compilation database not found. Running Soteria-C in parse-only mode to generate it..."
+            "Parsed compilation database not found. Running Soteria-C in parse-only mode to generate it..."
         )
         # Make sure compile_commands.json exists
         if not experiment.compile_commands.exists():
@@ -786,9 +770,13 @@ def run_infer_on_experiment(experiment_name: str):
     with contextlib.chdir(experiment_dir):
         cmd = f"infer --compilation-database {experiment.compile_commands_parsed} -j 1 --pulse-only --no-pulse-force-continue --pulse-log-unknown-calls"
         global_printer.print_message(f"{MAGENTA}Running:\n{cmd}{RESET}")
-        os.system(cmd)
+        elapsed = time.time()
+        subprocess.run(cmd, shell=True)
+        elapsed = time.time() - elapsed
 
-    global_printer.print_success("Infer analysis complete!")
+    global_printer.print_success(
+        f"Infer analysis complete! Took {elapsed:.2f} seconds."
+    )
 
 
 def calculate_parsing_percentage(stats_dict: dict) -> float:
