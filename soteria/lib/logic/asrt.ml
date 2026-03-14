@@ -11,66 +11,25 @@ module M (Symex : Symex.S) = struct
 
   open Symex
 
-  type ('spatial, 'pure) spatial_or_pure = Spatial of 'spatial | Pure of 'pure
-  [@@deriving show]
+  module type Base = Sym_states.Base.M(Symex).S
 
-  module type S = sig
-    type expr := Value.Expr.t
-    type t [@@deriving show]
+  type 'a atom = Spatial of 'a | Pure of Value.Expr.t
+  type 'a t = 'a atom list
 
-    val ins_outs : t -> expr list * expr list
-  end
+  let make ~spatial ~pure =
+    List.map (fun x -> Spatial x) spatial @ List.map (fun x -> Pure x) pure
 
-  (* FIXME: I don't like the name "Model" here. *)
-  module Model (A : S) = struct
-    module type S = sig
-      type state
-      type fix
+  module Execute (B : Base) = struct
+    let produce_atom atom st =
+      let open Producer.Syntax in
+      match atom with
+      | Spatial p -> B.produce p st
+      | Pure f ->
+          let+ () = Symex.Producer.produce_pure f in
+          st
 
-      val produce : A.t -> state option -> state option Producer.t
-      val consume : A.t -> state option -> (state option, fix list) Consumer.t
-    end
-  end
-
-  module With_pure (A : S) = struct
-    module Atom : S with type t = (A.t, Value.Expr.t) spatial_or_pure = struct
-      type t = (A.t, Value.Expr.t) spatial_or_pure [@@deriving show]
-
-      let ins_outs = function
-        | Spatial atom -> A.ins_outs atom
-        | Pure expr -> ([ expr ], [])
-    end
-
-    module Model (M : Model(A).S) :
-      Model(Atom).S with type state = M.state and type fix = M.fix = struct
-      type state = M.state
-      type fix = M.fix
-
-      let produce atom st =
-        let open Producer.Syntax in
-        match atom with
-        | Spatial pred -> M.produce pred st
-        | Pure f ->
-            let+ () = Symex.Producer.produce_pure f in
-            st
-
-      let consume atom st =
-        let open Consumer.Syntax in
-        match atom with
-        | Spatial pred -> M.consume pred st
-        | Pure f ->
-            let+ () = Symex.Consumer.consume_pure f in
-            st
-    end
-  end
-
-  module Model_with_star (A : S) (M : Model(A).S) = struct
-    type t = A.t list
-    type state = M.state
-    type fix = M.fix
-
-    let produce (asrt : t) (st : state option) : state option Producer.t =
-      Producer.fold_list ~init:st ~f:(Fun.flip M.produce) asrt
+    let produce (asrt : B.syn t) (st : B.t option) : B.t option Producer.t =
+      Producer.fold_list ~init:st ~f:(Fun.flip produce_atom) asrt
 
     let subst_covers subst expr =
       let exception Not_covered in
@@ -84,11 +43,14 @@ module M (Symex : Symex.S) = struct
         true
       with Not_covered -> false
 
+    let ins_outs (a : B.syn atom) =
+      match a with Spatial p -> B.ins_outs p | Pure f -> ([ f ], [])
+
     (** Returns whether the atom can be consumed. This is true only if
         - The substitution covers all in-parameters
         - All out-parameters are either known or can be learned *)
-    let is_consumable (subst : Value.Expr.Subst.t) (atom : A.t) : bool =
-      let ins, outs = A.ins_outs atom in
+    let is_consumable (subst : Value.Expr.Subst.t) (atom : B.syn atom) : bool =
+      let ins, outs = ins_outs atom in
       let learnable_pairs =
         List.mapi
           (fun i syn ->
@@ -106,11 +68,19 @@ module M (Symex : Symex.S) = struct
              Option.is_some (Value.Expr.Subst.learn subst syn v))
            learnable_pairs
 
-    let consume (asrt : t) (st : M.state option) :
-        (M.state option, M.fix list) Consumer.t =
+    let consume_atom atom st =
       let open Consumer.Syntax in
-      let rec aux (remaining : t) (st : M.state option) :
-          (M.state option, M.fix list) Consumer.t =
+      match atom with
+      | Spatial pred -> B.consume pred st
+      | Pure f ->
+          let+ () = Symex.Consumer.consume_pure f in
+          st
+
+    let consume (asrt : B.syn t) (st : B.t option) :
+        (B.t option, B.syn list) Consumer.t =
+      let open Consumer.Syntax in
+      let rec aux (remaining : B.syn t) (st : B.t option) :
+          (B.t option, B.syn list) Consumer.t =
         if List.is_empty remaining then Consumer.ok st
         else
           let* subst = Consumer.expose_subst () in
@@ -120,7 +90,7 @@ module M (Symex : Symex.S) = struct
                 "No consumable atom found, let's figure out what to do with \
                  this corner case"
           | Some (atom, rest) ->
-              let* st' = M.consume atom st in
+              let* st' = consume_atom atom st in
               aux rest st'
       in
       aux asrt st
