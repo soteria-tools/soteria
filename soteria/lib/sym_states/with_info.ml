@@ -67,14 +67,4 @@ struct
     let info = Option.merge (fun a _ -> a) t_orig syn.info in
     let+ node = B.produce syn.node t_opt in
     lift ~info node
-
-  (* let consume consume_inner serialized t =
-   *   let node, info = of_opt t in
-   *   let+ res = consume_inner serialized.node node in
-   *   match res with
-   *   | Compo_res.Ok (Some node) -> Compo_res.Ok (Some { node; info })
-   *   | Ok None -> Ok None
-   *   | Error e -> Error e
-   *   | Missing fixes ->
-   *       Missing (List.map (fun fix -> { node = fix; info }) fixes) *)
 end

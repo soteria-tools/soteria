@@ -189,6 +189,7 @@ module Block = struct
     Tree_block.assert_exclusively_owned a
 
   let produce _ _ = failwith "Not implemented"
+  let consume _ _ = failwith "Not implemented"
 end
 
 module Freeable_block = Soteria.Sym_states.Freeable.Make (DecayMapMonad) (Block)
@@ -911,4 +912,5 @@ let run_thread_exits () =
 
 let to_syn { heap; _ } = Heap.of_opt heap |> Heap.to_syn
 let ins_outs r = Heap.ins_outs r
-let produce _ = failwith "TODO: Tree_state.produce"
+let produce _ _ = failwith "TODO: Tree_state.produce"
+let consume _ _ = failwith "TODO: Tree_state.consume"
