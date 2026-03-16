@@ -119,7 +119,7 @@ module M (StateM : State.StateM.S) = struct
     let* () = State.store (vtable, Thin) Charon_util.unit_ptr (Ptr drop_fn) in
     (* We also need the alignment to be 1 *)
     let* align_ptr =
-      Sptr.offset ~ty:(TLiteral (TUInt Usize)) ~signed:false vtable Usize.(2s)
+      Sptr.offset ~ty:(TLiteral (TUInt Usize)) ~signed:false Usize.(2s) vtable
     in
     let+ () =
       State.store (align_ptr, Thin) Charon_util.unit_ptr (Int Usize.(1s))

@@ -122,8 +122,8 @@ module type S = sig
       ?check:bool ->
       ?ty:Charon.Types.ty ->
       signed:bool ->
-      t ->
       [< Typed.T.sint ] Typed.t ->
+      t ->
       (t, 'env) monad
 
     val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
@@ -418,8 +418,8 @@ module Make (State : State_intf.S) :
   module Sptr = struct
     include State.Sptr
 
-    let[@inline] offset ?check ?ty ~signed ptr off =
-      lift_err (offset ?check ?ty ~signed ptr off)
+    let[@inline] offset ?check ?ty ~signed off ptr =
+      ESM.lift @@ offset ?check ?ty ~signed off ptr
 
     let[@inline] distance ptr1 ptr2 = with_decay_map (distance ptr1 ptr2)
     let[@inline] decay ptr = with_decay_map (decay ptr)

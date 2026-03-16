@@ -155,18 +155,6 @@ module type S = sig
       point to any allocation. *)
   val nondet : Types.ty -> (t, [> Error.t ], 'a) Result.t
 
-  (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
-      [off], interpreting [off] as a [signed] integer. [ty] defaults to u8. May
-      result in a dangling pointer error if the pointer goes over the allocation
-      limit. This check can be disabled with [~check:false]. *)
-  val offset :
-    ?check:bool ->
-    ?ty:Charon.Types.ty ->
-    signed:bool ->
-    t ->
-    [< sint ] Typed.t ->
-    (t, [> Error.t ], 'a) Result.t
-
   (** Decay a pointer into an integer value, losing provenance.
       {b This does not expose the address of the allocation; for that, use
          [expose]} *)

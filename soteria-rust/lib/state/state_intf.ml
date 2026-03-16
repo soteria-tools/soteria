@@ -6,15 +6,29 @@ open Rust_val
 open Sptr
 
 module type S = sig
-  module Sptr : Sptr.S
-
-  type full_ptr := Sptr.t full_ptr
-  type rust_val := Sptr.t rust_val
-
   (* state *)
   include Soteria.Sym_states.Base.M(Rustsymex).S
 
   type 'a ret := ('a, Error.with_trace, serialized list) SM.Result.t
+
+  module Sptr : sig
+    include Sptr.S
+
+    (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
+        [off], interpreting [off] as a [signed] integer. [ty] defaults to u8.
+        May result in a dangling pointer error if the pointer goes over the
+        allocation limit. This check can be disabled with [~check:false]. *)
+    val offset :
+      ?check:bool ->
+      ?ty:Charon.Types.ty ->
+      signed:bool ->
+      [< sint ] Typed.t ->
+      t ->
+      t ret
+  end
+
+  type full_ptr := Sptr.t full_ptr
+  type rust_val := Sptr.t rust_val
 
   (** Prettier but expensive printing. *)
   val pp_pretty : ignore_freed:bool -> t Fmt.t

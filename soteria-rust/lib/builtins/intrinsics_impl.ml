@@ -33,7 +33,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let align_of ~t = Layout.align_of t
 
   let arith_offset ~t ~dst:(dst, meta) ~offset =
-    let+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t dst offset in
+    let+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t offset dst in
     (dst', meta)
 
   let offset ~ptr ~delta ~dst ~offset =
@@ -41,7 +41,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     | Ptr (dst, meta) ->
         let offset = as_base_i Usize offset in
         let signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
-        let+ dst' = Sptr.offset ~signed ~ty:ptr dst offset in
+        let+ dst' = Sptr.offset ~signed ~ty:ptr offset dst in
         Ptr (dst', meta)
     | Int _ -> error `UBPointerArithmetic
     | _ -> not_impl "ptr_add: invalid arguments"
@@ -377,8 +377,8 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     let rec aux ?res ?(inc = one) l r len =
       if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
-        let* l = Sptr.offset ~signed:false l inc in
-        let* r = Sptr.offset ~signed:false r inc in
+        let* l = Sptr.offset ~signed:false inc l in
+        let* r = Sptr.offset ~signed:false inc r in
         let* bl = State.load (l, Thin) byte in
         let* br = State.load (r, Thin) byte in
         (* compare_bytes reads all bytes and mustn't short-circuit, so we must
@@ -402,8 +402,8 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
       overlap for a range of size [size]; otherwise errors, with
       [`StdErr (name ^ " overlapped")]. *)
   let check_overlap name l r size =
-    let* l_end = Sptr.offset ~signed:false l size in
-    let* r_end = Sptr.offset ~signed:false r size in
+    let* l_end = Sptr.offset ~signed:false size l in
+    let* r_end = Sptr.offset ~signed:false size r in
     let* dist1 = Sptr.distance l r_end in
     let* dist2 = Sptr.distance r l_end in
     let zero = Usize.(0s) in
@@ -869,8 +869,8 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let read_vtable ~slot ~(ptr : full_ptr) : T.sint Typed.t ret =
     let ptr, _ = ptr in
     let* ptr =
-      Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) ptr
-        (BV.usizei slot)
+      Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) (BV.usizei slot)
+        ptr
     in
     let+ align = State.load (ptr, Thin) (TLiteral (TUInt Usize)) in
     as_base_i Usize align
@@ -907,7 +907,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
               Iter.(0 -- (Z.to_int bytes - 1))
               ~f:(fun i ->
                 let off = BV.usizei i in
-                let* ptr = Sptr.offset ~signed:false ptr off in
+                let* ptr = Sptr.offset ~signed:false off ptr in
                 State.store (ptr, Thin) (TLiteral (TUInt U8)) (Int val_))
         | None ->
             not_impl "write_bytes: don't know how to handle symbolic sizes"

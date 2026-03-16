@@ -347,8 +347,8 @@ module Make (StateImpl : State.S) = struct
               base.ty);
         let+ ptr' =
           Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
-            ptr
             Usize.(1s)
+            ptr
         in
         (ptr', Thin)
     | PlaceProjection (base, Field (kind, field)) ->
@@ -366,7 +366,7 @@ module Make (StateImpl : State.S) = struct
           | ProjAdt (_, None) | ProjTuple _ -> layout.fields
         in
         let off = Layout.Fields_shape.offset_of field fields in
-        let* ptr' = Sptr.offset ~signed:false ptr off in
+        let* ptr' = Sptr.offset ~signed:false off ptr in
         L.debug (fun f ->
             f "Projecting ADT %a, field %d, with pointer %a to pointer %a"
               Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr');
@@ -388,7 +388,7 @@ module Make (StateImpl : State.S) = struct
         let* () =
           assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty ptr idx in
+        let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty idx ptr in
         L.debug (fun f ->
             f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
               Sptr.pp ptr');
@@ -414,7 +414,7 @@ module Make (StateImpl : State.S) = struct
             (Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len))
             `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty ptr from in
+        let+ ptr' = Sptr.offset ~signed:false ~ty from ptr in
         let slice_len = to_ -!@ from in
         L.debug (fun f ->
             f "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp ptr
@@ -639,8 +639,8 @@ module Make (StateImpl : State.S) = struct
                         fold_list fields ~init:vt ~f:(fun vt field ->
                             let idx = Types.FieldId.to_int field in
                             let* vt_addr =
-                              Sptr.offset ~ty:unit_ptr ~signed:false vt
-                                (BV.usizei idx)
+                              Sptr.offset ~ty:unit_ptr ~signed:false
+                                (BV.usizei idx) vt
                             in
                             let+ vt = State.load (vt_addr, Thin) unit_ptr in
                             fst (as_ptr vt))
@@ -746,16 +746,12 @@ module Make (StateImpl : State.S) = struct
         | ((Ptr _ | Int _) as p1), ((Ptr _ | Int _) as p2) -> (
             match op with
             | Offset ->
-                let*^ p, meta, v =
-                  match (p1, p2) with
-                  | Ptr (p, meta), Int v -> return (p, meta, v)
-                  | _ -> Rustsymex.not_impl "Invalid operands in offset"
-                in
+                let p, meta = as_ptr p1 in
+                let off = as_base_i Usize p2 in
                 let ty = get_pointee (type_of_operand e1) in
-                let v = Typed.cast_i Usize v in
                 let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
                 let signed = Layout.is_signed off_ty in
-                let+ p' = Sptr.offset ~signed ~ty p v in
+                let+ p' = Sptr.offset ~signed ~ty off p in
                 Ptr (p', meta)
             | _ ->
                 let+ res = Core.eval_ptr_binop op p1 p2 in

@@ -100,14 +100,12 @@ Test kani::vec::any_vec
   Compiling... done in <time>
   => Running len_capacity_invariant...
   note: len_capacity_invariant: done in <time>, ran 17 branches
-  PC 1: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (V|1| == 0x0000000000000010) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (V|1| == 0x0000000000000010) /\
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000000 == V|1|) /\
         (extract[0-1](V|18|) == 0b00)
   PC 2: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-        (0x0000000000000000 == V|1|) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000000 == V|1|) /\
+        (V|1| == 0x0000000000000010) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (V|1| == 0x0000000000000010) /\
         (extract[0-1](V|18|) == 0b00)
   PC 3: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\

@@ -776,7 +776,7 @@ module Encoder (Sptr : Sptr.S) = struct
   (** Calculates the size and alignment of a type [t], according to the pointer
       metadata [meta]. Receives an arbitrary state and [load] function, to
       possibly access a heap to get VTable information. *)
-  let rec size_and_align_of_val ~load ~t ~meta st =
+  let rec size_and_align_of_val ~load_vtable ~t ~meta =
     let open Rustsymex in
     let open Rustsymex.Syntax in
     (* Takes inspiration from rustc, to calculate the size and alignment of
@@ -802,17 +802,8 @@ module Encoder (Sptr : Sptr.S) = struct
       | TDynTrait _, (Thin | Len _) ->
           failwith "size_and_align_of_val: Invalid metadata for dyn type"
       | TDynTrait _, VTable vtable ->
-          let usize = Types.TLiteral (TUInt Usize) in
-          let** size_ptr =
-            Sptr.offset ~signed:true ~ty:usize vtable Usize.(1s)
-          in
-          let** align_ptr =
-            Sptr.offset ~signed:true ~ty:usize vtable Usize.(2s)
-          in
-          let* size, _ = load (size_ptr, Thin) usize st in
-          let** size = return size in
-          let* align, _ = load (align_ptr, Thin) usize st in
-          let++ align = return align in
+          let** size = load_vtable `Size vtable in
+          let++ align = load_vtable `Align vtable in
           let size = as_base_i Usize size in
           let align = as_base_i Usize align in
           (size, Typed.cast align)
@@ -830,7 +821,7 @@ module Encoder (Sptr : Sptr.S) = struct
             | _ -> failwith "size_and_align_of_val: Unexpected layout for ADT"
           in
           let++ unsized_size, unsized_align =
-            size_and_align_of_val ~load ~t:last_field_ty ~meta st
+            size_and_align_of_val ~load_vtable ~t:last_field_ty ~meta
           in
           (* TODO: we need to check if [layout] is packed, in which case
              unsized_align is 1! See 113-125 of above function. *)
