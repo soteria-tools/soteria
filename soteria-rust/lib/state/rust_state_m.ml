@@ -126,13 +126,6 @@ module type S = sig
       [< Typed.T.sint ] Typed.t ->
       (t, 'env) monad
 
-    val project :
-      Types.ty ->
-      Expressions.field_proj_kind ->
-      Types.field_id ->
-      t ->
-      (t, 'env) monad
-
     val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
     val decay : t -> (Typed.T.sint Typed.t, 'env) monad
     val expose : t -> (Typed.T.sint Typed.t, 'env) monad
@@ -240,6 +233,9 @@ module type S = sig
     val leak_check : unit -> (unit, 'env) t
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
     val check_non_dangling : full_ptr -> Types.ty -> (unit, 'env) t
+
+    val check_non_dangling_untyped :
+      full_ptr -> Typed.(T.sint t) -> (unit, 'env) t
 
     val size_and_align_of_val :
       Types.ty ->
@@ -425,9 +421,6 @@ module Make (State : State_intf.S) :
     let[@inline] offset ?check ?ty ~signed ptr off =
       lift_err (offset ?check ?ty ~signed ptr off)
 
-    let[@inline] project ty proj_kind field_id ptr =
-      lift_err (project ty proj_kind field_id ptr)
-
     let[@inline] distance ptr1 ptr2 = with_decay_map (distance ptr1 ptr2)
     let[@inline] decay ptr = with_decay_map (decay ptr)
     let[@inline] expose ptr = with_decay_map (expose ptr)
@@ -527,6 +520,9 @@ module Make (State : State_intf.S) :
 
     let[@inline] check_non_dangling ptr ty =
       ESM.lift (check_non_dangling ptr ty)
+
+    let[@inline] check_non_dangling_untyped ptr size =
+      ESM.lift (check_non_dangling_untyped ptr size)
 
     let[@inline] size_and_align_of_val ty meta =
       ESM.lift (size_and_align_of_val ty meta)

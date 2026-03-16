@@ -443,7 +443,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             | Ptr ptr -> ptr
             | Int v ->
                 let v = Typed.cast_i Usize v in
-                let ptr = Sptr.null_ptr_of v in
+                let ptr = Sptr.of_address v in
                 (ptr, Thin)
             | _ -> failwith "expected pointer"
 

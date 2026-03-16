@@ -347,13 +347,16 @@ module Encoder (Sptr : Sptr.S) = struct
       associates to it the error to be raised if the requirement is not met.
 
       An optional [check_refs] function can be provided, to further check the
-      validity of references and boxes relative to some state; this allows
-      checking that references are not dangling, and that their pointees are
-      valid. By default this function already checks references are well-aligned
-      and non-null. Note that this check will raise errors in the outside monad,
-      rather than in the returned list, since it is not possible to represent
-      constraints in the state in first order logic. We provide this possibility
-      here, to avoid re-implementing value traversal elsewhere.
+      validity of references and boxes; this allows checking that references are
+      not dangling, well-aligned, and that their pointees are valid. Note that
+      this check will raise errors in the outside monad, rather than in the
+      returned list, since it is not possible to represent constraints in the
+      state in first order logic. We provide this possibility here, to avoid
+      re-implementing value traversal elsewhere.
+
+      Note that this function doesn't (and can't) check basic validity
+      requirements of references and boxes, even alignment, as e.g. for a
+      [&dyn Trait] the alignment cannot be known without some auxiliary state.
 
       This doesn't check:
       - the fact the bytes of the value cannot be undefined, as that is checked
@@ -393,14 +396,11 @@ module Encoder (Sptr : Sptr.S) = struct
           f Typed.v_false (`UBTransmute "VTable metadata when length expected")
     in
     (* undefined.validity.reference-box *)
-    let ref_box_validity ((ptr, meta) as fptr) pointee =
+    let ref_box_validity ((_, meta) as fptr) pointee =
       let** () = metadata_validity ~is_raw_ptr:false pointee meta in
       let** layout = Layout.layout_of pointee in
       if layout.uninhabited then f Typed.v_false (`RefToUninhabited pointee)
-      else
-        let** () = check_ref fptr pointee in
-        let aligned, err = Sptr.is_aligned layout.align ptr in
-        f aligned err
+      else check_ref fptr pointee
     in
     let** ty = Layout.normalise ty in
     match (v, (ty : Types.ty)) with
@@ -408,8 +408,7 @@ module Encoder (Sptr : Sptr.S) = struct
     | Int v, TLiteral TBool ->
         f U8.(0s <=@ v &&@ (v <=@ 1s)) (`UBTransmute "Invalid bool value")
     (* undefined.validity.fn-pointer *)
-    | Ptr (p, _), TFnPtr _ ->
-        f (Typed.not Sptr.(sem_eq (null_ptr ()) p)) `UBDanglingPointer
+    | Ptr (p, _), TFnPtr _ -> f (Typed.not (Sptr.is_null p)) `UBDanglingPointer
     (* undefined.validity.char *)
     | Int v, TLiteral TChar ->
         let is_surrogate = U32.(0xD800s <=@ v &&@ (v <=@ 0xDFFFs)) in
@@ -541,7 +540,7 @@ module Encoder (Sptr : Sptr.S) = struct
         Int v
     | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> return v
     | (TRawPtr _ | TRef _ | TFnPtr _), Int v ->
-        return (Ptr (Sptr.null_ptr_of v, Thin))
+        return (Ptr (Sptr.of_address v, Thin))
     | TVar (Free type_var_id), (PolyVal tid as v) ->
         if Types.TypeVarId.equal_id type_var_id tid then return v
         else

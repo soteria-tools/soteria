@@ -49,6 +49,7 @@ module type S = sig
 
   val fake_read : full_ptr -> Types.ty -> unit ret
   val check_non_dangling : full_ptr -> Types.ty -> unit ret
+  val check_non_dangling_untyped : full_ptr -> Typed.(T.sint t) -> unit ret
   val check_ptr_align : full_ptr -> Types.ty -> unit ret
 
   val copy_nonoverlapping :

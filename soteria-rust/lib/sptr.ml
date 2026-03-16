@@ -124,34 +124,31 @@ module DecayMapMonad = struct
   let get_where () = lift @@ get_trace ()
 end
 
+(** The base type of pointers, permitting simple operations on the pointer type.
+    The majority of relevant operations are exposed via the state monad's
+    pointer module, {!Rust_state_m.S.Sptr}. *)
 module type S = sig
   (** pointer type *)
   type t
 
   val pp : t Fmt.t
-  val null_ptr : unit -> t
-  val null_ptr_of : [< sint ] Typed.t -> t
 
-  (** Pointer equality. This comparison is structural, i.e. it is aware of
-      provenance.
+  (** Converts an address into a pointer, without provenance. *)
+  val of_address : [< sint ] Typed.t -> t
 
-      In other words, given [addr = decay ptr] and [ptr' = of_exposed addr],
-      [sem_eq ptr ptr'] will be false, even though they would have the same
-      address, as [ptr] has provenance and [ptr'] does not. *)
-  val sem_eq : t -> t -> sbool Typed.t
+  (** Whether this is the null pointer, meaning it always decays to 0. *)
+  val is_null : t -> sbool Typed.t
 
-  (** If this pointer is at a null location, i.e. has no provenance *)
-  val is_at_null_loc : t -> sbool Typed.t
+  (** Whether this pointer has provenance, i.e. points to some allocation. *)
+  val has_provenance : t -> sbool Typed.t
 
-  (** If these two pointers are at the same location (ie. same allocation) *)
-  val is_same_loc : t -> t -> sbool Typed.t
+  (** If these two pointers have the same provenance, i.e. point to the same
+      allocation (or if they both have no provenance). *)
+  val have_same_provenance : t -> t -> sbool Typed.t
 
   (** The distance, in bytes, between two pointers; if they point to different
       allocations, they are decayed and substracted. *)
   val distance : t -> t -> sint Typed.t DecayMapMonad.t
-
-  (** The symbolic constraints needed for the pointer to be valid. *)
-  val constraints : t -> sbool Typed.t
 
   (** Generates a nondeterministic pointer, that is valid for accesses to the
       given type. The location of the pointer is nondeterministic; it could
@@ -170,14 +167,6 @@ module type S = sig
     [< sint ] Typed.t ->
     (t, [> Error.t ], 'a) Result.t
 
-  (** Project a pointer to a field of the given type. *)
-  val project :
-    Types.ty ->
-    Expressions.field_proj_kind ->
-    Types.field_id ->
-    t ->
-    (t, [> Error.t ], 'a) Result.t
-
   (** Decay a pointer into an integer value, losing provenance.
       {b This does not expose the address of the allocation; for that, use
          [expose]} *)
@@ -191,11 +180,8 @@ module type S = sig
   (** For Miri: the allocation ID of this location, as a u64 *)
   val as_id : t -> [> sint ] Typed.t
 
-  (** Returns a symbolic boolean to check whether this pointer has the given
-      alignment, along with the error to raise otherwise. *)
-  val is_aligned : nonzero Typed.t -> t -> [> sbool ] Typed.t * Error.t
-
-  (** Get the allocation info for this pointer: its size and alignment *)
+  (** For Miri: get the allocation info for this pointer: its size and alignment
+  *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
 
   val iter_vars : t -> (Svalue.Var.t * 'b ty -> unit) -> unit

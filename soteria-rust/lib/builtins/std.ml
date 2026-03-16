@@ -82,7 +82,7 @@ module M (StateM : State.StateM.S) = struct
     (* FIXME: the size of this zero is probably wrong *)
     let mk_res ptr len = Enum (zero, [ Tuple [ Ptr (ptr, Len len) ] ]) in
     if%sat size ==@ zero then
-      let dangling = Sptr.null_ptr_of align in
+      let dangling = Sptr.of_address align in
       ok (mk_res dangling zero)
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
@@ -95,7 +95,8 @@ module M (StateM : State.StateM.S) = struct
 
   let fixme_panic_cleanup _ =
     (* TODO: whas is __rust_panic_cleanup meant to do and return? *)
-    ok (Ptr (Sptr.null_ptr (), VTable (Sptr.null_ptr ())))
+    let null = Sptr.of_address Usize.(0s) in
+    ok (Ptr (null, VTable null))
 
   let fixme_catch_unwind_cleanup args =
     (* We need to make a [&dyn Any] to emulate a trait object, how nightmareish.

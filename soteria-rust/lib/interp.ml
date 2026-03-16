@@ -147,7 +147,8 @@ module Make (StateImpl : State.S) = struct
         | (Dead | Uninit | Value _), _ -> ok ()
         | Stackptr ptr, None -> State.free ptr
         | Stackptr ((ptr, _) as fptr), Some protect ->
-            if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
+            if%sat Sptr.have_same_provenance ptr protect then ok ()
+            else State.free fptr)
 
   let resolve_fn_ptr (fn : Types.fn_ptr) : Fun_kind.t t =
     let open Fun_kind in
@@ -334,7 +335,7 @@ module Make (StateImpl : State.S) = struct
             | _ -> ok fptr)
         | Int off ->
             let off = Typed.cast_i Usize off in
-            let ptr = Sptr.null_ptr_of off in
+            let ptr = Sptr.of_address off in
             ok (ptr, Thin)
         | _ -> not_impl "Unexpected value when dereferencing place")
     (* The metadata of a pointer type is just the second part of the pointer *)
@@ -356,11 +357,19 @@ module Make (StateImpl : State.S) = struct
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
-        let* ptr' = Sptr.project base.ty kind field ptr in
+        let field = Types.FieldId.to_int field in
+        let* layout = Layout.layout_of base.ty in
+        let fields =
+          match kind with
+          | ProjAdt (_, Some variant) ->
+              Layout.Fields_shape.shape_for_variant variant layout.fields
+          | ProjAdt (_, None) | ProjTuple _ -> layout.fields
+        in
+        let off = Layout.Fields_shape.offset_of field fields in
+        let* ptr' = Sptr.offset ~signed:false ptr off in
         L.debug (fun f ->
-            f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
-              Expressions.pp_field_proj_kind kind Types.pp_field_id field
-              Sptr.pp ptr Sptr.pp ptr');
+            f "Projecting ADT %a, field %d, with pointer %a to pointer %a"
+              Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr');
         if Layout.is_dst place.ty then ok (ptr', meta) else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
@@ -869,7 +878,7 @@ module Make (StateImpl : State.S) = struct
           | Ptr (ptr, _) -> ok ptr
           | Int v ->
               let v = Typed.cast_i Usize v in
-              ok (Sptr.null_ptr_of v)
+              ok (Sptr.of_address v)
           | _ ->
               Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
                 pp_rust_val ptr
@@ -952,8 +961,8 @@ module Make (StateImpl : State.S) = struct
         let* src = eval_operand src in
         let* dst = eval_operand dst in
         let* count = eval_operand count in
-        let src = as_ptr_or ~make:Sptr.null_ptr_of src in
-        let dst = as_ptr_or ~make:Sptr.null_ptr_of dst in
+        let src = as_ptr_or ~make:Sptr.of_address src in
+        let dst = as_ptr_or ~make:Sptr.of_address dst in
         let count = as_base_i Usize count in
         let* () =
           with_env ~env:()
@@ -1031,7 +1040,7 @@ module Make (StateImpl : State.S) = struct
             let bool_discr =
               match discr with
               | Int discr -> BV.to_bool (Typed.cast_lit TBool discr)
-              | Ptr (ptr, _) -> Typed.not (Sptr.sem_eq ptr (Sptr.null_ptr ()))
+              | Ptr (ptr, _) -> Typed.not (Sptr.is_null ptr)
               | _ -> failwith "Expected base value for if discriminant"
             in
             if%sat[@lname "if case"] [@rname "else case"] bool_discr then
@@ -1057,8 +1066,7 @@ module Make (StateImpl : State.S) = struct
               | Int discr -> fun (v, _) -> discr ==@ BV.of_literal v
               | Ptr (ptr, _) ->
                   fun (v, _) ->
-                    if Z.equal Z.zero (z_of_literal v) then
-                      Sptr.sem_eq ptr (Sptr.null_ptr ())
+                    if Z.equal Z.zero (z_of_literal v) then Sptr.is_null ptr
                     else failwith "Can't compare pointer with non-0 scalar"
               | _ ->
                   fun (v, _) ->

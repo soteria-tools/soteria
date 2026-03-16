@@ -10,8 +10,6 @@ open Sptr
 
 (* Pointer implementation *)
 
-(** A pointer that can perform pointer arithmetics -- all pointers are a pair of
-    location and offset, along with an optional metadata. *)
 module Sptr = struct
   open Rustsymex.Syntax
 
@@ -35,20 +33,16 @@ module Sptr = struct
       size = Usize.(0s);
     }
 
-  let null_ptr_of ofs =
+  let of_address ofs =
     let null_ptr = null_ptr () in
     let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
     { null_ptr with ptr }
 
-  let sem_eq { ptr = ptr1; _ } { ptr = ptr2; _ } = ptr1 ==@ ptr2
-  let is_at_null_loc { ptr; _ } = Typed.Ptr.is_at_null_loc ptr
+  let is_null { ptr; _ } = Typed.Ptr.is_null ptr
+  let has_provenance { ptr; _ } = Typed.not (Typed.Ptr.is_at_null_loc ptr)
 
-  let is_same_loc { ptr = ptr1; _ } { ptr = ptr2; _ } =
+  let have_same_provenance { ptr = ptr1; _ } { ptr = ptr2; _ } =
     Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
-
-  let constraints { ptr; size; _ } =
-    let ofs = Typed.Ptr.ofs ptr in
-    Typed.conj [ Usize.(0s) <=$@ ofs; ofs <=$@ size ]
 
   let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8)) ~signed
       ({ ptr; _ } as fptr) off_by =
@@ -66,23 +60,11 @@ module Sptr = struct
         assert_or_error
           (off_by
           ==@ Usize.(0s)
-          ||@ (Typed.not off_by_ovf &&@ Typed.not off_ovf &&@ constraints ptr))
+          ||@ (Typed.not off_by_ovf &&@ Typed.not off_ovf))
           `UBDanglingPointer
       in
       ptr
     else Result.ok ptr
-
-  let project ty kind field ptr =
-    let field = Types.FieldId.to_int field in
-    let** layout = Layout.layout_of ty in
-    let fields =
-      match kind with
-      | Expressions.ProjAdt (_, Some variant) ->
-          Layout.Fields_shape.shape_for_variant variant layout.fields
-      | ProjAdt (_, None) | ProjTuple _ -> layout.fields
-    in
-    let off = Layout.Fields_shape.offset_of field fields in
-    offset ~signed:false ptr off
 
   let[@inline] _decay ~expose { ptr; align; size; _ } decay_map =
     let loc, ofs = Typed.Ptr.decompose ptr in
@@ -97,7 +79,7 @@ module Sptr = struct
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
     let open DecayMapMonad.Syntax in
-    if%sat Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2 then
+    if%sat have_same_provenance p1 p2 then
       DecayMapMonad.return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
     else
       let* ptr1 = decay p1 in
@@ -356,7 +338,7 @@ module Heap = struct
     let open SM in
     let open SM.Syntax in
     let** () =
-      assert_or_error Typed.(not (Typed.Ptr.is_null ptr.ptr)) `NullDereference
+      assert_or_error (Typed.not (Sptr.is_null ptr)) `NullDereference
     in
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     let* res =
@@ -372,7 +354,8 @@ module Heap = struct
     match res with
     | Missing _ as miss ->
         (* FIXME: this is wrong in compositional? *)
-        if%sat Sptr.is_at_null_loc ptr then Result.error `UBDanglingPointer
+        if%sat Typed.Ptr.is_at_null_loc ptr.ptr then
+          Result.error `UBDanglingPointer
         else return miss
     | ok_or_err -> return ok_or_err
 
@@ -548,16 +531,25 @@ and check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   let aligned, err = Sptr.is_aligned exp_align ptr in
   assert_or_error aligned err
 
-and check_non_dangling ((ptr : Sptr.t), meta) (ty : Types.ty) =
-  let** size, _ = size_and_align_of_val ty meta in
+and check_non_dangling_untyped ((ptr : Sptr.t), _) size =
   if%sat size ==@ Usize.(0s) then Result.ok ()
   else
+    let** ptr, size =
+      if%sat size >$@ Usize.(0s) then Result.ok (ptr, size)
+      else
+        let++^ ptr' = Sptr.offset ~check:false ~signed:true ptr size in
+        (ptr', Typed.(cast (BV.neg size)))
+    in
     let open Block.SM.Syntax in
     let@ ofs = with_ptr ptr in
     let+- _ =
       Block.with_tree_block (Tree_block.check_owned ofs (Typed.cast size))
     in
     `UBDanglingPointer
+
+and check_non_dangling ((_, meta) as ptr) (ty : Types.ty) =
+  let** size, _ = size_and_align_of_val ty meta in
+  check_non_dangling_untyped ptr size
 
 and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
     (Sptr.t rust_val, Error.t, serialized list) Result.t =
@@ -570,9 +562,12 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
     if (Config.get ()).recursive_validity <> Allow && check_refs then
       fun ptr ty ->
       (* we still need to check it's non-dangling! *)
+      let** () = check_ptr_align ptr ty in
       let** () = check_non_dangling ptr ty in
       fake_read ptr ty
-    else check_non_dangling
+    else fun ptr ty ->
+      let** () = check_ptr_align ptr ty in
+      check_non_dangling ptr ty
   in
   let++ () = Encoder.check_validity ~check_ref ty value in
   value
@@ -678,6 +673,10 @@ let load ?ignore_borrow ptr ty =
 let load_discriminant ptr ty =
   let@ () = with_loc_err ~trace:"Memory load (discriminant)" () in
   load_discriminant ptr ty
+
+let check_non_dangling_untyped ptr size =
+  let@ () = with_loc_err ~trace:"Dangling check" () in
+  check_non_dangling_untyped ptr size
 
 let check_non_dangling ptr ty =
   let@ () = with_loc_err ~trace:"Dangling check" () in
@@ -885,7 +884,7 @@ let with_exposed addr =
          let open Heap.SM.Syntax in
          let*^ res = DecayMap.from_exposed addr in
          match res with
-         | None -> Result.ok (Sptr.null_ptr_of addr, Thin)
+         | None -> Result.ok (Sptr.of_address addr, Thin)
          | Some (loc, ofs) -> (
              let ofs = addr -!@ ofs in
              let ptr = Typed.Ptr.mk loc ofs in
