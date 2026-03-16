@@ -278,7 +278,7 @@ module Interval : S = struct
           m "Useless range  %a: %a %a = %a" Var.pp var Data.pp range Range.pps
             new_range Data.pp range');
       let is_ok = not (Data.is_empty range) in
-      (Svalue.Bool.bool is_ok, Var.Set.empty, st))
+      (Svalue.Bool.of_bool is_ok, Var.Set.empty, st))
     else
       let st = Var.Map.add var range' st in
       log (fun m ->

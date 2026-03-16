@@ -101,7 +101,7 @@ module BitVec = struct
   let of_literal : Values.literal -> [> T.sint ] t = function
     | VScalar s -> of_scalar s
     | VChar c -> u32i (Uchar.to_int c)
-    | VBool b -> of_bool (bool b)
+    | VBool b -> of_bool (Bool.of_bool b)
     | l ->
         Fmt.failwith "Cannot convert non-scalar literal %s to bitvector"
           (PrintValues.literal_to_string l)
