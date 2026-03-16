@@ -6,11 +6,141 @@ module T = Typed.T
 open Rustsymex
 open Charon
 open Common
+open Sptr
+
+(* Pointer implementation *)
+
+(** A pointer that can perform pointer arithmetics -- all pointers are a pair of
+    location and offset, along with an optional metadata. *)
+module Sptr = struct
+  open Rustsymex.Syntax
+
+  type t = {
+    ptr : Typed.(T.sptr t);
+    tag : Tree_borrows.tag option;
+    align : Typed.(T.nonzero t);
+    size : Typed.(T.sint t);
+  }
+
+  let pp fmt { ptr; tag; _ } =
+    Fmt.pf fmt "%a[%a]" Typed.ppa ptr
+      Fmt.(option ~none:(any "*") Tree_borrows.pp_tag)
+      tag
+
+  let null_ptr () =
+    {
+      ptr = Typed.Ptr.null ();
+      tag = None;
+      align = Usize.(1s);
+      size = Usize.(0s);
+    }
+
+  let null_ptr_of ofs =
+    let null_ptr = null_ptr () in
+    let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
+    { null_ptr with ptr }
+
+  let sem_eq { ptr = ptr1; _ } { ptr = ptr2; _ } = ptr1 ==@ ptr2
+  let is_at_null_loc { ptr; _ } = Typed.Ptr.is_at_null_loc ptr
+
+  let is_same_loc { ptr = ptr1; _ } { ptr = ptr2; _ } =
+    Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
+
+  let constraints { ptr; size; _ } =
+    let ofs = Typed.Ptr.ofs ptr in
+    Typed.conj [ Usize.(0s) <=$@ ofs; ofs <=$@ size ]
+
+  let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8)) ~signed
+      ({ ptr; _ } as fptr) off_by =
+    let** size = Layout.size_of ty in
+    let loc, off = Typed.Ptr.decompose ptr in
+    let ( *? ), ( +? ) =
+      if signed then (( *$?@ ), ( +$?@ )) else (( *?@ ), ( +?@ ))
+    in
+    let off_by, off_by_ovf = size *? off_by in
+    let off, off_ovf = off +? off_by in
+    let ptr = Typed.Ptr.mk loc off in
+    let ptr = { fptr with ptr } in
+    if check then
+      let++ () =
+        assert_or_error
+          (off_by
+          ==@ Usize.(0s)
+          ||@ (Typed.not off_by_ovf &&@ Typed.not off_ovf &&@ constraints ptr))
+          `UBDanglingPointer
+      in
+      ptr
+    else Result.ok ptr
+
+  let project ty kind field ptr =
+    let field = Types.FieldId.to_int field in
+    let** layout = Layout.layout_of ty in
+    let fields =
+      match kind with
+      | Expressions.ProjAdt (_, Some variant) ->
+          Layout.Fields_shape.shape_for_variant variant layout.fields
+      | ProjAdt (_, None) | ProjTuple _ -> layout.fields
+    in
+    let off = Layout.Fields_shape.offset_of field fields in
+    offset ~signed:false ptr off
+
+  let[@inline] _decay ~expose { ptr; align; size; _ } decay_map =
+    let loc, ofs = Typed.Ptr.decompose ptr in
+    let+ loc_int, decay_map =
+      DecayMap.decay ~expose ~size ~align loc decay_map
+    in
+    L.debug (fun fmt -> fmt "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int);
+    (loc_int +!!@ ofs, decay_map)
+
+  let decay p = _decay ~expose:false p
+  let expose p = _decay ~expose:true p
+
+  let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
+    let open DecayMapMonad.Syntax in
+    if%sat Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2 then
+      DecayMapMonad.return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
+    else
+      let* ptr1 = decay p1 in
+      let+ ptr2 = decay p2 in
+      ptr1 -!@ ptr2
+
+  let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
+  let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
+
+  let is_aligned exp_align { ptr; align; _ } =
+    let loc, ofs = Typed.Ptr.decompose ptr in
+    (* A pointer with no provenance is alignd to it's offset *)
+    let align =
+      Typed.ite (Typed.Ptr.is_null_loc loc) exp_align (Typed.cast align)
+    in
+    let is_aligned =
+      ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
+    in
+    (is_aligned, `MisalignedPointer (exp_align, align, ofs))
+
+  let nondet ty =
+    let** layout = Layout.layout_of ty in
+    let* loc = nondet (Typed.t_loc ()) in
+    let* ofs = nondet (Typed.t_usize ()) in
+    let ptr = Typed.Ptr.mk loc ofs in
+    let ptr = { ptr; tag = None; align = layout.align; size = layout.size } in
+    let aligned, _ = is_aligned layout.align ptr in
+    let* () = assume [ aligned ] in
+    Result.ok ptr
+
+  let iter_vars { ptr; align; size; tag = _ } f =
+    Typed.iter_vars ptr f;
+    Typed.iter_vars align f;
+    Typed.iter_vars size f
+
+  let subst subst_var p =
+    let ptr = Typed.subst subst_var p.ptr in
+    let align = Typed.subst subst_var p.align in
+    let size = Typed.subst subst_var p.size in
+    { p with ptr; align; size }
+end
 
 (* State details *)
-module DecayMap = Sptr.DecayMap
-module DecayMapMonad = Sptr.DecayMapMonad
-module Sptr = Sptr.ArithPtr
 module Encoder = Value_codec.Encoder (Sptr)
 
 (* State combinators *)
