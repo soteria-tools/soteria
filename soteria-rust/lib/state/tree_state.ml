@@ -46,7 +46,7 @@ module Meta = struct
   type t = {
     align : Typed.T.nonzero Typed.t;
     size : Typed.T.sint Typed.t;
-    tb_root : Tree_borrow.tag;
+    tb_root : Tree_borrows.tag;
     kind : Alloc_kind.t;
     trace : Trace.t;
   }
@@ -76,11 +76,11 @@ module FunBiMap = struct
 end
 
 module Block = struct
-  type t = Tree_block.t option * Tree_borrow.t
+  type t = Tree_block.t option * Tree_borrows.t
   [@@deriving show { with_path = false }]
 
   let of_opt = function
-    | None -> (None, Tree_borrow.ub_state)
+    | None -> (None, Tree_borrows.ub_state)
     | Some (b1, b2) -> (b1, b2)
 
   let to_opt : t -> t option =
@@ -91,7 +91,7 @@ module Block = struct
 
   type serialized = Tree_block.serialized
   [@@deriving show { with_path = false }]
-  (* TODO: serialize Tree_borrow as well *)
+  (* TODO: serialize Tree_borrows as well *)
 
   module SM =
     Soteria.Sym_states.State_monad.Make
@@ -112,7 +112,7 @@ module Block = struct
     v
 
   let with_tree_block_read_tb
-      (f : Tree_borrow.t -> ('a, 'err, 'fix) Tree_block.SM.Result.t) :
+      (f : Tree_borrows.t -> ('a, 'err, 'fix) Tree_block.SM.Result.t) :
       ('a, 'err, 'fix) SM.Result.t =
     let* t_opt = SM.get_state () in
     let tree, tb = of_opt t_opt in
@@ -126,27 +126,27 @@ module Block = struct
     let pointee = Charon_util.get_pointee ty in
     let state =
       match (ty, Layout.is_unsafe_cell pointee) with
-      | TRef (_, _, RShared), false -> Tree_borrow.Frozen
-      | TRef (_, _, RShared), true -> Tree_borrow.Cell
-      | _, false -> Tree_borrow.Reserved false
-      | _, true -> Tree_borrow.ReservedIM
+      | TRef (_, _, RShared), false -> Tree_borrows.Frozen
+      | TRef (_, _, RShared), true -> Tree_borrows.Cell
+      | _, false -> Tree_borrows.Reserved false
+      | _, true -> Tree_borrows.ReservedIM
     in
     let protector =
       match (protect, ty) with
       | false, _ -> None
-      | true, TRef _ -> Some Tree_borrow.Strong
-      | true, TAdt adt when Charon_util.adt_is_box adt -> Some Tree_borrow.Weak
+      | true, TRef _ -> Some Tree_borrows.Strong
+      | true, TAdt adt when Charon_util.adt_is_box adt -> Some Tree_borrows.Weak
       | true, _ -> failwith "Non-ref or box in borrow?"
     in
     let* t_opt = SM.get_state () in
     let block, tb = of_opt t_opt in
     let parent = Option.get ptr.tag in
-    let tb', tag = Tree_borrow.add_child ~parent ~state ?protector tb in
+    let tb', tag = Tree_borrows.add_child ~parent ~state ?protector tb in
     let ptr' = { ptr with tag = Some tag } in
     L.debug (fun m ->
         m "%s pointer %a -> %a (%a)"
           (if protect then "Protecting" else "Borrowing")
-          Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state state);
+          Sptr.pp ptr Sptr.pp ptr' Tree_borrows.pp_state state);
     if not protect then
       let+ () = SM.set_state (to_opt (block, tb')) in
       Ok (ptr', meta)
@@ -167,7 +167,7 @@ module Block = struct
   let unprotect ofs tag size =
     let* t_opt = SM.get_state () in
     let block, tb = of_opt t_opt in
-    let tb' = Tree_borrow.unprotect tag tb in
+    let tb' = Tree_borrows.unprotect tag tb in
     let** (), block' =
       if%sat size ==@ Usize.(0s) then SM.Result.ok ((), block)
       else
@@ -201,9 +201,9 @@ module Freeable_block_with_meta = struct
     Soteria.Sym_states.With_info.Make (DecayMapMonad) (Meta) (Freeable_block)
 
   let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
-      (t * Tree_borrow.tag option) DecayMapMonad.t =
+      (t * Tree_borrows.tag option) DecayMapMonad.t =
     let open DecayMapMonad.Syntax in
-    let tb, tag = Tree_borrow.init ~state:Unique () in
+    let tb, tag = Tree_borrows.init ~state:Unique () in
     let block = Tree_block.alloc ?zeroed size in
     let+^ trace = get_trace () in
     let trace = Trace.rename 0 "Allocation" trace in
@@ -683,7 +683,7 @@ let free ((ptr : Sptr.t), _) =
    *   with_ptr ptr (fun _ ->
    *       Block.with_tree_block_read_tb (fun tb ->
    *           L.warn (fun m -> m "%a" Tree_borrow.pp tb);
-   *           if Tree_borrow.strong_protector_exists tb then
+   *           if Tree_borrows.strong_protector_exists tb then
    *             Tree_block.SM.Result.error `InvalidFreeStrongProtector
    *           else Tree_block.SM.Result.ok ()))
    * in *)

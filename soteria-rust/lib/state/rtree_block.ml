@@ -45,7 +45,7 @@ module Make (Sptr : Sptr.S) = struct
 
     type qty = Totally | Partially [@@deriving show { with_path = false }]
     type value = Init of rust_val | Zeros | Uninit of qty | Any | Lazy
-    type t = value * Tree_borrow.tb_state
+    type t = value * Tree_borrows.tb_state
 
     let pp_value ft =
       let open Fmt in
@@ -59,7 +59,7 @@ module Make (Sptr : Sptr.S) = struct
     let pp ft (v, _) = pp_value ft v
 
     let merge ~left:(v1, tb1) ~right:(v2, tb2) =
-      let tb = Tree_borrow.merge tb1 tb2 in
+      let tb = Tree_borrows.merge tb1 tb2 in
       match (v1, v2) with
       | Zeros, Zeros -> (Zeros, tb)
       | Uninit Totally, Uninit Totally -> (Uninit Totally, tb)
@@ -152,7 +152,7 @@ module Make (Sptr : Sptr.S) = struct
     let owned (t : tree) (v : value) : tree =
       let tb =
         match t.node with
-        | NotOwned _ -> Tree_borrow.empty_state
+        | NotOwned _ -> Tree_borrows.empty_state
         | Owned (_, tb) -> tb
       in
       { t with node = Owned (v, tb); children = None }
@@ -286,7 +286,7 @@ module Make (Sptr : Sptr.S) = struct
   (* Memory operations *)
 
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
-      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) =
+      (tag : Tree_borrows.tag option) (tb : Tree_borrows.t) =
     let open SM.Syntax in
     let** size = lift_symex @@ Layout.size_of ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
@@ -297,7 +297,7 @@ module Make (Sptr : Sptr.S) = struct
           let@ v, tb_st = as_owned ~mk_fixes t in
           let++^ tb_st' =
             match (ignore_borrow, tag) with
-            | false, Some tag -> Tree_borrow.access tag Read tb tb_st
+            | false, Some tag -> Tree_borrows.access tag Read tb tb_st
             | true, _ | _, None -> Rustsymex.Result.ok tb_st
           in
           { t with node = Owned (v, tb_st') }
@@ -310,7 +310,7 @@ module Make (Sptr : Sptr.S) = struct
         (sval, tree))
 
   let store (ofs : [< T.sint ] Typed.t) (value : rust_val)
-      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) :
+      (tag : Tree_borrows.tag option) (tb : Tree_borrows.t) :
       (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
     let** size = lift_symex @@ Value_codec.size_of value in
@@ -322,7 +322,7 @@ module Make (Sptr : Sptr.S) = struct
           let@ _, tb_st = as_owned ~mk_fixes t in
           let++^ tb_st' =
             match tag with
-            | Some tag -> Tree_borrow.access tag Write tb tb_st
+            | Some tag -> Tree_borrows.access tag Write tb tb_st
             | None -> Rustsymex.Result.ok tb_st
           in
           { node = Owned (Init value, tb_st'); range; children = None }
@@ -390,7 +390,7 @@ module Make (Sptr : Sptr.S) = struct
 
   let alloc ?(zeroed = false) size =
     let st = if zeroed then Zeros else Uninit Totally in
-    alloc (st, Tree_borrow.empty_state) size
+    alloc (st, Tree_borrows.empty_state) size
 
   (* Tree borrow updates *)
 
@@ -415,16 +415,16 @@ module Make (Sptr : Sptr.S) = struct
     with_tb_access ofs size (fun tb_st ->
         (* We need to do two things: protect this tag for the block, and perform
            a read, as all function calls perform one on the parameters. *)
-        Tree_borrow.set_protector ~protected:true tag tb tb_st
-        |> Tree_borrow.access tag Read tb)
+        Tree_borrows.set_protector ~protected:true tag tb tb_st
+        |> Tree_borrows.access tag Read tb)
 
   let unprotect ofs size tag tb =
     with_tb_access ofs size (fun tb_st ->
         Rustsymex.Result.ok
-        @@ Tree_borrow.set_protector ~protected:false tag tb tb_st)
+        @@ Tree_borrows.set_protector ~protected:false tag tb tb_st)
 
   let tb_access (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) :
+      (tag : Tree_borrows.tag) (tb : Tree_borrows.t) :
       (unit, 'err, 'fix) SM.Result.t =
-    with_tb_access ofs size (Tree_borrow.access tag Read tb)
+    with_tb_access ofs size (Tree_borrows.access tag Read tb)
 end

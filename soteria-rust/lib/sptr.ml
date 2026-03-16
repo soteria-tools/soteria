@@ -204,7 +204,7 @@ end
 
 type arithptr_t = {
   ptr : sptr Typed.t;
-  tag : Tree_borrow.tag option;
+  tag : Tree_borrows.tag option;
   align : nonzero Typed.t;
   size : sint Typed.t;
 }
@@ -214,14 +214,14 @@ type arithptr_t = {
 module ArithPtr : S with type t = arithptr_t = struct
   type t = arithptr_t = {
     ptr : sptr Typed.t;
-    tag : Tree_borrow.tag option;
+    tag : Tree_borrows.tag option;
     align : nonzero Typed.t;
     size : sint Typed.t;
   }
 
   let pp fmt { ptr; tag; _ } =
     Fmt.pf fmt "%a[%a]" Typed.ppa ptr
-      Fmt.(option ~none:(any "*") Tree_borrow.pp_tag)
+      Fmt.(option ~none:(any "*") Tree_borrows.pp_tag)
       tag
 
   let null_ptr () =
