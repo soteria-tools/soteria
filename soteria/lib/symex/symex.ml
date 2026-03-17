@@ -530,8 +530,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let fresh_var ty f = f (Solver.fresh_var ty)
 
   let branch_on ?(left_branch_name = "Left branch")
-      ?(right_branch_name = "Right branch") guard ~(then_ : unit -> 'a Iter.t)
-      ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
+      ?(right_branch_name = "Right branch") guard ~(then_ : unit -> 'a t)
+      ~(else_ : unit -> 'a t) : 'a t =
    fun f ->
     Stats.As_ctx.incr StatKeys.branch_on_calls;
     let guard = Solver.simplify guard in
@@ -569,7 +569,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
                   else L.trace (fun m -> m "Branch is not feasible")))
 
   let if_sure ?left_branch_name:_ ?right_branch_name:_ guard
-      ~(then_ : unit -> 'a Iter.t) ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
+      ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
    fun f ->
     let guard = Solver.simplify guard in
     match Value.to_bool guard with
@@ -590,7 +590,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
           else_ () f)
 
   let branch_on_take_one_ux ?left_branch_name:_ ?right_branch_name:_ guard
-      ~then_ ~else_ : 'a Iter.t =
+      ~then_ ~else_ : 'a t =
    fun f ->
     let guard = Solver.simplify guard in
     match Value.to_bool guard with
@@ -613,7 +613,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         ~else_ f
     else branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ f
 
-  let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
+  let branches (brs : (unit -> 'a t) list) : 'a t =
    fun f ->
     let brs = Fuel.take_branches brs in
     (* If there are 0 or 1 branches, we don't do anything, else we add how many
@@ -743,7 +743,7 @@ module Make (Sol : Solver.Mutable_incremental) :
   include Base_extension (CORE)
 
   let run_needs_stats_iter ?(fuel = Fuel_gauge.infinite) ~mode iter :
-      ('a * Value.(sbool t) list) Iter.t =
+      ('a * Value.(sbool t) list) t =
    fun continue ->
     let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
     let@ () = Symex_state.run ~init_fuel:fuel in
