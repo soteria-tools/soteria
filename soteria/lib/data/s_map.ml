@@ -66,6 +66,7 @@ struct
       (* TODO: Investigate: this is not a tailcall, because if%sat is not an
          if. *)
     in
+    let* key = Key.simplify key in
     match M.find_opt key st with
     | Some v -> Symex.return (key, Some v)
     | None -> M.to_seq st |> find_bindings
