@@ -330,7 +330,7 @@ module Make (StateImpl : State.S) = struct
             let pointee = get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
-                let+ () = State.check_ptr_align fptr pointee in
+                let+ () = Sptr.check_aligned fptr pointee in
                 fptr
             | _ -> ok fptr)
         | Int off ->
@@ -353,7 +353,7 @@ module Make (StateImpl : State.S) = struct
         (ptr', Thin)
     | PlaceProjection (base, Field (kind, field)) ->
         let* ((ptr, meta) as fptr) = resolve_place base in
-        let* () = State.check_ptr_align fptr base.ty in
+        let* () = Sptr.check_aligned fptr base.ty in
         L.debug (fun f ->
             f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
               Expressions.pp_field_proj_kind kind Sptr.pp ptr);
@@ -552,8 +552,8 @@ module Make (StateImpl : State.S) = struct
     (* Reference *)
     | RvRef (place, _borrow, _metadata) ->
         let* ptr = resolve_place place in
-        let* () = State.check_ptr_align ptr place.ty in
-        let* () = State.check_non_dangling ptr place.ty in
+        let* () = Sptr.check_aligned ptr place.ty in
+        let* () = Sptr.check_non_dangling ptr place.ty in
         let* () =
           if (Config.get ()).recursive_validity <> Allow then
             State.fake_read ptr place.ty

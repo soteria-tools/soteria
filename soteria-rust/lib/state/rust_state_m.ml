@@ -126,6 +126,14 @@ module type S = sig
       t ->
       (t, 'env) monad
 
+    val check_aligned : t Rust_val.full_ptr -> Types.ty -> (unit, 'env) monad
+
+    val check_non_dangling :
+      t Rust_val.full_ptr -> Types.ty -> (unit, 'env) monad
+
+    val check_non_dangling_untyped :
+      t Rust_val.full_ptr -> Typed.(T.sint t) -> (unit, 'env) monad
+
     val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
     val decay : t -> (Typed.T.sint Typed.t, 'env) monad
     val expose : t -> (Typed.T.sint Typed.t, 'env) monad
@@ -211,7 +219,6 @@ module type S = sig
 
     val uninit : full_ptr -> Types.ty -> (unit, 'env) t
     val free : full_ptr -> (unit, 'env) t
-    val check_ptr_align : full_ptr -> Types.ty -> (unit, 'env) t
     val borrow : ?protect:bool -> full_ptr -> Types.ty -> (full_ptr, 'env) t
     val unprotect : full_ptr -> Types.ty -> (unit, 'env) t
     val with_exposed : [< Typed.T.sint ] Typed.t -> (full_ptr, 'env) t
@@ -232,10 +239,6 @@ module type S = sig
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
     val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
-    val check_non_dangling : full_ptr -> Types.ty -> (unit, 'env) t
-
-    val check_non_dangling_untyped :
-      full_ptr -> Typed.(T.sint t) -> (unit, 'env) t
 
     val size_and_align_of_val :
       Types.ty ->
@@ -421,6 +424,14 @@ module Make (State : State_intf.S) :
     let[@inline] offset ?check ?ty ~signed off ptr =
       ESM.lift @@ offset ?check ?ty ~signed off ptr
 
+    let[@inline] check_aligned ptr ty = ESM.lift (check_aligned ptr ty)
+
+    let[@inline] check_non_dangling ptr ty =
+      ESM.lift (check_non_dangling ptr ty)
+
+    let[@inline] check_non_dangling_untyped ptr size =
+      ESM.lift (check_non_dangling_untyped ptr size)
+
     let[@inline] distance ptr1 ptr2 = with_decay_map (distance ptr1 ptr2)
     let[@inline] decay ptr = with_decay_map (decay ptr)
     let[@inline] expose ptr = with_decay_map (expose ptr)
@@ -490,7 +501,6 @@ module Make (State : State_intf.S) :
 
     let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
     let[@inline] free ptr = ESM.lift (free ptr)
-    let[@inline] check_ptr_align ptr ty = ESM.lift (check_ptr_align ptr ty)
     let[@inline] borrow ?protect ptr ty = ESM.lift (borrow ?protect ptr ty)
     let[@inline] unprotect ptr ty = ESM.lift (unprotect ptr ty)
     let[@inline] with_exposed addr = ESM.lift (with_exposed addr)
@@ -517,12 +527,6 @@ module Make (State : State_intf.S) :
 
     let[@inline] run_thread_exits () = ESM.lift (run_thread_exits ())
     let[@inline] fake_read ptr ty = ESM.lift (fake_read ptr ty)
-
-    let[@inline] check_non_dangling ptr ty =
-      ESM.lift (check_non_dangling ptr ty)
-
-    let[@inline] check_non_dangling_untyped ptr size =
-      ESM.lift (check_non_dangling_untyped ptr size)
 
     let[@inline] size_and_align_of_val ty meta =
       ESM.lift (size_and_align_of_val ty meta)

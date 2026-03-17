@@ -681,15 +681,23 @@ module Sptr = struct
     in
     let ptr' = Typed.Ptr.mk loc off in
     { fptr with ptr = ptr' }
+
+  let check_aligned ptr ty =
+    let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
+    check_ptr_align ptr ty
+
+  let check_non_dangling_untyped ptr size =
+    let@ () = with_loc_err ~trace:"Dangling check" () in
+    check_non_dangling_untyped ptr size
+
+  let check_non_dangling ptr ty =
+    let@ () = with_loc_err ~trace:"Dangling check" () in
+    check_non_dangling ptr ty
 end
 
 let size_and_align_of_val ty meta =
   let@ () = with_loc_err ~trace:"Size and alignment check" () in
   size_and_align_of_val ty meta
-
-let check_ptr_align ptr ty =
-  let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
-  check_ptr_align ptr ty
 
 let load ?ignore_borrow ptr ty =
   let@ () = with_loc_err ~trace:"Memory load" () in
@@ -698,14 +706,6 @@ let load ?ignore_borrow ptr ty =
 let load_discriminant ptr ty =
   let@ () = with_loc_err ~trace:"Memory load (discriminant)" () in
   load_discriminant ptr ty
-
-let check_non_dangling_untyped ptr size =
-  let@ () = with_loc_err ~trace:"Dangling check" () in
-  check_non_dangling_untyped ptr size
-
-let check_non_dangling ptr ty =
-  let@ () = with_loc_err ~trace:"Dangling check" () in
-  check_non_dangling ptr ty
 
 let fake_read ptr ty =
   let@ () = with_loc_err ~trace:"Fake read" () in

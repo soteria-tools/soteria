@@ -25,6 +25,21 @@ module type S = sig
       [< sint ] Typed.t ->
       t ->
       t ret
+
+    (** Checks this pointer isn't dangling for the given type, i.e. it points to
+        an allocation and doesn't range outside of it. This also checks the
+        allocation is live. *)
+    val check_non_dangling : t full_ptr -> Types.ty -> unit ret
+
+    (** Same as {!check_non_dangling}, but for untyped ranges, where only a size
+        is known. The size is signed: if less than 0, the range preceding the
+        pointer is checked. *)
+    val check_non_dangling_untyped : t full_ptr -> Typed.(T.sint t) -> unit ret
+
+    (** Checks this pointer is sufficiently aligned for the given type. This
+        takes into account the metadata: for a [&dyn Trait], it will access the
+        VTable to check alignment. *)
+    val check_aligned : t full_ptr -> Types.ty -> unit ret
   end
 
   type full_ptr := Sptr.t full_ptr
@@ -62,9 +77,6 @@ module type S = sig
     Types.ty -> Sptr.t Rust_val.meta -> (T.sint Typed.t * T.nonzero Typed.t) ret
 
   val fake_read : full_ptr -> Types.ty -> unit ret
-  val check_non_dangling : full_ptr -> Types.ty -> unit ret
-  val check_non_dangling_untyped : full_ptr -> Typed.(T.sint t) -> unit ret
-  val check_ptr_align : full_ptr -> Types.ty -> unit ret
 
   val copy_nonoverlapping :
     src:full_ptr -> dst:full_ptr -> size:sint Typed.t -> unit ret
