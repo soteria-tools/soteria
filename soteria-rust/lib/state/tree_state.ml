@@ -76,25 +76,12 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
     let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
     let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
 
-    let is_aligned exp_align { ptr; align; _ } =
-      let loc, ofs = Typed.Ptr.decompose ptr in
-      (* A pointer with no provenance is alignd to it's offset *)
-      let align =
-        Typed.ite (Typed.Ptr.is_null_loc loc) exp_align (Typed.cast align)
-      in
-      let is_aligned =
-        ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
-      in
-      (is_aligned, `MisalignedPointer (exp_align, align, ofs))
-
     let nondet ty =
       let** layout = Layout.layout_of ty in
       let* loc = nondet (Typed.t_loc ()) in
       let* ofs = nondet (Typed.t_usize ()) in
       let ptr = Typed.Ptr.mk loc ofs in
       let ptr = { ptr; tag = None; align = layout.align; size = layout.size } in
-      let aligned, _ = is_aligned layout.align ptr in
-      let* () = assume [ aligned ] in
       Result.ok ptr
 
     let iter_vars { ptr; align; size; tag = _ } f =
@@ -529,8 +516,13 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
     L.debug (fun m ->
         m "Checking pointer alignment of %a: expect %a for %a" Sptr_base.pp ptr
           Typed.ppa exp_align Common.Charon_util.pp_ty ty);
-    let aligned, err = Sptr_base.is_aligned exp_align ptr in
-    assert_or_error aligned err
+    let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+    (* A pointer with no provenance is aligned to it's offset *)
+    let align = Typed.(ite (Ptr.is_null_loc loc) exp_align (cast ptr.align)) in
+    let is_aligned =
+      ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
+    in
+    assert_or_error is_aligned (`MisalignedPointer (exp_align, align, ofs))
 
   and check_non_dangling_untyped ((ptr : Sptr_base.t), _) size =
     if%sat size ==@ Usize.(0s) then Result.ok ()
