@@ -8,7 +8,7 @@ open DecayMapMonad
 open DecayMapMonad.Result
 open DecayMapMonad.Syntax
 
-module Make (Sptr : Sptr.S) = struct
+module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
   module Encoder = Value_codec.Encoder (Sptr)
 
   type rust_val = Sptr.t Rust_val.t
