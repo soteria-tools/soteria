@@ -9,6 +9,7 @@ let fresh_tag () =
   !tag_counter
 
 let zero = 0
+let equal_tag = Int.equal
 let pp_tag fmt tag = Fmt.pf fmt "‖%d‖" tag
 
 module TagMap = PatriciaTree.MakeMap (struct
@@ -39,7 +40,7 @@ and node = {
   parents : tag list;
   initial_state : state;
 }
-[@@deriving show { with_path = false }]
+[@@deriving show { with_path = false }, eq]
 
 let pp_state fmt = function
   | Reserved true -> Fmt.string fmt "Re T"
@@ -141,6 +142,7 @@ let pp_tb_state =
 
 let empty_state = TagMap.empty
 let is_empty_state = TagMap.is_empty
+let equal_state = TagMap.reflexive_equal (Pair.equal Bool.equal equal_state)
 
 let set_protector ~protected tag root =
   TagMap.update tag (function

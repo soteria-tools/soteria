@@ -217,6 +217,10 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
 
     let of_children _ ~left ~right = of_children_s ~left ~right
 
+    (** Like {!of_children}, but doesn't attempt merging the children, i.e.
+        assumes that the intermediary node that is in [t] is still correct for
+        the new children. This is faster than {!of_children} but is only sound
+        if the children's content did not change. *)
     let with_children t ~left ~right =
       return { t with children = Some (left, right) }
 

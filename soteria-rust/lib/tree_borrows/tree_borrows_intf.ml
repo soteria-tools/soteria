@@ -33,6 +33,7 @@ module type S = sig
   val strong_protector_exists : t -> bool
   val empty_state : tb_state
   val is_empty_state : tb_state -> bool
+  val equal_state : tb_state -> tb_state -> bool
   val set_protector : protected:bool -> tag -> t -> tb_state -> tb_state
 
   (** [access root accessed e state]: Update all nodes in the mapping [state]
