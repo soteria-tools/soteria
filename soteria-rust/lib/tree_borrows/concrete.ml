@@ -140,6 +140,7 @@ let pp_tb_state =
         (if protected then " (p)" else ""))
 
 let empty_state = TagMap.empty
+let is_empty_state = TagMap.is_empty
 
 let set_protector ~protected tag root =
   TagMap.update tag (function
@@ -186,3 +187,22 @@ let access accessed e (root : t) (st : tb_state) =
   if !ub_happened then Result.error `AliasingError else Result.ok st'
 
 let merge = TagMap.idempotent_union @@ fun _ -> meet'
+
+(* Compositionality *)
+
+type serialized = | [@@deriving show]
+
+let serialize _ = Seq.empty
+let subst_serialized _ : serialized -> serialized = function _ -> .
+let iter_vars_serialized _ _ = ()
+
+type serialized_state = | [@@deriving show]
+
+let serialize_state _ = Seq.empty
+
+let subst_serialized_state _ : serialized_state -> serialized_state = function
+  | _ -> .
+
+let iter_vars_serialized_state _ _ = ()
+let consume_state _ st = Result.ok st
+let produce_state _ st = return st

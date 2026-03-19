@@ -125,22 +125,40 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
           TB.Split_tree.(Leaf ll, Leaf lr)
       | Lazy -> failwith "Should never split an intermediate node"
 
-    type serialized = SInit of rust_val | SUninit | SZeros | SAny
+    type serialized =
+      | SInit of rust_val
+      | SUninit
+      | SZeros
+      | SAny
+      | STree_borrow of Tree_borrows.serialized_state
     [@@deriving show { with_path = false }]
 
     let subst_serialized f = function
       | SInit v -> SInit (Rust_val.subst Sptr.subst f v)
-      | v -> v
+      | STree_borrow tb ->
+          STree_borrow (Tree_borrows.subst_serialized_state f tb)
+      | (SUninit | SZeros | SAny) as v -> v
 
     let iter_vars_serialized v f =
-      match v with SInit v -> Rust_val.iter_vars Sptr.iter_vars v f | _ -> ()
+      match v with
+      | SInit v -> Rust_val.iter_vars Sptr.iter_vars v f
+      | STree_borrow s -> Tree_borrows.iter_vars_serialized_state s f
+      | SUninit | SZeros | SAny -> ()
 
-    (* TODO: serialize tree borrow information! *)
     let serialize : t -> serialized Seq.t option = function
-      | Leaf (Init v, _tb) -> Some (Seq.return (SInit v))
-      | Leaf (Uninit, _tb) -> Some (Seq.return SUninit)
-      | Leaf (Zeros, _tb) -> Some (Seq.return SZeros)
-      | Leaf (Any, _tb) -> Some (Seq.return SAny)
+      | Leaf (leaf, tb) ->
+          let leaf_ser =
+            match leaf with
+            | Init v -> SInit v
+            | Uninit -> SUninit
+            | Zeros -> SZeros
+            | Any -> SAny
+          in
+          let tb_ser =
+            Tree_borrows.serialize_state tb
+            |> Seq.map (fun tb -> STree_borrow tb)
+          in
+          Some (Seq.cons leaf_ser tb_ser)
       | Lazy -> None
 
     let mk_fix_typed ty () =
@@ -165,7 +183,13 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
       in
       { t with node = Owned (Leaf (v, tb)); children = None }
 
+    let lift_tb_miss x =
+      let+? tb_s = x in
+      STree_borrow tb_s
+
     let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t =
+      (* NOTE: I believe there is something wrong here: if we consume the value
+         before the tree borrows state, that states gets lost... *)
       match (s, t.node) with
       | _, NotOwned _ -> miss []
       | _, Owned Lazy -> not_impl "Consume on lazy node"
@@ -180,14 +204,35 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
       | SZeros, Owned (Leaf (Zeros, _)) -> ok (not_owned t)
       | SZeros, Owned (Leaf (Init _, _)) -> not_impl "Assume rust_val == 0s"
       | SZeros, Owned (Leaf _) -> vanish ()
+      (* tree borrows *)
+      | STree_borrow s, Owned (Leaf (v, tb)) ->
+          let++ tb' = lift_tb_miss @@ lift @@ Tree_borrows.consume_state s tb in
+          { t with node = Owned (Leaf (v, tb')) }
 
     let produce (s : serialized) (t : tree) : tree DecayMapMonad.t =
       match (s, t.node) with
-      | _, (Owned _ | NotOwned Partially) -> vanish ()
+      | (SInit _ | SZeros | SUninit | SAny), (Owned _ | NotOwned Partially) ->
+          vanish ()
       | SInit v, NotOwned Totally -> return (owned t (Init v))
       | SZeros, NotOwned Totally -> return (owned t Zeros)
       | SUninit, NotOwned Totally -> return (owned t Uninit)
       | SAny, NotOwned Totally -> return (owned t Any)
+      | STree_borrow _, NotOwned _ ->
+          not_impl "Produce tree borrow on non-owned node"
+      | STree_borrow s, Owned _ ->
+          let rec aux (t : tree) =
+            match t.node with
+            | NotOwned _ -> failwith "impossible: tree is owned"
+            | Owned Lazy ->
+                let l, r = Option.get t.children in
+                let* l = aux l in
+                let+ r = aux r in
+                { t with children = Some (l, r) }
+            | Owned (Leaf (v, tb)) ->
+                let+^ tb' = Tree_borrows.produce_state s tb in
+                { t with node = Owned (Leaf (v, tb')) }
+          in
+          aux t
 
     let assert_exclusively_owned _ = Result.ok ()
   end

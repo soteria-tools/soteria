@@ -529,9 +529,6 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let+? fix = symex in
     [ MemVal { v = fix; offset; len } ]
 
-  let iter_values_serialized serialized f =
-    List.iter (function MemVal { v; _ } -> f v | _ -> ()) serialized
-
   let of_opt ?(mk_fixes = fun () -> Symex.return []) = function
     | None ->
         let+ fixes = mk_fixes () in
