@@ -226,13 +226,16 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
     | Some z -> return (Z.to_int z)
     | None -> not_impl "Cannot convert size to int"
 
-  let collect_leaves (t : Tree.t) =
+  let collect_leaves ~uninit (t : Tree.t) =
     Result.fold_iter (Tree.iter_leaves_rev t) ~init:[]
       ~f:(fun vs (range, v, _tb) ->
         let offset, _ = range in
         let offset = offset -!@ fst t.range in
         match v with
-        | Uninit -> Result.ok vs
+        | Uninit -> (
+            match uninit with
+            | `Ignore -> Result.ok vs
+            | `Error -> Result.error `UninitializedMemoryAccess)
         | Zeros ->
             let+ size = sint_to_int (Range.size range) in
             let value = BV.zero (size * 8) in
@@ -263,7 +266,7 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
        read/write scalars (int, float, pointers...) which cover the whole range
        with no gaps. For lazy nodes, we convert all of these to bitvectors, the
        concatenate them and call the encoder to decode the full value. *)
-    let** leaves = collect_leaves t in
+    let** leaves = collect_leaves ~uninit:`Error t in
     let* leaves =
       DecayMapMonad.map_list leaves ~f:(fun (v, _) ->
           match v with
@@ -387,7 +390,7 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
         let** framed, tree =
           Tree.frame_range t ~replace_node ~rebuild_parent range
         in
-        let++ leaves = collect_leaves framed in
+        let++ leaves = collect_leaves ~uninit:`Ignore framed in
         (leaves, tree))
 
   let uninit_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :

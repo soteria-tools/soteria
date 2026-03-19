@@ -45,20 +45,17 @@ Splitting and merging, via a union
   PC 1: empty
   
   => Running uninit_gap...
-  warning: uninit_gap (<time>): exception, Cast error: expected (TBitVector 32), got (TBitVector 24) for value 0x783412
-  Trace: Raised at Soteria_rust_lib__Typed.cast_error in file "soteria-rust/lib/typed.ml", lines 17-19, characters 2-79
-  Called from Soteria_rust_lib__Interp.Make.eval_rvalue in file "soteria-rust/lib/interp.ml", line 705, characters 32-57
-  Called from Soteria__Symex.Make.Result.run_needs_stats in file "soteria/lib/symex/symex.ml", lines 777-790, characters 8-25
-  Called from Soteria__Soteria_std__Reversible.Mutable_to_pooled.run in file "soteria/lib/soteria_std/reversible.ml", lines 130-139, characters 6-39
-  Called from Soteria__Stats.As_ctx.add_time_of_to in file "soteria/lib/stats/stats.ml", line 230, characters 14-18
-  Called from Soteria__Stats.As_ctx.with_stats in file "soteria/lib/stats/stats.ml", lines 199-202, characters 6-33
-  Called from Stdlib__Fun.protect in file "fun.ml", line 34, characters 8-15
-  Re-raised at Stdlib__Fun.protect in file "fun.ml", line 39, characters 6-52
-  Called from Soteria_rust_lib__Analyses__Wpst.exec_crate in file "soteria-rust/lib/analyses/wpst.ml", lines 92-98, characters 4-27
-  Called from Soteria_rust_lib__Analyses__Wpst.print_outcomes in file "soteria-rust/lib/analyses/wpst.ml", line 17, characters 8-12
+  error: uninit_gap: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Uninitialized memory access in uninit_gap
+      ┌─ $TESTCASE_ROOT/split_merges.rs:64:20
+   52 │  fn uninit_gap() {
+      │  --------------- 1: Entry point
+      ·  
+   64 │          assert_eq!(x.as_u32, 0x1234_5678);
+      │                     ^^^^^^^^ Memory load
+  PC 1: empty
   
-  
-  [2]
+  [1]
 Test unwinding, and catching that unwind; we need to ignore leaks as this uses a Box.
   $ soteria-rust exec unwind.rs --ignore-leaks
   Compiling... done in <time>
