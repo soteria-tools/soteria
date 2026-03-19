@@ -736,27 +736,21 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
        in
        (* Iterator over the tree borrow states in a tree. *)
        let collect_tb_states f =
-         Tree.iter_leaves_rev original_tree @@ fun leaf ->
-         match leaf.node with
-         | Owned (_, tb) ->
-             let range =
-               Tree_block.Range.offset leaf.range ~-!(fst original_tree.range)
-             in
-             f (tb, range)
-         | NotOwned Totally -> failwith "Impossible: we framed the range"
-         | NotOwned Partially ->
-             failwith "Impossible: iterating over an intermediate node"
+         Tree.iter_leaves_rev original_tree @@ fun (range, _, tb) ->
+         let range =
+           Tree_block.Range.offset range ~-!(fst original_tree.range)
+         in
+         f (tb, range)
        in
        (* Update a tree and its children with the given tree borrow state. *)
        let put_tb tb t =
          let rec aux tb (t : Tree.t) =
            match t.node with
-           | NotOwned _ -> failwith "Impossible: checked before"
-           | Owned (v, _) ->
-               let children =
-                 Option.map (fun (l, r) -> (aux tb l, aux tb r)) t.children
-               in
-               { t with children; node = Owned (v, tb) }
+           | NotOwned _ -> failwith "impossible: checked before"
+           | Owned Lazy ->
+               let l, r = Option.get t.children in
+               { t with children = Some (aux tb l, aux tb r) }
+           | Owned (Leaf (v, _)) -> { t with node = Owned (Leaf (v, tb)) }
          in
          try DecayMapMonad.Result.ok (aux tb t)
          with Failure msg -> DecayMapMonad.not_impl msg
