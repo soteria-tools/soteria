@@ -190,8 +190,6 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
       STree_borrow tb_s
 
     let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t =
-      (* NOTE: I believe there is something wrong here: if we consume the value
-         before the tree borrows state, that states gets lost... *)
       match (s, t.node) with
       | _, NotOwned _ -> miss []
       | _, Owned Lazy -> not_impl "Consume on lazy node"
@@ -211,7 +209,7 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
           let++ tb' = lift_tb_miss @@ lift @@ Tree_borrows.consume_state s tb in
           mk_leaf t v tb'
 
-    let produce (s : serialized) (t : tree) : tree DecayMapMonad.t =
+    let rec produce (s : serialized) (t : tree) : tree DecayMapMonad.t =
       match (s, t.node) with
       | ( (SInit _ | SZeros | SUninit | SAny),
           (NotOwned Totally | Owned (Leaf (Unowned, _))) ) ->
@@ -230,25 +228,37 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
             | _ -> assert false
           in
           return (mk_leaf t v tb)
-      | (SInit _ | SZeros | SUninit | SAny), (Owned _ | NotOwned Partially) ->
-          vanish ()
-      | STree_borrow s, NotOwned _ ->
+      | (SInit _ | SZeros | SUninit | SAny), Owned (Leaf _) -> vanish ()
+      | (SInit _ | SZeros | SUninit | SAny), (Owned Lazy | NotOwned Partially)
+        ->
+          (* FIXME: this is not correct if the leaves of the tree only contain
+             tree borrows information (i.e. they are all [NotOwned Totally] or
+             [Owned (Leaf Unowned, _)]). For now we just do a sanity check and
+             fail if our assumption is wrong. *)
+          let rec check_has_value (t : tree) =
+            match t.node with
+            | Owned (Leaf (Unowned, _)) | NotOwned Totally -> return ()
+            | Owned (Leaf _) -> vanish ()
+            | Owned Lazy | NotOwned Partially ->
+                let l, r = Option.get t.children in
+                let* () = check_has_value l in
+                check_has_value r
+          in
+          let* () = check_has_value t in
+          failwith "assumption was wrong; unsound! this should be unreachable"
+      (* Tree borrows: we produce recursively, as we don't want to merge the
+         leaves *)
+      | STree_borrow s, NotOwned Totally ->
           let+^ tb = Tree_borrows.produce_state s Tree_borrows.empty_state in
           mk_leaf t Unowned tb
-      | STree_borrow s, Owned _ ->
-          let rec aux (t : tree) =
-            match t.node with
-            | NotOwned _ -> failwith "impossible: tree is owned"
-            | Owned Lazy ->
-                let l, r = Option.get t.children in
-                let* l = aux l in
-                let+ r = aux r in
-                { t with children = Some (l, r) }
-            | Owned (Leaf (v, tb)) ->
-                let+^ tb' = Tree_borrows.produce_state s tb in
-                { t with node = Owned (Leaf (v, tb')) }
-          in
-          aux t
+      | STree_borrow s, Owned (Leaf (v, tb)) ->
+          let+^ tb = Tree_borrows.produce_state s tb in
+          mk_leaf t v tb
+      | STree_borrow _, (Owned Lazy | NotOwned Partially) ->
+          let l, r = Option.get t.children in
+          let* l = produce s l in
+          let+ r = produce s r in
+          { t with children = Some (l, r) }
 
     let assert_exclusively_owned _ = Result.ok ()
   end
