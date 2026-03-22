@@ -598,7 +598,29 @@ module rec Bool : Bool = struct
     | _, BitVec o, BitVec z when Z.(equal o one) && Z.equal z Z.zero ->
         BitVec.of_bool (size_of if_.node.ty) guard
     | _ when equal if_ else_ -> if_
-    | _ -> Ite (guard, if_, else_) <| if_.node.ty
+    | _ when equal guard if_ -> or_ guard else_
+    | _ when equal guard else_ -> or_ (not guard) if_
+    | _ ->
+        let[@inline] is_concrete = function
+          | { node = { kind = BitVec _ | Float _ | Bool _; _ }; _ } -> true
+          | _ -> false
+        in
+        let subst_neg = fun v -> if equal v guard then v_false else v in
+        let subst_pos =
+          match guard.node.kind with
+          | Binop (Eq, vl, vr) ->
+              if is_concrete vl then fun v ->
+                if equal v guard then v_true else if equal v vr then vl else v
+              else if is_concrete vr then fun v ->
+                if equal v guard then v_true else if equal v vl then vr else v
+              else fun v -> if equal v guard then v_true else v
+          | _ -> fun v -> if equal v guard then v_true else v
+        in
+        let if_' = Eval.eval ~subst:subst_pos if_ in
+        let else_' = Eval.eval ~subst:subst_neg else_ in
+        if equal if_ if_' && equal else_ else_' then
+          Ite (guard, if_', else_') <| if_.node.ty
+        else ite guard if_' else_'
 
   and sem_eq v1 v2 =
     match[@warning "-ambiguous-var-in-pattern-guard"]
@@ -2282,10 +2304,15 @@ and Eval : Eval = struct
         let l, changed = List.map_changed eval l in
         if (not force) && not changed then x else eval_nop nop l
     | Ite (guard, then_, else_) ->
-        let guard = eval guard in
-        if equal guard Bool.v_true then eval then_
-        else if equal guard Bool.v_false then eval else_
-        else Bool.ite guard (eval then_) (eval else_)
+        let guard' = eval guard in
+        if equal guard' Bool.v_true then eval then_
+        else if equal guard' Bool.v_false then eval else_
+        else
+          let then_' = eval then_ in
+          let else_' = eval else_ in
+          if equal then_ then_' && equal else_ else_' && equal guard guard' then
+            x
+          else Bool.ite guard' then_' else_'
     | Seq l ->
         let l, changed = List.map_changed eval l in
         if (not force) && not changed then x else SSeq.mk ~seq_ty:x.node.ty l
