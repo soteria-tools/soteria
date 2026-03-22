@@ -115,11 +115,8 @@ Test linked lists, to ensure dropping the list works despite the generic type
         ((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
         (V|1| != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
         ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 <=s (0xfffffffffffffff8 & V|1|))) /\
-        ((((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|))) != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000008 +ck V|1|) : (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) || ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 != (0xfffffffffffffff8 & V|1|)))) /\
         (((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) || ((extract[0-2](V|1|) != 0b000) && ((0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)) <=s V|1|))) /\
         ((extract[0-2](V|1|) == 0b000) || (V|1| <s (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        ((((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|))) != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000008 +ck V|1|) : (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) || (V|1| != ((extract[0-2](V|1|) == 0b000) ? V|1| : (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|))))) /\
-        (((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|))) != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000008 +ck V|1|) : (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) /\
         ((extract[0-2](V|1|) == 0b000) || ((0xfffffffffffffff8 & V|1|) <=u 0x7fffffffffffffe7)) /\
         ((extract[0-2](V|1|) == 0b000) ? (V|2| <u (0x7fffffffffffffef - V|1|)) : (V|2| <u (0x7fffffffffffffe7 - (0xfffffffffffffff8 & V|1|)))) /\
         ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 != (0xfffffffffffffff8 & V|1|))) /\
@@ -134,12 +131,9 @@ Test linked lists, to ensure dropping the list works despite the generic type
         ((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
         (V|1| != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
         ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 <=s (0xfffffffffffffff8 & V|1|))) /\
-        ((((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|))) != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000008 +ck V|1|) : (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) || ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 != (0xfffffffffffffff8 & V|1|)))) /\
         (((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) || ((extract[0-2](V|1|) != 0b000) && ((0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)) <=s V|1|))) /\
         ((extract[0-2](V|1|) == 0b000) || (V|1| <s (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        ((((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|))) != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000008 +ck V|1|) : (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) || (V|1| != ((extract[0-2](V|1|) == 0b000) ? V|1| : (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|))))) /\
         (V|1| != ((extract[0-2](V|1|) == 0b000) ? V|1| : (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        (((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|))) != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000008 +ck V|1|) : (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) /\
         ((extract[0-2](V|1|) == 0b000) || ((0xfffffffffffffff8 & V|1|) <=u 0x7fffffffffffffe7)) /\
         ((extract[0-2](V|1|) == 0b000) ? (V|2| <u (0x7fffffffffffffef - V|1|)) : (V|2| <u (0x7fffffffffffffe7 - (0xfffffffffffffff8 & V|1|)))) /\
         ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 != (0xfffffffffffffff8 & V|1|))) /\

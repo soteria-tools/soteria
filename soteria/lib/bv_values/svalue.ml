@@ -756,6 +756,8 @@ module rec Bool : Bool = struct
       when size_of l1.node.ty = size_of l2.node.ty ->
         and_ (sem_eq l1 l2) (sem_eq r1 r2)
     (* BvOfBool and If-then-elses *)
+    | Ite (b1, l1, t1), Ite (b2, l2, t2) when equal b1 b2 ->
+        ite b1 (sem_eq l1 l2) (sem_eq t1 t2)
     | Ite (b, l, t), (BitVec _ | Bool _) -> ite b (sem_eq l v2) (sem_eq t v2)
     | (BitVec _ | Bool _), Ite (b, l, t) -> ite b (sem_eq v1 l) (sem_eq v1 t)
     | Bool false, _ -> not v2
