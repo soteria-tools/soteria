@@ -80,10 +80,11 @@ let rec dst_slice_ty : Types.ty -> Types.ty option = function
 let is_dst ty = dst_kind ty <> NoneKind
 
 let[@inline] size_to_fit ~size ~align =
+  let open Usize in
   Typed.ite
-    (size %@ align ==@ Usize.(0s))
+    (size %@ align ==@ 0s)
     size
-    (size +!!@ align -!!@ (size %@ align))
+    ((size &@ BV.not (align -!!@ 1s)) +!!@ align)
 
 let mk ~size ~align ?(uninhabited = false)
     ?(fields : Fields_shape.t = Primitive) () =
