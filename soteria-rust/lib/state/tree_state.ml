@@ -209,8 +209,8 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
 
     (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
         being reborrowed. *)
-    let borrow ?(protect = false) ((ptr : Sptr_base.t), meta) (ty : Types.ty)
-        ofs =
+    let borrow ?(protect = false) ((ptr : Sptr_base.t), meta) tag
+        (ty : Types.ty) ofs =
       let pointee = Charon_util.get_pointee ty in
       let state =
         match (ty, Layout.is_unsafe_cell pointee) with
@@ -229,8 +229,7 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
       in
       let* t_opt = SM.get_state () in
       let block, tb = of_opt t_opt in
-      let parent = Option.get ptr.tag in
-      let tb', tag = Tree_borrows.add_child ~parent ~state ?protector tb in
+      let tb', tag = Tree_borrows.add_child ~parent:tag ~state ?protector tb in
       let ptr' = { ptr with tag = Some tag } in
       L.debug (fun m ->
           m "%s pointer %a -> %a (%a)"
@@ -332,7 +331,7 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
       match res with
       | Missing _ as miss ->
           (* FIXME: this is wrong in compositional? *)
-          if%sat Typed.Ptr.is_at_null_loc ptr.ptr then
+          if%sat Typed.not (Sptr_base.has_provenance ptr) then
             Result.error `UBDanglingPointer
           else return miss
       | ok_or_err -> return ok_or_err
@@ -867,10 +866,11 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
   let borrow ?protect (((ptr : Sptr_base.t), _) as fptr) (ty : Types.ty) =
     let@ () = with_loc_err ~trace:"Borrow" () in
     (* &UnsafeCell<T> are treated as raw pointers, and reuse parent's tag! *)
-    if Option.is_none ptr.tag then Result.ok fptr
-    else
-      let@ ofs = with_ptr ptr in
-      Block.borrow ?protect fptr ty ofs
+    match ptr.tag with
+    | None -> Result.ok fptr
+    | Some tag ->
+        let@ ofs = with_ptr ptr in
+        Block.borrow ?protect fptr tag ty ofs
 
   let unprotect ((ptr : Sptr_base.t), _) (ty : Types.ty) =
     let@ () = with_loc_err ~trace:"Reference unprotection" () in
