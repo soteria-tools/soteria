@@ -75,7 +75,7 @@ module type S = sig
   val consume_state :
     serialized_state ->
     tb_state ->
-    (tb_state, 'err, serialized_state) Rustsymex.Result.t
+    (tb_state, 'err, serialized_state list) Rustsymex.Result.t
 
   val produce_state : serialized_state -> tb_state -> tb_state Rustsymex.t
 end

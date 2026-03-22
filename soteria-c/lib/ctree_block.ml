@@ -148,7 +148,7 @@ module MemVal = struct
     (* init *)
     | SInit (_, ty), NotOwned _ ->
         let+ fixes = mk_fix_typed ty () in
-        Missing fixes
+        Missing [ fixes ]
     | SInit (v, ty), Owned node -> (
         let* sval_res = decode ~ty node in
         match sval_res with

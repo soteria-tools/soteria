@@ -94,7 +94,7 @@ module MemVal (Symex : Symex.Base) = struct
     val consume :
       serialized ->
       (t, sint) tree ->
-      ((t, sint) tree, 'err, serialized) Symex.Result.t
+      ((t, sint) tree, 'err, serialized list) Symex.Result.t
 
     (** Add the given [serialized] predicate onto the given tree; the input tree
         is not necessarily empty ([NotOwned Totally]), and if the predicate
@@ -109,7 +109,8 @@ module MemVal (Symex : Symex.Base) = struct
         state can be composed with it; in other words, calling [produce] on a
         tree with this node must always vanish. Otherwise this should raise a
         [miss] with the fixes needed for this to become exclusively owned. *)
-    val assert_exclusively_owned : t -> (unit, 'err, serialized) Symex.Result.t
+    val assert_exclusively_owned :
+      t -> (unit, 'err, serialized list) Symex.Result.t
   end
 end
 
@@ -468,7 +469,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     (** Cons/prod *)
 
     let consume (serialized : MemVal.serialized) (range : Range.t) (st : t) :
-        (t, 'err, MemVal.serialized) Symex.Result.t =
+        (t, 'err, MemVal.serialized list) Symex.Result.t =
       let replace_node = MemVal.consume serialized in
       let rebuild_parent = of_children in
       let++ _, tree = frame_range st ~replace_node ~rebuild_parent range in
@@ -531,7 +532,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
 
   let lift_miss ~offset ~len symex =
     let+? fix = symex in
-    [ MemVal { v = fix; offset; len } ]
+    List.map (fun v -> MemVal { v; offset; len }) fix
 
   let of_opt ?(mk_fixes = fun () -> Symex.return []) = function
     | None ->

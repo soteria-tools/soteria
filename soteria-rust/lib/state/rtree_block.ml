@@ -187,7 +187,7 @@ module Make (Tree_borrows : Tree_borrows.S) (Sptr : Sptr.S) = struct
 
     let lift_tb_miss x =
       let+? tb_s = x in
-      STree_borrow tb_s
+      List.map (fun s -> STree_borrow s) tb_s
 
     let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t =
       match (s, t.node) with
