@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import re
 import subprocess
 from typing import Any, Literal, Sequence, TypedDict
 
@@ -320,18 +321,17 @@ def get_intrinsics() -> dict[str, FunDecl]:
     return intrinsics
 
 
-# Generate the OCaml interface for the intrinsics stubs, along with the stub file itself;
-# returns [interfaces string, stubs string, main string]
-def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
-    class IntrinsicInfo(TypedDict):
-        name: str
-        path: str
-        doc: str
-        args: list[tuple[str, InterpType]]
-        types: list[str]
-        consts: list[str]
-        ret: InterpType
+class IntrinsicInfo(TypedDict):
+    name: str
+    path: str
+    doc: str
+    args: list[tuple[str, InterpType]]
+    types: list[str]
+    consts: list[str]
+    ret: InterpType
 
+
+def parse_intrinsics(intrinsics: dict[str, FunDecl]) -> list[IntrinsicInfo]:
     pprint("Generating OCaml interface and stubs...")
 
     def sanitize_comment(comment: str) -> str:
@@ -391,6 +391,12 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             }
         )
     intrinsics_info.sort(key=lambda x: x["name"])
+    return intrinsics_info
+
+
+# Generate the OCaml interface for the intrinsics stubs, along with the stub file itself;
+# returns [interfaces string, stubs string, main string]
+def generate_interface(intrinsics_info: list[IntrinsicInfo]) -> tuple[str, str, str]:
 
     prelude = """
     (** This file was generated with [scripts/intrinsics.py] -- do not edit it manually,
@@ -557,9 +563,61 @@ def write_ocaml_file(filename: Path, content: str) -> None:
     pprint(f"Wrote OCaml file {BOLD}{filename}{RESET}")
 
 
-if __name__ == "__main__":
+def check():
     intrinsics = get_intrinsics()
-    interface, stubs, main = generate_interface(intrinsics)
+    intrinsics_info = parse_intrinsics(intrinsics)
+    ml_folder = PWD / ".." / "lib" / "builtins"
+    impl_file = ml_folder / "intrinsics_impl.ml"
+    if not impl_file.exists():
+        pprint(
+            f"{RED}{BOLD}Error{RESET}: intrinsics_impl.ml does not exist; run the script without --check to generate it."
+        )
+        return
+
+    intrinsics_checklist = {info["name"]: False for info in intrinsics_info}
+    with open(impl_file) as f:
+        for line in f:
+            line = line.strip()
+            match = re.match(r"let\s+(\w+)\s+", line)
+            if match and (name := match.group(1)) in intrinsics_checklist:
+                intrinsics_checklist[name] = True
+
+    def to_enumeration(lst: Sequence[str], max_len: int = 80) -> list[str]:
+        if not lst:
+            return ["(none)"]
+        lines = []
+        current_line = ""
+        for item in lst:
+            item_str = f"{item}, "
+            if len(current_line) + len(item_str) > max_len:
+                lines.append(current_line.rstrip(", "))
+                current_line = item_str
+            else:
+                current_line += item_str
+        if current_line:
+            lines.append(current_line.rstrip(", "))
+        return lines
+
+    missing = [name for name, found in intrinsics_checklist.items() if not found]
+    implemented = [name for name, found in intrinsics_checklist.items() if found]
+    pprint(
+        f"{GREEN}{BOLD}OK{RESET}: Implemented intrinsics ({BOLD}{len(implemented)}{RESET}):"
+    )
+    for line in to_enumeration(implemented):
+        pprint(f"  {line}")
+    if missing:
+        pprint()
+        pprint(
+            f"{ORANGE}{BOLD}WARN{RESET}: Missing implementations ({BOLD}{len(missing)}{RESET}):"
+        )
+        for line in to_enumeration(missing):
+            pprint(f"  {line}")
+
+
+def main():
+    intrinsics = get_intrinsics()
+    intrinsics_info = parse_intrinsics(intrinsics)
+    interface, stubs, main = generate_interface(intrinsics_info)
 
     ml_folder = PWD / ".." / "lib" / "builtins"
     write_ocaml_file(ml_folder / "intrinsics_intf.ml", interface)
@@ -574,3 +632,10 @@ if __name__ == "__main__":
         end
         """
         write_ocaml_file(impl_file, impl_content)
+
+
+if __name__ == "__main__":
+    if "--check" in sys.argv:
+        check()
+    else:
+        main()
