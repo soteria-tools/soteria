@@ -252,7 +252,7 @@ let gen_bv_pair : (Sv.t * Sv.t) Gen.t =
   let open Gen in
   let* bv_size = bv_size in
   let+ direct = Gen.sized_size depth @@ gen_bv ~bv_size in
-  let smart = Eval.eval ~force:true direct in
+  let smart = Svalue.Eval.eval ~force:true direct in
   (smart, direct)
 
 (** Generate a boolean expression (direct) and its smartified version. *)
@@ -260,5 +260,5 @@ let gen_bool_pair : (Sv.t * Sv.t) Gen.t =
   let open Gen in
   let* bv_size = bv_size in
   let+ direct = Gen.sized_size depth @@ gen_bool ~bv_size in
-  let smart = Eval.eval ~force:true direct in
+  let smart = Svalue.Eval.eval ~force:true direct in
   (smart, direct)

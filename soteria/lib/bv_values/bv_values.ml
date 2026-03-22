@@ -3,7 +3,6 @@
 
 module Analyses = Analyses
 module Encoding = Encoding
-module Eval = Eval
 module Save_counter = Save_counter
 module Svalue = Svalue
 module Bv_solver = Bv_solver

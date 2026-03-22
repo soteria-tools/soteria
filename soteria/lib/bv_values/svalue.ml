@@ -481,6 +481,39 @@ module type Float = sig
   val is_nan : t -> t
 end
 
+module type Ptr = sig
+  val mk : t -> t -> t
+  val loc : t -> t
+  val null_loc : int -> t
+  val is_null_loc : t -> t
+  val loc_of_z : int -> Z.t -> t
+  val loc_of_int : int -> int -> t
+  val ofs : t -> t
+  val decompose : t -> t * t
+  val add_ofs : t -> t -> t
+  val null : int -> t
+  val is_null : t -> t
+  val is_at_null_loc : t -> t
+end
+
+module type SSeq = sig
+  val mk : seq_ty:ty -> t list -> t
+  val inner_ty : ty -> ty
+end
+
+module type Eval = sig
+  val eval_unop : Unop.t -> t -> t
+  val eval_binop : Binop.t -> t -> t -> t
+  val eval_nop : Nop.t -> t list -> t
+
+  val eval :
+    ?force:bool ->
+    ?eval_var:(t -> Var.t -> ty -> t) ->
+    ?subst:(t -> t) ->
+    t ->
+    t
+end
+
 (** {2 Booleans} *)
 
 module rec Bool : Bool = struct
@@ -2149,9 +2182,106 @@ and Float : Float = struct
   let round rm sv = Unop (FRound rm, sv) <| sv.node.ty
 end
 
+and Eval : Eval = struct
+  let eval_binop : Binop.t -> t -> t -> t = function
+    | And -> Bool.and_
+    | Or -> Bool.or_
+    | Eq -> Bool.sem_eq
+    | FEq -> Float.eq
+    | FLeq -> Float.leq
+    | FLt -> Float.lt
+    | FAdd -> Float.add
+    | FSub -> Float.sub
+    | FMul -> Float.mul
+    | FDiv -> Float.div
+    | FRem -> Float.rem
+    | Add { checked } -> BitVec.add ~checked
+    | Sub { checked } -> BitVec.sub ~checked
+    | Mul { checked } -> BitVec.mul ~checked
+    | Div signed -> BitVec.div ~signed
+    | Rem signed -> BitVec.rem ~signed
+    | Mod -> BitVec.mod_
+    | AddOvf signed -> BitVec.add_overflows ~signed
+    | SubOvf signed -> BitVec.sub_overflows ~signed
+    | MulOvf signed -> BitVec.mul_overflows ~signed
+    | Lt signed -> BitVec.lt ~signed
+    | Leq signed -> BitVec.leq ~signed
+    | BvConcat -> BitVec.concat
+    | BitAnd -> BitVec.and_
+    | BitOr -> BitVec.or_
+    | BitXor -> BitVec.xor
+    | Shl -> BitVec.shl
+    | LShr -> BitVec.lshr
+    | AShr -> BitVec.ashr
+
+  let eval_unop : Unop.t -> t -> t = function
+    | Not -> Bool.not
+    | FAbs -> Float.abs
+    | GetPtrLoc -> Ptr.loc
+    | GetPtrOfs -> Ptr.ofs
+    | BvOfBool n -> BitVec.of_bool n
+    | BvOfFloat (rounding, signed, size) ->
+        BitVec.of_float ~rounding ~signed ~size
+    | FloatOfBv (rounding, signed, fp) -> BitVec.to_float ~rounding ~signed ~fp
+    | FloatOfBvRaw _ -> BitVec.to_float_raw
+    | BvExtract (from, to_) -> BitVec.extract from to_
+    | BvExtend (signed, by) -> BitVec.extend ~signed by
+    | BvNot -> BitVec.not
+    | Neg -> BitVec.neg
+    | FIs fc -> Float.is_floatclass fc
+    | FRound rm -> Float.round rm
+
+  let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct
+
+  let rec eval ~force ~eval_var ~subst (x : t) : t =
+    let eval x =
+      let x = subst x in
+      let res = eval ~force ~eval_var ~subst x in
+      if equal res x then res else subst res
+    in
+    match x.node.kind with
+    | Var v -> eval_var x v x.node.ty
+    | Bool _ | Float _ | BitVec _ -> x
+    | Ptr (l, o) ->
+        let nl = eval l in
+        let no = eval o in
+        if (not force) && equal l nl && equal o no then x else Ptr.mk nl no
+    | Unop (unop, v) ->
+        let nv = eval v in
+        if (not force) && equal v nv then x else eval_unop unop nv
+    | Binop (binop, v1, v2) ->
+        (* TODO: for binops that may short-circuit such as || or &&, we could do
+           this without evaluating both sides, and deciding if any of either
+           side evaluates properly to e.g. true/false *)
+        let nv1 = eval v1 in
+        let nv2 = eval v2 in
+        if (not force) && equal v1 nv1 && equal v2 nv2 then x
+        else eval_binop binop nv1 nv2
+    | Nop (nop, l) ->
+        let l, changed = List.map_changed eval l in
+        if (not force) && not changed then x else eval_nop nop l
+    | Ite (guard, then_, else_) ->
+        let guard = eval guard in
+        if equal guard Bool.v_true then eval then_
+        else if equal guard Bool.v_false then eval else_
+        else Bool.ite guard (eval then_) (eval else_)
+    | Seq l ->
+        let l, changed = List.map_changed eval l in
+        if (not force) && not changed then x else SSeq.mk ~seq_ty:x.node.ty l
+
+  (** Evaluates an expression; will call [eval_var] on each [Var] encountered.
+      If evaluation errors (e.g. from a division by zero), gives up and returns
+      the original expression. The [force] flag forces evaluation to proceed
+      even if no sub-expressions changed (required if evaluating an expression
+      that has not been constructed using smart constructors). *)
+  let eval ?(force = false) ?(eval_var : t -> Var.t -> ty -> t = fun x _ _ -> x)
+      ?(subst : t -> t = Fun.id) (x : t) : t =
+    try eval ~force ~eval_var ~subst (subst x) with Division_by_zero -> x
+end
+
 (** {2 Pointers} *)
 
-module Ptr = struct
+and Ptr : Ptr = struct
   let mk l o =
     assert (size_of l.node.ty = size_of o.node.ty);
     Ptr (l, o) <| TPointer (size_of o.node.ty)
@@ -2187,7 +2317,7 @@ end
 
 (** {2 Sequences} *)
 
-module SSeq = struct
+and SSeq : SSeq = struct
   let mk ~seq_ty l = Seq l <| seq_ty
 
   let inner_ty ty =
