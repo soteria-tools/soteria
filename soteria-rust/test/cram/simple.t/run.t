@@ -188,7 +188,7 @@ Test transmutations keeping the bit-patterns the same
   => Running transmute_roundtrip::one_way_f32_u32...
   note: transmute_roundtrip::one_way_f32_u32: done in <time>, ran 2 branches
   PC 1: fis(NaN)(V|1|) /\ fis(NaN)(V|1|) /\ (bv2f[F32](V|2|) == V|1|)
-  PC 2: !(fis(NaN)(V|1|)) /\ !(fis(NaN)(V|1|)) /\ (bv2f[F32](V|2|) == V|1|)
+  PC 2: !(fis(NaN)(V|1|)) /\ (bv2f[F32](V|2|) == V|1|)
   
   => Running transmute_roundtrip::two_way_u32_i32...
   note: transmute_roundtrip::two_way_u32_i32: done in <time>, ran 1 branch
