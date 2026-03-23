@@ -28,4 +28,18 @@ module M (StateM : State.StateM.S) = struct
           ok ())
     in
     Tuple []
+
+  let hashmap_random_keys _ =
+    Encoder.nondet_valid
+      (TAdt
+         {
+           id = TTuple;
+           generics =
+             {
+               types = [ TLiteral (TUInt U64); TLiteral (TUInt U64) ];
+               regions = [];
+               const_generics = [];
+               trait_refs = [];
+             };
+         })
 end

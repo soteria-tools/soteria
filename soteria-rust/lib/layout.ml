@@ -2,7 +2,6 @@ open Charon
 open Typed.Infix
 open Typed.Syntax
 open Soteria.Symex.Compo_res
-module T = Typed.T
 module BV = Typed.BV
 open Rustsymex
 open Rustsymex.Result
@@ -385,11 +384,11 @@ let normalise (ty : Types.ty) =
 
 let size_of ty =
   let++ { size; _ } = layout_of ty in
-  (Typed.cast size :> [> T.sint ] Typed.t)
+  (Typed.cast size :> Typed.([> T.sint ] t))
 
 let align_of ty =
   let++ { align; _ } = layout_of ty in
-  (Typed.cast align :> [> T.nonzero ] Typed.t)
+  (Typed.cast align :> Typed.([> T.nonzero ] t))
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero
@@ -415,56 +414,6 @@ let max_value_z : Types.literal_type -> Z.t = function
   | TInt I8 -> Z.pred (Z.shift_left Z.one 7)
   | TInt Isize -> Z.pred (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
   | _ -> failwith "Invalid integer type for max_value_z"
-
-let size_to_uint : int -> Types.ty = function
-  | 1 -> TLiteral (TUInt U8)
-  | 2 -> TLiteral (TUInt U16)
-  | 4 -> TLiteral (TUInt U32)
-  | 8 -> TLiteral (TUInt U64)
-  | 16 -> TLiteral (TUInt U128)
-  | _ -> failwith "Invalid integer size"
-
-let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
-
-let constraints :
-    Types.literal_type -> [< T.cval ] Typed.t -> T.sbool Typed.t list = function
-  | TInt _ | TUInt _ | TFloat (F16 | F32 | F64 | F128) -> fun _ -> []
-  | TBool ->
-      fun x ->
-        let x = Typed.cast_lit TBool x in
-        [ U8.(0s) <=@ x; (x <=@ U8.(1s)) ]
-  | TChar ->
-      (* A char is a ‘Unicode scalar value’, which is any ‘Unicode code point’
-         other than a surrogate code point. This has a fixed numerical
-         definition: code points are in the range 0 to 0x10FFFF, inclusive.
-         Surrogate code points, used by UTF-16, are in the range 0xD800 to
-         0xDFFF. See https://doc.rust-lang.org/std/primitive.char.html *)
-      let codepoint_min = U32.(0s) in
-      let codepoint_max = U32.(0x10FFFFs) in
-      let surrogate_min = U32.(0xD800s) in
-      let surrogate_max = U32.(0xDFFFs) in
-      fun x ->
-        let x = Typed.cast_lit TChar x in
-        [
-          codepoint_min <=@ x;
-          x <=@ codepoint_max;
-          Typed.not (surrogate_min <=@ x &&@ (x <=@ surrogate_max));
-        ]
-
-let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
-  let open Rustsymex.Syntax in
-  let rty =
-    match ty with
-    | TInt _ | TUInt _ | TBool | TChar -> Typed.t_int (size_of_literal_ty ty * 8)
-    | TFloat F16 -> Typed.t_f16
-    | TFloat F32 -> Typed.t_f32
-    | TFloat F64 -> Typed.t_f64
-    | TFloat F128 -> Typed.t_f128
-  in
-  let constrs = constraints ty in
-  let* v = Rustsymex.nondet rty in
-  let+ () = Rustsymex.assume (constrs v) in
-  v
 
 let rec is_unsafe_cell : Types.ty -> bool = function
   | TAdt { id = TTuple; generics = { types; _ } } ->
