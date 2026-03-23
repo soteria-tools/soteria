@@ -361,10 +361,7 @@ module Make (StateImpl : State.S) = struct
             f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
               Expressions.pp_field_proj_kind kind Types.pp_field_id field
               Sptr.pp ptr Sptr.pp ptr');
-        let* layout = Layout.layout_of place.ty in
-        if layout.uninhabited then error `RefToUninhabited
-        else if Layout.is_dst place.ty then ok (ptr', meta)
-        else ok (ptr', Thin)
+        if Layout.is_dst place.ty then ok (ptr', meta) else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
         let* len =
@@ -528,15 +525,15 @@ module Make (StateImpl : State.S) = struct
   and eval_operand (op : Expressions.operand) =
     match op with
     | Constant c -> resolve_constant c
-    | Move loc | Copy loc ->
+    | Move place | Copy place ->
         (* I don't think the operand being [Move] matters at all, aside from
            function calls. See:
            https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
-        let* layout = Layout.layout_of loc.ty in
-        if layout.uninhabited then error `RefToUninhabited
+        let* layout = Layout.layout_of place.ty in
+        if layout.uninhabited then error (`RefToUninhabited place.ty)
         else
-          let* ptr = resolve_place_lazy loc in
-          load_lazy ptr loc.ty
+          let* ptr = resolve_place_lazy place in
+          load_lazy ptr place.ty
 
   and eval_operand_list = map_list ~f:eval_operand
 
@@ -586,7 +583,7 @@ module Make (StateImpl : State.S) = struct
             | (TRef _ | TRawPtr _ | TFnPtr _), TLiteral to_ty ->
                 (* expose provenance *)
                 let v, _ = as_ptr v in
-                let* v' = Sptr.expose v in
+                let+ v' = Sptr.expose v in
                 Encoder.cast_literal ~from_ty:(TUInt Usize) ~to_ty v'
             | TLiteral _, (TRef _ | TRawPtr _ | TFnPtr _) ->
                 (* with provenance *)
@@ -604,14 +601,14 @@ module Make (StateImpl : State.S) = struct
         | Cast (CastTransmute (from_ty, to_ty)) ->
             Core.transmute ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
-            let* v =
+            let+ v =
               match v with
               | Int i -> ok (i :> T.cval Typed.t)
               | Float f -> ok (f :> T.cval Typed.t)
               | _ -> not_impl "Invalid value for CastScalar"
             in
             Encoder.cast_literal ~from_ty ~to_ty v
-        | Cast (CastUnsize (_, _, meta)) ->
+        | Cast (CastUnsize (from_ty, to_ty, meta)) ->
             let update_meta prev =
               match meta with
               | MetaLength length ->
@@ -641,8 +638,8 @@ module Make (StateImpl : State.S) = struct
                       in
                       VTable vt')
               | MetaUnknown ->
-                  Fmt.kstr not_impl "Unsupported metadata in CastUnsize: %a"
-                    Types.pp_unsizing_metadata meta
+                  Fmt.kstr not_impl "Unknown metadata for %a -> %a" pp_ty
+                    from_ty pp_ty to_ty
             in
             let rec with_ptr_meta : rust_val -> rust_val t = function
               | Ptr (v, prev) ->
@@ -966,8 +963,8 @@ module Make (StateImpl : State.S) = struct
         in
         ok ()
     | PlaceMention place ->
-        let* ptr = resolve_place place in
-        State.check_non_dangling ptr place.ty
+        let+ _ = resolve_place place in
+        ()
     | SetDiscriminant (_, _) ->
         not_impl "Unsupported statement: SetDiscriminant"
 

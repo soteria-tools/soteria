@@ -134,7 +134,16 @@ module M (StateM : State.StateM.S) = struct
         BV.not_bool (cast res)
     | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
         let* meta_eq = eval_meta_eq meta_l meta_r in
-        ok (BV.of_bool (meta_eq &&@ Sptr.sem_eq l r))
+        let+ ptr_eq =
+          if%sure Sptr.is_same_loc l r then ok (Sptr.sem_eq l r)
+          else
+            (* Pointer comparison just uses the address! See
+               https://doc.rust-lang.org/std/ptr/index.html#provenance *)
+            let* l = Sptr.decay l in
+            let+ r = Sptr.decay r in
+            l ==@ r
+        in
+        BV.of_bool (meta_eq &&@ ptr_eq)
     | Eq, Ptr (p, _), Int v | Eq, Int v, Ptr (p, _) ->
         let v = cast_i Usize v in
         if%sat v ==@ Usize.(0s) then ok (BV.of_bool (Sptr.is_at_null_loc p))

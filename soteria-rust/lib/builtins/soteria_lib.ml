@@ -54,7 +54,7 @@ module M (StateM : State.StateM.S) = struct
 
   let nondet_bytes (fun_sig : Charon.Types.fun_sig) _ =
     let* output = Poly.subst_ty fun_sig.output in
-    Encoder.nondet output
+    Encoder.nondet_valid output
 
   let panic ?msg args =
     let* msg =

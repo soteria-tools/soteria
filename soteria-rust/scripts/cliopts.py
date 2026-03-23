@@ -39,6 +39,7 @@ class CliOpts(TypedDict):
     timeout: Optional[int]
     test_folder: Optional[Path]
     test_file: Optional[Path]
+    output_file: Optional[Path]
     categorise: TestCategoriser
 
 
@@ -69,6 +70,7 @@ def parse_flags() -> CliOpts:
         "timeout": None,
         "test_folder": None,
         "test_file": None,
+        "output_file": None,
         "categorise": categorise_rusteria,
     }
 
@@ -171,6 +173,8 @@ def parse_flags() -> CliOpts:
             with_kani = True
         elif arg == "--charon":
             with_charon = True
+        elif arg == "-o" or arg == "--output":
+            opts["output_file"] = Path(pop()).resolve()
 
         else:
             raise ArgError(f"{RED}Unknown flag: {arg}")
@@ -200,7 +204,7 @@ def opts_for_rusteria(
         "tool": "Rusteria",
         "tool_cmd": [
             "soteria-rust",
-            "rustc",
+            "exec",
             "--log-compilation",
             "--compact",
             "--no-color",

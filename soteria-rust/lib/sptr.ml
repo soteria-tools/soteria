@@ -96,18 +96,18 @@ module DecayMap : DecayMapS = struct
                in
                Result.ok address
            | None ->
-               let* addr = nondet (Typed.t_usize ()) in
+               let* address = nondet (Typed.t_usize ()) in
                let isize_max = Layout.max_value_z (TInt Isize) in
                let* () =
                  assume
                    [
-                     (addr %@ align ==@ Usize.(0s));
-                     align <=@ addr;
-                     addr <@ Typed.BitVec.usize isize_max -!@ size;
+                     (address %@ align ==@ Usize.(0s));
+                     align <=@ address;
+                     address <@ Typed.BitVec.usize isize_max -!@ size;
                    ]
                in
-               let* () = set_state (Some { address = addr; exposed = false }) in
-               Result.ok addr)
+               let* () = set_state (Some { address; exposed = expose }) in
+               Result.ok address)
       in
       Soteria.Symex.Compo_res.get_ok res
 
@@ -158,7 +158,12 @@ module type S = sig
   val null_ptr : unit -> t
   val null_ptr_of : [< sint ] Typed.t -> t
 
-  (** Pointer equality *)
+  (** Pointer equality. This comparison is structural, i.e. it is aware of
+      provenance.
+
+      In other words, given [addr = decay ptr] and [ptr' = of_exposed addr],
+      [sem_eq ptr ptr'] will be false, even though they would have the same
+      address, as [ptr] has provenance and [ptr'] does not. *)
   val sem_eq : t -> t -> sbool Typed.t
 
   (** If this pointer is at a null location, i.e. has no provenance *)
@@ -173,6 +178,11 @@ module type S = sig
 
   (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
+
+  (** Generates a nondeterministic pointer, that is valid for accesses to the
+      given type. The location of the pointer is nondeterministic; it could
+      point to any allocation. *)
+  val nondet : Types.ty -> (t, [> Error.t ], 'a) Result.t
 
   (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
       [off], interpreting [off] as a [signed] integer. [ty] defaults to u8. May
@@ -208,8 +218,8 @@ module type S = sig
   val as_id : t -> [> sint ] Typed.t
 
   (** Returns a symbolic boolean to check whether this pointer has the given
-      alignment *)
-  val is_aligned : [< nonzero ] Typed.t -> t -> [> sbool ] Typed.t
+      alignment, along with the error to raise otherwise. *)
+  val is_aligned : nonzero Typed.t -> t -> [> sbool ] Typed.t * Error.t
 
   (** Get the allocation info for this pointer: its size and alignment *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
@@ -326,7 +336,20 @@ module ArithPtr : S with type t = arithptr_t = struct
     let align =
       Typed.ite (Typed.Ptr.is_null_loc loc) exp_align (Typed.cast align)
     in
-    ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
+    let is_aligned =
+      ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
+    in
+    (is_aligned, `MisalignedPointer (exp_align, align, ofs))
+
+  let nondet ty =
+    let** layout = Layout.layout_of ty in
+    let* loc = nondet (Typed.t_loc ()) in
+    let* ofs = nondet (Typed.t_usize ()) in
+    let ptr = Typed.Ptr.mk loc ofs in
+    let ptr = { ptr; tag = None; align = layout.align; size = layout.size } in
+    let aligned, _ = is_aligned layout.align ptr in
+    let* () = assume [ aligned ] in
+    Result.ok ptr
 
   let iter_vars { ptr; align; size; tag = _ } f =
     Typed.iter_vars ptr f;

@@ -1,8 +1,7 @@
-module Stats = Soteria.Stats
 open Soteria.Terminal.Diagnostic
 open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap
-open Analyses.Common
+open Analyses.Util
 
 let wrap_step name f =
   Fmt.pr "%a...@?" (pp_style `Bold) name;
@@ -17,9 +16,9 @@ let wrap_step name f =
     Fmt.pr " errored@.";
     Printexc.raise_with_backtrace e bt
 
-let with_exn_and_config config f =
+let with_exn_and_config mode config f =
   try
-    Config.set_and_lock_global config;
+    Config.set_and_lock_global mode config;
     let outcome = f () in
     Analyses.Outcome.exit outcome
   with
@@ -32,11 +31,11 @@ let with_exn_and_config config f =
       fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err
 
 let exec_wpst config target =
-  let@ () = with_exn_and_config config in
-  let compile () = Frontend.parse_ullbc target in
+  let@ () = with_exn_and_config Whole_program config in
+  let compile () = Frontend.parse_ullbc_with_entry_points target in
   wrap_step "Compiling" compile |> Analyses.Wpst.exec
 
 let build_plugins config =
-  let@ () = with_exn_and_config config in
+  let@ () = with_exn_and_config Whole_program config in
   wrap_step "Compiling plugins" Frontend.compile_all_plugins;
   Ok
