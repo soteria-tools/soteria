@@ -93,9 +93,6 @@ module Decoder
       module SM :
         Soteria.Sym_states.State_monad.S
           with type 'a Symex.t = 'a DecayMapMonad.t
-           and type 'a Symex.Value.t = 'a Typed.t
-           and type 'a Symex.Value.ty = 'a Typed.ty
-           and type Symex.Value.sbool = Typed.sbool
 
       type fix
     end) =

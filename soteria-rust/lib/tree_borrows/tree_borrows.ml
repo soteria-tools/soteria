@@ -1,3 +1,2 @@
-module type S = Tree_borrows_intf.S
-
-module Concrete : S = Concrete
+module M = Tree_borrows_intf.M
+module Concrete = Concrete

@@ -8,7 +8,10 @@ open Charon
 open Common
 open Sptr
 
-module Make (Tree_borrows : Tree_borrows.S) = struct
+module Make (Tree_borrows : (Sym : Soteria.Symex.Base) -> Tree_borrows.M(Sym).S) =
+struct
+  module Tree_borrows = Tree_borrows (DecayMapMonad)
+
   (* Pointer implementation *)
 
   module Sptr_base = struct
@@ -162,23 +165,19 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
   end
 
   module Block = struct
-    type t = Tree_block.t option * Tree_borrows.t
+    type t = Tree_block.t option * Tree_borrows.t option
     [@@deriving show { with_path = false }]
 
-    let of_opt = function
-      | None -> (None, Tree_borrows.ub_state)
-      | Some (b1, b2) -> (b1, b2)
+    let of_opt = function None -> (None, None) | Some (b1, b2) -> (b1, b2)
 
-    let to_opt : t -> t option =
-      (* FIXME: This is off for compositionality, there is no zero in TBs
-         yet. *)
-      function
-      | None, _b -> None
+    let to_opt : t -> t option = function
+      | None, None -> None
       | b1, b2 -> Some (b1, b2)
 
-    type serialized = Tree_block.serialized
+    type serialized =
+      | Block of Tree_block.serialized
+      | Borrow of Tree_borrows.serialized
     [@@deriving show { with_path = false }]
-    (* TODO: serialize Tree_borrows as well *)
 
     module SM =
       Soteria.Sym_states.State_monad.Make
@@ -190,22 +189,31 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
     open SM
     open Syntax
 
+    let lift_fix_borrow s = Borrow s
+    let lift_fix_block s = Block s
+
+    let lift_fix_borrow_r r =
+      Soteria.Symex.Compo_res.map_missing r (List.map lift_fix_borrow)
+
+    let lift_fix_block_r r =
+      Soteria.Symex.Compo_res.map_missing r (List.map lift_fix_block)
+
     let with_tree_block (f : ('a, 'err, 'fix) Tree_block.SM.Result.t) :
-        ('a, 'err, 'fix) Result.t =
+        ('a, 'err, serialized list) Result.t =
       let* t_opt = SM.get_state () in
       let tree, tb = of_opt t_opt in
       let*^ v, tree = f tree in
       let+ () = SM.set_state (to_opt (tree, tb)) in
-      v
+      lift_fix_block_r v
 
     let with_tree_block_read_tb
-        (f : Tree_borrows.t -> ('a, 'err, 'fix) Tree_block.SM.Result.t) :
-        ('a, 'err, 'fix) SM.Result.t =
+        (f : Tree_borrows.t option -> ('a, 'err, 'fix) Tree_block.SM.Result.t) :
+        ('a, 'err, serialized list) SM.Result.t =
       let* t_opt = SM.get_state () in
       let tree, tb = of_opt t_opt in
       let*^ v, tree = f tb tree in
       let+ () = SM.set_state (to_opt (tree, tb)) in
-      v
+      lift_fix_block_r v
 
     (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
         being reborrowed. *)
@@ -229,7 +237,10 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
       in
       let* t_opt = SM.get_state () in
       let block, tb = of_opt t_opt in
-      let tb', tag = Tree_borrows.add_child ~parent:tag ~state ?protector tb in
+      let*^ res, tb' =
+        Tree_borrows.add_child ~parent:tag ~state ?protector tb
+      in
+      let** tag = return (lift_fix_borrow_r res) in
       let ptr' = { ptr with tag = Some tag } in
       L.debug (fun m ->
           m "%s pointer %a -> %a (%a)"
@@ -244,42 +255,55 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
           let+ () = SM.set_state (to_opt (block, tb')) in
           Ok (ptr', meta)
         else
-          let*^ res, block' = Tree_block.protect ofs size tag tb' block in
-          match res with
-          | Ok () ->
-              let+ () = SM.set_state (to_opt (block', tb')) in
-              Ok (ptr', meta)
-          | Error e -> Result.error e
-          | Missing f -> Result.miss f
+          let*^ res, block' = Tree_block.tb_access ofs size tag tb' block in
+          let** () = return (lift_fix_block_r res) in
+          let+ () = SM.set_state (to_opt (block', tb')) in
+          Ok (ptr', meta)
 
     let unprotect ofs tag size =
       let* t_opt = SM.get_state () in
       let block, tb = of_opt t_opt in
-      let tb' = Tree_borrows.unprotect tag tb in
+      let*^ res, tb' = Tree_borrows.unprotect tag tb in
+      let** () = return (lift_fix_borrow_r res) in
       let** (), block' =
         if%sat size ==@ Usize.(0s) then SM.Result.ok ((), block)
         else
           let*^ res, block' = Tree_block.unprotect ofs size tag tb' block in
-          match res with
-          | Ok () -> Result.ok ((), block')
-          | Error e -> Result.error e
-          | Missing f -> Result.miss f
+          let++ () = return (lift_fix_block_r res) in
+          ((), block')
       in
       SM.Result.set_state (to_opt (block', tb'))
 
     let assert_exclusively_owned t_opt =
+      let open DecayMapMonad.Syntax in
       let a, _ = of_opt t_opt in
-      Tree_block.assert_exclusively_owned a
+      let+ res = Tree_block.assert_exclusively_owned a in
+      lift_fix_block_r res
 
-    let serialize (x, _) = Option.fold ~none:[] ~some:Tree_block.serialize x
-    let subst_serialized f a = Tree_block.subst_serialized f a
-    let iter_vars_serialized f a = Tree_block.iter_vars_serialized f a
+    let serialize (block, borrow) =
+      let s_block = Option.fold ~none:[] ~some:Tree_block.serialize block in
+      let s_borrow = Option.fold ~none:[] ~some:Tree_borrows.serialize borrow in
+      List.map lift_fix_block s_block @ List.map lift_fix_borrow s_borrow
+
+    let subst_serialized f = function
+      | Block s -> Block (Tree_block.subst_serialized f s)
+      | Borrow s -> Borrow (Tree_borrows.subst_serialized f s)
+
+    let iter_vars_serialized s f =
+      match s with
+      | Block s -> Tree_block.iter_vars_serialized s f
+      | Borrow s -> Tree_borrows.iter_vars_serialized s f
 
     let produce s =
       let* st = get_state () in
       let st, tb = of_opt st in
-      let*^ (), st' = Tree_block.produce s st in
-      set_state (to_opt (st', tb))
+      match s with
+      | Block s ->
+          let*^ (), st' = Tree_block.produce s st in
+          set_state (to_opt (st', tb))
+      | Borrow s ->
+          let*^ (), tb' = Tree_borrows.produce s tb in
+          set_state (to_opt (st, tb'))
   end
 
   module Freeable_block =
@@ -299,7 +323,7 @@ module Make (Tree_borrows : Tree_borrows.S) = struct
       let trace = Trace.move_to_opt span trace in
       let info : Meta.t = { align; size; kind; trace; tb_root = tag } in
       let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
-      (({ node = Alive (Some block, tb); info = Some info } : t), tag)
+      (({ node = Alive (Some block, Some tb); info = Some info } : t), tag)
   end
 
   module Heap = struct

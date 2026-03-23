@@ -1,93 +1,112 @@
-open Rustsymex
+module M (Symex : Soteria.Symex.Base) = struct
+  module type S = sig
+    (** {2 Tree Borrows trees (the general structure)} *)
 
-module type S = sig
-  (** {2 Tree Borrows trees (the general structure)} *)
+    type tag
+    type access = Read | Write
 
-  type tag
-  type access = Read | Write
+    type state =
+      | Reserved of bool
+      | Unique
+      | Frozen
+      | ReservedIM
+      | Cell
+      | Disabled
+      | UB
 
-  type state =
-    | Reserved of bool
-    | Unique
-    | Frozen
-    | ReservedIM
-    | Cell
-    | Disabled
-    | UB
+    type protector = Strong | Weak
+    type t
 
-  type protector = Strong | Weak
-  type t
+    val pp : Format.formatter -> t -> unit
+    val pp_tag : Format.formatter -> tag -> unit
+    val pp_state : Format.formatter -> state -> unit
 
-  val pp : Format.formatter -> t -> unit
-  val pp_tag : Format.formatter -> tag -> unit
-  val pp_state : Format.formatter -> state -> unit
+    module SM :
+      Soteria.Sym_states.State_monad.S
+        with type 'a Symex.t = 'a Symex.t
+         and type st = t option
 
-  (** {2 Tree Borrows state (the per-byte information)} *)
+    (** {2 Tree Borrows state (the per-byte information)} *)
 
-  type tb_state
+    type tb_state
 
-  val pp_tb_state : Format.formatter -> tb_state -> unit
+    val pp_tb_state : Format.formatter -> tb_state -> unit
 
-  (* Compositionality *)
+    module SM_St :
+      Soteria.Sym_states.State_monad.S
+        with type 'a Symex.t = 'a Symex.t
+         and type st = tb_state option
 
-  type serialized
+    (* Compositionality *)
 
-  val pp_serialized : Format.formatter -> serialized -> unit
-  val serialize : t -> serialized Seq.t
+    type serialized
 
-  val subst_serialized :
-    (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
+    val pp_serialized : Format.formatter -> serialized -> unit
+    val serialize : t -> serialized list
 
-  val iter_vars_serialized :
-    serialized -> (Svalue.Var.t * 'a Typed.ty -> unit) -> unit
+    val subst_serialized :
+      (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
 
-  type serialized_state
+    val iter_vars_serialized :
+      serialized -> (Svalue.Var.t * 'a Typed.ty -> unit) -> unit
 
-  val pp_serialized_state : Format.formatter -> serialized_state -> unit
-  val serialize_state : tb_state -> serialized_state Seq.t
+    val consume : serialized -> t -> (t, 'err, serialized list) Symex.Result.t
+    val produce : serialized -> unit SM.t
 
-  val subst_serialized_state :
-    (Svalue.Var.t -> Svalue.Var.t) -> serialized_state -> serialized_state
+    type serialized_state
 
-  val iter_vars_serialized_state :
-    serialized_state -> (Svalue.Var.t * 'a Typed.ty -> unit) -> unit
+    val pp_serialized_state : Format.formatter -> serialized_state -> unit
+    val serialize_state : tb_state -> serialized_state list
 
-  val consume_state :
-    serialized_state ->
-    tb_state ->
-    (tb_state, 'err, serialized_state list) Rustsymex.Result.t
+    val subst_serialized_state :
+      (Svalue.Var.t -> Svalue.Var.t) -> serialized_state -> serialized_state
 
-  val produce_state : serialized_state -> tb_state -> tb_state Rustsymex.t
+    val iter_vars_serialized_state :
+      serialized_state -> (Svalue.Var.t * 'a Typed.ty -> unit) -> unit
 
-  (** {2 Operations on the structure} *)
+    val consume_state :
+      serialized_state ->
+      tb_state ->
+      (tb_state, 'err, serialized_state list) Symex.Result.t
 
-  val fresh_tag : unit -> tag
-  val zero : tag
-  val ub_state : t
-  val init : state:state -> unit -> t * tag
+    val produce_state : serialized_state -> tb_state -> tb_state Symex.t
 
-  val add_child :
-    parent:tag -> ?protector:protector -> state:state -> t -> t * tag
+    (** {2 Operations on the structure} *)
 
-  val unprotect : tag -> t -> t
-  val strong_protector_exists : t -> bool
+    val init : state:state -> unit -> t * tag
 
-  (** {2 Operations on the state} *)
+    val add_child :
+      parent:tag ->
+      ?protector:protector ->
+      state:state ->
+      (tag, 'e, serialized list) SM.Result.t
 
-  val empty_state : tb_state
-  val is_empty_state : tb_state -> bool
-  val equal_state : tb_state -> tb_state -> bool
-  val set_protector : protected:bool -> tag -> t -> tb_state -> tb_state
+    val unprotect : tag -> (unit, 'e, serialized list) SM.Result.t
+    val strong_protector_exists : t option -> bool
 
-  (** [access root accessed e state]: Update all nodes in the mapping [state]
-      for the tree rooted at [root] with an event [e], that happened at
-      [accessed]. *)
-  val access :
-    tag ->
-    access ->
-    t ->
-    tb_state ->
-    (tb_state, [> `AliasingError ], 'm) Result.t
+    (** {2 Operations on the state} *)
 
-  val merge : tb_state -> tb_state -> tb_state
+    val empty_state : tb_state
+    val is_empty_state : tb_state -> bool
+    val equal_state : tb_state -> tb_state -> bool
+
+    val set_protector :
+      protected:bool ->
+      tag ->
+      t option ->
+      tb_state ->
+      (tb_state, 'e, serialized list) Symex.Result.t
+
+    (** [access root accessed e state]: Update all nodes in the mapping [state]
+        for the tree rooted at [root] with an event [e], that happened at
+        [accessed]. *)
+    val access :
+      tag ->
+      access ->
+      t option ->
+      tb_state ->
+      (tb_state, [> `AliasingError ], serialized list) Symex.Result.t
+
+    val merge : tb_state -> tb_state -> tb_state
+  end
 end
