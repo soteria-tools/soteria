@@ -56,6 +56,7 @@ let get sym =
 
 let produce serialized : unit SM.t =
   let open SM.Syntax in
+  let* () = SM.assume [ Typed.not (Typed.Ptr.is_null_loc (snd serialized)) ] in
   let* () = produce serialized in
   let* state_after_prod = SM.get_state () in
   (* Bit heavy-handed but we just massively assume the well-formedness *)

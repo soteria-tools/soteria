@@ -30,7 +30,7 @@ module Heap =
     (Block)
 
 type t = { heap : Heap.t option; globs : Globs.t option }
-[@@deriving show { with_path = false }, sym_state_base { symex = Csymex }]
+[@@deriving sym_state_base { symex = Csymex }]
 
 open SM.Syntax
 
@@ -190,17 +190,13 @@ let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, serialized list) SM.Result.t
   else SM.Result.error `InvalidFree
 
 let produce (serialized : serialized) : unit SM.t =
-  L.debug (fun m -> m "Producing: %a" pp_serialized serialized);
   let* st_opt = SM.get_state () in
   let { heap; globs } = of_opt st_opt in
-
   match serialized with
   | Ser_heap sh ->
-      let* () = SM.assume [ Typed.not (Typed.Ptr.is_null_loc (fst sh)) ] in
       let*^ (), heap = Heap.produce sh heap in
       SM.set_state (to_opt { heap; globs })
   | Ser_globs sg ->
-      let* () = SM.assume [ Typed.not (Typed.Ptr.is_null_loc (snd sg)) ] in
       let*^ (), globs = Globs.produce sg globs in
       SM.set_state (to_opt { heap; globs })
 
