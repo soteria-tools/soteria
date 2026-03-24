@@ -1,11 +1,14 @@
 open Ppxlib
+open Ast_builder.Default
 
 module Sym_state_base = struct
   type field = { name : string; mod_path : Longident.t; loc : Location.t }
 
   let lid ~loc txt = { loc; txt }
   let lident ~loc s = lid ~loc (Longident.Lident s)
-  let strip_t = function Longident.Ldot (path, "t") -> Some path | _ -> None
+  let liddot ~loc base name = lid ~loc (Longident.Ldot (base, name))
+  let exprdot ~loc base name = pexp_ident ~loc (liddot ~loc base name)
+  let err ~loc msg = Location.raise_errorf ~loc "[@@deriving sym_state] %s" msg
 
   let module_of_core_type = function
     | {
@@ -15,7 +18,7 @@ module Sym_state_base = struct
         _;
       } -> (
         match ptyp_desc with
-        | Ptyp_constr ({ txt; _ }, []) -> strip_t txt
+        | Ptyp_constr ({ txt = Ldot (path, "t"); _ }, []) -> Some path
         | _ -> None)
     | _ -> None
 
@@ -23,14 +26,11 @@ module Sym_state_base = struct
     match module_of_core_type ct with
     | Some m -> m
     | None ->
-        Location.raise_errorf ~loc:ct.ptyp_loc
-          "[@@deriving sym_state_base] expects record fields of type \
-           <Module>.t option"
+        err ~loc:ct.ptyp_loc "expects record fields of type <Module>.t option"
 
   let fields_of_td_exn (td : type_declaration) =
     if td.ptype_name.txt <> "t" then
-      Location.raise_errorf ~loc:td.ptype_name.loc
-        "[@@deriving sym_state_base] only supports type named 't'";
+      err ~loc:td.ptype_name.loc "only supports type named 't'";
     match td.ptype_kind with
     | Ptype_record labels ->
         List.map
@@ -41,79 +41,55 @@ module Sym_state_base = struct
               loc = ld.pld_loc;
             })
           labels
-    | _ ->
-        Location.raise_errorf ~loc:td.ptype_loc
-          "[@@deriving sym_state_base] only supports record types"
-
-  let module_call ~loc mod_path fn args =
-    let open Ast_builder.Default in
-    let id = pexp_ident ~loc (lid ~loc (Longident.Ldot (mod_path, fn))) in
-    List.fold_left
-      (fun acc arg -> pexp_apply ~loc acc [ (Nolabel, arg) ])
-      id args
+    | _ -> err ~loc:td.ptype_loc "only supports record types"
 
   let constr_name name = "Ser_" ^ name
   let fn_with_name name = "with_" ^ name
   let fn_with_sym_name name = "with_" ^ name ^ "_sym"
 
   let record_pat ~loc fields =
-    Ast_builder.Default.ppat_record ~loc
+    ppat_record ~loc
       (List.map
-         (fun (f : field) -> (lident ~loc f.name, Ast_builder.Default.pvar ~loc f.name))
+         (fun (f : field) -> (lident ~loc f.name, pvar ~loc f.name))
          fields)
       Closed
 
   let record_expr ~loc fields =
-    Ast_builder.Default.pexp_record ~loc
+    pexp_record ~loc
       (List.map
-         (fun (f : field) -> (lident ~loc f.name, Ast_builder.Default.evar ~loc f.name))
+         (fun (f : field) -> (lident ~loc f.name, evar ~loc f.name))
          fields)
       None
 
   let serialized_ctor_decl ~loc (field : field) =
-    let open Ast_builder.Default in
     let arg_ty =
-      ptyp_constr ~loc
-        (lid ~loc (Longident.Ldot (field.mod_path, "serialized")))
-        []
+      ptyp_constr ~loc (liddot ~loc field.mod_path "serialized") []
     in
     constructor_declaration ~loc
       ~name:{ loc; txt = constr_name field.name }
       ~args:(Pcstr_tuple [ arg_ty ]) ~res:None
 
   let serialized_type_item ~loc fields =
-    let open Ast_builder.Default in
     let td =
       type_declaration ~loc
         ~name:{ loc; txt = "serialized" }
         ~params:[] ~cstrs:[]
         ~kind:(Ptype_variant (List.map (serialized_ctor_decl ~loc) fields))
-        ~private_:Public
-        ~manifest:
-          (Some
-             (ptyp_constr ~loc
-                (lid ~loc
-                   (Longident.Ldot (Longident.Lident "State_intf", "serialized")))
-                []))
+        ~private_:Public ~manifest:None
     in
     pstr_type ~loc Recursive [ td ]
 
   let pp_serialized_item ~loc fields =
-    let open Ast_builder.Default in
     let cases =
       List.map
         (fun (field : field) ->
-          let v = pvar ~loc "v" in
           let ctor = lident ~loc (constr_name field.name) in
-          let lhs = ppat_construct ~loc ctor (Some v) in
+          let lhs = ppat_construct ~loc ctor (Some [%pat? v]) in
           let rhs =
             [%expr
-              Fmt.pf ft "@[<2>(%s@ %a)@]"
+              Fmt.pf ft "(@[<2>%s@ %a@])"
                 [%e estring ~loc (constr_name field.name)]
-                [%e
-                  pexp_ident ~loc
-                    (lid ~loc
-                       (Longident.Ldot (field.mod_path, "pp_serialized")))]
+                [%e exprdot ~loc field.mod_path "pp_serialized"]
                 v]
           in
           case ~lhs ~guard:None ~rhs)
@@ -125,16 +101,13 @@ module Sym_state_base = struct
     [%stri let show_serialized s = Format.asprintf "%a" pp_serialized s]
 
   let pp_item ~loc fields =
-    let open Ast_builder.Default in
     let field_printer (f : field) =
       let field_expr = pexp_field ~loc [%expr x] (lident ~loc f.name) in
       [%expr
         Format.fprintf fmt "@[%s =@ " [%e estring ~loc f.name];
         (match [%e field_expr] with
         | None -> Format.pp_print_string fmt "empty"
-        | Some v ->
-            [%e pexp_ident ~loc (lid ~loc (Longident.Ldot (f.mod_path, "pp")))]
-              fmt v);
+        | Some v -> [%e exprdot ~loc f.mod_path "pp"] fmt v);
         Format.fprintf fmt "@]"]
     in
     let body =
@@ -157,32 +130,21 @@ module Sym_state_base = struct
 
   let show_item ~loc = [%stri let show x = Format.asprintf "%a" pp x]
 
-  let mk_none_pat ~loc =
-    Ast_builder.Default.ppat_construct ~loc (lident ~loc "None") None
-
-  let mk_none_expr ~loc =
-    Ast_builder.Default.pexp_construct ~loc (lident ~loc "None") None
-
-  let mk_some_expr ~loc e =
-    Ast_builder.Default.pexp_construct ~loc (lident ~loc "Some") (Some e)
-
   let of_opt_item ~loc fields =
-    let open Ast_builder.Default in
     let default_record =
       pexp_record ~loc
         (List.map
-           (fun (f : field) -> (lident ~loc f.name, mk_none_expr ~loc))
+           (fun (f : field) -> (lident ~loc f.name, [%expr None]))
            fields)
         None
     in
     [%stri let of_opt = function None -> [%e default_record] | Some v -> v]
 
   let to_opt_item ~loc fields =
-    let open Ast_builder.Default in
     let all_none_pat =
       ppat_record ~loc
         (List.map
-           (fun (f : field) -> (lident ~loc f.name, mk_none_pat ~loc))
+           (fun (f : field) -> (lident ~loc f.name, [%pat? None]))
            fields)
         Closed
     in
@@ -191,48 +153,23 @@ module Sym_state_base = struct
   let empty_item ~loc = [%stri let empty = None]
 
   let sm_item ~loc symex_module =
-    let open Ast_builder.Default in
-    let make_path =
-      lid ~loc
-        (Longident.Ldot
-           ( Longident.Ldot
-               ( Longident.Ldot (Longident.Lident "Soteria", "Sym_states"),
-                 "State_monad" ),
-             "Make" ))
-    in
-    let state_mod =
-      pmod_structure ~loc
-        [
-          pstr_type ~loc Nonrecursive
-            [
-              type_declaration ~loc ~name:{ loc; txt = "t" } ~params:[]
-                ~cstrs:[] ~kind:Ptype_abstract ~private_:Public
-                ~manifest:(Some [%type: t option]);
-            ];
-        ]
-    in
-    pstr_module ~loc
-      (module_binding ~loc ~name:{ loc; txt = Some "SM" }
-         ~expr:
-           (pmod_apply ~loc
-              (pmod_apply ~loc
-                 (pmod_ident ~loc make_path)
-                 (pmod_ident ~loc (lid ~loc symex_module)))
-              state_mod))
+    [%stri
+      module SM =
+        Soteria.Sym_states.State_monad.Make
+          ([%m
+          pmod_ident ~loc (lid ~loc symex_module)])
+          (struct
+            type nonrec t = t option
+          end)]
 
   let serialize_item ~loc fields =
-    let open Ast_builder.Default in
+    (*
+     * let serialize (st : t) : serialized list =
+     *   (List.map (fun v -> Ser_field1 v) (Module1.serialize st.field1))
+     *   @ (List.map (fun v -> Ser_field2 v) (Module2.serialize st.field2))
+     *)
     let per_field (f : field) =
       let field_expr = pexp_field ~loc [%expr st] (lident ~loc f.name) in
-      let fold_expr =
-        [%expr
-          Option.fold ~none:[]
-            ~some:
-              [%e
-                pexp_ident ~loc
-                  (lid ~loc (Longident.Ldot (f.mod_path, "serialize")))]
-            [%e field_expr]]
-      in
       [%expr
         List.map
           (fun v ->
@@ -240,7 +177,9 @@ module Sym_state_base = struct
               pexp_construct ~loc
                 (lident ~loc (constr_name f.name))
                 (Some [%expr v])])
-          [%e fold_expr]]
+          (Option.fold ~none:[]
+             ~some:[%e exprdot ~loc f.mod_path "serialize"]
+             [%e field_expr])]
     in
     let body =
       match List.map per_field fields with
@@ -251,19 +190,20 @@ module Sym_state_base = struct
     [%stri let serialize (st : t) : serialized list = [%e body]]
 
   let subst_serialized_item ~loc fields =
-    let open Ast_builder.Default in
+    (*
+     * let subst_serialized subst_var (serialized : serialized) : serialized =
+     *   match serialized with
+     *   | Ser_field1 v -> Ser_field1 (subst_serialized subst_var v)
+     *   | Ser_field2 v -> Ser_field2 (subst_serialized subst_var v)
+     *)
     let cases =
       List.map
         (fun (f : field) ->
           let ctor = lident ~loc (constr_name f.name) in
-          let lhs = ppat_construct ~loc ctor (Some (pvar ~loc "v")) in
+          let lhs = ppat_construct ~loc ctor (Some [%pat? v]) in
+          let subst_ser = exprdot ~loc f.mod_path "subst_serialized" in
           let rhs =
-            [%expr
-              [%e
-                pexp_construct ~loc ctor
-                  (Some
-                     (module_call ~loc f.mod_path "subst_serialized"
-                        [ [%expr subst_var]; [%expr v] ]))]]
+            pexp_construct ~loc ctor (Some [%expr [%e subst_ser] subst_var v])
           in
           case ~lhs ~guard:None ~rhs)
         fields
@@ -273,16 +213,19 @@ module Sym_state_base = struct
         [%e pexp_match ~loc [%expr serialized] cases]]
 
   let iter_vars_serialized_item ~loc fields =
-    let open Ast_builder.Default in
+    (*
+     * let iter_vars_serialized (serialized : serialized) iter =
+     *   match serialized with
+     *   | Ser_field1 v -> iter_vars_serialized v iter
+     *   | Ser_field2 v -> iter_vars_serialized v iter
+     *)
     let cases =
       List.map
         (fun (f : field) ->
           let ctor = lident ~loc (constr_name f.name) in
-          let lhs = ppat_construct ~loc ctor (Some (pvar ~loc "v")) in
-          let rhs =
-            module_call ~loc f.mod_path "iter_vars_serialized"
-              [ [%expr v]; [%expr iter] ]
-          in
+          let lhs = ppat_construct ~loc ctor (Some [%pat? v]) in
+          let iter_vars = exprdot ~loc f.mod_path "iter_vars_serialized" in
+          let rhs = [%expr [%e iter_vars] v iter] in
           case ~lhs ~guard:None ~rhs)
         fields
     in
@@ -291,40 +234,49 @@ module Sym_state_base = struct
         [%e pexp_match ~loc [%expr serialized] cases]]
 
   let with_field_item ~loc fields (target : field) =
+    (*
+     * let with_field1 f =
+     *   let open SM.Syntax in
+     *   let* st_opt = SM.get_state () in
+     *   let { field1; etc } = of_opt st_opt in
+     *   let*^ res, field1 = f field1 in
+     *   let+ () = SM.set_state (to_opt { field1; etc }) in
+     *   Soteria.Symex.Compo_res.map_missing res
+     *     (List.map (fun v -> Ser_field1 v))
+     *)
     let st_pat = record_pat ~loc fields in
     let set_state_record = record_expr ~loc fields in
-    let mapped_fix_expr =
-      [%expr
-        Soteria.Symex.Compo_res.map_missing res (fun fix ->
-            List.map
-              (fun v ->
-                [%e
-                  Ast_builder.Default.pexp_construct ~loc
-                    (lident ~loc (constr_name target.name))
-                    (Some [%expr v])])
-              fix)]
-    in
     let body =
       [%expr
         let open SM.Syntax in
         let* st_opt = SM.get_state () in
         let [%p st_pat] = of_opt st_opt in
-        let*^ res, [%p Ast_builder.Default.pvar ~loc target.name] =
-          f [%e Ast_builder.Default.evar ~loc target.name]
-        in
+        let*^ res, [%p pvar ~loc target.name] = f [%e evar ~loc target.name] in
         let+ () = SM.set_state (to_opt [%e set_state_record]) in
-        [%e mapped_fix_expr]]
+        Soteria.Symex.Compo_res.map_missing res
+          (List.map (fun v ->
+               [%e
+                 pexp_construct ~loc
+                   (lident ~loc (constr_name target.name))
+                   (Some [%expr v])]))]
     in
-    Ast_builder.Default.pstr_value ~loc Nonrecursive
+    pstr_value ~loc Nonrecursive
       [
-        Ast_builder.Default.value_binding ~loc
-          ~pat:(Ast_builder.Default.pvar ~loc (fn_with_name target.name))
-          ~expr:
-            (Ast_builder.Default.pexp_fun ~loc Nolabel None
-               (Ast_builder.Default.pvar ~loc "f") body);
+        value_binding ~loc
+          ~pat:(pvar ~loc (fn_with_name target.name))
+          ~expr:(pexp_fun ~loc Nolabel None (pvar ~loc "f") body);
       ]
 
   let with_field_sym_item ~loc fields (target : field) =
+    (*
+     * let with_field1_sym f =
+     *   let open SM.Syntax in
+     *   let* st_opt = SM.get_state () in
+     *   let { field1; etc } = of_opt st_opt in
+     *   let*^ res, field1 = f field1 in
+     *   let+ () = SM.set_state (to_opt { field1; etc }) in
+     *   res
+     *)
     let st_pat = record_pat ~loc fields in
     let set_state_record = record_expr ~loc fields in
     let body =
@@ -332,35 +284,32 @@ module Sym_state_base = struct
         let open SM.Syntax in
         let* st_opt = SM.get_state () in
         let [%p st_pat] = of_opt st_opt in
-        let*^ res, [%p Ast_builder.Default.pvar ~loc target.name] =
-          f [%e Ast_builder.Default.evar ~loc target.name]
-        in
+        let*^ res, [%p pvar ~loc target.name] = f [%e evar ~loc target.name] in
         let+ () = SM.set_state (to_opt [%e set_state_record]) in
         res]
     in
-    Ast_builder.Default.pstr_value ~loc Nonrecursive
+    pstr_value ~loc Nonrecursive
       [
-        Ast_builder.Default.value_binding ~loc
-          ~pat:(Ast_builder.Default.pvar ~loc (fn_with_sym_name target.name))
-          ~expr:
-            (Ast_builder.Default.pexp_fun ~loc Nolabel None
-               (Ast_builder.Default.pvar ~loc "f") body);
+        value_binding ~loc
+          ~pat:(pvar ~loc (fn_with_sym_name target.name))
+          ~expr:(pexp_fun ~loc Nolabel None (pvar ~loc "f") body);
       ]
 
   let produce_item ~loc fields =
-    let open Ast_builder.Default in
+    (*
+     * let produce (serialized : serialized) : unit SM.t =
+     *   match serialized with
+     *   | Ser_field1 v -> with_field1_sym (produce v)
+     *   | Ser_field2 v -> with_field2_sym (produce v)
+     *)
     let cases =
       List.map
         (fun (f : field) ->
           let ctor = lident ~loc (constr_name f.name) in
-          let lhs = ppat_construct ~loc ctor (Some (pvar ~loc "v")) in
+          let lhs = ppat_construct ~loc ctor (Some [%pat? v]) in
+          let produce = exprdot ~loc f.mod_path "produce" in
           let rhs =
-            [%expr
-              [%e evar ~loc (fn_with_sym_name f.name)]
-                ([%e
-                   pexp_ident ~loc
-                     (lid ~loc (Longident.Ldot (f.mod_path, "produce")))]
-                   v)]
+            [%expr [%e evar ~loc (fn_with_sym_name f.name)] ([%e produce] v)]
           in
           case ~lhs ~guard:None ~rhs)
         fields
@@ -410,33 +359,24 @@ module Sym_state_base = struct
 
   let module_expr_as_longindent ~loc expr =
     match expr with
-    | Some ({ pexp_desc = Pexp_ident { txt; _ }; _ } : expression) -> txt
-    | Some ({ pexp_desc = Pexp_construct ({ txt; _ }, None); _ } : expression)
-      ->
-        txt
-    | Some expr ->
-        Location.raise_errorf ~loc:expr.pexp_loc
-          "[sym_state_base] expected { symex = <Module> }"
+    | Some { pexp_desc = Pexp_construct ({ txt; _ }, None); _ } -> txt
+    | Some expr -> err ~loc:expr.pexp_loc "expected { symex = <Module> }"
     | None ->
-        Location.raise_errorf ~loc
-          "[@@deriving sym_state_base] requires a 'symex' argument specifying \
-           the symbolic execution module to use"
+        err ~loc
+          "requires a 'symex' argument specifying the symbolic execution \
+           module to use"
 
   let str_type_decl ~loc ~path:_ (_rec, tds) symex_module =
     let symex_module = module_expr_as_longindent ~loc symex_module in
     match tds with
     | [ td ] -> make_impl ~loc ~symex_module td
-    | _ ->
-        Location.raise_errorf ~loc
-          "[@@deriving sym_state_base] expects exactly one type declaration"
+    | _ -> err ~loc "expects exactly one type declaration"
 
   let sig_type_decl ~loc ~path:_ (_rec, tds) symex_module =
     let symex_module = module_expr_as_longindent ~loc symex_module in
     match tds with
     | [ td ] -> make_intf ~loc ~symex_module td
-    | _ ->
-        Location.raise_errorf ~loc
-          "[@@deriving sym_state_base] expects exactly one type declaration"
+    | _ -> err ~loc "expects exactly one type declaration"
 
   let register () =
     let symex_arg = Deriving.Args.arg "symex" Ast_pattern.__ in
@@ -444,8 +384,6 @@ module Sym_state_base = struct
     let sig_args = Deriving.Args.(empty +> symex_arg) in
     let str = Deriving.Generator.make str_args str_type_decl in
     let sig_ = Deriving.Generator.make sig_args sig_type_decl in
-    Deriving.add "sym_state_base" ~str_type_decl:str ~sig_type_decl:sig_
-    |> Deriving.ignore;
-    Deriving.add "soteria.sym_state_base" ~str_type_decl:str ~sig_type_decl:sig_
+    Deriving.add "sym_state" ~str_type_decl:str ~sig_type_decl:sig_
     |> Deriving.ignore
 end

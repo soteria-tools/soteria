@@ -1,10 +1,9 @@
 open Typed
 open T
-open Cerb_frontend
 module Agv = Aggregate_val
 module Compo_res = Soteria.Symex.Compo_res
 
-type serialized =
+type serialized = State.serialized =
   | Ser_heap of (sloc Typed.t * Block.serialized)
   | Ser_globs of (Symbol_std.t * sloc Typed.t)
 [@@deriving show { with_path = false }]
@@ -51,7 +50,7 @@ module type S = sig
 
   val produce_aggregate :
     sptr Typed.t ->
-    Ctype.ctype ->
+    Cerb_frontend.Ctype.ctype ->
     Aggregate_val.t ->
     t option ->
     (unit * t option) Csymex.t
