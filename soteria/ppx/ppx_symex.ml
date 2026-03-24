@@ -18,6 +18,8 @@ let () =
   in
   List.iter register [ Sat; Sat1; Sure ]
 
+let () = Expander.Reversible.register ()
+
 (* Register [0s], [1s] etc. *)
 let () =
   let open Expander.Sym_constants in
