@@ -56,6 +56,23 @@ module Sym_state_base = struct
     let id = pexp_ident ~loc (lid ~loc (Longident.Ldot (mod_path, fn))) in
     List.fold_left (fun acc arg -> pexp_apply ~loc acc [ (Nolabel, arg) ]) id args
 
+  let get_attr ~name attrs =
+    List.find_opt (fun (attr : attribute) -> attr.attr_name.txt = name) attrs
+
+  let symex_module_of_td_exn (td : type_declaration) =
+    match get_attr ~name:"sym_state_base.symex" td.ptype_attributes with
+    | None -> Longident.Lident "Csymex"
+    | Some attr -> (
+        match attr.attr_payload with
+        | PStr [ { pstr_desc = Pstr_eval ({ pexp_desc = Pexp_constant (Pconst_string (s, _, _)); _ }, _); _ } ]
+          -> Longident.parse s
+        | PStr [ { pstr_desc = Pstr_eval ({ pexp_desc = Pexp_ident { txt; _ }; _ }, _); _ } ]
+          -> txt
+        | _ ->
+            Location.raise_errorf ~loc:attr.attr_name.loc
+              "[sym_state_base.symex] expects a module path string, e.g. \
+               [@@sym_state_base.symex \"Csymex\"]")
+
   let constr_name name = "Ser_" ^ name
 
   let serialized_ctor_decl ~loc (field : field) =
@@ -93,7 +110,7 @@ module Sym_state_base = struct
           let lhs = ppat_construct ~loc ctor (Some v) in
           let rhs =
             [%expr
-              Fmt.pf ft "%s (%a)" [%e estring ~loc (constr_name field.name)]
+              Fmt.pf ft "@[<2>(%s@ %a)@]" [%e estring ~loc (constr_name field.name)]
                 [%e
                   pexp_ident ~loc
                     (lid ~loc (Longident.Ldot (field.mod_path, "pp_serialized")))]
@@ -136,6 +153,35 @@ module Sym_state_base = struct
         | t -> Some t]
 
   let empty_item ~loc = [%stri let empty = None]
+
+  let sm_item ~loc symex_module =
+    let open Ast_builder.Default in
+    let make_path =
+      lid ~loc
+        (Longident.Ldot
+           ( Longident.Ldot
+               ( Longident.Ldot (Longident.Lident "Soteria", "Sym_states"),
+                 "State_monad" ),
+             "Make" ))
+    in
+    let state_mod =
+      pmod_structure ~loc
+        [
+          pstr_type ~loc Nonrecursive
+            [
+              type_declaration ~loc ~name:{ loc; txt = "t" } ~params:[]
+                ~cstrs:[] ~kind:Ptype_abstract ~private_:Public
+                ~manifest:(Some [%type: t option]);
+            ];
+        ]
+    in
+    pstr_module ~loc
+      (module_binding ~loc ~name:{ loc; txt = Some "SM" }
+         ~expr:
+           (pmod_apply ~loc
+              (pmod_apply ~loc (pmod_ident ~loc make_path)
+                 (pmod_ident ~loc (lid ~loc symex_module)))
+              state_mod))
 
   let serialize_item ~loc fields =
     let open Ast_builder.Default in
@@ -236,7 +282,9 @@ module Sym_state_base = struct
 
   let make_impl ~loc (td : type_declaration) =
     let fields = fields_of_td_exn td in
-    [ serialized_type_item ~loc fields; pp_serialized_item ~loc fields; show_serialized_item ~loc ]
+    let symex_module = symex_module_of_td_exn td in
+    [ sm_item ~loc symex_module ]
+    @ [ serialized_type_item ~loc fields; pp_serialized_item ~loc fields; show_serialized_item ~loc ]
     @ [ of_opt_item ~loc fields; to_opt_item ~loc fields; empty_item ~loc ]
     @ [ serialize_item ~loc fields; subst_serialized_item ~loc fields; iter_vars_serialized_item ~loc fields ]
     @ List.map (with_field_item ~loc fields) fields

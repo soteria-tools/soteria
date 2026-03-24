@@ -30,22 +30,7 @@ module Heap =
     (Block)
 
 type t = { heap : Heap.t option; globs : Globs.t option }
-[@@deriving show { with_path = false }]
-
-let of_opt = function None -> { heap = None; globs = None } | Some v -> v
-let to_opt = function { heap = None; globs = None } -> None | t -> Some t
-
-type serialized = State_intf.serialized =
-  | Ser_heap of Heap.serialized
-  | Ser_globs of Globs.serialized
-[@@deriving show { with_path = false }]
-
-module SM =
-  Soteria.Sym_states.State_monad.Make
-    (Csymex)
-    (struct
-      type nonrec t = t option
-    end)
+[@@deriving show { with_path = false }, sym_state_base]
 
 open SM.Syntax
 
@@ -53,29 +38,6 @@ let[@inline] with_error_loc ?msg () (f : unit -> ('a, 'b, 'c) SM.Result.t) =
   let*^ loc = Csymex.get_loc () in
   let+- e = f () in
   Error.with_trace ?msg e loc
-
-let serialize (st : t) : serialized list =
-  let heaps =
-    Option.fold ~none:[] ~some:Heap.serialize st.heap
-    |> List.map (fun h -> Ser_heap h)
-  in
-  let globs =
-    Option.fold ~none:[] ~some:Globs.serialize st.globs
-    |> List.map (fun g -> Ser_globs g)
-  in
-  heaps @ globs
-
-let subst_serialized (subst_var : Svalue.Var.t -> Svalue.Var.t)
-    (serialized : serialized) : serialized =
-  match serialized with
-  | Ser_heap heap -> Ser_heap (Heap.subst_serialized subst_var heap)
-  | Ser_globs globs -> Ser_globs (Globs.subst_serialized subst_var globs)
-
-let iter_vars_serialized (s : serialized) :
-    (Svalue.Var.t * 'a Typed.ty -> unit) -> unit =
-  match s with
-  | Ser_heap heap -> Heap.iter_vars_serialized heap
-  | Ser_globs globs -> Globs.iter_vars_serialized globs
 
 let pp_pretty ~ignore_freed ft st =
   let ignore =
@@ -89,8 +51,6 @@ let pp_pretty ~ignore_freed ft st =
          parametrise the heap printer anymore... *)
       Heap.pp' ~ignore ~codom:Block.pp_pretty ft st
 
-let empty = None
-
 let log action ptr =
   let open SM.Syntax in
   let* st = SM.get_state () in
@@ -100,15 +60,6 @@ let log action ptr =
         Typed.ppa ptr Fmt_ail.pp_loc loc
         (Fmt.option ~none:(Fmt.any "Empty heap") (pp_pretty ~ignore_freed:true))
         st)
-
-let with_heap (f : ('a, 'err, Heap.serialized list) Heap.SM.Result.t) :
-    ('a, 'err, serialized list) SM.Result.t =
-  let open SM.Syntax in
-  let* st_opt = SM.get_state () in
-  let { heap; globs } = of_opt st_opt in
-  let*^ res, heap = f heap in
-  let+ () = SM.set_state (to_opt { heap; globs }) in
-  Compo_res.map_missing res (fun fix -> List.map (fun h -> Ser_heap h) fix)
 
 let[@inline] check_non_null loc =
   let open SM.Syntax in
