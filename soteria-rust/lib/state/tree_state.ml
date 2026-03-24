@@ -190,7 +190,15 @@ struct
     open Syntax
 
     let lift_fix_borrow s = Borrow s
-    let lift_fix_block s = Block s
+
+    let lift_fix_block (s : Tree_block.serialized) =
+      (* HACK: this is quite ugly; tree borrow misses relating to the structure
+         (not the state!) can occur within [Tree_block], however fixing them
+         there is not possible, since the structure is stored here, in [Block].
+         As such we catch those, and lift them appropriately here. *)
+      match s with
+      | MemVal { v = STree_borrow s; _ } -> Borrow s
+      | s -> Block s
 
     let lift_fix_borrow_r r =
       Soteria.Symex.Compo_res.map_missing r (List.map lift_fix_borrow)
