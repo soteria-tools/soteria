@@ -1,0 +1,75 @@
+{1 Soteria Statistics Tutorial}
+
+Welcome to the Soteria Statistics tutorial! This tutorial will guide you through the basics of using the {{!Soteria.Stats}Stats} module to track and report statistics during symbolic execution.
+
+Today you'll be learning how to:
+- {!intro}
+- {!recording}
+- {!printing}
+
+{2:intro Introduction to Stats}
+
+The {{!Soteria.Stats}Stats} module provides a way to track statistics across your symbolic execution engine. It uses algebraic effects under the hood to maintain a statistics context without requiring you to pass a state object explicitly everywhere.
+
+To use the statistics context, you need to wrap your execution with {{!Soteria.Stats.As_ctx.with_stats}Stats.As_ctx.with_stats}:
+
+{@ocaml[
+let (result : unit Stats.with_stats) =
+  Stats.As_ctx.with_stats () (fun () ->
+    (* Your execution here *)
+    ()
+  )
+]}
+
+{2:recording Recording Statistics}
+
+Once inside the [with_stats] context, you can record various types of statistics using the functions in {{!Soteria.Stats.As_ctx}Stats.As_ctx}.
+
+For example, you can increment counters, add floats, or measure the time taken by a function:
+
+{@ocaml[
+let (result : unit Stats.with_stats) =
+  Stats.As_ctx.with_stats () (fun () ->
+    (* Increment a counter named "instructions" *)
+    Stats.As_ctx.incr "instructions";
+    Stats.As_ctx.incr "instructions";
+    
+    (* Add a float value *)
+    Stats.As_ctx.add_float "memory_usage" 10.5;
+    
+    (* Measure execution time *)
+    Stats.As_ctx.add_time_of_to "heavy_computation" (fun () ->
+      ()
+    )
+  )
+]}
+
+After the execution finishes, you can retrieve these values from the [stats] field of the result using accessors like {{!Soteria.Stats.get_int}Stats.get_int} and {{!Soteria.Stats.get_float}Stats.get_float}:
+
+{@ocaml[
+let () =
+  let instrs = Stats.get_int result.stats "instructions" in
+  Format.printf "Instructions: %d\n" instrs
+]}
+
+{2:printing Customizing Output}
+
+By default, Soteria knows how to print basic statistics types. However, you can register custom printers for specific statistics using {{!Soteria.Stats.register_printer}Stats.register_printer} or convenience functions like {{!Soteria.Stats.register_int_printer}Stats.register_int_printer}.
+
+{@ocaml[
+let () =
+  Stats.register_int_printer "instructions"
+    ~name:"Instructions Executed"
+    (fun _stats fmt n -> Format.fprintf fmt "%d instrs" n)
+]}
+
+You can then pretty-print the collected statistics:
+
+{@ocaml[
+let () =
+  Format.printf "%a@." Stats.pp result.stats
+]}
+
+{2 Conclusion}
+
+The [Stats] module is a powerful tool to instrument your symbolic engine. By leveraging its algebraic effects based context, you can easily track metrics like instructions executed, time spent in the solver, and more, without cluttering your main codebase.
