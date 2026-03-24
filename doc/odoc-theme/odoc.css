@@ -361,6 +361,7 @@ body.odoc {
 
 .odoc-content {
 	grid-area: content;
+	padding-bottom: 100px;
 }
 
 .odoc-content > *:first-child {
