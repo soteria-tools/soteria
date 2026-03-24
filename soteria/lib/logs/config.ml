@@ -17,22 +17,29 @@ let v_list =
   Cmdliner.Arg.(
     value
     & flag_all
-    & info [ "v"; "verbose" ] ~docv:"v" ~doc:"Verbosity level, clashes with -q")
+    & info [ "v"; "verbose" ] ~docs:"OUTPUT OPTIONS" ~docv:"v"
+        ~doc:"Verbosity level, clashes with -q")
 
 type cli = {
   v_list : bool list; [@term v_list]
       (** Verbosity level. One -v includes ERROR, WARN, INFO, and every
           subsequent -v then includes DEBUG, TRACE and SMT respectively *)
   log_kind : (log_kind[@conv log_kind_cmdliner_conv ()]) option;
-      [@names [ "l"; "log_kind" ]]
+      [@docs "LOGS OPTIONS"] [@names [ "l"; "log_kind" ]]
       (** Log kind, clashes with --html *)
-  html : bool; [@names [ "html" ]]  (** HTML logging, clashes with --log-kind *)
-  always_log_smt : bool; [@names [ "log-smt" ]]
+  html : bool; [@docs "LOGS OPTIONS"] [@names [ "html" ]]
+      (** HTML logging, clashes with --log-kind *)
+  always_log_smt : bool; [@docs "LOGS OPTIONS"] [@names [ "log-smt" ]]
       (** Always log SMT queries, even in silent mode *)
-  no_color : bool; [@names [ "no-color"; "no-colour" ]] [@env "NO_COLOR"]
+  no_color : bool;
+      [@docs "LOGS OPTIONS"]
+      [@names [ "no-color"; "no-colour" ]]
+      [@env "NO_COLOR"]
       (** Disables coloured output. *)
   hide_unstable : bool;
-      [@names [ "hide-unstable"; "diffable" ]] [@env "HIDE_UNSTABLE"]
+      [@docs "LOGS OPTIONS"]
+      [@names [ "hide-unstable"; "diffable" ]]
+      [@env "HIDE_UNSTABLE"]
       (** Do not display unstable values like durations (e.g. for diffing
           purposes). *)
 }

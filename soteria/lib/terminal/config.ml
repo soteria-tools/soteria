@@ -1,5 +1,6 @@
 type t = {
   compact : bool;
+      [@docs "OUTPUT OPTIONS"]
       [@name [ "compact" ]]
       [@env "SOTERIA_COMPACT_DIAGNOSTICS"]
       [@make.default false]
