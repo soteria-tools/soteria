@@ -1,11 +1,6 @@
 type t = {
-  auto_include_path : string;
+  auto_include_path : string option;
       [@docs "FRONTEND OPTIONS"]
-      [@default
-        match Auto_include_site.Sites.includes with
-        | [] -> "."
-        | [ x ] -> x
-        | _ -> failwith "Multiple auto-include paths found"]
       [@docv "PATH"]
       [@names [ "auto-include-path" ]]
       [@env "SOTERIA_AUTO_INCLUDE_PATH"]

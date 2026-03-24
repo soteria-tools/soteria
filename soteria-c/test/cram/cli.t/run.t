@@ -106,9 +106,7 @@
              Disables coloured output.
   
   FRONTEND OPTIONS
-         --auto-include-path=PATH
-         (absent=/Users/opale/Documents/GitHub/soteria-agent/_build/install/default/share/soteria-c/includes
-         or SOTERIA_AUTO_INCLUDE_PATH env)
+         --auto-include-path=PATH (absent SOTERIA_AUTO_INCLUDE_PATH env)
              Path to the directory that contains the soteria-c.h
   
          -f FUNCTION_NAME
@@ -314,9 +312,7 @@
              Disables coloured output.
   
   FRONTEND OPTIONS
-         --auto-include-path=PATH
-         (absent=/Users/opale/Documents/GitHub/soteria-agent/_build/install/default/share/soteria-c/includes
-         or SOTERIA_AUTO_INCLUDE_PATH env)
+         --auto-include-path=PATH (absent SOTERIA_AUTO_INCLUDE_PATH env)
              Path to the directory that contains the soteria-c.h
   
          --harness=ENTRYPOINT, --entry-point=ENTRYPOINT, --entry=ENTRYPOINT
@@ -548,9 +544,7 @@
              Disables coloured output.
   
   FRONTEND OPTIONS
-         --auto-include-path=PATH
-         (absent=/Users/opale/Documents/GitHub/soteria-agent/_build/install/default/share/soteria-c/includes
-         or SOTERIA_AUTO_INCLUDE_PATH env)
+         --auto-include-path=PATH (absent SOTERIA_AUTO_INCLUDE_PATH env)
              Path to the directory that contains the soteria-c.h
   
          -f FUNCTION_NAME
@@ -720,9 +714,7 @@
              bug is found
   
   FRONTEND OPTIONS
-         --auto-include-path=PATH
-         (absent=/Users/opale/Documents/GitHub/soteria-agent/_build/install/default/share/soteria-c/includes
-         or SOTERIA_AUTO_INCLUDE_PATH env)
+         --auto-include-path=PATH (absent SOTERIA_AUTO_INCLUDE_PATH env)
              Path to the directory that contains the soteria-c.h
   
          --no-c23 (absent SOTERIA_NO_C23 env)
@@ -906,9 +898,7 @@
              Disables coloured output.
   
   FRONTEND OPTIONS
-         --auto-include-path=PATH
-         (absent=/Users/opale/Documents/GitHub/soteria-agent/_build/install/default/share/soteria-c/includes
-         or SOTERIA_AUTO_INCLUDE_PATH env)
+         --auto-include-path=PATH (absent SOTERIA_AUTO_INCLUDE_PATH env)
              Path to the directory that contains the soteria-c.h
   
          -I DIR
