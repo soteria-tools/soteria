@@ -50,3 +50,11 @@ let regex =
   in
   let pp fmt _re = Format.fprintf fmt "<regex>" in
   Arg.Conv.make ~docv:"REGEX" ~parser ~pp ()
+
+(** Common section names for command-line arguments. These can be used to group
+    related options together in the help output. *)
+module Sections = struct
+  let frontend = "FRONTEND OPTIONS"
+  let analysis = "ANALYSIS OPTIONS"
+  let output = "OUTPUT OPTIONS"
+end

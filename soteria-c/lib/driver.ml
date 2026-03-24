@@ -91,9 +91,16 @@ module Frontend = struct
     let result =
       let open Cerb_backend.Pipeline in
       let include_soteria_c_h =
-        let filename =
-          Filename.concat (Config.current ()).auto_include_path "soteria-c.h"
+        let auto_include_path =
+          match
+            ( (Config.current ()).auto_include_path,
+              Auto_include_site.Sites.includes )
+          with
+          | Some path, _ | None, [ path ] -> path
+          | None, [] -> "."
+          | None, _ :: _ :: _ -> failwith "Multiple auto-include paths found"
         in
+        let filename = Filename.concat auto_include_path "soteria-c.h" in
         if Sys.file_exists filename then "-include " ^ filename ^ " "
         else (
           warn (filename ^ " not found");
