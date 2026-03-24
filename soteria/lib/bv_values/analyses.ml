@@ -87,6 +87,11 @@ module Interval : S = struct
     let ( > ) = Z.gt
     let pow2 n = Z.shift_left Z.one n
     let ( ~- ) size x = pow2 size - x
+
+    (** [to_bv size x] if [x < 0], returns the corresponding unsigned bitvector
+        representation of [x] with size [size]. E.g. for [size = 8], [-1] would
+        be represented as [255]. *)
+    let to_bv n x = Z.(x land pred (one lsl n))
   end
 
   let mk_var n v : Svalue.t = Svalue.mk_var v (TBitVector n)
@@ -333,8 +338,11 @@ module Interval : S = struct
               c2
           | _ -> failwith "unreachable"
         in
-        if c1 < c2 then Some (v, size, (Neg, (~-size c2, c1 - c2 - one)))
-        else Some (v, size, (Pos, (c1 - c2, ~-size c2 - one)))
+        (* We need to be careful and use [to_bv] to ensure we don't end up with
+           ranges with negative number (BAD!) *)
+        if c1 < c2 then
+          Some (v, size, (Neg, (~-size c2, to_bv size (c1 - c2 - one))))
+        else Some (v, size, (Pos, (c1 - c2, to_bv size (~-size c2 - one))))
     (*
      *  Case 3: c1 + x <=u c2
      *  • c1 <= c2 => ~[ c2 - c1 + 1; -c1 - 1 ]
@@ -666,7 +674,13 @@ module Equality : S = struct
     | None -> vs
     | Some v_repr -> Iter.singleton v_repr
 
-  let encode ?vars (uf, refs) =
+  let encode ?vars (uf, refs) f =
+    let module URefTbl = Hashtbl.Make (struct
+      type t = Svalue.t UnionFind.rref
+
+      let equal r1 r2 = UnionFind.eq uf r1 r2
+      let hash = Hashtbl.hash
+    end) in
     let is_relevant =
       match vars with
       | None -> fun _ -> true
@@ -675,13 +689,25 @@ module Equality : S = struct
             Svalue.iter_vars v
             |> Iter.exists (fun (v, _) -> Var.Hashset.mem vars v)
     in
-    fun f ->
+    let relevant_refs = URefTbl.create 8 in
+    VMap.iter
+      (fun v ufref ->
+        if is_relevant v then
+          let repr = UnionFind.find uf ufref in
+          let repr_v = UnionFind.get uf repr in
+          URefTbl.add relevant_refs repr repr_v)
+      refs;
+    (* When encoding we need to be careful; e.g. if we know A = X and A = Y, and
+       X is relevant, we must also encode A = Y, as maybe X != Y; we don't have
+       the capacity to check that here, it is discharged to the solver. *)
+    VMap.iter
+      (fun v ufref ->
+        let ufref = UnionFind.find uf ufref in
+        match URefTbl.find_opt relevant_refs ufref with
+        | None -> ()
+        | Some repr when Svalue.equal v repr -> ()
+        | Some repr -> f (Typed.sem_eq (Typed.type_ v) (Typed.type_ repr)))
       refs
-      |> VMap.iter @@ fun v ufref ->
-         if is_relevant v then
-           let v_repr = UnionFind.get uf ufref in
-           if not (Svalue.equal v v_repr) then
-             f (Typed.sem_eq (Typed.type_ v) (Typed.type_ v_repr))
 
   let simplify st v = wrap_read (simplify v) st
   let add_constraint st v = wrap (add_constraint v) st

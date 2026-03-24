@@ -15,18 +15,44 @@ class TestConfig(TypedDict):
     tests: list[Path]
 
 
-KANI_PATH = (PWD / ".." / ".." / ".." / "kani" / "tests" / "kani").resolve()
-MIRI_PATH = (PWD / ".." / ".." / ".." / "miri" / "tests").resolve()
+KANI_PATH = get_env_path_or(
+    "KANI_SUITE_PATH", (PWD / ".." / ".." / ".." / "kani" / "tests" / "kani")
+)
+MIRI_PATH = get_env_path_or(
+    "MIRI_SUITE_PATH", (PWD / ".." / ".." / ".." / "miri" / "tests")
+)
+
+T = TypeVar("T")
 
 
-def filter_tests(opts: CliOpts, tests: Iterable[Path]) -> list[Path]:
+def determine_failure_expect(filepath: str) -> bool:
+    if "kani" in filepath or str(KANI_PATH) in filepath:
+        try:
+            with open(filepath, "r") as f:
+                content = f.read()
+                return "kani-verify-fail" in content
+        except Exception:
+            return False
+
+    if "miri" in filepath or str(MIRI_PATH) in filepath:
+        if "/pass/" in filepath:
+            return False
+        return "/fail/" in filepath or "/panic/" in filepath
+
+    return False
+
+
+def filter_tests(opts: CliOpts, tests: Iterable[T]) -> list[T]:
     exclusions = opts["exclusions"]
     filters = opts["filters"]
     tests = sorted(
-        t
-        for t in tests
-        if (not any(e in str(t) for e in exclusions))
-        and (filters == [] or all(f in str(t) for f in filters))
+        (
+            t
+            for t in tests
+            if (not any(e in str(t) for e in exclusions))
+            and (filters == [] or all(f in str(t) for f in filters))
+        ),
+        key=lambda t: str(t).lower(),
     )
     return tests
 
@@ -77,6 +103,8 @@ def kani(opts: CliOpts) -> TestConfig:
                 "--no-undefined-function-checks",
                 "--no-unwinding-checks",
                 "--no-default-checks",
+                "--extra-pointer-checks",
+                "--no-overflow-checks",
             ]:
                 continue
             if kani_flag.startswith("-Zmir-opt-level") or kani_flag.startswith(
@@ -87,12 +115,22 @@ def kani(opts: CliOpts) -> TestConfig:
                 kani_flags.pop(0)
                 continue
             if kani_flag == "--edition":
-                flags += [kani_flag, kani_flags.pop(0)]
+                if opts["tool"] == "Miri":
+                    flags += ["--edition", kani_flags.pop(0)]
+                else:
+                    flags += ["--rustc", '"--edition=' + kani_flags.pop(0) + '"']
                 continue
             if kani_flag == "-Z":
                 unstable_flag = kani_flags.pop(0).strip()
-                if unstable_flag in ["restrict-vtable"]:
+                if unstable_flag in [
+                    "restrict-vtable",
+                    "unstable-options",
+                    "uninit-checks",
+                ]:
                     continue
+                raise ArgError(
+                    f"Unhandled unstable flag for Kani test {file}: -Z {unstable_flag}\n"
+                )
 
             raise ArgError(
                 f"Unhandled dynamic flags for Kani test {file}: {kani_flag}\n"
@@ -114,7 +152,7 @@ def kani(opts: CliOpts) -> TestConfig:
         args = []
     elif opts["tool"] == "Miri":
         args = ["--test", "-Zmiri-ignore-leaks", "-Zmiri-disable-stacked-borrows"]
-    elif opts["tool"] == "Rusteria":
+    elif opts["tool"] == "Soteria":
         args = ["--ignore-leaks", "--kani", "--ignore-aliasing"]
     else:
         assert_never(opts["tool"])
@@ -130,21 +168,76 @@ def kani(opts: CliOpts) -> TestConfig:
 
 def miri(opts: CliOpts) -> TestConfig:
     @with_cache
-    def rusteria_dyn_flags(file: Path) -> list[str]:
+    def soteria_dyn_flags(file: Path) -> list[str]:
         flags = []
         config = get_config_line(file, "//@compile-flags:")
-        # if file contains "-Zmiri-ignore-leaks", add "--ignore-leaks"
-        if config:
-            if "-Zmiri-ignore-leaks" in config:
+        config = config.split() if config else []
+        while config:
+            miri_flag = config.pop(0).strip()
+
+            if miri_flag == "-C":
+                compile_flag = config.pop(0).strip()
+                miri_flag = f"-C{compile_flag}"
+
+            if miri_flag in [
+                # We don't support disabling validation, as Miri's support for it is
+                # entirely dependent on it's architecture and hard to maintain for our tool
+                "-Zmiri-disable-validation",
+                # We don't support disabling alignment checks
+                "-Zmiri-disable-alignment-check",
+                # We already do align checks symbolically!
+                "-Zmiri-symbolic-alignment-check",
+                # We always use tree borrows!
+                "-Zmiri-tree-borrows",
+                # We do not support precise interior mutability, so disabling it would not make a difference
+                "-Zmiri-tree-borrows-no-precise-interior-mut",
+                # We don't allow disabling isolation
+                "-Zmiri-disable-isolation",
+                # We don't allow disabling overflow checks
+                "-Coverflow-checks=off",
+                # Miri-specific optimisation flags
+                "-Zmiri-provenance-gc=0",
+                "-Zmiri-disable-leak-backtraces",
+                "-Zmiri-track-alloc-accesses",
+            ]:
+                continue
+
+            # Compilation flags we don't support
+            if any(
+                miri_flag.startswith(prefix)
+                for prefix in [
+                    "-Zmir-opt-level",
+                    "-Zinline-mir",
+                    "-Zinline-mir-hint-threshold",
+                    "-Zmiri-track-alloc-id",
+                    "-Zmiri-mute-stdout-stderr",
+                    "-Zoom=panic",
+                    "-Cpanic",
+                    "-Cdebug-assertions",
+                ]
+            ):
+                continue
+
+            if "-Zmiri-ignore-leaks" == miri_flag:
                 flags.append("--ignore-leaks")
-            if "-Zmiri-strict-provenance" in config:
+                continue
+            if "-Zmiri-strict-provenance" == miri_flag:
                 flags.append("--provenance=strict")
-            if "-Zmiri-permissive-provenance" in config:
+                continue
+            if "-Zmiri-permissive-provenance" == miri_flag:
                 flags.append("--provenance=permissive")
-            if "-Zmiri-disable-stacked-borrows" in config:
+                continue
+            if "-Zmiri-disable-stacked-borrows" == miri_flag:
                 flags.append("--ignore-aliasing")
-            if "-Zmiri-recursive-validation" in config:
-                flags.append("--recursive-validity")
+                continue
+            if "-Zmiri-recursive-validation" == miri_flag:
+                flags.append("--recursive-validity=deny")
+                continue
+
+            raise ArgError(
+                f"Unhandled dynamic flags for Miri test {file}: {miri_flag}\n"
+            )
+
         return flags
 
     @with_cache
@@ -168,11 +261,11 @@ def miri(opts: CliOpts) -> TestConfig:
         args = ["-Z=uninit-checks", "-Z=valid-value-checks"]
         dyn_flags = None
     elif opts["tool"] == "Miri":
-        args = []
+        args = ["--edition", "2021"]
         dyn_flags = miri_dyn_flags
-    elif opts["tool"] == "Rusteria":
+    elif opts["tool"] == "Soteria":
         args = ["--miri"]
-        dyn_flags = rusteria_dyn_flags
+        dyn_flags = soteria_dyn_flags
     else:
         assert_never(opts["tool"])
 

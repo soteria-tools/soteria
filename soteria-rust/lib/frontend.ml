@@ -14,6 +14,7 @@ exception CompilationError of string
 let plugin_err msg = raise (PluginError msg)
 let frontend_err msg = raise (FrontendError msg)
 let compilation_err msg = raise (CompilationError msg)
+let ( / ) = Filename.concat
 
 (** Utilities to run commands *)
 module Exe = struct
@@ -187,8 +188,8 @@ module Cmd = struct
       (let cmd = frontend_cmd () in
        Exe.exec_exn cmd [ "toolchain-path" ] |> List.hd)
 
-  let cargo () = Lazy.force toolchain_path ^ "/bin/cargo"
-  let rustc () = Lazy.force toolchain_path ^ "/bin/rustc"
+  let cargo () = Lazy.force toolchain_path / "bin" / "cargo"
+  let rustc () = Lazy.force toolchain_path / "bin" / "rustc"
   let rustc_as_env () = [ "RUSTC=" ^ rustc () ]
 
   let current_rustc_flags () =
@@ -291,36 +292,50 @@ module Lib = struct
 
   let root =
     lazy
-      (match (Config.get ()).plugin_directory with
-      | Some root -> root
-      | None -> List.hd Runtime_sites.Sites.plugins)
+      (match
+         ((Config.get ()).plugin_directory, Runtime_sites.Sites.plugins)
+       with
+      | Some root, _ -> root
+      | None, root :: _ -> root
+      | None, [] -> plugin_err "Couldn't find plugin directory")
 
   type t = Std | Kani | Miri
 
   let name = function Std -> "std" | Kani -> "kani" | Miri -> "miri"
-  let path lib = Filename.concat (Lazy.force root) (name lib)
+  let path lib = Lazy.force root / name lib
+
+  (** [exec_cargo ?env lib args] executes the command [cargo <args>] for the
+      library [lib].
+
+      @raise PluginError
+        if the command fails, with the error message from Cargo. *)
+  let exec_cargo ?(env = []) lib args =
+    let path = path lib in
+    let env = Cmd.rustc_as_env () @ env in
+    let _, err, status =
+      let@ () = Exe.run_in path in
+      Exe.exec ~env (Cmd.cargo ()) args
+    in
+    match status with
+    | WEXITED (0 | 255) -> ()
+    | _ ->
+        Fmt.kstr plugin_err "Couldn't compile lib at %s@.%a" path
+          Fmt.(list string)
+          err
+
+  (** Deletes the target directory of a target, to avoid duplicate builds *)
+  let clean lib = exec_cargo lib [ "clean" ]
 
   let compile lib =
     if not (Config.get ()).no_compile_plugins then
-      let path = path lib in
-      let verbosity =
-        if (Config.get ()).log_compilation then [ "--verbose" ] else []
-      in
       let env =
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
       in
-      let env = Cmd.rustc_as_env () @ env in
-      let _, err, status =
-        let@ () = Exe.run_in path in
-        Exe.exec ~env (Cmd.cargo ())
-          ([ "build"; "--lib"; "--target"; Lazy.force target ] @ verbosity)
+      let args =
+        [ "build"; "--lib"; "--target"; Lazy.force target ]
+        @ if (Config.get ()).log_compilation then [ "--verbose" ] else []
       in
-      match status with
-      | WEXITED (0 | 255) -> ()
-      | _ ->
-          Fmt.kstr plugin_err "Couldn't compile lib at %s@.%a" path
-            Fmt.(list string)
-            err
+      exec_cargo ~env lib args
 
   let with_compiled lib f =
     let path = path lib in
@@ -329,8 +344,8 @@ module Lib = struct
     let config : Cmd.t = f (path, target) in
     let lib_imports =
       [
-        Fmt.str "-L%s/target/%s/debug/deps" path target;
-        Fmt.str "-L%s/target/debug/deps" path;
+        "-L" ^ (path / "target" / target / "debug" / "deps");
+        "-L" ^ (path / "target" / "debug" / "deps");
       ]
     in
     { config with rustc = config.rustc @ lib_imports }
@@ -389,8 +404,8 @@ let default () =
         "soteria";
         (* include the std *)
         "--extern";
-        Fmt.str "noprelude:std=%s/target/%s/debug/libstd.rlib" std_lib_path
-          target;
+        "noprelude:std="
+        ^ (std_lib_path / "target" / target / "debug" / "libstd.rlib");
       ]
     ()
 
@@ -547,7 +562,7 @@ let parse_ullbc_of_crate ~(mk_cmd : mk_cmd) crate_dir =
     | Some test -> "test-" ^ test ^ ".llbc.json"
     | None -> "crate.llbc.json"
   in
-  let output = Filename.concat crate_dir filename in
+  let output = crate_dir / filename in
   let cmd = mk_cmd ~output () in
   parse_ullbc ~mode:Cargo ~cmd ~output ~pwd:crate_dir ()
 
@@ -574,4 +589,9 @@ let parse_ullbc_with_entry_points path =
   let mk_cmd, filter = create_using_current_config () in
   parse_ullbc_raw path ~mk_cmd |> with_entry_points ~filter
 
-let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
+let compile_all_plugins () =
+  List.iter
+    (fun l ->
+      Lib.clean l;
+      Lib.compile l)
+    [ Std; Kani; Miri ]
