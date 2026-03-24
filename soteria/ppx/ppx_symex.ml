@@ -24,3 +24,5 @@ let () =
   let kind = Context_free.Rule.Constant_kind.Integer in
   let rule = Context_free.Rule.constant kind suffix rewriter in
   Driver.register_transformation ~rules:[ rule ] "sym_constants"
+
+let () = Sym_state_base_deriver.Sym_state_base.register ()
