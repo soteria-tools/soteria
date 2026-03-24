@@ -56,6 +56,20 @@ module Sym_state_base = struct
   let fn_with_name name = "with_" ^ name
   let fn_with_sym_name name = "with_" ^ name ^ "_sym"
 
+  let record_pat ~loc fields =
+    Ast_builder.Default.ppat_record ~loc
+      (List.map
+         (fun (f : field) -> (lident ~loc f.name, Ast_builder.Default.pvar ~loc f.name))
+         fields)
+      Closed
+
+  let record_expr ~loc fields =
+    Ast_builder.Default.pexp_record ~loc
+      (List.map
+         (fun (f : field) -> (lident ~loc f.name, Ast_builder.Default.evar ~loc f.name))
+         fields)
+      None
+
   let serialized_ctor_decl ~loc (field : field) =
     let open Ast_builder.Default in
     let arg_ty =
@@ -277,28 +291,15 @@ module Sym_state_base = struct
         [%e pexp_match ~loc [%expr serialized] cases]]
 
   let with_field_item ~loc fields (target : field) =
-    let open Ast_builder.Default in
-    let st_pat =
-      ppat_record ~loc
-        (List.map
-           (fun (f : field) -> (lident ~loc f.name, pvar ~loc f.name))
-           fields)
-        Closed
-    in
-    let set_state_record =
-      pexp_record ~loc
-        (List.map
-           (fun (f : field) -> (lident ~loc f.name, evar ~loc f.name))
-           fields)
-        None
-    in
+    let st_pat = record_pat ~loc fields in
+    let set_state_record = record_expr ~loc fields in
     let mapped_fix_expr =
       [%expr
         Soteria.Symex.Compo_res.map_missing res (fun fix ->
             List.map
               (fun v ->
                 [%e
-                  pexp_construct ~loc
+                  Ast_builder.Default.pexp_construct ~loc
                     (lident ~loc (constr_name target.name))
                     (Some [%expr v])])
               fix)]
@@ -308,47 +309,42 @@ module Sym_state_base = struct
         let open SM.Syntax in
         let* st_opt = SM.get_state () in
         let [%p st_pat] = of_opt st_opt in
-        let*^ res, [%p pvar ~loc target.name] = f [%e evar ~loc target.name] in
+        let*^ res, [%p Ast_builder.Default.pvar ~loc target.name] =
+          f [%e Ast_builder.Default.evar ~loc target.name]
+        in
         let+ () = SM.set_state (to_opt [%e set_state_record]) in
         [%e mapped_fix_expr]]
     in
-    pstr_value ~loc Nonrecursive
+    Ast_builder.Default.pstr_value ~loc Nonrecursive
       [
-        value_binding ~loc
-          ~pat:(pvar ~loc (fn_with_name target.name))
-          ~expr:(pexp_fun ~loc Nolabel None (pvar ~loc "f") body);
+        Ast_builder.Default.value_binding ~loc
+          ~pat:(Ast_builder.Default.pvar ~loc (fn_with_name target.name))
+          ~expr:
+            (Ast_builder.Default.pexp_fun ~loc Nolabel None
+               (Ast_builder.Default.pvar ~loc "f") body);
       ]
 
   let with_field_sym_item ~loc fields (target : field) =
-    let open Ast_builder.Default in
-    let st_pat =
-      ppat_record ~loc
-        (List.map
-           (fun (f : field) -> (lident ~loc f.name, pvar ~loc f.name))
-           fields)
-        Closed
-    in
-    let set_state_record =
-      pexp_record ~loc
-        (List.map
-           (fun (f : field) -> (lident ~loc f.name, evar ~loc f.name))
-           fields)
-        None
-    in
+    let st_pat = record_pat ~loc fields in
+    let set_state_record = record_expr ~loc fields in
     let body =
       [%expr
         let open SM.Syntax in
         let* st_opt = SM.get_state () in
         let [%p st_pat] = of_opt st_opt in
-        let*^ res, [%p pvar ~loc target.name] = f [%e evar ~loc target.name] in
+        let*^ res, [%p Ast_builder.Default.pvar ~loc target.name] =
+          f [%e Ast_builder.Default.evar ~loc target.name]
+        in
         let+ () = SM.set_state (to_opt [%e set_state_record]) in
         res]
     in
-    pstr_value ~loc Nonrecursive
+    Ast_builder.Default.pstr_value ~loc Nonrecursive
       [
-        value_binding ~loc
-          ~pat:(pvar ~loc (fn_with_sym_name target.name))
-          ~expr:(pexp_fun ~loc Nolabel None (pvar ~loc "f") body);
+        Ast_builder.Default.value_binding ~loc
+          ~pat:(Ast_builder.Default.pvar ~loc (fn_with_sym_name target.name))
+          ~expr:
+            (Ast_builder.Default.pexp_fun ~loc Nolabel None
+               (Ast_builder.Default.pvar ~loc "f") body);
       ]
 
   let produce_item ~loc fields =
