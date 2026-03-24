@@ -195,20 +195,22 @@ module Sym_state_base = struct
     [%stri let of_opt = function None -> [%e default_record] | Some v -> v]
 
   let to_opt_item ~loc fields =
-    let all_none_pat =
-      ppat_record ~loc
-        (List.map
-           (fun (f : field) ->
-             let p =
-               match f.kind with
-               | Managed _ -> [%pat? None]
-               | Ignored _ -> [%pat? _]
-             in
-             (lident ~loc f.name, p))
-           fields)
-        Closed
+    let emptiness_checks =
+      List.map
+        (fun (f : field) ->
+          let field_expr = pexp_field ~loc [%expr t] (lident ~loc f.name) in
+          match f.kind with
+          | Managed _ -> [%expr [%e field_expr] = None]
+          | Ignored empty -> [%expr [%e field_expr] = [%e empty]])
+        fields
     in
-    [%stri let to_opt = function [%p all_none_pat] -> None | t -> Some t]
+    let is_empty_expr =
+      match emptiness_checks with
+      | [] -> [%expr true]
+      | hd :: tl -> List.fold_left (fun acc e -> [%expr [%e acc] && [%e e]]) hd tl
+    in
+    [%stri
+      let to_opt t = if [%e is_empty_expr] then None else Some t]
 
   let empty_item ~loc = [%stri let empty = None]
 
@@ -309,6 +311,18 @@ module Sym_state_base = struct
      *)
     let st_pat = record_pat ~loc fields in
     let set_state_record = record_expr ~loc fields in
+    let mapped_res =
+      match target.kind with
+      | Managed _ ->
+          [%expr
+            Soteria.Symex.Compo_res.map_missing res
+              (List.map (fun v ->
+                   [%e
+                     pexp_construct ~loc
+                       (lident ~loc (constr_name target.name))
+                       (Some [%expr v])]))]
+      | Ignored _ -> [%expr res]
+    in
     let body =
       [%expr
         let open SM.Syntax in
@@ -316,12 +330,7 @@ module Sym_state_base = struct
         let [%p st_pat] = of_opt st_opt in
         let*^ res, [%p pvar ~loc target.name] = f [%e evar ~loc target.name] in
         let+ () = SM.set_state (to_opt [%e set_state_record]) in
-        Soteria.Symex.Compo_res.map_missing res
-          (List.map (fun v ->
-               [%e
-                 pexp_construct ~loc
-                   (lident ~loc (constr_name target.name))
-                   (Some [%expr v])]))]
+        [%e mapped_res]]
     in
     pstr_value ~loc Nonrecursive
       [
@@ -397,8 +406,8 @@ module Sym_state_base = struct
         subst_serialized_item ~loc fields;
         iter_vars_serialized_item ~loc fields;
       ]
-    @ List.map (with_field_item ~loc fields) (managed_fields fields)
-    @ List.map (with_field_sym_item ~loc fields) (managed_fields fields)
+    @ List.map (with_field_item ~loc fields) fields
+    @ List.map (with_field_sym_item ~loc fields) fields
     @ [ produce_item ~loc fields ]
 
   let make_intf ~loc ~symex_module:_ (_td : type_declaration) =
