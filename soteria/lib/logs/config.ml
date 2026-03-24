@@ -17,8 +17,8 @@ let v_list =
   Cmdliner.Arg.(
     value
     & flag_all
-    & info [ "v"; "verbose" ] ~docs:"OUTPUT OPTIONS" ~docv:"v"
-        ~doc:"Verbosity level, clashes with -q")
+    & info [ "v"; "verbose" ] ~docs:Soteria_std.Cmdliner_helpers.Sections.output
+        ~docv:"v" ~doc:"Verbosity level, clashes with -q")
 
 type cli = {
   v_list : bool list; [@term v_list]

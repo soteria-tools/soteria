@@ -103,7 +103,7 @@ module Cli = struct
       Cmdliner.Arg.(
         value
         & opt (some fuel_value_conv) None
-        & info [ "step-fuel" ] ~docs:"ANALYSIS OPTIONS"
+        & info [ "step-fuel" ] ~docs:Cmdliner_helpers.Sections.analysis
             ~env:(Cmdliner.Cmd.Env.info "SOTERIA_STEP_FUEL")
             ~doc:
               (Fmt.str
@@ -118,7 +118,7 @@ module Cli = struct
         & opt (some fuel_value_conv) None
         & info
             [ "branching-fuel"; "branch-fuel" ]
-            ~docs:"ANALYSIS OPTIONS" ~docv:"N"
+            ~docs:Cmdliner_helpers.Sections.analysis ~docv:"N"
             ~env:(Cmdliner.Cmd.Env.info "SOTERIA_BRANCHING_FUEL")
             ~doc:
               (Fmt.str
@@ -131,7 +131,7 @@ module Cli = struct
       Cmdliner.Arg.(
         value
         & flag
-        & info [ "infinite-fuel" ] ~docs:"ANALYSIS OPTIONS"
+        & info [ "infinite-fuel" ] ~docs:Cmdliner_helpers.Sections.analysis
             ~env:(Cmdliner.Cmd.Env.info "SOTERIA_INFINITE_FUEL")
             ~doc:
               (Fmt.str "Use infinite fuel (may not terminate). Default: %b"

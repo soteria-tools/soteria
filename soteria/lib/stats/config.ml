@@ -1,6 +1,6 @@
 type t = {
   output_stats : string option;
-      [@docs "OUTPUT OPTIONS"]
+      [@docs Soteria_std.Cmdliner_helpers.Sections.output]
       [@names [ "output-stats"; "dump-stats"; "stats" ]]
       [@env "SOTERIA_OUTPUT_STATS"]
       (** If stats should be output. If the value is "stdout", prints the stats

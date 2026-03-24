@@ -53,13 +53,6 @@
          --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
              Path to the Z3 executable
   
-  PLUGINS OPTIONS
-         --kani
-             Use the Kani library
-  
-         --miri
-             Use the Miri library
-  
   OUTPUT OPTIONS
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
@@ -124,8 +117,14 @@
          --frontend=ENUM (absent=obol)
              Choose the frontend to use: Charon or Obol
   
+         --kani
+             Use the Kani library
+  
          --log-compilation
              Log the compilation process
+  
+         --miri
+             Use the Miri library
   
          --no-compile
              Do not compile the Rust code, as it is already compiled
@@ -298,13 +297,6 @@
          --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
              Path to the Z3 executable
   
-  PLUGINS OPTIONS
-         --kani
-             Use the Kani library
-  
-         --miri
-             Use the Miri library
-  
   OUTPUT OPTIONS
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
@@ -369,8 +361,14 @@
          --frontend=ENUM (absent=obol)
              Choose the frontend to use: Charon or Obol
   
+         --kani
+             Use the Kani library
+  
          --log-compilation
              Log the compilation process
+  
+         --miri
+             Use the Miri library
   
          --no-compile
              Do not compile the Rust code, as it is already compiled
