@@ -321,6 +321,24 @@ module Sym_state_base = struct
           ~expr:(pexp_fun ~loc Nolabel None (pvar ~loc "f") body);
       ]
 
+  let produce_item ~loc fields =
+    let open Ast_builder.Default in
+    let cases =
+      List.map
+        (fun (f : field) ->
+          let ctor = lident ~loc (constr_name f.name) in
+          let lhs = ppat_construct ~loc ctor (Some (pvar ~loc "v")) in
+          let rhs =
+            [%expr
+              [%e evar ~loc ("with_" ^ f.name ^ "_sym")]
+                ([%e pexp_ident ~loc (lid ~loc (Longident.Ldot (f.mod_path, "produce")))]
+                   v)]
+          in
+          case ~lhs ~guard:None ~rhs)
+        fields
+    in
+    [%stri let produce (serialized : serialized) : unit SM.t = [%e pexp_match ~loc [%expr serialized] cases]]
+
   let make_impl ~loc ~symex_module (td : type_declaration) =
     let fields = fields_of_td_exn td in
     [ sm_item ~loc symex_module ]
@@ -330,6 +348,7 @@ module Sym_state_base = struct
     @ [ serialize_item ~loc fields; subst_serialized_item ~loc fields; iter_vars_serialized_item ~loc fields ]
     @ List.map (with_field_item ~loc fields) fields
     @ List.map (with_field_sym_item ~loc fields) fields
+    @ [ produce_item ~loc fields ]
 
   let make_intf ~loc ~symex_module:_ (_td : type_declaration) =
     [
@@ -344,6 +363,7 @@ module Sym_state_base = struct
       [%sigi: val serialize : t -> serialized list];
       [%sigi: val subst_serialized : (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized];
       [%sigi: val iter_vars_serialized : serialized -> (Svalue.Var.t * 'a Typed.ty -> unit) -> unit];
+      [%sigi: val produce : serialized -> unit SM.t];
     ]
 
   let str_type_decl ~loc ~path:_ (_rec, tds) symex_module =

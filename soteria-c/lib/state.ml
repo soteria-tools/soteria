@@ -189,17 +189,6 @@ let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, serialized list) SM.Result.t
     with_heap @@ Heap.wrap (Typed.Ptr.loc ptr) (Block.free ())
   else SM.Result.error `InvalidFree
 
-let produce (serialized : serialized) : unit SM.t =
-  let* st_opt = SM.get_state () in
-  let { heap; globs } = of_opt st_opt in
-  match serialized with
-  | Ser_heap sh ->
-      let*^ (), heap = Heap.produce sh heap in
-      SM.set_state (to_opt { heap; globs })
-  | Ser_globs sg ->
-      let*^ (), globs = Globs.produce sg globs in
-      SM.set_state (to_opt { heap; globs })
-
 let produce_basic_val loc offset ty v =
   let*^ len = Layout.size_of_s ty in
   let block : Block.serialized =
@@ -284,9 +273,5 @@ let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) =
  *)
 
 let get_global (sym : Cerb_frontend.Symbol.sym) =
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
-  let*^ loc, globs = Globs.get sym st.globs in
-  let ptr = Typed.Ptr.mk loc Usize.(0s) in
-  let+ () = SM.set_state (to_opt { st with globs }) in
-  ptr
+  let+ loc = with_globs_sym (Globs.get sym) in
+  Typed.Ptr.mk loc Usize.(0s)
