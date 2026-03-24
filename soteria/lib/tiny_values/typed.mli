@@ -57,8 +57,8 @@ val sem_eq : 'a t -> 'a t -> sbool t
 val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
 val v_true : [> sbool ] t
 val v_false : [> sbool ] t
-val bool : bool -> [> sbool ] t
-val as_bool : 'a t -> bool option
+val of_bool : bool -> [> sbool ] t
+val to_bool : 'a t -> bool option
 val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val conj : [< sbool ] t list -> [> sbool ] t
 val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit

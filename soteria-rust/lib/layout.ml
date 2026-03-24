@@ -455,11 +455,11 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
      type *)
   | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
     ->
-      ok (Typed.bool (dst_kind ty1 = dst_kind ty2))
+      ok (Typed.of_bool (dst_kind ty1 = dst_kind ty2))
   | TLiteral (TUInt uint1), TLiteral (TUInt uint2) ->
-      ok (Typed.bool (size_of_uint_ty uint1 = size_of_uint_ty uint2))
+      ok (Typed.of_bool (size_of_uint_ty uint1 = size_of_uint_ty uint2))
   | TLiteral (TInt int1), TLiteral (TInt int2) ->
-      ok (Typed.bool (size_of_int_ty int1 = size_of_int_ty int2))
+      ok (Typed.of_bool (size_of_int_ty int1 = size_of_int_ty int2))
   | TLiteral (TUInt U32), TLiteral TChar | TLiteral TChar, TLiteral (TUInt U32)
     ->
       ok Typed.v_true

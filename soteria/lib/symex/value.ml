@@ -29,10 +29,10 @@ module type S = sig
   *)
   val mk_var : Var.t -> 'a ty -> 'a t
 
-  (** [as_bool v] returns [Some b] if [v] is a concrete boolean [b], or [None]
+  (** [to_bool v] returns [Some b] if [v] is a concrete boolean [b], or [None]
       if [v] is symbolic. *)
-  val as_bool : 'a t -> bool option
+  val to_bool : 'a t -> bool option
 
-  (** [bool b] creates a concrete boolean value from [b]. *)
-  val bool : bool -> sbool t
+  (** [of_bool b] creates a concrete boolean value from [b]. *)
+  val of_bool : bool -> sbool t
 end

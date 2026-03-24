@@ -12,6 +12,7 @@ Core components of Soteria, enabling symbolic execution, solver-interaction, use
 
 {!modules:
   Soteria.Symex
+  Soteria.Data
   Soteria.Sym_states
   Soteria.Solvers
   Soteria.Logs

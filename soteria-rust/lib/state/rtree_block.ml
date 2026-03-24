@@ -17,28 +17,30 @@ module Make (Sptr : Sptr.S) = struct
 
   module MemVal = struct
     module TB = Soteria.Sym_states.Tree_block
+    module S_bool = Typed.Bool
 
-    module SBoundedInt = struct
+    module S_bounded_int = struct
       include Typed
-      include Typed.Infix
+      include Typed.BV
 
-      type sint = T.sint
-      type sbool = T.sbool
+      type t = T.sint
 
-      let zero () = Typed.BitVec.usize Z.zero
-      let ( <@ ) = Typed.Infix.( <$@ )
-      let ( <=@ ) = Typed.Infix.( <=$@ )
+      let of_z = Typed.BitVec.usize
+      let zero () = of_z Z.zero
+      let one () = of_z Z.one
+      let lt = Typed.Infix.( <$@ )
+      let leq = Typed.Infix.( <=$@ )
 
       (* We assume addition/overflow within the range of an allocation may never
          overflow. This allows extremely good reductions around inequalities,
          which Tree_block relies on. *)
-      let ( +@ ) = Typed.Infix.( +!!@ )
-      let ( -@ ) = Typed.Infix.( -!!@ )
+      let add = Typed.Infix.( +!!@ )
+      let sub = Typed.Infix.( -!!@ )
 
-      let in_bound (v : sint Typed.t) : sbool Typed.t =
+      let is_in_bound (v : t Typed.t) : T.sbool Typed.t =
         let max = Layout.max_value_z (TInt Isize) in
         let max = Typed.BitVec.usize max in
-        v >=@ zero () &&@ (v <=@ max)
+        v <=@ max
     end
 
     type qty = Totally | Partially [@@deriving show { with_path = false }]

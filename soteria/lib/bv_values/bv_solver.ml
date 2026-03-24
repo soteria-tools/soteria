@@ -446,7 +446,7 @@ struct
       | TBitVector n ->
           let max = Z.(shift_left one n) in
           fun () -> Svalue.BitVec.mk n (Z.random_int max)
-      | TBool -> fun () -> Svalue.Bool.bool (Random.bool ())
+      | TBool -> fun () -> Svalue.Bool.of_bool (Random.bool ())
       (* TODO: because we can't evaluate floats, we can never do a trivial check
          for them. *)
       | TFloat _ -> raise No_model
