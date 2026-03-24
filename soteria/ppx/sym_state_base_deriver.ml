@@ -2,9 +2,16 @@ open Ppxlib
 open Ast_builder.Default
 
 module Sym_state_base = struct
+  type lift_cfg = { run : expression; state_field : string option }
+
   type field_kind = Managed of Longident.t | Ignored of expression
 
-  type field = { name : string; kind : field_kind; loc : Location.t }
+  type field = {
+    name : string;
+    kind : field_kind;
+    lift : lift_cfg option;
+    loc : Location.t;
+  }
 
   let lid ~loc txt = { loc; txt }
   let lident ~loc s = lid ~loc (Longident.Lident s)
@@ -12,6 +19,7 @@ module Sym_state_base = struct
   let exprdot ~loc base name = pexp_ident ~loc (liddot ~loc base name)
   let err ~loc msg = Location.raise_errorf ~loc "[@@deriving sym_state] %s" msg
   let ignore_attr = "sym_states.ignore"
+  let lift_attr = "sym_states.lift"
 
   let module_of_core_type = function
     | {
@@ -49,6 +57,42 @@ module Sym_state_base = struct
         | _ -> bad ())
     | _ -> bad ()
 
+  let find_record_field_expr name fields =
+    fields
+    |> List.find_map (fun ({ txt; _ }, e) ->
+           match txt with Longident.Lident n when String.equal n name -> Some e | _ -> None)
+
+  let ident_name_exn ~loc = function
+    | { pexp_desc = Pexp_ident { txt = Longident.Lident s; _ }; _ } -> s
+    | { pexp_desc = Pexp_construct ({ txt = Longident.Lident s; _ }, None); _ }
+      -> s
+    | _ -> err ~loc "expected an identifier"
+
+  let lift_cfg_of_attr_exn (attr : attribute) =
+    let bad () =
+      err ~loc:attr.attr_loc
+        "expects [@sym_states.lift { run = <expr>; state = <field>? }]"
+    in
+    match attr.attr_payload with
+    | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
+        match expr.pexp_desc with
+        | Pexp_record (fields, None) ->
+            let run =
+              match find_record_field_expr "run" fields with Some e -> e | None -> bad ()
+            in
+            let state_field =
+              find_record_field_expr "state" fields
+              |> Option.map (ident_name_exn ~loc:attr.attr_loc)
+            in
+            { run; state_field }
+        | _ -> bad ())
+    | _ -> bad ()
+
+  let lift_cfg_of_label (ld : label_declaration) =
+    ld.pld_attributes
+    |> List.find_opt (fun (attr : attribute) -> String.equal attr.attr_name.txt lift_attr)
+    |> Option.map lift_cfg_of_attr_exn
+
   let ignored_empty_expr (ld : label_declaration) =
     ld.pld_attributes
     |> List.find_opt (fun (attr : attribute) -> String.equal attr.attr_name.txt ignore_attr)
@@ -69,6 +113,7 @@ module Sym_state_base = struct
             {
               name = ld.pld_name.txt;
               kind;
+              lift = lift_cfg_of_label ld;
               loc = ld.pld_loc;
             })
           labels
@@ -323,13 +368,45 @@ module Sym_state_base = struct
                        (Some [%expr v])]))]
       | Ignored _ -> [%expr res]
     in
+    let bind_expr =
+      match target.lift with
+      | None -> [%expr f [%e evar ~loc target.name]]
+      | Some lift -> [%expr ([%e lift.run] st) (f [%e evar ~loc target.name])]
+    in
+    let set_state_expr =
+      match target.lift with
+      | None -> [%expr to_opt [%e set_state_record]]
+      | Some { state_field = None; _ } ->
+          let updated =
+            pexp_record ~loc
+              [ (lident ~loc target.name, evar ~loc target.name) ]
+              (Some [%expr st])
+          in
+          [%expr to_opt [%e updated]]
+      | Some { state_field = Some sf; _ } ->
+          let updated =
+            pexp_record ~loc
+              [
+                (lident ~loc target.name, evar ~loc target.name);
+                (lident ~loc sf, evar ~loc sf);
+              ]
+              (Some [%expr st])
+          in
+          [%expr to_opt [%e updated]]
+    in
+    let bind_pat =
+      match target.lift with
+      | Some { state_field = Some sf; _ } -> [%pat? ([%p pvar ~loc "res"], [%p pvar ~loc target.name]), [%p pvar ~loc sf]]
+      | _ -> [%pat? [%p pvar ~loc "res"], [%p pvar ~loc target.name]]
+    in
     let body =
       [%expr
         let open SM.Syntax in
         let* st_opt = SM.get_state () in
-        let [%p st_pat] = of_opt st_opt in
-        let*^ res, [%p pvar ~loc target.name] = f [%e evar ~loc target.name] in
-        let+ () = SM.set_state (to_opt [%e set_state_record]) in
+        let st = of_opt st_opt in
+        let [%p st_pat] = st in
+        let*^ [%p bind_pat] = [%e bind_expr] in
+        let+ () = SM.set_state [%e set_state_expr] in
         [%e mapped_res]]
     in
     pstr_value ~loc Nonrecursive
@@ -351,13 +428,45 @@ module Sym_state_base = struct
      *)
     let st_pat = record_pat ~loc fields in
     let set_state_record = record_expr ~loc fields in
+    let bind_expr =
+      match target.lift with
+      | None -> [%expr f [%e evar ~loc target.name]]
+      | Some lift -> [%expr ([%e lift.run] st) (f [%e evar ~loc target.name])]
+    in
+    let set_state_expr =
+      match target.lift with
+      | None -> [%expr to_opt [%e set_state_record]]
+      | Some { state_field = None; _ } ->
+          let updated =
+            pexp_record ~loc
+              [ (lident ~loc target.name, evar ~loc target.name) ]
+              (Some [%expr st])
+          in
+          [%expr to_opt [%e updated]]
+      | Some { state_field = Some sf; _ } ->
+          let updated =
+            pexp_record ~loc
+              [
+                (lident ~loc target.name, evar ~loc target.name);
+                (lident ~loc sf, evar ~loc sf);
+              ]
+              (Some [%expr st])
+          in
+          [%expr to_opt [%e updated]]
+    in
+    let bind_pat =
+      match target.lift with
+      | Some { state_field = Some sf; _ } -> [%pat? ([%p pvar ~loc "res"], [%p pvar ~loc target.name]), [%p pvar ~loc sf]]
+      | _ -> [%pat? [%p pvar ~loc "res"], [%p pvar ~loc target.name]]
+    in
     let body =
       [%expr
         let open SM.Syntax in
         let* st_opt = SM.get_state () in
-        let [%p st_pat] = of_opt st_opt in
-        let*^ res, [%p pvar ~loc target.name] = f [%e evar ~loc target.name] in
-        let+ () = SM.set_state (to_opt [%e set_state_record]) in
+        let st = of_opt st_opt in
+        let [%p st_pat] = st in
+        let*^ [%p bind_pat] = [%e bind_expr] in
+        let+ () = SM.set_state [%e set_state_expr] in
         res]
     in
     pstr_value ~loc Nonrecursive
