@@ -52,30 +52,34 @@ struct
   end)
 
   module Solver_state = struct
-    type t = Typed.sbool Typed.t Dynarray.t Dynarray.t
+    type t = {
+      slots : Typed.sbool Typed.t Dynarray.t;
+      saves : int Dynarray.t;
+    }
 
     let init () =
-      let t = Dynarray.create () in
-      Dynarray.add_last t (Dynarray.create ());
-      t
+      let saves = Dynarray.create () in
+      Dynarray.add_last saves 0;
+      { slots = Dynarray.create (); saves }
 
     let reset t =
-      Dynarray.clear t;
-      Dynarray.add_last t (Dynarray.create ())
+      Dynarray.clear t.slots;
+      Dynarray.clear t.saves;
+      Dynarray.add_last t.saves 0
 
-    let save t = Dynarray.add_last t (Dynarray.create ())
-    let backtrack_n t n = Dynarray.truncate t (Dynarray.length t - n)
+    let save t = Dynarray.add_last t.saves (Dynarray.length t.slots)
+
+    let backtrack_n t n =
+      let cutoff = Dynarray.get t.saves (Dynarray.length t.saves - n) in
+      Dynarray.truncate t.saves (Dynarray.length t.saves - n);
+      Dynarray.truncate t.slots cutoff
 
     let add_constraint (t : t) v =
       if Typed.equal v Typed.v_true then ()
-      else
-        match Dynarray.find_last t with
-        | None -> failwith "add_constraint: empty array"
-        | Some last ->
-            if Typed.equal v Typed.v_false then (
-              Dynarray.clear last;
-              Dynarray.add_last last Typed.v_false)
-            else Dynarray.add_last last v
+      else if Typed.equal v Typed.v_false then (
+        Dynarray.truncate t.slots (Dynarray.get_last t.saves);
+        Dynarray.add_last t.slots Typed.v_false)
+      else Dynarray.add_last t.slots v
 
     (** This function returns [Some b] if the solver state is trivially [b]
         (true or false). We maintain solver state such that trivial truths are
@@ -83,24 +87,22 @@ struct
         Therefore, it is enough to check either for emptyness of the topmost
         layer or falseness of the latest element. *)
     let trivial_truthiness (t : t) =
-      match Dynarray.find_last t with
-      | None -> Some true
-      | Some last -> (
-          match Dynarray.find_last last with
-          | None -> Some true
-          | Some v when Typed.equal v Typed.v_false -> Some false
-          | _ -> None)
+      let frame_start = Dynarray.get_last t.saves in
+      if Dynarray.length t.slots = frame_start then Some true
+      else
+        let v = Dynarray.get_last t.slots in
+        if Typed.equal v Typed.v_false then Some false else None
 
-    let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
+    let iter (t : t) f = Dynarray.iter f t.slots
 
     let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
       let neg_v = Typed.not v in
       Dynarray.find_map
-        (Dynarray.find_map (fun value ->
-             if Typed.equal value v then Some true
-             else if Typed.equal value neg_v then Some false
-             else None))
-        t
+        (fun value ->
+          if Typed.equal value v then Some true
+          else if Typed.equal value neg_v then Some false
+          else None)
+        t.slots
   end
 
   type t = {
@@ -229,41 +231,39 @@ struct
     (* Invariants: the PC only has checked things, and then only unchecked
        things. *)
 
-    type t = slot Dynarray.t Dynarray.t [@@deriving show]
+    type t = { slots : slot Dynarray.t; saves : int Dynarray.t }
+    [@@deriving show]
 
     let init () =
-      let t = Dynarray.create () in
-      Dynarray.add_last t (Dynarray.create ());
-      t
+      let saves = Dynarray.create () in
+      Dynarray.add_last saves 0;
+      { slots = Dynarray.create (); saves }
 
     let reset t =
-      Dynarray.clear t;
-      Dynarray.add_last t (Dynarray.create ())
+      Dynarray.clear t.slots;
+      Dynarray.clear t.saves;
+      Dynarray.add_last t.saves 0
 
-    let save t = Dynarray.add_last t (Dynarray.create ())
-    let backtrack_n t n = Dynarray.truncate t (Dynarray.length t - n)
+    let save t = Dynarray.add_last t.saves (Dynarray.length t.slots)
+
+    let backtrack_n t n =
+      let cutoff = Dynarray.get t.saves (Dynarray.length t.saves - n) in
+      Dynarray.truncate t.saves (Dynarray.length t.saves - n);
+      Dynarray.truncate t.slots cutoff
 
     let add_constraint (t : t) v =
       if Typed.equal v Typed.v_true then ()
-      else
-        match Dynarray.find_last t with
-        | None -> failwith "add_constraint: empty array"
-        | Some last ->
-            if Typed.equal v Typed.v_false then (
-              Dynarray.clear last;
-              (* We mark false as unchecked to make sure trivial_truthiness
-                 doesn't infer the wrong thing. *)
-              Dynarray.add_last last
-                { value = Asrt Typed.v_false; checked = false })
-            else Dynarray.add_last last { value = Asrt v; checked = false }
+      else if Typed.equal v Typed.v_false then (
+        Dynarray.truncate t.slots (Dynarray.get_last t.saves);
+        (* We mark false as unchecked to make sure trivial_truthiness
+           doesn't infer the wrong thing. *)
+        Dynarray.add_last t.slots { value = Asrt Typed.v_false; checked = false })
+      else Dynarray.add_last t.slots { value = Asrt v; checked = false }
 
     let dirty_variable (t : t) v =
-      match Dynarray.find_last t with
-      | None -> failwith "dirty_variable: empty array"
-      | Some last -> Dynarray.add_last last { value = Dirty v; checked = false }
+      Dynarray.add_last t.slots { value = Dirty v; checked = false }
 
-    let to_seq_rev (t : t) =
-      Seq.concat_map Dynarray.to_seq_rev (Dynarray.to_seq_rev t)
+    let to_seq_rev (t : t) = Dynarray.to_seq_rev t.slots
 
     (** This function returns [Some b] if the solver state is trivially [b]
         (true or false). We maintain solver state such that trivial truths are
@@ -283,21 +283,21 @@ struct
     let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
       let neg_v = Typed.not v in
       Dynarray.find_map
-        (Dynarray.find_map (function
+        (function
           | { value = Asrt value; _ } ->
               if Typed.equal value v then Some true
               else if Typed.equal value neg_v then Some false
               else None
-          | _ -> None))
-        t
+          | _ -> None)
+        t.slots
 
     (** Iterate over the assertions in the PC. *)
     let iter (t : t) f =
       Dynarray.iter
-        (Dynarray.iter (function
+        (function
           | { value = Asrt value; _ } -> f value
-          | { value = Dirty _; _ } -> ()))
-        t
+          | { value = Dirty _; _ } -> ())
+        t.slots
 
     (** If we have checked sat and obtaied SAT, we can mark all elements of the
         list as checked! *)
