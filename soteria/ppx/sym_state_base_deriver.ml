@@ -56,23 +56,6 @@ module Sym_state_base = struct
     let id = pexp_ident ~loc (lid ~loc (Longident.Ldot (mod_path, fn))) in
     List.fold_left (fun acc arg -> pexp_apply ~loc acc [ (Nolabel, arg) ]) id args
 
-  let get_attr ~name attrs =
-    List.find_opt (fun (attr : attribute) -> attr.attr_name.txt = name) attrs
-
-  let symex_module_of_td_exn (td : type_declaration) =
-    match get_attr ~name:"sym_state_base.symex" td.ptype_attributes with
-    | None -> Longident.Lident "Csymex"
-    | Some attr -> (
-        match attr.attr_payload with
-        | PStr [ { pstr_desc = Pstr_eval ({ pexp_desc = Pexp_constant (Pconst_string (s, _, _)); _ }, _); _ } ]
-          -> Longident.parse s
-        | PStr [ { pstr_desc = Pstr_eval ({ pexp_desc = Pexp_ident { txt; _ }; _ }, _); _ } ]
-          -> txt
-        | _ ->
-            Location.raise_errorf ~loc:attr.attr_name.loc
-              "[sym_state_base.symex] expects a module path string, e.g. \
-               [@@sym_state_base.symex \"Csymex\"]")
-
   let constr_name name = "Ser_" ^ name
 
   let serialized_ctor_decl ~loc (field : field) =
@@ -280,16 +263,15 @@ module Sym_state_base = struct
           ~expr:(pexp_fun ~loc Nolabel None (pvar ~loc "f") body);
       ]
 
-  let make_impl ~loc (td : type_declaration) =
+  let make_impl ~loc ~symex_module (td : type_declaration) =
     let fields = fields_of_td_exn td in
-    let symex_module = symex_module_of_td_exn td in
     [ sm_item ~loc symex_module ]
     @ [ serialized_type_item ~loc fields; pp_serialized_item ~loc fields; show_serialized_item ~loc ]
     @ [ of_opt_item ~loc fields; to_opt_item ~loc fields; empty_item ~loc ]
     @ [ serialize_item ~loc fields; subst_serialized_item ~loc fields; iter_vars_serialized_item ~loc fields ]
     @ List.map (with_field_item ~loc fields) fields
 
-  let make_intf ~loc (_td : type_declaration) =
+  let make_intf ~loc ~symex_module:_ (_td : type_declaration) =
     [
       [%sigi: type serialized];
       [%sigi: val pp_serialized : Format.formatter -> serialized -> unit];
@@ -302,23 +284,46 @@ module Sym_state_base = struct
       [%sigi: val iter_vars_serialized : serialized -> (Svalue.Var.t * 'a Typed.ty -> unit) -> unit];
     ]
 
-  let str_type_decl ~loc ~path:_ (_rec, tds) =
+  let str_type_decl ~loc ~path:_ (_rec, tds) symex_module =
+    let symex_module =
+      match symex_module with
+      | None -> Longident.Lident "Csymex"
+      | Some ({ pexp_desc = Pexp_ident { txt; _ }; _ } : expression) -> txt
+      | Some ({ pexp_desc = Pexp_construct ({ txt; _ }, None); _ } : expression)
+        -> txt
+      | Some expr ->
+          Location.raise_errorf ~loc:expr.pexp_loc
+            "[sym_state_base] expected { symex = <Module> }"
+    in
     match tds with
-    | [ td ] -> make_impl ~loc td
+    | [ td ] -> make_impl ~loc ~symex_module td
     | _ ->
         Location.raise_errorf ~loc
           "[@@deriving sym_state_base] expects exactly one type declaration"
 
-  let sig_type_decl ~loc ~path:_ (_rec, tds) =
+  let sig_type_decl ~loc ~path:_ (_rec, tds) symex_module =
+    let symex_module =
+      match symex_module with
+      | None -> Longident.Lident "Csymex"
+      | Some ({ pexp_desc = Pexp_ident { txt; _ }; _ } : expression) -> txt
+      | Some ({ pexp_desc = Pexp_construct ({ txt; _ }, None); _ } : expression)
+        -> txt
+      | Some expr ->
+          Location.raise_errorf ~loc:expr.pexp_loc
+            "[sym_state_base] expected { symex = <Module> }"
+    in
     match tds with
-    | [ td ] -> make_intf ~loc td
+    | [ td ] -> make_intf ~loc ~symex_module td
     | _ ->
         Location.raise_errorf ~loc
           "[@@deriving sym_state_base] expects exactly one type declaration"
 
   let register () =
-    let str = Deriving.Generator.make_noarg str_type_decl in
-    let sig_ = Deriving.Generator.make_noarg sig_type_decl in
+    let symex_arg = Deriving.Args.arg "symex" Ast_pattern.__ in
+    let str_args = Deriving.Args.(empty +> symex_arg) in
+    let sig_args = Deriving.Args.(empty +> symex_arg) in
+    let str = Deriving.Generator.make str_args str_type_decl in
+    let sig_ = Deriving.Generator.make sig_args sig_type_decl in
     Deriving.add "sym_state_base" ~str_type_decl:str ~sig_type_decl:sig_
     |> Deriving.ignore;
     Deriving.add "soteria.sym_state_base" ~str_type_decl:str ~sig_type_decl:sig_

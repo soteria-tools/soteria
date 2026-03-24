@@ -30,7 +30,7 @@ module Heap =
     (Block)
 
 type t = { heap : Heap.t option; globs : Globs.t option }
-[@@deriving show { with_path = false }, sym_state_base]
+[@@deriving show { with_path = false }, sym_state_base { symex = Csymex }]
 
 open SM.Syntax
 
