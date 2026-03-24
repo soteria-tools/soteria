@@ -263,8 +263,10 @@ module Reversible = struct
 
   let register () =
     let open Ppxlib in
-    Deriving.add "reversible"
-      ~str_type_decl:(Deriving.Generator.make_noarg str_type_decl)
-      ~sig_type_decl:(Deriving.Generator.make_noarg sig_type_decl)
+    let str = Deriving.Generator.make_noarg str_type_decl in
+    let sig_ = Deriving.Generator.make_noarg sig_type_decl in
+    Deriving.add "reversible" ~str_type_decl:str ~sig_type_decl:sig_
+    |> Deriving.ignore;
+    Deriving.add "soteria.reversible" ~str_type_decl:str ~sig_type_decl:sig_
     |> Deriving.ignore
 end
