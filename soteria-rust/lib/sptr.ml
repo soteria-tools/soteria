@@ -17,6 +17,7 @@ open T
 module type DecayMapS = sig
   type t
 
+  val empty : t
   val pp : Format.formatter -> t -> unit
 
   (** Decays the given location into an integer, updating the decay map
@@ -28,20 +29,20 @@ module type DecayMapS = sig
     size:[< sint ] Typed.t ->
     align:[< nonzero ] Typed.t ->
     [< sloc ] Typed.t ->
-    t option ->
-    (sint Typed.t * t option) Rustsymex.t
+    t ->
+    (sint Typed.t * t) Rustsymex.t
 
   (** Tries finding, for the given integer, the matching provenance in the decay
       map. If found, it returns that provenance, along with the exposed address
       for that allocation at offset 0. Otherwise returns [None]. *)
   val from_exposed :
     [< sint ] Typed.t ->
-    t option ->
-    ((sloc Typed.t * sint Typed.t) option * t option) Rustsymex.t
+    t ->
+    ((sloc Typed.t * sint Typed.t) option * t) Rustsymex.t
 end
 
 module DecayMap : DecayMapS = struct
-  module StateKey = struct
+  module MapKey = struct
     include Typed
 
     type t = sloc Typed.t
@@ -49,69 +50,44 @@ module DecayMap : DecayMapS = struct
     let to_int = unique_tag
     let pp = ppa
     let simplify = Rustsymex.simplify
-    let fresh () = failwith "Allocation is not valid for the decay map!"
   end
 
-  module Data = struct
-    type t = { address : sint Typed.t; exposed : bool }
-    [@@deriving show { with_path = false }]
+  type entry = { address : sint Typed.t; exposed : bool }
+  [@@deriving show { with_path = false }]
 
-    let fresh () =
-      Rustsymex.not_impl "DecayMap.Data.fresh (cannot fix missing decay info)"
+  module Map =
+    Soteria.Data.S_map.Direct_access_patricia_tree (Rustsymex) (MapKey)
 
-    let sem_eq d1 d2 =
-      if d1.exposed == d2.exposed then d1.address ==@ d2.address
-      else Typed.bool false
+  type t = entry Map.t
 
-    let subst subst_var d =
-      let address = Typed.subst subst_var d.address in
-      { d with address }
+  let pp = Map.pp pp_entry
+  let empty = Map.empty
 
-    let iter_vars d f = Typed.iter_vars d.address f
-  end
-
-  module Excl_data = Soteria.Sym_states.Excl.Make (Rustsymex) (Data)
-
-  include
-    Soteria.Sym_states.Pmap.Make_patricia_tree (Rustsymex) (StateKey)
-      (Excl_data)
-
-  open SM.Syntax
-
-  let pp ft t = pp ft t
-
-  let decay ~expose ~size ~align (loc : [< sloc ] Typed.t) : sint Typed.t SM.t =
-    if%sat Typed.Ptr.is_null_loc loc then SM.return Usize.(0s)
+  let decay ~expose ~size ~align (loc : [< sloc ] Typed.t) (map : t) :
+      (T.sint Typed.t * t) Rustsymex.t =
+    if%sat Typed.Ptr.is_null_loc loc then return (Usize.(0s), map)
     else
-      let+ res =
-        wrap
-          (loc :> sloc Typed.t)
-          (let open Excl_data.SM in
-           let open Syntax in
-           let* data_opt = get_state () in
-           match data_opt with
-           | Some { address; exposed } ->
-               let* () =
-                 set_state (Some { address; exposed = exposed || expose })
-               in
-               Result.ok address
-           | None ->
-               let* address = nondet (Typed.t_usize ()) in
-               let isize_max = Layout.max_value_z (TInt Isize) in
-               let* () =
-                 assume
-                   [
-                     (address %@ align ==@ Usize.(0s));
-                     align <=@ address;
-                     address <@ Typed.BitVec.usize isize_max -!@ size;
-                   ]
-               in
-               let* () = set_state (Some { address; exposed = expose }) in
-               Result.ok address)
-      in
-      Soteria.Symex.Compo_res.get_ok res
+      let* key, entry = Map.find_opt (cast loc) map in
+      match entry with
+      | Some { address; exposed } when Stdlib.not exposed && expose ->
+          let map = Map.syntactic_add key { address; exposed = true } map in
+          return (address, map)
+      | Some { address; exposed = _ } -> return (address, map)
+      | None ->
+          let* address = nondet (Typed.t_usize ()) in
+          let isize_max = Layout.max_value_z (TInt Isize) in
+          let+ () =
+            assume
+              [
+                (address %@ align ==@ Usize.(0s));
+                align <=@ address;
+                address <@ Typed.BitVec.usize isize_max -!@ size;
+              ]
+          in
+          let map = Map.syntactic_add key { address; exposed = expose } map in
+          (address, map)
 
-  let from_exposed (loc_int : [< sint ] Typed.t) =
+  let from_exposed (loc_int : [< sint ] Typed.t) (map : t) =
     (* UX: we only consider the first one; this is more or less correct, as per
        the documentation of [with_exposed_provenance]: "The provenance of the
        returned pointer is that of some pointer that was previously exposed"
@@ -119,21 +95,19 @@ module DecayMap : DecayMapS = struct
        See
        https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html *)
     let usize_ty = Typed.t_usize () in
-    let* st = SM.get_state () in
-    let bindings = syntactic_bindings (of_opt st) in
+    let bindings = Map.syntactic_bindings map in
     let binding =
       Typed.iter_vars loc_int
       |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
       |> Iter.filter_map (fun (var, ty) ->
           let v = Typed.mk_var var ty in
           Seq.find
-            (fun (_, Data.{ address; exposed }) ->
-              exposed && Typed.equal v address)
+            (fun (_, { address; exposed }) -> exposed && Typed.equal v address)
             bindings)
-      |> Iter.map (fun (loc, Data.{ address; _ }) -> (loc, address))
+      |> Iter.map (fun (loc, { address; _ }) -> (loc, address))
       |> Iter.to_opt
     in
-    SM.return binding
+    return (binding, map)
 end
 
 module DecayMapMonad = struct
@@ -141,7 +115,7 @@ module DecayMapMonad = struct
     Soteria.Sym_states.State_monad.Make
       (Rustsymex)
       (struct
-        type t = DecayMap.t option
+        type t = DecayMap.t
       end)
 
   let not_impl msg = lift @@ not_impl msg

@@ -784,7 +784,7 @@ def run_infer_on_experiment(experiment_name: str):
     # Run infer
     experiment_dir = global_config.experiment_folder / config.path
     with contextlib.chdir(experiment_dir):
-        cmd = f"infer --compilation-database {experiment.compile_commands_parsed} -j 1 --pulse-only --no-pulse-force-continue --pulse-log-unknown-calls"
+        cmd = f"infer --compilation-database {experiment.compile_commands_parsed} -j 1 --pulse-only"
         global_printer.print_message(f"{MAGENTA}Running:\n{cmd}{RESET}")
         os.system(cmd)
 

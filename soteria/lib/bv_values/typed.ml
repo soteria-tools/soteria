@@ -68,6 +68,12 @@ let size_of_int x = size_of x.node.ty
 let cast_checked2 x y =
   if equal_ty x.node.ty y.node.ty then Some (x, y, x.node.ty) else None
 
+module Bool = struct
+  include Bool
+
+  type t = sbool
+end
+
 module BitVec = struct
   include BitVec
 
