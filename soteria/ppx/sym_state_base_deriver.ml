@@ -293,6 +293,34 @@ module Sym_state_base = struct
           ~expr:(pexp_fun ~loc Nolabel None (pvar ~loc "f") body);
       ]
 
+  let with_field_sym_item ~loc fields (target : field) =
+    let open Ast_builder.Default in
+    let fn_name = "with_" ^ target.name ^ "_sym" in
+    let st_pat =
+      ppat_record ~loc
+        (List.map (fun (f : field) -> (lident ~loc f.name, pvar ~loc f.name)) fields)
+        Closed
+    in
+    let set_state_record =
+      pexp_record ~loc
+        (List.map (fun (f : field) -> (lident ~loc f.name, evar ~loc f.name)) fields)
+        None
+    in
+    let body =
+      [%expr
+        let open SM.Syntax in
+        let* st_opt = SM.get_state () in
+        let [%p st_pat] = of_opt st_opt in
+        let*^ res, [%p pvar ~loc target.name] = f [%e evar ~loc target.name] in
+        let+ () = SM.set_state (to_opt [%e set_state_record]) in
+        res]
+    in
+    pstr_value ~loc Nonrecursive
+      [
+        value_binding ~loc ~pat:(pvar ~loc fn_name)
+          ~expr:(pexp_fun ~loc Nolabel None (pvar ~loc "f") body);
+      ]
+
   let make_impl ~loc ~symex_module (td : type_declaration) =
     let fields = fields_of_td_exn td in
     [ sm_item ~loc symex_module ]
@@ -301,6 +329,7 @@ module Sym_state_base = struct
     @ [ of_opt_item ~loc fields; to_opt_item ~loc fields; empty_item ~loc ]
     @ [ serialize_item ~loc fields; subst_serialized_item ~loc fields; iter_vars_serialized_item ~loc fields ]
     @ List.map (with_field_item ~loc fields) fields
+    @ List.map (with_field_sym_item ~loc fields) fields
 
   let make_intf ~loc ~symex_module:_ (_td : type_declaration) =
     [
