@@ -74,7 +74,7 @@ package-soteria-c: ocaml packaging/soteria-c/bin-locations.txt packaging/soteria
 
 packaging/soteria-c/bin-locations.txt:
 	$(WHICHX) soteria-c > $@
-	$(WHICHX) z3 >> $@
+	$(WHICHX) z3 >> $@ 2>/dev/null || true
 
 packaging/soteria-c/macOS_dylibs.txt:
 	$(PACKAGING_BIN) infer-dylibs $(SOTERIA_C_BIN) > $@
@@ -93,9 +93,9 @@ package-soteria-rust: ocaml packaging/soteria-rust/bin-locations.txt packaging/s
 
 packaging/soteria-rust/bin-locations.txt:
 	$(WHICHX) soteria-rust > $@
-	$(WHICHX) z3 >> $@
-	which obol >> $@
-	which charon >> $@
+	$(WHICHX) z3 >> $@ 2>/dev/null || true
+	which obol >> $@ 2>/dev/null || true
+	which charon >> $@ 2>/dev/null || true
 	which obol-driver >> $@ 2>/dev/null || true
 	which charon-driver >> $@ 2>/dev/null || true
 

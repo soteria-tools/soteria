@@ -9,7 +9,7 @@ from common import *
 
 def file_str(file_name: str, tool: ToolName):
     issue = KNOWN_ISSUES.get(file_name, None)
-    if issue and tool == "Rusteria":
+    if issue and tool == "Soteria":
         return f"{GRAY}{file_name} {YELLOW}✦{RESET} {BOLD}{issue}{RESET} {GRAY}{tool}{RESET}"
     return f"{file_name} {GRAY}{tool}{RESET}"
 
@@ -24,7 +24,7 @@ class TestCategoriser(Protocol):
     def __call__(self, test: str, *, expect_failure: bool) -> LogCategorisation: ...
 
 
-def categorise_rusteria(test: str, *, expect_failure: bool) -> LogCategorisation:
+def categorise_soteria(test: str, *, expect_failure: bool) -> LogCategorisation:
 
     if "error: Compilation error" in test:
         if expect_failure:
@@ -286,7 +286,7 @@ def analyse(file: str) -> LogInfo:
     file_filters = [arg[3:] for arg in sys.argv if arg.startswith("-f=")]
 
     stats: LogInfo = {}
-    tool: ToolName = "Rusteria"
+    tool: ToolName = "Soteria"
 
     def log(tool: ToolName, test: str, outcome: Outcome, reason: Optional[str] = None):
         if outcome not in stats:
@@ -335,8 +335,8 @@ def analyse(file: str) -> LogInfo:
         # categorise appropriately
         if tool == "Kani":
             categories = categorise_kani(test, expect_failure=expect_failure)
-        elif tool == "Rusteria":
-            categories = categorise_rusteria(test, expect_failure=expect_failure)
+        elif tool == "Soteria":
+            categories = categorise_soteria(test, expect_failure=expect_failure)
         elif tool == "Miri":
             categories = categorise_miri(test, expect_failure=expect_failure)
         else:
@@ -598,8 +598,10 @@ def diff(f1: str, f2: str):
 
 
 # Returns, for each tests found in the file: (tool, test, outcome, time)
-# only works for Rusteria and Kani
-def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]]]:
+# only works for Soteria and Kani
+def parse_per_test(
+    file: Path, *, is_crate: bool
+) -> dict[str, dict[ToolName, tuple[Outcome, float]]]:
     try:
         content = open(file, "r").read()
     except FileNotFoundError:
@@ -607,10 +609,17 @@ def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]
     tests = content.split("[TEST] Running ")[1:]
     result: dict[str, dict[ToolName, tuple[Outcome, float]]] = {}
 
-    def push(tool: ToolName, filename: str, test: str, outcome: Outcome, time: float):
-        if filename.endswith(".rs"):
-            filename = filename[:-3]
-        test = f"{filename}::{test}"
+    def push(
+        tool: ToolName,
+        filename: Optional[str],
+        test: str,
+        outcome: Outcome,
+        time: float,
+    ):
+        if not is_crate and filename:
+            if filename.endswith(".rs"):
+                filename = filename[:-3]
+            test = f"{filename}::{test}"
         if test not in result:
             result[test] = {}
         if tool in result[test]:
@@ -618,15 +627,18 @@ def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]
         result[test][tool] = (outcome, time)
 
     for test in tests:
-        # get file name
-        file_path = re.search(r"(.+) - .*\n", test)
-        if not file_path:
-            exit(f"No file found in {test}")
-        file_path = file_path.group(1)
-        file_name = file_path.split("/")[-1]
+        if not is_crate:
+            # get file name
+            file_path = re.search(r"(.+) - .*\n", test)
+            if not file_path:
+                exit(f"No file found in {test}")
+            file_path = file_path.group(1)
+            file_name = file_path.split("/")[-1]
+        else:
+            file_name = None
 
-        tool: ToolName = "Rusteria" if "Compiling... done" in test else "Kani"
-        if tool == "Rusteria":
+        tool: ToolName = "Soteria" if "Compiling... done" in test else "Kani"
+        if tool == "Soteria":
             # two options:
             # - error: <name>: found issues in <time>, errors in N branches (out of M)
             # - note: <name>: done in <time>, ran N branches
@@ -683,7 +695,7 @@ def parse_per_test(file: Path) -> dict[str, dict[ToolName, tuple[Outcome, float]
 
 
 def parse_per_test_cmd(file: Path):
-    results = parse_per_test(file)
+    results = parse_per_test(file, is_crate=False)
     table: list[list[tuple[str, Optional[str]]]] = []
     table += [
         [
