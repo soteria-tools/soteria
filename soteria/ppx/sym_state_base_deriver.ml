@@ -107,6 +107,36 @@ module Sym_state_base = struct
   let show_serialized_item ~loc =
     [%stri let show_serialized s = Format.asprintf "%a" pp_serialized s]
 
+  let pp_item ~loc fields =
+    let open Ast_builder.Default in
+    let field_printer (f : field) =
+      let field_expr = pexp_field ~loc [%expr x] (lident ~loc f.name) in
+      [%expr
+        Format.fprintf fmt "@[%s =@ " [%e estring ~loc f.name];
+        (match [%e field_expr] with
+        | None -> Format.pp_print_string fmt "None"
+        | Some v ->
+            Format.pp_print_string fmt "(Some ";
+            [%e pexp_ident ~loc (lid ~loc (Longident.Ldot (f.mod_path, "pp")))] fmt v;
+            Format.pp_print_string fmt ")");
+        Format.fprintf fmt "@]"]
+    in
+    let body =
+      match List.map field_printer fields with
+      | [] -> [%expr ()]
+      | hd :: tl ->
+          List.fold_left
+            (fun acc expr -> [%expr [%e acc]; Format.fprintf fmt ";@ "; [%e expr]])
+            hd tl
+    in
+    [%stri
+      let pp fmt x =
+        Format.fprintf fmt "@[<2>{ ";
+        [%e body];
+        Format.fprintf fmt "@ }@]"]
+
+  let show_item ~loc = [%stri let show x = Format.asprintf "%a" pp x]
+
   let mk_none_pat ~loc = Ast_builder.Default.ppat_construct ~loc (lident ~loc "None") None
   let mk_none_expr ~loc = Ast_builder.Default.pexp_construct ~loc (lident ~loc "None") None
   let mk_some_expr ~loc e = Ast_builder.Default.pexp_construct ~loc (lident ~loc "Some") (Some e)
@@ -266,6 +296,7 @@ module Sym_state_base = struct
   let make_impl ~loc ~symex_module (td : type_declaration) =
     let fields = fields_of_td_exn td in
     [ sm_item ~loc symex_module ]
+    @ [ pp_item ~loc fields; show_item ~loc ]
     @ [ serialized_type_item ~loc fields; pp_serialized_item ~loc fields; show_serialized_item ~loc ]
     @ [ of_opt_item ~loc fields; to_opt_item ~loc fields; empty_item ~loc ]
     @ [ serialize_item ~loc fields; subst_serialized_item ~loc fields; iter_vars_serialized_item ~loc fields ]
@@ -273,6 +304,8 @@ module Sym_state_base = struct
 
   let make_intf ~loc ~symex_module:_ (_td : type_declaration) =
     [
+      [%sigi: val pp : Format.formatter -> t -> unit];
+      [%sigi: val show : t -> string];
       [%sigi: type serialized];
       [%sigi: val pp_serialized : Format.formatter -> serialized -> unit];
       [%sigi: val show_serialized : serialized -> string];
