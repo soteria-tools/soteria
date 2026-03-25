@@ -12,13 +12,24 @@ module Sym_state_base = struct
     loc : Location.t;
   }
 
+  let constr_name name = "Ser_" ^ name
+  let fn_with_name name = "with_" ^ name
+  let fn_with_sym_name name = "with_" ^ name ^ "_sym"
+  let ignore_attr = "sym_states.ignore"
+  let lift_attr = "sym_states.lift"
   let lid ~loc txt = { loc; txt }
   let lident ~loc s = lid ~loc (Longident.Lident s)
   let liddot ~loc base name = lid ~loc (Longident.Ldot (base, name))
   let exprdot ~loc base name = pexp_ident ~loc (liddot ~loc base name)
   let err ~loc msg = Location.raise_errorf ~loc "[@@deriving sym_state] %s" msg
-  let ignore_attr = "sym_states.ignore"
-  let lift_attr = "sym_states.lift"
+
+  (** For a field Foo, creates pattern [Ser_foo(v)] *)
+  let ppat_field ~loc field =
+    ppat_construct ~loc (lident ~loc (constr_name field.name)) (Some [%pat? v])
+
+  (** For a field Foo and expression e, creates expression [Ser_foo(e)] *)
+  let constr_field ~loc field expr =
+    pexp_construct ~loc (lident ~loc (constr_name field.name)) (Some expr)
 
   let module_of_core_type = function
     | {
@@ -125,15 +136,11 @@ module Sym_state_base = struct
           labels
     | _ -> err ~loc:td.ptype_loc "only supports record types"
 
-  let constr_name name = "Ser_" ^ name
-  let fn_with_name name = "with_" ^ name
-  let fn_with_sym_name name = "with_" ^ name ^ "_sym"
+  let is_managed (f : field) =
+    match f.kind with Managed _ -> true | Ignored _ -> false
 
-  let managed_fields fields =
-    List.filter
-      (fun (f : field) ->
-        match f.kind with Managed _ -> true | Ignored _ -> false)
-      fields
+  let managed_fields = List.filter is_managed
+  let ignored_fields = List.filter (Fun.negate is_managed)
 
   let mod_path_exn (f : field) =
     match f.kind with
@@ -164,8 +171,7 @@ module Sym_state_base = struct
       List.map
         (fun (field : field) ->
           let mod_path = mod_path_exn field in
-          let ctor = lident ~loc (constr_name field.name) in
-          let lhs = ppat_construct ~loc ctor (Some [%pat? v]) in
+          let lhs = ppat_field ~loc field in
           let rhs =
             [%expr
               Fmt.pf ft "(@[<2>%s@ %a@])"
@@ -231,22 +237,47 @@ module Sym_state_base = struct
     [%stri let of_opt = function None -> [%e default_record] | Some v -> v]
 
   let to_opt_item ~loc fields =
-    let emptiness_checks =
-      List.map
-        (fun (f : field) ->
-          let field_expr = pexp_field ~loc [%expr t] (lident ~loc f.name) in
+    (*
+     * let to_opt = function
+     *   | { field1 = None; field2 = None; ... } -> None
+     *   | t -> Some t
+     *
+     * IF NO IGNORED FIELDS, otherwise
+     * let to_opt = function
+     *   | { field1 = None; field2 = None; ... } when <ignored_field1> = <empty1> && ... -> None
+     *   | t -> Some t
+     *)
+    let all_none_pat =
+      ppat_record ~loc
+        (List.map
+           (fun (f : field) ->
+             let p =
+               match f.kind with
+               | Managed _ -> [%pat? None]
+               | Ignored _ -> ppat_var ~loc { txt = f.name; loc }
+             in
+             (lident ~loc f.name, p))
+           fields)
+        Closed
+    in
+    match ignored_fields fields with
+    | [] ->
+        [%stri let to_opt = function [%p all_none_pat] -> None | t -> Some t]
+    | hd :: tl ->
+        let is_emp f =
           match f.kind with
-          | Managed _ -> [%expr [%e field_expr] = None]
-          | Ignored empty -> [%expr [%e field_expr] = [%e empty]])
-        fields
-    in
-    let is_empty_expr =
-      match emptiness_checks with
-      | [] -> [%expr true]
-      | hd :: tl ->
-          List.fold_left (fun acc e -> [%expr [%e acc] && [%e e]]) hd tl
-    in
-    [%stri let to_opt t = if [%e is_empty_expr] then None else Some t]
+          | Managed _ -> err ~loc:f.loc "internal: expected ignored field"
+          | Ignored e -> [%expr [%e evar ~loc f.name] = [%e e]]
+        in
+        let all_ignored_are_emp =
+          List.fold_left
+            (fun acc f -> [%expr [%e acc] && [%e is_emp f]])
+            (is_emp hd) tl
+        in
+        [%stri
+          let to_opt = function
+            | [%p all_none_pat] when [%e all_ignored_are_emp] -> None
+            | t -> Some t]
 
   let empty_item ~loc = [%stri let empty = None]
 
@@ -271,11 +302,7 @@ module Sym_state_base = struct
       let field_expr = pexp_field ~loc [%expr st] (lident ~loc f.name) in
       [%expr
         List.map
-          (fun v ->
-            [%e
-              pexp_construct ~loc
-                (lident ~loc (constr_name f.name))
-                (Some [%expr v])])
+          (fun v -> [%e constr_field ~loc f [%expr v]])
           (Option.fold ~none:[]
              ~some:[%e exprdot ~loc (mod_path_exn f) "serialize"]
              [%e field_expr])]
@@ -299,12 +326,9 @@ module Sym_state_base = struct
     let cases =
       List.map
         (fun (f : field) ->
-          let ctor = lident ~loc (constr_name f.name) in
-          let lhs = ppat_construct ~loc ctor (Some [%pat? v]) in
           let subst_ser = exprdot ~loc (mod_path_exn f) "subst_serialized" in
-          let rhs =
-            pexp_construct ~loc ctor (Some [%expr [%e subst_ser] subst_var v])
-          in
+          let lhs = ppat_field ~loc f in
+          let rhs = constr_field ~loc f [%expr [%e subst_ser] subst_var v] in
           case ~lhs ~guard:None ~rhs)
         fields
     in
@@ -422,10 +446,7 @@ module Sym_state_base = struct
         SM.Result.map_missing
           ([%e with_sym] f)
           (List.map (fun v : serialized ->
-               [%e
-                 pexp_construct ~loc
-                   (lident ~loc (constr_name target.name))
-                   (Some [%expr v])]))]
+               [%e constr_field ~loc target [%expr v]]))]
     in
 
     pstr_value ~loc Nonrecursive
@@ -461,19 +482,20 @@ module Sym_state_base = struct
 
   let make_impl ~loc ~symex_module (td : type_declaration) =
     let fields = fields_of_td_exn td in
-    [ sm_item ~loc symex_module ]
-    @ [ pp_item ~loc fields; show_item ~loc ]
-    @ [
-        serialized_type_item ~loc fields;
-        pp_serialized_item ~loc fields;
-        show_serialized_item ~loc;
-      ]
-    @ [ of_opt_item ~loc fields; to_opt_item ~loc fields; empty_item ~loc ]
-    @ [
-        serialize_item ~loc fields;
-        subst_serialized_item ~loc fields;
-        iter_vars_serialized_item ~loc fields;
-      ]
+    [
+      sm_item ~loc symex_module;
+      pp_item ~loc fields;
+      show_item ~loc;
+      serialized_type_item ~loc fields;
+      pp_serialized_item ~loc fields;
+      show_serialized_item ~loc;
+      of_opt_item ~loc fields;
+      to_opt_item ~loc fields;
+      empty_item ~loc;
+      serialize_item ~loc fields;
+      subst_serialized_item ~loc fields;
+      iter_vars_serialized_item ~loc fields;
+    ]
     @ List.map (with_field_sym_item ~loc) fields
     @ List.map (with_field_item ~loc) (managed_fields fields)
     @ [ produce_item ~loc fields ]
