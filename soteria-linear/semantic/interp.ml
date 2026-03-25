@@ -98,7 +98,7 @@ module Make (State : State_intf.S) = struct
         let** arg_values =
           SM.Result.map_list arg_exprs ~f:(eval_pure_expr subst)
         in
-        let func = get_function fname in
+        let func = Context.get_function fname in
         eval_function func arg_values
     | Load addr ->
         let** addr = eval_pure_expr subst addr in
