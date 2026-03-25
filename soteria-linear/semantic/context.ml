@@ -18,14 +18,14 @@ type spec = {
 type t = {
   program : Program.t;
   specs : spec list Hashtbl.Hstring.t;
-  being_analysed : string Dynarray.t;
+  being_analysed : Hashset.Hstring.t;
 }
 
 let make ~program () =
   {
     program;
     specs = Hashtbl.Hstring.create 0;
-    being_analysed = Dynarray.create ();
+    being_analysed = Hashset.Hstring.with_capacity 8;
   }
 
 type fun_interp = Use_specs of spec list | Inline
@@ -33,15 +33,11 @@ type fun_interp = Use_specs of spec list | Inline
 type _ Effect.t +=
   | Get_function : string -> Fun_def.t Effect.t
   | Get_interp : string -> fun_interp Effect.t
-  | Add_spec : string * spec list -> unit Effect.t
-  | Use_specs : bool Effect.t
 
 let get_function name = Effect.perform (Get_function name)
 let get_interp name = Effect.perform (Get_interp name)
-let add_spec name spec = Effect.perform (Add_spec (name, spec))
-let use_specs () = Effect.perform Use_specs
 
-let with_context ~(fun_interps : string -> fun_interp) ctx f =
+let with_context ~(fun_interps : context:t -> string -> fun_interp) ctx f =
   try f () with
   | effect Get_function name, k ->
       let func = String_map.find name ctx.program in
@@ -50,7 +46,7 @@ let with_context ~(fun_interps : string -> fun_interp) ctx f =
       let interp =
         match Hashtbl.Hstring.find_opt ctx.specs name with
         | None -> (
-            match fun_interps name with
+            match fun_interps ~context:ctx name with
             | Inline -> Inline
             | Use_specs specs ->
                 Hashtbl.Hstring.replace ctx.specs name specs;
@@ -58,13 +54,7 @@ let with_context ~(fun_interps : string -> fun_interp) ctx f =
         | Some specs -> Use_specs specs
       in
       Effect.Deep.continue k interp
-  | effect Add_spec (name, specs), k ->
-      let current_specs =
-        Hashtbl.Hstring.find_opt ctx.specs name |> Option.value ~default:[]
-      in
-      Hashtbl.Hstring.replace ctx.specs name (current_specs @ specs);
-      Effect.Deep.continue k ()
 
 let with_program_inline_everything program f =
   let context = make ~program () in
-  with_context ~fun_interps:(fun _ -> Inline) context f
+  with_context ~fun_interps:(fun ~context:_ _ -> Inline) context f

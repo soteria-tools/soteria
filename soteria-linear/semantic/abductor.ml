@@ -30,26 +30,39 @@ let make_spec_opt (((~args, ~res), pc) : branch) : Context.spec option =
   in
   Context.{ args; pre; post; pc; ret }
 
-let analyse_function ~context fname func_dec =
+let rec fun_interps ~(context : Context.t) fname =
+  (* If we're currently analysing a function, this is a recursive or
+     mutually-recursive call, keep going. *)
+  if Hashset.Hstring.mem context.being_analysed fname then Inline
+  else
+    let fn = Lang.String_map.find fname context.program in
+    analyse_function ~context fname fn;
+    Use_specs (Hashtbl.Hstring.find context.specs fname)
+
+and analyse_function ~context fname (func_dec : Lang.Fun_def.t) =
   L.info (fun m -> m "Analysing function %s" fname);
-  match Hashtbl.Hstring.find_opt context.specs fname with
-  | Some _ ->
-      (* Function was already analysed, do nothing *)
-      ()
-  | None ->
-      let@ () = with_context ~fun_interps:(fun _ -> Inline) context in
-      let process =
-        let open Bi_interp in
-        let open LSymex.Syntax in
-        let* args =
-          SM.Symex.map_list func_dec.Lang.Fun_def.args ~f:(fun _ ->
-              Interp.S_val.fresh ())
+  Hashset.Hstring.add context.being_analysed fname;
+  let () =
+    match Hashtbl.Hstring.find_opt context.specs fname with
+    | Some _ ->
+        (* Function was already analysed, do nothing *)
+        ()
+    | None ->
+        let@ () = with_context ~fun_interps context in
+        let process =
+          let open Bi_interp in
+          let open LSymex.Syntax in
+          let* args =
+            SM.Symex.map_list func_dec.Lang.Fun_def.args ~f:(fun _ ->
+                Interp.S_val.fresh ())
+          in
+          let+ res = Bi_interp.eval_function func_dec args Bi_state.empty in
+          (~args, ~res)
         in
-        let+ res = Bi_interp.eval_function func_dec args Bi_state.empty in
-        (~args, ~res)
-      in
-      let results : branch list =
-        LSymex.run ~mode:UX ~fuel:bi_abd_fuel process
-      in
-      let specs = List.filter_map make_spec_opt results in
-      Hashtbl.Hstring.replace context.specs fname specs
+        let results : branch list =
+          LSymex.run ~mode:UX ~fuel:bi_abd_fuel process
+        in
+        let specs = List.filter_map make_spec_opt results in
+        Hashtbl.Hstring.replace context.specs fname specs
+  in
+  Hashset.Hstring.remove context.being_analysed fname

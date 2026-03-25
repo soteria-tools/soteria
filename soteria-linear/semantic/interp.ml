@@ -73,58 +73,6 @@ module Make (State : State_intf.S) = struct
   let cast_to_bool v = lift_to_state (cast_to_bool v)
   let cast_to_int v = lift_to_state (cast_to_int v)
 
-  let rec eval_expr (subst : subst) expr : (S_val.t, 'err, 'fix) SM.Result.t =
-    let* () = SM.consume_fuel_steps 1 in
-    L.debug (fun m ->
-        m "@[<v 0>@[<v 2>Interp expr:@ %a@]@.@[<v 2>In subst:@ %a@]@]" Expr.pp
-          expr pp_subst subst);
-    match expr with
-    | Expr.Pure_expr e -> eval_pure_expr subst e
-    | Let (x, e1, e2) ->
-        let** v1 = eval_expr subst e1 in
-        let subst =
-          Option.fold ~none:subst ~some:(fun x -> String_map.add x v1 subst) x
-        in
-        eval_expr subst e2
-    | If (guard, then_, else_) ->
-        let** v_guard = eval_expr subst guard in
-        let** v_guard = cast_to_bool v_guard in
-        if%sat v_guard then eval_expr subst then_ else eval_expr subst else_
-    | Call (fname, arg_exprs) ->
-        let** arg_values =
-          SM.Result.map_list arg_exprs ~f:(eval_pure_expr subst)
-        in
-        let func = Context.get_function fname in
-        eval_function func arg_values
-    | Load addr ->
-        let** addr = eval_pure_expr subst addr in
-        let** addr = cast_to_int addr in
-        State.load addr
-    | Store (addr, value) ->
-        let** addr = eval_pure_expr subst addr in
-        let** addr = cast_to_int addr in
-        let** value = eval_pure_expr subst value in
-        let++ () = State.store addr value in
-        (S_val.v_false :> S_val.t)
-    | Alloc ->
-        let++ addr = State.alloc () in
-        (addr :> S_val.t)
-    | Free addr ->
-        let** addr = eval_pure_expr subst addr in
-        let** addr = cast_to_int addr in
-        let++ () = State.free addr in
-        (S_val.v_false :> S_val.t)
-
-  and eval_function func args =
-    let subst = List.combine func.Fun_def.args args |> String_map.of_list in
-    L.debug (fun m ->
-        m "@[<v 2>Running function %s with args:@ %a@]" func.Fun_def.name
-          pp_subst subst);
-    let++ r = eval_expr subst func.Fun_def.body in
-    L.debug (fun m ->
-        m "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name S_val.pp r);
-    r
-
   module Asrt_executor = Logic.Asrt.Execute (State)
 
   let subst_res subst res =
@@ -132,7 +80,7 @@ module Make (State : State_intf.S) = struct
     | Ok v -> Compo_res.Ok (S_val.subst subst v)
     | Error e -> Compo_res.Error e
 
-  let exec_spec spec args st =
+  let exec_spec args spec st =
     (* Bit of a gymnastic here, I wonder if things can be improved to have a
        better interface. *)
     let open Symex in
@@ -163,4 +111,64 @@ module Make (State : State_intf.S) = struct
           (v, st)
         in
         (v, st)
+
+  let rec eval_expr (subst : subst) expr : (S_val.t, 'err, 'fix) SM.Result.t =
+    let* () = SM.consume_fuel_steps 1 in
+    L.debug (fun m ->
+        m "@[<v 0>@[<v 2>Interp expr:@ %a@]@.@[<v 2>In subst:@ %a@]@]" Expr.pp
+          expr pp_subst subst);
+    match expr with
+    | Expr.Pure_expr e -> eval_pure_expr subst e
+    | Let (x, e1, e2) ->
+        let** v1 = eval_expr subst e1 in
+        let subst =
+          Option.fold ~none:subst ~some:(fun x -> String_map.add x v1 subst) x
+        in
+        eval_expr subst e2
+    | If (guard, then_, else_) ->
+        let** v_guard = eval_expr subst guard in
+        let** v_guard = cast_to_bool v_guard in
+        if%sat v_guard then eval_expr subst then_ else eval_expr subst else_
+    | Call (fname, arg_exprs) -> (
+        let** arg_values =
+          SM.Result.map_list arg_exprs ~f:(eval_pure_expr subst)
+        in
+        let func_interp = Context.get_interp fname in
+        match func_interp with
+        | Inline ->
+            let func = Context.get_function fname in
+            eval_function func arg_values
+        | Use_specs specs ->
+            let spec_runs =
+              List.map (fun specs () -> exec_spec arg_values specs) specs
+            in
+            SM.branches spec_runs)
+    | Load addr ->
+        let** addr = eval_pure_expr subst addr in
+        let** addr = cast_to_int addr in
+        State.load addr
+    | Store (addr, value) ->
+        let** addr = eval_pure_expr subst addr in
+        let** addr = cast_to_int addr in
+        let** value = eval_pure_expr subst value in
+        let++ () = State.store addr value in
+        (S_val.v_false :> S_val.t)
+    | Alloc ->
+        let++ addr = State.alloc () in
+        (addr :> S_val.t)
+    | Free addr ->
+        let** addr = eval_pure_expr subst addr in
+        let** addr = cast_to_int addr in
+        let++ () = State.free addr in
+        (S_val.v_false :> S_val.t)
+
+  and eval_function func args =
+    let subst = List.combine func.Fun_def.args args |> String_map.of_list in
+    L.debug (fun m ->
+        m "@[<v 2>Running function %s with args:@ %a@]" func.Fun_def.name
+          pp_subst subst);
+    let++ r = eval_expr subst func.Fun_def.body in
+    L.debug (fun m ->
+        m "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name S_val.pp r);
+    r
 end
