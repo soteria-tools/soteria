@@ -5,12 +5,14 @@ let search_urls = ['db.js','../sherlodoc.js'];
   heap : Heap.t option;
   globs : Globs.t option;
 }
-[@@deriving sym_state { symex = My_symex }]</code></pre><p>The <code>symex</code> argument is required and indicates which symbolic monad family the generated <code>SM</code> module should use.</p><h3 id="what-gets-generated"><a href="#what-gets-generated" class="anchor"></a>What gets generated</h3><p>At a high level, the deriver emits:</p><pre>module SM :
+[@@deriving sym_state { symex = My_symex }]</code></pre><p>The <code>symex</code> argument is required and indicates which symbolic monad family the generated <code>SM</code> module should use.</p><h3 id="what-gets-generated"><a href="#what-gets-generated" class="anchor"></a>What gets generated</h3><p>At a high level, the deriver emits:</p><pre class="language-ocaml"><code>module SM :
   Soteria.Sym_states.State_monad.S
-    with module Symex = MySymex
+    with module Symex = My_symex
      and type st = t option
 
-type serialized = Ser_heap of Heap.serialized | Ser_globs of Globs.serialized
+type serialized =
+  | Ser_heap of Heap.serialized
+  | Ser_globs of Globs.serialized
 
 val pp : Format.formatter -&gt; t -&gt; unit
 val show : t -&gt; string
@@ -33,33 +35,32 @@ val with_heap :
   ('a, 'e, Heap.serialized list) Heap.SM.Result.t -&gt;
   ('a, 'e, serialized list) SM.Result.t
 
-val with_heap_sym : 'a Heap.SM.t -&gt; 'a SM.t
-
-val with_globs : (* ... *)
-val with_globs_sym : (* ... *)</pre><p><code>with_heap_sym</code> is a wrapper that calls a symbolic computation of type <code>Heap.SM.t</code> with the heap part of the state and updates it with the result. On the other hand, <code>with_heap</code> is a more powerful wrapper that also lifts missing outcomes into the right <code>serialized</code> variant.</p><h3 id="ignored-fields"><a href="#ignored-fields" class="anchor"></a>Ignored fields</h3><p>You can keep non-compositional auxiliary fields in <code>t</code> and still derive everything. Mark them with <code>@sym_state.ignore</code>, providing their empty value:</p><pre class="language-ocaml"><code>type t = {
+val with_heap_sym : 'a Heap.SM.t -&gt; 'a SM.t</code></pre><p><code>with_heap_sym</code> is a wrapper that calls a symbolic computation of type <code>Heap.SM.t</code> with the heap part of the state and updates it with the result. On the other hand, <code>with_heap</code> is a more powerful wrapper that also lifts missing outcomes into the right <code>serialized</code> variant.</p><h3 id="ignored-fields"><a href="#ignored-fields" class="anchor"></a>Ignored fields</h3><p>You can keep non-compositional auxiliary fields in <code>t</code> and still derive everything. Mark them with <code>@sym_state.ignore</code>, providing their empty value:</p><pre class="language-ocaml"><code>type t = {
   heap : Heap.t option;
   globs : Globs.t option;
   functions : FunBiMap.t [@sym_state.ignore { empty = FunBiMap.empty }];
 }
-[@@deriving sym_state { symex = My_symex }]</code></pre><p>Ignored fields are not serialized. They are still considered in <code>to_opt</code> emptiness checks using <code>( = )</code> against the provided <code>empty</code> expression, and they still get a <code>with_field_sym</code> wrapper that operates over the underlying monad (e.g. <code>My_symex</code>).</p><pre>val with_functions_sym :
+[@@deriving sym_state { symex = My_symex }]</code></pre><p>Ignored fields are not serialized. They are still considered in <code>to_opt</code> emptiness checks using <code>( = )</code> against the provided <code>empty</code> expression, and they still get a <code>with_field_sym</code> wrapper that operates over the underlying monad (e.g. <code>My_symex</code>).</p><pre class="language-ocaml"><code>val with_functions_sym :
     (FunBiMap.t -&gt; ('a * FunBiMap.t, 'e, 'f) My_symex.Result.t) -&gt;
-    ('a, 'e, 'f) SM.Result.t</pre><h3 id="lifting-into-nested-monads"><a href="#lifting-into-nested-monads" class="anchor"></a>Lifting into nested monads</h3><p>For managed (i.e. not ignored) fields, <code>with_&lt;field&gt;</code> and <code>with_&lt;field&gt;_sym</code> can run through a custom lifter with <code>@sym_state.lift</code>. This can be useful if this field's state model has a different monad.</p><p><code>@sym_state.lift</code> takes a record with two fields:</p><ul><li><code>run</code> is a function that takes the <i>full</i> state and returns a handler for the field's monad.</li><li><code>state</code> (optional) is an additional field that is returned by the <code>run</code> function, and which must be placed back into the state type.</li></ul><p>This enables complex state shapes; for example, with <code>FancyHeap</code> backed by a custom <code>PointerMonad</code> state monad:</p><pre class="language-ocaml"><code>type t = {
-  pointers : DecayedPointers.t [@sym_state.ignore { empty = DecayedPointers.empty }];
-  heap : FancyHeap.t option
+    ('a, 'e, 'f) SM.Result.t</code></pre><h3 id="lifting-into-nested-monads"><a href="#lifting-into-nested-monads" class="anchor"></a>Lifting into nested monads</h3><p>For managed (i.e. not ignored) fields, <code>with_&lt;field&gt;</code> and <code>with_&lt;field&gt;_sym</code> can run through a custom lifter with <code>@sym_state.lift</code>. This can be useful if this field's state model has a different monad.</p><p><code>@sym_state.lift</code> takes a record with two fields:</p><ul><li><code>run</code> is a function that takes the <i>full</i> state and returns a handler for the field's monad.</li><li><code>state</code> (optional) is an additional field that is returned by the <code>run</code> function, and which must be placed back into the state type.</li></ul><p>This enables complex state shapes; for example, with <code>FancyHeap</code> backed by a custom <code>PointerMonad</code> state monad:</p><pre class="language-ocaml"><code>type t = {
+  pointers : DecayedPointers.t;
+    [@sym_state.ignore { empty = DecayedPointers.empty }]
+  heap : FancyHeap.t option;
     [@sym_state.lift
       {
         run = (fun st -&gt; PointerMonad.run_with_state ~state:st.pointers);
         state = pointers
-      }];
+      }]
+  globs : Globs.t option;
 }
-[@@deriving sym_state { symex = My_symex }]</code></pre><p>This makes the generated <code>with_heap</code> and <code>with_heap_sym</code> behave like this:</p><pre>let with_heap_sym f =
+[@@deriving sym_state { symex = My_symex }]</code></pre><p>This makes the generated <code>with_heap</code> and <code>with_heap_sym</code> behave like this:</p><pre class="language-ocaml"><code>let with_heap_sym f =
   let open SM.Syntax in
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
   let { heap; _ } = st in
   let*^ (res, heap), pointers =
-    DecayMapMonad.run_with_state ~state:st.pointers (f heap)
+    PointerMonad.run_with_state ~state:st.pointers (f heap)
   in
   let+ () = SM.set_state (to_opt { st with heap; pointers }) in
-  res</pre><p>Which can then easily be used:</p><pre>let load addr ty =
-    with_heap (Heap.load addr ty)</pre></div></body></html>
+  res</code></pre><p>Which can then easily be used:</p><pre class="language-ocaml"><code>let load addr ty =
+  with_heap_sym (FancyHeap.load addr ty)</code></pre></div></body></html>
