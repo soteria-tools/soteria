@@ -15,8 +15,8 @@ module Sym_state_base = struct
   let constr_name name = "Ser_" ^ name
   let fn_with_name name = "with_" ^ name
   let fn_with_sym_name name = "with_" ^ name ^ "_sym"
-  let ignore_attr = "sym_states.ignore"
-  let lift_attr = "sym_states.lift"
+  let ignore_attr = "sym_state.ignore"
+  let lift_attr = "sym_state.lift"
   let lid ~loc txt = { loc; txt }
   let lident ~loc s = lid ~loc (Longident.Lident s)
   let liddot ~loc base name = lid ~loc (Longident.Ldot (base, name))
@@ -51,7 +51,7 @@ module Sym_state_base = struct
 
   let ignored_empty_of_attr_exn (attr : attribute) =
     let bad () =
-      err ~loc:attr.attr_loc "expects [@sym_states.ignore { empty = <expr> }]"
+      err ~loc:attr.attr_loc "expects [@sym_state.ignore { empty = <expr> }]"
     in
     match attr.attr_payload with
     | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
@@ -84,7 +84,7 @@ module Sym_state_base = struct
   let lift_cfg_of_attr_exn (attr : attribute) =
     let err () =
       err ~loc:attr.attr_loc
-        "expects [@sym_states.lift { run = <expr>; state = <field>? }]"
+        "expects [@sym_state.lift { run = <expr>; state = <field>? }]"
     in
     match attr.attr_payload with
     | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
@@ -102,6 +102,18 @@ module Sym_state_base = struct
             { run; state_field }
         | _ -> err ())
     | _ -> err ()
+
+  let check_no_extra_attrs (ld : label_declaration) =
+    let allowed = [ ignore_attr; lift_attr ] in
+    ld.pld_attributes
+    |> List.iter @@ fun (attr : attribute) ->
+       if not (List.exists (String.equal attr.attr_name.txt) allowed) then
+         let rec pp_attrs ?(acc = "") = function
+           | [] -> acc
+           | [ a ] -> acc ^ "and [@" ^ a ^ "]"
+           | a :: rest -> pp_attrs ~acc:(acc ^ "[@" ^ a ^ "], ") rest
+         in
+         err ~loc:attr.attr_loc ("only supports attributes " ^ pp_attrs allowed)
 
   let lift_cfg_of_label (ld : label_declaration) =
     ld.pld_attributes
@@ -122,6 +134,7 @@ module Sym_state_base = struct
     | Ptype_record labels ->
         List.map
           (fun ld ->
+            check_no_extra_attrs ld;
             let kind =
               match ignored_empty_expr ld with
               | Some e -> Ignored e
