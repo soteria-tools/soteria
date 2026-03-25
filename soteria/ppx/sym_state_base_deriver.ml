@@ -373,7 +373,7 @@ module Sym_state_base = struct
       let iter_vars_serialized (serialized : serialized) iter =
         [%e pexp_match ~loc [%expr serialized] cases]]
 
-  let with_field_sym_item ~loc (target : field) =
+  let with_field_sym_item ~loc fields (target : field) =
     (*
      * DEFAULT:
      * let with_field1_sym f =
@@ -421,7 +421,8 @@ module Sym_state_base = struct
     let updated =
       pexp_record ~loc
         (List.map (fun l -> (lident ~loc l, evar ~loc l)) updated_fields)
-        (Some [%expr st])
+        (if List.compare_lengths updated_fields fields = 0 then None
+         else Some [%expr st])
     in
     let call_and_assign =
       match target.kind with
@@ -509,7 +510,7 @@ module Sym_state_base = struct
       subst_serialized_item ~loc fields;
       iter_vars_serialized_item ~loc fields;
     ]
-    @ List.map (with_field_sym_item ~loc) fields
+    @ List.map (with_field_sym_item ~loc fields) fields
     @ List.map (with_field_item ~loc) (managed_fields fields)
     @ [ produce_item ~loc fields ]
 

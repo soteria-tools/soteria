@@ -55,3 +55,59 @@ module Ast = struct
       | BinOp (op, e1, e2) -> Fmt.pf ft "(%a %a %a)" pp e1 Binop.pp op pp e2
   end
 end
+
+(* for the PPX sym_states tutorial: *)
+
+module My_symex = Symex.Make (Tiny_solver.Z3_solver)
+
+module Heap = struct
+  type t = unit
+  type serialized = unit
+
+  module SM = Soteria.Sym_states.State_monad.Make (My_symex) (struct
+    type nonrec t = t option
+  end)
+
+  let pp _ _ = ()
+  let pp_serialized _ _ = ()
+  let serialize _ = []
+  let subst_serialized _ x = x
+  let iter_vars_serialized _ _ = ()
+  let produce (_ : serialized) (st : t option) : (unit * t option) My_symex.t =
+    My_symex.return ((), st)
+end
+
+module Globs = Heap
+module FunBiMap = struct
+  type t = unit
+  let empty = ()
+end
+
+module DecayedPointers = struct
+  type t = unit
+  let empty = ()
+end
+
+module PointerMonad =
+  Soteria.Sym_states.State_monad.Make (My_symex) (DecayedPointers)
+
+module FancyHeap = struct
+  type t = unit
+  type serialized = unit
+
+  module SM = Soteria.Sym_states.State_monad.Make (PointerMonad) (struct
+    type nonrec t = t option
+  end)
+
+  let pp _ _ = ()
+  let pp_serialized _ _ = ()
+  let serialize _ = []
+  let subst_serialized _ x = x
+  let iter_vars_serialized _ _ = ()
+
+  let produce (_ : serialized) (heap : t option) :
+      (unit * t option) PointerMonad.t =
+   fun pointers -> My_symex.return (((), heap), pointers)
+
+  let load _ _ = SM.Result.ok ()
+end

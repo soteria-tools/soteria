@@ -1,0 +1,155 @@
+{1 Sym state PPX tutorial}
+
+This page explains how to use the [sym_state] deriver to generate most of the
+boilerplate required by state modules implementing the
+{{!Soteria.Sym_states.Base.M.S}symbolic state base API}.
+
+{2 What it solves}
+
+{{!Soteria.Sym_states.Base.M.S}State models} repeat the same patterns:
+
+- [SM] state-monad instantiation.
+- [serialized] type, printers and helpers
+- [of_opt]/[to_opt]/[empty] helpers.
+- [produce] to produce into the state from the serialized type.
+- [with_<field>] and [with_<field>_sym] helper wrappers.
+
+The [sym_state] PPX generates these from the state type declaration.
+More formally, this generates a product of the state models of the
+individual fields.
+
+{2 Basic usage}
+
+Define a record type [t] where managed symbolic fields have type
+[<Module>.t option], then derive:
+
+{@ocaml[
+type t = {
+  heap : Heap.t option;
+  globs : Globs.t option;
+}
+[@@deriving sym_state { symex = My_symex }]
+]}
+
+The [symex] argument is required and indicates which symbolic monad family the
+generated [SM] module should use.
+
+{2 What gets generated}
+
+At a high level, the deriver emits:
+
+{@ocaml skip[
+module SM :
+  Soteria.Sym_states.State_monad.S
+    with module Symex = My_symex
+     and type st = t option
+
+type serialized =
+  | Ser_heap of Heap.serialized
+  | Ser_globs of Globs.serialized
+
+val pp : Format.formatter -> t -> unit
+val show : t -> string
+val pp_serialized : Format.formatter -> serialized -> unit
+val show_serialized : serialized -> string
+
+val of_opt : t option -> t
+val to_opt : t -> t option
+val empty : t option
+
+val serialize : t -> serialized list
+val subst_serialized :
+  (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
+val iter_vars_serialized :
+  serialized -> (Svalue.Var.t * 'a Typed.ty -> unit) -> unit
+
+val produce : serialized -> unit SM.t
+
+val with_heap :
+  ('a, 'e, Heap.serialized list) Heap.SM.Result.t ->
+  ('a, 'e, serialized list) SM.Result.t
+
+val with_heap_sym : 'a Heap.SM.t -> 'a SM.t
+]}
+
+[with_heap_sym] is a wrapper that calls a symbolic computation of type [Heap.SM.t]
+with the heap part of the state and updates it with the result.
+On the other hand, [with_heap] is a more powerful wrapper that also lifts
+missing outcomes into the right [serialized] variant.
+
+{2 Ignored fields}
+
+You can keep non-compositional auxiliary fields in [t] and still derive everything.
+Mark them with [@sym_state.ignore], providing their empty value:
+
+{@ocaml[
+type t = {
+  heap : Heap.t option;
+  globs : Globs.t option;
+  functions : FunBiMap.t [@sym_state.ignore { empty = FunBiMap.empty }];
+}
+[@@deriving sym_state { symex = My_symex }]
+]}
+
+Ignored fields are not serialized. They are still considered in [to_opt]
+emptiness checks using [( = )] against the provided [empty] expression, and they
+still get a [with_field_sym] wrapper that operates over the underlying monad
+(e.g. [My_symex]).
+
+{@ocaml skip[
+val with_functions_sym :
+    (FunBiMap.t -> ('a * FunBiMap.t, 'e, 'f) My_symex.Result.t) ->
+    ('a, 'e, 'f) SM.Result.t
+]}
+
+{2 Lifting into nested monads}
+
+For managed (i.e. not ignored) fields, [with_<field>] and [with_<field>_sym] can run
+through a custom lifter with [@sym_state.lift]. This can be useful if this field's
+state model has a different monad.
+
+[@sym_state.lift] takes a record with two fields:
+- [run] is a function that takes the {i full} state and returns a handler for
+  the field's monad.
+- [state] (optional) is an additional field that is returned by the [run] function,
+  and which must be placed back into the state type.
+
+This enables complex state shapes; for example, with [FancyHeap] backed by a
+custom [PointerMonad] state monad:
+
+{@ocaml[
+type t = {
+  pointers : DecayedPointers.t;
+    [@sym_state.ignore { empty = DecayedPointers.empty }]
+  heap : FancyHeap.t option;
+    [@sym_state.lift
+      {
+        run = (fun st -> PointerMonad.run_with_state ~state:st.pointers);
+        state = pointers
+      }]
+  globs : Globs.t option;
+}
+[@@deriving sym_state { symex = My_symex }]
+]}
+
+This makes the generated [with_heap] and [with_heap_sym] behave like this:
+
+{@ocaml[
+let with_heap_sym f =
+  let open SM.Syntax in
+  let* st_opt = SM.get_state () in
+  let st = of_opt st_opt in
+  let { heap; _ } = st in
+  let*^ (res, heap), pointers =
+    PointerMonad.run_with_state ~state:st.pointers (f heap)
+  in
+  let+ () = SM.set_state (to_opt { st with heap; pointers }) in
+  res
+]}
+
+Which can then easily be used:
+
+{@ocaml[
+let load addr ty =
+  with_heap_sym (FancyHeap.load addr ty)
+]}

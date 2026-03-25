@@ -5,8 +5,8 @@ let pp_bi_state pp_st pp_fixes fmt (st, fixes) =
     (Fmt.Dump.list pp_fixes) fixes
 
 module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
-  (** This is unsound in {!Symex.Approx.OX}-mode, use only in
-      {!Symex.Approx.UX}-mode. *)
+  (** This is unsound in {{!Soteria.Symex.Approx.OX}OX}-mode, use only in
+      {{!Soteria.Symex.Approx.UX}UX}-mode. *)
 
   type t = B.t option * B.serialized list
   type serialized = B.serialized
