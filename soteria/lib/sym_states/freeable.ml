@@ -14,7 +14,7 @@ module Make
       include Base.M(Symex).S
 
       val assert_exclusively_owned :
-        t option -> (unit, 'err, serialized list) Symex.Result.t
+        unit -> (unit, 'err, serialized list) SM.Result.t
     end) =
 struct
   type t = I.t freeable [@@deriving show { with_path = false }]
@@ -65,12 +65,7 @@ struct
     return (lift_fix_r res)
 
   let free () : (unit, 'err, serialized list) SM.Result.t =
-    let** () =
-      wrap (fun st ->
-          let open Symex.Syntax in
-          let+ res = I.assert_exclusively_owned st in
-          (res, st))
-    in
+    let** () = wrap (I.assert_exclusively_owned ()) in
     SM.Result.set_state (Some Freed)
 
   (* In the context of UX, using a non-matching spec will simply vanish *)

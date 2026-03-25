@@ -33,11 +33,9 @@ module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
   open SM
   open SM.Syntax
 
-  let assert_exclusively_owned st : (unit, 'err, serialized list) Symex.Result.t
-      =
-    let open Symex.Syntax in
-    let+ res, _ = unwrap () st in
-    Compo_res.map res (fun _ -> ())
+  let assert_exclusively_owned () : (unit, 'err, serialized list) Result.t =
+    let++ _ = unwrap () in
+    ()
 
   let load = unwrap
 
