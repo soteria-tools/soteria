@@ -6,11 +6,9 @@ module M (Symex : Symex.Base) = struct
 
     module SM :
       State_monad.S
-        with type 'a Symex.t = 'a Symex.t
+        with module Symex = Symex
+         and module Value = Symex.Value
          and type st = t option
-         and type 'a Symex.Value.t = 'a Symex.Value.t
-         and type 'a Symex.Value.ty = 'a Symex.Value.ty
-         and type Symex.Value.sbool = Symex.Value.sbool
 
     type serialized [@@deriving show]
 
