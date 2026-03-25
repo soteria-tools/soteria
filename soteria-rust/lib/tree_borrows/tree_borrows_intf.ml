@@ -32,11 +32,6 @@ module M (Symex : Soteria.Symex.Base) = struct
 
     val pp_tb_state : Format.formatter -> tb_state -> unit
 
-    module SM_St :
-      Soteria.Sym_states.State_monad.S
-        with type 'a Symex.t = 'a Symex.t
-         and type st = tb_state option
-
     (* Compositionality *)
 
     type serialized
@@ -73,7 +68,7 @@ module M (Symex : Soteria.Symex.Base) = struct
 
     (** {2 Operations on the structure} *)
 
-    val init : state:state -> unit -> t * tag
+    val init : state:state -> unit -> (t * tag) Symex.t
 
     val add_child :
       parent:tag ->

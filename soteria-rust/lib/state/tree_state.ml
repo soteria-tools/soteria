@@ -324,7 +324,7 @@ struct
     let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
         (t * Tree_borrows.tag option) DecayMapMonad.t =
       let open DecayMapMonad.Syntax in
-      let tb, tag = Tree_borrows.init ~state:Unique () in
+      let* tb, tag = Tree_borrows.init ~state:Unique () in
       let block = Tree_block.alloc ?zeroed size in
       let+^ trace = get_trace () in
       let trace = Trace.rename 0 "Allocation" trace in

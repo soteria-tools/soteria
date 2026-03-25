@@ -23,6 +23,7 @@ module Make (Symex : Soteria.Symex.Base) : Tree_borrows_intf.M(Symex).S = struct
 
   (* Lift operations symbolically *)
 
+  let init ~state () = return (init ~state ())
   let unwrap = Option.get ~msg:"missing state in concrete TB"
 
   let add_child ~parent ?protector ~state st =
