@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>sym_state_ppx (soteria.sym_state_ppx)</title><meta charset="utf-8"/><link rel="stylesheet" href="../odoc.support/odoc.css"/><meta name="generator" content="odoc 3.1.0"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script><script>let base_url = '../';
+let search_urls = ['db.js','../sherlodoc.js'];
+</script><script src="../odoc.support/odoc_search.js" defer="defer"></script></head><body class="odoc"><nav class="odoc-nav"><a href="index.html">Up</a> – <a href="../index.html">Index</a> &#x00BB; <a href="index.html">soteria</a> &#x00BB; sym_state_ppx</nav><div class="odoc-search"><div class="search-inner"><input class="search-bar" placeholder="🔎 Type '/' to search..."/><div class="search-snake"></div><div class="search-result"></div></div></div><header class="odoc-preamble"><h2 id="sym-state-ppx-tutorial"><a href="#sym-state-ppx-tutorial" class="anchor"></a>Sym state PPX tutorial</h2><p>This page explains how to use the <code>sym_state</code> deriver to generate most of the boilerplate required by state modules implementing the <a href="Soteria/Sym_states/Base/M/module-type-S/index.html" title="Soteria.Sym_states.Base.M.S">symbolic state base API</a>.</p></header><div class="odoc-tocs"><nav class="odoc-toc odoc-local-toc"><ul><li><a href="#what-it-solves">What it solves</a></li><li><a href="#basic-usage">Basic usage</a></li><li><a href="#what-gets-generated">What gets generated</a></li><li><a href="#ignored-fields">Ignored fields</a></li><li><a href="#lifting-into-nested-monads">Lifting into nested monads</a></li></ul></nav></div><div class="odoc-content"><h3 id="what-it-solves"><a href="#what-it-solves" class="anchor"></a>What it solves</h3><p><a href="Soteria/Sym_states/Base/M/module-type-S/index.html" title="Soteria.Sym_states.Base.M.S">State models</a> repeat the same patterns:</p><ul><li><code>SM</code> state-monad instantiation.</li><li><code>serialized</code> type, printers and helpers</li><li><code>of_opt</code>/<code>to_opt</code>/<code>empty</code> helpers.</li><li><code>produce</code> to produce into the state from the serialized type.</li><li><code>with_&lt;field&gt;</code> and <code>with_&lt;field&gt;_sym</code> helper wrappers.</li></ul><p>The <code>sym_state</code> PPX generates these from the state type declaration. More formally, this generates a product of the state models of the individual fields.</p><h3 id="basic-usage"><a href="#basic-usage" class="anchor"></a>Basic usage</h3><p>Define a record type <code>t</code> where managed symbolic fields have type <code>&lt;Module&gt;.t option</code>, then derive:</p><pre class="language-ocaml"><code>type t = {
+  heap : Heap.t option;
+  globs : Globs.t option;
+}
+[@@deriving sym_state { symex = My_symex }]</code></pre><p>The <code>symex</code> argument is required and indicates which symbolic monad family the generated <code>SM</code> module should use.</p><h3 id="what-gets-generated"><a href="#what-gets-generated" class="anchor"></a>What gets generated</h3><p>At a high level, the deriver emits:</p><pre>module SM :
+  Soteria.Sym_states.State_monad.S
+    with module Symex = MySymex
+     and type st = t option
+
+type serialized = Ser_heap of Heap.serialized | Ser_globs of Globs.serialized
+
+val pp : Format.formatter -&gt; t -&gt; unit
+val show : t -&gt; string
+val pp_serialized : Format.formatter -&gt; serialized -&gt; unit
+val show_serialized : serialized -&gt; string
+
+val of_opt : t option -&gt; t
+val to_opt : t -&gt; t option
+val empty : t option
+
+val serialize : t -&gt; serialized list
+val subst_serialized :
+  (Svalue.Var.t -&gt; Svalue.Var.t) -&gt; serialized -&gt; serialized
+val iter_vars_serialized :
+  serialized -&gt; (Svalue.Var.t * 'a Typed.ty -&gt; unit) -&gt; unit
+
+val produce : serialized -&gt; unit SM.t
+
+val with_heap :
+  ('a, 'e, Heap.serialized list) Heap.SM.Result.t -&gt;
+  ('a, 'e, serialized list) SM.Result.t
+
+val with_heap_sym : 'a Heap.SM.t -&gt; 'a SM.t
+
+val with_globs : (* ... *)
+val with_globs_sym : (* ... *)</pre><p><code>with_heap_sym</code> is a wrapper that calls a symbolic computation of type <code>Heap.SM.t</code> with the heap part of the state and updates it with the result. On the other hand, <code>with_heap</code> is a more powerful wrapper that also lifts missing outcomes into the right <code>serialized</code> variant.</p><h3 id="ignored-fields"><a href="#ignored-fields" class="anchor"></a>Ignored fields</h3><p>You can keep non-compositional auxiliary fields in <code>t</code> and still derive everything. Mark them with <code>@sym_state.ignore</code>, providing their empty value:</p><pre class="language-ocaml"><code>type t = {
+  heap : Heap.t option;
+  globs : Globs.t option;
+  functions : FunBiMap.t [@sym_state.ignore { empty = FunBiMap.empty }];
+}
+[@@deriving sym_state { symex = My_symex }]</code></pre><p>Ignored fields are not serialized. They are still considered in <code>to_opt</code> emptiness checks using <code>( = )</code> against the provided <code>empty</code> expression, and they still get a <code>with_field_sym</code> wrapper that operates over the underlying monad (e.g. <code>My_symex</code>).</p><pre>val with_functions_sym :
+    (FunBiMap.t -&gt; ('a * FunBiMap.t, 'e, 'f) My_symex.Result.t) -&gt;
+    ('a, 'e, 'f) SM.Result.t</pre><h3 id="lifting-into-nested-monads"><a href="#lifting-into-nested-monads" class="anchor"></a>Lifting into nested monads</h3><p>For managed (i.e. not ignored) fields, <code>with_&lt;field&gt;</code> and <code>with_&lt;field&gt;_sym</code> can run through a custom lifter with <code>@sym_state.lift</code>. This can be useful if this field's state model has a different monad.</p><p><code>@sym_state.lift</code> takes a record with two fields:</p><ul><li><code>run</code> is a function that takes the <i>full</i> state and returns a handler for the field's monad.</li><li><code>state</code> (optional) is an additional field that is returned by the <code>run</code> function, and which must be placed back into the state type.</li></ul><p>This enables complex state shapes; for example, with <code>FancyHeap</code> backed by a custom <code>PointerMonad</code> state monad:</p><pre class="language-ocaml"><code>type t = {
+  pointers : DecayedPointers.t [@sym_state.ignore { empty = DecayedPointers.empty }];
+  heap : FancyHeap.t option
+    [@sym_state.lift
+      {
+        run = (fun st -&gt; PointerMonad.run_with_state ~state:st.pointers);
+        state = pointers
+      }];
+}
+[@@deriving sym_state { symex = My_symex }]</code></pre><p>This makes the generated <code>with_heap</code> and <code>with_heap_sym</code> behave like this:</p><pre>let with_heap_sym f =
+  let open SM.Syntax in
+  let* st_opt = SM.get_state () in
+  let st = of_opt st_opt in
+  let { heap; _ } = st in
+  let*^ (res, heap), pointers =
+    DecayMapMonad.run_with_state ~state:st.pointers (f heap)
+  in
+  let+ () = SM.set_state (to_opt { st with heap; pointers }) in
+  res</pre><p>Which can then easily be used:</p><pre>let load addr ty =
+    with_heap (Heap.load addr ty)</pre></div></body></html>
