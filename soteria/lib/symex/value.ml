@@ -26,6 +26,7 @@ module type Expr = sig
     (** Type of substitutions *)
     type t
 
+    val pp : Format.formatter -> t -> unit
     val empty : t
 
     (* * Applies a substitution to a syntactic representation to obtain a

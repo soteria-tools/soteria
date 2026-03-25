@@ -7,10 +7,11 @@ let ty (s : t) : ty = s.node.ty
 let[@inline] of_value v = v
 
 module Subst = struct
-  module Raw_map = Map.Make (Svalue)
+  module Raw_map = Soteria_std.Map.MakePp (Svalue)
 
   type t = Svalue.t Raw_map.t
 
+  let pp = Raw_map.pp Svalue.pp
   let empty = Raw_map.empty
 
   let rec apply ~missing_var (s : t) (v : Svalue.t) =

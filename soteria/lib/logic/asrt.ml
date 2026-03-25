@@ -1,4 +1,5 @@
 open Soteria_std
+open Logs.Import
 module Var = Symex.Var
 
 module M (Symex : Symex.S) = struct
@@ -13,8 +14,8 @@ module M (Symex : Symex.S) = struct
 
   module type Base = Sym_states.Base.M(Symex).S
 
-  type 'a atom = Spatial of 'a | Pure of Value.Expr.t
-  type 'a t = 'a atom list
+  type 'a atom = Spatial of 'a | Pure of Value.Expr.t [@@deriving show]
+  type 'a t = 'a atom list [@@deriving show]
 
   let make ~spatial ~pure =
     List.map (fun x -> Spatial x) spatial @ List.map (fun x -> Pure x) pure
@@ -70,6 +71,7 @@ module M (Symex : Symex.S) = struct
 
     let consume_atom atom st =
       let open Consumer.Syntax in
+      L.debug (fun m -> m "@[Consuming atom:@ %a@]" (pp_atom B.pp_syn) atom);
       match atom with
       | Spatial pred -> B.consume pred st
       | Pure f ->
@@ -79,6 +81,10 @@ module M (Symex : Symex.S) = struct
     let consume (asrt : B.syn t) (st : B.t option) :
         (B.t option, B.syn list) Consumer.t =
       let open Consumer.Syntax in
+      let* subst = Consumer.expose_subst () in
+      L.debug (fun m ->
+          m "@[<v>@[About to consume asrt:@ %a@]@ @[in subst:@ %a@]@]"
+            (pp B.pp_syn) asrt Value.Expr.Subst.pp subst);
       let rec aux (remaining : B.syn t) (st : B.t option) :
           (B.t option, B.syn list) Consumer.t =
         if List.is_empty remaining then Consumer.ok st
