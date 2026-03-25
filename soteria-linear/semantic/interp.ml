@@ -1,9 +1,11 @@
 include Aux
+open Syntaxes.FunctionWrap
 open Soteria_linear_ast.Lang
 open Symex
 open Symex.Syntax
 open S_val.Infix
 open Soteria.Logs
+module Compo_res = Soteria.Symex.Compo_res
 
 let cast_both (ty : [< S_val.T.any ] S_val.ty) v1 v2 =
   let v1 = S_val.cast_checked v1 ty in
@@ -60,13 +62,7 @@ let rec eval_pure_expr (subst : subst) expr : (S_val.t, 'err, 'a) Symex.Result.t
           v1 /@ v2)
 
 module Make (State : State_intf.S) = struct
-  module SM =
-    Soteria.Sym_states.State_monad.Make
-      (Symex)
-      (struct
-        type t = State.t option
-      end)
-
+  module SM = State.SM
   open SM.Syntax
 
   let lift_to_state f =
@@ -128,4 +124,43 @@ module Make (State : State_intf.S) = struct
     L.debug (fun m ->
         m "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name S_val.pp r);
     r
+
+  module Asrt_executor = Logic.Asrt.Execute (State)
+
+  let subst_res subst res =
+    match res with
+    | Ok v -> Compo_res.Ok (S_val.subst subst v)
+    | Error e -> Compo_res.Error e
+
+  let exec_spec spec args st =
+    (* Bit of a gymnastic here, I wonder if things can be improved to have a
+       better interface. *)
+    let open Symex in
+    let open Syntax in
+    let Context.{ args = params; pre; post; pc; ret } = spec in
+    let asrt = Logic.Asrt.make ~spatial:pre ~pure:pc in
+    let* frame =
+      let@@ () = Consumer.run_consumer ~subst:Value.Expr.Subst.empty in
+      let open Consumer in
+      let open Syntax in
+      let pairs = List.combine params args in
+      let* () =
+        iter_list pairs ~f:(fun (param, arg) -> S_val.learn_eq param arg)
+      in
+      Asrt_executor.consume asrt st
+    in
+    match frame with
+    | Missing m -> return (Compo_res.Missing m, st)
+    | Error e -> return (Compo_res.Error (e :> Error.t), st)
+    | Ok (frame, subst) ->
+        let+ (v, st), _ =
+          let open Producer in
+          let@@ () = run_producer ~subst in
+          let open Syntax in
+          let post = Logic.Asrt.make ~spatial:post ~pure:[] in
+          let* st = Asrt_executor.produce post frame in
+          let+ v = apply_subst subst_res ret in
+          (v, st)
+        in
+        (v, st)
 end

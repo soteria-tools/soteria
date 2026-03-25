@@ -1,7 +1,7 @@
 open Aux
 
 module type S = sig
-  include Soteria.Sym_states.Base.M(Symex).S
+  include Soteria.Sym_states.Base.M(Symex).S with type syn = State.syn
 
   type 'a res := ('a, Error.t, syn list) SM.Result.t
 
