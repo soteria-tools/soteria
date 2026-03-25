@@ -265,38 +265,29 @@ module Heap = struct
       end)
 end
 
-type serialized = Heap of Heap.serialized
-[@@deriving show { with_path = false }]
-
-let subst_serialized subst = function
-  | Heap s -> Heap (Heap.subst_serialized subst s)
-
-let iter_vars_serialized ser iter =
-  match ser with Heap s -> Heap.iter_vars_serialized s iter
-
 type t = {
   heap : Heap.t option;
-  functions : FunBiMap.t;
+      [@sym_states.lift
+        {
+          run = (fun st -> DecayMapMonad.run_with_state ~state:st.pointers);
+          state = pointers;
+        }]
+  functions : FunBiMap.t; [@sym_states.ignore { empty = FunBiMap.empty }]
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
-  errors : Error.with_trace list;
-  pointers : DecayMap.t;
+      [@sym_states.ignore { empty = GlobMap.empty }]
+  errors : Error.with_trace list; [@sym_states.ignore { empty = [] }]
+  pointers : DecayMap.t; [@sym_states.ignore { empty = DecayMap.empty }]
   thread_destructor :
-    unit ->
+    (unit ->
     t option ->
-    ((unit, Error.with_trace, serialized list) Soteria.Symex.Compo_res.t
-    * t option)
-    Rustsymex.t;
-      [@printer Fmt.any "code"]
+    ((unit, Error.with_trace, unit) Soteria.Symex.Compo_res.t * t option)
+    Rustsymex.t)
+    option;
+      [@sym_states.ignore { empty = None }]
   const_generics : Sptr.t rust_val Types.ConstGenericVarId.Map.t;
+      [@sym_states.ignore { empty = Types.ConstGenericVarId.Map.empty }]
 }
-[@@deriving show { with_path = false }]
-
-module SM =
-  Soteria.Sym_states.State_monad.Make
-    (Rustsymex)
-    (struct
-      type nonrec t = t option
-    end)
+[@@deriving sym_state { symex = Rustsymex }]
 
 let pp_pretty ~ignore_freed ft { heap; _ } =
   let (ignore : 'a * Freeable_block_with_meta.t -> bool) =
@@ -319,20 +310,6 @@ let pp_pretty ~ignore_freed ft { heap; _ } =
                 ft node)
         ft st
 
-let empty_state =
-  {
-    heap = None;
-    functions = FunBiMap.empty;
-    globals = GlobMap.empty;
-    errors = [];
-    pointers = DecayMap.empty;
-    thread_destructor = (fun () -> SM.Result.ok ());
-    const_generics = Types.ConstGenericVarId.Map.empty;
-  }
-
-let empty : t option = None
-let of_opt = function None -> empty_state | Some st -> st
-
 open SM
 open SM.Syntax
 
@@ -354,20 +331,6 @@ let[@inline] with_loc_err ?trace:msg ()
   in
   Error.log_at trace err;
   Error (Error.decorate trace err)
-
-let with_heap_symex (f : 'a Heap.SM.t) : 'a SM.t =
-  let* st = SM.get_state () in
-  let st = of_opt st in
-  let*^ (res, heap), pointers =
-    DecayMapMonad.run_with_state ~state:st.pointers @@ f st.heap
-  in
-  let+ () = SM.set_state (Some { st with heap; pointers }) in
-  res
-
-let with_heap (f : ('a, 'b, Heap.serialized list) Heap.SM.Result.t) :
-    ('a, 'b, serialized list) Result.t =
-  SM.Result.map_missing (with_heap_symex f) (fun fix ->
-      List.map (fun h -> Heap h) fix)
 
 let apply_parser (type a) ?(ignore_borrow = false) ptr
     (parser : offset:T.sint Typed.t -> a Heap.Decoder.ParserMonad.t) :
@@ -697,32 +660,25 @@ let zeros (ptr, _) size =
   let@ ofs = with_ptr ptr in
   Block.with_tree_block (Tree_block.zero_range ofs size)
 
-let with_globals () f =
-  let* st = SM.get_state () in
-  let st = of_opt st in
-  let res, globals = f st.globals in
-  let+ () = SM.set_state (Some { st with globals }) in
-  Ok res
-
 let store_str_global str ptr =
-  let@ globals = with_globals () in
+  let@ globals = with_globals_sym in
   let globals = GlobMap.add (String str) ptr globals in
-  ((), globals)
+  Rustsymex.Result.ok ((), globals)
 
 let store_global g ptr =
-  let@ globals = with_globals () in
+  let@ globals = with_globals_sym in
   let globals = GlobMap.add (Global g) ptr globals in
-  ((), globals)
+  Rustsymex.Result.ok ((), globals)
 
 let load_str_global str =
-  let@ globals = with_globals () in
+  let@ globals = with_globals_sym in
   let ptr = GlobMap.find_opt (String str) globals in
-  (ptr, globals)
+  Rustsymex.Result.ok (ptr, globals)
 
 let load_global g =
-  let@ globals = with_globals () in
+  let@ globals = with_globals_sym in
   let ptr = GlobMap.find_opt (Global g) globals in
-  (ptr, globals)
+  Rustsymex.Result.ok (ptr, globals)
 
 let borrow ?protect (((ptr : Sptr.t), _) as fptr) (ty : Types.ty) =
   let@ () = with_loc_err ~trace:"Borrow" () in
@@ -828,38 +784,24 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
        in
        Result.error (Error.decorate leak_trace `MemoryLeak)))
 
-let with_errors () (f : Error.with_trace list -> 'a * Error.with_trace list) :
-    ('a, Error.with_trace, serialized list) Result.t =
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
-  let res, errors = f st.errors in
-  let+ () = SM.set_state (Some { st with errors }) in
-  Ok res
-
 let add_error e =
-  let@ errors = with_errors () in
-  ((), e :: errors)
+  let@ errors = with_errors_sym in
+  Rustsymex.Result.ok ((), e :: errors)
 
 let pop_error () =
   let** error =
-    let@ errors = with_errors () in
+    let@ errors = with_errors_sym in
     match errors with
-    | e :: rest -> (e, rest)
+    | e :: rest -> Rustsymex.Result.ok (e, rest)
     | _ -> failwith "pop_error with no errors?"
   in
   Result.error error
 
-let with_functions (type a) (f : FunBiMap.t -> a * FunBiMap.t) : a SM.t =
-  let* st = SM.get_state () in
-  let st = of_opt st in
-  let res, functions = f st.functions in
-  let+ () = SM.set_state (Some { st with functions }) in
-  res
-
 let declare_fn fn_def =
   let align = Usize.(16s) in
-  let* result =
-    with_functions (fun fns -> (FunBiMap.get_loc fn_def fns, fns))
+  let** result =
+    with_functions_sym (fun fns ->
+        Rustsymex.Result.ok (FunBiMap.get_loc fn_def fns, fns))
   in
   match result with
   | Some loc ->
@@ -885,50 +827,53 @@ let declare_fn fn_def =
       in
       let ptr = { ptr with tag = None } in
       let loc = Typed.Ptr.loc ptr.ptr in
-      let* () = with_functions (fun fns -> ((), FunBiMap.add loc fn_def fns)) in
-      Result.ok (ptr, meta)
+      with_functions_sym (fun fns ->
+          Rustsymex.Result.ok ((ptr, meta), FunBiMap.add loc fn_def fns))
 
 let lookup_fn (({ ptr; _ } : Sptr.t), _) =
+  let open Rustsymex in
+  let open Syntax in
   let@ () = with_loc_err ~trace:"Accessing function pointer" () in
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
+  let@ functions = with_functions_sym in
   let** () =
     assert_or_error (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `MisalignedFnPointer
   in
   let loc = Typed.Ptr.loc ptr in
-  match FunBiMap.get_fn loc st.functions with
-  | Some fn -> Result.ok fn
+  match FunBiMap.get_fn loc functions with
+  | Some fn -> Result.ok (fn, functions)
   | None -> Result.error `NotAFnPointer
 
 let lookup_const_generic id ty =
+  let open Rustsymex in
+  let open Syntax in
   let@ () = with_loc_err ~trace:"Accessing const generic" () in
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
-  match Types.ConstGenericVarId.Map.find_opt id st.const_generics with
-  | Some v -> Result.ok v
+  let@ const_generics = with_const_generics_sym in
+  match Types.ConstGenericVarId.Map.find_opt id const_generics with
+  | Some v -> Result.ok (v, const_generics)
   | None ->
-      let**^ v = Encoder.nondet_valid ty in
-      let const_generics =
-        Types.ConstGenericVarId.Map.add id v st.const_generics
-      in
-      let+ () = SM.set_state (Some { st with const_generics }) in
-      Ok v
+      let++ v = Encoder.nondet_valid ty in
+      (v, Types.ConstGenericVarId.Map.add id v const_generics)
 
 let register_thread_exit callback =
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
-  let thread_destructor () =
-    let** () = st.thread_destructor () in
-    callback ()
+  (* HACK: we cannot expect thread exit callbacks to miss with serialized,
+     because when we define the callback type the serialized type has not yet
+     been defined. Instead we expect it to return unit; for now we fail, while
+     we figure out a solution. *)
+  let@ thread_destructor = with_thread_destructor_sym in
+  let callback () =
+    SM.Result.map_missing (callback ()) (fun _ ->
+        failwith "TODO: Miss in thread exit")
   in
-  SM.Result.set_state (Some { st with thread_destructor })
+  let destructor =
+    match thread_destructor with
+    | None -> callback
+    | Some destructor -> fun () -> Result.bind (destructor ()) callback
+  in
+  Rustsymex.Result.ok ((), Some destructor)
 
 let run_thread_exits () =
- fun st_opt ->
+  let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
-  st.thread_destructor () st_opt
-
-let serialize { heap; _ } =
-  Heap.of_opt heap |> Heap.serialize |> List.map (fun h -> Heap h)
-
-let produce s st = match s with Heap h -> with_heap_symex (Heap.produce h) st
+  match st.thread_destructor with
+  | None -> Result.ok ()
+  | Some destructor -> SM.Result.map_missing (destructor ()) (fun () -> [])
