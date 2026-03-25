@@ -1,3 +1,6 @@
+(** Concrete implementation of tree borrows, for testing and debugging. Does not
+    support compositionality, just lifts {!Raw} to fit the state model shape. *)
+
 open Soteria.Symex.Compo_res
 
 module Make (Symex : Soteria.Symex.Base) : Tree_borrows_intf.M(Symex).S = struct

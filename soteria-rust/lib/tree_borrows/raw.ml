@@ -1,3 +1,6 @@
+(** A simple Tree Borrows implementation. It doesn't support any sort of
+    symbolic reasoning or anything fancy, it's just the raw logic. *)
+
 type tag = int
 
 let tag_counter = ref 0
