@@ -95,8 +95,8 @@ module MemVal (Symex : Symex.Base) = struct
         The input tree corresponds to the subtree relevant to the predicate's
         offset and length, meaning [t.node] is the node covering the whole
         predicate's range. *)
-    (* val consume : syn -> (t, sint) tree -> ((t, sint) tree, 'err, syn)
-       Symex.Result.t *)
+    val consume :
+      syn -> (t, sint) tree -> ((t, sint) tree, 'err, syn) Symex.Result.t
 
     (** Add the given [syn] predicate onto the given tree; the input tree is not
         necessarily empty ([NotOwned Totally]), and if the predicate overlaps
@@ -111,7 +111,7 @@ module MemVal (Symex : Symex.Base) = struct
         state can be composed with it; in other words, calling [produce] on a
         tree with this node must always vanish. Otherwise this should raise a
         [miss] with the fixes needed for this to become exclusively owned. *)
-    val assert_exclusively_owned : t -> (unit, 'err, syn) Symex.Result.t
+    val assert_exclusively_owned : t -> (unit, 'err, syn list) Symex.Result.t
   end
 end
 
@@ -594,10 +594,10 @@ struct
     | Bound b -> ([], [ b ])
 
   let lift_miss ~offset ~len symex =
-    let+? fix = symex in
+    let+? fixes = symex in
     let offset = Expr.of_value offset in
     let len = Expr.of_value len in
-    [ MemVal { v = fix; offset; len } ]
+    List.map (fun fix -> MemVal { v = fix; offset; len }) fixes
 
   let of_opt ?(mk_fixes = fun () -> Symex.return []) = function
     | None ->
