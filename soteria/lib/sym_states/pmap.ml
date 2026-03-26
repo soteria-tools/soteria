@@ -187,7 +187,10 @@ struct
     let rec find_bindings = function
       | [] -> Symex.return (key, None)
       | (k, v) :: tl ->
-          if%sat Key.sem_eq key k then Symex.return (k, Some v)
+          let lname = Fmt.str "Case %a == %a" Key.pp key Key.pp k in
+          let rname = Fmt.str "Case %a != %a" Key.pp key Key.pp k in
+          if%sat[@lname lname] [@rname rname] Key.sem_eq key k then
+            Symex.return (k, Some v)
           else find_bindings tl
       (* TODO: Investigate: this is not a tailcall, because if%sat is not an
          if. *)

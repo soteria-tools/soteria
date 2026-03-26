@@ -83,8 +83,11 @@ module M (Symex : Symex.S) = struct
       let open Consumer.Syntax in
       let* subst = Consumer.expose_subst () in
       L.debug (fun m ->
-          m "@[<v>@[About to consume asrt:@ %a@]@ @[in subst:@ %a@]@]"
-            (pp B.pp_syn) asrt Value.Expr.Subst.pp subst);
+          m
+            "@[<v>@[About to consume asrt:@ %a@]@ @[in subst:@ %a@]@ @[and \
+             current state:@ %a@]@]"
+            (pp B.pp_syn) asrt Value.Expr.Subst.pp subst (Fmt.Dump.option B.pp)
+            st);
       let rec aux (remaining : B.syn t) (st : B.t option) :
           (B.t option, B.syn list) Consumer.t =
         if List.is_empty remaining then Consumer.ok st
