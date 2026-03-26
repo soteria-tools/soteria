@@ -24,12 +24,12 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
 
   (* Lift operations symbolically *)
 
-  let init ~state () = return (init ~state ())
+  let init () = return (init ())
   let unwrap = Option.get ~msg:"missing state in concrete TB"
 
-  let add_child ~parent ?protector ~state st =
+  let borrow ?protector parent ~state st =
     let st = unwrap st in
-    let st', tag = add_child ~parent ?protector ~state st in
+    let st', tag = borrow ?protector parent ~state st in
     return (Ok tag, Some st')
 
   let unprotect tag st = return (Ok (), Some (unwrap st |> unprotect tag))

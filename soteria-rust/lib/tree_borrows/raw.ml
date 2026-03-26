@@ -107,14 +107,14 @@ let pp ft t =
     (fun ft (tag, node) -> pf ft "%a -> %a" pp_tag tag pp_node node)
     ft t
 
-let init ~state () =
+let init ?(initial_state = Unique) () =
   let tag = fresh_tag () in
-  let node = { protector = None; parents = [ tag ]; initial_state = state } in
+  let node = { protector = None; parents = [ tag ]; initial_state } in
   (TagMap.singleton tag node, tag)
 
-let ub_state = fst @@ init ~state:UB ()
+let ub_state = fst @@ init ~initial_state:UB ()
 
-let add_child ~parent ?protector ~state st =
+let borrow ?protector parent ~state st =
   let tag = fresh_tag () in
   let node_parent = TagMap.find parent st in
   let node =

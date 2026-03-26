@@ -70,11 +70,11 @@ module M (Symex : Rust_symex) = struct
 
     (** {2 Operations on the structure} *)
 
-    val init : state:state -> unit -> (t * tag) Symex.t
+    val init : unit -> (t * tag) Symex.t
 
-    val add_child :
-      parent:tag ->
+    val borrow :
       ?protector:protector ->
+      tag ->
       state:state ->
       (tag, 'e, serialized list) SM.Result.t
 

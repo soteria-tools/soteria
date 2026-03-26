@@ -244,9 +244,7 @@ module Make (Tree_borrows : Tree_borrows.T) = struct
       in
       let* t_opt = SM.get_state () in
       let block, tb = of_opt t_opt in
-      let*^ res, tb' =
-        Tree_borrows.add_child ~parent:tag ~state ?protector tb
-      in
+      let*^ res, tb' = Tree_borrows.borrow ~state ?protector tag tb in
       let** tag = return (lift_fix_borrow_r res) in
       let ptr' = { ptr with tag = Some tag } in
       L.debug (fun m ->
@@ -323,7 +321,7 @@ module Make (Tree_borrows : Tree_borrows.T) = struct
     let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
         (t * Tree_borrows.tag option) DecayMapMonad.t =
       let open DecayMapMonad.Syntax in
-      let* tb, tag = Tree_borrows.init ~state:Unique () in
+      let* tb, tag = Tree_borrows.init () in
       let block = Tree_block.alloc ?zeroed size in
       let+^ trace = get_trace () in
       let trace = Trace.rename 0 "Allocation" trace in
