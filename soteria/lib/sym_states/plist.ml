@@ -160,10 +160,7 @@ struct
           | None -> SInt.greater_or_equal x (SInt.of_int 0)
           | Some b -> SInt.in_range x (SInt.of_int 0, b)
         in
-        let* () =
-          Symex.Consumer.consume_pure
-            (Symex.Value.Expr.of_value (in_bounds_opt ofs))
-        in
+        let* () = Symex.Consumer.assert_pure (in_bounds_opt ofs) in
         let*^ ofs, codom = find_opt_sym ofs m in
         let+? fix =
           let+ codom = Elem.consume inner_ser codom in

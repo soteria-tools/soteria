@@ -93,7 +93,9 @@ module type Core = sig
         {b unsatisfiable}. *)
   val assert_ : sbool v -> bool t
 
-  (** [consume_pure v] is somewhat equivalent to
+  (** TODO: remove me before merging
+
+      [consume_pure v] is somewhat equivalent to
       [if%sat v then ok () else error (`Lfail v)]. The difference is that it
       does not branch:
       - In UX, analysis gives up in case of [`Lfail], and the error branch is
@@ -298,6 +300,7 @@ module type Base = sig
     val apply_subst :
       ((Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
 
+    val assert_pure : Value.(sbool t) -> (unit, 'fix) t
     val consume_pure : Value.Expr.t -> (unit, 'fix) t
     val learn_eq : Value.Expr.t -> 'a Value.t -> (unit, 'fix) t
     val expose_subst : unit -> (subst, 'fix) t
@@ -1039,13 +1042,16 @@ module Base_extension (Core : Core) = struct
           Result.ok (res, s)
         with Missing_subst v -> Result.error (`Missing_subst v)
 
-    let consume_pure e : (unit, 'fix) t =
-      let open Syntax in
-      let* v = apply_subst Fun.id e in
+    let assert_pure v : (unit, 'fix) t =
       if Approx.As_ctx.is_ux () then lift_symex (assume [ v ])
       else
         bind (lift_symex (assert_ v)) @@ fun assert_passed ->
         if assert_passed then ok () else lfail v
+
+    let consume_pure e : (unit, 'fix) t =
+      let open Syntax in
+      let* v = apply_subst Fun.id e in
+      assert_pure v
 
     let expose_subst () : (subst, 'fix) t = fun subst -> Result.ok (subst, subst)
   end
