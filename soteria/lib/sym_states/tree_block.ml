@@ -96,7 +96,7 @@ module MemVal (Symex : Symex.Base) = struct
         offset and length, meaning [t.node] is the node covering the whole
         predicate's range. *)
     val consume :
-      syn -> (t, sint) tree -> ((t, sint) tree, 'err, syn) Symex.Result.t
+      syn -> (t, sint) tree -> ((t, sint) tree, syn list) Symex.Consumer.t
 
     (** Add the given [syn] predicate onto the given tree; the input tree is not
         necessarily empty ([NotOwned Totally]), and if the predicate overlaps
@@ -526,6 +526,25 @@ struct
 
     (** Cons/prod *)
 
+    module Consumer_frame_range = Frame_range (struct
+      include Symex.Consumer
+
+      type ('a, 'b, 'c) t = ('a, 'c) Symex.Consumer.t
+
+      let lift = lift_symex
+      let return = ok
+    end)
+
+    let consume (syn : MemVal.syn) (range : Range.t) (st : t) :
+        (t, MemVal.syn list) Consumer.t =
+      let open Symex.Consumer.Syntax in
+      let replace_node t = MemVal.consume syn t in
+      let rebuild_parent = of_children in
+      let+ _, tree =
+        Consumer_frame_range.frame_range st ~replace_node ~rebuild_parent range
+      in
+      tree
+
     (* let consume (syn : MemVal.syn) (range : Range.t) (st : t) : (t, 'err,
        MemVal.syn) Symex.Result.t = let replace_node = MemVal.consume syn in let
        rebuild_parent = of_children in let++ _, tree = frame_range st
@@ -593,11 +612,19 @@ struct
         (offset :: len :: mis, mos)
     | Bound b -> ([], [ b ])
 
-  let lift_miss ~offset ~len symex =
-    let+? fixes = symex in
+  let lift_fixes ~offset ~len fixes =
     let offset = Expr.of_value offset in
     let len = Expr.of_value len in
     List.map (fun fix -> MemVal { v = fix; offset; len }) fixes
+
+  let lift_miss ~offset ~len symex =
+    let+? fixes = symex in
+    lift_fixes ~offset ~len fixes
+
+  let lift_miss_c ~offset ~len consumer =
+    let open Symex.Consumer.Syntax in
+    let+? fixes = consumer in
+    lift_fixes ~offset ~len fixes
 
   let of_opt ?(mk_fixes = fun () -> Symex.return []) = function
     | None ->
@@ -694,12 +721,13 @@ struct
     Seq.append (serialize_tree t.root) bound |> List.of_seq
 
   let consume_bound bound t =
+    let open Consumer in
+    let open Syntax in
     match t with
-    | None | Some { bound = None; _ } ->
-        Result.miss_no_fix ~reason:"consume_bound" ()
+    | None | Some { bound = None; _ } -> miss_no_fix ~reason:"consume_bound" ()
     | Some { bound = Some v; root } ->
-        let+ () = Symex.assume [ v ==@ bound ] in
-        Ok (to_opt { bound = None; root })
+        let+ () = learn_eq bound v in
+        to_opt { bound = None; root }
 
   let produce_bound (bound : Expr.t) (st : t option) : t option Symex.Producer.t
       =
@@ -740,18 +768,25 @@ struct
     let+ root = Tree.produce v range t.root in
     to_opt { t with root }
 
-  (* let consume_mem_val offset len v t = let ((_, high) as range) =
-     Range.of_low_and_size offset len in let** t = of_opt t in let* () = match
-     t.bound with | None -> Symex.return () | Some bound -> Symex.assume [ high
-     <=@ bound ] in let++ root = lift_miss ~offset ~len @@ Tree.consume v range
-     t.root in to_opt { t with root } *)
+  let consume_mem_val (offset : Expr.t) (len : Expr.t) v t =
+    let open Consumer in
+    let open Consumer.Syntax in
+    let* offset = apply_subst Expr.subst offset in
+    let* len = apply_subst Expr.subst len in
+    let ((_, high) as range) = Range.of_low_and_size offset len in
+    let* t = lift_res @@ of_opt t in
+    let* () =
+      match t.bound with
+      | None -> ok ()
+      | Some bound -> assert_pure (high <=@ bound)
+    in
+    let+ root = lift_miss_c ~offset ~len @@ Tree.consume v range t.root in
+    to_opt { t with root }
 
-  (* let consume (list : syn) (t : t option) =
-   *   Symex.Result.fold_list
-   *     ~f:(fun acc -> function
-   *       | Bound bound -> consume_bound bound acc
-   *       | MemVal { offset; len; v } -> consume_mem_val offset len v acc)
-   *     ~init:t list *)
+  let consume (syn : syn) (t : t option) =
+    match syn with
+    | Bound bound -> consume_bound bound t
+    | MemVal { offset; len; v } -> consume_mem_val offset len v t
 
   let produce (ser : syn) : t option -> t option Symex.Producer.t =
     match ser with
