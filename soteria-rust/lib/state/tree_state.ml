@@ -8,8 +8,7 @@ open Charon
 open Common
 open Sptr
 
-module Make (Tree_borrows : (Sym : Soteria.Symex.Base) -> Tree_borrows.M(Sym).S) =
-struct
+module Make (Tree_borrows : Tree_borrows.T) = struct
   module Tree_borrows = Tree_borrows (DecayMapMonad)
 
   (* Pointer implementation *)

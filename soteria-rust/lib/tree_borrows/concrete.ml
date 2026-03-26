@@ -3,7 +3,8 @@
 
 open Soteria.Symex.Compo_res
 
-module Make (Symex : Soteria.Symex.Base) : Tree_borrows_intf.M(Symex).S = struct
+module Make (Symex : Tree_borrows_intf.Rust_symex) :
+  Tree_borrows_intf.M(Symex).S = struct
   open Symex
   include Raw
 

@@ -1,4 +1,6 @@
-module M (Symex : Soteria.Symex.Base) = struct
+module type Rust_symex = Soteria.Symex.Base with module Value = Rustsymex.Value
+
+module M (Symex : Rust_symex) = struct
   module type S = sig
     (** {2 Tree Borrows trees (the general structure)} *)
 
@@ -105,3 +107,5 @@ module M (Symex : Soteria.Symex.Base) = struct
     val merge : tb_state -> tb_state -> tb_state
   end
 end
+
+module type T = (Symex : Rust_symex) -> M(Symex).S
