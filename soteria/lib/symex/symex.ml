@@ -29,31 +29,31 @@ end
 
 module type Symex_syntax_S = sig
   type sbool_v
-  type 'a t
+  type ('a, 'b) t
 
   val branch_on :
     ?left_branch_name:string ->
     ?right_branch_name:string ->
     sbool_v ->
-    then_:(unit -> 'a t) ->
-    else_:(unit -> 'a t) ->
-    'a t
+    then_:(unit -> ('a, 'b) t) ->
+    else_:(unit -> ('a, 'b) t) ->
+    ('a, 'b) t
 
   val branch_on_take_one :
     ?left_branch_name:string ->
     ?right_branch_name:string ->
     sbool_v ->
-    then_:(unit -> 'a t) ->
-    else_:(unit -> 'a t) ->
-    'a t
+    then_:(unit -> ('a, 'b) t) ->
+    else_:(unit -> ('a, 'b) t) ->
+    ('a, 'b) t
 
   val if_sure :
     ?left_branch_name:string ->
     ?right_branch_name:string ->
     sbool_v ->
-    then_:(unit -> 'a t) ->
-    else_:(unit -> 'a t) ->
-    'a t
+    then_:(unit -> ('a, 'b) t) ->
+    else_:(unit -> ('a, 'b) t) ->
+    ('a, 'b) t
 end
 
 module type Core = sig
@@ -256,7 +256,9 @@ module type Base = sig
     val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
     module Symex_syntax :
-      Symex_syntax_S with type 'a t := 'a t and type sbool_v := Value.(sbool t)
+      Symex_syntax_S
+        with type ('a, 'b) t := 'a t
+         and type sbool_v := Value.(sbool t)
   end
 
   module Producer : sig
@@ -283,7 +285,7 @@ module type Base = sig
 
       module Symex_syntax :
         Symex_syntax_S
-          with type 'a t := 'a t
+          with type ('a, 'b) t := 'a t
            and type sbool_v := Value.(sbool t)
     end
   end
@@ -335,6 +337,11 @@ module type Base = sig
 
       val ( let*^ ) : 'a symex -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
       val ( let+^ ) : 'a symex -> ('a -> 'b) -> ('b, 'fix) t
+
+      module Symex_syntax :
+        Symex_syntax_S
+          with type ('a, 'b) t := ('a, 'b) t
+           and type sbool_v := Value.(sbool t)
     end
   end
 end
@@ -990,6 +997,29 @@ module Base_extension (Core : Core) = struct
       let ( let*! ) = bind_res
       let ( let*^ ) m k = bind (lift_symex m) k
       let ( let+^ ) m k = map (lift_symex m) k
+
+      module Symex_syntax = struct
+        let[@inline] branch_on ?left_branch_name ?right_branch_name guard ~then_
+            ~else_ =
+         fun st ->
+          branch_on ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () st)
+            ~else_:(fun () -> else_ () st)
+
+        let[@inline] branch_on_take_one ?left_branch_name ?right_branch_name
+            guard ~then_ ~else_ =
+         fun st ->
+          branch_on_take_one ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () st)
+            ~else_:(fun () -> else_ () st)
+
+        let[@inline] if_sure ?left_branch_name ?right_branch_name guard ~then_
+            ~else_ =
+         fun st ->
+          if_sure ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () st)
+            ~else_:(fun () -> else_ () st)
+      end
     end
 
     let apply_subst (sf : (Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem)
