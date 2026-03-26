@@ -85,8 +85,10 @@ module Make (State : State_intf.S) = struct
        better interface. *)
     let open Symex in
     let open Syntax in
+    L.debug (fun m ->
+        m "@[<v 2>Executing specification:@ %a@]" Context.pp_spec spec);
     let Context.{ args = params; pre; post; pc; ret } = spec in
-    let asrt = Logic.Asrt.make ~spatial:pre ~pure:pc in
+    let asrt = Logic.Asrt.make ~spatial:pre ~pure:[] in
     let* frame =
       let@@ () = Consumer.run_consumer ~subst:Value.Expr.Subst.empty in
       let open Consumer in
@@ -105,7 +107,7 @@ module Make (State : State_intf.S) = struct
           let open Producer in
           let@@ () = run_producer ~subst in
           let open Syntax in
-          let post = Logic.Asrt.make ~spatial:post ~pure:[] in
+          let post = Logic.Asrt.make ~spatial:post ~pure:pc in
           let* st = Asrt_executor.produce post frame in
           let+ v = apply_subst subst_res ret in
           (v, st)
