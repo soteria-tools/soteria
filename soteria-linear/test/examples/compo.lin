@@ -1,0 +1,8 @@
+let load l =
+  let x = [l] in
+  x
+  
+let main =
+  let l = alloc in
+  [l] <- 10;
+  load(l)
