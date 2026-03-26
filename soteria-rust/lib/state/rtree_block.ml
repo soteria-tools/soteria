@@ -156,6 +156,9 @@ module Make (Sptr : Sptr.S) = struct
       in
       { t with node = Owned (v, tb); children = None }
 
+    let consume (_s : syn) (_t : tree) : (tree, syn list) Consumer.t =
+      failwith "TODO"
+
     (* let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t = match
        (s, t.node) with | _, NotOwned _ -> miss [] (* init *) | SInit _, _ ->
        not_impl "Consume typed value on rust_val equality." (* any *) | SAny,
