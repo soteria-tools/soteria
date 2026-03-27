@@ -87,7 +87,6 @@ module type Core = sig
   val branch_on :
     ?left_branch_name:string ->
     ?right_branch_name:string ->
-    ?branch_span:Coverage.source_span ->
     sbool v ->
     then_:(unit -> 'a t) ->
     else_:(unit -> 'a t) ->
@@ -103,7 +102,6 @@ module type Core = sig
   val if_sure :
     ?left_branch_name:string ->
     ?right_branch_name:string ->
-    ?branch_span:Coverage.source_span ->
     sbool v ->
     then_:(unit -> 'a t) ->
     else_:(unit -> 'a t) ->
@@ -116,7 +114,6 @@ module type Core = sig
   val branch_on_take_one :
     ?left_branch_name:string ->
     ?right_branch_name:string ->
-    ?branch_span:Coverage.source_span ->
     sbool v ->
     then_:(unit -> 'a t) ->
     else_:(unit -> 'a t) ->
@@ -228,7 +225,6 @@ module type Base = sig
       val branch_on :
         ?left_branch_name:string ->
         ?right_branch_name:string ->
-        ?branch_span:Coverage.source_span ->
         sbool_v ->
         then_:(unit -> 'a t) ->
         else_:(unit -> 'a t) ->
@@ -237,7 +233,6 @@ module type Base = sig
       val branch_on_take_one :
         ?left_branch_name:string ->
         ?right_branch_name:string ->
-        ?branch_span:Coverage.source_span ->
         sbool_v ->
         then_:(unit -> 'a t) ->
         else_:(unit -> 'a t) ->
@@ -246,7 +241,6 @@ module type Base = sig
       val if_sure :
         ?left_branch_name:string ->
         ?right_branch_name:string ->
-        ?branch_span:Coverage.source_span ->
         sbool_v ->
         then_:(unit -> 'a t) ->
         else_:(unit -> 'a t) ->
@@ -536,26 +530,16 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let fresh_var ty f = f (Solver.fresh_var ty)
 
   let branch_on ?(left_branch_name = "Left branch")
-      ?(right_branch_name = "Right branch") ?branch_span guard
-      ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
+      ?(right_branch_name = "Right branch") guard ~(then_ : unit -> 'a t)
+      ~(else_ : unit -> 'a t) : 'a t =
    fun f ->
     Stats.As_ctx.incr StatKeys.branch_on_calls;
-    let mark_branch side =
-      Option.iter
-        (fun (span : Coverage.source_span) ->
-          Coverage.As_ctx.mark_branch span side)
-        branch_span
-    in
     let guard = Solver.simplify guard in
     match Value.to_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
        remove the Some true and Some false optimisation. *)
-    | Some true ->
-        mark_branch `Then;
-        then_ () f
-    | Some false ->
-        mark_branch `Else;
-        else_ () f
+    | Some true -> then_ () f
+    | Some false -> else_ () f
     | None ->
         let left_unsat = ref false in
         Symex_state.save ();
@@ -563,18 +547,15 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
             Solver.add_constraints ~simplified:true [ guard ];
             let sat_res = Solver.sat () in
             left_unsat := Solver_result.is_unsat sat_res;
-            if Solver_result.is_sat sat_res then (
-              mark_branch `Then;
-              then_ () f)
+            if Solver_result.is_sat sat_res then then_ () f
             else L.trace (fun m -> m "Branch is not feasible"));
         Symex_state.backtrack_n 1;
         L.with_section ~is_branch:true right_branch_name (fun () ->
             Solver.add_constraints [ Value.(not guard) ];
-            if !left_unsat then (
+            if !left_unsat then
               (* Right must be sat since left was not! We didn't branch so we
                  don't consume the counter *)
-              mark_branch `Else;
-              else_ () f)
+              else_ () f
             else (
               Stats.As_ctx.incr StatKeys.branch_on_branched;
               match Fuel.consume_branching 1 with
@@ -584,83 +565,53 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
                       m "Exhausted branching fuel, not continuing")
               | Not_exhausted ->
                   Stats.As_ctx.incr StatKeys.branches;
-                  if Solver_result.is_sat (Solver.sat ()) then (
-                    mark_branch `Else;
-                    else_ () f)
+                  if Solver_result.is_sat (Solver.sat ()) then else_ () f
                   else L.trace (fun m -> m "Branch is not feasible")))
 
-  let if_sure ?left_branch_name:_ ?right_branch_name:_ ?branch_span guard
+  let if_sure ?left_branch_name:_ ?right_branch_name:_ guard
       ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
    fun f ->
-    let mark_branch side =
-      Option.iter
-        (fun (span : Coverage.source_span) ->
-          Coverage.As_ctx.mark_branch span side)
-        branch_span
-    in
     let guard = Solver.simplify guard in
     match Value.to_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
        remove the Some true and Some false optimisation. *)
-    | Some true ->
-        mark_branch `Then;
-        then_ () f
-    | Some false ->
-        mark_branch `Else;
-        else_ () f
+    | Some true -> then_ () f
+    | Some false -> else_ () f
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ Value.(not guard) ];
         let neg_unsat = Solver_result.is_unsat (Solver.sat ()) in
-        if neg_unsat then (
-          mark_branch `Then;
-          then_ () f);
+        if neg_unsat then then_ () f;
         Symex_state.backtrack_n 1;
         if not neg_unsat then (
           (* Adding this constraint is technically redundant, but it's still
              worth having it in the PC for simplifications. *)
           Solver.add_constraints [ guard ];
-          mark_branch `Else;
           else_ () f)
 
-  let branch_on_take_one_ux ?left_branch_name:_ ?right_branch_name:_
-      ?branch_span guard ~then_ ~else_ : 'a t =
+  let branch_on_take_one_ux ?left_branch_name:_ ?right_branch_name:_ guard
+      ~then_ ~else_ : 'a t =
    fun f ->
-    let mark_branch side =
-      Option.iter
-        (fun (span : Coverage.source_span) ->
-          Coverage.As_ctx.mark_branch span side)
-        branch_span
-    in
     let guard = Solver.simplify guard in
     match Value.to_bool guard with
-    | Some true ->
-        mark_branch `Then;
-        then_ () f
-    | Some false ->
-        mark_branch `Else;
-        else_ () f
+    | Some true -> then_ () f
+    | Some false -> else_ () f
     | None ->
         Symex_state.save ();
         Solver.add_constraints ~simplified:true [ guard ];
         let left_sat = Solver_result.is_sat (Solver.sat ()) in
-        if left_sat then (
-          mark_branch `Then;
-          then_ () f);
+        if left_sat then then_ () f;
         Symex_state.backtrack_n 1;
         if not left_sat then (
           Solver.add_constraints [ Value.(not guard) ];
-          mark_branch `Else;
           else_ () f)
 
-  let branch_on_take_one ?left_branch_name ?right_branch_name ?branch_span guard
-      ~then_ ~else_ f =
+  let branch_on_take_one ?left_branch_name ?right_branch_name guard ~then_
+      ~else_ f =
     if Approx.As_ctx.is_ux () then
-      branch_on_take_one_ux ?left_branch_name ?right_branch_name ?branch_span
-        guard ~then_ ~else_ f
-    else
-      branch_on ?left_branch_name ?right_branch_name ?branch_span guard ~then_
+      branch_on_take_one_ux ?left_branch_name ?right_branch_name guard ~then_
         ~else_ f
+    else branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ f
 
   let branches (brs : (unit -> 'a t) list) : 'a t =
    fun f ->

@@ -5,7 +5,8 @@ module If_sat = struct
     let then_name = "lname"
     let else_name = "rname"
     let branch_name = "name"
-    let span_name = "span"
+    let cond_span = "span"
+    let cond_span_opt = "span_opt"
 
     let attribute_expr (attr : attribute) =
       match attr.attr_payload with
@@ -47,6 +48,22 @@ module If_sat = struct
     | Sat1 -> [%expr Symex_syntax.branch_on_take_one]
     | Sure -> [%expr Symex_syntax.if_sure]
 
+  let coverage_mark_fn ~loc = [%expr Soteria.Coverage.As_ctx.mark_branch]
+
+  let expand_coverage ~loc ~span_attr ~side expr =
+    match span_attr with
+    | None -> expr
+    | Some (span_attr, `Sure) ->
+        let fn = coverage_mark_fn ~loc in
+        [%expr
+          let () = [%e fn] [%e side] [%e span_attr] in
+          [%e expr]]
+    | Some (span_attr, `Opt) ->
+        let fn = coverage_mark_fn ~loc in
+        [%expr
+          let () = Option.iter ([%e fn] [%e side]) [%e span_attr] in
+          [%e expr]]
+
   let expand_if ~loc ~ext ~span_attr guard then_ else_ =
     let associated_fn = associated_fn ~loc ext in
     let lname =
@@ -59,13 +76,11 @@ module If_sat = struct
       |> Option.fold ~some:Branch_names.attribute_expr
            ~none:[%expr Stdlib.String.cat "Right branch at " __LOC__]
     in
-    let branch_span =
-      span_attr
-      |> Option.fold ~some:Branch_names.attribute_expr ~none:[%expr None]
-    in
+    let then_ = expand_coverage ~loc ~span_attr ~side:[%expr `Then] then_ in
+    let else_ = expand_coverage ~loc ~span_attr ~side:[%expr `Else] else_ in
     [%expr
       [%e associated_fn] [%e guard] ~left_branch_name:[%e lname]
-        ~right_branch_name:[%e rname] ?branch_span:[%e branch_span]
+        ~right_branch_name:[%e rname]
         ~then_:(fun () -> [%e then_])
         ~else_:(fun () -> [%e else_])]
 
@@ -75,7 +90,19 @@ module If_sat = struct
       match expr with
       | [%expr if [%e? guard] then [%e? then_] else [%e? else_]] as whole_expr
         ->
-          let span_attr = get_attr ~name:Branch_names.span_name whole_expr in
+          let span_attr =
+            match
+              ( get_attr ~name:Branch_names.cond_span whole_expr,
+                get_attr ~name:Branch_names.cond_span_opt whole_expr )
+            with
+            | Some _, Some _ ->
+                Location.raise_errorf ~loc
+                  "Cannot specify both '%s' and '%s' attributes"
+                  Branch_names.cond_span Branch_names.cond_span_opt
+            | Some attr, None -> Some (Branch_names.attribute_expr attr, `Sure)
+            | None, Some attr -> Some (Branch_names.attribute_expr attr, `Opt)
+            | None, None -> None
+          in
           let then_ =
             get_attr ~name:Branch_names.then_name whole_expr
             |> override_attr_opt ~name:Branch_names.branch_name then_

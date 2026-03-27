@@ -63,7 +63,7 @@ module As_ctx : sig
   val mark_line : file:string -> line:int -> unit
 
   (** [mark_branch span side] records that [side] of [span] has been reached. *)
-  val mark_branch : source_span -> branch_side -> unit
+  val mark_branch : branch_side -> source_span -> unit
 
   (** [get_copy ()] retrieves a copy of the coverage aggregated in the current
       environment. *)

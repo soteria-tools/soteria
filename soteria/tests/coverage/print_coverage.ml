@@ -7,18 +7,10 @@ let process : (int, int, unit) Result.t =
   let* b2 = nondet t_bool in
   let branch_id = "tests/sample-branch" in
   let branch_span =
-    Some { Soteria.Coverage.file = "sample.c"; line = 7; branch_id }
+    { Soteria.Coverage.file = "sample.c"; line = 7; branch_id }
   in
-  let* x =
-    branch_on ?branch_span b1
-      ~then_:(fun () -> return 1)
-      ~else_:(fun () -> return 2)
-  in
-  let* y =
-    branch_on ?branch_span b2
-      ~then_:(fun () -> return 3)
-      ~else_:(fun () -> return 4)
-  in
+  let* x = if%sat[@span branch_span] b1 then return 1 else return 2 in
+  let* y = if%sat[@span branch_span] b2 then return 3 else return 4 in
   Result.ok (x + y)
 
 let () =

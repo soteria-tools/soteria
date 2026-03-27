@@ -855,7 +855,7 @@ module Make (State : State_intf.S) = struct
           ok (Agv.Basic (BV.of_bool b_res))
         else
           let*^ v1 = cast_aggregate_to_bool v1 in
-          if%sat[@span Csymex.branch_span_of_loc loc] Typed.not v1 then
+          if%sat[@span_opt Csymex.branch_span_of_loc loc] Typed.not v1 then
             let* v2 = eval_expr e2 in
             let*^ b_res = cast_aggregate_to_bool v2 in
             ok (Agv.Basic (BV.of_bool b_res))
@@ -871,7 +871,7 @@ module Make (State : State_intf.S) = struct
           ok (Agv.Basic (BV.of_bool b_res))
         else
           let*^ v1 = cast_aggregate_to_bool v1 in
-          if%sat[@span Csymex.branch_span_of_loc loc] v1 then
+          if%sat[@span_opt Csymex.branch_span_of_loc loc] v1 then
             let* v2 = eval_expr e2 in
             let*^ b_res = cast_aggregate_to_bool v2 in
             ok (Agv.Basic (BV.of_bool b_res))
@@ -1043,7 +1043,7 @@ module Make (State : State_intf.S) = struct
     | AilEcond (guard, Some t, e) ->
         let* guard = eval_expr guard in
         let*^ guard_bool = cast_aggregate_to_bool guard in
-        if%sat[@span Csymex.branch_span_of_loc loc] guard_bool then
+        if%sat[@span_opt Csymex.branch_span_of_loc loc] guard_bool then
           let* res = eval_expr t in
           lift_symex @@ cast ~old_ty:(type_of t) ~new_ty:(type_of aexpr) res
         else
@@ -1193,7 +1193,7 @@ module Make (State : State_intf.S) = struct
     match stmt with
     | AilScase (case, stmt) ->
         let guard_size = Typed.size_of_int guard in
-        if%sat[@span Csymex.branch_span_of_loc loc]
+        if%sat[@span_opt Csymex.branch_span_of_loc loc]
           guard ==@ BV.mk guard_size case
         then exec_stmt stmt
         else exec_case guard stmt
@@ -1229,7 +1229,7 @@ module Make (State : State_intf.S) = struct
         | Normal | Continue ->
             let* guard = eval_expr e in
             let*^ guard_bool = cast_aggregate_to_bool guard in
-            if%sat[@span Csymex.branch_span_of_loc loc] guard_bool then
+            if%sat[@span_opt Csymex.branch_span_of_loc loc] guard_bool then
               exec_stmt astmt
             else ok Normal)
     | AilSmarker (_, stmt) -> exec_case guard stmt
@@ -1279,7 +1279,7 @@ module Make (State : State_intf.S) = struct
     | AilSif (cond, then_stmt, else_stmt) ->
         let* v = eval_expr cond in
         let*^ v = cast_aggregate_to_bool v in
-        if%sat[@span Csymex.branch_span_of_loc loc] v then
+        if%sat[@span_opt Csymex.branch_span_of_loc loc] v then
           exec_stmt then_stmt [@name "if branch"]
         else exec_stmt else_stmt [@name "else branch"]
     | AilSwhile (cond, stmt, _loopid) ->
@@ -1288,7 +1288,7 @@ module Make (State : State_intf.S) = struct
           let* cond_v = eval_expr cond in
           let*^ cond_v = cast_aggregate_to_bool cond_v in
           let neg_cond = Typed.not cond_v in
-          if%sat[@span Csymex.branch_span_of_loc cond_loc] neg_cond then
+          if%sat[@span_opt Csymex.branch_span_of_loc cond_loc] neg_cond then
             ok Normal
           else
             let () = L.trace (fun m -> m "Condition is SAT!") in
@@ -1310,7 +1310,8 @@ module Make (State : State_intf.S) = struct
           | Normal | Continue ->
               let* cond_v = eval_expr cond in
               let*^ cond_v = cast_aggregate_to_bool cond_v in
-              if%sat[@span Csymex.branch_span_of_loc cond_loc] Typed.not cond_v
+              if%sat[@span_opt Csymex.branch_span_of_loc cond_loc]
+                Typed.not cond_v
               then ok Normal
               else loop ()
           | Case _ -> failwith "SOTERIA BUG: Case in do body"

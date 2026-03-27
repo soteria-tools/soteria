@@ -328,7 +328,7 @@ module As_ctx = struct
           in
           Hstring.replace coverage.line_hits key (prev + 1))
 
-  let mark_branch ({ file; line; branch_id } : source_span) side =
+  let mark_branch side ({ file; line; branch_id } : source_span) =
     if line > 0 then
       apply (fun coverage ->
           let key = make_branch_key ~file ~line ~branch_id in
