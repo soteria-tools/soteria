@@ -1,9 +1,44 @@
-(** Tracking of source coverage across symbolic execution. *)
+(** Tracking of source coverage across symbolic execution.
+
+    This module exposes two layers:
+    - an aggregate model ([t], [report], JSON/export writers), and
+    - an effect context ([As_ctx]) used during symbolic execution.
+
+    Instrumented code records events through {!As_ctx.mark_line} and
+    {!As_ctx.mark_branch}. The current effect handler accumulates events into a
+    coverage value, which can later be transformed to a report and exported
+    (JSON, Cobertura XML, and other writers).
+
+    {b Important: branch identity and [branch_id] robustness}
+
+    Branch coverage is keyed by source location plus [branch_id]. The line
+    number is useful for human-facing reports, but line alone is not enough to
+    uniquely identify a conditional: multiple branch points may share the same
+    line (e.g. short-circuit expressions, compact formatting, macro-generated
+    code).
+
+    To keep branch coverage robust, [branch_id] should be:
+    - stable across runs of the same source,
+    - unique among branch points that could otherwise collide,
+    - derived from frontend information that survives translation passes.
+
+    In practice, good [branch_id] candidates are frontend-specific location
+    identifiers (or [file:line:col]-like identities when column information is
+    trustworthy). Avoid volatile ids tied to solver state or fresh-variable
+    naming. *)
 
 open Soteria_std.Hashtbl
 
 type branch_side = [ `Then | `Else ]
-type source_span = { file : string; line : int; branch_id : string }
+type source_span = {
+  file : string;
+      (** Source file path as reported by the frontend. *)
+  line : int;
+      (** 1-based source line for human-facing reporting. *)
+  branch_id : string;
+      (** Stable identifier for the branch point; used for disambiguation and
+          aggregation. *)
+}
 type t
 type 'a with_coverage = { res : 'a; coverage : t }
 type branch_coverage = { line : int; then_reached : bool; else_reached : bool }
@@ -60,6 +95,7 @@ module As_ctx : sig
       coverage according to current configuration if enabled. *)
   val with_coverage_dumped : unit -> (unit -> 'a) -> 'a
 
+  (** [mark_line ~file ~line] records one hit for a source line. *)
   val mark_line : file:string -> line:int -> unit
 
   (** [mark_branch span side] records that [side] of [span] has been reached. *)
