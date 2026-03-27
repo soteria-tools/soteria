@@ -43,6 +43,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
     Result.ok (set_protector ~protected tag (unwrap st) t)
 
   let strong_protector_exists st = strong_protector_exists (unwrap st)
+  let merge l r = return (merge l r)
 
   (* Compositionality *)
 

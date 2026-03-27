@@ -389,9 +389,9 @@ struct
     | Owned (Leaf (node, _)) -> decode_mem_val ~ty node
 
   let merge_tree_borrows t =
-    Iter.fold
-      (fun tb_st (_, _, tb_st') -> Tree_borrows.merge tb_st tb_st')
-      Tree_borrows.empty_state (Tree.iter_leaves_rev t)
+    DecayMapMonad.fold_iter ~init:Tree_borrows.empty_state
+      ~f:(fun tb_st (_, _, tb_st') -> Tree_borrows.merge tb_st tb_st')
+      (Tree.iter_leaves_rev t)
 
   let init range v tb : Tree.t =
     Tree.make ~node:(Owned (Leaf (Init v, tb))) ~range ()
@@ -451,7 +451,7 @@ struct
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ t = as_owned ~mk_fixes t in
-          let tb_st = merge_tree_borrows t in
+          let* tb_st = merge_tree_borrows t in
           match tag with
           | Some tag ->
               let++ tb_st' =
@@ -490,7 +490,7 @@ struct
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ _ = as_owned ~mk_fixes t in
-          let tb_st = merge_tree_borrows t in
+          let* tb_st = merge_tree_borrows t in
           ok (uninit range tb_st)
         in
         let rebuild_parent = Tree.of_children in
@@ -507,7 +507,7 @@ struct
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ t = as_owned ~mk_fixes t in
-          let tb_st = merge_tree_borrows t in
+          let* tb_st = merge_tree_borrows t in
           ok @@ zeros range tb_st
         in
         let rebuild_parent = Tree.of_children in

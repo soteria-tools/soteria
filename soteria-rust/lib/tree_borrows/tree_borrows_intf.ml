@@ -104,7 +104,7 @@ module M (Symex : Rust_symex) = struct
       tb_state ->
       (tb_state, [> `AliasingError ], serialized list) Symex.Result.t
 
-    val merge : tb_state -> tb_state -> tb_state
+    val merge : tb_state -> tb_state -> tb_state Symex.t
   end
 end
 
