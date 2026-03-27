@@ -35,6 +35,8 @@ Executing a symbolic process is done using the {{!Soteria.Symex.S.run}run} funct
 {@ocaml[
 # Symex.run
 - : ?fuel:Symex.Fuel_gauge.t ->
+    ?stats:Symex.effect_handling ->
+    ?coverage:Symex.effect_handling ->
     mode:Symex.Approx.t ->
     'a Symex.t -> ('a * Symex.Value.sbool Typed.t list) list
 = <fun>

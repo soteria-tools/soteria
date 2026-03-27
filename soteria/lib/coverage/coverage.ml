@@ -314,7 +314,6 @@ module As_ctx = struct
 
   let with_coverage_dumped () f =
     let { res; coverage } = with_coverage () f in
-    if Option.is_some (Config.get ()).output_coverage then output coverage;
     res
 
   let[@inline] apply f = Effect.perform (Apply f)

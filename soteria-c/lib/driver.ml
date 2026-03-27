@@ -260,7 +260,8 @@ let exec_function ~includes ~fuel file_names function_name =
         Wpst_interp.exec_fun entry_point ~args:[]
       in
       let@ () = with_function_context linked in
-      Ok (Csymex.Result.run_needs_stats ~mode:OX ~fuel symex)
+      Ok
+        (Csymex.Result.run ~mode:OX ~fuel ~stats:Handled ~coverage:Handled symex)
   in
   match result with
   | Ok v -> v

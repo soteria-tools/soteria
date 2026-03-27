@@ -15,15 +15,13 @@ let process : (int, int, unit) Result.t =
 
 let () =
   Soteria.Logs.Config.(set_and_lock (make ~hide_unstable:true ()));
-  let with_coverage =
+  let { coverage; _ } : 'a Soteria.Coverage.with_coverage =
     Soteria.Coverage.As_ctx.with_coverage () @@ fun () ->
-    Soteria.Stats.As_ctx.with_stats () @@ fun () ->
     Soteria.Coverage.As_ctx.mark_line ~file:"sample.c" ~line:3;
     Soteria.Coverage.As_ctx.mark_line ~file:"sample.c" ~line:3;
     Soteria.Coverage.As_ctx.mark_line ~file:"sample.c" ~line:4;
-    ignore (run_needs_stats ~mode:UX process)
+    run ~coverage:Handled ~mode:UX process
   in
-  let coverage = with_coverage.Soteria.Coverage.coverage in
   let report_json = Soteria.Coverage.to_yojson coverage in
   Yojson.Safe.pretty_to_channel stdout report_json;
   Fmt.pr "@.@.";

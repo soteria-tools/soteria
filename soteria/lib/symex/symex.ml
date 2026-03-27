@@ -252,6 +252,19 @@ end
 module type S = sig
   include Base
 
+  (** How an effect for a particular feature should be handled by the [run]
+      function. *)
+  type effect_handling =
+    | Ignore
+        (** Handle the effect by ignoring it, so don't collect any information.
+        *)
+    | Dump
+        (** Handle the effect, and dump the information according to the
+            relevant configuration. *)
+    | Handled
+        (** The effect is already handled by the caller, nothing needs to be
+            done. *)
+
   (** A Symex runs in a pooled solver environment. This module exposes some
       information about the solver pool. *)
   module Solver_pool : sig
@@ -262,35 +275,37 @@ module type S = sig
   type 'a v := 'a Value.t
   type sbool := Value.sbool
 
-  (** [run ~fuel  p] actually performs symbolic execution of the symbolic
-      process [p] and returns a list of obtained branches which capture the
-      outcome together with a path condition that is a list of boolean symbolic
-      values.
+  (** [run ~mode p] actually performs symbolic execution of the symbolic process
+      [p] and returns a list of obtained branches which capture the outcome
+      together with a path condition that is a list of boolean symbolic values.
 
       The [mode] parameter is used to specify whether execution should be done
       in an under-approximate ({!Symex.Approx.UX}) or an over-approximate
-      ({!Symex.Approx.OX}) manner. Users may optionally pass a
-      {{!Fuel_gauge.t}fuel gauge} to limit execution depth and breadth.
+      ({!Symex.Approx.OX}) manner.
+
+      This function also takes a number of optional parameters to configure how
+      the execution is performed and what information is collected during
+      execution:
+      - [fuel] receives a {{!Fuel_gauge.t}fuel gauge} to limit execution depth
+        and breadth. By default, the fuel is infinite.
+      - [stats] specifies whether statistics about the execution are already
+        handled outside the function (see {!Stats.As_ctx.with_stats}) or should
+        be handled and ignored by this function (default).
+      - [coverage] specifies whether coverage information about the execution
+        are already handled outside the function (see
+        {!Coverage.As_ctx.with_coverage}) or should be handled and ignored by
+        this function (default).
 
       @raise Symex.Gave_up
         if the symbolic process calls [give_up] and the mode is
         {!Symex.Approx.OX}. Prefer using {!Result.run} when possible. *)
   val run :
-    ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
-
-  (** Same as {!run}, but returns additional information about execution, see
-      {!Soteria.Stats}. *)
-  val run_with_stats :
     ?fuel:Fuel_gauge.t ->
+    ?stats:effect_handling ->
+    ?coverage:effect_handling ->
     mode:Approx.t ->
     'a t ->
-    ('a * sbool v list) list Stats.with_stats
-
-  (** Same as {!run} but has to be run within {!Stats.As_ctx.with_stats} or will
-      throw an exception. This function is exposed should users wish to run
-      several symbolic execution processes using a single [stats] record. *)
-  val run_needs_stats :
-    ?fuel:Fuel_gauge.t -> mode:Approx.t -> 'a t -> ('a * sbool v list) list
+    ('a * sbool v list) list
 
   module Result : sig
     include module type of Result
@@ -298,24 +313,15 @@ module type S = sig
     (** Same as {{!Symex.S.run}run}, but receives a symbolic process that
         returns a {!Symex.Compo_res.t} and maps the result to an
         {!Symex.Or_gave_up.t}, potentially adding any path that gave up to the
-        list. *)
+        list.
+
+        Aside from the optional arguments mentioned in {!Symex.S.run}, this also
+        takes an optional [fail_fast] argument. If true, execution will be
+        stopped on the first encountered error. It is false by default. *)
     val run :
       ?fuel:Fuel_gauge.t ->
-      ?fail_fast:bool ->
-      mode:Approx.t ->
-      ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
-
-    val run_with_stats :
-      ?fuel:Fuel_gauge.t ->
-      ?fail_fast:bool ->
-      mode:Approx.t ->
-      ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
-      Stats.with_stats
-
-    val run_needs_stats :
-      ?fuel:Fuel_gauge.t ->
+      ?stats:effect_handling ->
+      ?coverage:effect_handling ->
       ?fail_fast:bool ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
@@ -742,8 +748,14 @@ module Make (Sol : Solver.Mutable_incremental) :
   include CORE
   include Base_extension (CORE)
 
-  let run_needs_stats_iter ?(fuel = Fuel_gauge.infinite) ~mode iter :
-      ('a * Value.(sbool t) list) t =
+  type effect_handling = Ignore | Dump | Handled
+
+  let opt_handler ignore dump = function
+    | Ignore -> ignore ()
+    | Dump -> dump ()
+    | Handled -> fun f -> f ()
+
+  let run_iter ~fuel ~mode iter : ('a * Value.(sbool t) list) t =
    fun continue ->
     let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
     let@ () = Symex_state.run ~init_fuel:fuel in
@@ -752,24 +764,29 @@ module Make (Sol : Solver.Mutable_incremental) :
     let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
     iter @@ fun x -> if admissible () then continue (x, Solver.as_values ())
 
-  let run_needs_stats ?(fuel = Fuel_gauge.infinite) ~mode iter =
-    Iter.to_list (run_needs_stats_iter ~fuel ~mode iter)
-
-  let run ?fuel ~mode iter =
-    let@ () = Stats.As_ctx.with_stats_ignored () in
-    let@ () = Coverage.As_ctx.with_coverage_ignored () in
-    run_needs_stats ?fuel ~mode iter
-
-  let run_with_stats ?fuel ~mode iter =
-    let@ () = Stats.As_ctx.with_stats () in
-    let@ () = Coverage.As_ctx.with_coverage_ignored () in
-    run_needs_stats ?fuel ~mode iter
+  let run ?(fuel = Fuel_gauge.infinite) ?(stats = Ignore) ?(coverage = Ignore)
+      ~mode iter =
+    let@ () =
+      Stats.As_ctx.(opt_handler with_stats_ignored with_stats_dumped stats)
+    in
+    let@ () =
+      Coverage.As_ctx.(
+        opt_handler with_coverage_ignored with_coverage_dumped coverage)
+    in
+    Iter.to_list (run_iter ~fuel ~mode iter)
 
   module Result = struct
     include Result
 
-    let run_needs_stats ?(fuel = Fuel_gauge.infinite) ?(fail_fast = false) ~mode
-        iter =
+    let run ?(fuel = Fuel_gauge.infinite) ?(stats = Ignore) ?(coverage = Ignore)
+        ?(fail_fast = false) ~mode iter =
+      let@ () =
+        Stats.As_ctx.(opt_handler with_stats_ignored with_stats_dumped stats)
+      in
+      let@ () =
+        Coverage.As_ctx.(
+          opt_handler with_coverage_ignored with_coverage_dumped coverage)
+      in
       let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
       let@ () = Symex_state.run ~init_fuel:fuel in
       let@ () = Approx.As_ctx.with_mode mode in
@@ -779,7 +796,7 @@ module Make (Sol : Solver.Mutable_incremental) :
         try
           iter @@ fun x ->
           if Solver_result.admissible ~mode (Solver.sat ()) then (
-            (* Make sure to drop branche that have leftover assumes with
+            (* Make sure to drop branches that have leftover assumes with
                unsatisfiable PCs. *)
             let x = Compo_res.map_error x (fun e -> Or_gave_up.E e) in
             l := (x, Solver.as_values ()) :: !l;
@@ -792,16 +809,6 @@ module Make (Sol : Solver.Mutable_incremental) :
         | Fail_fast -> ()
       in
       List.rev !l
-
-    let run ?fuel ?fail_fast ~mode iter =
-      let@ () = Stats.As_ctx.with_stats_ignored () in
-      let@ () = Coverage.As_ctx.with_coverage_ignored () in
-      run_needs_stats ?fuel ?fail_fast ~mode iter
-
-    let run_with_stats ?fuel ?fail_fast ~mode iter =
-      let@ () = Stats.As_ctx.with_stats () in
-      let@ () = Coverage.As_ctx.with_coverage_ignored () in
-      run_needs_stats ?fuel ?fail_fast ~mode iter
   end
 end
 

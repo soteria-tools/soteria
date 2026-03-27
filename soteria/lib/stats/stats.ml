@@ -208,7 +208,7 @@ module As_ctx = struct
 
   let with_stats_dumped () f =
     let { res; stats } = with_stats () f in
-    if Option.is_some (Config.get ()).output_stats then output stats;
+    output stats;
     res
 
   let[@inline] apply f = Effect.perform (Apply f)
