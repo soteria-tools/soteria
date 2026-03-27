@@ -24,6 +24,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
 
   (* Lift operations symbolically *)
 
+  let nondet_tag () = return None
   let init () = return (init ())
   let unwrap = Option.get ~msg:"missing state in concrete TB"
 

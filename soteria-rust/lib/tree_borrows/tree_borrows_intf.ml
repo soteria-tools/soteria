@@ -70,6 +70,11 @@ module M (Symex : Rust_symex) = struct
 
     (** {2 Operations on the structure} *)
 
+    (** Generates a nondeterministic tag, for a nondeterministic pointer. May
+        return [None] if this tree borrows implementation doesn't support
+        symbolic tags. *)
+    val nondet_tag : unit -> tag option Symex.t
+
     val init : unit -> (t * tag) Symex.t
 
     val borrow :

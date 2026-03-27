@@ -82,8 +82,12 @@ module Make (Tree_borrows : Tree_borrows.T) = struct
       let** layout = Layout.layout_of ty in
       let* loc = nondet (Typed.t_loc ()) in
       let* ofs = nondet (Typed.t_usize ()) in
+      let* tag, _ =
+        DecayMapMonad.run_with_state ~state:DecayMap.empty
+        @@ Tree_borrows.nondet_tag ()
+      in
       let ptr = Typed.Ptr.mk loc ofs in
-      let ptr = { ptr; tag = None; align = layout.align; size = layout.size } in
+      let ptr = { ptr; tag; align = layout.align; size = layout.size } in
       Result.ok ptr
 
     let iter_vars { ptr; align; size; tag = _ } f =
