@@ -77,24 +77,25 @@ module Make
     let[@inline] consume_fuel_steps n = lift (Sym.consume_fuel_steps n)
     let[@inline] give_up msg = lift (Sym.give_up msg)
 
-    let[@inline] branch_on ?left_branch_name ?right_branch_name guard ~then_
-        ~else_ =
+    let[@inline] branch_on ?left_branch_name ?right_branch_name ?branch_span
+        guard ~then_ ~else_ =
      fun st ->
-      Sym.branch_on ?left_branch_name ?right_branch_name guard
+      Sym.branch_on ?left_branch_name ?right_branch_name ?branch_span guard
         ~then_:(fun () -> then_ () st)
         ~else_:(fun () -> else_ () st)
 
-    let[@inline] branch_on_take_one ?left_branch_name ?right_branch_name guard
+    let[@inline] branch_on_take_one ?left_branch_name ?right_branch_name
+        ?branch_span guard ~then_ ~else_ =
+     fun st ->
+      Sym.branch_on_take_one ?left_branch_name ?right_branch_name ?branch_span
+        guard
+        ~then_:(fun () -> then_ () st)
+        ~else_:(fun () -> else_ () st)
+
+    let[@inline] if_sure ?left_branch_name ?right_branch_name ?branch_span guard
         ~then_ ~else_ =
      fun st ->
-      Sym.branch_on_take_one ?left_branch_name ?right_branch_name guard
-        ~then_:(fun () -> then_ () st)
-        ~else_:(fun () -> else_ () st)
-
-    let[@inline] if_sure ?left_branch_name ?right_branch_name guard ~then_
-        ~else_ =
-     fun st ->
-      Sym.if_sure ?left_branch_name ?right_branch_name guard
+      Sym.if_sure ?left_branch_name ?right_branch_name ?branch_span guard
         ~then_:(fun () -> then_ () st)
         ~else_:(fun () -> else_ () st)
   end

@@ -5,6 +5,7 @@ module If_sat = struct
     let then_name = "lname"
     let else_name = "rname"
     let branch_name = "name"
+    let span_name = "span"
 
     let attribute_expr (attr : attribute) =
       match attr.attr_payload with
@@ -46,7 +47,7 @@ module If_sat = struct
     | Sat1 -> [%expr Symex_syntax.branch_on_take_one]
     | Sure -> [%expr Symex_syntax.if_sure]
 
-  let expand_if ~loc ~ext guard then_ else_ =
+  let expand_if ~loc ~ext ~span_attr guard then_ else_ =
     let associated_fn = associated_fn ~loc ext in
     let lname =
       get_attr ~name:Branch_names.branch_name then_
@@ -58,9 +59,13 @@ module If_sat = struct
       |> Option.fold ~some:Branch_names.attribute_expr
            ~none:[%expr Stdlib.String.cat "Right branch at " __LOC__]
     in
+    let branch_span =
+      span_attr
+      |> Option.fold ~some:Branch_names.attribute_expr ~none:[%expr None]
+    in
     [%expr
       [%e associated_fn] [%e guard] ~left_branch_name:[%e lname]
-        ~right_branch_name:[%e rname]
+        ~right_branch_name:[%e rname] ?branch_span:[%e branch_span]
         ~then_:(fun () -> [%e then_])
         ~else_:(fun () -> [%e else_])]
 
@@ -70,6 +75,7 @@ module If_sat = struct
       match expr with
       | [%expr if [%e? guard] then [%e? then_] else [%e? else_]] as whole_expr
         ->
+          let span_attr = get_attr ~name:Branch_names.span_name whole_expr in
           let then_ =
             get_attr ~name:Branch_names.then_name whole_expr
             |> override_attr_opt ~name:Branch_names.branch_name then_
@@ -78,8 +84,7 @@ module If_sat = struct
             get_attr ~name:Branch_names.else_name whole_expr
             |> override_attr_opt ~name:Branch_names.branch_name else_
           in
-
-          expand_if ~loc ~ext guard then_ else_
+          expand_if ~loc ~ext ~span_attr guard then_ else_
       | [%expr if [%e? _] then [%e? _]] ->
           Location.raise_errorf ~loc "'if%%%s' must include an else branch"
             (Extension_name.to_string ext)

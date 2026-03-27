@@ -184,9 +184,11 @@ struct
       let ( let*^ ) x f = bind (lift x) f
 
       module Symex_syntax = struct
-        let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
+        let branch_on ?left_branch_name ?right_branch_name ?branch_span guard
+            ~then_ ~else_ =
          fun handler get_all state ->
-          DecayMapMonad.branch_on ?left_branch_name ?right_branch_name guard
+          DecayMapMonad.branch_on ?left_branch_name ?right_branch_name
+            ?branch_span guard
             ~then_:(fun () -> then_ () handler get_all state)
             ~else_:(fun () -> else_ () handler get_all state)
       end

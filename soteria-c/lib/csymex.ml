@@ -30,6 +30,16 @@ module StatKeys = struct
     disable_printer give_up_reasons
 end
 
+module CoverageKeys = struct
+  let branch_id_of_loc (loc : Cerb_location.t) : string =
+    Format.asprintf "%a" Fmt_ail.pp_loc loc
+
+  let source_of_loc (loc : Cerb_location.t) : (string * int) option =
+    match Error.Diagnostic.extract_location loc with
+    | Some (file, line, _col) -> Some (file, line)
+    | None -> None
+end
+
 let fresh_alloc_id () =
   match Config.current_mode () with
   | Compositional -> nondet Typed.t_loc
@@ -48,6 +58,27 @@ let get_loc () = get_state ()
 (* FIXME: this is actually wrong because of branching. the loc should probably
    be carried in the monad itself? *)
 let with_loc ~(loc : Cerb_location.t) f = with_state ~state:loc f
+
+let mark_line_coverage_here () =
+  let open Syntax in
+  let* loc = get_loc () in
+  let () =
+    Option.iter
+      (fun (file, line) -> Soteria.Coverage.As_ctx.mark_line ~file ~line)
+      (CoverageKeys.source_of_loc loc)
+  in
+  return ()
+
+let branch_span_of_loc (loc : Cerb_location.t) :
+    Soteria.Coverage.source_span option =
+  Option.map
+    (fun (file, line) ->
+      {
+        Soteria.Coverage.file;
+        line;
+        branch_id = CoverageKeys.branch_id_of_loc loc;
+      })
+    (CoverageKeys.source_of_loc loc)
 
 let not_impl msg =
   let open Syntax in

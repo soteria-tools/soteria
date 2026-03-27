@@ -257,6 +257,7 @@ module type S = sig
       val branch_on :
         ?left_branch_name:string ->
         ?right_branch_name:string ->
+        ?branch_span:Soteria.Coverage.source_span ->
         Typed.T.sbool Typed.t ->
         then_:(unit -> ('a, 'env) t) ->
         else_:(unit -> ('a, 'env) t) ->
@@ -265,6 +266,7 @@ module type S = sig
       val branch_on_take_one :
         ?left_branch_name:string ->
         ?right_branch_name:string ->
+        ?branch_span:Soteria.Coverage.source_span ->
         Typed.T.sbool Typed.t ->
         then_:(unit -> ('a, 'env) t) ->
         else_:(unit -> ('a, 'env) t) ->
@@ -273,6 +275,7 @@ module type S = sig
       val if_sure :
         ?left_branch_name:string ->
         ?right_branch_name:string ->
+        ?branch_span:Soteria.Coverage.source_span ->
         Typed.T.sbool Typed.t ->
         then_:(unit -> ('a, 'env) t) ->
         else_:(unit -> ('a, 'env) t) ->
@@ -539,22 +542,27 @@ module Make (State : State_intf.S) :
     let ( let+^ ) x f = map (lift_symex x) f
 
     module Symex_syntax = struct
-      let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
+      let branch_on ?left_branch_name ?right_branch_name ?branch_span guard
+          ~then_ ~else_ =
        fun env state ->
-        Rustsymex.branch_on ?left_branch_name ?right_branch_name guard
+        Rustsymex.branch_on ?left_branch_name ?right_branch_name ?branch_span
+          guard
           ~then_:(fun () -> then_ () env state)
           ~else_:(fun () -> else_ () env state)
 
-      let branch_on_take_one ?left_branch_name ?right_branch_name guard ~then_
+      let branch_on_take_one ?left_branch_name ?right_branch_name ?branch_span
+          guard ~then_ ~else_ =
+       fun env state ->
+        Rustsymex.branch_on_take_one ?left_branch_name ?right_branch_name
+          ?branch_span guard
+          ~then_:(fun () -> then_ () env state)
+          ~else_:(fun () -> else_ () env state)
+
+      let if_sure ?left_branch_name ?right_branch_name ?branch_span guard ~then_
           ~else_ =
        fun env state ->
-        Rustsymex.branch_on_take_one ?left_branch_name ?right_branch_name guard
-          ~then_:(fun () -> then_ () env state)
-          ~else_:(fun () -> else_ () env state)
-
-      let if_sure ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
-       fun env state ->
-        Rustsymex.if_sure ?left_branch_name ?right_branch_name guard
+        Rustsymex.if_sure ?left_branch_name ?right_branch_name ?branch_span
+          guard
           ~then_:(fun () -> then_ () env state)
           ~else_:(fun () -> else_ () env state)
     end
