@@ -63,5 +63,11 @@ struct
       'acc ->
       t option ->
       'acc Symex.t
+
+    val fold_res :
+      ('acc -> Key.t * codom -> ('acc, 'e, 'f) Symex.Result.t) ->
+      'acc ->
+      t option ->
+      ('acc, 'e, 'f) Symex.Result.t
   end
 end

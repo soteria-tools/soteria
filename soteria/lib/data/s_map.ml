@@ -46,6 +46,13 @@ struct
     let open Symex in
     let st = of_opt st in
     fold_seq (M.to_seq st) ~init ~f
+
+  let fold_res (type acc)
+      (f : acc -> Key.t * 'a -> (acc, 'e, 'f) Symex.Result.t) (init : acc) st :
+      (acc, 'e, 'f) Symex.Result.t =
+    let open Symex in
+    let st = of_opt st in
+    Result.fold_seq (M.to_seq st) ~init ~f
 end
 
 module Build_base
