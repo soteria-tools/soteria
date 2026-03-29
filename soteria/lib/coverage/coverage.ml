@@ -154,7 +154,21 @@ module JsonWriter : Writer = struct
 end
 
 module CoberturaWriter : Writer = struct
-  let to_formatter ft report =
+  let mk_elem tag attrs children = Xml.Element (tag, attrs, children)
+
+  let write_xml_to_formatter ft xml =
+    Format.pp_print_string ft "<?xml version=\"1.0\" ?>\n";
+    Format.pp_print_string ft (Xml.to_string_fmt xml)
+
+  let write_xml_to_file file xml =
+    let oc = Out_channel.open_text file in
+    Fun.protect
+      ~finally:(fun () -> close_out oc)
+      (fun () ->
+        Out_channel.output_string oc "<?xml version=\"1.0\" ?>\n";
+        Out_channel.output_string oc (Xml.to_string_fmt xml))
+
+  let cobertura_xml report =
     let covered_lines = ref 0 in
     let total_lines = ref 0 in
     let covered_branches = ref 0 in
@@ -181,54 +195,72 @@ module CoberturaWriter : Writer = struct
       if !total_branches = 0 then 1.
       else float_of_int !covered_branches /. float_of_int !total_branches
     in
-    Fmt.pf ft
-      "<?xml version=\"1.0\" ?>\n\
-       <coverage lines-valid=\"%d\" lines-covered=\"%d\" line-rate=\"%.6f\" \
-       branches-valid=\"%d\" branches-covered=\"%d\" branch-rate=\"%.6f\" \
-       version=\"soteria\">\n\
-      \  <packages>\n\
-      \    <package name=\"soteria\" line-rate=\"%.6f\" branch-rate=\"%.6f\">\n\
-      \      <classes>\n"
-      !total_lines !covered_lines line_rate !total_branches !covered_branches
-      branch_rate line_rate branch_rate;
-    List.iter
-      (fun (file, file_cov) ->
-        Fmt.pf ft
-          "        <class name=\"%s\" filename=\"%s\" line-rate=\"0.0\" \
-           branch-rate=\"0.0\">\n\
-          \          <methods/>\n\
-          \          <lines>\n"
-          file file;
-        List.iter
-          (fun (line, hits) ->
-            Fmt.pf ft "            <line number=\"%s\" hits=\"%d\"/>\n" line
-              hits)
-          (sorted_bindings file_cov.lines);
-        List.iter
-          (fun (_branch_id, br) ->
-            let taken =
-              (if br.then_reached then 1 else 0)
-              + if br.else_reached then 1 else 0
-            in
-            Fmt.pf ft
-              "            <line number=\"%d\" hits=\"1\" branch=\"true\" \
-               condition-coverage=\"%d%% (%d/2)\"/>\n"
-              br.line
-              (taken * 100 / 2)
-              taken)
-          (sorted_bindings file_cov.branches);
-        Fmt.pf ft "          </lines>\n        </class>\n")
-      (sorted_bindings report);
-    Fmt.pf ft "      </classes>\n    </package>\n  </packages>\n</coverage>\n"
+    let classes =
+      List.map
+        (fun (file, file_cov) ->
+          let lines =
+            List.map
+              (fun (line, hits) ->
+                mk_elem "line"
+                  [ ("number", line); ("hits", string_of_int hits) ]
+                  [])
+              (sorted_bindings file_cov.lines)
+          in
+          let branch_lines =
+            List.map
+              (fun (_branch_id, br) ->
+                let taken =
+                  (if br.then_reached then 1 else 0)
+                  + if br.else_reached then 1 else 0
+                in
+                mk_elem "line"
+                  [
+                    ("number", string_of_int br.line);
+                    ("hits", "1");
+                    ("branch", "true");
+                    ( "condition-coverage",
+                      Printf.sprintf "%d%% (%d/2)" (taken * 100 / 2) taken );
+                  ]
+                  [])
+              (sorted_bindings file_cov.branches)
+          in
+          mk_elem "class"
+            [
+              ("name", file);
+              ("filename", file);
+              ("line-rate", "0.0");
+              ("branch-rate", "0.0");
+            ]
+            [
+              mk_elem "methods" [] []; mk_elem "lines" [] (lines @ branch_lines);
+            ])
+        (sorted_bindings report)
+    in
+    mk_elem "coverage"
+      [
+        ("lines-valid", string_of_int !total_lines);
+        ("lines-covered", string_of_int !covered_lines);
+        ("line-rate", Printf.sprintf "%.6f" line_rate);
+        ("branches-valid", string_of_int !total_branches);
+        ("branches-covered", string_of_int !covered_branches);
+        ("branch-rate", Printf.sprintf "%.6f" branch_rate);
+        ("version", "soteria");
+      ]
+      [
+        mk_elem "packages" []
+          [
+            mk_elem "package"
+              [
+                ("name", "soteria");
+                ("line-rate", Printf.sprintf "%.6f" line_rate);
+                ("branch-rate", Printf.sprintf "%.6f" branch_rate);
+              ]
+              [ mk_elem "classes" [] classes ];
+          ];
+      ]
 
-  let to_file file report =
-    let oc = Out_channel.open_text file in
-    Fun.protect
-      ~finally:(fun () -> close_out oc)
-      (fun () ->
-        let ft = Format.formatter_of_out_channel oc in
-        to_formatter ft report;
-        Format.pp_print_flush ft ())
+  let to_formatter ft report = write_xml_to_formatter ft (cobertura_xml report)
+  let to_file file report = write_xml_to_file file (cobertura_xml report)
 end
 
 let output t =

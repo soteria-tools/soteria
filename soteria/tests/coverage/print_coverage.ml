@@ -2,24 +2,28 @@ open Soteria.Symex.Make (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 open Syntax
 open Soteria.Tiny_values.Typed
 
-let process : (int, int, unit) Result.t =
+let file = "my.file"
+
+let branch_span line : Soteria.Coverage.source_span =
+  { file; line; branch_id = "b_" ^ string_of_int line }
+
+let process : (unit, 'e, 'f) Result.t =
   let* b1 = nondet t_bool in
-  let* b2 = nondet t_bool in
-  let branch_id = "tests/sample-branch" in
-  let branch_span =
-    { Soteria.Coverage.file = "sample.c"; line = 7; branch_id }
+  Soteria.Coverage.As_ctx.mark_line ~file ~line:1;
+  let* () = if%sat[@span branch_span 2] b1 then return () else return () in
+  Soteria.Coverage.As_ctx.mark_line ~file ~line:3;
+  let* () =
+    if%sat[@span branch_span 4] v_false then return ()
+    else if%sat[@span branch_span 4] v_true then return ()
+    else return ()
   in
-  let* x = if%sat[@span branch_span] b1 then return 1 else return 2 in
-  let* y = if%sat[@span branch_span] b2 then return 3 else return 4 in
-  Result.ok (x + y)
+  Soteria.Coverage.As_ctx.mark_line ~file ~line:5;
+  Result.ok ()
 
 let () =
   Soteria.Logs.Config.(set_and_lock (make ~hide_unstable:true ()));
   let { coverage; _ } : 'a Soteria.Coverage.with_coverage =
     Soteria.Coverage.As_ctx.with_coverage () @@ fun () ->
-    Soteria.Coverage.As_ctx.mark_line ~file:"sample.c" ~line:3;
-    Soteria.Coverage.As_ctx.mark_line ~file:"sample.c" ~line:3;
-    Soteria.Coverage.As_ctx.mark_line ~file:"sample.c" ~line:4;
     run ~coverage:Handled ~mode:UX process
   in
   let report = Soteria.Coverage.to_report coverage in

@@ -63,6 +63,7 @@
    (>= 0.5))
   (yojson
    (< 3.0))
+  xml-light
   unionFind
   ppx_deriving_yojson
   ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]

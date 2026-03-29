@@ -19,6 +19,7 @@
   tsort
   unix
   unionFind
+  xml-light
   yojson
   zarith)
  (preprocess
