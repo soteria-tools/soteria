@@ -603,7 +603,7 @@ struct
 
   type syn =
     | MemVal of { offset : Expr.t; len : Expr.t; v : MemVal.syn }
-    | Bound of Expr.t
+    | Bound of Expr.t [@printer fun f v -> Fmt.pf f "Bound(%a)" Expr.pp v]
   [@@deriving show { with_path = false }]
 
   let ins_outs = function

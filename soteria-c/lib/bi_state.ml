@@ -16,15 +16,10 @@ let get_global sym st = wrap_no_fail (State.get_global sym) st
 let copy_nonoverlapping ~dst ~src ~size =
   wrap (State.copy_nonoverlapping ~dst ~src ~size)
 
-let produce_aggregate ptr ty v : unit SM.t =
-  let open SM.Syntax in
-  let* st = SM.get_state () in
+let produce_aggregate ptr ty v st =
+  let open Producer.Syntax in
   let st, fixes = of_opt st in
-  let*^ (), st = State.produce_aggregate ptr ty v st in
-  SM.set_state (to_opt (st, fixes))
+  let+ st = State.produce_aggregate ptr ty v st in
+  to_opt (st, fixes)
 
 (* let consume s t = Bi.consume ~produce:State.produce State.consume s t *)
-
-let to_spec st_opt =
-  let st, pre = of_opt st_opt in
-  (pre, Option.fold ~none:[] ~some:State.serialize st)

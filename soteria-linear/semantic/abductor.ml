@@ -17,7 +17,7 @@ type branch = (args:Aux.S_val.t list * res:res) * LSymex.Value.(sbool t) list
 let make_spec_opt (((~args, ~res), pc) : branch) : Context.spec option =
   let open Syntaxes.Option in
   let res, bstate = res in
-  let pre, post = Bi_state.to_spec bstate in
+  let ~pre, ~post = Bi_state.to_spec bstate in
   let args = List.map Aux.S_val.to_syn args in
   let pc = List.map LSymex.Value.Expr.of_value pc in
   let+ ret =

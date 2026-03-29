@@ -1,14 +1,33 @@
 module T = Typed.T
+module Expr = Typed.Expr
 
-type t = Basic of T.cval Typed.t | Struct of t list | Array of t list
+type 'v agv = Basic of 'v | Struct of 'v agv list | Array of 'v agv list
+type t = T.cval Typed.t agv
+type syn = Expr.t agv
 
-let rec pp ft =
+let to_syn v =
+  let rec aux v =
+    match v with
+    | Basic v -> Basic (Typed.Expr.of_value v)
+    | Struct fields -> Struct (List.map aux fields)
+    | Array elements -> Array (List.map aux elements)
+  in
+  aux v
+
+let rec subst f = function
+  | Basic v -> Basic (Expr.subst f v)
+  | Struct fields -> Struct (List.map (subst f) fields)
+  | Array elements -> Array (List.map (subst f) elements)
+
+let rec pp_agv pp_v ft =
   let open Fmt in
   function
-  | Basic v -> Typed.ppa ft v
-  | Struct fields -> braces (list ~sep:comma pp) ft fields
-  | Array elements -> brackets (list ~sep:comma pp) ft elements
+  | Basic v -> pp_v ft v
+  | Struct fields -> braces (list ~sep:comma (pp_agv pp_v)) ft fields
+  | Array elements -> brackets (list ~sep:comma (pp_agv pp_v)) ft elements
 
+let pp ft v = (pp_agv Typed.ppa) ft v
+let pp_syn ft v = (pp_agv Typed.Expr.pp) ft v
 let int_z size z = Basic (Typed.BitVec.mk_masked size z)
 let int size i = Basic (Typed.BitVec.mki_masked size i)
 
@@ -31,16 +50,6 @@ let basic_or_unsupported ~msg v =
 
 let rec iter_vars v f =
   match v with
-  | Basic v -> Typed.iter_vars v f
+  | Basic v -> Svalue.iter_vars v f
   | Struct values | Array values ->
       List.iter (fun value -> iter_vars value f) values
-
-let rec subst f v =
-  match v with
-  | Basic v -> Basic (Typed.subst f v)
-  | Struct fields ->
-      let fields = List.map (subst f) fields in
-      Struct fields
-  | Array elements ->
-      let elements = List.map (subst f) elements in
-      Array elements

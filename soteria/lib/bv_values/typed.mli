@@ -324,4 +324,8 @@ module Infix : sig
   val ( /.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 end
 
-module Expr : Symex.Value.Expr with type 'a v := 'a t and type 'a ty := 'a ty
+module Expr :
+  Symex.Value.Expr
+    with type 'a v := 'a t
+     and type 'a ty := 'a ty
+     and type t = Svalue.t

@@ -27,9 +27,10 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
     | None -> (None, [])
     | Some (st, v) -> (st, v)
 
-  let to_spec topt : syn list * syn list =
+  let to_spec topt : pre:syn list * post:syn list =
     let post, pre = of_opt topt in
-    (pre, Option.fold ~none:[] ~some:B.to_syn post)
+    let post = Option.fold ~none:[] ~some:B.to_syn post in
+    (~pre, ~post)
 
   let to_opt : t -> t option = function None, [] -> None | other -> Some other
   let expose (st, fixes) = (st, fixes)

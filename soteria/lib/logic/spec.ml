@@ -1,4 +1,4 @@
-module M (Symex : Symex.S) = struct
+module M (Symex : Symex.Base) = struct
   open Symex
 
   type ('asrt, 'err) t = {

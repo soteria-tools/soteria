@@ -2,7 +2,7 @@ open Soteria_std
 open Logs.Import
 module Var = Symex.Var
 
-module M (Symex : Symex.S) = struct
+module M (Symex : Symex.Base) = struct
   (** Atoms of separation logic assertions are SL assertions that do not contain
       separating conjunctions.
 

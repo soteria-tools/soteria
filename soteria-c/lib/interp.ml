@@ -14,7 +14,7 @@ module InterpM (State : State_intf.S) = struct
   module SSM = Soteria.Sym_states.State_monad.Make (StateM) (Store)
   open SSM
 
-  type 'a t = ('a, Error.with_trace, State.serialized list) SSM.Result.t
+  type 'a t = ('a, Error.with_trace, State.syn list) SSM.Result.t
 
   let map x f = Result.map x f
   let bind x f = Result.bind x f
@@ -61,7 +61,7 @@ module InterpM (State : State_intf.S) = struct
     SSM.lift @@ StateM.lift (Csymex.map s Soteria.Symex.Compo_res.ok)
 
   let lift_symex_res (type a)
-      (s : (a, Error.with_trace, State.serialized list) Csymex.Result.t) : a t =
+      (s : (a, Error.with_trace, State.syn list) Csymex.Result.t) : a t =
     SSM.lift @@ StateM.lift s
 
   let[@inline] error (err : Error.t) : 'a t =
@@ -176,7 +176,7 @@ module Make (State : State_intf.S) = struct
 
   type fun_exec =
     args:Agv.t list ->
-    (Agv.t, Error.with_trace, State.serialized list) InterpM.StateM.Result.t
+    (Agv.t, Error.with_trace, State.syn list) InterpM.StateM.Result.t
 
   let get_param_tys name =
     let ptys = Ail_helpers.get_param_tys name in
@@ -1368,28 +1368,16 @@ module Make (State : State_intf.S) = struct
       let+ (res, _), state = eval_expr expr Store.empty state in
       (res, state)
     in
-    (* Produce_zero will be useful when Cerberus allows for knowing when no
-       declaration is given. *)
-    let _produce_zero (ptr : [< T.sptr ] Typed.t) ty =
-      let loc = Typed.Ptr.loc ptr in
-      let offset = Typed.Ptr.ofs ptr in
-      let* len = StateM.lift @@ Layout.size_of_s ty in
-      let block =
-        Block.
-          {
-            node =
-              Soteria.Sym_states.Freeable.Alive
-                (Ctree_block.MemVal { offset; len; v = SZeros });
-            info = None;
-          }
-      in
-      let serialized : State.serialized = Ser_heap (loc, block) in
-      State.produce serialized
-    in
     let produce_expr (ptr : [< T.sptr ] Typed.t) ty expr =
+      let syn = Typed.Expr.of_value in
       let** v = eval_expr_no_store expr in
-      let* () = State.produce_aggregate ptr ty v in
-      StateM.Result.ok ()
+      let* st = StateM.get_state () in
+      let*^ st' =
+        Producer.run_identity_producer
+        @@ State.produce_aggregate (syn ptr) ty (Agv.to_syn v) st
+      in
+      let+ () = StateM.set_state st' in
+      Soteria.Symex.Compo_res.Ok ()
     in
     StateM.Result.iter_list prog.sigma.object_definitions ~f:(fun def ->
         let id, e = def in
