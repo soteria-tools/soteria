@@ -154,7 +154,7 @@ compare_parser.add_argument(
     type=str,
     nargs="*",
     default=default_experiments_to_run,
-    help=f"List of experiment names to run (default: all)",
+    help="List of experiment names to run (default: all)",
 )
 
 
@@ -600,9 +600,13 @@ class Experiment(PrintersMixin):
 
 ########## List experiments ##########
 
-simple_config = lambda name: ExperimentConfig(
-    name=name, path=Path(name), cmake_args=["-DBUILD_TESTING=OFF"]
-)
+
+def simple_config(name) -> ExperimentConfig:
+    return ExperimentConfig(
+        name=name, path=Path(name), cmake_args=["-DBUILD_TESTING=OFF"]
+    )
+
+
 configs = [
     ExperimentConfig(
         name="Collections-C",
@@ -663,7 +667,7 @@ def at_start():
     # If first arg is not a subcommand, treat it as 'run' command
     import sys
 
-    if len(sys.argv) > 1 and sys.argv[1] not in ["run", "infer", "compare"]:
+    if len(sys.argv) <= 1 or (len(sys.argv) > 1 and sys.argv[1] not in ["run", "infer", "compare"]):
         # Insert 'run' as the subcommand
         sys.argv.insert(1, "run")
 
