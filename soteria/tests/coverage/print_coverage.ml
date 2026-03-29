@@ -22,12 +22,9 @@ let () =
     Soteria.Coverage.As_ctx.mark_line ~file:"sample.c" ~line:4;
     run ~coverage:Handled ~mode:UX process
   in
-  let report_json = Soteria.Coverage.to_yojson coverage in
-  Yojson.Safe.pretty_to_channel stdout report_json;
+  let report = Soteria.Coverage.to_report coverage in
+  Soteria.Coverage.JsonWriter.to_formatter Fmt.stdout report;
   Fmt.pr "@.@.";
-  Soteria.Coverage.Writers.cobertura.write_to_formatter Fmt.stdout
-    (Soteria.Coverage.to_report coverage);
-  Fmt.pr "@.";
-  Soteria.Coverage.Writers.json.write_to_formatter Fmt.stdout
+  Soteria.Coverage.CoberturaWriter.to_formatter Fmt.stdout
     (Soteria.Coverage.to_report coverage);
   Fmt.pr "@."

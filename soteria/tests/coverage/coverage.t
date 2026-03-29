@@ -31,15 +31,3 @@ Coverage report can be exported to JSON and Cobertura XML
     </packages>
   </coverage>
   
-  {
-    "sample.c": {
-      "lines": { "3": 2, "4": 1 },
-      "branches": {
-        "tests/sample-branch": {
-          "line": 7,
-          "then_reached": true,
-          "else_reached": true
-        }
-      }
-    }
-  }

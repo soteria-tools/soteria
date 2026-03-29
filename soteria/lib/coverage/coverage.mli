@@ -30,15 +30,15 @@
 open Soteria_std.Hashtbl
 
 type branch_side = [ `Then | `Else ]
+
 type source_span = {
-  file : string;
-      (** Source file path as reported by the frontend. *)
-  line : int;
-      (** 1-based source line for human-facing reporting. *)
+  file : string;  (** Source file path as reported by the frontend. *)
+  line : int;  (** 1-based source line for human-facing reporting. *)
   branch_id : string;
       (** Stable identifier for the branch point; used for disambiguation and
           aggregation. *)
 }
+
 type t
 type 'a with_coverage = { res : 'a; coverage : t }
 type branch_coverage = { line : int; then_reached : bool; else_reached : bool }
@@ -71,16 +71,16 @@ val map_with_coverage : ('a -> 'b) -> 'a with_coverage -> 'b with_coverage
 *)
 val to_report : t -> report
 
-val to_yojson : t -> Yojson.Safe.t
 val report_to_yojson : report -> Yojson.Safe.t
 
-module Writers : sig
-  val json : coverage_writer
-  val cobertura : coverage_writer
-  val codecov_json : coverage_writer
+module type Writer = sig
+  val to_formatter : Format.formatter -> report -> unit
+  val to_file : string -> report -> unit
 end
 
-val output_with : coverage_writer -> t -> unit
+module JsonWriter : Writer
+module CoberturaWriter : Writer
+
 val output : t -> unit
 
 module As_ctx : sig

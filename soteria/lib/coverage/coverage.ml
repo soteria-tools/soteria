@@ -141,160 +141,106 @@ let report_to_yojson report =
     (List.map (fun (file, file_cov) -> (file, file_coverage_to_yojson file_cov))
     @@ sorted_bindings report)
 
-let to_yojson t = report_to_yojson (to_report t)
-
-let write_json_to_formatter ft report =
-  Yojson.Safe.pretty_print ft (report_to_yojson report)
-
-let write_json_to_file file report =
-  Yojson.Safe.to_file file (report_to_yojson report)
-
-let pp_line_hits_json ft line_hits =
-  Fmt.pf ft "{";
-  let first = ref true in
-  List.iter
-    (fun (line, hits) ->
-      if !first then first := false else Fmt.pf ft ",";
-      Fmt.pf ft "\"%s\":%d" line hits)
-    (sorted_bindings line_hits);
-  Fmt.pf ft "}"
-
-let write_codecov_json_to_formatter ft report =
-  Fmt.pf ft "{\"coverage\":{";
-  let first = ref true in
-  List.iter
-    (fun (file, file_cov) ->
-      if !first then first := false else Fmt.pf ft ",";
-      Fmt.pf ft "\"%s\":" file;
-      pp_line_hits_json ft file_cov.lines)
-    (sorted_bindings report);
-  Fmt.pf ft "}}"
-
-let write_cobertura_to_formatter ft report =
-  let covered_lines = ref 0 in
-  let total_lines = ref 0 in
-  let covered_branches = ref 0 in
-  let total_branches = ref 0 in
-  Hstring.iter
-    (fun _file file_cov ->
-      Hstring.iter
-        (fun _line hits ->
-          incr total_lines;
-          if hits > 0 then incr covered_lines)
-        file_cov.lines;
-      Hstring.iter
-        (fun _branch_id br ->
-          total_branches := !total_branches + 2;
-          if br.then_reached then incr covered_branches;
-          if br.else_reached then incr covered_branches)
-        file_cov.branches)
-    report;
-  let line_rate =
-    if !total_lines = 0 then 1.
-    else float_of_int !covered_lines /. float_of_int !total_lines
-  in
-  let branch_rate =
-    if !total_branches = 0 then 1.
-    else float_of_int !covered_branches /. float_of_int !total_branches
-  in
-  Fmt.pf ft
-    "<?xml version=\"1.0\" ?>\n\
-     <coverage lines-valid=\"%d\" lines-covered=\"%d\" line-rate=\"%.6f\" \
-     branches-valid=\"%d\" branches-covered=\"%d\" branch-rate=\"%.6f\" \
-     version=\"soteria\">\n\
-    \  <packages>\n\
-    \    <package name=\"soteria\" line-rate=\"%.6f\" branch-rate=\"%.6f\">\n\
-    \      <classes>\n"
-    !total_lines !covered_lines line_rate !total_branches !covered_branches
-    branch_rate line_rate branch_rate;
-  List.iter
-    (fun (file, file_cov) ->
-      Fmt.pf ft
-        "        <class name=\"%s\" filename=\"%s\" line-rate=\"0.0\" \
-         branch-rate=\"0.0\">\n\
-        \          <methods/>\n\
-        \          <lines>\n"
-        file file;
-      List.iter
-        (fun (line, hits) ->
-          Fmt.pf ft "            <line number=\"%s\" hits=\"%d\"/>\n" line hits)
-        (sorted_bindings file_cov.lines);
-      List.iter
-        (fun (_branch_id, br) ->
-          let taken =
-            (if br.then_reached then 1 else 0)
-            + if br.else_reached then 1 else 0
-          in
-          Fmt.pf ft
-            "            <line number=\"%d\" hits=\"1\" branch=\"true\" \
-             condition-coverage=\"%d%% (%d/2)\"/>\n"
-            br.line
-            (taken * 100 / 2)
-            taken)
-        (sorted_bindings file_cov.branches);
-      Fmt.pf ft "          </lines>\n        </class>\n")
-    (sorted_bindings report);
-  Fmt.pf ft "      </classes>\n    </package>\n  </packages>\n</coverage>\n"
-
-let write_cobertura_to_file file report =
-  let oc = Out_channel.open_text file in
-  Fun.protect
-    ~finally:(fun () -> close_out oc)
-    (fun () ->
-      let ft = Format.formatter_of_out_channel oc in
-      write_cobertura_to_formatter ft report;
-      Format.pp_print_flush ft ())
-
-module Writers = struct
-  let json =
-    {
-      write_to_formatter = write_json_to_formatter;
-      write_to_file = write_json_to_file;
-    }
-
-  let cobertura =
-    {
-      write_to_formatter = write_cobertura_to_formatter;
-      write_to_file = write_cobertura_to_file;
-    }
-
-  let codecov_json =
-    {
-      write_to_formatter = write_codecov_json_to_formatter;
-      write_to_file =
-        (fun file report ->
-          let oc = Out_channel.open_text file in
-          Fun.protect
-            ~finally:(fun () -> close_out oc)
-            (fun () ->
-              let ft = Format.formatter_of_out_channel oc in
-              write_codecov_json_to_formatter ft report;
-              Format.pp_print_flush ft ()));
-    }
+module type Writer = sig
+  val to_formatter : Format.formatter -> report -> unit
+  val to_file : string -> report -> unit
 end
 
-let writer_of_format format =
-  match String.lowercase_ascii format with
-  | "json" -> Some Writers.json
-  | "cobertura" | "cobertura-xml" | "xml" -> Some Writers.cobertura
-  | "codecov-json" -> Some Writers.codecov_json
-  | _ -> None
+module JsonWriter : Writer = struct
+  let to_formatter ft report =
+    Yojson.Safe.pretty_print ft (report_to_yojson report)
 
-let output_with writer t =
-  match (Config.get ()).output_coverage with
-  | None -> ()
-  | Some "stdout" -> writer.write_to_formatter Fmt.stdout (to_report t)
-  | Some file -> writer.write_to_file file (to_report t)
+  let to_file file report = Yojson.Safe.to_file file (report_to_yojson report)
+end
+
+module CoberturaWriter : Writer = struct
+  let to_formatter ft report =
+    let covered_lines = ref 0 in
+    let total_lines = ref 0 in
+    let covered_branches = ref 0 in
+    let total_branches = ref 0 in
+    Hstring.iter
+      (fun _file file_cov ->
+        Hstring.iter
+          (fun _line hits ->
+            incr total_lines;
+            if hits > 0 then incr covered_lines)
+          file_cov.lines;
+        Hstring.iter
+          (fun _branch_id br ->
+            total_branches := !total_branches + 2;
+            if br.then_reached then incr covered_branches;
+            if br.else_reached then incr covered_branches)
+          file_cov.branches)
+      report;
+    let line_rate =
+      if !total_lines = 0 then 1.
+      else float_of_int !covered_lines /. float_of_int !total_lines
+    in
+    let branch_rate =
+      if !total_branches = 0 then 1.
+      else float_of_int !covered_branches /. float_of_int !total_branches
+    in
+    Fmt.pf ft
+      "<?xml version=\"1.0\" ?>\n\
+       <coverage lines-valid=\"%d\" lines-covered=\"%d\" line-rate=\"%.6f\" \
+       branches-valid=\"%d\" branches-covered=\"%d\" branch-rate=\"%.6f\" \
+       version=\"soteria\">\n\
+      \  <packages>\n\
+      \    <package name=\"soteria\" line-rate=\"%.6f\" branch-rate=\"%.6f\">\n\
+      \      <classes>\n"
+      !total_lines !covered_lines line_rate !total_branches !covered_branches
+      branch_rate line_rate branch_rate;
+    List.iter
+      (fun (file, file_cov) ->
+        Fmt.pf ft
+          "        <class name=\"%s\" filename=\"%s\" line-rate=\"0.0\" \
+           branch-rate=\"0.0\">\n\
+          \          <methods/>\n\
+          \          <lines>\n"
+          file file;
+        List.iter
+          (fun (line, hits) ->
+            Fmt.pf ft "            <line number=\"%s\" hits=\"%d\"/>\n" line
+              hits)
+          (sorted_bindings file_cov.lines);
+        List.iter
+          (fun (_branch_id, br) ->
+            let taken =
+              (if br.then_reached then 1 else 0)
+              + if br.else_reached then 1 else 0
+            in
+            Fmt.pf ft
+              "            <line number=\"%d\" hits=\"1\" branch=\"true\" \
+               condition-coverage=\"%d%% (%d/2)\"/>\n"
+              br.line
+              (taken * 100 / 2)
+              taken)
+          (sorted_bindings file_cov.branches);
+        Fmt.pf ft "          </lines>\n        </class>\n")
+      (sorted_bindings report);
+    Fmt.pf ft "      </classes>\n    </package>\n  </packages>\n</coverage>\n"
+
+  let to_file file report =
+    let oc = Out_channel.open_text file in
+    Fun.protect
+      ~finally:(fun () -> close_out oc)
+      (fun () ->
+        let ft = Format.formatter_of_out_channel oc in
+        to_formatter ft report;
+        Format.pp_print_flush ft ())
+end
 
 let output t =
-  let cfg = Config.get () in
-  match writer_of_format cfg.coverage_format with
-  | Some writer -> output_with writer t
-  | None ->
-      Fmt.failwith
-        "Unsupported coverage format: %s (supported: json, cobertura, \
-         codecov-json)"
-        cfg.coverage_format
+  let (module Writer : Writer) =
+    match (Config.get ()).coverage_format with
+    | Json -> (module JsonWriter)
+    | Cobertura -> (module CoberturaWriter)
+  in
+  match (Config.get ()).output_coverage with
+  | None -> ()
+  | Some "stdout" -> Writer.to_formatter Fmt.stdout (to_report t)
+  | Some file -> Writer.to_file file (to_report t)
 
 module As_ctx = struct
   type _ Effect.t += Apply : (t -> unit) -> unit Effect.t
@@ -314,6 +260,7 @@ module As_ctx = struct
 
   let with_coverage_dumped () f =
     let { res; coverage } = with_coverage () f in
+    output coverage;
     res
 
   let[@inline] apply f = Effect.perform (Apply f)
