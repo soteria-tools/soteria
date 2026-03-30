@@ -206,23 +206,37 @@ module CoberturaWriter : Writer = struct
                   [])
               (sorted_bindings file_cov.lines)
           in
+          let branches_by_line : (int * int) Hstring.t = Hstring.create 0 in
+          Hstring.iter
+            (fun _branch_id br ->
+              let line = string_of_int br.line in
+              let prev_taken, prev_total =
+                Option.value ~default:(0, 0)
+                  (Hstring.find_opt branches_by_line line)
+              in
+              let taken =
+                prev_taken
+                + (if br.then_reached then 1 else 0)
+                + (if br.else_reached then 1 else 0)
+              in
+              Hstring.replace branches_by_line line (taken, prev_total + 2))
+            file_cov.branches;
           let branch_lines =
             List.map
-              (fun (_branch_id, br) ->
-                let taken =
-                  (if br.then_reached then 1 else 0)
-                  + if br.else_reached then 1 else 0
+              (fun (line, (taken, total)) ->
+                let hits =
+                  Option.value ~default:1 (Hstring.find_opt file_cov.lines line)
                 in
+                let pct = if total = 0 then 100 else taken * 100 / total in
                 mk_elem "line"
                   [
-                    ("number", string_of_int br.line);
-                    ("hits", "1");
+                    ("number", line);
+                    ("hits", string_of_int hits);
                     ("branch", "true");
-                    ( "condition-coverage",
-                      Printf.sprintf "%d%% (%d/2)" (taken * 100 / 2) taken );
+                    ("condition-coverage", Printf.sprintf "%d%% (%d/%d)" pct taken total);
                   ]
                   [])
-              (sorted_bindings file_cov.branches)
+              (sorted_bindings branches_by_line)
           in
           mk_elem "class"
             [
