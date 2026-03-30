@@ -24,6 +24,7 @@ struct
   let empty = M.empty
   let is_empty = M.is_empty
   let syntactic_bindings = M.to_seq
+  let syntactic_iter m f = M.iter (fun k v -> f (k, v)) m
   let syntactic_mem = M.mem
   let syntactic_add = M.add
   let syntactic_add_opt k v = M.update k (fun _ -> v)

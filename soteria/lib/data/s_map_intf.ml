@@ -42,6 +42,7 @@ struct
     val empty : 'a t
     val is_empty : 'a t -> bool
     val syntactic_bindings : 'a t -> (Key.t * 'a) Seq.t
+    val syntactic_iter : 'a t -> (Key.t * 'a) Iter.t
     val syntactic_mem : Key.t -> 'a t -> bool
     val syntactic_add : Key.t -> 'a -> 'a t -> 'a t
     val syntactic_add_opt : Key.t -> 'a option -> 'a t -> 'a t
