@@ -2253,11 +2253,11 @@ end
 
 module SSet = struct
   let mk ~set_ty l = Seq l <| set_ty
+  let singleton x = Seq [ x ] <| t_set x.node.ty
+  let empty ~set_ty = Seq [] <| set_ty
 
   let inner_ty ty =
     match ty with TSet ty -> ty | _ -> failwith "Expected a set type"
-
-  let empty ~set_ty = Seq [] <| set_ty
 
   let mem x s =
     match s.node.kind with

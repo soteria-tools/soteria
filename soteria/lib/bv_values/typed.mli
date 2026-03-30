@@ -275,7 +275,10 @@ end
 
 module SSet : sig
   val mk : set_ty:'a sset ty -> 'a t list -> [> 'a sset ] t
+  val singleton : 'a t -> [> 'a sset ] t
+  val empty : set_ty:'a sset ty -> [> 'a sset ] t
   val mem : 'a t -> [< 'a sset ] t -> [> sbool ] t
+  val union : [< 'a sset ] t -> [< 'a sset ] t -> [> 'a sset ] t
 end
 
 module Infix : sig
