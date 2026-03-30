@@ -534,11 +534,14 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let+? fix = symex in
     List.map (fun v -> MemVal { v; offset; len }) fix
 
-  let of_opt ?(mk_fixes = fun () -> Symex.return []) = function
-    | None ->
+  let of_opt ?mk_fixes x =
+    match (x, mk_fixes) with
+    | Some t, _ -> Result.ok t
+    | None, Some mk_fixes ->
         let+ fixes = mk_fixes () in
         Missing fixes
-    | Some t -> Result.ok t
+    | None, None ->
+        Result.miss_no_fix ~reason:"Tree_block.of_opt missed with no fix" ()
 
   let to_opt t = if is_empty t then None else Some t
 

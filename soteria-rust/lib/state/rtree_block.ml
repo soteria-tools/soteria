@@ -322,6 +322,14 @@ struct
   let mk_fix_any ofs len () = [ [ MemVal { offset = ofs; len; v = SAny } ] ]
   let mk_fix_any_s ofs len () = return (mk_fix_any ofs len ())
 
+  let mk_fix_tb ofs len () =
+    return
+      [
+        List.map
+          (fun v -> MemVal { offset = ofs; len; v = MemVal.lift_tb_st_fix v })
+          (Tree_borrows.fix_empty_state ());
+      ]
+
   let collect_leaves ~uninit (t : Tree.t) =
     Result.fold_iter (Tree.iter_leaves_rev t) ~init:[]
       ~f:(fun vs (range, v, _tb) ->
@@ -526,7 +534,8 @@ struct
       (size : Typed.([< T.sint ] t)) f =
     (* TODO: figure out [mk_fixes] for tree borrows state! *)
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
+    let mk_fixes = mk_fix_tb ofs size in
+    with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ t = as_owned t in

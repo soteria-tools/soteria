@@ -59,6 +59,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
   type serialized_state = | [@@deriving show]
 
   let serialize_state _ = []
+  let fix_empty_state () = []
 
   let subst_serialized_state _ : serialized_state -> serialized_state = function
     | _ -> .

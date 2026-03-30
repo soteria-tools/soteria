@@ -88,6 +88,7 @@ module M (Symex : Rust_symex) = struct
 
     (** {2 Operations on the state} *)
 
+    val fix_empty_state : unit -> serialized_state list
     val empty_state : tb_state
     val is_empty_state : tb_state -> bool
     val equal_state : tb_state -> tb_state -> bool
