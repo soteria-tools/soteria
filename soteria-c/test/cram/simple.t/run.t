@@ -1310,6 +1310,72 @@ Checking that code cannot branch infinitely
   Executed 112 statements
   Verification Success!
 
+Coverage test -- JSON
+  $ soteria-c exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --coverage stdout --coverage-format json
+  Executed 11 statements
+  Verification Success!
+  {
+    "sym.c": {
+      "lines": {
+        "2": 1,
+        "3": 6,
+        "4": 1,
+        "5": 6,
+        "6": 0,
+        "7": 0,
+        "9": 2,
+        "12": 1,
+        "13": 2,
+        "18": 1,
+        "19": 5,
+        "20": 4
+      },
+      "branches": {
+        "sym.c:3:3-14:4": {
+          "line": 3,
+          "then_reached": true,
+          "else_reached": true
+        },
+        "sym.c:5:5-8:6": {
+          "line": 5,
+          "then_reached": false,
+          "else_reached": true
+        }
+      }
+    }
+  }
+
+Coverage test -- JSON
+  $ soteria-c exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --coverage stdout --coverage-format cobertura
+  Executed 11 statements
+  Verification Success!
+  <?xml version="1.0" ?>
+  <coverage lines-valid="12" lines-covered="10" line-rate="0.833333" branches-valid="4" branches-covered="3" branch-rate="0.750000" version="soteria">
+    <packages>
+      <package name="soteria" line-rate="0.833333" branch-rate="0.750000">
+        <classes>
+          <class name="sym.c" filename="sym.c" line-rate="0.0" branch-rate="0.0">
+            <methods/>
+            <lines>
+              <line number="2" hits="1"/>
+              <line number="3" hits="6" branch="true" condition-coverage="100% (2/2)"/>
+              <line number="4" hits="1"/>
+              <line number="5" hits="6" branch="true" condition-coverage="50% (1/2)"/>
+              <line number="6" hits="0"/>
+              <line number="7" hits="0"/>
+              <line number="9" hits="2"/>
+              <line number="12" hits="1"/>
+              <line number="13" hits="2"/>
+              <line number="18" hits="1"/>
+              <line number="19" hits="5"/>
+              <line number="20" hits="4"/>
+            </lines>
+          </class>
+        </classes>
+      </package>
+    </packages>
+  </coverage>
+
   $ soteria-c exec global.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
     [Ok: (0x00000001,

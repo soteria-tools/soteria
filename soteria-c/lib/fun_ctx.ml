@@ -57,3 +57,56 @@ let get_sym sv t =
     | _ -> None
   in
   Csymex.of_opt_not_impl ~msg:"Could not resolve function" @@ res
+
+let rec reachable_lines ~file (stmt : Ail_tys.stmt) : int Iter.t =
+ fun f ->
+  let Cerb_frontend.AilSyntax.{ loc; node; _ } = stmt in
+  let () =
+    match Error.Diagnostic.extract_location loc with
+    | Some (file', line, _loc) ->
+        (* sanity check: we are still in the same file *)
+        assert (file = file');
+        f line
+    | None -> ()
+  in
+  match node with
+  | AilSlabel (_, stmt, _)
+  | AilScase (_, stmt)
+  | AilSmarker (_, stmt)
+  | AilSwhile (_, stmt, _)
+  | AilSswitch (_, stmt)
+  | AilSdo (stmt, _, _) ->
+      reachable_lines ~file stmt f
+  | AilSif (_, then_stmt, else_stmt) ->
+      reachable_lines ~file then_stmt f;
+      reachable_lines ~file else_stmt f
+  | AilSblock (_, stmtl) | AilSpar stmtl ->
+      List.iter (fun s -> reachable_lines ~file s f) stmtl
+  | AilSskip | AilSreturn _ | AilSreturnVoid | AilSexpr _ | AilSdeclaration _
+  | AilSbreak | AilScontinue | AilSgoto _
+  | AilScase_rangeGNU (_, _, _)
+  | AilSdefault _
+  | AilSreg_store (_, _) ->
+      ()
+
+let reachable_stmt_lines_by_file_iter (stmt : Ail_tys.stmt) :
+    (string * int Iter.t) Iter.t =
+ fun f ->
+  let Cerb_frontend.AilSyntax.{ loc; _ } = stmt in
+  match Error.Diagnostic.extract_location loc with
+  | None -> ()
+  | Some (file, _, _) -> f (file, reachable_lines ~file stmt)
+
+let reachable_lines_iter (prog : Ail_tys.linked_program) :
+    (string * int Iter.t) Iter.t =
+ fun f ->
+  (prog.sigma.function_definitions
+  |> Iter.of_list
+  |> Iter.map (fun (_sym, (_loc, _storage, _inline, _params, body)) ->
+      reachable_stmt_lines_by_file_iter body)
+  |> Iter.concat)
+    f
+
+let mark_files_lines_reachable (prog : Ail_tys.linked_program) =
+  Soteria.Coverage.As_ctx.mark_files_lines_reachable
+  @@ reachable_lines_iter prog

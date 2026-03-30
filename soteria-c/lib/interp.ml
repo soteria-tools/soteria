@@ -1253,7 +1253,6 @@ module Make (State : State_intf.S) = struct
     in
     let AilSyntax.{ loc; node = stmt; _ } = astmt in
     let@@ () = with_loc ~loc in
-    let*^ () = Csymex.mark_line_coverage_here () in
     match stmt with
     | AilSskip -> ok Normal
     | AilSreturn e ->

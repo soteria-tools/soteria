@@ -238,6 +238,7 @@ let resolve_function (linked : Ail_tys.linked_program) entry_point =
 let with_function_context prog f =
   let open Effect.Deep in
   let fctx = Fun_ctx.of_linked_program prog in
+  let () = Fun_ctx.mark_files_lines_reachable prog in
   Layout.Tag_defs.run_with_prog prog.sigma @@ fun () ->
   Ail_helpers.run_with_prog prog @@ fun () ->
   try f () with effect Interp.Get_fun_ctx, k -> continue k fctx
