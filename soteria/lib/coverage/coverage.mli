@@ -98,6 +98,10 @@ module As_ctx : sig
       reachable without recording hits. Existing hit counts are preserved. *)
   val mark_lines_reachable : file:string -> int Iter.t -> unit
 
+  (** [mark_files_lines_reachable spans] marks reachable lines for multiple
+      files. The outer iterator yields [(file, lines)] pairs. *)
+  val mark_files_lines_reachable : (string * int Iter.t) Iter.t -> unit
+
   (** [mark_branch span side] records that [side] of [span] has been reached. *)
   val mark_branch : branch_side -> branch_span -> unit
 

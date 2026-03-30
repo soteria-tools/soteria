@@ -34,7 +34,7 @@ let sorted_int_bindings tbl =
   |> List.of_seq
   |> List.sort (fun (k1, _) (k2, _) -> Int.compare k1 k2)
 
-let empty_file_hits () = { lines = Hint.create 0; branches = Hstring.create 0 }
+let empty_file_hits () = { lines = Hint.create 16; branches = Hstring.create 8 }
 
 let get_or_create_file_hits (coverage : t) file =
   match Hstring.find_opt coverage file with
@@ -299,18 +299,24 @@ module As_ctx = struct
         in
         Hint.replace file_hits.lines line (prev + 1))
 
+  let update_reachable_line hits line =
+    if not (Hint.mem hits line) then Hint.replace hits line 0
+
   let mark_line_reachable ~file ~line =
     apply (fun coverage ->
         let file_hits = get_or_create_file_hits coverage file in
-        if Option.is_none (Hint.find_opt file_hits.lines line) then
-          Hint.replace file_hits.lines line 0)
+        update_reachable_line file_hits.lines line)
 
   let mark_lines_reachable ~file (lines : int Iter.t) =
     apply (fun coverage ->
         let file_hits = get_or_create_file_hits coverage file in
-        lines (fun line ->
-            if Option.is_none (Hint.find_opt file_hits.lines line) then
-              Hint.replace file_hits.lines line 0))
+        lines (update_reachable_line file_hits.lines))
+
+  let mark_files_lines_reachable (spans : (string * int Iter.t) Iter.t) =
+    apply (fun coverage ->
+        spans (fun (file, lines) ->
+            let file_hits = get_or_create_file_hits coverage file in
+            lines (update_reachable_line file_hits.lines)))
 
   let mark_branch side ({ file; line; branch_id } : branch_span) =
     apply (fun coverage ->
