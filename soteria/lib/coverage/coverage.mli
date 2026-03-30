@@ -104,6 +104,10 @@ module As_ctx : sig
       coverage reports. *)
   val mark_line_reachable : file:string -> line:int -> unit
 
+  (** [mark_lines_reachable ~file lines] marks all lines from [lines] as
+      reachable without recording hits. Existing hit counts are preserved. *)
+  val mark_lines_reachable : file:string -> int Iter.t -> unit
+
   (** [mark_branch span side] records that [side] of [span] has been reached. *)
   val mark_branch : branch_side -> source_span -> unit
 

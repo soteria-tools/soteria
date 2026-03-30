@@ -325,6 +325,13 @@ module As_ctx = struct
         if Option.is_none (Hstring.find_opt coverage.line_hits key) then
           Hstring.replace coverage.line_hits key 0)
 
+  let mark_lines_reachable ~file (lines : int Iter.t) =
+    apply (fun coverage ->
+        lines (fun line ->
+            let key = make_line_key ~file ~line in
+            if Option.is_none (Hstring.find_opt coverage.line_hits key) then
+              Hstring.replace coverage.line_hits key 0))
+
   let mark_branch side ({ file; line; branch_id } : source_span) =
     apply (fun coverage ->
         let key = make_branch_key ~file ~line ~branch_id in
