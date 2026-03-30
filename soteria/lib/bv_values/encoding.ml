@@ -11,6 +11,7 @@ type ty = Svalue.ty
 let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
 let t_seq = atom "Seq"
+let seq_empty seq_ty = as_type (atom "seq.empty") seq_ty
 let seq_singl t = atom "seq.unit" $$ [ t ]
 let seq_concat ts = atom "seq.++" $$ ts
 
@@ -96,6 +97,7 @@ let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | BvConcat -> bv_concat
   (* HACK: make an interface that supports solver extensions *)
   | SetMember -> set_member Z3
+  | SetUnion -> set_union Z3
 
 let rec encode_value (v : Svalue.t) =
   match v.node.kind with
@@ -112,10 +114,17 @@ let rec encode_value (v : Svalue.t) =
       bv_k n z
   | Ptr _ -> pointers_not_supported ()
   | Seq vs -> (
-      match vs with
-      | [] -> failwith "need type to encode empty lists"
-      | _ :: _ ->
-          List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat)
+      match (vs, v.node.ty) with
+      | [], TSeq _ -> seq_empty (sort_of_ty v.node.ty)
+      | _ :: _, TSeq _ ->
+          List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat
+      | [], TSet _ -> set_empty Z3 (sort_of_ty @@ Svalue.SSet.inner_ty v.node.ty)
+      | _ :: _, TSet _ ->
+          List.fold_left
+            (fun acc v -> set_insert Z3 (encode_value_memo v) acc)
+            (set_empty Z3 (sort_of_ty @@ Svalue.SSet.inner_ty v.node.ty))
+            vs
+      | _, _ -> failwith "Expected sequence or set type for encoding")
   | Ite (c, t, e) ->
       ite (encode_value_memo c) (encode_value_memo t) (encode_value_memo e)
   | Unop (unop, v1) ->

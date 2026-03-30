@@ -157,6 +157,7 @@ module Binop = struct
     | AShr
     (* Set operations *)
     | SetMember
+    | SetUnion
   [@@deriving eq, show { with_path = false }, ord]
 
   let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
@@ -193,6 +194,7 @@ module Binop = struct
     | LShr -> Fmt.string ft "l>>"
     | AShr -> Fmt.string ft "a>>"
     | SetMember -> Fmt.string ft "∈"
+    | SetUnion -> Fmt.string ft "∪"
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
@@ -2261,6 +2263,11 @@ module SSet = struct
     match s.node.kind with
     | Seq l -> Bool.of_bool (List.exists (equal x) l)
     | _ -> Binop (SetMember, x, s) <| TBool
+
+  let union s1 s2 =
+    match (s1.node.kind, s2.node.kind) with
+    | Seq l1, Seq l2 -> Seq (l1 @ l2) <| s1.node.ty
+    | _ -> mk_commut_binop SetUnion s1 s2 <| s1.node.ty
 end
 
 (** {2 Infix operators} *)
