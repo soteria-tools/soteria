@@ -45,7 +45,8 @@ type branch_coverage = { line : int; then_reached : bool; else_reached : bool }
 
 type file_coverage = {
   lines : int Hstring.t;
-      (** Covered lines with their hit counts. Missing lines are omitted. *)
+      (** Reachable lines with hit counts. A value of [0] means reachable but
+          not reached. *)
   branches : branch_coverage Hstring.t;
       (** For each conditional id, whether then/else was reached and on which
           line that conditional lives. *)
@@ -97,6 +98,11 @@ module As_ctx : sig
 
   (** [mark_line ~file ~line] records one hit for a source line. *)
   val mark_line : file:string -> line:int -> unit
+
+  (** [mark_line_reachable ~file ~line] marks a source line as reachable
+      without recording a hit. Useful to include not-yet-reached lines in
+      coverage reports. *)
+  val mark_line_reachable : file:string -> line:int -> unit
 
   (** [mark_branch span side] records that [side] of [span] has been reached. *)
   val mark_branch : branch_side -> source_span -> unit

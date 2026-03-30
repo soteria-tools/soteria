@@ -170,14 +170,14 @@ module CoberturaWriter : Writer = struct
 
   let cobertura_xml report =
     let covered_lines = ref 0 in
-    let total_lines = ref 0 in
+    let valid_lines = ref 0 in
     let covered_branches = ref 0 in
     let total_branches = ref 0 in
     Hstring.iter
       (fun _file file_cov ->
         Hstring.iter
           (fun _line hits ->
-            incr total_lines;
+            incr valid_lines;
             if hits > 0 then incr covered_lines)
           file_cov.lines;
         Hstring.iter
@@ -188,8 +188,8 @@ module CoberturaWriter : Writer = struct
           file_cov.branches)
       report;
     let line_rate =
-      if !total_lines = 0 then 1.
-      else float_of_int !covered_lines /. float_of_int !total_lines
+      if !valid_lines = 0 then 1.
+      else float_of_int !covered_lines /. float_of_int !valid_lines
     in
     let branch_rate =
       if !total_branches = 0 then 1.
@@ -238,7 +238,7 @@ module CoberturaWriter : Writer = struct
     in
     mk_elem "coverage"
       [
-        ("lines-valid", string_of_int !total_lines);
+        ("lines-valid", string_of_int !valid_lines);
         ("lines-covered", string_of_int !covered_lines);
         ("line-rate", Printf.sprintf "%.6f" line_rate);
         ("branches-valid", string_of_int !total_branches);
@@ -298,29 +298,33 @@ module As_ctx = struct
   let[@inline] apply f = Effect.perform (Apply f)
 
   let mark_line ~file ~line =
-    if line > 0 then
-      apply (fun coverage ->
-          let key = make_line_key ~file ~line in
-          let prev =
-            Option.value ~default:0 (Hstring.find_opt coverage.line_hits key)
-          in
-          Hstring.replace coverage.line_hits key (prev + 1))
+    apply (fun coverage ->
+        let key = make_line_key ~file ~line in
+        let prev =
+          Option.value ~default:0 (Hstring.find_opt coverage.line_hits key)
+        in
+        Hstring.replace coverage.line_hits key (prev + 1))
+
+  let mark_line_reachable ~file ~line =
+    apply (fun coverage ->
+        let key = make_line_key ~file ~line in
+        if Option.is_none (Hstring.find_opt coverage.line_hits key) then
+          Hstring.replace coverage.line_hits key 0)
 
   let mark_branch side ({ file; line; branch_id } : source_span) =
-    if line > 0 then
-      apply (fun coverage ->
-          let key = make_branch_key ~file ~line ~branch_id in
-          let prev =
-            Option.value
-              ~default:{ line; then_reached = false; else_reached = false }
-              (Hstring.find_opt coverage.branch_hits key)
-          in
-          let next =
-            match side with
-            | `Then -> { prev with then_reached = true }
-            | `Else -> { prev with else_reached = true }
-          in
-          Hstring.replace coverage.branch_hits key next)
+    apply (fun coverage ->
+        let key = make_branch_key ~file ~line ~branch_id in
+        let prev =
+          Option.value
+            ~default:{ line; then_reached = false; else_reached = false }
+            (Hstring.find_opt coverage.branch_hits key)
+        in
+        let next =
+          match side with
+          | `Then -> { prev with then_reached = true }
+          | `Else -> { prev with else_reached = true }
+        in
+        Hstring.replace coverage.branch_hits key next)
 
   let get_copy () : t =
     let copy_ref = ref (create ()) in

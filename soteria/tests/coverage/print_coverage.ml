@@ -9,6 +9,8 @@ let branch_span line : Soteria.Coverage.source_span =
 
 let process : (unit, 'e, 'f) Result.t =
   let* b1 = nondet t_bool in
+  Soteria.Coverage.As_ctx.mark_line_reachable ~file ~line:6;
+  Soteria.Coverage.As_ctx.mark_line_reachable ~file ~line:7;
   Soteria.Coverage.As_ctx.mark_line ~file ~line:1;
   let* () = if%sat[@span branch_span 2] b1 then return () else return () in
   Soteria.Coverage.As_ctx.mark_line ~file ~line:3;
