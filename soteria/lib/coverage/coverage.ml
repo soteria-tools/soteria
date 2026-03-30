@@ -20,6 +20,26 @@ type coverage_writer = {
   write_to_file : string -> report -> unit;
 }
 
+let effective_line_hits_for_file (file_cov : file_coverage) =
+  let hits = Hstring.copy file_cov.lines in
+  let branch_execs_by_line : int Hstring.t = Hstring.create 0 in
+  Hstring.iter
+    (fun _branch_id br ->
+      let line = string_of_int br.line in
+      let branch_execs = if br.then_reached || br.else_reached then 1 else 0 in
+      if branch_execs > 0 then (
+        let prev_execs =
+          Option.value ~default:0 (Hstring.find_opt branch_execs_by_line line)
+        in
+        Hstring.replace branch_execs_by_line line (prev_execs + branch_execs)))
+    file_cov.branches;
+  Hstring.iter
+    (fun line branch_execs ->
+      let prev_hits = Option.value ~default:0 (Hstring.find_opt hits line) in
+      if branch_execs > prev_hits then Hstring.replace hits line branch_execs)
+    branch_execs_by_line;
+  hits
+
 let sorted_bindings tbl =
   Hstring.to_seq tbl
   |> List.of_seq
@@ -123,10 +143,11 @@ let branch_coverage_to_yojson b =
     ]
 
 let file_coverage_to_yojson file_cov =
+  let line_hits = effective_line_hits_for_file file_cov in
   let lines_json =
     `Assoc
       (List.map (fun (line, hits) -> (line, `Int hits))
-      @@ sorted_bindings file_cov.lines)
+      @@ sorted_bindings line_hits)
   in
   let branches_json =
     `Assoc
@@ -175,11 +196,12 @@ module CoberturaWriter : Writer = struct
     let total_branches = ref 0 in
     Hstring.iter
       (fun _file file_cov ->
+        let hits = effective_line_hits_for_file file_cov in
         Hstring.iter
-          (fun _line hits ->
+          (fun _line line_hits ->
             incr valid_lines;
-            if hits > 0 then incr covered_lines)
-          file_cov.lines;
+            if line_hits > 0 then incr covered_lines)
+          hits;
         Hstring.iter
           (fun _branch_id br ->
             total_branches := !total_branches + 2;
@@ -198,14 +220,6 @@ module CoberturaWriter : Writer = struct
     let classes =
       List.map
         (fun (file, file_cov) ->
-          let lines =
-            List.map
-              (fun (line, hits) ->
-                mk_elem "line"
-                  [ ("number", line); ("hits", string_of_int hits) ]
-                  [])
-              (sorted_bindings file_cov.lines)
-          in
           let branches_by_line : (int * int) Hstring.t = Hstring.create 0 in
           Hstring.iter
             (fun _branch_id br ->
@@ -221,22 +235,27 @@ module CoberturaWriter : Writer = struct
               in
               Hstring.replace branches_by_line line (taken, prev_total + 2))
             file_cov.branches;
-          let branch_lines =
+          let line_hits = effective_line_hits_for_file file_cov in
+          let lines =
             List.map
-              (fun (line, (taken, total)) ->
-                let hits =
-                  Option.value ~default:1 (Hstring.find_opt file_cov.lines line)
-                in
-                let pct = if total = 0 then 100 else taken * 100 / total in
-                mk_elem "line"
-                  [
-                    ("number", line);
-                    ("hits", string_of_int hits);
-                    ("branch", "true");
-                    ("condition-coverage", Printf.sprintf "%d%% (%d/%d)" pct taken total);
-                  ]
-                  [])
-              (sorted_bindings branches_by_line)
+              (fun (line, hits) ->
+                match Hstring.find_opt branches_by_line line with
+                | None ->
+                    mk_elem "line"
+                      [ ("number", line); ("hits", string_of_int hits) ]
+                      []
+                | Some (taken, total) ->
+                    let pct = if total = 0 then 100 else taken * 100 / total in
+                    mk_elem "line"
+                      [
+                        ("number", line);
+                        ("hits", string_of_int hits);
+                        ("branch", "true");
+                        ( "condition-coverage",
+                          Printf.sprintf "%d%% (%d/%d)" pct taken total );
+                      ]
+                      [])
+              (sorted_bindings line_hits)
           in
           mk_elem "class"
             [
@@ -245,9 +264,7 @@ module CoberturaWriter : Writer = struct
               ("line-rate", "0.0");
               ("branch-rate", "0.0");
             ]
-            [
-              mk_elem "methods" [] []; mk_elem "lines" [] (lines @ branch_lines);
-            ])
+            [ mk_elem "methods" [] []; mk_elem "lines" [] lines ])
         (sorted_bindings report)
     in
     mk_elem "coverage"
