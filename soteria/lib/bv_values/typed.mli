@@ -19,8 +19,9 @@ module T : sig
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
+  type 'a sset = [ `Set of 'a ]
   type cval = [ sint | sptr | sfloat ]
-  type any = [ sint_ovf | sfloat | sbool | sptr | sloc | any sseq ]
+  type any = [ sint_ovf | sfloat | sbool | sptr | sloc | any sseq | any sset ]
 
   val pp_sint : Format.formatter -> sint -> unit
   val pp_sint_ovf : Format.formatter -> sint_ovf -> unit
@@ -35,6 +36,9 @@ module T : sig
   val pp_sseq :
     (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a sseq -> unit
 
+  val pp_sset :
+    (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a sset -> unit
+
   val pp_any : Format.formatter -> any -> unit
   val hash_sint : sint -> int
   val hash_sint_ovf : sint_ovf -> int
@@ -46,6 +50,7 @@ module T : sig
   val hash_sloc : sloc -> int
   val hash_cval : cval -> int
   val hash_sseq : 'a sseq -> int
+  val hash_sset : 'a sset -> int
   val hash_any : any -> int
 end
 
@@ -64,6 +69,7 @@ val t_int : int -> [> sint ] ty
 val t_ptr : int -> [> sptr ] ty
 val t_loc : int -> [> sloc ] ty
 val t_seq : ([< any ] as 'a) ty -> [> 'a sseq ] ty
+val t_set : ([< any ] as 'a) ty -> [> 'a sset ] ty
 val t_f16 : [> sfloat ] ty
 val t_f32 : [> sfloat ] ty
 val t_f64 : [> sfloat ] ty
@@ -265,6 +271,11 @@ end
 
 module SSeq : sig
   val mk : seq_ty:'a sseq ty -> 'a t list -> [> 'a sseq ] t
+end
+
+module SSet : sig
+  val mk : set_ty:'a sset ty -> 'a t list -> [> 'a sset ] t
+  val mem : 'a t -> [< 'a sset ] t -> [> sbool ] t
 end
 
 module Infix : sig

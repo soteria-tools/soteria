@@ -31,6 +31,7 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | Shl -> BitVec.shl
   | LShr -> BitVec.lshr
   | AShr -> BitVec.ashr
+  | SetMember -> SSet.mem
 
 let eval_unop : Unop.t -> t -> t = function
   | Not -> Bool.not

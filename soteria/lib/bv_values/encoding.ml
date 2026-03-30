@@ -16,14 +16,15 @@ let seq_concat ts = atom "seq.++" $$ ts
 
 let rec sort_of_ty : Svalue.ty -> sexp = function
   | TBool -> t_bool
+  | TBitVector n -> t_bits n
   | TLoc n -> t_bits n
   | TFloat F16 -> t_f16
   | TFloat F32 -> t_f32
   | TFloat F64 -> t_f64
   | TFloat F128 -> t_f128
   | TSeq ty -> t_seq $ sort_of_ty ty
+  | TSet ty -> t_set (sort_of_ty ty)
   | TPointer _ -> pointers_not_supported ()
-  | TBitVector n -> t_bits n
 
 let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 
@@ -93,6 +94,8 @@ let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
   | Leq true -> bv_sleq
   | Leq false -> bv_uleq
   | BvConcat -> bv_concat
+  (* HACK: make an interface that supports solver extensions *)
+  | SetMember -> set_member Z3
 
 let rec encode_value (v : Svalue.t) =
   match v.node.kind with
