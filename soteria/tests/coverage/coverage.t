@@ -1,4 +1,4 @@
-Coverage report can be exported to JSON and Cobertura XML
+Coverage report can be exported to JSON, Cobertura XML, and LCOV
   $ ./print_coverage.exe
   {
     "my.file": {
@@ -32,3 +32,25 @@ Coverage report can be exported to JSON and Cobertura XML
       </package>
     </packages>
   </coverage>
+  
+  SF:my.file
+  BRDA:2,0,then,1
+  BRDA:2,0,else,1
+  BRDA:4,0,then,0
+  BRDA:4,0,else,1
+  BRDA:4,1,then,1
+  BRDA:4,1,else,0
+  DA:1,1
+  DA:2,2
+  DA:3,2
+  DA:4,2
+  DA:5,2
+  DA:6,0
+  DA:7,0
+  BRF:6
+  BRH:4
+  LF:7
+  LH:5
+  end_of_record
+  
+

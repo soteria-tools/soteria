@@ -65,7 +65,8 @@
              Make diagnostic outputs compact.
   
          --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
-             Coverage output format. Options are "json" and "cobertura".
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
   
          --dump-report=FILE (absent SOTERIA_DUMP_REPORT env)
              Write a JSON report of all diagnostics (bugs and errors) to the
@@ -286,7 +287,8 @@
              Make diagnostic outputs compact.
   
          --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
-             Coverage output format. Options are "json" and "cobertura".
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
   
          --dump-report=FILE (absent SOTERIA_DUMP_REPORT env)
              Write a JSON report of all diagnostics (bugs and errors) to the
@@ -533,7 +535,8 @@
              Make diagnostic outputs compact.
   
          --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
-             Coverage output format. Options are "json" and "cobertura".
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
   
          --dump-report=FILE (absent SOTERIA_DUMP_REPORT env)
              Write a JSON report of all diagnostics (bugs and errors) to the
@@ -902,7 +905,8 @@
              Make diagnostic outputs compact.
   
          --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
-             Coverage output format. Options are "json" and "cobertura".
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
   
          --dump-report=FILE (absent SOTERIA_DUMP_REPORT env)
              Write a JSON report of all diagnostics (bugs and errors) to the

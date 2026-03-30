@@ -30,4 +30,6 @@ let () =
   Soteria.Coverage.JsonWriter.to_formatter Fmt.stdout coverage;
   Fmt.pr "@.@.";
   Soteria.Coverage.CoberturaWriter.to_formatter Fmt.stdout coverage;
+  Fmt.pr "@.@.";
+  Soteria.Coverage.LcovWriter.to_formatter Fmt.stdout coverage;
   Fmt.pr "@."

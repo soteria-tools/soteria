@@ -1345,7 +1345,7 @@ Coverage test -- JSON
     }
   }
 
-Coverage test -- JSON
+Coverage test -- Cobertura
   $ soteria-c exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --coverage stdout --coverage-format cobertura
   Executed 11 statements
   Verification Success!
@@ -1375,6 +1375,33 @@ Coverage test -- JSON
       </package>
     </packages>
   </coverage>
+
+Coverage test -- LCOV
+  $ soteria-c exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --coverage stdout --coverage-format lcov
+  Executed 11 statements
+  Verification Success!
+  SF:sym.c
+  BRDA:3,0,then,1
+  BRDA:3,0,else,1
+  BRDA:5,0,then,0
+  BRDA:5,0,else,1
+  DA:2,1
+  DA:3,6
+  DA:4,1
+  DA:5,6
+  DA:6,0
+  DA:7,0
+  DA:9,2
+  DA:12,1
+  DA:13,2
+  DA:18,1
+  DA:19,5
+  DA:20,4
+  BRF:4
+  BRH:3
+  LF:12
+  LH:10
+  end_of_record
 
   $ soteria-c exec global.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:

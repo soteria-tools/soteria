@@ -257,11 +257,63 @@ module CoberturaWriter : Writer = struct
   let to_file file report = write_xml_to_file file (cobertura_xml report)
 end
 
+module LcovWriter : Writer = struct
+  let next_block_index next_by_line line =
+    let idx = Option.value ~default:0 (Hint.find_opt next_by_line line) in
+    Hint.replace next_by_line line (idx + 1);
+    idx
+
+  let pp_file ft file (file_cov : file_hits) =
+    let hits = effective_line_hits_for_file file_cov in
+    let total_lines = ref 0 in
+    let covered_lines = ref 0 in
+    let total_branches = ref 0 in
+    let covered_branches = ref 0 in
+    let next_by_line = Hint.create 8 in
+    Format.fprintf ft "SF:%s\n" file;
+    sorted_str_bindings file_cov.branches
+    |> List.iter (fun (branch_id, br) ->
+        let _ = branch_id in
+        let block = next_block_index next_by_line br.line in
+        incr total_branches;
+        if br.then_reached then incr covered_branches;
+        Format.fprintf ft "BRDA:%d,%d,then,%d\n" br.line block
+          (int_of_bool br.then_reached);
+        incr total_branches;
+        if br.else_reached then incr covered_branches;
+        Format.fprintf ft "BRDA:%d,%d,else,%d\n" br.line block
+          (int_of_bool br.else_reached));
+    sorted_int_bindings hits
+    |> List.iter (fun (line, line_hits) ->
+        incr total_lines;
+        if line_hits > 0 then incr covered_lines;
+        Format.fprintf ft "DA:%d,%d\n" line line_hits);
+    Format.fprintf ft "BRF:%d\n" !total_branches;
+    Format.fprintf ft "BRH:%d\n" !covered_branches;
+    Format.fprintf ft "LF:%d\n" !total_lines;
+    Format.fprintf ft "LH:%d\n" !covered_lines;
+    Format.fprintf ft "end_of_record\n"
+
+  let to_formatter ft report =
+    sorted_str_bindings report
+    |> List.iter (fun (file, cov) -> pp_file ft file cov)
+
+  let to_file file report =
+    let oc = Out_channel.open_text file in
+    Fun.protect
+      ~finally:(fun () -> close_out oc)
+      (fun () ->
+        let ft = Format.formatter_of_out_channel oc in
+        to_formatter ft report;
+        Format.pp_print_flush ft ())
+end
+
 let output t =
   let (module Writer : Writer) =
     match (Config.get ()).coverage_format with
     | Json -> (module JsonWriter)
     | Cobertura -> (module CoberturaWriter)
+    | Lcov -> (module LcovWriter)
   in
   match (Config.get ()).output_coverage with
   | None -> ()

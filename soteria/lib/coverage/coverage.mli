@@ -7,7 +7,7 @@
     Instrumented code records events through {!As_ctx.mark_line} and
     {!As_ctx.mark_branch}. The current effect handler accumulates events into a
     coverage value, which can later be transformed to a report and exported
-    (JSON, Cobertura XML, and other writers).
+    (JSON, Cobertura XML, LCOV, and other writers).
 
     {b Important: branch identity and [branch_id] robustness}
 
@@ -71,6 +71,7 @@ end
 
 module JsonWriter : Writer
 module CoberturaWriter : Writer
+module LcovWriter : Writer
 
 val output : t -> unit
 

@@ -58,7 +58,8 @@
              Make diagnostic outputs compact.
   
          --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
-             Coverage output format. Options are "json" and "cobertura".
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
   
          --output-coverage=VAL, --dump-coverage=VAL, --coverage=VAL (absent
          SOTERIA_OUTPUT_COVERAGE env)
@@ -317,7 +318,8 @@
              Make diagnostic outputs compact.
   
          --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
-             Coverage output format. Options are "json" and "cobertura".
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
   
          --output-coverage=VAL, --dump-coverage=VAL, --coverage=VAL (absent
          SOTERIA_OUTPUT_COVERAGE env)

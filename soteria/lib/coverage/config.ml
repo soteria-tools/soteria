@@ -4,7 +4,7 @@ open Soteria_std.Cmdliner_helpers
    it. We ignore the warning here. *)
 [@@@warning "-unused-open"]
 
-type format = Json | Cobertura
+type format = Json | Cobertura | Lcov
 [@@deriving subliner_enum, show { with_path = false }]
 
 type t = {
@@ -20,7 +20,8 @@ type t = {
       [@default Json]
       [@names [ "coverage-format" ]]
       [@env "SOTERIA_COVERAGE_FORMAT"]
-      (** Coverage output format. Options are "json" and "cobertura". *)
+      (** Coverage output format. Options are "json", "cobertura", and "lcov".
+      *)
 }
 [@@deriving make, subliner]
 
