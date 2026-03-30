@@ -6,25 +6,7 @@ type ty = Svalue.ty
 
 let ( $$ ) = app
 let ( $ ) f v = f $$ [ v ]
-let t_seq = atom "Seq"
-let seq_singl t = atom "seq.unit" $$ [ t ]
-let seq_concat ts = atom "seq.++" $$ ts
-
-let t_ptr, mk_ptr, get_loc, get_ofs, init_commands =
-  let ptr = "Ptr" in
-  let mk_ptr = "mk-ptr" in
-  let loc = "loc" in
-  let ofs = "ofs" in
-  let cmd =
-    declare_datatype ptr [] [ (mk_ptr, [ (loc, t_int); (ofs, t_int) ]) ]
-  in
-
-  ( atom ptr,
-    (fun l o -> atom mk_ptr $$ [ l; o ]),
-    (fun p -> atom loc $$ [ p ]),
-    (fun p -> atom ofs $$ [ p ]),
-    [ cmd ] )
-
+let init_commands = []
 let sort_of_ty : ty -> sexp = function TBool -> t_bool | TInt -> t_int
 let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function Not -> bool_not
