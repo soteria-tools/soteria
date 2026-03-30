@@ -29,7 +29,7 @@
 
 open Soteria_std.Hashtbl
 
-type branch_side = [ `Then | `Else ]
+type branch_side = Then | Else
 
 type source_span = {
   file : string;  (** Source file path as reported by the frontend. *)
@@ -39,25 +39,20 @@ type source_span = {
           aggregation. *)
 }
 
-type t
-type 'a with_coverage = { res : 'a; coverage : t }
 type branch_coverage = { line : int; then_reached : bool; else_reached : bool }
 
-type file_coverage = {
-  lines : int Hstring.t;
+type file_hits = {
+  lines : int Hint.t;
       (** Reachable lines with hit counts. A value of [0] means reachable but
           not reached. *)
   branches : branch_coverage Hstring.t;
       (** For each conditional id, whether then/else was reached and on which
-          line that conditional lives. *)
+          line that conditional lives. Note this cannot be stored along the
+          lines, as there may be several conditionals on one line. *)
 }
 
-type report = file_coverage Hstring.t
-
-type coverage_writer = {
-  write_to_formatter : Format.formatter -> report -> unit;
-  write_to_file : string -> report -> unit;
-}
+type t = file_hits Hstring.t
+type 'a with_coverage = { res : 'a; coverage : t }
 
 val create : unit -> t
 
@@ -67,16 +62,11 @@ val merge : t -> t -> t
 
 val with_empty_coverage : 'a -> 'a with_coverage
 val map_with_coverage : ('a -> 'b) -> 'a with_coverage -> 'b with_coverage
-
-(** [to_report t] returns a per-file aggregated report suitable for exporters.
-*)
-val to_report : t -> report
-
-val report_to_yojson : report -> Yojson.Safe.t
+val to_yojson : t -> Yojson.Safe.t
 
 module type Writer = sig
-  val to_formatter : Format.formatter -> report -> unit
-  val to_file : string -> report -> unit
+  val to_formatter : Format.formatter -> t -> unit
+  val to_file : string -> t -> unit
 end
 
 module JsonWriter : Writer
@@ -99,9 +89,9 @@ module As_ctx : sig
   (** [mark_line ~file ~line] records one hit for a source line. *)
   val mark_line : file:string -> line:int -> unit
 
-  (** [mark_line_reachable ~file ~line] marks a source line as reachable
-      without recording a hit. Useful to include not-yet-reached lines in
-      coverage reports. *)
+  (** [mark_line_reachable ~file ~line] marks a source line as reachable without
+      recording a hit. Useful to include not-yet-reached lines in coverage
+      reports. *)
   val mark_line_reachable : file:string -> line:int -> unit
 
   (** [mark_lines_reachable ~file lines] marks all lines from [lines] as

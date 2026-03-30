@@ -76,8 +76,8 @@ module If_sat = struct
       |> Option.fold ~some:Branch_names.attribute_expr
            ~none:[%expr Stdlib.String.cat "Right branch at " __LOC__]
     in
-    let then_ = expand_coverage ~loc ~span_attr ~side:[%expr `Then] then_ in
-    let else_ = expand_coverage ~loc ~span_attr ~side:[%expr `Else] else_ in
+    let then_ = expand_coverage ~loc ~span_attr ~side:[%expr Then] then_ in
+    let else_ = expand_coverage ~loc ~span_attr ~side:[%expr Else] else_ in
     [%expr
       [%e associated_fn] [%e guard] ~left_branch_name:[%e lname]
         ~right_branch_name:[%e rname]

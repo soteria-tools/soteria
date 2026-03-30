@@ -1,138 +1,97 @@
 open Soteria_std
 module Hstring = Hashtbl.Hstring
+module Hint = Hashtbl.Hint
 module Config = Config
 
-type branch_side = [ `Then | `Else ]
+type branch_side = Then | Else
 type source_span = { file : string; line : int; branch_id : string }
 type branch_coverage = { line : int; then_reached : bool; else_reached : bool }
-
-type file_coverage = {
-  lines : int Hstring.t;
-  branches : branch_coverage Hstring.t;
-}
-
-type report = file_coverage Hstring.t
-type t = { line_hits : int Hstring.t; branch_hits : branch_coverage Hstring.t }
+type file_hits = { lines : int Hint.t; branches : branch_coverage Hstring.t }
+type t = file_hits Hstring.t
 type 'a with_coverage = { res : 'a; coverage : t }
 
-type coverage_writer = {
-  write_to_formatter : Format.formatter -> report -> unit;
-  write_to_file : string -> report -> unit;
-}
-
-let effective_line_hits_for_file (file_cov : file_coverage) =
-  let hits = Hstring.copy file_cov.lines in
-  let branch_execs_by_line : int Hstring.t = Hstring.create 0 in
+let effective_line_hits_for_file (file_cov : file_hits) =
+  let hits = Hint.copy file_cov.lines in
+  let branch_execs_by_line : int Hint.t = Hint.create 0 in
   Hstring.iter
     (fun _branch_id br ->
-      let line = string_of_int br.line in
       let branch_execs = if br.then_reached || br.else_reached then 1 else 0 in
-      if branch_execs > 0 then (
+      if branch_execs > 0 then
         let prev_execs =
-          Option.value ~default:0 (Hstring.find_opt branch_execs_by_line line)
+          Option.value ~default:0 (Hint.find_opt branch_execs_by_line br.line)
         in
-        Hstring.replace branch_execs_by_line line (prev_execs + branch_execs)))
+        Hint.replace branch_execs_by_line br.line (prev_execs + branch_execs))
     file_cov.branches;
-  Hstring.iter
+  Hint.iter
     (fun line branch_execs ->
-      let prev_hits = Option.value ~default:0 (Hstring.find_opt hits line) in
-      if branch_execs > prev_hits then Hstring.replace hits line branch_execs)
+      let prev_hits = Option.value ~default:0 (Hint.find_opt hits line) in
+      if branch_execs > prev_hits then Hint.replace hits line branch_execs)
     branch_execs_by_line;
   hits
 
-let sorted_bindings tbl =
+let sorted_str_bindings tbl =
   Hstring.to_seq tbl
   |> List.of_seq
   |> List.sort (fun (k1, _) (k2, _) -> String.compare k1 k2)
 
-let make_line_key ~file ~line = Fmt.str "%s:%d" file line
+let sorted_int_bindings tbl =
+  Hint.to_seq tbl
+  |> List.of_seq
+  |> List.sort (fun (k1, _) (k2, _) -> Int.compare k1 k2)
 
-let make_branch_key ~file ~line ~branch_id =
-  Fmt.str "%s:%d:%s" file line branch_id
+let empty_file_hits () = { lines = Hint.create 0; branches = Hstring.create 0 }
 
-let parse_line_key key =
-  match String.index_of ~sub_str:":" key with
-  | None -> None
-  | Some i ->
-      let file = String.sub key 0 i in
-      let line_part = String.sub key (i + 1) (String.length key - i - 1) in
-      Option.map (fun line -> (file, line)) (int_of_string_opt line_part)
+let get_or_create_file_hits (coverage : t) file =
+  match Hstring.find_opt coverage file with
+  | Some file_hits -> file_hits
+  | None ->
+      let file_hits = empty_file_hits () in
+      Hstring.replace coverage file file_hits;
+      file_hits
 
-let parse_branch_key key =
-  match String.index_of ~sub_str:":" key with
-  | None -> None
-  | Some i ->
-      let file = String.sub key 0 i in
-      let rest = String.sub key (i + 1) (String.length key - i - 1) in
-      Option.map
-        (fun j ->
-          let line_part = String.sub rest 0 j in
-          let branch_id =
-            String.sub rest (j + 1) (String.length rest - j - 1)
-          in
-          (file, int_of_string_opt line_part, branch_id))
-        (String.index_of ~sub_str:":" rest)
+let create () = Hstring.create 0
 
-let create () = { line_hits = Hstring.create 0; branch_hits = Hstring.create 0 }
-
-let copy t =
-  {
-    line_hits = Hstring.copy t.line_hits;
-    branch_hits = Hstring.copy t.branch_hits;
-  }
+let copy (t : t) : t =
+  let c = Hstring.create (Hstring.length t) in
+  Hstring.iter
+    (fun file file_hits ->
+      Hstring.replace c file
+        {
+          lines = Hint.copy file_hits.lines;
+          branches = Hstring.copy file_hits.branches;
+        })
+    t;
+  c
 
 let merge c1 c2 =
   let c = copy c1 in
   Hstring.iter
-    (fun key n ->
-      let prev = Option.value ~default:0 (Hstring.find_opt c.line_hits key) in
-      Hstring.replace c.line_hits key (prev + n))
-    c2.line_hits;
-  Hstring.iter
-    (fun key br ->
-      match Hstring.find_opt c.branch_hits key with
-      | None -> Hstring.replace c.branch_hits key br
-      | Some prev ->
-          Hstring.replace c.branch_hits key
-            {
-              line = prev.line;
-              then_reached = prev.then_reached || br.then_reached;
-              else_reached = prev.else_reached || br.else_reached;
-            })
-    c2.branch_hits;
+    (fun file file_hits2 ->
+      let file_hits = get_or_create_file_hits c file in
+      Hint.iter
+        (fun line n ->
+          let prev =
+            Option.value ~default:0 (Hint.find_opt file_hits.lines line)
+          in
+          Hint.replace file_hits.lines line (prev + n))
+        file_hits2.lines;
+      Hstring.iter
+        (fun branch_id br ->
+          match Hstring.find_opt file_hits.branches branch_id with
+          | None -> Hstring.replace file_hits.branches branch_id br
+          | Some prev ->
+              Hstring.replace file_hits.branches branch_id
+                {
+                  line = prev.line;
+                  then_reached = prev.then_reached || br.then_reached;
+                  else_reached = prev.else_reached || br.else_reached;
+                })
+        file_hits2.branches)
+    c2;
   c
 
 let with_empty_coverage res = { res; coverage = create () }
 let map_with_coverage f { res; coverage } = { res = f res; coverage }
-
-let to_report t =
-  let report = Hstring.create 16 in
-  let get_or_create_file_cov file =
-    match Hstring.find_opt report file with
-    | Some cov -> cov
-    | None ->
-        let cov = { lines = Hstring.create 16; branches = Hstring.create 16 } in
-        Hstring.add report file cov;
-        cov
-  in
-  Hstring.iter
-    (fun key hits ->
-      match parse_line_key key with
-      | None -> ()
-      | Some (file, line) ->
-          let file_cov = get_or_create_file_cov file in
-          Hstring.replace file_cov.lines (string_of_int line) hits)
-    t.line_hits;
-  Hstring.iter
-    (fun key br ->
-      match parse_branch_key key with
-      | None -> ()
-      | Some (file, Some _line, branch_id) ->
-          let file_cov = get_or_create_file_cov file in
-          Hstring.replace file_cov.branches branch_id br
-      | Some (_file, None, _branch_id) -> ())
-    t.branch_hits;
-  report
 
 let branch_coverage_to_yojson b =
   `Assoc
@@ -146,32 +105,30 @@ let file_coverage_to_yojson file_cov =
   let line_hits = effective_line_hits_for_file file_cov in
   let lines_json =
     `Assoc
-      (List.map (fun (line, hits) -> (line, `Int hits))
-      @@ sorted_bindings line_hits)
+      (List.map (fun (line, hits) -> (string_of_int line, `Int hits))
+      @@ sorted_int_bindings line_hits)
   in
   let branches_json =
     `Assoc
       (List.map (fun (branch_id, branch_cov) ->
            (branch_id, branch_coverage_to_yojson branch_cov))
-      @@ sorted_bindings file_cov.branches)
+      @@ sorted_str_bindings file_cov.branches)
   in
   `Assoc [ ("lines", lines_json); ("branches", branches_json) ]
 
-let report_to_yojson report =
+let to_yojson report =
   `Assoc
     (List.map (fun (file, file_cov) -> (file, file_coverage_to_yojson file_cov))
-    @@ sorted_bindings report)
+    @@ sorted_str_bindings report)
 
 module type Writer = sig
-  val to_formatter : Format.formatter -> report -> unit
-  val to_file : string -> report -> unit
+  val to_formatter : Format.formatter -> t -> unit
+  val to_file : string -> t -> unit
 end
 
 module JsonWriter : Writer = struct
-  let to_formatter ft report =
-    Yojson.Safe.pretty_print ft (report_to_yojson report)
-
-  let to_file file report = Yojson.Safe.to_file file (report_to_yojson report)
+  let to_formatter ft report = Yojson.Safe.pretty_print ft (to_yojson report)
+  let to_file file report = Yojson.Safe.to_file file (to_yojson report)
 end
 
 module CoberturaWriter : Writer = struct
@@ -197,7 +154,7 @@ module CoberturaWriter : Writer = struct
     Hstring.iter
       (fun _file file_cov ->
         let hits = effective_line_hits_for_file file_cov in
-        Hstring.iter
+        Hint.iter
           (fun _line line_hits ->
             incr valid_lines;
             if line_hits > 0 then incr covered_lines)
@@ -219,43 +176,45 @@ module CoberturaWriter : Writer = struct
     in
     let classes =
       List.map
-        (fun (file, file_cov) ->
-          let branches_by_line : (int * int) Hstring.t = Hstring.create 0 in
+        (fun (file, (file_cov : file_hits)) ->
+          let branches_by_line : (int * int) Hint.t = Hint.create 0 in
           Hstring.iter
             (fun _branch_id br ->
-              let line = string_of_int br.line in
               let prev_taken, prev_total =
                 Option.value ~default:(0, 0)
-                  (Hstring.find_opt branches_by_line line)
+                  (Hint.find_opt branches_by_line br.line)
               in
               let taken =
                 prev_taken
                 + (if br.then_reached then 1 else 0)
-                + (if br.else_reached then 1 else 0)
+                + if br.else_reached then 1 else 0
               in
-              Hstring.replace branches_by_line line (taken, prev_total + 2))
+              Hint.replace branches_by_line br.line (taken, prev_total + 2))
             file_cov.branches;
           let line_hits = effective_line_hits_for_file file_cov in
           let lines =
             List.map
               (fun (line, hits) ->
-                match Hstring.find_opt branches_by_line line with
+                match Hint.find_opt branches_by_line line with
                 | None ->
                     mk_elem "line"
-                      [ ("number", line); ("hits", string_of_int hits) ]
+                      [
+                        ("number", string_of_int line);
+                        ("hits", string_of_int hits);
+                      ]
                       []
                 | Some (taken, total) ->
                     let pct = if total = 0 then 100 else taken * 100 / total in
                     mk_elem "line"
                       [
-                        ("number", line);
+                        ("number", string_of_int line);
                         ("hits", string_of_int hits);
                         ("branch", "true");
                         ( "condition-coverage",
                           Printf.sprintf "%d%% (%d/%d)" pct taken total );
                       ]
                       [])
-              (sorted_bindings line_hits)
+              (sorted_int_bindings line_hits)
           in
           mk_elem "class"
             [
@@ -265,7 +224,7 @@ module CoberturaWriter : Writer = struct
               ("branch-rate", "0.0");
             ]
             [ mk_elem "methods" [] []; mk_elem "lines" [] lines ])
-        (sorted_bindings report)
+        (sorted_str_bindings report)
     in
     mk_elem "coverage"
       [
@@ -302,8 +261,8 @@ let output t =
   in
   match (Config.get ()).output_coverage with
   | None -> ()
-  | Some "stdout" -> Writer.to_formatter Fmt.stdout (to_report t)
-  | Some file -> Writer.to_file file (to_report t)
+  | Some "stdout" -> Writer.to_formatter Fmt.stdout t
+  | Some file -> Writer.to_file file t
 
 module As_ctx = struct
   type _ Effect.t += Apply : (t -> unit) -> unit Effect.t
@@ -330,39 +289,39 @@ module As_ctx = struct
 
   let mark_line ~file ~line =
     apply (fun coverage ->
-        let key = make_line_key ~file ~line in
+        let file_hits = get_or_create_file_hits coverage file in
         let prev =
-          Option.value ~default:0 (Hstring.find_opt coverage.line_hits key)
+          Option.value ~default:0 (Hint.find_opt file_hits.lines line)
         in
-        Hstring.replace coverage.line_hits key (prev + 1))
+        Hint.replace file_hits.lines line (prev + 1))
 
   let mark_line_reachable ~file ~line =
     apply (fun coverage ->
-        let key = make_line_key ~file ~line in
-        if Option.is_none (Hstring.find_opt coverage.line_hits key) then
-          Hstring.replace coverage.line_hits key 0)
+        let file_hits = get_or_create_file_hits coverage file in
+        if Option.is_none (Hint.find_opt file_hits.lines line) then
+          Hint.replace file_hits.lines line 0)
 
   let mark_lines_reachable ~file (lines : int Iter.t) =
     apply (fun coverage ->
+        let file_hits = get_or_create_file_hits coverage file in
         lines (fun line ->
-            let key = make_line_key ~file ~line in
-            if Option.is_none (Hstring.find_opt coverage.line_hits key) then
-              Hstring.replace coverage.line_hits key 0))
+            if Option.is_none (Hint.find_opt file_hits.lines line) then
+              Hint.replace file_hits.lines line 0))
 
   let mark_branch side ({ file; line; branch_id } : source_span) =
     apply (fun coverage ->
-        let key = make_branch_key ~file ~line ~branch_id in
+        let file_hits = get_or_create_file_hits coverage file in
         let prev =
           Option.value
             ~default:{ line; then_reached = false; else_reached = false }
-            (Hstring.find_opt coverage.branch_hits key)
+            (Hstring.find_opt file_hits.branches branch_id)
         in
         let next =
           match side with
-          | `Then -> { prev with then_reached = true }
-          | `Else -> { prev with else_reached = true }
+          | Then -> { prev with then_reached = true }
+          | Else -> { prev with else_reached = true }
         in
-        Hstring.replace coverage.branch_hits key next)
+        Hstring.replace file_hits.branches branch_id next)
 
   let get_copy () : t =
     let copy_ref = ref (create ()) in

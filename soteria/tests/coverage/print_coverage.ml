@@ -27,9 +27,7 @@ let () =
     Soteria.Coverage.As_ctx.with_coverage () @@ fun () ->
     run ~coverage:Handled ~mode:UX process
   in
-  let report = Soteria.Coverage.to_report coverage in
-  Soteria.Coverage.JsonWriter.to_formatter Fmt.stdout report;
+  Soteria.Coverage.JsonWriter.to_formatter Fmt.stdout coverage;
   Fmt.pr "@.@.";
-  Soteria.Coverage.CoberturaWriter.to_formatter Fmt.stdout
-    (Soteria.Coverage.to_report coverage);
+  Soteria.Coverage.CoberturaWriter.to_formatter Fmt.stdout coverage;
   Fmt.pr "@."
