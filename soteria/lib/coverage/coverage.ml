@@ -2,6 +2,7 @@ open Soteria_std
 module Hstring = Hashtbl.Hstring
 module Hint = Hashtbl.Hint
 module Config = Config
+module IMap = PatriciaTree.MakeMap (Int)
 
 type branch_side = Then | Else
 type branch_span = { file : string; line : int; branch_id : string }
@@ -10,8 +11,9 @@ type file_hits = { lines : int Hint.t; branches : branch_coverage Hstring.t }
 type t = file_hits Hstring.t
 type 'a with_coverage = { res : 'a; coverage : t }
 
+let int_of_bool b = if b then 1 else 0
+
 let effective_line_hits_for_file (file_cov : file_hits) =
-  let int_of_bool b = if b then 1 else 0 in
   let hits = Hint.copy file_cov.lines in
   Hstring.iter
     (fun _branch_id br ->
@@ -127,6 +129,74 @@ end
 module CoberturaWriter : Writer = struct
   let mk_elem tag attrs children = Xml.Element (tag, attrs, children)
 
+  type totals = {
+    mutable total_lines : int; [@default 0]
+    mutable covered_lines : int; [@default 0]
+    mutable total_branches : int; [@default 0]
+    mutable covered_branches : int; [@default 0]
+  }
+  [@@deriving make]
+
+  let add_line_totals totals =
+    Hint.iter @@ fun _line line_hits ->
+    totals.total_lines <- totals.total_lines + 1;
+    if line_hits > 0 then totals.covered_lines <- totals.covered_lines + 1
+
+  let add_branch_totals totals =
+    Hstring.iter @@ fun _branch_id br ->
+    totals.total_branches <- totals.total_branches + 2;
+    if br.then_reached then
+      totals.covered_branches <- totals.covered_branches + 1;
+    if br.else_reached then
+      totals.covered_branches <- totals.covered_branches + 1
+
+  (** [Hstring.fold] but suitable for currying *)
+  let my_hstring_fold init f h = Hstring.fold f h init
+
+  let branches_by_line =
+    my_hstring_fold IMap.empty @@ fun _branch_id br ->
+    let taken = int_of_bool br.then_reached + int_of_bool br.else_reached in
+    IMap.update br.line @@ function
+    | None -> Some (taken, 2)
+    | Some (prev_taken, prev_total) -> Some (prev_taken + taken, prev_total + 2)
+
+  let line_xml ~line ~hits =
+    mk_elem "line"
+      [ ("number", string_of_int line); ("hits", string_of_int hits) ]
+      []
+
+  let branch_line_xml ~line ~hits ~taken ~total =
+    let pct = if total = 0 then 100 else taken * 100 / total in
+    mk_elem "line"
+      [
+        ("number", string_of_int line);
+        ("hits", string_of_int hits);
+        ("branch", "true");
+        ("condition-coverage", Printf.sprintf "%d%% (%d/%d)" pct taken total);
+      ]
+      []
+
+  let class_lines_xml (hits : int Hint.t) (by_line : (int * int) IMap.t) =
+    sorted_int_bindings hits
+    |> List.map @@ fun (line, line_hits) ->
+       match IMap.find_opt line by_line with
+       | None -> line_xml ~line ~hits:line_hits
+       | Some (taken, total) ->
+           branch_line_xml ~line ~hits:line_hits ~taken ~total
+
+  let class_xml file (file_cov : file_hits) =
+    let hits = effective_line_hits_for_file file_cov in
+    let by_line = branches_by_line file_cov.branches in
+    let lines = class_lines_xml hits by_line in
+    mk_elem "class"
+      [
+        ("name", file);
+        ("filename", file);
+        ("line-rate", "0.0");
+        ("branch-rate", "0.0");
+      ]
+      [ mk_elem "methods" [] []; mk_elem "lines" [] lines ]
+
   let write_xml_to_formatter ft xml =
     Format.pp_print_string ft "<?xml version=\"1.0\" ?>\n";
     Format.pp_print_string ft (Xml.to_string_fmt xml)
@@ -140,87 +210,33 @@ module CoberturaWriter : Writer = struct
         Out_channel.output_string oc (Xml.to_string_fmt xml))
 
   let cobertura_xml report =
-    let covered_lines = ref 0 in
-    let valid_lines = ref 0 in
-    let covered_branches = ref 0 in
-    let total_branches = ref 0 in
+    let totals = make_totals () in
 
     let classes =
       sorted_str_bindings report
       |> List.map @@ fun (file, (file_cov : file_hits)) ->
          let hits = effective_line_hits_for_file file_cov in
-
-         Hint.iter
-           (fun _line line_hits ->
-             incr valid_lines;
-             if line_hits > 0 then incr covered_lines)
-           hits;
-
-         let branches_by_line : (int * int) Hint.t = Hint.create 0 in
-         Hstring.iter
-           (fun _branch_id br ->
-             total_branches := !total_branches + 2;
-             if br.then_reached then incr covered_branches;
-             if br.else_reached then incr covered_branches;
-
-             let prev_taken, prev_total =
-               Option.value ~default:(0, 0)
-                 (Hint.find_opt branches_by_line br.line)
-             in
-             let taken =
-               prev_taken
-               + (if br.then_reached then 1 else 0)
-               + if br.else_reached then 1 else 0
-             in
-             Hint.replace branches_by_line br.line (taken, prev_total + 2))
-           file_cov.branches;
-         let lines =
-           sorted_int_bindings hits
-           |> List.map @@ fun (line, hits) ->
-              match Hint.find_opt branches_by_line line with
-              | None ->
-                  mk_elem "line"
-                    [
-                      ("number", string_of_int line);
-                      ("hits", string_of_int hits);
-                    ]
-                    []
-              | Some (taken, total) ->
-                  let pct = if total = 0 then 100 else taken * 100 / total in
-                  mk_elem "line"
-                    [
-                      ("number", string_of_int line);
-                      ("hits", string_of_int hits);
-                      ("branch", "true");
-                      ( "condition-coverage",
-                        Printf.sprintf "%d%% (%d/%d)" pct taken total );
-                    ]
-                    []
-         in
-         mk_elem "class"
-           [
-             ("name", file);
-             ("filename", file);
-             ("line-rate", "0.0");
-             ("branch-rate", "0.0");
-           ]
-           [ mk_elem "methods" [] []; mk_elem "lines" [] lines ]
+         add_line_totals totals hits;
+         add_branch_totals totals file_cov.branches;
+         class_xml file file_cov
     in
     let line_rate =
-      if !valid_lines = 0 then 1.
-      else float_of_int !covered_lines /. float_of_int !valid_lines
+      if totals.total_lines = 0 then 1.
+      else float_of_int totals.covered_lines /. float_of_int totals.total_lines
     in
     let branch_rate =
-      if !total_branches = 0 then 1.
-      else float_of_int !covered_branches /. float_of_int !total_branches
+      if totals.total_branches = 0 then 1.
+      else
+        float_of_int totals.covered_branches
+        /. float_of_int totals.total_branches
     in
     mk_elem "coverage"
       [
-        ("lines-valid", string_of_int !valid_lines);
-        ("lines-covered", string_of_int !covered_lines);
+        ("lines-valid", string_of_int totals.total_lines);
+        ("lines-covered", string_of_int totals.covered_lines);
         ("line-rate", Printf.sprintf "%.6f" line_rate);
-        ("branches-valid", string_of_int !total_branches);
-        ("branches-covered", string_of_int !covered_branches);
+        ("branches-valid", string_of_int totals.total_branches);
+        ("branches-covered", string_of_int totals.covered_branches);
         ("branch-rate", Printf.sprintf "%.6f" branch_rate);
         ("version", "soteria");
       ]
