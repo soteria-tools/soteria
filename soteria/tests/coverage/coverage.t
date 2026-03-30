@@ -2,7 +2,7 @@ Coverage report can be exported to JSON and Cobertura XML
   $ ./print_coverage.exe
   {
     "my.file": {
-      "lines": { "1": 1, "2": 1, "3": 2, "4": 2, "5": 2, "6": 0, "7": 0 },
+      "lines": { "1": 1, "2": 2, "3": 2, "4": 2, "5": 2, "6": 0, "7": 0 },
       "branches": {
         "b_2_1": { "line": 2, "then_reached": true, "else_reached": true },
         "b_4_1": { "line": 4, "then_reached": false, "else_reached": true },
@@ -20,7 +20,7 @@ Coverage report can be exported to JSON and Cobertura XML
             <methods/>
             <lines>
               <line number="1" hits="1"/>
-              <line number="2" hits="1" branch="true" condition-coverage="100% (2/2)"/>
+              <line number="2" hits="2" branch="true" condition-coverage="100% (2/2)"/>
               <line number="3" hits="2"/>
               <line number="4" hits="2" branch="true" condition-coverage="50% (2/4)"/>
               <line number="5" hits="2"/>

@@ -4,7 +4,7 @@ open Soteria.Tiny_values.Typed
 
 let file = "my.file"
 
-let branch_span line id : Soteria.Coverage.source_span =
+let branch_span line id : Soteria.Coverage.branch_span =
   { file; line; branch_id = "b_" ^ string_of_int line ^ "_" ^ string_of_int id }
 
 let process : (unit, 'e, 'f) Result.t =

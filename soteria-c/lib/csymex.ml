@@ -70,7 +70,7 @@ let mark_line_coverage_here () =
   return ()
 
 let branch_span_of_loc (loc : Cerb_location.t) :
-    Soteria.Coverage.source_span option =
+    Soteria.Coverage.branch_span option =
   Option.map
     (fun (file, line) ->
       {

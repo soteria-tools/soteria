@@ -4,29 +4,22 @@ module Hint = Hashtbl.Hint
 module Config = Config
 
 type branch_side = Then | Else
-type source_span = { file : string; line : int; branch_id : string }
+type branch_span = { file : string; line : int; branch_id : string }
 type branch_coverage = { line : int; then_reached : bool; else_reached : bool }
 type file_hits = { lines : int Hint.t; branches : branch_coverage Hstring.t }
 type t = file_hits Hstring.t
 type 'a with_coverage = { res : 'a; coverage : t }
 
 let effective_line_hits_for_file (file_cov : file_hits) =
+  let int_of_bool b = if b then 1 else 0 in
   let hits = Hint.copy file_cov.lines in
-  let branch_execs_by_line : int Hint.t = Hint.create 0 in
   Hstring.iter
     (fun _branch_id br ->
-      let branch_execs = if br.then_reached || br.else_reached then 1 else 0 in
-      if branch_execs > 0 then
-        let prev_execs =
-          Option.value ~default:0 (Hint.find_opt branch_execs_by_line br.line)
-        in
-        Hint.replace branch_execs_by_line br.line (prev_execs + branch_execs))
+      if br.then_reached || br.else_reached then
+        let execs = int_of_bool br.then_reached + int_of_bool br.else_reached in
+        let prev_hits = Option.value ~default:0 (Hint.find_opt hits br.line) in
+        Hint.replace hits br.line (prev_hits + execs))
     file_cov.branches;
-  Hint.iter
-    (fun line branch_execs ->
-      let prev_hits = Option.value ~default:0 (Hint.find_opt hits line) in
-      if branch_execs > prev_hits then Hint.replace hits line branch_execs)
-    branch_execs_by_line;
   hits
 
 let sorted_str_bindings tbl =
@@ -151,21 +144,68 @@ module CoberturaWriter : Writer = struct
     let valid_lines = ref 0 in
     let covered_branches = ref 0 in
     let total_branches = ref 0 in
-    Hstring.iter
-      (fun _file file_cov ->
-        let hits = effective_line_hits_for_file file_cov in
-        Hint.iter
-          (fun _line line_hits ->
-            incr valid_lines;
-            if line_hits > 0 then incr covered_lines)
-          hits;
-        Hstring.iter
-          (fun _branch_id br ->
-            total_branches := !total_branches + 2;
-            if br.then_reached then incr covered_branches;
-            if br.else_reached then incr covered_branches)
-          file_cov.branches)
-      report;
+
+    let classes =
+      sorted_str_bindings report
+      |> List.map @@ fun (file, (file_cov : file_hits)) ->
+         let hits = effective_line_hits_for_file file_cov in
+
+         Hint.iter
+           (fun _line line_hits ->
+             incr valid_lines;
+             if line_hits > 0 then incr covered_lines)
+           hits;
+
+         let branches_by_line : (int * int) Hint.t = Hint.create 0 in
+         Hstring.iter
+           (fun _branch_id br ->
+             total_branches := !total_branches + 2;
+             if br.then_reached then incr covered_branches;
+             if br.else_reached then incr covered_branches;
+
+             let prev_taken, prev_total =
+               Option.value ~default:(0, 0)
+                 (Hint.find_opt branches_by_line br.line)
+             in
+             let taken =
+               prev_taken
+               + (if br.then_reached then 1 else 0)
+               + if br.else_reached then 1 else 0
+             in
+             Hint.replace branches_by_line br.line (taken, prev_total + 2))
+           file_cov.branches;
+         let lines =
+           sorted_int_bindings hits
+           |> List.map @@ fun (line, hits) ->
+              match Hint.find_opt branches_by_line line with
+              | None ->
+                  mk_elem "line"
+                    [
+                      ("number", string_of_int line);
+                      ("hits", string_of_int hits);
+                    ]
+                    []
+              | Some (taken, total) ->
+                  let pct = if total = 0 then 100 else taken * 100 / total in
+                  mk_elem "line"
+                    [
+                      ("number", string_of_int line);
+                      ("hits", string_of_int hits);
+                      ("branch", "true");
+                      ( "condition-coverage",
+                        Printf.sprintf "%d%% (%d/%d)" pct taken total );
+                    ]
+                    []
+         in
+         mk_elem "class"
+           [
+             ("name", file);
+             ("filename", file);
+             ("line-rate", "0.0");
+             ("branch-rate", "0.0");
+           ]
+           [ mk_elem "methods" [] []; mk_elem "lines" [] lines ]
+    in
     let line_rate =
       if !valid_lines = 0 then 1.
       else float_of_int !covered_lines /. float_of_int !valid_lines
@@ -173,58 +213,6 @@ module CoberturaWriter : Writer = struct
     let branch_rate =
       if !total_branches = 0 then 1.
       else float_of_int !covered_branches /. float_of_int !total_branches
-    in
-    let classes =
-      List.map
-        (fun (file, (file_cov : file_hits)) ->
-          let branches_by_line : (int * int) Hint.t = Hint.create 0 in
-          Hstring.iter
-            (fun _branch_id br ->
-              let prev_taken, prev_total =
-                Option.value ~default:(0, 0)
-                  (Hint.find_opt branches_by_line br.line)
-              in
-              let taken =
-                prev_taken
-                + (if br.then_reached then 1 else 0)
-                + if br.else_reached then 1 else 0
-              in
-              Hint.replace branches_by_line br.line (taken, prev_total + 2))
-            file_cov.branches;
-          let line_hits = effective_line_hits_for_file file_cov in
-          let lines =
-            List.map
-              (fun (line, hits) ->
-                match Hint.find_opt branches_by_line line with
-                | None ->
-                    mk_elem "line"
-                      [
-                        ("number", string_of_int line);
-                        ("hits", string_of_int hits);
-                      ]
-                      []
-                | Some (taken, total) ->
-                    let pct = if total = 0 then 100 else taken * 100 / total in
-                    mk_elem "line"
-                      [
-                        ("number", string_of_int line);
-                        ("hits", string_of_int hits);
-                        ("branch", "true");
-                        ( "condition-coverage",
-                          Printf.sprintf "%d%% (%d/%d)" pct taken total );
-                      ]
-                      [])
-              (sorted_int_bindings line_hits)
-          in
-          mk_elem "class"
-            [
-              ("name", file);
-              ("filename", file);
-              ("line-rate", "0.0");
-              ("branch-rate", "0.0");
-            ]
-            [ mk_elem "methods" [] []; mk_elem "lines" [] lines ])
-        (sorted_str_bindings report)
     in
     mk_elem "coverage"
       [
@@ -308,7 +296,7 @@ module As_ctx = struct
             if Option.is_none (Hint.find_opt file_hits.lines line) then
               Hint.replace file_hits.lines line 0))
 
-  let mark_branch side ({ file; line; branch_id } : source_span) =
+  let mark_branch side ({ file; line; branch_id } : branch_span) =
     apply (fun coverage ->
         let file_hits = get_or_create_file_hits coverage file in
         let prev =

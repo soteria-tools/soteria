@@ -31,7 +31,7 @@ open Soteria_std.Hashtbl
 
 type branch_side = Then | Else
 
-type source_span = {
+type branch_span = {
   file : string;  (** Source file path as reported by the frontend. *)
   line : int;  (** 1-based source line for human-facing reporting. *)
   branch_id : string;
@@ -99,7 +99,7 @@ module As_ctx : sig
   val mark_lines_reachable : file:string -> int Iter.t -> unit
 
   (** [mark_branch span side] records that [side] of [span] has been reached. *)
-  val mark_branch : branch_side -> source_span -> unit
+  val mark_branch : branch_side -> branch_span -> unit
 
   (** [get_copy ()] retrieves a copy of the coverage aggregated in the current
       environment. *)
