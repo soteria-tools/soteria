@@ -11,8 +11,9 @@ module T = struct
   type sptr = [ `Ptr ]
   type sloc = [ `Loc ]
   type 'a sseq = [ `List of 'a ]
+  type 'a sset = [ `Set of 'a ]
   type cval = [ sint | sptr | sfloat ]
-  type any = [ sint_ovf | sfloat | sbool | sptr | sloc | any sseq ]
+  type any = [ sint_ovf | sfloat | sbool | sptr | sloc | any sseq | any sset ]
 
   let pp_sint _ _ = ()
   let pp_sint_ovf _ _ = ()
@@ -23,6 +24,7 @@ module T = struct
   let pp_sptr _ _ = ()
   let pp_sloc _ _ = ()
   let pp_sseq _ _ _ = ()
+  let pp_sset _ _ _ = ()
   let pp_any _ _ = ()
   let pp_cval _ _ = ()
   let hash_sint _ = 0
@@ -34,6 +36,7 @@ module T = struct
   let hash_sptr _ = 0
   let hash_sloc _ = 0
   let hash_sseq _ = 0
+  let hash_sset _ = 0
   let hash_any _ = 0
   let hash_cval _ = 0
 end

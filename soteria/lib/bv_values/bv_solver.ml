@@ -451,7 +451,7 @@ struct
          for them. *)
       | TFloat _ -> raise No_model
       (* TODO: figure this out *)
-      | TPointer _ | TSeq _ -> raise No_model
+      | TPointer _ | TSeq _ | TSet _ -> raise No_model
     in
     let fuel = 3 in
     try

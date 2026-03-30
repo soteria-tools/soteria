@@ -35,11 +35,12 @@ end
 
 type ty =
   | TBool
+  | TBitVector of int
   | TFloat of FloatPrecision.t
   | TLoc of int
   | TPointer of int (* size of location and offset *)
   | TSeq of ty
-  | TBitVector of int
+  | TSet of ty
 [@@deriving eq, show { with_path = false }, ord]
 
 let t_bool = TBool
@@ -51,6 +52,7 @@ let t_f128 = t_float F128
 let t_loc n = TLoc n
 let t_ptr n = TPointer n
 let t_seq ty = TSeq ty
+let t_set ty = TSet ty
 let t_bv n = TBitVector n
 let is_float = function TFloat _ -> true | _ -> false
 let is_bv = function TBitVector _ -> true | _ -> false
@@ -153,6 +155,8 @@ module Binop = struct
     | Shl
     | LShr
     | AShr
+    (* Set operations *)
+    | SetMember
   [@@deriving eq, show { with_path = false }, ord]
 
   let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
@@ -188,6 +192,7 @@ module Binop = struct
     | Shl -> Fmt.string ft "<<"
     | LShr -> Fmt.string ft "l>>"
     | AShr -> Fmt.string ft "a>>"
+    | SetMember -> Fmt.string ft "∈"
 end
 
 let pp_hash_consed pp_node ft t = pp_node ft t.node
@@ -2240,6 +2245,22 @@ module SSeq = struct
 
   let inner_ty ty =
     match ty with TSeq ty -> ty | _ -> failwith "Expected a sequence type"
+end
+
+(** {2 Sets} *)
+
+module SSet = struct
+  let mk ~set_ty l = Seq l <| set_ty
+
+  let inner_ty ty =
+    match ty with TSet ty -> ty | _ -> failwith "Expected a set type"
+
+  let empty ~set_ty = Seq [] <| set_ty
+
+  let mem x s =
+    match s.node.kind with
+    | Seq l -> Bool.of_bool (List.exists (equal x) l)
+    | _ -> Binop (SetMember, x, s) <| TBool
 end
 
 (** {2 Infix operators} *)
