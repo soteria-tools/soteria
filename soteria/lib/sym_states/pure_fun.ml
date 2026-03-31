@@ -9,11 +9,11 @@ open Compo_res
 
 (** FIXME: This is almost verbatim the same thing as the input of excl *)
 module Codom (Symex : Symex.Base) = struct
-  module Data = Data.M (Symex)
+  module Abstr = Data.Abstr.M (Symex)
 
   module type S = sig
-    include Data.Abstr_with_syn
-    include Data.Sem_eq with type t := t
+    include Abstr.S_with_syn
+    include Abstr.Sem_eq with type t := t
   end
 end
 

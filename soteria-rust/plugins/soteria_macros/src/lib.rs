@@ -7,7 +7,7 @@ use {
     syn::{parse_macro_input, ItemFn},
 };
 
-macro_rules! rusteria_attribute {
+macro_rules! soteria_attribute {
     ($name:ident) => {
         #[proc_macro_attribute]
         pub fn $name(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -15,7 +15,7 @@ macro_rules! rusteria_attribute {
             let fn_item = parse_macro_input!(item as ItemFn);
             let attribute = format_ident!("{}", stringify!($name));
             quote!(
-                #[rusteriatool::#attribute(#args)]
+                #[soteriatool::#attribute(#args)]
                 #fn_item
             ).into()
         }
@@ -23,18 +23,18 @@ macro_rules! rusteria_attribute {
     ($name:ident, no_args) => {
         #[proc_macro_attribute]
         pub fn $name(attr: TokenStream, item: TokenStream) -> TokenStream {
-            assert!(attr.is_empty(), "`#[rusteria::{}]` does not take any arguments currently", stringify!($name));
+            assert!(attr.is_empty(), "`#[soteria::{}]` does not take any arguments currently", stringify!($name));
             let fn_item = parse_macro_input!(item as ItemFn);
             let attribute = format_ident!("{}", stringify!($name));
             quote!(
-                #[rusteriatool::#attribute]
+                #[soteriatool::#attribute]
                 #fn_item
             ).into()
         }
     };
 }
 
-rusteria_attribute!(step_fuel);
-rusteria_attribute!(branch_fuel);
-rusteria_attribute!(test, no_args);
-rusteria_attribute!(expect_fail, no_args);
+soteria_attribute!(step_fuel);
+soteria_attribute!(branch_fuel);
+soteria_attribute!(test, no_args);
+soteria_attribute!(expect_fail, no_args);

@@ -61,7 +61,7 @@ module type S = sig
   val check_ptr_align : full_ptr -> Types.ty -> unit ret
 
   val copy_nonoverlapping :
-    dst:full_ptr -> src:full_ptr -> size:sint Typed.t -> unit ret
+    src:full_ptr -> dst:full_ptr -> size:sint Typed.t -> unit ret
 
   val uninit : full_ptr -> Types.ty -> unit ret
   val zeros : full_ptr -> sint Typed.t -> unit ret

@@ -124,6 +124,26 @@ and[@tail_mod_cons] prepend_concat_map2 zs f xs ys =
     (inclusive), of length [n]. *)
 let sub ~from ~len l = l |> drop from |> take len
 
+(** Group a list of pairs by their first component, using the provided
+    comparison function to determine equality of keys. The resulting list
+    contains pairs of keys and lists of corresponding values. The complexity is
+    O(n log n), the list is traversed only once. *)
+let group_by (type a) ?(compare : a -> a -> int = Stdlib.compare)
+    (l : (a * 'b) list) =
+  let module Map = Map.Make (struct
+    type t = a
+
+    let compare = compare
+  end) in
+  l
+  |> fold_left
+       (fun acc (k, v) ->
+         Map.update k
+           (function None -> Some [ v ] | Some l -> Some (v :: l))
+           acc)
+       Map.empty
+  |> Map.bindings
+
 let rec find_with_rest f l =
   match l with
   | [] -> None

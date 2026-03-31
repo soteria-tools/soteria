@@ -42,24 +42,14 @@ and node_qty = Partially | Totally
     [Tree_block] wraps it into a structure containing this information. *)
 module MemVal (Symex : Symex.Base) = struct
   module type S = sig
-    module SBoundedInt : sig
-      type +'a t = 'a Symex.Value.t
-      type sbool
-      type sint
+    (** @canonical Data.S_bool.S(Symex).S *)
+    module S_bool : Data.S_bool.S(Symex).S
 
-      val v_false : sbool t
-      val zero : unit -> sint t
-      val ( +@ ) : sint t -> sint t -> sint t
-      val ( -@ ) : sint t -> sint t -> sint t
-      val ( <@ ) : sint t -> sint t -> sbool t
-      val ( <=@ ) : sint t -> sint t -> sbool t
-      val ( ==@ ) : sint t -> sint t -> sbool t
-      val ( &&@ ) : sbool t -> sbool t -> sbool t
-      val in_bound : sint t -> sbool t
-    end
+    (** @canonical Data.S_int.S(Symex)(S_bool).Bounded_S *)
+    module S_bounded_int : Data.S_int.S(Symex)(S_bool).Bounded_S
 
     type t
-    type sint := SBoundedInt.sint SBoundedInt.t
+    type sint := S_bounded_int.t Symex.Value.t
 
     val pp : Format.formatter -> t -> unit
 
@@ -115,24 +105,15 @@ module MemVal (Symex : Symex.Base) = struct
   end
 end
 
-module Make
-    (Symex : Symex.Base)
-    (MemVal :
-      MemVal(Symex).S
-        with type 'a SBoundedInt.t = 'a Symex.Value.t
-         and type SBoundedInt.sbool = Symex.Value.sbool) =
-struct
+module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
   module Expr = Symex.Value.Expr
   open Compo_res
   open Symex.Syntax
   open Symex
-  open MemVal.SBoundedInt
+  open Data.S_bool.Make_syntax (Symex) (MemVal.S_bool)
+  open Data.S_int.Make_syntax (Symex) (MemVal.S_bool) (MemVal.S_bounded_int)
 
-  module Sym_int_syntax = struct
-    let zero = MemVal.SBoundedInt.zero
-  end
-
-  type nonrec sint = sint Symex.Value.t
+  type nonrec sint = MemVal.S_bounded_int.t Symex.Value.t
 
   (* re-export the types to be able to use them easily *)
   type nonrec ('a, 'sint) tree = ('a, 'sint) tree = {
@@ -141,18 +122,8 @@ struct
     children : (('a, 'sint) tree * ('a, 'sint) tree) option;
   }
 
-  module Range = struct
-    type t = sint * sint
-
-    let pp ft (l, u) = Fmt.pf ft "[%a, %a[" Symex.Value.ppa l Symex.Value.ppa u
-    let sem_eq (a, c) (b, d) = a ==@ b &&@ (c ==@ d)
-    let is_inside (l1, u1) (l2, u2) = l2 <=@ l1 &&@ (u1 <=@ u2)
-    let strictly_inside x (l, u) = l <@ x &&@ (x <@ u)
-    let size (l, u) = u -@ l
-    let split_at (l, h) x = ((l, x), (x, h))
-    let offset (l, u) off = (l +@ off, u +@ off)
-    let of_low_and_size low size = (low, low +@ size)
-  end
+  module Range =
+    Data.S_range.Make (Symex) (MemVal.S_bool) (MemVal.S_bounded_int)
 
   module Split_tree = Split_tree
 
@@ -330,7 +301,7 @@ struct
       else if Option.is_none t.children then return (t, None)
       else
         let left, right = Option.get t.children in
-        if%sat Range.is_inside range left.range then
+        if%sat Range.subset_eq range left.range then
           let* extracted, new_left = extract left range in
           let+ new_self =
             match new_left with
@@ -476,7 +447,7 @@ struct
                       of_children_s ~left ~right:(Option.get right_opt)
                     in
                     frame_inside ~replace_node ~rebuild_parent new_self range
-                else if%sat Range.is_inside range left.range then
+                else if%sat Range.subset_eq range left.range then
                   let* node, left =
                     frame_inside ~replace_node ~rebuild_parent left range
                   in
@@ -735,7 +706,7 @@ struct
     let open Producer.Syntax in
     let pb () =
       let* bound = apply_subst Expr.subst bound in
-      let+^ () = assume [ MemVal.SBoundedInt.in_bound bound ] in
+      let+^ () = assume [ MemVal.S_bounded_int.is_in_bound bound ] in
       bound
     in
     match st with
@@ -754,7 +725,9 @@ struct
     let* offset = apply_subst Expr.subst offset in
     let* len = apply_subst Expr.subst len in
     let ((low, high) as range) = Range.of_low_and_size offset len in
-    let*^ () = assume MemVal.SBoundedInt.[ in_bound low; in_bound high ] in
+    let*^ () =
+      assume MemVal.S_bounded_int.[ is_in_bound low; is_in_bound high ]
+    in
     let t =
       match t with
       | Some t -> t

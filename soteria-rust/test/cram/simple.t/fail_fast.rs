@@ -1,5 +1,5 @@
 fn main() {
-    let cond: bool = rusteria::nondet_bytes();
+    let cond: bool = soteria::nondet_bytes();
     if cond {
         panic!("ok");
     } else {

@@ -1,5 +1,6 @@
 type t = {
   compact : bool;
+      [@docs Soteria_std.Cmdliner_helpers.Sections.output]
       [@name [ "compact" ]]
       [@env "SOTERIA_COMPACT_DIAGNOSTICS"]
       [@make.default false]

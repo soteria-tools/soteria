@@ -579,7 +579,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
           f ()
       | l :: ls -> (
           let l = Solver.simplify l in
-          match Value.as_bool l with
+          match Value.to_bool l with
           | Some true -> aux acc ls
           | Some false ->
               L.trace (fun m -> m "Assuming false, stopping this branch")
@@ -592,7 +592,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       side-effects at the wrong time. *)
   let assert_raw value : bool =
     let value = Solver.simplify value in
-    match Value.as_bool value with
+    match Value.to_bool value with
     | Some true -> true
     | Some false -> false
     | None ->
@@ -624,7 +624,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
 
   let consume_false () f =
     if Approx.As_ctx.is_ux () then ()
-    else f (Compo_res.Error (`Lfail (Value.bool false)))
+    else f (Compo_res.Error (`Lfail (Value.of_bool false)))
 
   let nondet_UNSAFE ty =
     let v = Solver.fresh_var ty in
@@ -635,12 +635,12 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let fresh_var ty f = f (Solver.fresh_var ty)
 
   let branch_on ?(left_branch_name = "Left branch")
-      ?(right_branch_name = "Right branch") guard ~(then_ : unit -> 'a Iter.t)
-      ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
+      ?(right_branch_name = "Right branch") guard ~(then_ : unit -> 'a t)
+      ~(else_ : unit -> 'a t) : 'a t =
    fun f ->
     Stats.As_ctx.incr StatKeys.branch_on_calls;
     let guard = Solver.simplify guard in
-    match Value.as_bool guard with
+    match Value.to_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
        remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
@@ -674,10 +674,10 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
                   else L.trace (fun m -> m "Branch is not feasible")))
 
   let if_sure ?left_branch_name:_ ?right_branch_name:_ guard
-      ~(then_ : unit -> 'a Iter.t) ~(else_ : unit -> 'a Iter.t) : 'a Iter.t =
+      ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
    fun f ->
     let guard = Solver.simplify guard in
-    match Value.as_bool guard with
+    match Value.to_bool guard with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
        remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
@@ -695,10 +695,10 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
           else_ () f)
 
   let branch_on_take_one_ux ?left_branch_name:_ ?right_branch_name:_ guard
-      ~then_ ~else_ : 'a Iter.t =
+      ~then_ ~else_ : 'a t =
    fun f ->
     let guard = Solver.simplify guard in
-    match Value.as_bool guard with
+    match Value.to_bool guard with
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
@@ -718,7 +718,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         ~else_ f
     else branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ f
 
-  let branches (brs : (unit -> 'a Iter.t) list) : 'a Iter.t =
+  let branches (brs : (unit -> 'a t) list) : 'a t =
    fun f ->
     let brs = Fuel.take_branches brs in
     (* If there are 0 or 1 branches, we don't do anything, else we add how many
@@ -1072,7 +1072,7 @@ module Make (Sol : Solver.Mutable_incremental) :
   include Base_extension (CORE)
 
   let run_needs_stats_iter ?(fuel = Fuel_gauge.infinite) ~mode iter :
-      ('a * Value.(sbool t) list) Iter.t =
+      ('a * Value.(sbool t) list) t =
    fun continue ->
     let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
     let@ () = Symex_state.run ~init_fuel:fuel in

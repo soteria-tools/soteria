@@ -5,7 +5,7 @@ open Syntaxes.FunctionWrap
 module State = State.Tree_state
 module Interp = Interp.Make (State)
 open Error.Diagnostic
-open Common
+open Util
 
 (** An error happened at runtime during execution *)
 exception ExecutionError of string
@@ -63,16 +63,16 @@ let print_outcomes entry_name f =
       (entry_name, Outcome.Fatal)
 
 let exec_crate (crate : Charon.UllbcAst.crate)
-    (entry_points : 'fuel Frontend.entry_point list) =
+    (entry_points : Frontend.entry_point list) =
   let@ () = Crate.with_crate crate in
 
   (* get entry points to the crate *)
-  if List.is_empty entry_points then execution_err "No entry points found";
+  if List.is_empty entry_points then fatal "No entry points found";
 
   (* prepare executing the entry points *)
-  let exec_fun = Interp.exec_fun ~args:[] ~state:State.empty in
+  let exec_fun = Interp.exec_fun ~state:State.empty in
 
-  let@ { fuel; fun_decl; expect_error } : 'fuel Frontend.entry_point =
+  let@ { fuel; fun_decl; expect_error } : Frontend.entry_point =
     (Fun.flip List.map) entry_points
   in
   (* execute! *)
@@ -80,6 +80,14 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let@ () = print_outcomes entry_name in
   Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
     ("Running " ^ entry_name ^ "...");
+  let args =
+    if entry_name = "miri_start" then
+      [
+        Rust_val.Int (Typed.BV.usizei 0);
+        Rust_val.Ptr (State.Sptr.null_ptr (), Thin);
+      ]
+    else []
+  in
   let { res = branches; stats } : 'res Soteria.Stats.with_stats =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
@@ -87,7 +95,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
       Rustsymex.Result.run_with_stats ~mode:OX ~fuel
         ~fail_fast:(Config.get ()).fail_fast
     in
-    exec_fun fun_decl
+    exec_fun fun_decl ~args
   in
   Soteria.Stats.output stats;
 
@@ -144,22 +152,14 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     let pcs = List.map snd branches in
     Ok (pcs, nbranches, unexplored > 0)
   else
-    (* join th errors by [error type * calltrace], and find all matching PCs *)
     let errors =
       branches
       |> List.filter_map (function
-        | Compo_res.Error (e, _), pc -> Some (e, pc)
+        | Compo_res.Error (e, _st), pc -> Some (e, pc)
         | _ -> None)
+      |> List.group_by ~compare:Error.compare_with_trace
     in
-    let errors_joined =
-      List.map fst errors
-      |> List.sort_uniq compare
-      |> List.map (fun e ->
-          errors
-          |> List.filter_map (fun (e', pc) -> if e = e' then Some pc else None)
-          |> Pair.make e)
-    in
-    Error (errors_joined, nbranches)
+    Error (errors, nbranches)
 
 let print_outcomes_summary outcomes =
   let open Fmt in

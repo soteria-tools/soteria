@@ -37,27 +37,64 @@
   SYNOPSIS
          soteria-rust exec [OPTION]… PATH
   
+  DESCRIPTION
          Run Soteria Rust on the specified file or crate; this will either use
          Rustc to compile that file only, or use Cargo to compile the whole
          crate if it's a directory. It will then look for all entrypoints and
          execute them symbolically.
   
-  ARGUMENTS
-         PATH (required)
-             The .rs file or the directory of the crate to analyse
+  SOLVER OPTIONS
+         --dump-smt-to=VAL, --dump-smt=VAL
+             Dump the SMT queries to the given file
   
-  OPTIONS
-         --approx-floating-ops=ENUM (absent=warn)
-             Whether to allow complex floating-point operations to be
-             over-approximated. Applies to e.g. sqrt, exp, pow and
-             trigonometric functions. If deny, will vanish execution when
-             encountering them.
+         --solver-timeout=INT (absent SOTERIA_SOLVER_TIMEOUT env)
+             Set the solver timeout in miliseconds
   
-         --branch-fuel=INT (absent BRANCH_FUEL env)
-             The default branch fuel for each entrypoint -- every symbolic
-             execution branching point counts as one fuel. Defaults to infinite
-             fuel.
+         --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
+             Path to the Z3 executable
   
+  OUTPUT OPTIONS
+         --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
+             Make diagnostic outputs compact.
+  
+         --output-crate
+             Pretty-print the compiled crate to a file
+  
+         --show-pcs, --pcs (absent SHOW_PCS env)
+             Whether to show the path conditions for outcomes at the end of
+             execution.
+  
+         --stats=VAL, --output-stats=VAL, --dump-stats=VAL (absent
+         SOTERIA_OUTPUT_STATS env)
+             If stats should be output. If the value is "stdout", prints the
+             stats to stdout; otherwise, stores them as JSON in the specified
+             file.
+  
+         --summary
+             If a summary of all test cases should be printed at the end of
+             execution
+  
+         -v, --verbose
+             Verbosity level, clashes with -q
+  
+  LOGS OPTIONS
+         --hide-unstable, --diffable (absent HIDE_UNSTABLE env)
+             Do not display unstable values like durations (e.g. for diffing
+             purposes).
+  
+         --html
+             HTML logging, clashes with --log-kind
+  
+         -l ENUM, --log_kind=ENUM
+             Log kind, clashes with --html
+  
+         --log-smt
+             Always log SMT queries, even in silent mode
+  
+         --no-colour, --no-color (absent NO_COLOR env)
+             Disables coloured output.
+  
+  FRONTEND OPTIONS
          --charon-path=VAL (absent=charon or SOTERIA_CHARON_PATH env)
              Path to the charon binary. Defaults to "charon", i.e. looked up in
              PATH.
@@ -65,22 +102,13 @@
          --clean (absent SOTERIA_RUST_CLEANUP env)
              Clean up compiled files after execution
   
-         --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
-             Make diagnostic outputs compact.
-  
-         --dump-smt-to=VAL, --dump-smt=VAL
-             Dump the SMT queries to the given file
-  
-         --exclude=[,…]
+         --exclude=REGEX[,…]
              Filter the entrypoints to exclude, by name. If empty, no
              entrypoints are excluded. Multiple filters can be provided,
              comma-separated; tests matching any will be excluded. The filters
              are treated as regexes. Opposite of --filter.
   
-         --fail-fast (absent FAIL_FAST env)
-             Stop symbolic execution upon the first error encountered.
-  
-         --filter=[,…]
+         --filter=REGEX[,…]
              Filter the entrypoints to run, by name. If empty, all entrypoints
              are run. Multiple filters can be provided, comma-separated; tests
              matching any will be selected. The filters are treated as regexes.
@@ -89,36 +117,14 @@
          --frontend=ENUM (absent=obol)
              Choose the frontend to use: Charon or Obol
   
-         --hide-unstable, --diffable (absent HIDE_UNSTABLE env)
-             Do not display unstable values like durations (e.g. for diffing
-             purposes).
-  
-         --html
-             HTML logging, clashes with --log-kind
-  
-         --ignore-aliasing
-             Ignore pointer aliasing rules (tree borrows)
-  
-         --ignore-leaks
-             Ignore memory leaks
-  
          --kani
              Use the Kani library
-  
-         -l ENUM, --log_kind=ENUM
-             Log kind, clashes with --html
   
          --log-compilation
              Log the compilation process
   
-         --log-smt
-             Always log SMT queries, even in silent mode
-  
          --miri
              Use the Miri library
-  
-         --no-colour, --no-color (absent NO_COLOR env)
-             Disables coloured output.
   
          --no-compile
              Do not compile the Rust code, as it is already compiled
@@ -130,12 +136,47 @@
              Path to the obol binary. Defaults to "obol", i.e. looked up in
              PATH.
   
-         --output-crate
-             Pretty-print the compiled crate to a file
-  
          --plugins=VAL (absent SOTERIA_RUST_PLUGINS env)
              The directory in which plugins are and should be compiled;
              defaults to the current dune-managed site.
+  
+         --rustc=[,…] (absent RUSTC_FLAGS env)
+             Additional flags to pass to the Rustc compiler
+  
+         --sysroot=VAL (absent RUST_SYSROOT env)
+             The sysroot to use for compilation. If not provided, the default
+             sysroot is used.
+  
+         --target=VAL (absent TARGET env)
+             The compilation target triple to use, e.g.
+             x86_64-unknown-linux-gnu. If not provided, the default target for
+             the current machine is used.
+  
+         --test=VAL
+             The test profile to use to compile the crate; this only has an
+             effect if analysing a crate. By default, the crate's source is
+             analysed, not the tests.
+  
+  ANALYSIS OPTIONS
+         --approx-floating-ops=ENUM (absent=warn)
+             Whether to allow complex floating-point operations to be
+             over-approximated. Applies to e.g. sqrt, exp, pow and
+             trigonometric functions. If deny, will vanish execution when
+             encountering them.
+  
+         --branch-fuel=INT (absent BRANCH_FUEL env)
+             The default branch fuel for each entrypoint -- every symbolic
+             execution branching point counts as one fuel. Defaults to infinite
+             fuel.
+  
+         --fail-fast (absent FAIL_FAST env)
+             Stop symbolic execution upon the first error encountered.
+  
+         --ignore-aliasing
+             Ignore pointer aliasing rules (tree borrows)
+  
+         --ignore-leaks
+             Ignore memory leaks
   
          --polymorphic, --poly
              Whether compilation (and thus analysis) should be done on
@@ -150,44 +191,13 @@
              Whether to check the validity of the addressed memory when
              obtaining a reference to it. We only go one level deep.
   
-         --rustc=[,…] (absent RUSTC_FLAGS env)
-             Additional flags to pass to the Rustc compiler
-  
-         --show-pcs, --pcs (absent SHOW_PCS env)
-             Whether to show the path conditions for outcomes at the end of
-             execution.
-  
-         --solver-timeout=INT (absent SOTERIA_SOLVER_TIMEOUT env)
-             Set the solver timeout in miliseconds
-  
-         --stats=VAL, --output-stats=VAL, --dump-stats=VAL (absent
-         SOTERIA_OUTPUT_STATS env)
-             If stats should be output. If the value is "stdout", prints the
-             stats to stdout; otherwise, stores them as JSON in the specified
-             file.
-  
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
              jump counts as one fuel. Defaults to infinite fuel.
   
-         --summary
-             If a summary of all test cases should be printed at the end of
-             execution
-  
-         --sysroot=VAL (absent RUST_SYSROOT env)
-             The sysroot to use for compilation. If not provided, the default
-             sysroot is used.
-  
-         --target=VAL (absent TARGET env)
-             The compilation target triple to use, e.g.
-             x86_64-unknown-linux-gnu. If not provided, the default target for
-             the current machine is used.
-  
-         -v, --verbose
-             Verbosity level, clashes with -q
-  
-         --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
-             Path to the Z3 executable
+  ARGUMENTS
+         PATH (required)
+             The .rs file or the directory of the crate to analyse
   
   COMMON OPTIONS
          --help[=FMT] (default=auto)
@@ -271,23 +281,64 @@
   SYNOPSIS
          soteria-rust build-plugins [OPTION]…
   
+  DESCRIPTION
          Build the plugins for Soteria Rust; this is done automatically when
          running Soteria Rust except when --no-compile-plugins is used, so you
          should only need to run this command if you want to build the plugins
          separately.
   
-  OPTIONS
-         --approx-floating-ops=ENUM (absent=warn)
-             Whether to allow complex floating-point operations to be
-             over-approximated. Applies to e.g. sqrt, exp, pow and
-             trigonometric functions. If deny, will vanish execution when
-             encountering them.
+  SOLVER OPTIONS
+         --dump-smt-to=VAL, --dump-smt=VAL
+             Dump the SMT queries to the given file
   
-         --branch-fuel=INT (absent BRANCH_FUEL env)
-             The default branch fuel for each entrypoint -- every symbolic
-             execution branching point counts as one fuel. Defaults to infinite
-             fuel.
+         --solver-timeout=INT (absent SOTERIA_SOLVER_TIMEOUT env)
+             Set the solver timeout in miliseconds
   
+         --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
+             Path to the Z3 executable
+  
+  OUTPUT OPTIONS
+         --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
+             Make diagnostic outputs compact.
+  
+         --output-crate
+             Pretty-print the compiled crate to a file
+  
+         --show-pcs, --pcs (absent SHOW_PCS env)
+             Whether to show the path conditions for outcomes at the end of
+             execution.
+  
+         --stats=VAL, --output-stats=VAL, --dump-stats=VAL (absent
+         SOTERIA_OUTPUT_STATS env)
+             If stats should be output. If the value is "stdout", prints the
+             stats to stdout; otherwise, stores them as JSON in the specified
+             file.
+  
+         --summary
+             If a summary of all test cases should be printed at the end of
+             execution
+  
+         -v, --verbose
+             Verbosity level, clashes with -q
+  
+  LOGS OPTIONS
+         --hide-unstable, --diffable (absent HIDE_UNSTABLE env)
+             Do not display unstable values like durations (e.g. for diffing
+             purposes).
+  
+         --html
+             HTML logging, clashes with --log-kind
+  
+         -l ENUM, --log_kind=ENUM
+             Log kind, clashes with --html
+  
+         --log-smt
+             Always log SMT queries, even in silent mode
+  
+         --no-colour, --no-color (absent NO_COLOR env)
+             Disables coloured output.
+  
+  FRONTEND OPTIONS
          --charon-path=VAL (absent=charon or SOTERIA_CHARON_PATH env)
              Path to the charon binary. Defaults to "charon", i.e. looked up in
              PATH.
@@ -295,22 +346,13 @@
          --clean (absent SOTERIA_RUST_CLEANUP env)
              Clean up compiled files after execution
   
-         --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
-             Make diagnostic outputs compact.
-  
-         --dump-smt-to=VAL, --dump-smt=VAL
-             Dump the SMT queries to the given file
-  
-         --exclude=[,…]
+         --exclude=REGEX[,…]
              Filter the entrypoints to exclude, by name. If empty, no
              entrypoints are excluded. Multiple filters can be provided,
              comma-separated; tests matching any will be excluded. The filters
              are treated as regexes. Opposite of --filter.
   
-         --fail-fast (absent FAIL_FAST env)
-             Stop symbolic execution upon the first error encountered.
-  
-         --filter=[,…]
+         --filter=REGEX[,…]
              Filter the entrypoints to run, by name. If empty, all entrypoints
              are run. Multiple filters can be provided, comma-separated; tests
              matching any will be selected. The filters are treated as regexes.
@@ -319,36 +361,14 @@
          --frontend=ENUM (absent=obol)
              Choose the frontend to use: Charon or Obol
   
-         --hide-unstable, --diffable (absent HIDE_UNSTABLE env)
-             Do not display unstable values like durations (e.g. for diffing
-             purposes).
-  
-         --html
-             HTML logging, clashes with --log-kind
-  
-         --ignore-aliasing
-             Ignore pointer aliasing rules (tree borrows)
-  
-         --ignore-leaks
-             Ignore memory leaks
-  
          --kani
              Use the Kani library
-  
-         -l ENUM, --log_kind=ENUM
-             Log kind, clashes with --html
   
          --log-compilation
              Log the compilation process
   
-         --log-smt
-             Always log SMT queries, even in silent mode
-  
          --miri
              Use the Miri library
-  
-         --no-colour, --no-color (absent NO_COLOR env)
-             Disables coloured output.
   
          --no-compile
              Do not compile the Rust code, as it is already compiled
@@ -360,12 +380,47 @@
              Path to the obol binary. Defaults to "obol", i.e. looked up in
              PATH.
   
-         --output-crate
-             Pretty-print the compiled crate to a file
-  
          --plugins=VAL (absent SOTERIA_RUST_PLUGINS env)
              The directory in which plugins are and should be compiled;
              defaults to the current dune-managed site.
+  
+         --rustc=[,…] (absent RUSTC_FLAGS env)
+             Additional flags to pass to the Rustc compiler
+  
+         --sysroot=VAL (absent RUST_SYSROOT env)
+             The sysroot to use for compilation. If not provided, the default
+             sysroot is used.
+  
+         --target=VAL (absent TARGET env)
+             The compilation target triple to use, e.g.
+             x86_64-unknown-linux-gnu. If not provided, the default target for
+             the current machine is used.
+  
+         --test=VAL
+             The test profile to use to compile the crate; this only has an
+             effect if analysing a crate. By default, the crate's source is
+             analysed, not the tests.
+  
+  ANALYSIS OPTIONS
+         --approx-floating-ops=ENUM (absent=warn)
+             Whether to allow complex floating-point operations to be
+             over-approximated. Applies to e.g. sqrt, exp, pow and
+             trigonometric functions. If deny, will vanish execution when
+             encountering them.
+  
+         --branch-fuel=INT (absent BRANCH_FUEL env)
+             The default branch fuel for each entrypoint -- every symbolic
+             execution branching point counts as one fuel. Defaults to infinite
+             fuel.
+  
+         --fail-fast (absent FAIL_FAST env)
+             Stop symbolic execution upon the first error encountered.
+  
+         --ignore-aliasing
+             Ignore pointer aliasing rules (tree borrows)
+  
+         --ignore-leaks
+             Ignore memory leaks
   
          --polymorphic, --poly
              Whether compilation (and thus analysis) should be done on
@@ -380,44 +435,9 @@
              Whether to check the validity of the addressed memory when
              obtaining a reference to it. We only go one level deep.
   
-         --rustc=[,…] (absent RUSTC_FLAGS env)
-             Additional flags to pass to the Rustc compiler
-  
-         --show-pcs, --pcs (absent SHOW_PCS env)
-             Whether to show the path conditions for outcomes at the end of
-             execution.
-  
-         --solver-timeout=INT (absent SOTERIA_SOLVER_TIMEOUT env)
-             Set the solver timeout in miliseconds
-  
-         --stats=VAL, --output-stats=VAL, --dump-stats=VAL (absent
-         SOTERIA_OUTPUT_STATS env)
-             If stats should be output. If the value is "stdout", prints the
-             stats to stdout; otherwise, stores them as JSON in the specified
-             file.
-  
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
              jump counts as one fuel. Defaults to infinite fuel.
-  
-         --summary
-             If a summary of all test cases should be printed at the end of
-             execution
-  
-         --sysroot=VAL (absent RUST_SYSROOT env)
-             The sysroot to use for compilation. If not provided, the default
-             sysroot is used.
-  
-         --target=VAL (absent TARGET env)
-             The compilation target triple to use, e.g.
-             x86_64-unknown-linux-gnu. If not provided, the default target for
-             the current machine is used.
-  
-         -v, --verbose
-             Verbosity level, clashes with -q
-  
-         --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
-             Path to the Z3 executable
   
   COMMON OPTIONS
          --help[=FMT] (default=auto)

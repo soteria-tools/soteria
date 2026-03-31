@@ -14,6 +14,7 @@ exception CompilationError of string
 let plugin_err msg = raise (PluginError msg)
 let frontend_err msg = raise (FrontendError msg)
 let compilation_err msg = raise (CompilationError msg)
+let ( / ) = Filename.concat
 
 (** Utilities to run commands *)
 module Exe = struct
@@ -124,23 +125,48 @@ end
 
 (** Organise commands to send to the Soteria-Rust frontend *)
 module Cmd = struct
+  type entry = Attrib of string | Name of string | Pub
+
+  let entry_as_flag = function
+    | Attrib a -> [ "--start-from-attribute=" ^ a ]
+    | Name n -> [ "--start-from"; n ]
+    | Pub -> [ "--start-from-pub" ]
+
+  let entry_matches_fn (fn : UllbcAst.fun_decl) = function
+    | Attrib attrib -> decl_has_attr fn attrib
+    | Name n -> (
+        match List.last_opt fn.item_meta.name with
+        | Some (PeIdent (name, _)) -> name = n
+        | _ -> false)
+    | Pub -> fn.item_meta.is_local && fn.item_meta.attr_info.public
+
   type t = {
     charon : string list; [@default []]
-        (** Arguments passed to Charon (only when not in [Obol] mode) *)
+        (** Arguments passed to Charon (only when using the [Charon] frontend)
+        *)
     obol : string list; [@default []]
-        (** Arguments passed to Obol (only in [Obol] mode) *)
+        (** Arguments passed to Obol (only when using the [Obol] frontend) *)
     features : string list; [@default []]
         (** Features to enable for compilation (as in --cfg) *)
     rustc : string list; [@default []]
         (** DEPRECATED?: rustc flags. For Cargo we use RUSTFLAGS, but when
             possible it would be nicer to use the Cargo-specific command (as
             with features)? *)
+    entry_points : entry list; [@default []]
+        (** Functions to mark as entry points, e.g.
+            [Attrib "soteriatool::test"], when we are interested in filtering
+            the entry-points. *)
+    expect_error : entry list; [@default []]
+        (** Markers to know that an entry point is expected to fail. This is
+            used to inverse the outcomes of the execution, so that we can use
+            the same plugin for both expected-success and expected-failure
+            tests. *)
   }
   [@@deriving make]
 
   type mode = Cargo | Rustc
 
-  let empty_cmd = make ()
+  let empty = make ()
 
   let concat_cmd c1 c2 =
     {
@@ -148,6 +174,8 @@ module Cmd = struct
       obol = c1.obol @ c2.obol;
       features = c1.features @ c2.features;
       rustc = c1.rustc @ c2.rustc;
+      entry_points = c1.entry_points @ c2.entry_points;
+      expect_error = c1.expect_error @ c2.expect_error;
     }
 
   let frontend_cmd () =
@@ -160,8 +188,8 @@ module Cmd = struct
       (let cmd = frontend_cmd () in
        Exe.exec_exn cmd [ "toolchain-path" ] |> List.hd)
 
-  let cargo () = Lazy.force toolchain_path ^ "/bin/cargo"
-  let rustc () = Lazy.force toolchain_path ^ "/bin/rustc"
+  let cargo () = Lazy.force toolchain_path / "bin" / "cargo"
+  let rustc () = Lazy.force toolchain_path / "bin" / "rustc"
   let rustc_as_env () = [ "RUSTC=" ^ rustc () ]
 
   let current_rustc_flags () =
@@ -177,12 +205,14 @@ module Cmd = struct
   let is_edition_flag = String.starts_with ~prefix:"--edition"
 
   let flags_for_cargo =
+    (* Cargo already specifies the edition and the crate type! *)
     List.filter (fun s -> not (is_edition_flag s || is_crate_type_flag s))
 
   let flags_as_rustc_env args =
     if List.is_empty args then [] else [ "RUSTFLAGS=" ^ String.concat " " args ]
 
-  let build_cmd ~mode { charon; obol; features; rustc } =
+  let build_cmd ~mode
+      { charon; obol; features; rustc; entry_points; expect_error = _ } =
     let features = List.concat_map (fun f -> [ "--cfg"; f ]) features in
     let user_specified = current_rustc_flags () in
     let rustc =
@@ -193,8 +223,29 @@ module Cmd = struct
     let rustc = rustc @ user_specified @ features in
     let cmd, args =
       match (Config.get ()).frontend with
-      | Obol -> ((Config.get ()).obol_path, obol)
-      | Charon -> ((Config.get ()).charon_path, charon)
+      | Obol ->
+          let entries = List.concat_map entry_as_flag entry_points in
+          ((Config.get ()).obol_path, obol @ entries)
+      | Charon ->
+          (* FIXME: PR Charon to change this! *)
+          let attribs, non_attribs =
+            List.partition
+              (function Attrib _ -> true | _ -> false)
+              entry_points
+          in
+          let attribs =
+            match attribs with
+            | [] -> []
+            | [ h ] -> [ h ]
+            | h :: _ ->
+                L.warn (fun m ->
+                    m
+                      "Charon currently only support one entry attribute; more \
+                       than one was specified, only the first will be used");
+                [ h ]
+          in
+          let entries = List.concat_map entry_as_flag (attribs @ non_attribs) in
+          ((Config.get ()).charon_path, charon @ entries)
     in
     match mode with
     | Rustc ->
@@ -212,10 +263,14 @@ module Cmd = struct
         in
         (cmd, ("rustc" :: args) @ [ "--" ] @ rustc, [])
     | Cargo ->
-        (* Cargo already specifies the edition *)
+        let cargo =
+          match (Config.get ()).test with
+          | Some test -> [ "--test"; test ]
+          | None -> []
+        in
         let rustc = flags_for_cargo rustc in
         let env = rustc_as_env () @ flags_as_rustc_env rustc in
-        (cmd, "cargo" :: args, env)
+        (cmd, ("cargo" :: args) @ [ "--" ] @ cargo, env)
 
   let exec_in ~mode folder cmd =
     let cmd, args, env = build_cmd ~mode cmd in
@@ -237,36 +292,50 @@ module Lib = struct
 
   let root =
     lazy
-      (match (Config.get ()).plugin_directory with
-      | Some root -> root
-      | None -> List.hd Runtime_sites.Sites.plugins)
+      (match
+         ((Config.get ()).plugin_directory, Runtime_sites.Sites.plugins)
+       with
+      | Some root, _ -> root
+      | None, root :: _ -> root
+      | None, [] -> plugin_err "Couldn't find plugin directory")
 
   type t = Std | Kani | Miri
 
   let name = function Std -> "std" | Kani -> "kani" | Miri -> "miri"
-  let path lib = Filename.concat (Lazy.force root) (name lib)
+  let path lib = Lazy.force root / name lib
+
+  (** [exec_cargo ?env lib args] executes the command [cargo <args>] for the
+      library [lib].
+
+      @raise PluginError
+        if the command fails, with the error message from Cargo. *)
+  let exec_cargo ?(env = []) lib args =
+    let path = path lib in
+    let env = Cmd.rustc_as_env () @ env in
+    let _, err, status =
+      let@ () = Exe.run_in path in
+      Exe.exec ~env (Cmd.cargo ()) args
+    in
+    match status with
+    | WEXITED (0 | 255) -> ()
+    | _ ->
+        Fmt.kstr plugin_err "Couldn't compile lib at %s@.%a" path
+          Fmt.(list string)
+          err
+
+  (** Deletes the target directory of a target, to avoid duplicate builds *)
+  let clean lib = exec_cargo lib [ "clean" ]
 
   let compile lib =
     if not (Config.get ()).no_compile_plugins then
-      let path = path lib in
-      let verbosity =
-        if (Config.get ()).log_compilation then [ "--verbose" ] else []
-      in
       let env =
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
       in
-      let env = Cmd.rustc_as_env () @ env in
-      let _, err, status =
-        let@ () = Exe.run_in path in
-        Exe.exec ~env (Cmd.cargo ())
-          ([ "build"; "--lib"; "--target"; Lazy.force target ] @ verbosity)
+      let args =
+        [ "build"; "--lib"; "--target"; Lazy.force target ]
+        @ if (Config.get ()).log_compilation then [ "--verbose" ] else []
       in
-      match status with
-      | WEXITED (0 | 255) -> ()
-      | _ ->
-          Fmt.kstr plugin_err "Couldn't compile lib at %s@.%a" path
-            Fmt.(list string)
-            err
+      exec_cargo ~env lib args
 
   let with_compiled lib f =
     let path = path lib in
@@ -275,209 +344,172 @@ module Lib = struct
     let config : Cmd.t = f (path, target) in
     let lib_imports =
       [
-        Fmt.str "-L%s/target/%s/debug/deps" path target;
-        Fmt.str "-L%s/target/debug/deps" path;
+        "-L" ^ (path / "target" / target / "debug" / "deps");
+        "-L" ^ (path / "target" / "debug" / "deps");
       ]
     in
     { config with rustc = config.rustc @ lib_imports }
 end
 
-type fun_decl = UllbcAst.fun_decl
+type entry_point_filter = {
+  filter : Cmd.entry list;
+  expect_error : Cmd.entry list;
+}
 
-type 'fuel entry_point = {
-  fun_decl : fun_decl;
+type entry_point = {
+  fun_decl : UllbcAst.fun_decl;
   expect_error : bool;
-  fuel : 'fuel;
+  fuel : Soteria.Symex.Fuel_gauge.t;
 }
 
-let mk_entry_point ?(expect_error = false) ?fuel fun_decl =
-  Some { fun_decl; expect_error; fuel }
+type mk_cmd = ?input:string -> output:string -> unit -> Cmd.t
 
-type 'fuel plugin = {
-  mk_cmd : unit -> Cmd.t;
-  get_entry_point : fun_decl -> 'fuel entry_point option;
-}
+let default () =
+  let@ std_lib_path, target = Lib.with_compiled Std in
+  let opaque_names =
+    List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names
+  in
+  Cmd.make
+    ~charon:
+      ([
+         "--ullbc";
+         "--extract-opaque-bodies";
+         "--mir elaborated";
+         "--reconstruct-fallible-operations";
+         "--reconstruct-asserts";
+         "--desugar-drops";
+         "--precise-drops";
+       ]
+      @ opaque_names
+      @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
+    ~obol:opaque_names
+    ~entry_points:[ Name "main"; Attrib "soteriatool::test" ]
+    ~expect_error:[ Attrib "soteriatool::expect_fail" ]
+    ~features:[ "soteria" ]
+    ~rustc:
+      [
+        (* i.e. not always a binary! *)
+        "--crate-type=lib";
+        "-Z";
+        "unstable-options";
+        (* No warning *)
+        "-Awarnings";
+        "--cap-lints=allow";
+        (* include our std and soteria crates *)
+        "-Z";
+        "crate-attr=feature(register_tool)";
+        "-Z";
+        "crate-attr=register_tool(soteriatool)";
+        "--extern";
+        "soteria";
+        (* include the std *)
+        "--extern";
+        "noprelude:std="
+        ^ (std_lib_path / "target" / target / "debug" / "libstd.rlib");
+      ]
+    ()
 
-let default =
-  let mk_cmd () =
-    let@ std_lib_path, target = Lib.with_compiled Std in
-    let opaque_names =
-      List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names
+let kani () =
+  let@ _ = Lib.with_compiled Kani in
+  Cmd.make ~features:[ "kani" ]
+    ~entry_points:[ Attrib "kanitool::proof" ]
+    ~expect_error:[ Attrib "kanitool::should_panic" ]
+    ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)"; "--extern"; "kani" ]
+    ()
+
+let miri () =
+  let@ _ = Lib.with_compiled Miri in
+  Cmd.make ~features:[ "miri" ]
+    ~rustc:[ "--extern"; "miristd"; "--edition"; "2021" ]
+    ~entry_points:[ Name "miri_start" ] ()
+
+(** Filters a name, according to the current {!Config.t.filter} and
+    {!Config.t.exclude} settings. If there are no filters, all names are
+    included; otherwise, a name is included if it matches any filter and doesn't
+    match any exclude. *)
+let filter_name crate name =
+  let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
+  let name = PrintTypes.name_to_string fmt_env name in
+
+  let filters = (Config.get ()).filter in
+  let excludes = (Config.get ()).exclude in
+
+  let any_contains =
+    List.exists (fun r ->
+        try Str.search_forward r name 0 >= 0 with Not_found -> false)
+  in
+  (List.is_empty filters || any_contains filters) && not (any_contains excludes)
+
+let get_entry_point (filter : entry_point_filter) crate
+    (decl : UllbcAst.fun_decl) =
+  let ( let*! ) b f = if b then f () else None in
+  (* check it's a valid entry-point *)
+  let*! () =
+    List.is_empty filter.filter
+    || List.exists (Cmd.entry_matches_fn decl) filter.filter
+  in
+  (* check it's filtered *)
+  let*! () = filter_name crate decl.item_meta.name in
+  (* build the entry point *)
+  let expect_error =
+    List.exists (Cmd.entry_matches_fn decl) filter.expect_error
+  in
+  let open Soteria.Symex in
+  let fuel : Fuel_gauge.t =
+    let get_or name default : Fuel_gauge.Fuel_value.t =
+      match (decl_get_attr decl name, default) with
+      | Some fuel, _ -> Finite (int_of_string fuel)
+      | None, Some fuel -> Finite fuel
+      | None, None -> Infinite
     in
-    Cmd.make
-      ~charon:
-        ([
-           "--ullbc";
-           "--extract-opaque-bodies";
-           "--mir elaborated";
-           "--reconstruct-fallible-operations";
-           "--reconstruct-asserts";
-           "--desugar-drops";
-           "--precise-drops";
-         ]
-        @ opaque_names
-        @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
-      ~obol:
-        ([
-           "--start-from";
-           "main";
-           "--start-from-attribute";
-           "rusteriatool::test";
-         ]
-        @ opaque_names)
-      ~features:[ "rusteria" ]
-      ~rustc:
-        [
-          (* i.e. not always a binary! *)
-          "--crate-type=lib";
-          "-Z";
-          "unstable-options";
-          (* No warning *)
-          "-Awarnings";
-          "--cap-lints=allow";
-          (* include our std and rusteria crates *)
-          "-Z";
-          "crate-attr=feature(register_tool)";
-          "-Z";
-          "crate-attr=register_tool(rusteriatool)";
-          "--extern";
-          "rusteria";
-          (* include the std *)
-          "--extern";
-          Fmt.str "noprelude:std=%s/target/%s/debug/libstd.rlib" std_lib_path
-            target;
-        ]
-      ()
+    {
+      steps = get_or "soteriatool::step_fuel" (Config.get ()).step_fuel;
+      branching = get_or "soteriatool::branch_fuel" (Config.get ()).branch_fuel;
+    }
   in
-  let get_entry_point (decl : fun_decl) =
-    match List.last_opt decl.item_meta.name with
-    | Some (PeIdent ("main", _)) -> mk_entry_point decl
-    | _ when decl_has_attr decl "rusteriatool::test" ->
-        let expect_error = decl_has_attr decl "rusteriatool::expect_fail" in
-        mk_entry_point ~expect_error decl
-    | _ -> None
-  in
-  { mk_cmd; get_entry_point }
+  Some { fun_decl = decl; expect_error; fuel }
 
-let kani =
-  let mk_cmd () =
-    let@ _ = Lib.with_compiled Kani in
-    Cmd.make ~features:[ "kani" ]
-      ~obol:[ "--start-from-attribute"; "kanitool::proof" ]
-      ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)"; "--extern"; "kani" ]
-      ()
+let create_using_current_config () : mk_cmd * entry_point_filter =
+  let config = Config.get () in
+  let cmd_parts =
+    [ default () ]
+    @ (if config.with_kani then [ kani () ] else [])
+    @ if config.with_miri then [ miri () ] else []
   in
-  let get_entry_point (decl : fun_decl) =
-    if
-      decl_has_attr decl "kanitool::proof"
-      (* TODO: maybe we can raise an error or a warning here *)
-      && List.is_empty decl.signature.inputs
-    then
-      let expect_error = decl_has_attr decl "kanitool::should_panic" in
-      mk_entry_point ~expect_error decl
-    else None
+  let cmd = List.fold_left Cmd.concat_cmd Cmd.empty cmd_parts in
+  let cmd =
+    match config.test with
+    | None -> cmd
+    | Some _ ->
+        (* HACK: if we're in test mode, we want to ignore main because Rust will
+           compile it in a quirky way and it requires having a sysroot. Instead
+           we want to look for the tests directly! So we add #[test] *)
+        let entry_points =
+          Cmd.Attrib "test" :: cmd.entry_points
+          |> List.filter (function Cmd.Pub | Name "main" -> false | _ -> true)
+        in
+        let expect_error = Cmd.Attrib "should_panic" :: cmd.expect_error in
+        { cmd with entry_points; expect_error }
   in
-  { mk_cmd; get_entry_point }
-
-let miri =
-  let mk_cmd () =
-    let@ _ = Lib.with_compiled Miri in
-    Cmd.make ~features:[ "miri" ]
-      ~rustc:[ "--extern"; "miristd"; "--edition"; "2021" ]
-      ~obol:[ "--start-from"; "miri_start" ]
-      ()
-  in
-  let get_entry_point (decl : fun_decl) =
-    match List.last decl.item_meta.name with
-    | PeIdent ("miri_start", _) -> mk_entry_point decl
-    | _ -> None
-  in
-  { mk_cmd; get_entry_point }
-
-type root_plugin = {
-  mk_cmd : ?input:string -> output:string -> unit -> Cmd.t;
-  get_entry_point :
-    UllbcAst.crate -> fun_decl -> Soteria.Symex.Fuel_gauge.t entry_point option;
-}
-
-let merge_ifs (plugins : (bool * Soteria.Symex.Fuel_gauge.t option plugin) list)
-    =
-  let plugins =
-    List.filter_map
-      (fun (enabled, plugin) -> if enabled then Some plugin else None)
-      plugins
-  in
-
-  let mk_cmd ?input ~output () =
+  let mk_cmd =
+   fun ?input ~output () ->
     let input =
       Option.fold ~none:[] ~some:(fun s -> [ Filename.quote s ]) input
     in
-    let init =
-      Cmd.make
-        ~charon:[ "--dest-file"; Filename.quote output ]
-        ~obol:[ "--dest-file"; Filename.quote output ]
-        ~rustc:input ()
-    in
-    List.map (fun (p : 'a plugin) -> p.mk_cmd ()) plugins
-    |> List.fold_left Cmd.concat_cmd init
+    Cmd.make
+      ~charon:[ "--dest-file"; Filename.quote output ]
+      ~obol:[ "--dest-file"; Filename.quote output ]
+      ~rustc:input ()
+    |> Cmd.concat_cmd cmd
   in
+  (mk_cmd, { filter = cmd.entry_points; expect_error = cmd.expect_error })
 
-  let filter_name name =
-    let any_contains rs =
-      List.exists
-        (fun r ->
-          try Str.search_forward (Str.regexp r) name 0 >= 0
-          with Not_found -> false)
-        rs
-    in
-
-    let filters = (Config.get ()).filter in
-    let excludes = (Config.get ()).exclude in
-
-    (List.is_empty filters || any_contains filters)
-    && not (any_contains excludes)
-  in
-
-  let get_entry_point crate (decl : fun_decl) =
-    let rec aux acc rest =
-      match (acc, rest) with
-      | Some ep, _ ->
-          let open Soteria.Symex in
-          let fuel : Fuel_gauge.t =
-            let get_or name default : Fuel_gauge.Fuel_value.t =
-              match (decl_get_attr decl name, default) with
-              | Some fuel, _ -> Finite (int_of_string fuel)
-              | None, Some fuel -> Finite fuel
-              | None, None -> Infinite
-            in
-            {
-              steps = get_or "rusteriatool::step_fuel" (Config.get ()).step_fuel;
-              branching =
-                get_or "rusteriatool::branch_fuel" (Config.get ()).branch_fuel;
-            }
-          in
-          Some { ep with fuel }
-      | None, (p : 'a plugin) :: rest -> aux (p.get_entry_point decl) rest
-      | None, [] -> None
-    in
-    let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-    let name = PrintTypes.name_to_string fmt_env decl.item_meta.name in
-    if not (filter_name name) then None else aux None plugins
-  in
-  { mk_cmd; get_entry_point }
-
-let create_using_current_config () =
-  merge_ifs
-    [
-      (true, default);
-      ((Config.get ()).with_kani, kani);
-      ((Config.get ()).with_miri, miri);
-    ]
+let modify_mk_cmd f mk_cmd =
+ fun ?input ~output () -> f @@ mk_cmd ?input ~output ()
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
+let parse_ullbc ~mode ~cmd ~output ~pwd () =
   if not (Config.get ()).no_compile then (
-    let cmd = plugin.mk_cmd ?input ~output () in
     let _, err, res = Cmd.exec_in ~mode pwd cmd in
     if not (Exe.is_ok res) then
       if res = WEXITED 2 then compilation_err (String.concat "\n" err)
@@ -509,34 +541,57 @@ let parse_ullbc ~mode ~plugin ?input ~output ~pwd () =
     Cleaner.touched crate_file);
   crate
 
-let with_entry_points ~plugin (crate : Charon.UllbcAst.crate) =
+let with_entry_points ~filter (crate : Charon.UllbcAst.crate) =
   let entry_points =
     Charon.Types.FunDeclId.Map.values crate.fun_decls
-    |> List.filter_map (plugin.get_entry_point crate)
+    |> List.filter_map (get_entry_point filter crate)
   in
   (crate, entry_points)
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_file file_name =
-  let plugin = create_using_current_config () in
+let parse_ullbc_of_file ~(mk_cmd : mk_cmd) file_name =
   let parent_folder = Filename.dirname file_name in
   let output = Printf.sprintf "%s.llbc.json" file_name in
-  parse_ullbc ~mode:Rustc ~plugin ~input:file_name ~output ~pwd:parent_folder ()
-  |> with_entry_points ~plugin
+  let cmd = mk_cmd ~input:file_name ~output () in
+  parse_ullbc ~mode:Rustc ~cmd ~output ~pwd:parent_folder ()
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_crate crate_dir =
-  let plugin = create_using_current_config () in
-  let output = Printf.sprintf "%s/crate.llbc.json" crate_dir in
-  parse_ullbc ~mode:Cargo ~plugin ~output ~pwd:crate_dir ()
-  |> with_entry_points ~plugin
+let parse_ullbc_of_crate ~(mk_cmd : mk_cmd) crate_dir =
+  let filename =
+    match (Config.get ()).test with
+    | Some test -> "test-" ^ test ^ ".llbc.json"
+    | None -> "crate.llbc.json"
+  in
+  let output = crate_dir / filename in
+  let cmd = mk_cmd ~output () in
+  parse_ullbc ~mode:Cargo ~cmd ~output ~pwd:crate_dir ()
+
+let parse_ullbc_raw ~mk_cmd = function
+  | `File file -> parse_ullbc_of_file ~mk_cmd file
+  | `Dir path -> parse_ullbc_of_crate ~mk_cmd path
+
+(** Given a path, if it's a file will parse the ULLBC of that single file using
+    rustc; otherwise will assume it's a path to a crate and use cargo.
+    {b Will translate all functions in the crate, without filtering
+       entry-points.} *)
+let parse_ullbc path =
+  let mk_cmd, _filter = create_using_current_config () in
+  let mk_cmd =
+    modify_mk_cmd (fun c -> Cmd.{ c with entry_points = [] }) mk_cmd
+  in
+  parse_ullbc_raw ~mk_cmd path
 
 (** Given a path, will check if it has a [.rs] extension, in which case it will
     parse the ULLBC of that single file using rustc; otherwise will assume it's
-    a path to a crate and use cargo. *)
-let parse_ullbc path =
-  match path with
-  | `File file -> parse_ullbc_of_file file
-  | `Dir path -> parse_ullbc_of_crate path
+    a path to a crate and use cargo.
+    {b Will only start translation from functions considered entry-points.} *)
+let parse_ullbc_with_entry_points path =
+  let mk_cmd, filter = create_using_current_config () in
+  parse_ullbc_raw path ~mk_cmd |> with_entry_points ~filter
 
-let compile_all_plugins () = List.iter Lib.compile [ Std; Kani; Miri ]
+let compile_all_plugins () =
+  List.iter
+    (fun l ->
+      Lib.clean l;
+      Lib.compile l)
+    [ Std; Kani; Miri ]

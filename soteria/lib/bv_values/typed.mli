@@ -107,29 +107,43 @@ val unique_tag : [< any ] t -> int
 
 val sem_eq : 'a t -> 'a t -> sbool t
 val sem_eq_untyped : 'a t -> 'b t -> sbool t
-val v_true : [> sbool ] t
-val v_false : [> sbool ] t
-val bool : bool -> [> sbool ] t
-val as_bool : 'a t -> bool option
-val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 
-(** Similar to [and_], but the rhs is only evaluated if the lhs is not the
-    concrete false. In other words, this is a short-circuiting and. Avoids some
-    errors, like a division by zero in [0 != x && n / x] when [x] is [0]. *)
-val and_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
+(** Boolean operations *)
 
-val conj : [< sbool ] t list -> [> sbool ] t
-val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
-val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+module type Bool_ := sig
+  val v_true : [> sbool ] t
+  val v_false : [> sbool ] t
+  val of_bool : bool -> [> sbool ] t
+  val to_bool : 'a t -> bool option
+  val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 
-(** Similar to [or_], but the rhs is only evaluated if the lhs is not the
-    concrete true. In other words, this is a short-circuiting or. Avoids some
-    errors, like a division by zero in [0 == x || n / x] when [x] is [0]. *)
-val or_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
+  (** Similar to [and_], but the rhs is only evaluated if the lhs is not the
+      concrete false. In other words, this is a short-circuiting and. Avoids
+      some errors, like a division by zero in [0 != x && n / x] when [x] is [0].
+  *)
+  val and_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
 
-val not : [< sbool ] t -> [> sbool ] t
-val distinct : 'a t list -> [> sbool ] t
-val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
+  val conj : [< sbool ] t list -> [> sbool ] t
+  val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
+  val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+
+  (** Similar to [or_], but the rhs is only evaluated if the lhs is not the
+      concrete true. In other words, this is a short-circuiting or. Avoids some
+      errors, like a division by zero in [0 == x || n / x] when [x] is [0]. *)
+  val or_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
+
+  val not : [< sbool ] t -> [> sbool ] t
+  val distinct : 'a t list -> [> sbool ] t
+  val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
+end
+
+include Bool_
+
+module Bool : sig
+  include Bool_
+
+  type t = sbool
+end
 
 (** Bit vector operations *)
 

@@ -2,15 +2,15 @@ open Symex
 open Compo_res
 
 module SInt_sig (Symex : Symex.Base) = struct
-  module Data = Data.M (Symex)
+  module Abstr = Data.Abstr.M (Symex)
 
   module type S = sig
     (** Symbolic integers *)
     open Symex
 
-    include Data.Abstr_with_syn
+    include Abstr.S_with_syn
     include Stdlib.Map.OrderedType with type t := t
-    include Data.Sem_eq with type t := t
+    include Abstr.Sem_eq with type t := t
 
     val of_int : int -> t
     val in_range : t -> t * t -> Value.(sbool t)

@@ -19,7 +19,18 @@ let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
        ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
 
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
+let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
+
+let t_lit : Types.literal_type -> [< T.cval ] ty = function
+  | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
+  | TFloat F16 -> t_f16
+  | TFloat F32 -> t_f32
+  | TFloat F64 -> t_f64
+  | TFloat F128 -> t_f128
+
+let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
+  t_float (float_precision ty)
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -34,11 +45,7 @@ let cast_lit ty (v : 'a t) : [> T.sint ] t =
   cast_checked ~ty:(t_int size) v
 
 let cast_i uty = cast_lit (TUInt uty)
-let cast_fp fp v = cast_checked ~ty:(t_float fp) v
-
-let cast_f fty v =
-  let fp = float_precision fty in
-  cast_checked ~ty:(t_float fp) v
+let cast_f fty v = cast_checked ~ty:(t_float fty) v
 
 let cast_float v =
   match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
@@ -94,7 +101,7 @@ module BitVec = struct
   let of_literal : Values.literal -> [> T.sint ] t = function
     | VScalar s -> of_scalar s
     | VChar c -> u32i (Uchar.to_int c)
-    | VBool b -> of_bool (bool b)
+    | VBool b -> of_bool (Bool.of_bool b)
     | l ->
         Fmt.failwith "Cannot convert non-scalar literal %s to bitvector"
           (PrintValues.literal_to_string l)
@@ -105,11 +112,6 @@ module BitVec = struct
         Fmt.failwith "Cannot convert non-value const expr %a to bitvector"
           Types.pp_constant_expr c
 
-  let bv_to_z ty z =
-    let tag_size = 8 * size_of_literal_ty ty in
-    let signed = is_signed ty in
-    bv_to_z signed tag_size z
-
   let max ~signed l r = ite (gt ~signed l r) l r
   let min ~signed l r = ite (lt ~signed l r) l r
 end
@@ -119,7 +121,6 @@ module BV = BitVec
 module Float = struct
   include Float
 
-  let mk_fp = mk
   let mk fty = mk (float_precision fty)
 end
 

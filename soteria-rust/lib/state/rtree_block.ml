@@ -17,28 +17,30 @@ module Make (Sptr : Sptr.S) = struct
 
   module MemVal = struct
     module TB = Soteria.Sym_states.Tree_block
+    module S_bool = Typed.Bool
 
-    module SBoundedInt = struct
+    module S_bounded_int = struct
       include Typed
-      include Typed.Infix
+      include Typed.BV
 
-      type sint = T.sint
-      type sbool = T.sbool
+      type t = T.sint
 
-      let zero () = Typed.BitVec.usize Z.zero
-      let ( <@ ) = Typed.Infix.( <$@ )
-      let ( <=@ ) = Typed.Infix.( <=$@ )
+      let of_z = Typed.BitVec.usize
+      let zero () = of_z Z.zero
+      let one () = of_z Z.one
+      let lt = Typed.Infix.( <$@ )
+      let leq = Typed.Infix.( <=$@ )
 
       (* We assume addition/overflow within the range of an allocation may never
          overflow. This allows extremely good reductions around inequalities,
          which Tree_block relies on. *)
-      let ( +@ ) = Typed.Infix.( +!!@ )
-      let ( -@ ) = Typed.Infix.( -!!@ )
+      let add = Typed.Infix.( +!!@ )
+      let sub = Typed.Infix.( -!!@ )
 
-      let in_bound (v : sint Typed.t) : sbool Typed.t =
+      let is_in_bound (v : t Typed.t) : T.sbool Typed.t =
         let max = Layout.max_value_z (TInt Isize) in
         let max = Typed.BitVec.usize max in
-        v >=@ zero () &&@ (v <=@ max)
+        v <=@ max
     end
 
     type qty = Totally | Partially [@@deriving show { with_path = false }]
@@ -143,6 +145,15 @@ module Make (Sptr : Sptr.S) = struct
       | Lazy | Uninit Partially ->
           failwith "Should never split an intermediate node"
 
+    let mk_fix_typed ty () =
+      let+^ v = Encoder.nondet_valid ty in
+      (* we're basically guaranteed this won't error (ie. layout error) by now,
+         so we can safely unwrap. *)
+      let v = get_ok v in
+      [ Init (Rust_val.to_syn Sptr.to_syn v) ]
+
+    let mk_fix_any () = [ Any ]
+
     type tree = (t, T.sint Typed.t) TB.tree
 
     let not_owned (t : tree) : tree =
@@ -212,12 +223,15 @@ module Make (Sptr : Sptr.S) = struct
             failwith "Iterating over an intermediate node?")
 
   let decode_mem_val ~ty = function
-    | Init value -> Encoder.transmute_one ~to_ty:ty value
+    | Init value ->
+        let+ res = Encoder.transmute_one ~to_ty:ty value in
+        Ok res
     | Zeros ->
         let**^ size = Layout.size_of ty in
         let* size = sint_to_int size in
         let zero = BV.zero (size * 8) in
-        Encoder.transmute_one ~to_ty:ty (Int zero)
+        let+ res = Encoder.transmute_one ~to_ty:ty (Int zero) in
+        Ok res
     | Uninit _ -> Result.error `UninitializedMemoryAccess
     | Any ->
         (* We don't know if this read is valid, as memory could be
@@ -244,7 +258,8 @@ module Make (Sptr : Sptr.S) = struct
     match List.rev leaves with
     | hd :: tl ->
         let bv = List.fold_left BV.concat hd tl in
-        Encoder.transmute_one ~to_ty:ty (Int bv)
+        let+ res = Encoder.transmute_one ~to_ty:ty (Int bv) in
+        Ok res
     | _ -> failwith "Impossible"
 
   let decode_tree ~ty (t : Tree.t) =
@@ -258,35 +273,48 @@ module Make (Sptr : Sptr.S) = struct
 
   let zeros range tb : Tree.t = Tree.make ~node:(Owned (Zeros, tb)) ~range ()
 
-  let as_owned t f =
-    match t.node with
-    | NotOwned _ -> miss_no_fix ~reason:"as_owned" ()
-    | Owned (v, tb) -> f (v, tb)
+  let mk_fix_typed ofs ty () =
+    let*^ len = Layout.size_of ty in
+    let len = get_ok len in
+    let+ fixes = mk_fix_typed ty () in
+    List.map
+      (fun v ->
+        [ MemVal { offset = Expr.of_value ofs; len = Expr.of_value len; v } ])
+      fixes
+
+  let mk_fix_any ofs len () =
+    [
+      [
+        MemVal { offset = Expr.of_value ofs; len = Expr.of_value len; v = Any };
+      ];
+    ]
+
+  let mk_fix_any_s ofs len () = return (mk_fix_any ofs len ())
+
+  let as_owned ?mk_fixes t f =
+    match (t.node, mk_fixes) with
+    | Owned (v, tb), _ -> f (v, tb)
+    | NotOwned _, None -> miss_no_fix ~reason:"as_owned" ()
+    | NotOwned _, Some mk_fixes ->
+        let+ fixes = mk_fixes () in
+        Missing fixes
 
   let check_owned (ofs : [< T.sint ] Typed.t) (size : [< T.nonzero ] Typed.t) =
     let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
     with_bound_check bound (fun t -> DecayMapMonad.Result.ok ((), t))
+
+  (* Memory operations *)
 
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
       (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) =
     let open SM.Syntax in
     let** size = lift_symex @@ Layout.size_of ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    let mk_fixes () =
-      let open DecayMapMonad.Syntax in
-      let+^ v = Encoder.nondet ty in
-      (* we're basically guaranteed this won't error (ie. layout error) by now,
-         so we can safely unwrap. *)
-      let v = Rust_val.to_syn Sptr.to_syn (get_ok v) in
-      let v = MemVal.Init v in
-      let offset = Expr.of_value ofs in
-      let len = Expr.of_value size in
-      [ [ MemVal { offset; len; v } ] ]
-    in
+    let mk_fixes = mk_fix_typed ofs ty in
     with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
-          let@ v, tb_st = as_owned t in
+          let@ v, tb_st = as_owned ~mk_fixes t in
           let++^ tb_st' =
             match (ignore_borrow, tag) with
             | false, Some tag -> Tree_borrow.access tag Read tb tb_st
@@ -307,10 +335,11 @@ module Make (Sptr : Sptr.S) = struct
     let open SM.Syntax in
     let** size = lift_symex @@ Value_codec.size_of value in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
+    let mk_fixes = mk_fix_any_s ofs size in
+    with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
-          let@ _, tb_st = as_owned t in
+          let@ _, tb_st = as_owned ~mk_fixes t in
           let++^ tb_st' =
             match tag with
             | Some tag -> Tree_borrow.access tag Write tb tb_st
@@ -346,10 +375,11 @@ module Make (Sptr : Sptr.S) = struct
   let uninit_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
       (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
+    let mk_fixes = mk_fix_any_s ofs size in
+    with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
-          let@ _ = as_owned t in
+          let@ _ = as_owned ~mk_fixes t in
           Tree.map_leaves t @@ fun tt ->
           match tt.node with
           | Owned (_, tb) -> Result.ok (uninit tt.range tb)
@@ -364,10 +394,11 @@ module Make (Sptr : Sptr.S) = struct
   let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
       (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
+    let mk_fixes = mk_fix_any_s ofs size in
+    with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
-          let@ _, tb = as_owned t in
+          let@ _, tb = as_owned ~mk_fixes t in
           (* Is there something to do with the tree borrow here? *)
           Result.ok @@ zeros range tb
         in
@@ -377,19 +408,21 @@ module Make (Sptr : Sptr.S) = struct
         in
         ((), tree))
 
+  let alloc ?(zeroed = false) size =
+    let st = if zeroed then Zeros else Uninit Totally in
+    alloc (st, Tree_borrow.empty_state) size
+
   (* Tree borrow updates *)
 
-  let protect ofs size tag tb =
+  let with_tb_access (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) f
+      =
+    (* TODO: figure out [mk_fixes] for tree borrows state! *)
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     with_bound_check bound (fun t ->
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ v, tb_st = as_owned t in
-          (* We need to do two things: protect this tag for the block, and
-             perform a read, as all function calls perform one on the
-             parameters. *)
-          let tb_st' = Tree_borrow.set_protector ~protected:true tag tb tb_st in
-          let++^ tb_st' = Tree_borrow.access tag Read tb tb_st' in
+          let++^ tb_st' = f tb_st in
           { t with node = Owned (v, tb_st') }
         in
         let rebuild_parent = Tree.of_children in
@@ -398,48 +431,20 @@ module Make (Sptr : Sptr.S) = struct
         in
         ((), tree))
 
+  let protect ofs size tag tb =
+    with_tb_access ofs size (fun tb_st ->
+        (* We need to do two things: protect this tag for the block, and perform
+           a read, as all function calls perform one on the parameters. *)
+        Tree_borrow.set_protector ~protected:true tag tb tb_st
+        |> Tree_borrow.access tag Read tb)
+
   let unprotect ofs size tag tb =
-    let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
-        let open DecayMapMonad.Syntax in
-        let replace_node t =
-          let@ v, tb_st = as_owned t in
-          (* We need to do two things: protect this tag for the block, and
-             perform a read, as all function calls perform one on the
-             parameters. *)
-          let tb_st' =
-            Tree_borrow.set_protector ~protected:false tag tb tb_st
-          in
-          Result.ok { t with node = Owned (v, tb_st') }
-        in
-        let rebuild_parent = Tree.of_children in
-        let++ _, tree =
-          Tree.frame_range t ~replace_node ~rebuild_parent range
-        in
-        ((), tree))
+    with_tb_access ofs size (fun tb_st ->
+        Rustsymex.Result.ok
+        @@ Tree_borrow.set_protector ~protected:false tag tb tb_st)
 
   let tb_access (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
       (tag : Tree_borrow.tag) (tb : Tree_borrow.t) :
       (unit, 'err, 'fix) SM.Result.t =
-    let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    with_bound_check bound (fun t ->
-        let open DecayMapMonad.Syntax in
-        let replace_node t =
-          let@ _ = as_owned t in
-          Tree.map_leaves t @@ fun tt ->
-          match tt.node with
-          | Owned (v, tb_st) ->
-              let++^ tb_st' = Tree_borrow.access tag Read tb tb_st in
-              { tt with node = Owned (v, tb_st') }
-          | _ -> assert false
-        in
-        let rebuild_parent = Tree.with_children in
-        let++ _, tree =
-          Tree.frame_range t ~replace_node ~rebuild_parent range
-        in
-        ((), tree))
-
-  let alloc ?(zeroed = false) size =
-    let st = if zeroed then Zeros else Uninit Totally in
-    alloc (st, Tree_borrow.empty_state) size
+    with_tb_access ofs size (Tree_borrow.access tag Read tb)
 end

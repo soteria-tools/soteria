@@ -28,15 +28,20 @@ module StateKey = struct
   let pp = ppa
   let show = Fmt.to_to_string pp
   let to_int = unique_tag
-  let i = ref 0
-  let distinct _ = v_true
+  let concrete_loc = ref 0
   let simplify = DecayMapMonad.simplify
 
+  let distinct vs =
+    match Config.get_mode () with
+    | Compositional -> distinct vs
+    | Whole_program -> v_true
+
   let fresh () =
-    incr i;
-    DecayMapMonad.return @@ Ptr.loc_of_int !i
-  (* The above only works in WPST -- otherwise, use:
-   * let fresh () = nondet (Typed.t_sloc ()) *)
+    match Config.get_mode () with
+    | Compositional -> DecayMapMonad.nondet (Typed.t_loc ())
+    | Whole_program ->
+        incr concrete_loc;
+        DecayMapMonad.return (Ptr.loc_of_int !concrete_loc)
 end
 
 module Freeable = Soteria.Sym_states.Freeable.Make (DecayMapMonad)
@@ -69,6 +74,7 @@ module FunBiMap = struct
 
         let compare = Typed.compare
         let pp = Typed.ppa
+        let show = Fmt.to_to_string pp
       end)
       (Fun_kind)
 
@@ -102,10 +108,11 @@ module Block = struct
         type nonrec t = t option
       end)
 
-  open SM.Syntax
+  open SM
+  open Syntax
 
   let with_tree_block (f : ('a, 'err, 'fix) Tree_block.SM.Result.t) :
-      ('a, 'err, 'fix) SM.Result.t =
+      ('a, 'err, 'fix) Result.t =
     let* t_opt = SM.get_state () in
     let tree, tb = of_opt t_opt in
     let*^ v, tree = f tree in
@@ -124,8 +131,6 @@ module Block = struct
   (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
       being reborrowed. *)
   let borrow ?(protect = false) ((ptr : Sptr.t), meta) (ty : Types.ty) ofs =
-    let open SM in
-    let open SM.Syntax in
     let pointee = Charon_util.get_pointee ty in
     let state =
       match (ty, Layout.is_unsafe_cell pointee) with
@@ -168,8 +173,6 @@ module Block = struct
         | Missing f -> Result.miss f
 
   let unprotect ofs tag size =
-    let open SM in
-    let open SM.Syntax in
     let* t_opt = SM.get_state () in
     let block, tb = of_opt t_opt in
     let tb' = Tree_borrow.unprotect tag tb in
@@ -224,9 +227,7 @@ module Heap = struct
     let open SM in
     let open SM.Syntax in
     let** () =
-      assert_or_error
-        Typed.(not (Sptr.sem_eq ptr (Sptr.null_ptr ())))
-        `NullDereference
+      assert_or_error Typed.(not (Typed.Ptr.is_null ptr.ptr)) `NullDereference
     in
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     let* res =
@@ -265,15 +266,14 @@ module Heap = struct
       end)
 end
 
-type syn = Heap.syn [@@deriving show { with_path = false }]
+type syn = Heap of Heap.syn [@@deriving show { with_path = false }]
 
 type t = {
   heap : Heap.t option;
   functions : FunBiMap.t;
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
   errors : Error.with_trace list;
-      [@printer Fmt.list Error.pp_err_and_call_trace]
-  pointers : DecayMap.t option;
+  pointers : DecayMap.t;
   thread_destructor :
     unit ->
     t option ->
@@ -318,7 +318,7 @@ let empty_state =
     functions = FunBiMap.empty;
     globals = GlobMap.empty;
     errors = [];
-    pointers = None;
+    pointers = DecayMap.empty;
     thread_destructor = (fun () -> SM.Result.ok ());
     const_generics = Types.ConstGenericVarId.Map.empty;
   }
@@ -348,7 +348,7 @@ let[@inline] with_loc_err ?trace:msg ()
   Error.log_at trace err;
   Error (Error.decorate trace err)
 
-let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
+let with_heap_symex (f : 'a Heap.SM.t) : 'a SM.t =
   let* st = SM.get_state () in
   let st = of_opt st in
   let*^ (res, heap), pointers =
@@ -356,6 +356,11 @@ let with_heap (f : ('a, 'b, 'c) Heap.SM.Result.t) : ('a, 'b, 'c) Result.t =
   in
   let+ () = SM.set_state (Some { st with heap; pointers }) in
   res
+
+let with_heap (f : ('a, 'b, Heap.syn list) Heap.SM.Result.t) :
+    ('a, 'b, syn list) Result.t =
+  SM.Result.map_missing (with_heap_symex f) (fun fix ->
+      List.map (fun h -> Heap h) fix)
 
 let apply_parser (type a) ?(ignore_borrow = false) ptr
     (parser : offset:T.sint Typed.t -> a Heap.Decoder.ParserMonad.t) :
@@ -403,12 +408,8 @@ and check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   L.debug (fun m ->
       m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
         Typed.ppa exp_align Common.Charon_util.pp_ty ty);
-  (* 0-based pointers are aligned up to their offset *)
-  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-  let align = Typed.ite (Typed.Ptr.is_null_loc loc) exp_align ptr.align in
-  assert_or_error
-    (Sptr.is_aligned exp_align ptr)
-    (`MisalignedPointer (exp_align, align, ofs))
+  let aligned, err = Sptr.is_aligned exp_align ptr in
+  assert_or_error aligned err
 
 and check_non_dangling ((ptr : Sptr.t), meta) (ty : Types.ty) =
   let** size, _ = size_and_align_of_val ty meta in
@@ -429,10 +430,14 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
   L.debug (fun f ->
       f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
   let check_ref =
-    if (Config.get ()).recursive_validity <> Allow && check_refs then fake_read
+    if (Config.get ()).recursive_validity <> Allow && check_refs then
+      fun ptr ty ->
+      (* we still need to check it's non-dangling! *)
+      let** () = check_non_dangling ptr ty in
+      fake_read ptr ty
     else check_non_dangling
   in
-  let++ () = Encoder.check_valid ~check_ref value ty in
+  let++ () = Encoder.check_validity ~check_ref ty value in
   value
 
 and load_discriminant ((ptr, _) as fptr) ty =
@@ -443,25 +448,21 @@ and load_discriminant ((ptr, _) as fptr) ty =
 (** Performs a side-effect free ghost read -- this does not modify the state or
     the tree-borrow state. Returns [Some error] if an error occurred, and [None]
     otherwise. Will wrap whatever error happened in [`InvalidRef]. *)
-(* We can't return a [Rustsymex.Result.t] here, because it's used in [load]
-   which expects a [Tree_block.syn list] for the [Missing] case, while the
-   external signature expects a [syn]. This could be fixed by lifting all misses
-   individually inside [handler] and [get_all] in [apply_parser], but that's
-   kind of a mess to change and not really worth it I believe; I don't think
-   these misses matter at all (TBD). *)
 and fake_read ((ptr, meta) as fptr) ty =
   let open Syntax in
-  let is_uncheckable_dst =
-    match meta with
-    | Thin -> false
-    | Len l ->
+  let skip_check =
+    match (meta, (Config.get ()).recursive_validity) with
+    | _, Allow -> true
+    | _, Warn when Config.get_mode () = Compositional -> true
+    | Thin, _ -> false
+    | Len l, _ ->
         (* TODO: we don't support symbolic slices *)
         Option.is_none (Typed.BitVec.to_z l)
-    | VTable _ ->
+    | VTable _, _ ->
         (* FIXME: i am not certain how one checks for the validity of a &dyn *)
         true
   in
-  if is_uncheckable_dst then Result.ok ()
+  if skip_check then Result.ok ()
   else (
     L.debug (fun m ->
         m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) fptr
@@ -471,14 +472,14 @@ and fake_read ((ptr, meta) as fptr) ty =
       ()
     in
     match (Config.get ()).recursive_validity with
+    | Allow -> failwith "Unreachable, handled above"
     | Deny -> Result.error (`InvalidRef err)
     | Warn ->
         let*^ trace = get_trace () in
         let err = Error.decorate trace (`InvalidRef err) in
         let loc = Typed.Ptr.loc ptr.ptr in
         Error.Diagnostic.warn_trace_once ~reason:(InvalidReference loc) err;
-        Result.ok ()
-    | Allow -> Result.ok ())
+        Result.ok ())
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
@@ -549,7 +550,7 @@ let fake_read ptr ty =
   let@ () = with_loc_err ~trace:"Fake read" () in
   fake_read ptr ty
 
-let copy_nonoverlapping ~dst:(dst, _) ~src:(src, _) ~size :
+let copy_nonoverlapping ~src:(src, _) ~dst:(dst, _) ~size :
     (unit, Error.with_trace, syn list) Result.t =
   let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
   let** tree_to_write =
@@ -665,13 +666,19 @@ let free ((ptr : Sptr.t), _) =
   let** () = tb_load_untyped ptr ptr.size in
   (* Freeing also requires there to be no strong protectors in the tree. See:
      https://github.com/minirust/minirust/blob/master/spec/mem/tree_borrows/memory.md *)
-  let** () =
-    with_ptr ptr (fun _ ->
-        Block.with_tree_block_read_tb (fun tb ->
-            if Tree_borrow.strong_protector_exists tb then
-              Tree_block.SM.Result.error `InvalidFreeStrongProtector
-            else Tree_block.SM.Result.ok ()))
-  in
+
+  (* FIXME: this currently causes errors in LinkedList? Unsure why, would
+     required a length investigation... minimal repro:
+     LinkedList::from([42]).pop_back() *)
+
+  (* let** () =
+   *   with_ptr ptr (fun _ ->
+   *       Block.with_tree_block_read_tb (fun tb ->
+   *           L.warn (fun m -> m "%a" Tree_borrow.pp tb);
+   *           if Tree_borrow.strong_protector_exists tb then
+   *             Tree_block.SM.Result.error `InvalidFreeStrongProtector
+   *           else Tree_block.SM.Result.ok ()))
+   * in *)
   L.debug (fun m -> m "Freeing pointer %a" Sptr.pp ptr);
   with_heap
     (Heap.wrap loc (Freeable_block_with_meta.wrap (Freeable_block.free ())))
@@ -748,7 +755,10 @@ let with_exposed addr =
                Heap.wrap loc @@ Freeable_block_with_meta.SM.Result.get_state ()
              in
              match (block : Freeable_block_with_meta.t option) with
-             | None | Some { info = None; _ } -> Result.miss []
+             | None | Some { info = None; _ } ->
+                 Result.miss_no_fix ()
+                   ~reason:
+                     "Get a pointer from exposed with no matching allocation?"
              | Some { info = Some { size; align; _ }; _ } ->
                  let ptr : Sptr.t = { ptr; tag = None; align; size } in
                  Result.ok (ptr, Thin)))
@@ -889,7 +899,7 @@ let lookup_const_generic id ty =
   match Types.ConstGenericVarId.Map.find_opt id st.const_generics with
   | Some v -> Result.ok v
   | None ->
-      let**^ v = Encoder.nondet ty in
+      let**^ v = Encoder.nondet_valid ty in
       let const_generics =
         Types.ConstGenericVarId.Map.add id v st.const_generics
       in
@@ -910,7 +920,9 @@ let run_thread_exits () =
   let st = of_opt st_opt in
   st.thread_destructor () st_opt
 
-let to_syn { heap; _ } = Heap.of_opt heap |> Heap.to_syn
-let ins_outs r = Heap.ins_outs r
+let to_syn { heap; _ } =
+  Heap.of_opt heap |> Heap.to_syn |> List.map (fun h -> Heap h)
+
+let ins_outs (Heap r) = Heap.ins_outs r
 let produce _ _ = failwith "TODO: Tree_state.produce"
 let consume _ _ = failwith "TODO: Tree_state.consume"

@@ -48,20 +48,11 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   $ soteria-rust exec unwind.rs --ignore-leaks
   Compiling... done in <time>
   => Running main...
-  error: main: found issues in <time>, errors in 1 branch (out of 2)
-  error: Failed assertion: assertion failed: result.is_err() in main
-      ┌─ $TESTCASE_ROOT/unwind.rs:9:9
-    1 │  fn main() {
-      │  --------- 1: Entry point
-      ·  
-    9 │          assert!(result.is_err());
-      │          ^^^^^^^^^^^^^^^^^^^^^^^^
-      │          │
-      │          Triggering operation
-      │          2: Call trace
-  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
+  note: main: done in <time>, ran 2 branches
+  PC 1: (V|1| == 0x01) /\ (0x0000000000000001 <=u V|2|) /\
+        (V|2| <=u 0x7ffffffffffffffd) /\ (V|1| == 0x01)
+  PC 2: (0x00 == V|1|) /\ (0x00 == V|1|)
   
-  [1]
 Test that we properly handle the niche optimisation
   $ soteria-rust exec niche_optim.rs --ignore-leaks
   Compiling... done in <time>
@@ -107,17 +98,17 @@ Test function calls on function pointers
 Check strict provenance disables int to ptr casts
   $ soteria-rust exec provenance.rs --provenance strict
   Compiling... done in <time>
-  => Running main...
-  error: main: found issues in <time>, errors in 1 branch (out of 1)
-  bug: Attempted to cast an integer to an pointer with strict provenance in main
+  => Running with_exposed...
+  error: with_exposed: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Attempted to cast an integer to an pointer with strict provenance in with_exposed
       ┌─ $RUSTLIB/src/rust/library/core/src/ptr/mod.rs:986:5
   986 │      addr as *const T
       │      ^^^^^^^^^^^^^^^^ Casting integer to pointer
-      ┌─ $TESTCASE_ROOT/provenance.rs:5:18
-    1 │  fn main() {
-      │  --------- 1: Entry point
+      ┌─ $TESTCASE_ROOT/provenance.rs:6:18
+    2 │  fn with_exposed() {
+      │  ----------------- 1: Entry point
       ·  
-    5 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
+    6 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
       │                   ---------------------------------------------- 2: Call trace
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
@@ -126,18 +117,10 @@ Check strict provenance disables int to ptr casts
 Check permissive provenance allows int to ptr casts
   $ soteria-rust exec provenance.rs --provenance permissive
   Compiling... done in <time>
-  => Running main...
-  error: main: found issues in <time>, errors in 1 branch (out of 1)
-  bug: Dangling pointer in main
-      ┌─ $TESTCASE_ROOT/provenance.rs:7:9
-    1 │  fn main() {
-      │  --------- 1: Entry point
-      ·  
-    7 │          *p_back = 1;
-      │          ^^^^^^^^^^^ Memory store
+  => Running with_exposed...
+  note: with_exposed: done in <time>, ran 1 branch
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
-  [1]
 
 Check corner cases with permissive provenance, around transmutes
   $ soteria-rust exec provenance_transmute.rs --provenance permissive

@@ -92,13 +92,13 @@ struct
         match st with
         | None -> miss [ [ Freed ] ]
         | Some Freed -> ok None
-        | Some (Alive _) -> lfail (Value.bool false))
+        | Some (Alive _) -> lfail (Value.of_bool false))
     | Alive ser -> (
         let* ist =
           match st with
           | None -> ok None
           | Some (Alive ist) -> ok (Some ist)
-          | Some Freed -> lfail (Value.bool false)
+          | Some Freed -> lfail (Value.of_bool false)
         in
         let+ ist = lift_fix_c (I.consume ser ist) in
         match ist with Some ist -> Some (Alive ist) | None -> None)

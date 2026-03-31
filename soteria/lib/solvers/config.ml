@@ -1,11 +1,17 @@
 type t = {
   solver_timeout : int option;
-      [@names [ "solver-timeout" ]] [@env "SOTERIA_SOLVER_TIMEOUT"]
+      [@docs "SOLVER OPTIONS"]
+      [@names [ "solver-timeout" ]]
+      [@env "SOTERIA_SOLVER_TIMEOUT"]
       (** Set the solver timeout in miliseconds*)
-  dump_smt_file : string option; [@names [ "dump-smt"; "dump-smt-to" ]]
+  dump_smt_file : string option;
+      [@docs "SOLVER OPTIONS"] [@names [ "dump-smt"; "dump-smt-to" ]]
       (** Dump the SMT queries to the given file*)
   z3_path : string;
-      [@default "z3"] [@names [ "z3-path" ]] [@env "SOTERIA_Z3_PATH"]
+      [@docs "SOLVER OPTIONS"]
+      [@default "z3"]
+      [@names [ "z3-path" ]]
+      [@env "SOTERIA_Z3_PATH"]
       (** Path to the Z3 executable *)
 }
 [@@deriving make, subliner]

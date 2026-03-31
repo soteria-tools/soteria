@@ -28,7 +28,7 @@ let rec eval_pure_expr (subst : subst) expr : (S_val.t, 'err, 'a) Symex.Result.t
     =
   match expr with
   | Pure_expr.Int n -> Result.ok (S_val.int n)
-  | Bool b -> Result.ok (S_val.bool b)
+  | Bool b -> Result.ok (S_val.of_bool b)
   | Var x -> Result.ok (String_map.find x subst)
   | NondetInt ->
       let* v = Symex.nondet S_val.t_int in

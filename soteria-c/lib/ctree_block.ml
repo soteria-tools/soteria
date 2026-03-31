@@ -1,34 +1,35 @@
 open Soteria.Symex.Compo_res
 open Csymex.Syntax
 open Typed
-open Typed.Syntax
 open Csymex
 open Csymex.Result
 module Ctype = Cerb_frontend.Ctype
 
 module MemVal = struct
   module TB = Soteria.Sym_states.Tree_block
+  module S_bool = Typed.Bool
 
-  module SBoundedInt = struct
+  module S_bounded_int = struct
     include Typed
+    include Typed.BitVec
 
-    type sint = T.sint
-    type sbool = T.sbool
+    type t = T.sint
 
-    let zero () = Usize.(0s)
-    let ( <@ ) = Typed.Infix.( <$@ )
-    let ( <=@ ) = Typed.Infix.( <=$@ )
-    let ( ==@ ) = Typed.Infix.( ==@ )
-    let ( &&@ ) = Typed.Infix.( &&@ )
+    let of_z = Typed.BitVec.usize
+    let zero () = of_z Z.zero
+    let one () = of_z Z.one
+    let lt = Typed.Infix.( <$@ )
+    let leq = Typed.Infix.( <=$@ )
 
     (* We assume addition/overflow within the range of an allocation may never
        overflow. This allows extremely good reductions around inequalities,
        which Tree_block relies on. *)
-    let ( +@ ) = Typed.Infix.( +!!@ )
-    let ( -@ ) = Typed.Infix.( -!!@ )
+    let add = Typed.Infix.( +!!@ )
+    let sub = Typed.Infix.( -!!@ )
 
-    let in_bound (v : sint Typed.t) : sbool Typed.t =
-      zero () <=@ v &&@ (v <=@ Typed.BitVec.isize_max)
+    let is_in_bound (v : t Typed.t) : sbool Typed.t =
+      let open Typed.Infix in
+      v <=@ Typed.BitVec.isize_max
   end
 
   let pp_init ft (v, ty) =

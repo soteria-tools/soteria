@@ -166,9 +166,9 @@ module type S = sig
       from_ty:Values.literal_type ->
       to_ty:Values.literal_type ->
       [< Typed.T.cval ] Typed.t ->
-      (rust_val, 'env) monad
+      rust_val
 
-    val nondet : Types.ty -> (rust_val, 'env) monad
+    val nondet_valid : Types.ty -> (rust_val, 'env) monad
     val apply_attributes : rust_val -> Meta.attribute list -> (unit, 'env) monad
 
     val ref_tys_in :
@@ -377,15 +377,6 @@ module Make (State : State_intf.S) :
     let+ res, _ = f env in
     (res, old_env)
 
-  let[@inline] with_decay_map_res
-      (f : ('a, Error.t, syn list) Sptr.DecayMapMonad.Result.t) : ('a, 'env) t =
-    ESM.lift
-      (let open State.SM.Syntax in
-       let*- err = State.with_decay_map f in
-       let+^ trace = get_trace () in
-       Error.log_at trace err;
-       Compo_res.Error (Error.decorate trace err))
-
   let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
     ESM.lift (State.SM.map (State.with_decay_map f) Compo_res.ok)
 
@@ -457,11 +448,7 @@ module Make (State : State_intf.S) :
     include Value_codec.Encoder (State.Sptr)
 
     let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
-
-    let[@inline] cast_literal ~from_ty ~to_ty cval =
-      with_decay_map_res (cast_literal ~from_ty ~to_ty cval)
-
-    let[@inline] nondet ty = lift_err (nondet ty)
+    let[@inline] nondet_valid ty = lift_err (nondet_valid ty)
     let[@inline] apply_attributes v attrs = lift_err (apply_attributes v attrs)
 
     (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
@@ -526,15 +513,7 @@ module Make (State : State_intf.S) :
       ESM.lift (lookup_const_generic id ty)
 
     let[@inline] add_error e = ESM.lift (add_error e)
-
-    (** pop_error always errors, so the result type 'a is polymorphic. We need
-        to coerce the unit result to 'a since it never succeeds. *)
-    let[@inline] pop_error () : ('a, 'env) monad =
-     fun env ->
-      let open SM.Syntax in
-      let+ res = pop_error () in
-      (res, env)
-
+    let[@inline] pop_error () : ('a, 'env) monad = ESM.lift (pop_error ())
     let[@inline] leak_check () = ESM.lift (leak_check ())
 
     let[@inline] register_thread_exit (f : unit -> (unit, unit) monad) =

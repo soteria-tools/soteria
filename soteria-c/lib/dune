@@ -1,8 +1,8 @@
 (include_subdirs qualified)
 
 (library
- (package soteria-c)
  (name soteria_c_lib)
+ (public_name soteria-c)
  (libraries
   soteria
   cmdliner

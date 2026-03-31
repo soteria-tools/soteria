@@ -1,19 +1,5 @@
 open Symex
-
-module type MapS = sig
-  type key
-  type 'a t
-
-  val empty : 'a t
-  val is_empty : 'a t -> bool
-  val add : key -> 'a -> 'a t -> 'a t
-  val add_seq : (key * 'a) Seq.t -> 'a t -> 'a t
-  val update : key -> ('a option -> 'a option) -> 'a t -> 'a t
-  val mem : key -> 'a t -> bool
-  val find_opt : key -> 'a t -> 'a option
-  val iter : (key -> 'a -> unit) -> 'a t -> unit
-  val to_seq : 'a t -> (key * 'a) Seq.t
-end
+open Data
 
 module Ckey (K : sig
   type t
@@ -24,16 +10,9 @@ struct
 end
 
 module Key (Symex : Symex.Base) = struct
-  open Symex
-  module Data = Data.M (Symex)
-
   module type S = sig
-    include Soteria_std.Ordered_type.S
-    include Data.Abstr_with_syn with type t := t
-    include Data.Sem_eq with type t := t
-    include Data.Simplifiable with type t := t
-
-    val distinct : t list -> Value.(sbool t)
+    include S_map.Key(Symex).S
+    include Abstr.M(Symex).S_with_syn with type t := t
   end
 
   module type S_patricia_tree = sig
@@ -73,8 +52,8 @@ struct
     val syntactic_mem : Key.t -> t -> bool
 
     val pp' :
-      ?key:(Format.formatter -> Key.t -> unit) ->
       ?codom:(Format.formatter -> codom -> unit) ->
+      ?key:(Format.formatter -> Key.t -> unit) ->
       ?ignore:(Key.t * codom -> bool) ->
       Format.formatter ->
       t ->

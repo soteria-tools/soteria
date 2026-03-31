@@ -6,25 +6,31 @@ import math
 import time
 from io import TextIOWrapper
 from pathlib import Path
-from typing import assert_never
+from typing import Sequence, Union, assert_never
 
 from cliopts import (
     ArgError,
     CliOpts,
-    SuiteName,
     opts_for_kani,
     opts_for_miri,
-    opts_for_rusteria,
+    opts_for_soteria,
     parse_flags,
 )
 from common import *
-from config import TEST_SUITES, TestConfig, filter_tests
+from config import (
+    TEST_SUITES,
+    TestConfig,
+    determine_failure_expect,
+    filter_tests,
+)
 from parselog import (
     LogCategorisation_,
     TestCategoriser,
     parse_per_test,
 )
-from test_exclusions import KNOWN_ISSUES, SKIPPED_TESTS
+from test_exclusions import KNOWN_ISSUES
+
+OUTPUT_DIR = get_env_path_or("OUTPUT_DIR", PWD / "output")
 
 
 # Execute a test, return the categorisation and the elapsed time
@@ -39,12 +45,16 @@ def exec_test(
     timeout: Optional[int] = None,
     cwd: Optional[Path] = None,
 ) -> tuple[LogCategorisation_, float]:
-    expect_failure = determine_failure_expect(str(file))
+    expect_failure = False
+    if file is not None:
+        expect_failure = determine_failure_expect(str(file.resolve()))
     if test_conf and file and test_conf["dyn_flags"]:
         cmd = cmd + test_conf["dyn_flags"](file)
 
     if log:
-        log.write(f"[TEST] Running {file} - {datetime.datetime.now()}:\n")
+        log.write(
+            f"[TEST] Running {' '.join(cmd)} {file or ''} - {datetime.datetime.now()}:\n"
+        )
 
     before = time.time()
 
@@ -63,7 +73,7 @@ def exec_test(
         # Kani tends to leave a kani-compiler process behind
         if tool == "Kani":
             subprocess.run(["pkill", "-f", "kani-compiler"])
-        if tool == "Rusteria":
+        if tool == "Soteria":
             subprocess.run(["pkill", "-f", "z3"])
 
         return ((Outcome.TIME_OUT, None), timeout or 0)
@@ -88,9 +98,9 @@ def build():
     if _built:
         return
     _built = True
-    pprint(f"Building {BOLD}Rusteria{RESET} ... ", flush=True, end="")
+    pprint(f"Building {BOLD}Soteria{RESET} ... ", flush=True, end="")
     before = time.time()
-    build_rusteria()
+    build_soteria()
     elapsed = time.time() - before
     print(f"took {BOLD}{elapsed:.3f}s{RESET}")
 
@@ -100,7 +110,7 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
     cmd = opts["tool_cmd"] + test_conf["args"]
     tests = test_conf["tests"]
 
-    log = PWD / f"{test_conf['name'].lower()}.log"
+    log = OUTPUT_DIR / f"{test_conf['name'].lower()}.log"
     log.touch()
     log.write_text(f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n")
     pprint(f"{BOLD}Running {len(tests)} tests{RESET}")
@@ -112,59 +122,45 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
     oks = 0
     errs = 0
     tool_errs = 0
-    before = time.time()
+    results: dict[Path, tuple[Outcome, Optional[str]]] = {}
+    total_elapsed = 0
     with log.open("a") as logfile:
         for path in tests:
             relative = path.relative_to(test_conf["root"])
             pprint(f"Running {relative} ... ", end="", flush=True)
 
-            if str(relative) in SKIPPED_TESTS and not opts["no_skips"]:
-                (outcome, reason) = SKIPPED_TESTS[str(relative)]
-                msg = "" if reason is None else f": {BOLD}{reason}{RESET}"
-                print(f"{outcome} {YELLOW}✦{RESET} {GRAY}{BOLD}Skipped{RESET}{msg}")
-            else:
-                try:
-                    (outcome, reason), elapsed = exec_test(
-                        path,
-                        cmd=cmd,
-                        log=logfile,
-                        tool=opts["tool"],
-                        categoriser=opts["categorise"],
-                        test_conf=test_conf,
-                        timeout=opts["timeout"],
-                    )
-                except KeyboardInterrupt as e:
-                    interrupts += 1
-                    print(
-                        f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
-                    )
-                    if interrupts >= 3:
-                        raise e
-                    continue
+            try:
+                (outcome, reason), elapsed = exec_test(
+                    path,
+                    cmd=cmd,
+                    log=logfile,
+                    tool=opts["tool"],
+                    categoriser=opts["categorise"],
+                    test_conf=test_conf,
+                    timeout=opts["timeout"],
+                )
+                results[relative] = (outcome, reason)
+            except KeyboardInterrupt as e:
+                results[relative] = (Outcome.TIME_OUT, "User interrupt")
+                interrupts += 1
+                print(
+                    f" {ORANGE}✷{RESET} {BOLD}User interrupted{RESET} ({interrupts}/3)"
+                )
+                if interrupts >= 3:
+                    raise e
+                continue
 
-                txt = f"{outcome} in {elapsed:.3f}s"
-                if elapsed > 1:
-                    txt += " 🐌"
-                if not outcome.is_expected() and reason:
-                    txt += f" ({GRAY}{reason}{RESET})"
-                if issue := dict_get_suffix(KNOWN_ISSUES, str(relative)):
-                    txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
-                    if outcome.is_pass():
-                        end_msgs.append(f'Fixed {relative}, for "{BOLD}{issue}{RESET}"')
-                if issue := dict_get_suffix(SKIPPED_TESTS, str(relative)):
-                    _, issue = issue
-                    txt += f" {YELLOW}✦{RESET} {BOLD}(not skipped){RESET}"
-                    if not outcome.is_timeout():
-                        end_msgs.append(
-                            f"Fixed timeout {relative} ({elapsed:.3f}s)"
-                            + (
-                                f", for {BOLD}{issue}{RESET}"
-                                if issue is not None
-                                else ""
-                            )
-                        )
-
-                print(txt)
+            total_elapsed += elapsed
+            txt = f"{outcome} in {elapsed:.3f}s"
+            if elapsed > 1:
+                txt += " 🐌"
+            if not outcome.is_expected() and reason:
+                txt += f" ({GRAY}{reason}{RESET})"
+            if issue := dict_get_suffix(KNOWN_ISSUES, str(relative)):
+                txt += f" {YELLOW}✦{RESET} {BOLD}{issue}{RESET}"
+                if outcome.is_pass():
+                    end_msgs.append(f'Fixed {relative}, for "{BOLD}{issue}{RESET}"')
+            print(txt)
 
             if outcome.is_pass():
                 oks += 1
@@ -172,14 +168,21 @@ def exec_tests(opts: CliOpts, test_conf: TestConfig):
                 errs += 1
             elif outcome.is_tool():
                 tool_errs += 1
-    elapsed = time.time() - before
     pprint(
-        f"{BOLD}Finished in {elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)} ({PURPLE}{tool_errs}{RESET})",
+        f"{BOLD}Finished in {total_elapsed:.3f}s{RESET}: {GREEN}{oks}{RESET}/{RED}{errs}{RESET}/{len(tests)} ({PURPLE}{tool_errs}{RESET})",
     )
     if len(end_msgs) > 0:
         pprint(f"{BOLD}Closing remarks:")
         for msg in end_msgs:
             pprint(f"{ORANGE}✭{RESET} {msg}")
+    if opts["output_file"] is not None:
+        # output as CSV with columns: test path, outcome, reason
+        output_path = Path(opts["output_file"])
+        output_path.touch()
+        with output_path.open("w") as output_io:
+            output_io.write("test_path,outcome,reason\n")
+            for path, (outcome, reason) in results.items():
+                output_io.write(f"{path},{outcome.name},{reason or ''}\n")
 
 
 def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
@@ -188,7 +191,7 @@ def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
     tests = test_conf["tests"]
     cmd = opts["tool_cmd"] + test_conf["args"]
     csv_suffix = opts.get("tag") or f"{iters}-{int(time.time())}"
-    csv_file = PWD / f"eval-{csv_suffix}.csv"
+    csv_file = OUTPUT_DIR / f"eval-{csv_suffix}.csv"
 
     pprint(f"{BOLD}Running {len(tests)} tests, {iters} times{RESET}")
 
@@ -197,9 +200,6 @@ def evaluate_perf(opts: CliOpts, iters: int, test_conf: TestConfig):
     for path in tests:
         relative = path.relative_to(test_conf["root"])
         txt = f"Running {relative} ..."
-        if str(relative) in SKIPPED_TESTS and not opts["no_skips"]:
-            pprint(f"{txt} {GRAY}{BOLD}skipped")
-            continue
 
         times = test_times[relative] = []
 
@@ -330,29 +330,57 @@ def diff_evaluation(path1: Path, path2: Path):
     pptable(rows)
 
 
+def store_csv(
+    path: Path,
+    data: Sequence[Sequence[Union[str, tuple[str, Optional[str]]]]],
+    *,
+    name: str = "Benchmark results",
+):
+    def cell_str(cell: Union[str, tuple[str, Optional[str]]]) -> str:
+        if isinstance(cell, str):
+            return cell
+        return cell[0]
+
+    path.touch()
+    with path.open("w") as csv_io:
+        csv_io.writelines(",".join(cell_str(c) for c in row) + "\n" for row in data)
+    pprint(f"{BOLD}{name} stored in {path}{RESET}")
+
+
 Benchmark = dict[ToolName, tuple[Outcome, float]]
 
 
-def benchmark(tool: Optional[ToolName], opts: CliOpts):
-    log = PWD / "benchmark.log"
+def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpts):
+    log = OUTPUT_DIR / "benchmark.log"
     log.touch()
     log.write_text(f"Running benchmark - {datetime.datetime.now()}:\n\n")
 
     log = log.open("a")
 
     results: dict[tuple[Path, SuiteName], Benchmark] = {}  # type: ignore
-    end_msgs: set[str] = set()
     interrupts = 0
-    timeout = opts["timeout"] or 5
 
     def run_benchmark(opts: CliOpts):
         if tool is not None and opts["tool"] != tool:
             return
-        if tool == "Rusteria":
+        if opts["tool"] == "Soteria":
             build()
         for name, callback in TEST_SUITES.items():
             if name == "custom":
                 continue
+            if suite is not None and name != suite:
+                continue
+
+            timeout: int
+            if opts["timeout"]:
+                timeout = opts["timeout"]
+            elif name == "kani":
+                timeout = 23
+            elif name == "miri":
+                timeout = 9
+            else:
+                raise ValueError(f"Unknown suite {name} for timeout defaults")
+
             test_conf = callback(opts)
             if len(test_conf["tests"]) == 0:
                 continue
@@ -403,17 +431,18 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
 
     pprint(f"{BOLD}Running benchmark{RESET}")
     try:
-        run_benchmark(opts_for_rusteria(opts, force_obol=True, timeout=timeout))
-        run_benchmark(opts_for_kani(opts, timeout=timeout))
+        run_benchmark(opts_for_soteria(opts, force_obol=True))
+        run_benchmark(opts_for_kani(opts, timeout=None))
         run_benchmark(opts_for_miri(opts))
     except Exception as e:
         print(e)
 
+    # Make the main CSV file
     rows: list[list[tuple[str, Optional[str]]]] = [
         [
             ("Suite", BOLD),
             ("File", BOLD),
-            ("Rusteria", BOLD),
+            ("Soteria", BOLD),
             ("(s)", None),
             ("Kani", BOLD),
             ("(s)", None),
@@ -429,17 +458,99 @@ def benchmark(tool: Optional[ToolName], opts: CliOpts):
             row.append((f"{elapsed:.3f}", None) if elapsed >= 0 else ("", None))
         rows.append(row)
 
-    csv_file = PWD / "benchmark.csv"
-    csv_file.touch()
-    with csv_file.open("w") as csv_io:
-        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in rows)
-    pprint()
-    pptable(rows)
+    csv_file = OUTPUT_DIR / "benchmark.csv"
+    store_csv(csv_file, rows)
 
-    if len(end_msgs) > 0:
-        pprint(f"{BOLD}Closing remarks:")
-        for end_msg in end_msgs:
-            pprint(f"{ORANGE}✭{RESET} {end_msg}")
+    # Make the tables for the survival charts:
+    def survival_for(suite: str):
+        tools: list[ToolName] = ["Soteria", "Kani", "Miri"]
+        rows: list[list[str]] = [
+            ["", *(tools), "Total"],
+        ]
+        results_suite = [res for (_, s), res in results.items() if s == suite]
+        try:
+            max_timestamp = max(res[tool][1] for res in results_suite for tool in tools)
+        except ValueError:
+            return
+        max_rows = 1000
+        increment = round(max_timestamp / max_rows, 2)
+        if increment == 0:
+            increment = 0.01
+        total_tests = len(results_suite)
+        t = 0.00
+        while t <= max_timestamp:
+            row = [str(round(t, 2))]
+            for tool in tools:
+                count = sum(
+                    1
+                    for res in results_suite
+                    if res[tool][0].is_pass() and res[tool][1] <= t
+                )
+                row.append(str(count))
+            row.append(str(total_tests))
+            rows.append(row)
+            t += increment
+
+        csv_file = OUTPUT_DIR / f"survival-{suite}.csv"
+        store_csv(csv_file, rows, name=f"Survival data for {suite}")
+
+    survival_for("kani")
+    survival_for("miri")
+
+    # Make the table for console output
+    pretty_table = [
+        [
+            ("Tool", BOLD),
+            ("Kani", BOLD),
+            ("Suite", BOLD),
+            ("", None),
+            ("", None),
+            ("Miri", BOLD),
+            ("Suite", BOLD),
+            ("", None),
+            ("", None),
+            ("Total", BOLD),
+        ],
+        [
+            ("", None),
+            ("Pass", GREEN),
+            ("Fail", RED),
+            ("Unsup", ORANGE),
+            ("Timeout", YELLOW),
+            ("Pass", GREEN),
+            ("Fail", RED),
+            ("Unsup", ORANGE),
+            ("Timeout", YELLOW),
+            ("% Pass", BOLD),
+        ],
+    ]
+
+    for tool in cast(list[ToolName], ["Kani", "Miri", "Soteria"]):
+        total_passes = 0
+        total = 0
+        row: list[tuple[str, Optional[str]]] = [(tool, BOLD)]
+        for suite_name in ["kani", "miri"]:
+            entries = [
+                res[tool][0] for (_, s), res in results.items() if s == suite_name
+            ]
+            passes = sum(1 for e in entries if e.is_pass())
+            fails = sum(1 for e in entries if e.is_fail())
+            unsupported = sum(1 for e in entries if e.is_unsupported())
+            timeouts = sum(1 for e in entries if e.is_timeout())
+            total_passes += passes
+            total += len(entries)
+            row += [
+                (str(passes), None),
+                (str(fails), None),
+                (str(unsupported), None),
+                (str(timeouts), None),
+            ]
+        pass_rate = total_passes / total * 100 if total > 0 else 0
+        row.append((f"{pass_rate:.1f}%", BOLD))
+        pretty_table.append(row)
+
+    pprint()
+    pptable(pretty_table)
 
 
 def kani_comparison(opts: CliOpts, path: Path, cached: bool):
@@ -452,9 +563,9 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
 
     def run_with(opts: CliOpts, id: str) -> dict[str, tuple[Outcome, float]]:
         key = opts["tool"]
-        log_path = PWD / f"kani-comparison-{id}.log"
+        log_path = OUTPUT_DIR / f"kani-comparison-{id}.log"
         if cached:
-            results = parse_per_test(log_path)
+            results = parse_per_test(log_path, is_crate=False)
             results = {k: v[key] for k, v in results.items()}
             return results
 
@@ -501,7 +612,7 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
         )
         log.close()
 
-        results = parse_per_test(log_path)
+        results = parse_per_test(log_path, is_crate=False)
         results = {k: v[key] for k, v in results.items()}
         return results
 
@@ -519,12 +630,12 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
 
         return WithEnv()
 
-    rusteria = opts_for_rusteria(opts, force_obol=True)
-    rusteria["tool_cmd"] += ["--kani"]
-    res_rusteria = run_with(rusteria, "rusteria")
+    soteria = opts_for_soteria(opts, force_obol=True)
+    soteria["tool_cmd"] += ["--kani"]
+    res_soteria = run_with(soteria, "soteria")
     kani = opts_for_kani(opts)
     kani["tool_cmd"] = [
-        f for f in kani["tool_cmd"] if not f.startswith("--harness-timeout=5s")
+        f for f in kani["tool_cmd"] if not f.startswith("--harness-timeout")
     ]
     kani["tool_cmd"] += ["--harness-timeout=10s"]
     res_kani = run_with(kani, "kani")
@@ -537,7 +648,7 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
         [
             ("Suite", BOLD),
             ("Test", BOLD),
-            ("Rusteria", BOLD),
+            ("Soteria", BOLD),
             ("(s)", None),
             ("Kani", BOLD),
             ("(s)", None),
@@ -545,8 +656,8 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
             ("(s)", None),
         ]
     ]
-    for test in res_rusteria.keys():
-        r_out, r_time = res_rusteria.get(test, (Outcome.UNKNOWN, -2))
+    for test in res_soteria.keys():
+        r_out, r_time = res_soteria.get(test, (Outcome.UNKNOWN, -2))
         k_out, k_time = res_kani.get(test, (Outcome.UNKNOWN, -2))
         ku_out, ku_time = res_kani_unwind.get(test, (Outcome.UNKNOWN, -2))
 
@@ -570,49 +681,117 @@ def kani_comparison(opts: CliOpts, path: Path, cached: bool):
             ]
         )
 
-    csv_file = PWD / "kani-comparison.csv"
-    csv_file.touch()
-    with csv_file.open("w") as csv_io:
-        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in table)
+    csv_file = OUTPUT_DIR / "kani-comparison.csv"
+    store_csv(csv_file, table)
+
+    # Make the table for the survival chart
+    s_rows: list[list[str]] = [
+        ["", "Soteria", "Kani", "Kani (Unwinding)", "Total"],
+    ]
+    max_timestamp = 10.0
+    max_rows = 1000
+    increment = round(max_timestamp / max_rows, 2)
+    if increment == 0:
+        increment = 0.01
+    total_tests = len(res_soteria)
+    t = 0.00
+    while t <= max_timestamp:
+
+        def count(res: dict[str, tuple[Outcome, float]]):
+            x = sum(1 for (o, t_res) in res.values() if o.is_pass() and t_res <= t)
+            return str(x)
+
+        s_rows.append(
+            [
+                str(round(t, 2)),
+                count(res_soteria),
+                count(res_kani),
+                count(res_kani_unwind),
+                str(total_tests),
+            ]
+        )
+        t += increment
+
+    csv_file = OUTPUT_DIR / "survival-kani-comparison.csv"
+    store_csv(csv_file, s_rows, name="Survival data for Kani comparison")
+
+    table_small: list[list[tuple[str, Optional[str]]]] = []
+    suites = list(set(test.split("::")[0] for test in res_soteria.keys()))
+    suites.sort()
+    table_small.append(
+        [
+            ("Tool", BOLD),
+            *((suite, BOLD) for suite in suites),
+            ("Total", BOLD),
+        ]
+    )
+
+    def add_for(name: str, res: dict[str, tuple[Outcome, float]]):
+        row: list[tuple[str, Optional[str]]] = [(name, BOLD)]
+        total = 0
+        for suite in suites:
+            suite_res = [v for k, v in res.items() if k.startswith(suite + "::")]
+            passes = sum(1 for r, _ in suite_res if r.is_pass())
+            total += passes
+            row.append((str(passes), None))
+        row.append((str(total), None))
+        table_small.append(row)
+
+    add_for("Kani", res_kani)
+    add_for("Kani (unwinding)", res_kani_unwind)
+    add_for("Soteria", res_soteria)
+
+    row: list[tuple[str, Optional[str]]] = [("Total Tests", BOLD)]
+    for suite in suites:
+        suite_res = [v for k, v in res_soteria.items() if k.startswith(suite + "::")]
+        row.append((str(len(suite_res)), None))
+    row.append((str(len(res_soteria)), None))
+    table_small.append(row)
+
     pptable(table)
+    pprint()
+    pprint("Results summary: ")
+    pptable(table_small)
 
 
-def finetime(opts: CliOpts):
+def kani_comparison_cargo(opts: CliOpts, crate: Path):
     build()
-
-    finetime = (PWD / ".." / ".." / ".." / "finetime").resolve()
 
     # to find the tests, we run the crate with a 0 step fuel
     def get_tests() -> list[str]:
-        ropts = opts_for_rusteria(opts, force_obol=True, timeout=None)
+        ropts = opts_for_soteria(opts, force_obol=True)
         tool_cmd = ropts["tool_cmd"].copy()
-        tool_cmd[1] = "cargo"
         data = subprocess_run(
-            tool_cmd + ["--kani", "--step-fuel=0", str(finetime)],
+            tool_cmd + ["--kani", "--step-fuel=0", str(crate)],
             capture_output=True,
             text=True,
         )
         tests: list[str] = []
         for line in data.stdout.splitlines():
             # look for
-            # warning: <test> (0.01ms): runtime error, Missed 1 branches
-            if line.startswith("warning: "):
-                tests.append(line.split(" ")[1])
+            # note: time_scale::utc::proof_harness::roundtrip_near_leap_seconds: done in 0.33ms, ran 0 branches
+            if line.startswith("note: "):
+                test = line.split(" ")[1]
+                if test.endswith(":"):
+                    test = test[:-1]
+                tests.append(test)
         if len(tests) == 0:
-            raise RuntimeError(f"Could not find any tests in Finetime: {data.stdout}")
+            raise RuntimeError(f"Could not find any tests in the Crate: {data.stdout}")
         return tests
 
-    tests = get_tests()
+    tests_raw = get_tests()
+    tests = filter_tests(opts, tests_raw)
+    do_filter_tests = len(tests_raw) != len(tests)
     pprint(f"{BOLD}Running {len(tests)} tests{RESET}")
 
     interrupts = 0
+    timeout = opts["timeout"] or 60
 
-    def run_with_rusteria() -> dict[str, tuple[Outcome, float]]:
-        ropts = opts_for_rusteria(opts, force_obol=True, timeout=None)
+    def run_with_soteria() -> dict[str, tuple[Outcome, float]]:
+        ropts = opts_for_soteria(opts, force_obol=True)
         tool_cmd = ropts["tool_cmd"].copy()
-        tool_cmd[1] = "cargo"
         tool_cmd += ["--kani", "--no-compile"]
-        log_path = PWD / "finetime-comparison-rusteria.log"
+        log_path = OUTPUT_DIR / "crate-comparison-soteria.log"
         log_path.touch()
         log_path.write_text(
             f"Running {len(tests)} tests - {datetime.datetime.now()}:\n\n"
@@ -620,9 +799,9 @@ def finetime(opts: CliOpts):
         log = log_path.open("a")
 
         pprint(
-            f"{CYAN}{BOLD}==>{RESET} Running with {BOLD}Rusteria{RESET}",
+            f"{CYAN}{BOLD}==>{RESET} Running with {BOLD}Soteria{RESET}",
         )
-        log.write("Running tests with Rusteria\n\n")
+        log.write("Running tests with Soteria\n\n")
 
         before = time.time()
         for test in tests:
@@ -630,12 +809,12 @@ def finetime(opts: CliOpts):
             try:
                 filter = ["--filter", test]
                 (outcome, _), elapsed = exec_test(
-                    finetime,
+                    crate,
                     cmd=tool_cmd + filter,
                     log=log,
                     categoriser=ropts["categorise"],
-                    tool="Rusteria",
-                    timeout=ropts["timeout"],
+                    tool="Soteria",
+                    timeout=timeout,
                 )
             except KeyboardInterrupt:
                 nonlocal interrupts
@@ -656,26 +835,20 @@ def finetime(opts: CliOpts):
         )
         log.close()
 
-        results = parse_per_test(log_path)
-        results = {
-            (k if "finetime::" not in k else k.replace("finetime::", "")): v["Rusteria"]
-            for k, v in results.items()
-        }
+        results = parse_per_test(log_path, is_crate=True)
+        results = {k: v["Soteria"] for k, v in results.items()}
         return results
 
     def run_with_kani(*, cached=False) -> dict[str, tuple[Outcome, float]]:
-        kopts = opts_for_kani(opts, timeout=None)
+        kopts = opts_for_kani(opts, timeout=timeout)
         kopts["tool_cmd"] = ["cargo", "kani"] + kopts["tool_cmd"][1:]
-        log_path = PWD / "finetime-comparison-kani.log"
+        if do_filter_tests:
+            kopts["tool_cmd"] += ["--harness=" + test for test in tests]
+        log_path = OUTPUT_DIR / "crate-comparison-kani.log"
 
         if cached:
-            results = parse_per_test(log_path)
-            results = {
-                (k if not k.startswith("None::") else k.replace("None::", "")): v[
-                    "Kani"
-                ]
-                for k, v in results.items()
-            }
+            results = parse_per_test(log_path, is_crate=True)
+            results = {k: v["Kani"] for k, v in results.items()}
             return results
 
         log_path.touch()
@@ -699,8 +872,9 @@ def finetime(opts: CliOpts):
                 log=log,
                 categoriser=kopts["categorise"],
                 tool="Kani",
-                timeout=kopts["timeout"],
-                cwd=finetime,
+                # no timeout because included in the command
+                timeout=None,
+                cwd=crate,
             )
         except KeyboardInterrupt:
             nonlocal interrupts
@@ -716,38 +890,42 @@ def finetime(opts: CliOpts):
         )
         log.close()
 
-        results = parse_per_test(log_path)
+        results = parse_per_test(log_path, is_crate=True)
         results = {k: v["Kani"] for k, v in results.items()}
         return results
 
-    res_rusteria = run_with_rusteria()
-    res_kani = run_with_kani(cached=True)
+    res_soteria = run_with_soteria()
+    res_kani = run_with_kani()
 
     table: list[list[tuple[str, Optional[str]]]] = []
     table += [
         [
-            ("Suite", BOLD),
             ("Test", BOLD),
-            ("Rusteria", BOLD),
+            ("Soteria", BOLD),
             ("(s)", None),
             ("Kani", BOLD),
             ("(s)", None),
         ]
     ]
-    keys = list(set(res_rusteria.keys()).union(set(res_kani.keys())))
+    keys = list(set(res_soteria.keys()).union(set(res_kani.keys())))
     keys.sort()
+
     for test in keys:
-        r_out, r_time = res_rusteria.get(test, (Outcome.UNKNOWN, -2))
-        k_out, k_time = res_kani.get(test, (Outcome.UNKNOWN, -2))
+        if test not in res_soteria:
+            res_soteria[test] = (Outcome.TIME_OUT, timeout)
+        if test not in res_kani:
+            res_kani[test] = (Outcome.TIME_OUT, timeout)
+
+    for test in keys:
+        r_out, r_time = res_soteria[test]
+        k_out, k_time = res_kani[test]
 
         if k_time == -1:
-            k_time = 10
-        suite, test_name = test.split("::", 1)
+            k_time = timeout
 
         table.append(
             [
-                (suite, BOLD),
-                (test_name, None),
+                (test, None),
                 (r_out.txt, r_out.clr),
                 (f"{r_time:.3f}", None) if r_time >= 0 else ("-", GRAY),
                 (k_out.txt, k_out.clr),
@@ -755,18 +933,74 @@ def finetime(opts: CliOpts):
             ]
         )
 
-    csv_file = PWD / "finetime-comparison.csv"
-    csv_file.touch()
-    with csv_file.open("w") as csv_io:
-        csv_io.writelines(",".join(c[0] for c in row) + "\n" for row in table)
+    csv_file = OUTPUT_DIR / "crate-comparison.csv"
+    store_csv(csv_file, table, name="Kani comparison for Crate")
+
+    # Make the table for the survival chart
+    s_rows: list[list[str]] = [
+        ["", "Soteria", "Kani", "Total"],
+    ]
+    max_timestamp = timeout
+    max_rows = 1000
+    increment = round(max_timestamp / max_rows, 2)
+    if increment == 0:
+        increment = 0.01
+    total_tests = len(keys)
+    t = 0.00
+    while t <= max_timestamp:
+
+        def count(res: dict[str, tuple[Outcome, float]]):
+            x = sum(1 for (o, t_res) in res.values() if o.is_pass() and t_res <= t)
+            return str(x)
+
+        s_rows.append(
+            [
+                str(round(t, 2)),
+                count(res_soteria),
+                count(res_kani),
+                str(total_tests),
+            ]
+        )
+        t += increment
+
+    csv_file = OUTPUT_DIR / "survival-crate-comparison.csv"
+    store_csv(csv_file, s_rows, name="Survival data for Cargo Kani comparison")
+
+    pretty_table: list[list[tuple[str, Optional[str]]]] = [
+        [
+            ("Tool", BOLD),
+            ("Pass", GREEN),
+            ("Fail", RED),
+            ("Unsup", ORANGE),
+            ("Timeout", YELLOW),
+        ],
+    ]
+    for name, res in [("Soteria", res_soteria), ("Kani", res_kani)]:
+        passes = sum(1 for r, _ in res.values() if r.is_pass())
+        fails = sum(1 for r, _ in res.values() if r.is_fail())
+        unsupported = sum(1 for r, _ in res.values() if r.is_unsupported())
+        timeouts = sum(1 for r, _ in res.values() if r.is_timeout())
+        pretty_table.append(
+            [
+                (name, BOLD),
+                (str(passes), None),
+                (str(fails), None),
+                (str(unsupported), None),
+                (str(timeouts), None),
+            ]
+        )
+
     pptable(table)
+    pprint()
+    pprint("Results summary: ")
+    pptable(pretty_table)
 
 
 def main():
     try:
         opts = parse_flags()
     except ArgError as e:
-        print(f"{RED}Error: {YELLOW}{e}")
+        print(f"{RED}Error: {YELLOW}{e}{RESET}")
         exit(1)
 
     cmd = opts["cmd"]
@@ -791,13 +1025,14 @@ def main():
         (file1, file2) = cmd[1]
         diff_evaluation(file1, file2)
     elif cmd[0] == "benchmark":
-        (tool,) = cmd[1]
-        benchmark(tool, opts)
+        (tool, suite) = cmd[1]
+        benchmark(tool, suite, opts)
     elif cmd[0] == "comp-kani":
         (compare_path, cached) = cmd[1]
         kani_comparison(opts, compare_path, cached)
-    elif cmd[0] == "finetime":
-        finetime(opts)
+    elif cmd[0] == "comp-kani-cargo":
+        (crate,) = cmd[1]
+        kani_comparison_cargo(opts, crate)
     else:
         assert_never(cmd)
 

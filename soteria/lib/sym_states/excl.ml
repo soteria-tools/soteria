@@ -1,6 +1,6 @@
 open Symex
 
-module Make (Symex : Symex.Base) (E : Data.M(Symex).Abstr_with_syn) = struct
+module Make (Symex : Symex.Base) (E : Data.Abstr.M(Symex).S_with_syn) = struct
   type t = E.t [@@deriving show { with_path = false }]
   type syn = E.syn [@@deriving show { with_path = false }]
 

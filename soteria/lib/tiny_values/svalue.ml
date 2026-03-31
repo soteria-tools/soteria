@@ -191,12 +191,12 @@ let rec subst subst_var sv =
 let v_true = Bool true <| TBool
 let v_false = Bool false <| TBool
 
-let as_bool t =
+let to_bool t =
   if equal t v_true then Some true
   else if equal t v_false then Some false
   else None
 
-let bool b =
+let of_bool b =
   (* avoid re-alloc and re-hashconsing *)
   if b then v_true else v_false
 
@@ -378,7 +378,7 @@ let neg v = match v.node.kind with Int i -> int_z (Z.neg i) | _ -> sub zero v
 
 let rec lt v1 v2 =
   match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> bool (Z.lt i1 i2)
+  | Int i1, Int i2 -> of_bool (Z.lt i1 i2)
   | _, _ when equal v1 v2 -> v_false
   | _, Binop (Plus, v2, v3) when equal v1 v2 -> lt zero v3
   | _, Binop (Plus, v2, v3) when equal v1 v3 -> lt zero v2
@@ -404,14 +404,14 @@ let rec lt v1 v2 =
       lt v1 (int_z @@ Z.sub x y)
   | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
   | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
-      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      if Z.equal Z.zero x then of_bool (Z.lt y Z.zero)
       else
         let op = if Z.divisible y x || Z.(y > zero) then lt else leq in
         if Z.(zero < x) then op (int_z Z.(y / x)) v1'
         else op v1' (int_z Z.(y / x))
   | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
   | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
-      if Z.equal Z.zero x then bool (Z.lt Z.zero y)
+      if Z.equal Z.zero x then of_bool (Z.lt Z.zero y)
       else
         let op = if Z.divisible y x || Z.(y < zero) then lt else leq in
         if Z.(zero < x) then op v1' (int_z Z.(y / x))
@@ -428,7 +428,7 @@ let rec lt v1 v2 =
 
 and leq v1 v2 =
   match (v1.node.kind, v2.node.kind) with
-  | Int i1, Int i2 -> bool (Z.leq i1 i2)
+  | Int i1, Int i2 -> of_bool (Z.leq i1 i2)
   | _, _ when equal v1 v2 -> v_true
   | _, Binop (Plus, v2, v3) when equal v1 v2 -> leq zero v3
   | _, Binop (Plus, v2, v3) when equal v1 v3 -> leq zero v2
@@ -452,14 +452,14 @@ and leq v1 v2 =
       leq v1 (int_z @@ Z.sub x y)
   | Int y, Binop (Times, { node = { kind = Int x; _ }; _ }, v1')
   | Int y, Binop (Times, v1', { node = { kind = Int x; _ }; _ }) ->
-      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      if Z.equal Z.zero x then of_bool (Z.lt y Z.zero)
       else
         let op = if Z.divisible y x || Z.(y < zero) then leq else lt in
         if Z.(zero < x) then op (int_z Z.(y / x)) v1'
         else op v1' (int_z Z.(y / x))
   | Binop (Times, v1', { node = { kind = Int x; _ }; _ }), Int y
   | Binop (Times, { node = { kind = Int x; _ }; _ }, v1'), Int y ->
-      if Z.equal Z.zero x then bool (Z.lt y Z.zero)
+      if Z.equal Z.zero x then of_bool (Z.lt y Z.zero)
       else
         let op = if Z.divisible y x || Z.(y > zero) then leq else lt in
         if Z.(zero < x) then op v1' (int_z Z.(y / x))
@@ -482,8 +482,8 @@ let rec sem_eq v1 v2 =
   if equal v1 v2 then v_true
   else
     match (v1.node.kind, v2.node.kind) with
-    | Int z1, Int z2 -> bool (Z.equal z1 z2)
-    | Bool b1, Bool b2 -> bool (b1 = b2)
+    | Int z1, Int z2 -> of_bool (Z.equal z1 z2)
+    | Bool b1, Bool b2 -> of_bool (b1 = b2)
     | _, Binop (Plus, v2, v3) when equal v1 v2 -> sem_eq v3 zero
     | _, Binop (Plus, v2, v3) when equal v1 v3 -> sem_eq v2 zero
     | Binop (Plus, v1, v3), _ when equal v1 v2 -> sem_eq v3 zero
@@ -508,7 +508,7 @@ let rec sem_eq v1 v2 =
     | Int y, Binop (Times, v1, { node = { kind = Int x; _ }; _ })
     | Binop (Times, v1, { node = { kind = Int x; _ }; _ }), Int y
     | Binop (Times, { node = { kind = Int x; _ }; _ }, v1), Int y ->
-        if Z.equal Z.zero x then bool (Z.equal Z.zero y)
+        if Z.equal Z.zero x then of_bool (Z.equal Z.zero y)
         else if Z.(equal zero (rem y x)) then sem_eq v1 (int_z Z.(y / x))
         else v_false
     | _ -> mk_commut_binop Eq v1 v2 <| TBool

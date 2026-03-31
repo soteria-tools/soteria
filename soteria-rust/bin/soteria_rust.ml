@@ -27,6 +27,7 @@ module Exec = struct
       (Cmd.info ~exits ~doc:"Run symbolic execution"
          ~man:
            [
+             `S Cmdliner.Manpage.s_description;
              `P
                "Run Soteria Rust on the specified file or crate; this will \
                 either use Rustc to compile that file only, or use Cargo to \
@@ -48,6 +49,7 @@ module Build_plugins = struct
       (Cmd.info ~exits ~doc:"Build plugins"
          ~man:
            [
+             `S Cmdliner.Manpage.s_description;
              `P
                "Build the plugins for Soteria Rust; this is done automatically \
                 when running Soteria Rust except when --no-compile-plugins is \
