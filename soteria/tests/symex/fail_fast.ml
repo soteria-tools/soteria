@@ -49,11 +49,11 @@ let or_gave_up a =
 
 let fuel = Soteria.Symex.Fuel_gauge.infinite
 
-let process =
+let process () =
   let* b = nondet Typed.t_bool in
   if%sat b then Result.error "Left error" else Result.error "Right error"
 
-let process_give_up =
+let process_give_up () =
   let* b = nondet Typed.t_bool in
   if%sat b then give_up "Left gave up" else Result.error "Right error"
 

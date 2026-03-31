@@ -39,7 +39,7 @@ let exec file =
     | Some f -> f
     | None -> failwith "No main function found"
   in
-  let process =
+  let process () =
     let@@ () = Exec_interp.SM.Result.run_with_state ~state:State.empty in
     Exec_interp.eval_function main []
   in
@@ -57,7 +57,7 @@ let generate_summaries file =
     (fun fname (func_dec : Fun_def.t) ->
       let@ () = L.with_section (Fmt.str "Generating summary for %s" fname) in
       Fmt.pr "@[<v 2>Summaries for %s:@ " fname;
-      let process =
+      let process () =
         let open Bi_interp in
         let@@ () = SM.Result.run_with_state ~state:Bi_state.empty in
         let open SM.Syntax in

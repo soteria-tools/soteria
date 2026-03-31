@@ -2,7 +2,7 @@ open Soteria.Symex.Make (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 open Syntax
 open Soteria.Tiny_values.Typed
 
-let process : (int, int, unit) Result.t =
+let process () : (int, int, unit) Result.t =
   let* b1 = nondet t_bool in
   let* b2 = nondet t_bool in
   let* b3 = nondet t_bool in

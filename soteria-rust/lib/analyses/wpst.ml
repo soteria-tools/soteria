@@ -94,7 +94,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     let@ () = Soteria.Stats.As_ctx.with_stats () in
     Rustsymex.Result.run ~mode:OX ~fuel ~stats:Handled
       ~fail_fast:(Config.get ()).fail_fast
-    @@ exec_fun fun_decl ~args
+    @@ fun () -> exec_fun fun_decl ~args
   in
   Soteria.Stats.output stats;
 

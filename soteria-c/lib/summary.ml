@@ -230,7 +230,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           let iter_args f =
             List.iter (fun cval -> Agv.iter_vars cval f) summary.args
           in
-          let process =
+          let process () =
             let open Csymex.Syntax in
             let* subst =
               From_iter.from_iter

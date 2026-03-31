@@ -7,14 +7,14 @@ open Infix
    Test Processes
    ============================================================================ *)
 
-let if_true = if%sure v_true then return 42 else return (-1)
-let if_false = if%sure v_false then return (-1) else return 42
+let if_true () = if%sure v_true then return 42 else return (-1)
+let if_false () = if%sure v_false then return (-1) else return 42
 
-let if_maybe =
+let if_maybe () =
   let* b = nondet t_bool in
   if%sure b then return (-1) else return 42
 
-let if_guaranteed =
+let if_guaranteed () =
   let* x = nondet t_int in
   let* () = assume [ x >@ one ] in
   if%sure x >@ zero then return 42 else return (-1)

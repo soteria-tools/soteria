@@ -251,7 +251,7 @@ let exec_function ~includes ~fuel file_names function_name =
     else
       let* entry_point = resolve_function linked function_name in
       let open Wpst_interp.InterpM in
-      let symex =
+      let symex () =
         let open StateM.Syntax in
         let@@ () = StateM.Result.run_with_state ~state:SState.empty in
         let** () = Wpst_interp.init_prog_state linked in

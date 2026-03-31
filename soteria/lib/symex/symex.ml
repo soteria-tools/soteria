@@ -276,7 +276,7 @@ module type S = sig
   type sbool := Value.sbool
 
   (** [run ~mode p] actually performs symbolic execution of the symbolic process
-      [p] and returns a list of obtained branches which capture the outcome
+      [p ()] and returns a list of obtained branches which capture the outcome
       together with a path condition that is a list of boolean symbolic values.
 
       The [mode] parameter is used to specify whether execution should be done
@@ -304,7 +304,7 @@ module type S = sig
     ?stats:effect_handling ->
     ?coverage:effect_handling ->
     mode:Approx.t ->
-    'a t ->
+    (unit -> 'a t) ->
     ('a * sbool v list) list
 
   module Result : sig
@@ -324,7 +324,7 @@ module type S = sig
       ?coverage:effect_handling ->
       ?fail_fast:bool ->
       mode:Approx.t ->
-      ('ok, 'err, 'fix) t ->
+      (unit -> ('ok, 'err, 'fix) t) ->
       (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
   end
 end
@@ -762,7 +762,7 @@ module Make (Sol : Solver.Mutable_incremental) :
     let@ () = Approx.As_ctx.with_mode mode in
     let@ () = Give_up.with_give_up_raising in
     let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
-    iter @@ fun x -> if admissible () then continue (x, Solver.as_values ())
+    iter () @@ fun x -> if admissible () then continue (x, Solver.as_values ())
 
   let run ?(fuel = Fuel_gauge.infinite) ?(stats = Ignore) ?(coverage = Ignore)
       ~mode iter =
@@ -794,7 +794,7 @@ module Make (Sol : Solver.Mutable_incremental) :
       let () =
         let exception Fail_fast in
         try
-          iter @@ fun x ->
+          iter () @@ fun x ->
           if Solver_result.admissible ~mode (Solver.sat ()) then (
             (* Make sure to drop branches that have leftover assumes with
                unsatisfiable PCs. *)

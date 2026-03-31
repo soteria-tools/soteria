@@ -50,9 +50,9 @@ include Syntaxes.FunctionWrap
    [Rustsymex], along with the relevant [produce], [consume], etc. *)
 
 let run ?fuel ?stats ?coverage ~mode symex =
-  run_with_state ~state:MonadState.empty symex
+  MonoSymex.run ?fuel ?stats ?coverage ~mode @@ fun () ->
+  run_with_state ~state:MonadState.empty (symex ())
   |> (Fun.flip MonoSymex.map) fst
-  |> MonoSymex.run ?fuel ?stats ?coverage ~mode
 
 module Result = struct
   include Result
@@ -65,9 +65,9 @@ module Result = struct
     | Missing f -> Missing f
 
   let run ?fuel ?stats ?coverage ?fail_fast ~mode symex =
-    run_with_state ~state:MonadState.empty symex
+    MonoSymex.Result.run ?fuel ?stats ?coverage ?fail_fast ~mode @@ fun () ->
+    run_with_state ~state:MonadState.empty (symex ())
     |> (Fun.flip MonoSymex.map) ignore_state
-    |> MonoSymex.Result.run ?fuel ?stats ?coverage ?fail_fast ~mode
 end
 
 module Poly = struct

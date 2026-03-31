@@ -44,13 +44,13 @@ let get_gave_up_reasons results =
    ============================================================================ *)
 
 let ux_mode_returns_three_branches () =
-  let results = run ~mode:UX (complex_process ()) in
+  let results = run ~mode:UX complex_process in
   Alcotest.(check int) "number of branches" 3 (List.length results);
   Alcotest.(check int) "ok branches" 2 (count_oks results);
   Alcotest.(check int) "error branches" 1 (count_errors results)
 
 let ux_mode_result_returns_three_branches () =
-  let results = Result.run ~mode:UX (complex_process ()) in
+  let results = Result.run ~mode:UX complex_process in
   Alcotest.(check int) "number of branches" 3 (List.length results);
   Alcotest.(check int) "ok branches" 2 (count_oks results);
   Alcotest.(check int) "error branches" 1 (count_errors results)
@@ -63,7 +63,7 @@ let ox_mode_raises_gave_up () =
   let raised = ref false in
   let reason_msg = ref "" in
   (try
-     let _ = run ~mode:OX (complex_process ()) in
+     let _ = run ~mode:OX complex_process in
      ()
    with Soteria.Symex.Gave_up reason ->
      raised := true;
@@ -72,7 +72,7 @@ let ox_mode_raises_gave_up () =
   Alcotest.(check string) "gave up reason" "x == y" !reason_msg
 
 let ox_mode_result_returns_four_branches () =
-  let results = Result.run ~mode:OX (complex_process ()) in
+  let results = Result.run ~mode:OX complex_process in
   Alcotest.(check int) "number of branches" 4 (List.length results);
   Alcotest.(check int) "ok branches" 2 (count_oks results);
   Alcotest.(check int) "error branches" 2 (count_errors results);

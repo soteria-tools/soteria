@@ -1,7 +1,7 @@
 open Soteria.Symex.Make (Tiny_solver.Z3_solver)
 open Syntax
 
-let branching_process =
+let branching_process () =
   let* b = nondet Typed.t_bool in
   if%sat b then
     (* At this stage there is no available solver, they're both used. This
@@ -12,7 +12,7 @@ let branching_process =
       (* We created two solvers, so this branch returns 1 *)
       (Solver_pool.total_created () - 1)
 
-let interrupted_process =
+let interrupted_process () =
   let* b = nondet Typed.t_bool in
   if%sat b then
     (* We have run our first query. Therefore, we have one solver created and

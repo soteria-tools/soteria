@@ -7,7 +7,8 @@ let file = "my.file"
 let branch_span line id : Soteria.Coverage.branch_span =
   { file; line; branch_id = "b_" ^ string_of_int line ^ "_" ^ string_of_int id }
 
-let process : (unit, 'e, 'f) Result.t =
+let process () : (unit, 'e, 'f) Result.t =
+  Soteria.Coverage.As_ctx.register_function ~file ~name:"my_fun" ~line:1 ();
   let* b1 = nondet t_bool in
   Soteria.Coverage.As_ctx.mark_lines_reachable ~file Iter.(1 -- 7);
   Soteria.Coverage.As_ctx.mark_line ~file ~line:1;
