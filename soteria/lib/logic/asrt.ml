@@ -38,7 +38,7 @@ module M (Symex : Symex.Base) = struct
         let () =
           ignore
           @@ Value.Expr.Subst.apply
-               ~missing_var:(fun _ _ -> raise Not_covered)
+               ~missing_var:(fun _ _ -> raise_notrace Not_covered)
                subst expr
         in
         true
