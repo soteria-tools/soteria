@@ -46,7 +46,7 @@ struct
 
     type qty = Totally | Partially [@@deriving show { with_path = false }]
     type leaf = Init of rust_val | Zeros | Uninit | Any | Unowned
-    type t = Leaf of leaf * Tree_borrows.tb_state | Lazy
+    type t = Leaf of leaf * Tree_borrows.tb_state option | Lazy
 
     let pp_leaf ft =
       let open Fmt in
@@ -61,7 +61,9 @@ struct
       let open Fmt in
       function
       | Leaf (leaf, tb) ->
-          pf ft "Leaf (%a, %a)" pp_leaf leaf Tree_borrows.pp_tb_state tb
+          pf ft "Leaf (%a, %a)" pp_leaf leaf
+            (option ~none:(any "-") Tree_borrows.pp_tb_state)
+            tb
       | Lazy -> pf ft "Lazy"
 
     let merge ~left ~right =
@@ -145,7 +147,11 @@ struct
 
     let lift_tb_miss tb_s =
       let+? tb_s in
-      List.map lift_tb_fix tb_s
+      List.map
+        (function
+          | Tree_borrows.Structure s -> lift_tb_fix s
+          | Tree_borrows.State s -> lift_tb_st_fix s)
+        tb_s
 
     let subst_serialized f = function
       | SInit v -> SInit (Rust_val.subst Sptr.subst f v)
@@ -162,11 +168,12 @@ struct
       | SUninit | SZeros | SAny -> ()
 
     let serialize : t -> serialized Seq.t option = function
-      | Leaf (Unowned, tb) ->
+      | Leaf (Unowned, Some tb) ->
           Some
             (Tree_borrows.serialize_state tb
             |> List.map lift_tb_st_fix
             |> List.to_seq)
+      | Leaf (Unowned, None) -> failwith "Impossible: unowned with no TB state"
       | Leaf (leaf, tb) ->
           let leaf_ser =
             match leaf with
@@ -177,7 +184,7 @@ struct
             | Unowned -> assert false
           in
           let tb_ser =
-            Tree_borrows.serialize_state tb
+            Option.fold ~none:[] ~some:Tree_borrows.serialize_state tb
             |> List.map lift_tb_st_fix
             |> List.to_seq
           in
@@ -197,15 +204,15 @@ struct
 
     let mk_leaf (t : tree) (v : leaf) tb : tree =
       let node =
-        match (v, Tree_borrows.is_empty_state tb) with
-        | Unowned, true -> TB.NotOwned Totally
+        match (v, tb) with
+        | Unowned, None -> TB.NotOwned Totally
         | _, _ -> TB.Owned (Leaf (v, tb))
       in
       { range = t.range; node; children = None }
 
     let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t =
       match (s, t.node) with
-      | _, NotOwned _ -> miss []
+      | _, NotOwned _ -> miss_no_fix ~reason:"rtree_block consume notowned" ()
       | _, Owned Lazy -> not_impl "Consume on lazy node"
       (* init *)
       | SInit _, _ -> not_impl "Consume typed value on rust_val equality."
@@ -239,7 +246,7 @@ struct
           let tb =
             match t.node with
             | Owned (Leaf (Unowned, tb)) -> tb
-            | NotOwned Totally -> Tree_borrows.empty_state
+            | NotOwned Totally -> None
             | _ -> assert false
           in
           return (mk_leaf t v tb)
@@ -264,7 +271,7 @@ struct
       (* Tree borrows: we produce recursively, as we don't want to merge the
          leaves *)
       | STree_borrow_st s, NotOwned Totally ->
-          let+ tb = Tree_borrows.produce_state s Tree_borrows.empty_state in
+          let+ tb = Tree_borrows.produce_state s None in
           mk_leaf t Unowned tb
       | STree_borrow_st s, Owned (Leaf (v, tb)) ->
           let+ tb = Tree_borrows.produce_state s tb in
@@ -397,7 +404,7 @@ struct
     | Owned (Leaf (node, _)) -> decode_mem_val ~ty node
 
   let merge_tree_borrows t =
-    DecayMapMonad.fold_iter ~init:Tree_borrows.empty_state
+    DecayMapMonad.fold_iter ~init:None
       ~f:(fun tb_st (_, _, tb_st') -> Tree_borrows.merge tb_st tb_st')
       (Tree.iter_leaves_rev t)
 
@@ -526,7 +533,8 @@ struct
 
   let alloc ?(zeroed = false) size =
     let st = if zeroed then Zeros else Uninit in
-    alloc (Leaf (st, Tree_borrows.empty_state)) size
+    let+ tb_st = Tree_borrows.init_st () in
+    alloc (Leaf (st, tb_st)) size
 
   (* Tree borrow updates *)
 

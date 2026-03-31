@@ -326,7 +326,7 @@ module Make (Tree_borrows : Tree_borrows.T) = struct
         (t * Tree_borrows.tag option) DecayMapMonad.t =
       let open DecayMapMonad.Syntax in
       let* tb, tag = Tree_borrows.init () in
-      let block = Tree_block.alloc ?zeroed size in
+      let* block = Tree_block.alloc ?zeroed size in
       let+^ trace = get_trace () in
       let trace = Trace.rename 0 "Allocation" trace in
       let trace = Trace.move_to_opt span trace in
