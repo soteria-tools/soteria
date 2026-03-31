@@ -63,10 +63,13 @@ module M (Symex : Rust_symex) = struct
 
     val consume_state :
       serialized_state ->
-      tb_state ->
-      (tb_state, 'err, serialized_state list) Symex.Result.t
+      tb_state option ->
+      (tb_state option, 'err, serialized_state list) Symex.Result.t
 
-    val produce_state : serialized_state -> tb_state -> tb_state Symex.t
+    val produce_state :
+      serialized_state -> tb_state option -> tb_state option Symex.t
+
+    type full_serialized = Structure of serialized | State of serialized_state
 
     (** {2 Operations on the structure} *)
 
@@ -89,16 +92,15 @@ module M (Symex : Rust_symex) = struct
     (** {2 Operations on the state} *)
 
     val fix_empty_state : unit -> serialized_state list
-    val empty_state : tb_state
-    val is_empty_state : tb_state -> bool
-    val equal_state : tb_state -> tb_state -> bool
+    val init_st : unit -> tb_state option Symex.t
+    val equal_state : tb_state option -> tb_state option -> bool
 
     val set_protector :
       protected:bool ->
       tag ->
       t option ->
-      tb_state ->
-      (tb_state, 'e, serialized list) Symex.Result.t
+      tb_state option ->
+      (tb_state option, 'e, full_serialized list) Symex.Result.t
 
     (** [access root accessed e state]: Update all nodes in the mapping [state]
         for the tree rooted at [root] with an event [e], that happened at
@@ -107,10 +109,13 @@ module M (Symex : Rust_symex) = struct
       tag ->
       access ->
       t option ->
-      tb_state ->
-      (tb_state, [> `AliasingError ], serialized list) Symex.Result.t
+      tb_state option ->
+      ( tb_state option,
+        [> `AliasingError ],
+        full_serialized list )
+      Symex.Result.t
 
-    val merge : tb_state -> tb_state -> tb_state Symex.t
+    val merge : tb_state option -> tb_state option -> tb_state option Symex.t
   end
 end
 

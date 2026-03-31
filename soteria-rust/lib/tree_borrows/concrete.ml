@@ -26,7 +26,8 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
 
   let nondet_tag () = return None
   let init () = return (init ())
-  let unwrap = Option.get ~msg:"missing state in concrete TB"
+  let init_st _ = return (Some empty_state)
+  let unwrap x = Option.get ~msg:"missing state in concrete TB" x
 
   let borrow ?protector parent ~state st =
     let st = unwrap st in
@@ -36,15 +37,16 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
   let unprotect tag st = return (Ok (), Some (unwrap st |> unprotect tag))
 
   let access accessed e root st =
-    match access accessed e (unwrap root) st with
-    | Ok st' -> Symex.Result.ok st'
+    match access accessed e (unwrap root) (unwrap st) with
+    | Ok st' -> Symex.Result.ok (Some st')
     | Error e -> Symex.Result.error e
 
-  let set_protector ~protected tag st t =
-    Result.ok (set_protector ~protected tag (unwrap st) t)
+  let set_protector ~protected tag t st =
+    Result.ok (Some (set_protector ~protected tag (unwrap t) (unwrap st)))
 
   let strong_protector_exists st = strong_protector_exists (unwrap st)
-  let merge l r = return (merge l r)
+  let merge l r = return (Some (merge (unwrap l) (unwrap r)))
+  let equal_state = Option.equal equal_state
 
   (* Compositionality *)
 
@@ -57,6 +59,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
   let produce _ st = return ((), st)
 
   type serialized_state = | [@@deriving show]
+  type full_serialized = Structure of serialized | State of serialized_state
 
   let serialize_state _ = []
   let fix_empty_state () = []
