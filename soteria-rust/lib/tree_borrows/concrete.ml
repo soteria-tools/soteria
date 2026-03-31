@@ -26,7 +26,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
 
   let nondet_tag () = return None
   let init () = return (init ())
-  let init_st _ = return (Some empty_state)
+  let init_st _ = return empty_state
   let unwrap x = Option.get ~msg:"missing state in concrete TB" x
 
   let borrow ?protector parent ~state st =
@@ -45,7 +45,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
     Result.ok (Some (set_protector ~protected tag (unwrap t) (unwrap st)))
 
   let strong_protector_exists st = strong_protector_exists (unwrap st)
-  let merge l r = return (Some (merge (unwrap l) (unwrap r)))
+  let merge l r = return (merge l r)
   let equal_state = Option.equal equal_state
 
   (* Compositionality *)

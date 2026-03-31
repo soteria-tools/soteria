@@ -92,7 +92,7 @@ module M (Symex : Rust_symex) = struct
     (** {2 Operations on the state} *)
 
     val fix_empty_state : unit -> serialized_state list
-    val init_st : unit -> tb_state option Symex.t
+    val init_st : unit -> tb_state Symex.t
     val equal_state : tb_state option -> tb_state option -> bool
 
     val set_protector :
@@ -115,7 +115,7 @@ module M (Symex : Rust_symex) = struct
         full_serialized list )
       Symex.Result.t
 
-    val merge : tb_state option -> tb_state option -> tb_state option Symex.t
+    val merge : tb_state -> tb_state -> tb_state Symex.t
   end
 end
 
