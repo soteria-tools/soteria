@@ -318,11 +318,14 @@ struct
     | Some z -> return (Z.to_int z)
     | None -> not_impl "Cannot convert size to int"
 
+  let lift_miss_res ~ofs ~len =
+    List.map (fun v -> MemVal { offset = ofs; len; v })
+
   let mk_fix_typed ofs ty () =
     let*^ len = Layout.size_of ty in
     let len = get_ok len in
     let+ fixes = mk_fix_typed ty () in
-    List.map (fun v -> [ MemVal { offset = ofs; len; v } ]) fixes
+    [ lift_miss_res ~ofs ~len fixes ]
 
   let mk_fix_any ofs len () = [ [ MemVal { offset = ofs; len; v = SAny } ] ]
   let mk_fix_any_s ofs len () = return (mk_fix_any ofs len ())
@@ -330,9 +333,8 @@ struct
   let mk_fix_tb ofs len () =
     return
       [
-        List.map
-          (fun v -> MemVal { offset = ofs; len; v = MemVal.lift_tb_st_fix v })
-          (Tree_borrows.fix_empty_state ());
+        lift_miss_res ~ofs ~len
+        @@ List.map MemVal.lift_tb_st_fix (Tree_borrows.fix_empty_state ());
       ]
 
   let collect_leaves ~uninit (t : Tree.t) =
@@ -370,7 +372,9 @@ struct
         (* We don't know if this read is valid, as memory could be
            uninitialised. We have to approximate and vanish. *)
         not_impl "Reading from Any memory, vanishing."
-    | Unowned -> failwith "Unowned leaf, should have been caught before"
+    | Unowned ->
+        let+ fix = MemVal.mk_fix_typed ty () in
+        Missing [ fix ]
 
   let decode_lazy ~ty (t : Tree.t) =
     (* The tree spans the entire type we're interested in. Furthermore, we only
@@ -399,7 +403,9 @@ struct
     match t.node with
     | NotOwned _ -> miss []
     | Owned Lazy -> decode_lazy ~ty t
-    | Owned (Leaf (node, _)) -> decode_mem_val ~ty node
+    | Owned (Leaf (node, _)) ->
+        let offset, len = t.range in
+        lift_miss ~offset ~len @@ decode_mem_val ~ty node
 
   let merge_tree_borrows t =
     DecayMapMonad.Result.fold_iter ~init:None
