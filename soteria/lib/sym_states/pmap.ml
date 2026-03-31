@@ -54,6 +54,9 @@ struct
   let show = Fmt.to_to_string pp
   let of_opt = function None -> empty | Some m -> m
   let to_opt m = if is_empty m then None else Some m
+  let show = Fmt.to_to_string pp
+  let of_opt = function None -> empty | Some m -> m
+  let to_opt m = if is_empty m then None else Some m
 
   let alloc ~(new_codom : Codom.t) : (Key.t, 'err, syn list) SM.Result.t =
     let* st = SM.get_state () in
@@ -65,7 +68,12 @@ struct
           Key.distinct
             (key :: (syntactic_bindings st |> Seq.map fst |> List.of_seq));
         ]
+        [
+          Key.distinct
+            (key :: (syntactic_bindings st |> Seq.map fst |> List.of_seq));
+        ]
     in
+    let+ () = SM.set_state (to_opt (syntactic_add key new_codom st)) in
     let+ () = SM.set_state (to_opt (syntactic_add key new_codom st)) in
     Ok key
 
@@ -84,8 +92,13 @@ struct
     let st =
       Seq.fold_left (fun st (k, v) -> syntactic_add k v st) st bindings
     in
+    let st =
+      Seq.fold_left (fun st (k, v) -> syntactic_add k v st) st bindings
+    in
     let* () =
       SM.assume
+        [ syntactic_bindings st |> Seq.map fst |> List.of_seq |> Key.distinct ]
+        SM.assume
         [ syntactic_bindings st |> Seq.map fst |> List.of_seq |> Key.distinct ]
     in
     let+ () = SM.set_state (to_opt st) in
@@ -97,10 +110,12 @@ struct
     let* st = SM.get_state () in
     let st = of_opt st in
     let* key, codom = lift @@ find_opt key st in
+    let* key, codom = lift @@ find_opt key st in
     let* res, codom = lift @@ f codom in
     match res with
     | Ok v ->
         (* Only update the state in case of success! *)
+        let+ () = SM.set_state (to_opt (syntactic_add_opt key codom st)) in
         let+ () = SM.set_state (to_opt (syntactic_add_opt key codom st)) in
         Ok v
     | Error e -> SM.Result.error e

@@ -18,6 +18,7 @@ module type DecayMapS = sig
   type t
 
   val empty : t
+  val empty : t
   val pp : Format.formatter -> t -> unit
 
   (** Decays the given location into an integer, updating the decay map

@@ -154,6 +154,15 @@ module Make (Sptr : Sptr.S) = struct
 
     let mk_fix_any () = [ Any ]
 
+    let mk_fix_typed ty () =
+      let+^ v = Encoder.nondet_valid ty in
+      (* we're basically guaranteed this won't error (ie. layout error) by now,
+         so we can safely unwrap. *)
+      let v = get_ok v in
+      [ SInit v ]
+
+    let mk_fix_any () = [ Any ]
+
     type tree = (t, T.sint Typed.t) TB.tree
 
     let not_owned (t : tree) : tree =
