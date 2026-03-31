@@ -117,10 +117,8 @@ struct
 
     let split ~at node =
       match node with
-      | Leaf (((Uninit | Zeros | Any | Unowned) as v), tb) ->
-          let ll = Leaf (v, tb) in
-          let lr = Leaf (v, tb) in
-          return TB.Split_tree.(Leaf ll, Leaf lr)
+      | Leaf ((Uninit | Zeros | Any | Unowned), _) ->
+          return TB.Split_tree.(Leaf node, Leaf node)
       | Leaf (Init value, tb) ->
           let+ vl, vr = split_rval value at in
           let ll = Leaf (Init vl, tb) in
@@ -404,8 +402,18 @@ struct
     | Owned (Leaf (node, _)) -> decode_mem_val ~ty node
 
   let merge_tree_borrows t =
-    DecayMapMonad.fold_iter ~init:None
-      ~f:(fun tb_st (_, _, tb_st') -> Tree_borrows.merge tb_st tb_st')
+    DecayMapMonad.Result.fold_iter ~init:None
+      ~f:(fun acc ((offset, len), _, tb_st) ->
+        match (tb_st, acc) with
+        | None, _ ->
+            (* Missing state; we must miss *)
+            lift_miss ~offset ~len
+            @@ lift_tb_st_miss
+            @@ Result.miss [ Tree_borrows.fix_empty_state () ]
+        | Some _, None -> Result.ok tb_st
+        | Some tb_st, Some acc ->
+            let+ res = Tree_borrows.merge tb_st acc in
+            Ok (Some res))
       (Tree.iter_leaves_rev t)
 
   let init range v tb : Tree.t =
@@ -466,7 +474,7 @@ struct
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ t = as_owned ~mk_fixes t in
-          let* tb_st = merge_tree_borrows t in
+          let** tb_st = merge_tree_borrows t in
           match tag with
           | Some tag ->
               let++ tb_st' =
@@ -505,8 +513,8 @@ struct
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ _ = as_owned ~mk_fixes t in
-          let* tb_st = merge_tree_borrows t in
-          ok (uninit range tb_st)
+          let++ tb_st = merge_tree_borrows t in
+          uninit range tb_st
         in
         let rebuild_parent = Tree.of_children in
         let++ _, tree =
@@ -522,8 +530,8 @@ struct
         let open DecayMapMonad.Syntax in
         let replace_node t =
           let@ t = as_owned ~mk_fixes t in
-          let* tb_st = merge_tree_borrows t in
-          ok @@ zeros range tb_st
+          let++ tb_st = merge_tree_borrows t in
+          zeros range tb_st
         in
         let rebuild_parent = Tree.of_children in
         let++ _, tree =
@@ -534,7 +542,7 @@ struct
   let alloc ?(zeroed = false) size =
     let st = if zeroed then Zeros else Uninit in
     let+ tb_st = Tree_borrows.init_st () in
-    alloc (Leaf (st, tb_st)) size
+    alloc (Leaf (st, Some tb_st)) size
 
   (* Tree borrow updates *)
 
