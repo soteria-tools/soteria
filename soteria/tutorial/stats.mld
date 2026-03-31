@@ -23,7 +23,7 @@ A key feature of the statistics system is that it automatically {e merges} stati
 
 {2:basic Getting Started with Statistics}
 
-To collect statistics, you need to wrap your computation with {{!Soteria.Stats.As_ctx.with_stats}with_stats}:
+To collect statistics, you need to wrap your computation with {{!Soteria.Stats.As_ctx.with_stats}with_stats}. Note that [with_stats] must be called outside of any symbolic process (i.e. outside functions returning ['a Symex.t]):
 
 {@ocaml[
 let computation () =
@@ -210,7 +210,6 @@ By default, statistics are printed in a generic format. You can register custom 
 Use {{!Soteria.Stats.register_int_printer}register_int_printer} for integer statistics:
 
 {@ocaml[
-(* Register a custom printer for "operations" *)
 let () = Soteria.Stats.register_int_printer "operations" 
   ~name:"Total Operations"
   (fun _stats ft count -> Fmt.pf ft "%d ops" count);;
@@ -220,8 +219,6 @@ let demo () =
   ();;
 
 let result = Soteria.Stats.As_ctx.with_stats () demo;;
-
-(* When printed, this will show "Total Operations: 42 ops" *)
 ]}
 
 {3 Context-Aware Printer}
@@ -229,14 +226,13 @@ let result = Soteria.Stats.As_ctx.with_stats () demo;;
 Printers receive the full statistics object, allowing context-aware formatting:
 
 {@ocaml[
-(* Register a printer that shows percentages *)
 let () = Soteria.Stats.register_int_printer "successful_checks"
   ~name:"Successful Checks"
   (fun stats ft successes ->
     let total = Soteria.Stats.get_int stats "total_checks" in
     if total > 0 then
-      let pct = (float_of_int successes /. float_of_int total) *. 100. in
-      Fmt.pf ft "%d / %d (%.1f%%)" successes total pct
+      Fmt.pf ft "%d / %d (%a)" successes total
+        Soteria.Logs.Printers.pp_percent (float_of_int total, float_of_int successes)
     else
       Fmt.pf ft "%d" successes
   );;
@@ -247,7 +243,6 @@ let demo_checks () =
   ();;
 
 let result = Soteria.Stats.As_ctx.with_stats () demo_checks;;
-(* When printed: "Successful Checks: 85 / 100 (85.0%)" *)
 ]}
 
 {3 Float Printer with Time Formatting}
@@ -298,15 +293,17 @@ let results = Symex.run_with_stats ~mode:OX (analyze_value ());;
 let execution_results = results.res;;
 
 (* results.stats contains statistics from the execution *)
-let exec_time = Soteria.Stats.get_float results.stats "soteria.exec-time";;
+let exec_time = Soteria.Stats.get_float results.stats Soteria.Symex.StatKeys.exec_time;;
 ]}
 
 The built-in Symex statistics tracked automatically include:
-- Execution time
-- SAT solving time
-- Number of SAT checks  
-- Number of branches explored
-- Number of execution steps
+- Execution time ([Soteria.Symex.StatKeys.exec_time])
+- SAT solving time ([Soteria.Symex.StatKeys.sat_time])
+- Number of SAT checks ([Soteria.Symex.StatKeys.sat_checks])
+- Number of branches explored ([Soteria.Symex.StatKeys.branches])
+- Number of execution steps ([Soteria.Symex.StatKeys.steps])
+
+See {{!Soteria.Symex.StatKeys}Soteria.Symex.StatKeys} for all available constants.
 
 {3 Custom Statistics in Analysis}
 
@@ -402,22 +399,25 @@ Soteria.Stats.output result.stats;;
 
 {3 Naming Conventions}
 
-Use consistent, hierarchical names for statistics:
+Use consistent, hierarchical names for statistics, and define a [StatKeys] module to centralize your stat key constants, document them, and register their printers — this makes the code maintainable as the number of statistics grows:
 
 {@ocaml[
+module StatKeys = struct
+  let paths_explored = "analysis.paths_explored"
+  let total_time = "analysis.time"
+  let errors_found = "analysis.errors"
+
+  let () =
+    let open Soteria.Stats in
+    register_int_printer paths_explored ~name:"Paths Explored"
+      (fun _ ft n -> Fmt.pf ft "%d paths" n);
+    register_float_printer total_time ~name:"Analysis Time"
+      (fun _ -> Soteria.Logs.Printers.pp_time)
+end;;
+
 let good_names () =
-  (* Use dot notation for hierarchies *)
-  Soteria.Stats.As_ctx.incr "symex.branches";
-  Soteria.Stats.As_ctx.incr "symex.sat_checks";
-  Soteria.Stats.As_ctx.incr "solver.z3.queries";
-  
-  (* Use descriptive names *)
-  Soteria.Stats.As_ctx.incr "unexplored_branches";
-  Soteria.Stats.As_ctx.add_float "total_execution_time" 1.5;
-  
-  (* Use consistent prefixes for related stats *)
-  Soteria.Stats.As_ctx.incr "memory.allocations";
-  Soteria.Stats.As_ctx.incr "memory.deallocations";
+  Soteria.Stats.As_ctx.incr StatKeys.paths_explored;
+  Soteria.Stats.As_ctx.add_float StatKeys.total_time 1.5;
   ();;
 ]}
 
