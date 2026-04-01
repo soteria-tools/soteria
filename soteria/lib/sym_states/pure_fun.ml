@@ -47,8 +47,10 @@ module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
         let+ () = SM.set_state (Some x) in
         Ok x
 
-  let consume (s : syn) (t : st) : (st, syn list) Symex.Consumer.t =
-    let open Symex.Consumer.Syntax in
+  open Symex
+
+  let consume (s : syn) (t : st) : (st, syn list) Consumer.t =
+    let open Consumer.Syntax in
     match t with
     | None ->
         let*^ x = C.fresh () in
@@ -57,8 +59,6 @@ module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
     | Some x ->
         let+ () = C.learn_eq s x in
         Some x
-
-  open Symex
 
   let produce (s : syn) (t : st) : st Producer.t =
     let open Producer.Syntax in
