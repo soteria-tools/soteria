@@ -108,12 +108,8 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
               (List.map
                  (fun fix () ->
                    let*^ st' =
-                     let open Symex.Syntax in
-                     let* st =
-                       Symex.fold_list fix ~init:st ~f:(fun st syn ->
-                           Symex.Producer.run_identity (B.produce syn st))
-                     in
-                     Symex.return st
+                     Symex.fold_list fix ~init:st ~f:(fun st syn ->
+                         Symex.Producer.run_identity (B.produce syn st))
                    in
                    with_fuel (fuel - 1) (to_opt (st', fix @ fixes)))
                  fix_choices)
