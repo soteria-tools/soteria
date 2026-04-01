@@ -10,9 +10,10 @@ module type Expr = sig
       uses an identity substitution. *)
   val of_value : 'a v -> t
 
+  (* NOTE: Being able to get a type from an expresion might be too restrictive
+     for some applications with dynamic types? *)
+
   (** Gets the type associated to a syntactic values. *)
-  (* NOTE: this might be too restrictive for some applications with dynamic
-      types? *)
   val ty : t -> 'a ty
 
   (** Convenience function *)
