@@ -90,7 +90,7 @@ module Make (State : State_intf.S) = struct
     let Context.{ args = params; pre; post; pc; ret } = spec in
     let asrt = Logic.Asrt.make ~spatial:pre ~pure:[] in
     let* frame =
-      let@@ () = Consumer.run_consumer ~subst:Value.Expr.Subst.empty in
+      let@@ () = Consumer.run ~subst:Value.Expr.Subst.empty in
       let open Consumer in
       let open Syntax in
       let pairs = List.combine params args in

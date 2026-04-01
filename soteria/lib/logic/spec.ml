@@ -38,9 +38,7 @@ module M (Symex : Symex.Base) = struct
           in
           consume spec.pre state
         in
-        let result =
-          Consumer.run_consumer ~subst:Value.Expr.Subst.empty consumer
-        in
+        let result = Consumer.run ~subst:Value.Expr.Subst.empty consumer in
         Result.map_error result Either.right
       in
       let* state, subst = Producer.run ~subst (produce spec.post frame) in

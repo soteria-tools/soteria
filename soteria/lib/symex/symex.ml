@@ -308,7 +308,7 @@ module type Base = sig
       (('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) ->
       ('b, 'fix2) t
 
-    val run_consumer :
+    val run :
       subst:subst -> ('a, 'fix) t -> ('a * subst, cons_fail, 'fix) Result.t
 
     module Syntax : sig
@@ -941,7 +941,7 @@ module Base_extension (Core : Core) = struct
       Monad.foldM ~return:ok ~bind ~fold:Foldable.List.fold x ~init ~f
 
     let iter_list x ~f = fold_list x ~init:() ~f:(fun () a -> f a)
-    let run_consumer ~subst p = p subst
+    let run ~subst p = p subst
 
     module Syntax = struct
       let ( let* ) = bind
