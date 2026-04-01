@@ -152,7 +152,7 @@ module Learn_eq (Symex : Soteria.Symex.Base with module Value = Typed) = struct
             learn_eq ofs1 ofs2)
           vs1 vs2
     | PolyVal _, PolyVal _ ->
-        lift_symex @@ Symex.give_up "Learning equality of polymorphic values"
+        lift @@ Symex.give_up "Learning equality of polymorphic values"
     | _ -> Fmt.failwith "Mismatching rust_val kinds: %a vs %a" ppa_syn syn ppa t
 end
 

@@ -502,7 +502,6 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
 
       type ('a, 'b, 'c) t = ('a, 'c) Symex.Consumer.t
 
-      let lift = lift_symex
       let return = ok
     end)
 

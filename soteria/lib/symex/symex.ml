@@ -292,7 +292,7 @@ module type Base = sig
     val learn_eq : Value.Expr.t -> 'a Value.t -> (unit, 'fix) t
     val expose_subst : unit -> (subst, 'fix) t
     val lift_res : ('a, cons_fail, 'fix) Result.t -> ('a, 'fix) t
-    val lift_symex : 'a symex -> ('a, 'fix) t
+    val lift : 'a symex -> ('a, 'fix) t
     val branches : (unit -> ('a, 'fix) t) list -> ('a, 'fix) t
     val ok : 'a -> ('a, 'fix) t
     val lfail : Value.sbool Value.t -> ('a, 'fix) t
@@ -911,7 +911,7 @@ module Base_extension (Core : Core) = struct
     let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
      fun subst -> Result.map r (fun a -> (a, subst))
 
-    let lift_symex (m : 'a symex) : ('a, 'fix) t =
+    let lift (m : 'a symex) : ('a, 'fix) t =
      fun subst -> Core.map m (fun a -> Compo_res.ok (a, subst))
 
     let branches (l : (unit -> ('a, 'fix) t) list) : ('a, 'fix) t =
@@ -952,8 +952,8 @@ module Base_extension (Core : Core) = struct
       let ( let+ ) = map
       let ( let+? ) = map_missing
       let ( let*! ) = bind_res
-      let ( let*^ ) m k = bind (lift_symex m) k
-      let ( let+^ ) m k = map (lift_symex m) k
+      let ( let*^ ) m k = bind (lift m) k
+      let ( let+^ ) m k = map (lift m) k
 
       module Symex_syntax = struct
         let[@inline] branch_on ?left_branch_name ?right_branch_name guard ~then_
@@ -997,9 +997,9 @@ module Base_extension (Core : Core) = struct
         with Missing_subst v -> Result.error (`Missing_subst v)
 
     let assert_pure v : (unit, 'fix) t =
-      if Approx.As_ctx.is_ux () then lift_symex (assume [ v ])
+      if Approx.As_ctx.is_ux () then lift (assume [ v ])
       else
-        bind (lift_symex (assert_ v)) @@ fun assert_passed ->
+        bind (lift (assert_ v)) @@ fun assert_passed ->
         if assert_passed then ok () else lfail v
 
     let consume_pure e : (unit, 'fix) t =

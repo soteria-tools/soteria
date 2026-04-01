@@ -100,9 +100,9 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
       let*! res = B.consume syn st in
       match res with
       | Ok st' -> ok (to_opt (st', fixes))
-      | Error _ -> lift_symex (Symex.vanish ())
+      | Error _ -> lift (Symex.vanish ())
       | Missing fix_choices ->
-          if fuel <= 0 then lift_symex (Symex.vanish ())
+          if fuel <= 0 then lift (Symex.vanish ())
           else
             branches
               (List.map
