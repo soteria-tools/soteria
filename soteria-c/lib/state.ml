@@ -340,28 +340,6 @@ let consume (syn : syn) (st : t option) : (t option, syn list) Consumer.t =
       in
       to_opt { heap; globs }
 
-(* let consume (serialized : serialized) (st : t) :
- *     (t, [> Csymex.lfail ] err, serialized) Csymex.Result.t =
- *   let@ () = with_error_loc_as_call_trace () in
- *   L.debug (fun m -> m "Consuming state from %a" pp_serialized serialized);
- *   let** globs =
- *     let+ res = Globs.consume serialized.globs st.globs in
- *     match res with
- *     | Ok globs -> Soteria.Symex.Compo_res.Ok globs
- *     | Error e -> Error e
- *     | Missing fixes ->
- *         let fixes = List.map (fun fix -> { heap = []; globs = fix }) fixes in
- *         Missing fixes
- *   in
- *   let+ res = SPmap.consume Block.consume serialized.heap st.heap in
- *   match res with
- *   | Ok heap -> Soteria.Symex.Compo_res.Ok { heap; globs }
- *   | Error e -> Error e
- *   | Missing fixes ->
- *       let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in
- *       Missing fixes
- *)
-
 let get_global (sym : Cerb_frontend.Symbol.sym) =
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in

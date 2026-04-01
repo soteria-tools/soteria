@@ -21,5 +21,3 @@ let produce_aggregate ptr ty v st =
   let st, fixes = of_opt st in
   let+ st = State.produce_aggregate ptr ty v st in
   to_opt (st, fixes)
-
-(* let consume s t = Bi.consume ~produce:State.produce State.consume s t *)

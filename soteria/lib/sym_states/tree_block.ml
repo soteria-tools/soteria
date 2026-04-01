@@ -515,11 +515,6 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
       in
       tree
 
-    (* let consume (syn : MemVal.syn) (range : Range.t) (st : t) : (t, 'err,
-       MemVal.syn) Symex.Result.t = let replace_node = MemVal.consume syn in let
-       rebuild_parent = of_children in let++ _, tree = frame_range st
-       ~replace_node ~rebuild_parent range in tree *)
-
     module Producer_frame_range = Frame_range (struct
       include Symex.Producer
 
