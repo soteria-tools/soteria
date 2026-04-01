@@ -1,3 +1,4 @@
+open Soteria_std
 open Svalue
 
 type t = Svalue.t [@@deriving show { with_path = false }]
@@ -7,7 +8,11 @@ let ty (s : t) : ty = s.node.ty
 let[@inline] of_value v = v
 
 module Subst = struct
-  module Raw_map = Soteria_std.Map.MakePp (Svalue)
+  module Raw_map = PatriciaTree.MakeMap (struct
+    type t = Svalue.t [@@deriving show]
+
+    let to_int = Svalue.unique_tag
+  end)
 
   type t = Svalue.t Raw_map.t
 

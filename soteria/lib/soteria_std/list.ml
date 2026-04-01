@@ -134,6 +134,8 @@ let group_by (type a) ?(compare : a -> a -> int = Stdlib.compare)
     type t = a
 
     let compare = compare
+    let pp _ _ = ()
+    let show _ = ""
   end) in
   l
   |> fold_left

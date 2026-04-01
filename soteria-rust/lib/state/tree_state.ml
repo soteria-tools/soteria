@@ -61,7 +61,7 @@ end
 
 type global = String of string | Global of Types.global_decl_id
 
-module GlobMap = Map.MakePp (struct
+module GlobMap = Map.Make (struct
   type t = global = String of string | Global of Types.global_decl_id
   [@@deriving show { with_path = false }, ord]
 end)

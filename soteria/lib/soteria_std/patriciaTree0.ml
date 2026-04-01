@@ -1,12 +1,14 @@
-(** Extensions to [Stdlib.Map] with pretty-printing support. *)
+include PatriciaTree
 
-include Stdlib.Map
+module type KEY = sig
+  include PatriciaTree.KEY
 
-module Make (Key : Ordered_type.S) = struct
-  include Make (Key)
+  val pp : Format.formatter -> t -> unit
+end
 
-  (** Adds an element to the map, but throws [Invalid_argument] if the key
-      already exists. *)
+module MakeMap (Key : KEY) = struct
+  include PatriciaTree.MakeMap (Key)
+
   let add_assert_new key value map =
     update key
       (function

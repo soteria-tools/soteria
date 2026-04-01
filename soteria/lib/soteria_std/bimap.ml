@@ -4,8 +4,7 @@
     correspondence between keys of type [KeyL] (left) and [KeyR] (right). It
     allows efficient lookup in both directions by internally maintaining two
     synchronized maps. *)
-module Make (KeyL : Stdlib.Map.OrderedType) (KeyR : Stdlib.Map.OrderedType) =
-struct
+module Make (KeyL : Ordered_type.S) (KeyR : Ordered_type.S) = struct
   module M = Map.Make (KeyL)
   module M_rev = Map.Make (KeyR)
 

@@ -9,7 +9,12 @@ let subst f v = f v
 
 module Subst = struct
   (* TODO: make this a Patricia Tree *)
-  module Raw_map = Map.MakePp (Svalue)
+  module Raw_map = PatriciaTree.MakeMap (struct
+    type t = Svalue.t
+
+    let to_int = Svalue.unique_tag
+    let pp = Svalue.pp
+  end)
 
   type t = Svalue.t Raw_map.t
 
