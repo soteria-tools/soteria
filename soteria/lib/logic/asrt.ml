@@ -97,9 +97,13 @@ module M (Symex : Symex.Base) = struct
           let* subst = Consumer.expose_subst () in
           match List.find_with_rest (is_consumable subst) remaining with
           | None ->
-              failwith
-                "No consumable atom found, let's figure out what to do with \
-                 this corner case"
+              L.info (fun m ->
+                  m
+                    "@[<v>Failed to consume assertion because I can't find any \
+                     consumable atom left given my current substitution.@.@[<v \
+                     2>Substitution:@ %a@]@.@[<v 2>Atoms left:@ %a@]@]"
+                    Value.Expr.Subst.pp subst (pp B.pp_syn) remaining);
+              Consumer.lfail @@ Value.of_bool false
           | Some (atom, rest) ->
               let* st' = consume_atom atom st in
               aux rest st'
