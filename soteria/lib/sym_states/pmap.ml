@@ -84,9 +84,6 @@ struct
     let st =
       Seq.fold_left (fun st (k, v) -> syntactic_add k v st) st bindings
     in
-    let st =
-      Seq.fold_left (fun st (k, v) -> syntactic_add k v st) st bindings
-    in
     let* () =
       SM.assume
         [ syntactic_bindings st |> Seq.map fst |> List.of_seq |> Key.distinct ]
