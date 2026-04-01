@@ -35,16 +35,25 @@ module type Expr = sig
     val apply : missing_var:(Var.t -> 'a ty -> 'a v) -> t -> expr -> 'a v * t
 
     (** [learn θ e v] takes the substitution [θ], the expression [e] and the
-        value [v] and completes [θ] into the unique substitution [θ'] such that
-        [θ'(e) = v]. If there is zero or more than one such substitution,
-        returns [None].
+        value [v] and tries to complete [θ] into a substitution [θ'] such that
+        [θ'(e) = v].
 
-        FIXME: I'm not sure that's true. I believe that for the inputs:
-        - [θ = [x -> 0]]
-        - [v = 1]
-        - [e = x] the function should return [Some θ] (i.e. not modify the
-          substitution), and the consumption is in charge of checking the
-          equality after. This function needs a better documentation. *)
+        The only requirement from this function is that, if this function
+        returns [Some θ'], then [θ'] covers all variables in [e]. However, all
+        implementations of this function should be sound:
+        - If this function returns a substitution that does not cover all
+          variables in [e], the client may crash (but not result to an
+          unsoundness).
+        - If this function returns a wrong substitution (where [θ'(e) != v]),
+          this will not result in an unsoundness, but may prevent successful
+          consumption.
+        - If there are more than one substitution that satisfies the
+          requirement, this function can return any of them. This will lead to
+          under-approximation when in UX mode, and to a probable consumption
+          failure in UX mode.
+        - If this function returns [None] when there exists a correct
+          substitution, this will only lead to consumption failure. The function
+          can always be extended to return a correct substitution. *)
     val learn : t -> expr -> 'a v -> t option
   end
 end
