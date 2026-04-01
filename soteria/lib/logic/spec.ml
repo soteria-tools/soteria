@@ -43,14 +43,12 @@ module M (Symex : Symex.Base) = struct
         in
         Result.map_error result Either.right
       in
-      let* state, subst =
-        Producer.run_producer ~subst (produce spec.post frame)
-      in
+      let* state, subst = Producer.run ~subst (produce spec.post frame) in
       let** ret =
         match spec.ret with
         | Ok e ->
             let subst_val = Producer.apply_subst Fun.id e in
-            let* v, _subst = Producer.run_producer ~subst subst_val in
+            let* v, _subst = Producer.run ~subst subst_val in
             Result.ok v
         | Error err -> Result.error (Either.left err)
       in

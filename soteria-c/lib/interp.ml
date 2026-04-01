@@ -1373,7 +1373,7 @@ module Make (State : State_intf.S) = struct
       let** v = eval_expr_no_store expr in
       let* st = StateM.get_state () in
       let*^ st' =
-        Producer.run_identity_producer
+        Producer.run_identity
         @@ State.produce_aggregate (syn ptr) ty (Agv.to_syn v) st
       in
       let+ () = StateM.set_state st' in

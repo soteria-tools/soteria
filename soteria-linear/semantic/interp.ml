@@ -105,7 +105,7 @@ module Make (State : State_intf.S) = struct
     | Ok (frame, subst) ->
         let+ (v, st), _ =
           let open Producer in
-          let@@ () = run_producer ~subst in
+          let@@ () = run ~subst in
           let open Syntax in
           let post = Logic.Asrt.make ~spatial:post ~pure:pc in
           let* st = Asrt_executor.produce post frame in

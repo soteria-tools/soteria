@@ -259,8 +259,8 @@ module type Base = sig
       ((Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
 
     val produce_pure : Value.Expr.t -> unit t
-    val run_producer : subst:subst -> 'a t -> ('a * subst) symex
-    val run_identity_producer : 'a t -> 'a symex
+    val run : subst:subst -> 'a t -> ('a * subst) symex
+    val run_identity : 'a t -> 'a symex
 
     module Syntax : sig
       include module type of Syntax
@@ -888,12 +888,12 @@ module Base_extension (Core : Core) = struct
       let* v = apply_subst Fun.id e in
       lift (assume [ v ])
 
-    let run_producer ~subst p =
+    let run ~subst p =
       let ( let+ ) = Core.map in
       let+ x, s = p (Some subst) in
       (x, Option.get s)
 
-    let run_identity_producer p =
+    let run_identity p =
       let ( let+ ) = Core.map in
       let+ x, _s = p None in
       x

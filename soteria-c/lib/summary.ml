@@ -258,9 +258,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
                   let+ v = apply_subst Expr.subst sv in
                   v :: acc)
             in
-            let* pc, _ =
-              Csymex.Producer.run_producer ~subst:Expr.Subst.empty producer
-            in
+            let* pc, _ = Csymex.Producer.run ~subst:Expr.Subst.empty producer in
             L.trace (fun m ->
                 m
                   "Produced heap, about to check if path condition holds in \

@@ -65,8 +65,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
                         ~f:(fun fix st ->
                           let open Symex.Syntax in
                           let+ st' =
-                            Symex.Producer.run_identity_producer
-                              (B.produce fix st)
+                            Symex.Producer.run_identity (B.produce fix st)
                           in
                           ((), st'))
                         st
@@ -112,8 +111,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
                      let open Symex.Syntax in
                      let* st =
                        Symex.fold_list fix ~init:st ~f:(fun st syn ->
-                           Symex.Producer.run_identity_producer
-                             (B.produce syn st))
+                           Symex.Producer.run_identity (B.produce syn st))
                      in
                      Symex.return st
                    in
