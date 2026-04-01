@@ -1054,12 +1054,6 @@ module Base_extension (Core : Core) = struct
   end
 end
 
-module Base_test (Sol : Solver.Mutable_incremental) : Base = struct
-  module CORE = Make_core (Sol)
-  include CORE
-  include Base_extension (CORE)
-end
-
 module Make (Sol : Solver.Mutable_incremental) :
   S with module Value = Sol.Value = struct
   (* TODO: CORE this can go away when `include functors` land
