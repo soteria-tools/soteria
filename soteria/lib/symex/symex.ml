@@ -13,7 +13,22 @@ module Solver_result = Solver_result
 module Value = Value
 module Var = Var
 
+exception Tool_bug of string
 exception Gave_up of string
+
+let tool_bug reason = raise (Tool_bug reason)
+
+let () =
+  Printexc.register_printer (function
+    | Gave_up reason ->
+        Some (Fmt.str "Analysis gave up (and was not caught): %s" reason)
+    | Tool_bug reason ->
+        Some
+          (Fmt.str
+             "@[<v>Tool Bug : %s@.This is due to an invalid use of the Soteria \
+              API, please report this with the tool developer.@]"
+             reason)
+    | _ -> None)
 
 module Or_gave_up = struct
   type 'err t = E of 'err | Gave_up of string
@@ -1021,14 +1036,14 @@ module Base_extension (Core : Core) = struct
         match Value.Expr.Subst.learn subst expr v with
         | Some s -> s
         | None ->
-            failwith
+            tool_bug
               "Consumed something that was not yet consumable, this is a tool \
                bug!"
       in
       let v', subst =
         Value.Expr.Subst.apply
           ~missing_var:(fun _ _ ->
-            failwith
+            tool_bug
               "Tool Bug: learned substitution does not cover expression's free \
                variables.")
           subst expr
