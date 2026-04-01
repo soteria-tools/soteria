@@ -39,16 +39,19 @@ type branch_span = {
           aggregation. *)
 }
 
-type branch_coverage = { line : int; then_reached : bool; else_reached : bool }
+type branch_coverage = { line : int; then_hits : int; else_hits : int }
+type function_coverage = { line : int; end_line : int option; hits : int }
 
 type file_hits = {
   lines : int Hint.t;
       (** Reachable lines with hit counts. A value of [0] means reachable but
           not reached. *)
   branches : branch_coverage Hstring.t;
-      (** For each conditional id, whether then/else was reached and on which
-          line that conditional lives. Note this cannot be stored along the
+      (** For each conditional id, then/else hit counters and the source line
+          where that conditional lives. Note this cannot be stored along the
           lines, as there may be several conditionals on one line. *)
+  functions : function_coverage Hstring.t;
+      (** Registered function definitions and their hit counts. *)
 }
 
 type t = file_hits Hstring.t
@@ -87,24 +90,42 @@ module As_ctx : sig
       coverage according to current configuration if enabled. *)
   val with_coverage_dumped : unit -> (unit -> 'a) -> 'a
 
+  (** [register_line ~file ~line] marks a source line as reachable without
+      recording a hit. Useful to include not-yet-reached lines in coverage
+      reports. *)
+  val register_line : file:string -> line:int -> unit
+
+  (** [register_lines ~file lines] marks all lines from [lines] as reachable
+      without recording hits. Existing hit counts are preserved. *)
+  val register_lines : file:string -> int Iter.t -> unit
+
+  (** [register_files_lines spans] marks reachable lines for multiple files. The
+      outer iterator yields [(file, lines)] pairs. *)
+  val register_files_lines : (string * int Iter.t) Iter.t -> unit
+
+  (** [register_branch span] registers a branch point as reachable even if
+      neither side is taken. *)
+  val register_branch : branch_span -> unit
+
+  (** [register_function ~file ~name ~line ?end_line ()] registers function
+      metadata for export. *)
+  val register_function :
+    file:string -> name:string -> line:int -> ?end_line:int -> unit -> unit
+
+  (** [register_functions fns] registers function metadata in bulk. The iterator
+      yields [(file, name, line, end_line)] tuples. *)
+  val register_functions : (string * string * int * int option) Iter.t -> unit
+
   (** [mark_line ~file ~line] records one hit for a source line. *)
   val mark_line : file:string -> line:int -> unit
 
-  (** [mark_line_reachable ~file ~line] marks a source line as reachable without
-      recording a hit. Useful to include not-yet-reached lines in coverage
-      reports. *)
-  val mark_line_reachable : file:string -> line:int -> unit
-
-  (** [mark_lines_reachable ~file lines] marks all lines from [lines] as
-      reachable without recording hits. Existing hit counts are preserved. *)
-  val mark_lines_reachable : file:string -> int Iter.t -> unit
-
-  (** [mark_files_lines_reachable spans] marks reachable lines for multiple
-      files. The outer iterator yields [(file, lines)] pairs. *)
-  val mark_files_lines_reachable : (string * int Iter.t) Iter.t -> unit
-
-  (** [mark_branch span side] records that [side] of [span] has been reached. *)
+  (** [mark_branch span side] increments hit count for [side] of [span]. *)
   val mark_branch : branch_side -> branch_span -> unit
+
+  (** [mark_function ~file ~name ~line ?end_line ()] increments function hit
+      count and registers function metadata if it was missing. *)
+  val mark_function :
+    file:string -> name:string -> line:int -> ?end_line:int -> unit -> unit
 
   (** [get_copy ()] retrieves a copy of the coverage aggregated in the current
       environment. *)

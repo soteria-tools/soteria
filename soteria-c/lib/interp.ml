@@ -1355,6 +1355,7 @@ module Make (State : State_intf.S) = struct
     let open Csymex.Syntax in
     (* Put arguments in store *)
     let name, (_loc, _, _, params, stmt) = fundef in
+    let () = Fun_ctx.mark_function_hit fundef in
     let ret_ty = Ail_helpers.get_return_ty name in
     (* FIXME: let@ () = with_loc ~loc in *)
     L.debug (fun m -> m "Executing function %a" Fmt_ail.pp_sym name);

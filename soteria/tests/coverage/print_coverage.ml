@@ -8,18 +8,25 @@ let branch_span line id : Soteria.Coverage.branch_span =
   { file; line; branch_id = "b_" ^ string_of_int line ^ "_" ^ string_of_int id }
 
 let process () : (unit, 'e, 'f) Result.t =
-  Soteria.Coverage.As_ctx.register_function ~file ~name:"my_fun" ~line:1 ();
+  let open Soteria.Coverage.As_ctx in
+  register_function ~file ~name:"other_fun" ~line:15 ();
+  register_function ~file ~name:"my_fun" ~line:1 ();
+  mark_function ~file ~name:"my_fun" ~line:1 ();
   let* b1 = nondet t_bool in
-  Soteria.Coverage.As_ctx.mark_lines_reachable ~file Iter.(1 -- 7);
-  Soteria.Coverage.As_ctx.mark_line ~file ~line:1;
+  register_lines ~file Iter.(1 -- 7);
+  mark_line ~file ~line:1;
   let* () = if%sat[@span branch_span 2 1] b1 then return () else return () in
-  Soteria.Coverage.As_ctx.mark_line ~file ~line:3;
+  mark_line ~file ~line:3;
   let* () =
     if%sat[@span branch_span 4 1] v_false then return ()
     else if%sat[@span branch_span 4 2] v_true then return ()
     else return ()
   in
-  Soteria.Coverage.As_ctx.mark_line ~file ~line:5;
+  mark_line ~file ~line:5;
+  let* () = if%sat[@span_opt None] b1 then return () else return () in
+  let* () =
+    if%sat[@span_opt Some (branch_span 6 1)] b1 then return () else return ()
+  in
   Result.ok ()
 
 let () =

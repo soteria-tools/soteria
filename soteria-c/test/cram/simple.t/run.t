@@ -1331,16 +1331,12 @@ Coverage test -- JSON
         "20": 4
       },
       "branches": {
-        "sym.c:3:3-14:4": {
-          "line": 3,
-          "then_reached": true,
-          "else_reached": true
-        },
-        "sym.c:5:5-8:6": {
-          "line": 5,
-          "then_reached": false,
-          "else_reached": true
-        }
+        "sym.c:3:3-14:4": { "line": 3, "then_hits": 1, "else_hits": 1 },
+        "sym.c:5:5-8:6": { "line": 5, "then_hits": 0, "else_hits": 1 }
+      },
+      "functions": {
+        "main": { "line": 17, "hits": 1 },
+        "simple": { "line": 1, "hits": 1 }
       }
     }
   }
@@ -1355,7 +1351,18 @@ Coverage test -- Cobertura
       <package name="soteria" line-rate="0.833333" branch-rate="0.750000">
         <classes>
           <class name="sym.c" filename="sym.c" line-rate="0.0" branch-rate="0.0">
-            <methods/>
+            <methods>
+              <method name="main" signature="" line-rate="1.0" branch-rate="0.0">
+                <lines>
+                  <line number="17" hits="1"/>
+                </lines>
+              </method>
+              <method name="simple" signature="" line-rate="1.0" branch-rate="0.0">
+                <lines>
+                  <line number="1" hits="1"/>
+                </lines>
+              </method>
+            </methods>
             <lines>
               <line number="2" hits="1"/>
               <line number="3" hits="6" branch="true" condition-coverage="100% (2/2)"/>
@@ -1381,6 +1388,12 @@ Coverage test -- LCOV
   Executed 11 statements
   Verification Success!
   SF:sym.c
+  FN:17,main
+  FNDA:1,main
+  FN:1,simple
+  FNDA:1,simple
+  FNF:2
+  FNH:2
   BRDA:3,0,then,1
   BRDA:3,0,else,1
   BRDA:5,0,then,0

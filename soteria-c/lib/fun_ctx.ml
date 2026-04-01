@@ -100,13 +100,31 @@ let reachable_stmt_lines_by_file_iter (stmt : Ail_tys.stmt) :
 let reachable_lines_iter (prog : Ail_tys.linked_program) :
     (string * int Iter.t) Iter.t =
  fun f ->
-  (prog.sigma.function_definitions
-  |> Iter.of_list
-  |> Iter.map (fun (_sym, (_loc, _storage, _inline, _params, body)) ->
-      reachable_stmt_lines_by_file_iter body)
-  |> Iter.concat)
-    f
+  prog.sigma.function_definitions
+  |> List.iter @@ fun (_sym, (_loc, _storage, _inline, _params, body)) ->
+     reachable_stmt_lines_by_file_iter body f
+
+let register_functions_iter (prog : Ail_tys.linked_program) :
+    (string * string * int * int option) Iter.t =
+ fun f ->
+  prog.sigma.function_definitions
+  |> List.iter @@ fun (sym, (loc, _, _, _, _)) ->
+     match Error.Diagnostic.extract_location loc with
+     | None -> ()
+     | Some (file, line, _col) ->
+         let fn_name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym in
+         f (file, fn_name, line, None)
+
+let register_functions (prog : Ail_tys.linked_program) =
+  Soteria.Coverage.As_ctx.register_functions (register_functions_iter prog)
+
+let mark_function_hit (prog : Ail_tys.fundef) =
+  let sym, (loc, _, _, _, _) = prog in
+  match Error.Diagnostic.extract_location loc with
+  | None -> ()
+  | Some (file, line, _col) ->
+      let name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym in
+      Soteria.Coverage.As_ctx.mark_function ~file ~name ~line ()
 
 let mark_files_lines_reachable (prog : Ail_tys.linked_program) =
-  Soteria.Coverage.As_ctx.mark_files_lines_reachable
-  @@ reachable_lines_iter prog
+  Soteria.Coverage.As_ctx.register_files_lines @@ reachable_lines_iter prog
