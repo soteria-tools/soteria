@@ -230,8 +230,6 @@ struct
       | STree_borrow _, _ -> not_impl "Consume TB structure in tree block?"
 
     let rec produce (s : serialized) (t : tree) : tree DecayMapMonad.t =
-      L.warn (fun m ->
-          m "produce: %a / %a" pp_serialized s (TB.pp_node pp) t.node);
       match (s, t.node) with
       | ( (SInit _ | SZeros | SUninit | SAny),
           (NotOwned Totally | Owned (Leaf (Unowned, _))) ) ->
