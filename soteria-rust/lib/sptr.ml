@@ -97,11 +97,10 @@ module DecayMap : DecayMapS = struct
        See
        https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html *)
     let usize_ty = Typed.t_usize () in
-    let usize_ty_syn = Typed.untype_type usize_ty in
     let bindings = Map.syntactic_bindings map in
     let binding =
-      Svalue.iter_vars (Expr.of_value loc_int)
-      |> Iter.filter (fun (_, ty) -> Svalue.equal_ty usize_ty_syn ty)
+      Typed.iter_vars loc_int
+      |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
       |> Iter.filter_map (fun (var, _) ->
           let v = Typed.mk_var var usize_ty in
           Seq.find
