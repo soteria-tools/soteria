@@ -14,8 +14,10 @@ module M (Symex : Symex.Base) = struct
 
   module type Base = Sym_states.Base.M(Symex).S
 
-  type 'a atom = Spatial of 'a | Pure of Value.Expr.t [@@deriving show]
-  type 'a t = 'a atom list [@@deriving show]
+  type 'a atom = Spatial of 'a | Pure of Value.Expr.t
+  [@@deriving show { with_path = false }]
+
+  type 'a t = 'a atom list [@@deriving show { with_path = false }]
 
   let make ~spatial ~pure =
     List.map (fun x -> Spatial x) spatial @ List.map (fun x -> Pure x) pure
