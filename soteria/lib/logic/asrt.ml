@@ -22,6 +22,9 @@ module M (Symex : Symex.Base) = struct
   let make ~spatial ~pure =
     List.map (fun x -> Spatial x) spatial @ List.map (fun x -> Pure x) pure
 
+  (** [Execute] contains the utilities to perform {e production} and
+      {e consumption} of a given assertion, using the consumer and producer of
+      the parameter [B]. *)
   module Execute (B : Base) = struct
     let produce_atom atom st =
       let open Producer.Syntax in
