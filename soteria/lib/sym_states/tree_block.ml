@@ -73,7 +73,7 @@ module MemVal (Symex : Symex.Base) = struct
     val pp_syn : Format.formatter -> syn -> unit
 
     (** Serialize this memory value; either returns [Some syn], or [None] to
-        signal the children must instead be syn. *)
+        signal the children must instead be serialized instead. *)
     val to_syn : t -> syn Seq.t option
 
     (** Extract the given [syn] predicate from the tree; this may result in an
