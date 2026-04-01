@@ -397,7 +397,7 @@ module StatKeys = struct
       (fun stats ft calls ->
         let branched = get_int stats branch_on_branched in
         Fmt.pf ft "branches %a of calls (%d of %d)" pp_percenti
-          (branched, calls) branched calls)
+          (calls, branched) branched calls)
 end
 
 module Make_core (Sol : Solver.Mutable_incremental) = struct
