@@ -489,23 +489,22 @@ let sem_eq_untyped v1 v2 =
 
 (** {2 General constructors} *)
 
-let mk_unop (op : Unop.t) v = match op with Not -> not v
+let mk_unop : Unop.t -> t -> t = function Not -> not
 
-let mk_binop (op : Binop.t) v1 v2 =
-  match op with
-  | And -> and_ v1 v2
-  | Or -> or_ v1 v2
-  | Eq -> sem_eq v1 v2
-  | Leq -> leq v1 v2
-  | Lt -> lt v1 v2
-  | Plus -> add v1 v2
-  | Minus -> sub v1 v2
-  | Times -> mul v1 v2
-  | Div -> div v1 v2
-  | Rem -> rem v1 v2
-  | Mod -> mod_ v1 v2
+let mk_binop : Binop.t -> t -> t -> t = function
+  | And -> and_
+  | Or -> or_
+  | Eq -> sem_eq
+  | Leq -> leq
+  | Lt -> lt
+  | Plus -> add
+  | Minus -> sub
+  | Times -> mul
+  | Div -> div
+  | Rem -> rem
+  | Mod -> mod_
 
-let mk_nop (op : Nop.t) vs = match op with Nop.Distinct -> distinct vs
+let mk_nop : Nop.t -> t list -> t = function Distinct -> distinct
 
 (** {2 Infix operators} *)
 
