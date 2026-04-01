@@ -97,8 +97,45 @@ let output t =
   | Some "stdout" -> Writer.to_formatter Fmt.stdout t
   | Some file -> Writer.to_file file t
 
-let update_reachable_line hits line =
-  if not (Hint.mem hits line) then Hint.replace hits line 0
+(** Optimised udpate that doesn't replace if the content didn't change *)
+let[@inline] hint_update ~default h key f =
+  match Hint.find_opt h key with
+  | None -> Hint.replace h key (f default)
+  | Some prev ->
+      let res = f prev in
+      if res <> prev then Hint.replace h key res
+
+(** Optimised udpate that doesn't replace if the content didn't change *)
+let[@inline] hstr_update ~default h key f =
+  match Hstring.find_opt h key with
+  | None -> Hstring.replace h key (f default)
+  | Some prev ->
+      let res = f prev in
+      if res <> prev then Hstring.replace h key res
+
+let update_file_hits (file_hits : file_hits) incr (item : code_item) =
+  match item with
+  | Line line -> hint_update ~default:0 file_hits.lines line (( + ) incr)
+  | Conditional { line; branch_id; side } -> (
+      hstr_update
+        ~default:{ line; then_hits = 0; else_hits = 0 }
+        file_hits.branches branch_id
+      @@ fun prev ->
+      match side with
+      | Some Then -> { prev with then_hits = prev.then_hits + incr }
+      | Some Else -> { prev with else_hits = prev.else_hits + incr }
+      | None -> prev)
+  | Function { name; line; end_line } ->
+      hstr_update ~default:{ line; end_line; hits = 0 } file_hits.functions name
+      @@ fun prev ->
+      let end_line =
+        match end_line with Some _ -> end_line | None -> prev.end_line
+      in
+      { line = prev.line; end_line; hits = prev.hits + incr }
+
+let update_file file incr (item : code_item) cov =
+  let file_hits = get_or_create_file_hits cov file in
+  update_file_hits file_hits incr item
 
 module As_ctx = struct
   type _ Effect.t += Apply : (t -> unit) -> unit Effect.t
@@ -122,110 +159,23 @@ module As_ctx = struct
     res
 
   let[@inline] apply f = Effect.perform (Apply f)
+  let register ~file item = apply (update_file file 0 item)
 
-  let register_line ~file ~line =
+  let register_bulk (items : (string * code_item) Iter.t) =
     apply (fun coverage ->
-        let file_hits = get_or_create_file_hits coverage file in
-        update_reachable_line file_hits.lines line)
+        items (fun (file, item) -> update_file file 0 item coverage))
 
-  let register_lines ~file (lines : int Iter.t) =
+  let register_file_bulk (files : (string * code_item Iter.t) Iter.t) =
     apply (fun coverage ->
-        let file_hits = get_or_create_file_hits coverage file in
-        lines (update_reachable_line file_hits.lines))
-
-  let register_files_lines (spans : (string * int Iter.t) Iter.t) =
-    apply (fun coverage ->
-        spans (fun (file, lines) ->
+        files (fun (file, items) ->
             let file_hits = get_or_create_file_hits coverage file in
-            lines (update_reachable_line file_hits.lines)))
+            items (update_file_hits file_hits 0)))
 
-  let register_branch ({ file; line; branch_id } : branch_span) =
-    apply (fun coverage ->
-        let file_hits = get_or_create_file_hits coverage file in
-        if not (Hstring.mem file_hits.branches branch_id) then
-          Hstring.replace file_hits.branches branch_id
-            { line; then_hits = 0; else_hits = 0 })
+  let mark ~file item = apply (update_file file 1 item)
 
-  let register_function ~file ~name ~line ?end_line () =
-    apply (fun coverage ->
-        let file_hits = get_or_create_file_hits coverage file in
-        let prev = Hstring.find_opt file_hits.functions name in
-        let fn_cov =
-          match prev with
-          | None -> { line; end_line; hits = 0 }
-          | Some prev ->
-              {
-                line = prev.line;
-                end_line =
-                  (match end_line with
-                  | Some _ -> end_line
-                  | None -> prev.end_line);
-                hits = prev.hits;
-              }
-        in
-        Hstring.replace file_hits.functions name fn_cov)
-
-  let register_functions (fns : (string * string * int * int option) Iter.t) =
-    apply (fun coverage ->
-        fns (fun (file, name, line, end_line) ->
-            let file_hits = get_or_create_file_hits coverage file in
-            let prev = Hstring.find_opt file_hits.functions name in
-            let fn_cov =
-              match prev with
-              | None -> { line; end_line; hits = 0 }
-              | Some prev ->
-                  {
-                    line = prev.line;
-                    end_line =
-                      (match end_line with
-                      | Some _ -> end_line
-                      | None -> prev.end_line);
-                    hits = prev.hits;
-                  }
-            in
-            Hstring.replace file_hits.functions name fn_cov))
-
-  let mark_line ~file ~line =
-    apply (fun coverage ->
-        let file_hits = get_or_create_file_hits coverage file in
-        let prev =
-          Option.value ~default:0 (Hint.find_opt file_hits.lines line)
-        in
-        Hint.replace file_hits.lines line (prev + 1))
-
-  let mark_branch side ({ file; line; branch_id } : branch_span) =
-    apply (fun coverage ->
-        let file_hits = get_or_create_file_hits coverage file in
-        let prev =
-          Option.value
-            ~default:{ line; then_hits = 0; else_hits = 0 }
-            (Hstring.find_opt file_hits.branches branch_id)
-        in
-        let next =
-          match side with
-          | Then -> { prev with then_hits = prev.then_hits + 1 }
-          | Else -> { prev with else_hits = prev.else_hits + 1 }
-        in
-        Hstring.replace file_hits.branches branch_id next)
-
-  let mark_function ~file ~name ~line ?end_line () =
-    apply (fun coverage ->
-        let file_hits = get_or_create_file_hits coverage file in
-        let prev = Hstring.find_opt file_hits.functions name in
-        let fn_cov =
-          match prev with
-          | None -> { line; end_line; hits = 1 }
-          | Some prev ->
-              {
-                line = prev.line;
-                end_line =
-                  (match end_line with
-                  | Some _ -> end_line
-                  | None -> prev.end_line);
-                hits = prev.hits + 1;
-              }
-        in
-        Hstring.replace file_hits.functions name fn_cov)
+  let mark_branch side { file; line; branch_id } =
+    apply
+      (update_file file 1 (Conditional { line; branch_id; side = Some side }))
 
   let get_copy () : t =
     let copy_ref = ref (create ()) in

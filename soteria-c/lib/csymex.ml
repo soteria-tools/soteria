@@ -47,7 +47,7 @@ let get_loc () = get_state ()
 
 let with_loc ~(loc : Cerb_location.t) f =
   Option.iter
-    (fun (file, line, _col) -> Soteria.Coverage.As_ctx.mark_line ~file ~line)
+    (fun (file, line, _col) -> Soteria.Coverage.As_ctx.mark ~file (Line line))
     (Error.Diagnostic.extract_location loc);
   with_state ~state:loc f
 
