@@ -2,6 +2,14 @@
     implement to be used in Soteria's symbolic execution engine. *)
 
 module type Expr = sig
+  (** [Expr.t] describes a {e syntactic} representation of a value of type
+      ['a v]. Syntactic objects, unlike semantic values, can contain "free"
+      variables and operations such as substitution have meaning.
+
+      [Expr.t] objects are used in, for instance, assertions ({!Logic}). They
+      can be substituted through a {!Symex.S.Producer} monad or learned through
+      a {!Symex.S.Consumer} monad. *)
+
   type 'a ty
   type 'a v
   type t [@@deriving show]
@@ -60,7 +68,10 @@ end
 
 module type S = sig
   (** The type of symbolic values, parameterized by their type. For example,
-      [sbool t] represents a symbolic boolean. *)
+      [sbool t] represents a symbolic boolean.
+
+      Values also expose an {!Expr} module for their syntactic representation.
+  *)
   type +'a t
 
   (** Type of values. *)
@@ -88,6 +99,10 @@ module type S = sig
 
   (** [of_bool b] creates a concrete boolean value from [b]. *)
   val of_bool : bool -> sbool t
+
+  (* TODO: in the future, I'd like to separate [S_with_syn] from [S]. I think
+     everything is heavier because of the syntactic part, it'd be nice to make
+     it optional. *)
 
   module Expr : Expr with type 'a ty := 'a ty and type 'a v := 'a t
 end
