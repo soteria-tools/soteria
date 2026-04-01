@@ -95,6 +95,10 @@ module type Core = sig
 
   (** Do not use [nondet_UNSAFE]. *)
   val nondet_UNSAFE : 'a vt -> 'a v
+  (* [nondet_UNSAFE] creates a nondet value but does not wrap it inside a symex
+     monad. This could be used unsafely, because it's not lazy. It is exposed
+     because we use it in Producer. TODO: this may be removable when we have
+     modular explicit, and we can thread a monad through all our definitions *)
 
   (** [nondet ty] creates a fresh variable of type [ty]. *)
   val nondet : 'a vt -> 'a v t
