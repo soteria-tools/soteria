@@ -101,13 +101,13 @@ struct
     | Some v -> Symex.return (ofs, Some v)
     | None -> find_bindings (M.bindings m)
 
+  let in_bounds_opt ofs b =
+    match b with
+    | None -> SInt.greater_or_equal ofs (SInt.of_int 0)
+    | Some b -> SInt.in_range ofs (SInt.of_int 0, b)
+
   let assert_in_bounds (ofs : SInt.t) (b : SInt.t option) =
-    let cond =
-      match b with
-      | None -> SInt.greater_or_equal ofs (SInt.of_int 0)
-      | Some b -> SInt.in_range ofs (SInt.of_int 0, b)
-    in
-    SM.assert_or_error cond `OutOfBounds
+    SM.assert_or_error (in_bounds_opt ofs b) `OutOfBounds
 
   let create (size : int) ~(new_codom : Elem.t) : t =
     if size <= 0 then
@@ -155,12 +155,7 @@ struct
             to_opt (m, None))
     | Ser_binding (ofs, inner_ser) ->
         let* ofs = Symex.Consumer.apply_subst SInt.subst ofs in
-        let in_bounds_opt x =
-          match b with
-          | None -> SInt.greater_or_equal x (SInt.of_int 0)
-          | Some b -> SInt.in_range x (SInt.of_int 0, b)
-        in
-        let* () = Symex.Consumer.assert_pure (in_bounds_opt ofs) in
+        let* () = Symex.Consumer.assert_pure (in_bounds_opt ofs b) in
         let*^ ofs, codom = find_opt_sym ofs m in
         let+? fix =
           let+ codom = Elem.consume inner_ser codom in
@@ -173,11 +168,6 @@ struct
     let open Symex.Producer in
     let open Symex.Producer.Syntax in
     let m, b = of_opt st in
-    let in_bounds_opt x =
-      match b with
-      | None -> SInt.greater_or_equal x (SInt.of_int 0)
-      | Some b -> SInt.in_range x (SInt.of_int 0, b)
-    in
     match syn with
     | Ser_bound b_ser -> (
         match b with
@@ -187,7 +177,7 @@ struct
         | Some _ -> vanish ())
     | Ser_binding (ofs, inner_ser) ->
         let* ofs = Symex.Producer.apply_subst SInt.subst ofs in
-        let*^ () = Symex.assume [ in_bounds_opt ofs ] in
+        let*^ () = Symex.assume [ in_bounds_opt ofs b ] in
         let*^ ofs, codom = find_opt_sym ofs m in
         let+ codom = Elem.produce inner_ser codom in
         let m = add_opt ofs codom m in
