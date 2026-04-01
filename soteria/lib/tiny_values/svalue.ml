@@ -157,36 +157,6 @@ let mk_var v ty = Var v <| ty
 let mk_commut_binop op l r =
   if l.tag <= r.tag then Binop (op, l, r) else Binop (op, r, l)
 
-(* TODO: substitution will break normal forms. *)
-let rec subst subst_var sv =
-  match sv.node.kind with
-  | Var v -> mk_var (subst_var v) sv.node.ty
-  | Bool _ | Int _ -> sv
-  | Unop (op, v) ->
-      let v' = subst subst_var v in
-      if equal v v' then sv else Unop (op, v') <| sv.node.ty
-  | Binop (op, l, r) ->
-      let l' = subst subst_var l in
-      let r' = subst subst_var r in
-      if equal l l' && equal r r' then sv else Binop (op, l', r') <| sv.node.ty
-  | Nop (op, l) ->
-      let changed = ref false in
-      let l' =
-        List.map
-          (fun sv ->
-            let new_sv = subst subst_var sv in
-            if not (equal new_sv sv) then changed := true;
-            new_sv)
-          l
-      in
-      if !changed then Nop (op, l') <| sv.node.ty else sv
-  | Ite (c, t, e) ->
-      let c' = subst subst_var c in
-      let t' = subst subst_var t in
-      let e' = subst subst_var e in
-      if equal c c' && equal t t' && equal e e' then sv
-      else Ite (c', t', e') <| sv.node.ty
-
 (** {2 Booleans} *)
 
 let v_true = Bool true <| TBool
