@@ -230,6 +230,8 @@ struct
       | STree_borrow _, _ -> not_impl "Consume TB structure in tree block?"
 
     let rec produce (s : serialized) (t : tree) : tree DecayMapMonad.t =
+      L.warn (fun m ->
+          m "produce: %a / %a" pp_serialized s (TB.pp_node pp) t.node);
       match (s, t.node) with
       | ( (SInit _ | SZeros | SUninit | SAny),
           (NotOwned Totally | Owned (Leaf (Unowned, _))) ) ->
@@ -251,21 +253,25 @@ struct
       | (SInit _ | SZeros | SUninit | SAny), Owned (Leaf _) -> vanish ()
       | (SInit _ | SZeros | SUninit | SAny), (Owned Lazy | NotOwned Partially)
         ->
-          (* FIXME: this is not correct if the leaves of the tree only contain
-             tree borrows information (i.e. they are all [NotOwned Totally] or
-             [Owned (Leaf Unowned, _)]). For now we just do a sanity check and
-             fail if our assumption is wrong. *)
-          let rec check_has_value (t : tree) =
-            match t.node with
-            | Owned (Leaf (Unowned, _)) | NotOwned Totally -> return ()
-            | Owned (Leaf _) -> vanish ()
-            | Owned Lazy | NotOwned Partially ->
-                let l, r = Option.get t.children in
-                let* () = check_has_value l in
-                check_has_value r
+          let l, r = Option.get t.children in
+          let* sl, sr =
+            match s with
+            | SZeros | SUninit | SAny -> return (s, s)
+            | SInit v ->
+                let _, middle = l.range in
+                let+ vl, vr = split_rval v middle in
+                (SInit vl, SInit vr)
+            | _ -> assert false
           in
-          let* () = check_has_value t in
-          failwith "assumption was wrong; unsound! this should be unreachable"
+          let* l = produce sl l in
+          let+ r = produce sr r in
+          let node : t TB.node =
+            match (l.node, r.node) with
+            | NotOwned Totally, NotOwned Totally -> NotOwned Totally
+            | NotOwned _, _ | _, NotOwned _ -> NotOwned Partially
+            | Owned left, Owned right -> Owned (merge ~left ~right)
+          in
+          { t with node; children = Some (l, r) }
       (* Tree borrows: we produce recursively, as we don't want to merge the
          leaves *)
       | STree_borrow_st s, NotOwned Totally ->
