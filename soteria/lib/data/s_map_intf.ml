@@ -26,13 +26,12 @@ module Key (Symex : Symex.Base) = struct
 
   module type S = sig
     include Stdlib.Map.OrderedType
+    include Abstr.Sem_eq with type t := t
+    include Abstr.Simplifiable with type t := t
 
     val pp : Format.formatter -> t -> unit
     val show : t -> string
     val distinct : t list -> Symex.Value.(sbool t)
-
-    include Abstr.Sem_eq with type t := t
-    include Abstr.Simplifiable with type t := t
   end
 
   module type S_patricia_tree = sig
