@@ -17,11 +17,22 @@ module M (Symex : Symex.Base) = struct
 
     include S
 
+    (** Syntactic representation of the abstraction (that can be serialized).
+        Basically, everywhere a symbolic value exists, it must be cast to an
+        [Expr.t] *)
     type syn [@@deriving show]
 
     val to_syn : t -> syn
+
+    (** Given a substitution, casts a syntactic object to a semantic object. *)
     val subst : (Value.Expr.t -> 'a Value.t) -> syn -> t
+
+    (** [learn_eq s t] extends the substitution [θ] of the consumer monad such
+        that all variables of [s] are bound and [θ(s) = t] (or fails to do so).
+    *)
     val learn_eq : syn -> t -> (unit, 'a) Symex.Consumer.t
+
+    (** Returns the list of expressions contained by the abstraction. *)
     val exprs_syn : syn -> Symex.Value.Expr.t list
   end
 
