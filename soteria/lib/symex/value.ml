@@ -55,10 +55,9 @@ module type Expr = sig
         - If this function returns a wrong substitution (where [θ'(e) != v]),
           this will not result in an unsoundness, but may prevent successful
           consumption.
-        - If there are more than one substitution that satisfies the
-          requirement, this function can return any of them. This will lead to
-          under-approximation when in UX mode, and to a probable consumption
-          failure in UX mode.
+        - If there are multiple substitutions that satisfy the requirement, this
+          function can return any of them. This will lead to under-approximation
+          when in UX mode, and to a probable consumption failure in UX mode.
         - If this function returns [None] when there exists a correct
           substitution, this will only lead to consumption failure. The function
           can always be extended to return a correct substitution. *)
