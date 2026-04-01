@@ -11,6 +11,7 @@ module Subst = struct
 
   type t = Svalue.t Raw_map.t
 
+  let extend s v subst = Raw_map.add_assert_new s v subst
   let pp = Raw_map.pp Svalue.pp
   let empty = Raw_map.empty
 
@@ -55,8 +56,12 @@ module Subst = struct
         let vs, s = apply_list ~missing_var s vs in
         (v :: vs, s)
 
-  let learn (_s : t) (_syn : Svalue.t) (_v : Svalue.t) : t option =
-    failwith "TODO: bv_values.syn.learn"
+  let rec learn (s : t) (e : Svalue.t) (v : Svalue.t) : t option =
+    match e.node.kind with
+    | Var _ -> if Raw_map.mem e s then Some s else Some (extend e v s)
+    | Unop (Unop.Not, e') -> learn s e' (Bool.not v)
+    (* This pattern matching can be extended for any reversible operation. *)
+    | _ -> None
 end
 
 let subst (f : t -> t) (s : t) : t = f s
