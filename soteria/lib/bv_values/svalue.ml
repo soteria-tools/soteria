@@ -212,6 +212,7 @@ and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 let hash t = t.tag
 let kind t = t.node.kind
 let unique_tag t = t.tag
+let is_bool_ty = function TBool -> true | _ -> false
 
 let iter =
   let rec aux (f : t -> unit) (sv : t) : unit =

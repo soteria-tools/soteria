@@ -30,6 +30,8 @@ val t_int : [> sint ] ty
 type +'a t
 type sbool = T.sbool
 
+val is_bool_ty : 'a ty -> bool
+
 (** Basic value operations *)
 
 val get_ty : 'a t -> Svalue.ty

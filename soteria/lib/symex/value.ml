@@ -60,6 +60,9 @@ module type S = sig
   (** The type for booleans. *)
   type sbool
 
+  (** Whether the given type is [sbool ty] *)
+  val is_bool_ty : 'a ty -> bool
+
   (** [not b] returns the logical negation of boolean [b]. *)
   val not : sbool t -> sbool t
 

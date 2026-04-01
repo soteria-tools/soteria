@@ -888,9 +888,17 @@ module Base_extension (Core : Core) = struct
 
     let produce_pure e : unit t =
       let open Syntax in
-      (* FIXME: This does no check that `e` is indeed a boolean. *)
-      let* v = apply_subst Fun.id e in
-      lift (assume [ v ])
+      let is_bool = Value.is_bool_ty @@ Value.Expr.ty e in
+      if not is_bool then (
+        L.error (fun m ->
+            m
+              "Producing non-boolean pure value!! This is quite probably a \
+               tool bug, please report it. Expr: %a"
+              Value.Expr.pp e);
+        vanish ())
+      else
+        let* v = apply_subst Fun.id e in
+        lift (assume [ v ])
 
     let run ~subst p =
       let ( let+ ) = Core.map in

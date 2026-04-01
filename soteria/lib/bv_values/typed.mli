@@ -77,6 +77,7 @@ type sbool = T.sbool
 
 (** Basic value operations *)
 
+val is_bool_ty : 'a ty -> bool
 val get_ty : 'a t -> Svalue.ty
 val type_type : Svalue.ty -> 'a ty
 val untype_type : 'a ty -> Svalue.ty
