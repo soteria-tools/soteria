@@ -14,7 +14,7 @@ module Subst = struct
   type t = Svalue.t Raw_map.t
 
   let pp = Raw_map.pp Svalue.pp
-  let extend s v subst = Raw_map.add_if_not_exists s v subst
+  let extend s v subst = Raw_map.add_assert_new s v subst
   let find_opt s subst = Raw_map.find_opt s subst
   let empty = Raw_map.empty
 

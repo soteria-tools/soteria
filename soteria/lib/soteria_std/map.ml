@@ -5,12 +5,14 @@ include Stdlib.Map
 module MakePp (Key : Ordered_type.S) = struct
   include Make (Key)
 
-  let add_if_not_exists key value map =
+  (** Adds an element to the map, but throws [Invalid_argument] if the key
+      already exists. *)
+  let add_assert_new key value map =
     update key
       (function
         | None -> Some value
         | Some _ ->
-            raise (Invalid_argument "Map.add_if_not_exists: key already exists"))
+            raise (Invalid_argument "Map.add_assert_new: key already exists"))
       map
 
   let pp pp_v ft m =
