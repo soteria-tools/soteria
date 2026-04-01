@@ -29,9 +29,9 @@ module type Expr = sig
     val pp : Format.formatter -> t -> unit
     val empty : t
 
-    (* * Applies a substitution to a syntactic representation to obtain a
-       symbolic value. Should values be missing, fresh values are generated
-       using the provided function. *)
+    (** Applies a substitution to a syntactic representation to obtain a
+        symbolic value. Should a variable binding be missing, fresh values are
+        generated using the provided function. *)
     val apply : missing_var:(Var.t -> 'a ty -> 'a v) -> t -> expr -> 'a v * t
 
     (** [learn θ e v] takes the substitution [θ], the expression [e] and the
