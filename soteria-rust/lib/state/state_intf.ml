@@ -14,13 +14,6 @@ module type S = sig
   (* state *)
   include Soteria.Sym_states.Base.M(Rustsymex).S
 
-  module SM :
-    Soteria.Sym_states.State_monad.S
-      with type 'a Symex.t = 'a Rustsymex.t
-       and type st = t option
-       and module Symex.Value = Rustsymex.Value
-       and module Value = Rustsymex.Value
-
   type 'a ret := ('a, Error.with_trace, syn list) SM.Result.t
 
   val pp : t Fmt.t

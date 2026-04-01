@@ -35,12 +35,6 @@ struct
 
     include Base.M(Symex).S with type syn = Key.syn * codom_syn
 
-    module SM :
-      State_monad.S
-        with module Symex = Symex
-         and module Value = Symex.Value
-         and type st = t option
-
     type ('a, 'err) res := ('a, 'err, syn list) SM.Result.t
 
     type ('a, 'err) codom_res :=
