@@ -69,8 +69,6 @@ module Make
     let[@inline] assume b = lift (Sym.assume b)
     let[@inline] vanish () = lift (Sym.vanish ())
     let[@inline] assert_ b = lift (Sym.assert_ b)
-    let[@inline] consume_pure b = lift (Sym.consume_pure b)
-    let[@inline] consume_false () = lift (Sym.consume_false ())
     let[@inline] nondet_UNSAFE ty = Sym.nondet_UNSAFE ty
     let[@inline] nondet ty = lift (Sym.nondet ty)
     let[@inline] simplify v = lift (Sym.simplify v)

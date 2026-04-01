@@ -93,23 +93,6 @@ module type Core = sig
         {b unsatisfiable}. *)
   val assert_ : sbool v -> bool t
 
-  (** TODO: remove me before merging
-
-      [consume_pure v] is somewhat equivalent to
-      [if%sat v then ok () else error (`Lfail v)]. The difference is that it
-      does not branch:
-      - In UX, analysis gives up in case of [`Lfail], and the error branch is
-        discarded. Because of that, doing two sat checks is not required, and
-        [consume_pure] is just an [assume].
-      - In OX, the error case is enough to know the proof cannot be concluded,
-        and the ok branch is discarded. Therefore, in OX, it is equivalent to
-        [assert_]. *)
-  val consume_pure : sbool v -> (unit, [> lfail ], 'a) Compo_res.t t
-
-  (** [consume_false] is [consume_pure (Value.bool false)], but with a signature
-      that is easier to manipulate. *)
-  val consume_false : unit -> ('a, [> lfail ], 'b) Compo_res.t t
-
   (** Do not use [nondet_UNSAFE]. *)
   val nondet_UNSAFE : 'a vt -> 'a v
 
@@ -615,17 +598,6 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       returns [true] if (not value) is {b unsatisfiable}. *)
   let assert_ value f = f (assert_raw value)
 
-  let consume_pure value f =
-    if Approx.As_ctx.is_ux () then
-      assume [ value ] (fun () -> f (Compo_res.Ok ()))
-    else
-      let assert_passed = assert_raw value in
-      if assert_passed then f (Ok ()) else f (Error (`Lfail value))
-
-  let consume_false () f =
-    if Approx.As_ctx.is_ux () then ()
-    else f (Compo_res.Error (`Lfail (Value.of_bool false)))
-
   let nondet_UNSAFE ty =
     let v = Solver.fresh_var ty in
     Value.mk_var v ty
@@ -932,28 +904,6 @@ module Base_extension (Core : Core) = struct
     type subst = Value.Expr.Subst.t
     type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
 
-    let learn_eq expr v : (unit, 'fix) t =
-      let open Syntax in
-      fun subst ->
-        let subst =
-          match Value.Expr.Subst.learn subst expr v with
-          | Some s -> s
-          | None ->
-              failwith
-                "Consumed something that was not yet consumable, this is a \
-                 tool bug!"
-        in
-        let v', subst =
-          Value.Expr.Subst.apply
-            ~missing_var:(fun _ _ ->
-              failwith
-                "Tool Bug: learned substitution does not cover expression's \
-                 free variables.")
-            subst expr
-        in
-        let++ () = consume_pure (Value.sem_eq_untyped v v') in
-        ((), subst)
-
     let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
      fun subst -> Result.map r (fun a -> (a, subst))
 
@@ -1052,6 +1002,26 @@ module Base_extension (Core : Core) = struct
       let open Syntax in
       let* v = apply_subst Fun.id e in
       assert_pure v
+
+    let learn_eq expr v : (unit, 'fix) t =
+     fun subst ->
+      let subst =
+        match Value.Expr.Subst.learn subst expr v with
+        | Some s -> s
+        | None ->
+            failwith
+              "Consumed something that was not yet consumable, this is a tool \
+               bug!"
+      in
+      let v', subst =
+        Value.Expr.Subst.apply
+          ~missing_var:(fun _ _ ->
+            failwith
+              "Tool Bug: learned substitution does not cover expression's free \
+               variables.")
+          subst expr
+      in
+      assert_pure (Value.sem_eq_untyped v v') subst
 
     let expose_subst () : (subst, 'fix) t = fun subst -> Result.ok (subst, subst)
   end
