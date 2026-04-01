@@ -144,6 +144,9 @@ let group_by (type a) ?(compare : a -> a -> int = Stdlib.compare)
        Map.empty
   |> Map.bindings
 
+(** [find_with_rest f l] will look for the first element of [l] that satisfies
+    the predicate [f]. If one is found, returns [Some (x, l')], where
+    [f x = true] and [l'] is [l] with [x] removed (order is preserved). *)
 let rec find_with_rest f l =
   match l with
   | [] -> None
