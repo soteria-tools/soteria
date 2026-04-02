@@ -90,9 +90,9 @@ module Make (State : State_intf.S) = struct
     let Context.{ args = params; pre; post; pc; ret } = spec in
     let asrt = Logic.Asrt.make ~spatial:pre ~pure:[] in
     let* frame =
-      let@@ () = Consumer.run ~subst:Value.Expr.Subst.empty in
       let open Consumer in
       let open Syntax in
+      let@@ () = run ~subst:Value.Expr.Subst.empty in
       let pairs = List.combine params args in
       let* () =
         iter_list pairs ~f:(fun (param, arg) -> S_val.learn_eq param arg)
@@ -105,8 +105,8 @@ module Make (State : State_intf.S) = struct
     | Ok (frame, subst) ->
         let+ (v, st), _ =
           let open Producer in
-          let@@ () = run ~subst in
           let open Syntax in
+          let@@ () = run ~subst in
           let post = Logic.Asrt.make ~spatial:post ~pure:pc in
           let* st = Asrt_executor.produce post frame in
           let+ v = apply_subst subst_res ret in
