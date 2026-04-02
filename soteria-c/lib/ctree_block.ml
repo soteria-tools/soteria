@@ -218,18 +218,12 @@ let sval_leaf ~range ~value ~ty =
 let zeros ~range = Tree.make ~node:(Owned Zeros) ~range ()
 let uninit ~range = Tree.make ~node:(Owned (Uninit Totally)) ~range ()
 
-let mk_fix_typed ofs ty () =
+let mk_fix_typed offset ty () =
   let* len = Layout.size_of_s ty in
   let+ fixes = mk_fix_typed ty () in
-  List.map
-    (fun v ->
-      [ MemVal { offset = Expr.of_value ofs; len = Expr.of_value len; v } ])
-    fixes
+  [ lift_fixes ~offset ~len fixes ]
 
-let mk_fix_any ofs len () =
-  [
-    [ MemVal { offset = Expr.of_value ofs; len = Expr.of_value len; v = SAny } ];
-  ]
+let mk_fix_any offset len () = [ lift_fixes ~offset ~len [ SAny ] ]
 
 let mk_fix_any_s ofs len () =
   let fixes = mk_fix_any ofs len () in
