@@ -1,3 +1,5 @@
+(** Basic mixin signatures for symbolic abstractions *)
+
 module M (Symex : Symex.Base) = struct
   open Symex
 

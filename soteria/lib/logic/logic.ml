@@ -1,4 +1,4 @@
-(** Separation logic for specifications and summaries *)
+(** Separation logic assertions *)
 
 module Make (Symex : Symex.Base) = struct
   module Asrt = Asrt.M (Symex)
