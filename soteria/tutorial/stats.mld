@@ -1,4 +1,4 @@
-{1 Soteria Statistics Tutorial}
+{0 Soteria Statistics Tutorial}
 
 Welcome to the Soteria statistics tutorial! This tutorial will guide you through using the {{!Soteria.Stats}Stats} module for tracking, aggregating, and reporting metrics during symbolic execution and program analysis.
 

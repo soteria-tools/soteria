@@ -1,4 +1,4 @@
-{1 Soteria Logging Tutorial}
+{0 Soteria Logging Tutorial}
 
 Welcome to the Soteria logging tutorial! This tutorial will guide you through using the {{!Soteria.Logs}Logs} module for debugging and analyzing your symbolic execution programs.
 
