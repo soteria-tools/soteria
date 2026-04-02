@@ -8,7 +8,6 @@ let[@inline] of_value v = v
 let subst f v = f v
 
 module Subst = struct
-  (* TODO: make this a Patricia Tree *)
   module Raw_map = PatriciaTree.MakeMap (struct
     type t = Svalue.t
 

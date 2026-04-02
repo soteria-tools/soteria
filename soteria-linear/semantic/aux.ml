@@ -1,8 +1,6 @@
 open Soteria_linear_ast.Lang
 module Typed = Soteria.Tiny_values.Typed
 module Symex = Soteria.Symex.Make (Soteria.Tiny_values.Tiny_solver.Z3_solver)
-
-(* module Data = Soteria.Data.M (Symex) *)
 module Logic = Soteria.Logic.Make (Symex)
 
 module Error = struct
