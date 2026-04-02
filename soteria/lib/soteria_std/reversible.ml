@@ -67,6 +67,74 @@ end = struct
     f e
 end
 
+(** An efficient, in-place, mutable reversible state for an array of values,
+    where checkpoints are represented by indices in the array. *)
+module Make_mutable_array (Elt : sig
+  type t
+end) : sig
+  include Mutable
+
+  (** This is an optimised version of [backtrack_n 1 t; save t]: it truncates
+      the values accumulated since the last checkpoint, effectively backtracking
+      to the last checkpoint, but without removing it. This is useful when the
+      last checkpoint is still needed, but the changes since then should be
+      discarded. *)
+  val truncate_to_checkpoint : t -> unit
+
+  (** Returns true if no values have been added since the last checkpoint. *)
+  val is_at_checkpoint : t -> bool
+
+  (** Gets the last value added to the array
+
+      @raise Invalid_argument if the array is empty. *)
+  val peek_last : t -> Elt.t
+
+  (** Adds a value to the array. *)
+  val add : t -> Elt.t -> unit
+
+  (** Iterate over all values in the current state. *)
+  val iter : t -> (Elt.t -> unit) -> unit
+
+  (** Find the first value in the current state for which [f] returns [Some],
+      and return that value. *)
+  val find_map : t -> (Elt.t -> 'a option) -> 'a option
+
+  (** Return a sequence of all values in the current state, in reverse order. *)
+  val to_seq_rev : t -> Elt.t Seq.t
+end = struct
+  type t = Elt.t Dynarray.t * int Dynarray.t
+
+  let init () =
+    let saves = Dynarray.create () in
+    Dynarray.add_last saves 0;
+    (Dynarray.create (), saves)
+
+  let reset (slots, saves) =
+    Dynarray.clear slots;
+    Dynarray.clear saves;
+    Dynarray.add_last saves 0
+
+  let save (slots, saves) = Dynarray.add_last saves (Dynarray.length slots)
+
+  let backtrack_n (slots, saves) n =
+    let idx = Dynarray.length saves - n in
+    let cutoff = Dynarray.get saves idx in
+    Dynarray.truncate saves idx;
+    Dynarray.truncate slots cutoff
+
+  let truncate_to_checkpoint (slots, saves) =
+    Dynarray.truncate slots (Dynarray.get_last saves)
+
+  let is_at_checkpoint (slots, saves) =
+    Dynarray.length slots = Dynarray.get_last saves
+
+  let peek_last (slots, _) = Dynarray.get_last slots
+  let add (slots, _) v = Dynarray.add_last slots v
+  let iter (slots, _) f = Dynarray.iter f slots
+  let find_map (slots, _) f = Dynarray.find_map f slots
+  let to_seq_rev (slots, _) = Dynarray.to_seq_rev slots
+end
+
 (** Interface for effectful reversible operations that operate on a state
     captured by an algebraic effect.
 
