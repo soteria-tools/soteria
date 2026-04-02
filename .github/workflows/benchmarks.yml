@@ -1,0 +1,343 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: ["main"]
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  benchmark-main:
+    name: Run Benchmarks (main)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    steps:
+      - name: Find CI workflow run
+        id: find-run
+        run: |
+          # Wait up to 5 minutes for a CI run to appear for this commit
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            RUN_ID=$(gh run list --repo ${{ github.repository }} \
+              --commit ${{ github.sha }} \
+              --workflow ci.yml \
+              --json databaseId,status \
+              --jq '.[0].databaseId // empty')
+            
+            if [ -n "$RUN_ID" ]; then
+              echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            echo "Waiting for CI workflow to start... (attempt $((ATTEMPT + 1))/$MAX_ATTEMPTS)"
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "No CI workflow run found for commit ${{ github.sha }}"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for CI workflow to complete
+        run: |
+          gh run watch ${{ steps.find-run.outputs.run_id }} --repo ${{ github.repository }} --exit-status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download soteria-c package
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-soteria-c-package
+          path: soteria-c-package
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.find-run.outputs.run_id }}
+
+      - name: Download soteria-rust package
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-soteria-rust-package
+          path: soteria-rust-package
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.find-run.outputs.run_id }}
+
+      - name: Setup package executables
+        run: |
+          # Make binaries executable
+          chmod +x soteria-c-package/bin/*
+          chmod +x soteria-rust-package/bin/*
+          
+          # Add packages to PATH
+          echo "${GITHUB_WORKSPACE}/soteria-c-package/bin" >> $GITHUB_PATH
+          echo "${GITHUB_WORKSPACE}/soteria-rust-package/bin" >> $GITHUB_PATH
+
+      - name: Setup environment variables
+        run: |
+          # soteria-c environment
+          echo "CERB_INSTALL_PREFIX=${GITHUB_WORKSPACE}/soteria-c-package" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=${GITHUB_WORKSPACE}/soteria-c-package/lib:${GITHUB_WORKSPACE}/soteria-rust-package/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "SOTERIA_Z3_PATH=${GITHUB_WORKSPACE}/soteria-c-package/bin/z3" >> $GITHUB_ENV
+          echo "SOTERIA_AUTO_INCLUDE_PATH=${GITHUB_WORKSPACE}/soteria-c-package/lib/soteria-c" >> $GITHUB_ENV
+          echo "SOTERIA_USE_CERB_HEADERS=true" >> $GITHUB_ENV
+          
+          # soteria-rust environment
+          echo "SOTERIA_OBOL_PATH=${GITHUB_WORKSPACE}/soteria-rust-package/bin/obol" >> $GITHUB_ENV
+          echo "SOTERIA_CHARON_PATH=${GITHUB_WORKSPACE}/soteria-rust-package/bin/charon" >> $GITHUB_ENV
+          echo "SOTERIA_RUST_PLUGINS=${GITHUB_WORKSPACE}/soteria-rust-package/plugins" >> $GITHUB_ENV
+          
+          # Package directories for benchmark scripts
+          echo "SOTERIA_C_PACKAGE_DIR=${GITHUB_WORKSPACE}/soteria-c-package" >> $GITHUB_ENV
+          echo "SOTERIA_RUST_PACKAGE_DIR=${GITHUB_WORKSPACE}/soteria-rust-package" >> $GITHUB_ENV
+
+      - name: Install hyperfine
+        run: brew install hyperfine
+
+      - name: Run benchmarks
+        run: |
+          python3 scripts/run_benchmarks.py \
+            "${{ github.sha }}" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            benchmark-results.json
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Generate benchmark page
+        run: |
+          mkdir -p gh-pages/benchmarks
+          python3 scripts/generate_benchmark_page.py \
+            --new-results benchmark-results.json \
+            --history gh-pages/benchmarks/main-history.json \
+            --output gh-pages/benchmarks/main.html \
+            --history-output gh-pages/benchmarks/main-history.json \
+            --mode main \
+            --max-history 50 \
+            --repo-url "https://github.com/${{ github.repository }}"
+
+      - name: Commit and push
+        working-directory: gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/
+          git diff --staged --quiet || git commit -m "Update benchmarks for ${{ github.sha }}"
+          git push
+
+      - run: echo "Successfully published benchmarks to https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/benchmarks/main.html"
+
+  benchmark-pr:
+    name: Run Benchmarks (PR)
+    if: |
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '!run-benchmarks') &&
+      contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.comment.author_association)
+    runs-on: macos-latest
+    steps:
+      - name: Add eyes reaction
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+
+      - name: Get PR details
+        id: pr
+        run: |
+          PR_DATA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json headRefOid)
+          SHA=$(echo "$PR_DATA" | jq -r .headRefOid)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find CI workflow run
+        id: find-run
+        run: |
+          # Wait up to 5 minutes for a CI run to appear for this commit
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            RUN_ID=$(gh run list --repo ${{ github.repository }} \
+              --commit ${{ steps.pr.outputs.sha }} \
+              --workflow ci.yml \
+              --json databaseId,status \
+              --jq '.[0].databaseId // empty')
+            
+            if [ -n "$RUN_ID" ]; then
+              echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            echo "Waiting for CI workflow to start... (attempt $((ATTEMPT + 1))/$MAX_ATTEMPTS)"
+            sleep 10
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "No CI workflow run found for commit ${{ steps.pr.outputs.sha }}"
+          exit 1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for CI workflow to complete
+        run: |
+          gh run watch ${{ steps.find-run.outputs.run_id }} --repo ${{ github.repository }} --exit-status
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout repository at PR commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
+
+      - name: Download soteria-c package
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-soteria-c-package
+          path: soteria-c-package
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.find-run.outputs.run_id }}
+
+      - name: Download soteria-rust package
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-latest-soteria-rust-package
+          path: soteria-rust-package
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ steps.find-run.outputs.run_id }}
+
+      - name: Setup package executables
+        run: |
+          # Make binaries executable
+          chmod +x soteria-c-package/bin/*
+          chmod +x soteria-rust-package/bin/*
+          
+          # Add packages to PATH
+          echo "${GITHUB_WORKSPACE}/soteria-c-package/bin" >> $GITHUB_PATH
+          echo "${GITHUB_WORKSPACE}/soteria-rust-package/bin" >> $GITHUB_PATH
+
+      - name: Setup environment variables
+        run: |
+          # soteria-c environment
+          echo "CERB_INSTALL_PREFIX=${GITHUB_WORKSPACE}/soteria-c-package" >> $GITHUB_ENV
+          echo "DYLD_LIBRARY_PATH=${GITHUB_WORKSPACE}/soteria-c-package/lib:${GITHUB_WORKSPACE}/soteria-rust-package/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "SOTERIA_Z3_PATH=${GITHUB_WORKSPACE}/soteria-c-package/bin/z3" >> $GITHUB_ENV
+          echo "SOTERIA_AUTO_INCLUDE_PATH=${GITHUB_WORKSPACE}/soteria-c-package/lib/soteria-c" >> $GITHUB_ENV
+          echo "SOTERIA_USE_CERB_HEADERS=true" >> $GITHUB_ENV
+          
+          # soteria-rust environment
+          echo "SOTERIA_OBOL_PATH=${GITHUB_WORKSPACE}/soteria-rust-package/bin/obol" >> $GITHUB_ENV
+          echo "SOTERIA_CHARON_PATH=${GITHUB_WORKSPACE}/soteria-rust-package/bin/charon" >> $GITHUB_ENV
+          echo "SOTERIA_RUST_PLUGINS=${GITHUB_WORKSPACE}/soteria-rust-package/plugins" >> $GITHUB_ENV
+          
+          # Package directories for benchmark scripts
+          echo "SOTERIA_C_PACKAGE_DIR=${GITHUB_WORKSPACE}/soteria-c-package" >> $GITHUB_ENV
+          echo "SOTERIA_RUST_PACKAGE_DIR=${GITHUB_WORKSPACE}/soteria-rust-package" >> $GITHUB_ENV
+
+      - name: Install hyperfine
+        run: brew install hyperfine
+
+      - name: Run benchmarks
+        run: |
+          python3 scripts/run_benchmarks.py \
+            "${{ steps.pr.outputs.sha }}" \
+            "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            benchmark-results.json
+
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Generate PR benchmark page
+        run: |
+          mkdir -p gh-pages/benchmarks
+          python3 scripts/generate_benchmark_page.py \
+            --new-results benchmark-results.json \
+            --history gh-pages/benchmarks/main-history.json \
+            --output gh-pages/benchmarks/pr-${{ github.event.issue.number }}.html \
+            --mode pr \
+            --pr-number ${{ github.event.issue.number }} \
+            --repo-url "https://github.com/${{ github.repository }}"
+
+      - name: Commit and push
+        working-directory: gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmarks/
+          git commit -m "Add benchmarks for PR #${{ github.event.issue.number }}"
+          git push
+
+      - name: Add rocket reaction on success
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'rocket'
+            });
+
+      - name: Post benchmark URL
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.issue.number;
+            const url = `https://${owner}.github.io/${repo}/benchmarks/pr-${prNumber}.html`;
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: `Benchmarks published at: ${url}. It should appear online in a few minutes.`
+            });
+
+      - name: Add failure reaction
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: '-1'
+            });
+
+      - name: Post failure comment
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const prNumber = context.payload.issue.number;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${{ github.run_id }}`;
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: prNumber,
+              body: `Failed to run benchmarks. See [workflow run](${runUrl}) for details.`
+            });
