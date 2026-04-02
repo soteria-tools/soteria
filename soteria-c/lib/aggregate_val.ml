@@ -5,14 +5,10 @@ type 'v agv = Basic of 'v | Struct of 'v agv list | Array of 'v agv list
 type t = T.cval Typed.t agv
 type syn = Expr.t agv
 
-let to_syn v =
-  let rec aux v =
-    match v with
-    | Basic v -> Basic (Typed.Expr.of_value v)
-    | Struct fields -> Struct (List.map aux fields)
-    | Array elements -> Array (List.map aux elements)
-  in
-  aux v
+let rec to_syn = function
+  | Basic v -> Basic (Typed.Expr.of_value v)
+  | Struct fields -> Struct (List.map to_syn fields)
+  | Array elements -> Array (List.map to_syn elements)
 
 let rec subst f = function
   | Basic v -> Basic (Expr.subst f v)
