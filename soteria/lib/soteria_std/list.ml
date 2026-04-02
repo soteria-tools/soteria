@@ -26,6 +26,9 @@ let take_count n l =
 let combine_opt l1 l2 =
   try Some (combine l1 l2) with Invalid_argument _ -> None
 
+let combine_or ~ok ~err l1 l2 =
+  try ok (combine l1 l2) with Invalid_argument _ -> err ()
+
 (** Aggregates results, returning all errors if any, otherwise all successful
     values. *)
 let join_results outcomes =
@@ -131,6 +134,8 @@ let group_by (type a) ?(compare : a -> a -> int = Stdlib.compare)
     type t = a
 
     let compare = compare
+    let pp _ _ = ()
+    let show _ = ""
   end) in
   l
   |> fold_left
@@ -140,3 +145,16 @@ let group_by (type a) ?(compare : a -> a -> int = Stdlib.compare)
            acc)
        Map.empty
   |> Map.bindings
+
+(** [find_with_rest f l] will look for the first element of [l] that satisfies
+    the predicate [f]. If one is found, returns [Some (x, l')], where
+    [f x = true] and [l'] is [l] with [x] removed (order is preserved). *)
+let rec find_with_rest f l =
+  match l with
+  | [] -> None
+  | x :: xs -> (
+      if f x then Some (x, xs)
+      else
+        match find_with_rest f xs with
+        | None -> None
+        | Some (found, rest) -> Some (found, x :: rest))

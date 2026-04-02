@@ -33,7 +33,7 @@ depends: [
   "qcheck-core" {with-test}
   "qcheck-alcotest" {with-test}
   "dune" {>= "3.14" & build & >= "3.14.0"}
-  "ppxlib"
+  "ppxlib" {>= "0.38.0"}
   "hc" {>= "0.5"}
   "yojson" {< "3.0"}
   "unionFind"

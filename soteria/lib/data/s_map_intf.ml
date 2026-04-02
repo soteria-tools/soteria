@@ -13,13 +13,24 @@ module type MapS = sig
   val to_seq : 'a t -> (key * 'a) Seq.t
 end
 
+module Concrete_key (K : sig
+  type t
+end) =
+struct
+  type t = K.t
+  type syn = K.t
+end
+
 module Key (Symex : Symex.Base) = struct
+  module Abstr = Abstr.M (Symex)
+
   module type S = sig
     include Stdlib.Map.OrderedType
+    include Abstr.Sem_eq with type t := t
+    include Abstr.Simplifiable with type t := t
 
     val pp : Format.formatter -> t -> unit
-    val sem_eq : t -> t -> Symex.Value.(sbool t)
-    val simplify : t -> t Symex.t
+    val show : t -> string
     val distinct : t list -> Symex.Value.(sbool t)
   end
 
