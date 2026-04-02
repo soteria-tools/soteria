@@ -356,8 +356,4 @@ module ArithPtr :
     let align = se p.align in
     let size = se p.size in
     { p with ptr; align; size }
-
-  (* let subst subst_var p = let ptr = Typed.subst subst_var p.ptr in let align
-     = Typed.subst subst_var p.align in let size = Typed.subst subst_var p.size
-     in { p with ptr; align; size } *)
 end
