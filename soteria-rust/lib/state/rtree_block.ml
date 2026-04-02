@@ -273,22 +273,15 @@ module Make (Sptr : Sptr.S) = struct
 
   let zeros range tb : Tree.t = Tree.make ~node:(Owned (Zeros, tb)) ~range ()
 
-  let mk_fix_typed ofs ty () =
+  let mk_fix_typed offset ty () =
     let*^ len = Layout.size_of ty in
     let len = get_ok len in
     let+ fixes = mk_fix_typed ty () in
-    List.map
-      (fun v ->
-        [ MemVal { offset = Expr.of_value ofs; len = Expr.of_value len; v } ])
-      fixes
+    [ lift_fixes ~offset ~len fixes ]
+  (* List.map (fun v -> [ MemVal { offset = Expr.of_value ofs; len =
+     Expr.of_value len; v } ]) fixes *)
 
-  let mk_fix_any ofs len () =
-    [
-      [
-        MemVal { offset = Expr.of_value ofs; len = Expr.of_value len; v = Any };
-      ];
-    ]
-
+  let mk_fix_any offset len () = [ lift_fixes ~offset ~len [ Any ] ]
   let mk_fix_any_s ofs len () = return (mk_fix_any ofs len ())
 
   let as_owned ?mk_fixes t f =

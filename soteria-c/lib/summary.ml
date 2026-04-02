@@ -268,11 +268,16 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           let is_manifest =
             try
               let result = Csymex.run_needs_stats ~mode:OX process in
-              List.iter
-                (fun (_, pc) ->
-                  L.debug (fun m ->
-                      m "Path condition: %a" (Fmt.Dump.list Typed.ppa) pc))
-                result;
+              L.debug (fun m ->
+                  let pp_pc ft pc =
+                    Fmt.pf ft "@[<2>Path condition: %a@]"
+                      (Fmt.Dump.list Typed.ppa) pc
+                  in
+                  let pp_res ft (res, pc) =
+                    Fmt.pf ft "<v 2>Branch:@.Res: %a@.%a@]" Fmt.bool res pp_pc
+                      pc
+                  in
+                  m "%a" Fmt.(list ~sep:cut pp_res) result);
               (* The bug is manifest if the test passed in every branch. *)
               (not (List.is_empty result)) && List.for_all fst result
             with Soteria.Symex.Gave_up _ -> false

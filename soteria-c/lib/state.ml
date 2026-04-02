@@ -251,13 +251,9 @@ let produce (s : syn) (t : t option) : t option Producer.t =
 let produce_basic_val loc offset ty v t =
   let open Producer.Syntax in
   let*^ len = Layout.size_of_s ty in
+  let len = Typed.Expr.of_value len in
   let block : Block.syn =
-    {
-      node =
-        Alive
-          (MemVal { offset; len = Typed.Expr.of_value len; v = SInit (v, ty) });
-      info = None;
-    }
+    { node = Alive (MemVal { offset; len; v = SInit (v, ty) }); info = None }
   in
   let syn : syn = Ser_heap (loc, block) in
   produce syn t
