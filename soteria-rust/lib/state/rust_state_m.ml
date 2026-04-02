@@ -42,7 +42,7 @@ struct
 end
 
 module type S = sig
-  type serialized
+  type syn
   type st
   type ('a, 'env) t
   type ('a, 'env) monad := ('a, 'env) t
@@ -52,7 +52,7 @@ module type S = sig
   val error_raw : Error.with_trace -> ('a, 'env) t
   val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
   val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
-  val miss : serialized list list -> ('a, 'env) t
+  val miss : syn list list -> ('a, 'env) t
   val vanish : unit -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
   val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
@@ -95,7 +95,7 @@ module type S = sig
     env:'env ->
     state:st ->
     (unit -> ('a, 'env) t) ->
-    ('a * st, Error.with_trace * st, serialized list) Compo_res.t Rustsymex.t
+    ('a * st, Error.with_trace * st, syn list) Compo_res.t Rustsymex.t
 
   val lift_symex : 'a Rustsymex.t -> ('a, 'env) t
 
@@ -284,12 +284,12 @@ end
 module Make (State : State_intf.S) :
   S
     with type st = State.t option
-     and type serialized = State.serialized
+     and type syn = State.syn
      and type Sptr.t = State.Sptr.t = struct
   (* utilities *)
 
   type st = State.t option
-  type serialized = State.serialized
+  type syn = State.syn
   type full_ptr = State.Sptr.t Rust_val.full_ptr
   type rust_val = State.Sptr.t Rust_val.t
 
@@ -306,7 +306,7 @@ module Make (State : State_intf.S) :
       include
         Compo_resT2
           (struct
-            type fix = serialized list
+            type fix = syn list
             type error = Error.with_trace
           end)
           (MONAD)
@@ -517,7 +517,7 @@ module Make (State : State_intf.S) :
     let[@inline] leak_check () = ESM.lift (leak_check ())
 
     let[@inline] register_thread_exit (f : unit -> (unit, unit) monad) =
-      let unlifted () : (unit, Error.with_trace, serialized list) SM.Result.t =
+      let unlifted () : (unit, Error.with_trace, syn list) SM.Result.t =
         SM.map (f () ()) fst
       in
       ESM.lift (register_thread_exit unlifted)

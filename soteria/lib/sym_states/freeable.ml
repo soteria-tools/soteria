@@ -14,7 +14,7 @@ module Make
       include Base.M(Symex).S
 
       val assert_exclusively_owned :
-        t option -> (unit, 'err, serialized list) Symex.Result.t
+        t option -> (unit, 'err, syn list) Symex.Result.t
     end) =
 struct
   type t = I.t freeable [@@deriving show { with_path = false }]
@@ -22,8 +22,7 @@ struct
   let pp' ?(inner = I.pp) = pp_freeable inner
   let pp ft t = pp' ft t
 
-  type serialized = I.serialized freeable
-  [@@deriving show { with_path = false }]
+  type syn = I.syn freeable [@@deriving show { with_path = false }]
 
   module SM =
     State_monad.Make
@@ -34,17 +33,13 @@ struct
 
   let lift_fix fix = Alive fix
   let lift_fix_r r = Compo_res.map_missing r (List.map lift_fix)
+  let lift_fix_c f = Symex.Consumer.map_missing f (List.map lift_fix)
 
-  let serialize = function
+  let to_syn = function
     | Freed -> [ Freed ]
-    | Alive a -> List.map (fun x -> Alive x) (I.serialize a)
+    | Alive a -> List.map (fun x -> Alive x) (I.to_syn a)
 
-  let subst_serialized subst_var = function
-    | Freed -> Freed
-    | Alive a -> Alive (I.subst_serialized subst_var a)
-
-  let iter_vars_serialized serialized f =
-    match serialized with Freed -> () | Alive a -> I.iter_vars_serialized a f
+  let ins_outs = function Freed -> ([], []) | Alive s -> I.ins_outs s
 
   open SM
   open SM.Syntax
@@ -57,14 +52,14 @@ struct
     | Some Freed -> Result.error `UseAfterFree
 
   (* [f] must be a "symex state monad" *)
-  let wrap (f : ('a, 'err, I.serialized list) I.SM.Result.t) :
-      ('b, 'err, serialized list) SM.Result.t =
+  let wrap (f : ('a, 'err, I.syn list) I.SM.Result.t) :
+      ('b, 'err, syn list) SM.Result.t =
     let** inner_state = unwrap_alive () in
     let*^ res, inner_state' = f inner_state in
     let* () = SM.set_state (Option.map (fun x -> Alive x) inner_state') in
     return (lift_fix_r res)
 
-  let free () : (unit, 'err, serialized list) SM.Result.t =
+  let free () : (unit, 'err, syn list) SM.Result.t =
     let** () =
       wrap (fun st ->
           let open Symex.Syntax in
@@ -73,47 +68,38 @@ struct
     in
     SM.Result.set_state (Some Freed)
 
-  (* In the context of UX, using a non-matching spec will simply vanish *)
-  (* let consume
-   *    (cons :
-   *      'inner_ser ->
-   *      'inner_st option ->
-   *      ('inner_st option, [> Symex.lfail ], 'inner_ser) Symex.Result.t)
-   *    (serialized : 'inner_ser serialized) (st : 'inner_st t option) :
-   *    ( 'inner_st t option,
-   *      [> Symex.lfail ],
-   *      'inner_ser serialized )
-   *    Symex.Result.t =
-   *  match serialized with
-   *  | Freed -> (
-   *      match st with
-   *      | None -> Symex.Result.miss [ Freed ]
-   *      | Some Freed -> Symex.Result.ok None
-   *      | Some (Alive _) -> Symex.consume_false ())
-   *  | Alive ser -> (
-   *      match st with
-   *      | None ->
-   *          let++ st' = cons ser None |> lift_fix_s in
-   *          Option.map (fun x -> Alive x) st'
-   *      | Some Freed -> Symex.vanish ()
-   *      | Some (Alive st) ->
-   *          let++ st' = cons ser (Some st) |> lift_fix_Us in
-   *          Option.map (fun x -> Alive x) st') *)
-
-  let produce (serialize : serialized) : unit SM.t =
-    let* st = SM.get_state () in
-    match serialize with
+  let produce (syn : syn) st : st Symex.Producer.t =
+    let open Symex.Producer in
+    let open Symex.Producer.Syntax in
+    match syn with
     | Freed -> (
-        match st with
-        | None -> SM.set_state (Some Freed)
-        | Some _ -> SM.vanish ())
+        match st with None -> return (Some Freed) | Some _ -> vanish ())
     | Alive ser ->
         let* ist =
           match st with
-          | None -> SM.return None
-          | Some (Alive s) -> SM.return (Some s)
-          | Some Freed -> SM.vanish ()
+          | None -> return None
+          | Some (Alive s) -> return (Some s)
+          | Some Freed -> vanish ()
         in
-        let*^ (), ist' = I.produce ser ist in
-        SM.set_state (Option.map (fun s -> Alive s) ist')
+        let+ ist' = I.produce ser ist in
+        Option.map (fun s -> Alive s) ist'
+
+  let consume (syn : syn) (st : st) : (st, syn list) Symex.Consumer.t =
+    let open Symex.Consumer in
+    let open Symex.Consumer.Syntax in
+    match syn with
+    | Freed -> (
+        match st with
+        | None -> miss [ [ Freed ] ]
+        | Some Freed -> ok None
+        | Some (Alive _) -> lfail (Value.of_bool false))
+    | Alive ser -> (
+        let* ist =
+          match st with
+          | None -> ok None
+          | Some (Alive ist) -> ok (Some ist)
+          | Some Freed -> lfail (Value.of_bool false)
+        in
+        let+ ist = lift_fix_c (I.consume ser ist) in
+        match ist with Some ist -> Some (Alive ist) | None -> None)
 end

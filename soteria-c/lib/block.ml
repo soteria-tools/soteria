@@ -5,10 +5,8 @@ include With_origin (Freeable_ctree_block)
 let pp_pretty ft t =
   pp' ~inner:(Freeable_ctree_block.pp' ~inner:Ctree_block.pp_pretty) ft t
 
-let is_freed (t : t) = match t.node with Freed -> true | _ -> false
-
-let serialized_is_freed (s : serialized) =
-  match s.node with Freed -> true | _ -> false
+let is_freed (t : ('a Soteria.Sym_states.Freeable.freeable, 'b) with_info) =
+  match t.node with Freed -> true | _ -> false
 
 let alloc ?loc ~zeroed size =
   {

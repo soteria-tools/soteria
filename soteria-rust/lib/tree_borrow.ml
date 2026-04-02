@@ -15,6 +15,7 @@ module TagMap = PatriciaTree.MakeMap (struct
   type t = tag
 
   let to_int = Fun.id
+  let pp = Format.pp_print_int
 end)
 
 type access = Read | Write

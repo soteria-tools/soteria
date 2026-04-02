@@ -1,19 +1,8 @@
 open Symex
 
-module Elem (Symex : Symex.Base) = struct
-  module type S = sig
-    type t [@@deriving show]
-
-    val fresh : unit -> t Symex.t
-    val sem_eq : t -> t -> Symex.Value.(sbool t)
-    val subst : (Var.t -> Var.t) -> t -> t
-    val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
-  end
-end
-
-module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
+module Make (Symex : Symex.Base) (E : Data.Abstr.M(Symex).S_with_syn) = struct
   type t = E.t [@@deriving show { with_path = false }]
-  type serialized = E.t [@@deriving show { with_path = false }]
+  type syn = E.syn [@@deriving show { with_path = false }]
 
   module SM =
     State_monad.Make
@@ -28,13 +17,12 @@ module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
     | Some x -> SM.Result.ok x st
     | None ->
         let* v = E.fresh () in
-        SM.Result.miss [ [ v ] ] st
+        SM.Result.miss [ [ E.to_syn v ] ] st
 
   open SM
   open SM.Syntax
 
-  let assert_exclusively_owned st : (unit, 'err, serialized list) Symex.Result.t
-      =
+  let assert_exclusively_owned st : (unit, 'err, syn list) Symex.Result.t =
     let open Symex.Syntax in
     let+ res, _ = unwrap () st in
     Compo_res.map res (fun _ -> ())
@@ -45,21 +33,24 @@ module Make (Symex : Symex.Base) (E : Elem(Symex).S) = struct
     let** _ = unwrap () in
     SM.Result.set_state (Some x)
 
-  let serialize s = [ s ]
+  let to_syn (s : E.t) : syn list = [ E.to_syn s ]
+  let ins_outs (s : syn) = ([], E.exprs_syn s)
 
-  let iter_vars_serialized (x : serialized) : 'b Symex.Value.ty Var.iter_vars =
-   fun f -> E.iter_vars x f
+  open Symex
 
-  let subst_serialized (subst_var : Var.t -> Var.t) (x : serialized) :
-      serialized =
-    E.subst subst_var x
+  let produce (s : syn) (t : st) : st Producer.t =
+    let open Producer.Syntax in
+    match t with
+    | None ->
+        let+ x = Producer.apply_subst E.subst s in
+        Some x
+    | Some _ -> Producer.vanish ()
 
-  let consume x : (unit, [> Symex.lfail ], serialized list) SM.Result.t =
-    let** y = unwrap () in
-    let** () = SM.consume_pure (E.sem_eq x y) in
-    SM.Result.set_state None
-
-  let produce (v : serialized) : unit SM.t =
-    let* t = SM.get_state () in
-    match t with None -> SM.set_state (Some v) | Some _ -> SM.vanish ()
+  let consume (s : syn) (t : st) : (st, syn list) Consumer.t =
+    let open Consumer.Syntax in
+    match t with
+    | None -> Consumer.miss [ [ s ] ]
+    | Some x ->
+        let+ () = E.learn_eq s x in
+        None
 end

@@ -553,6 +553,7 @@ module Equality : S = struct
     type t = Svalue.t
 
     let to_int = Svalue.unique_tag
+    let pp = Svalue.pp
   end)
 
   include Reversible.Make_mutable (struct
