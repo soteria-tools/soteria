@@ -1,5 +1,4 @@
 open Cerb_frontend
-module Var := Soteria.Symex.Var
 
 include
   Soteria.Sym_states.Base.M(Csymex).S
