@@ -159,13 +159,15 @@ module MemVal = struct
         | Missing f -> miss f
         | Error `UninitializedMemoryAccess ->
             L.info (fun m -> m "Consuming a value from uninit, logical failure");
-            lfail Typed.v_false
-        (* any *))
-    | SAny, Owned _ -> ok (not_owned t) (* uninit *)
+            lfail Typed.v_false)
+    (* any *)
+    | SAny, Owned _ -> ok (not_owned t)
+    (* uninit *)
     | SUninit, Owned (Uninit Totally) -> ok (not_owned t)
     | SUninit, _ ->
         L.info (fun m -> m "Consuming uninit but no uninit, logical failure");
-        lfail Typed.v_false (* zeros *)
+        lfail Typed.v_false
+    (* zeros *)
     | SZeros, Owned Zeros -> ok (not_owned t)
     | SZeros, Owned (Init (v, cty)) ->
         let*^ size = Layout.size_of_s cty in
