@@ -23,6 +23,10 @@ module Tag_layout = struct
         *)
   }
   [@@deriving show { with_path = false }]
+
+  let iter_vars { offset; tags; encoding = _; ty = _ } f =
+    Typed.iter_vars offset f;
+    Array.iter (Option.iter (fun t -> Typed.iter_vars t f)) tags
 end
 
 (** We use a custom type for the member offsets for layouts; this allows us to
@@ -66,6 +70,15 @@ module Fields_shape = struct
     | s ->
         Fmt.failwith "Shape %a has no variant %a" pp s Types.VariantId.pp_id
           variant
+
+  let rec iter_vars fields f : unit =
+    match fields with
+    | Primitive -> ()
+    | Arbitrary (_, fields) -> Array.iter (fun v -> Typed.iter_vars v f) fields
+    | Enum (tl, layouts) ->
+        Array.iter (fun v -> iter_vars v f) layouts;
+        Tag_layout.iter_vars tl f
+    | Array v -> Typed.iter_vars v f
 end
 
 (* TODO: size should be an [option], for unsized types *)
@@ -76,3 +89,9 @@ type t = {
   fields : Fields_shape.t;
 }
 [@@deriving show]
+
+let iter_vars ({ size; align; fields; uninhabited = _ } : t)
+    (f : Svalue.Var.t * 'a Typed.ty -> unit) : unit =
+  iter_vars size f;
+  iter_vars align f;
+  Fields_shape.iter_vars fields f

@@ -34,11 +34,13 @@ module Session = struct
         | Some layout -> ok layout
         | None ->
             let** layout = f () in
-            (* let is_concrete = Iter.is_empty (iter_vars layout) in if
-               is_concrete then ( Hashtbl.add cache ty layout; Result.ok layout)
-               else *)
-            let+ () = Poly.push_layout ty layout in
-            Ok layout)
+            let is_concrete = Iter.is_empty (iter_vars layout) in
+            if is_concrete then (
+              Hashtbl.add cache ty layout;
+              Result.ok layout)
+            else
+              let+ () = Poly.push_layout ty layout in
+              Ok layout)
 end
 
 let size_of_int_ty = size_of_int_ty
