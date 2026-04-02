@@ -2,12 +2,18 @@
     immutable total map from identifier to address *)
 
 open Csymex
+module Expr = Typed.Expr
 
 module Loc = struct
   open Csymex.Syntax
 
-  type t = Typed.T.sloc Typed.t
+  type t = Typed.T.sloc Typed.t [@@deriving show { with_path = false }]
+  type syn = Expr.t [@@deriving show { with_path = false }]
 
+  let to_syn (loc : t) : syn = Expr.of_value loc
+  let learn_eq s l = Consumer.learn_eq s l
+  let exprs_syn (loc : syn) : Expr.t list = [ loc ]
+  let subst = Expr.subst
   let pp = Typed.ppa
 
   let fresh () =
@@ -16,8 +22,6 @@ module Loc = struct
     loc
 
   let sem_eq = Typed.sem_eq
-  let subst = Typed.subst
-  let iter_vars = Typed.iter_vars
 end
 
 module Glob_fn = Pure_fun (Loc)
@@ -54,18 +58,18 @@ let get sym =
   in
   loc
 
-let produce serialized : unit SM.t =
-  let open SM.Syntax in
-  let* () = SM.assume [ Typed.not (Typed.Ptr.is_null_loc (snd serialized)) ] in
-  let* () = produce serialized in
-  let* state_after_prod = SM.get_state () in
+let produce syn (t : t option) : t option Producer.t =
+  let open Producer.Syntax in
+  let* t = produce syn t in
   (* Bit heavy-handed but we just massively assume the well-formedness *)
-  let to_assume =
-    syntactic_bindings (Option.value ~default:empty state_after_prod)
+  let distinct_locs =
+    syntactic_bindings (Option.value ~default:empty t)
     |> Seq.map snd
     |> List.of_seq
     |> Typed.distinct
   in
-  SM.assume [ to_assume ]
+  let* loc = Producer.apply_subst Loc.subst (snd syn) in
+  let+^ () = assume [ distinct_locs; Typed.(not (Ptr.is_null_loc loc)) ] in
+  t
 
 let empty = None

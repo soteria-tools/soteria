@@ -46,9 +46,11 @@ module DecayMap : DecayMapS = struct
     include Typed
 
     type t = sloc Typed.t
+    type syn = Expr.t [@@deriving show { with_path = false }]
 
     let to_int = unique_tag
     let pp = ppa
+    let show = Fmt.to_to_string pp
     let simplify = Rustsymex.simplify
   end
 
@@ -99,8 +101,8 @@ module DecayMap : DecayMapS = struct
     let binding =
       Typed.iter_vars loc_int
       |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
-      |> Iter.filter_map (fun (var, ty) ->
-          let v = Typed.mk_var var ty in
+      |> Iter.filter_map (fun (var, _) ->
+          let v = Typed.mk_var var usize_ty in
           Seq.find
             (fun (_, { address; exposed }) -> exposed && Typed.equal v address)
             bindings)
@@ -124,11 +126,14 @@ module DecayMapMonad = struct
   let get_where () = lift @@ get_trace ()
 end
 
+module D_abstr = Soteria.Data.Abstr.M (DecayMapMonad)
+
 module type S = sig
   (** pointer type *)
-  type t
+  include D_abstr.S_with_syn
 
-  val pp : t Fmt.t
+  include D_abstr.Sem_eq with type t := t
+
   val null_ptr : unit -> t
   val null_ptr_of : [< sint ] Typed.t -> t
 
@@ -197,32 +202,52 @@ module type S = sig
 
   (** Get the allocation info for this pointer: its size and alignment *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
-
-  val iter_vars : t -> (Svalue.Var.t * 'b ty -> unit) -> unit
-  val subst : (Svalue.Var.t -> Svalue.Var.t) -> t -> t
 end
 
-type arithptr_t = {
-  ptr : sptr Typed.t;
+type ('sptr, 'snonzero, 'sint) arithptr = {
+  ptr : 'sptr;
   tag : Tree_borrow.tag option;
-  align : nonzero Typed.t;
-  size : sint Typed.t;
+  align : 'snonzero;
+  size : 'sint;
 }
 
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
     location and offset, along with an optional metadata. *)
-module ArithPtr : S with type t = arithptr_t = struct
-  type t = arithptr_t = {
-    ptr : sptr Typed.t;
-    tag : Tree_borrow.tag option;
-    align : nonzero Typed.t;
-    size : sint Typed.t;
-  }
+module ArithPtr :
+  S
+    with type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t) arithptr
+     and type syn = (Expr.t, Expr.t, Expr.t) arithptr = struct
+  type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t) arithptr
+  type syn = (Expr.t, Expr.t, Expr.t) arithptr
 
-  let pp fmt { ptr; tag; _ } =
-    Fmt.pf fmt "%a[%a]" Typed.ppa ptr
+  let pp' pp_v fmt { ptr; tag; _ } =
+    Fmt.pf fmt "%a[%a]" pp_v ptr
       Fmt.(option ~none:(any "*") Tree_borrow.pp_tag)
       tag
+
+  let pp : t Fmt.t = pp' Typed.ppa
+  let show = Fmt.to_to_string pp
+  let pp_syn : syn Fmt.t = pp' Expr.pp
+  let show_syn = Fmt.to_to_string pp_syn
+
+  let to_syn { ptr; tag; align; size } =
+    {
+      ptr = Expr.of_value ptr;
+      align = Expr.of_value align;
+      size = Expr.of_value size;
+      tag;
+    }
+
+  let learn_eq syn t =
+    let open DecayMapMonad.Consumer in
+    let open Syntax in
+    let* () = if syn.tag = t.tag then ok () else lfail Typed.v_false in
+    let* () = learn_eq syn.ptr t.ptr in
+    let* () = learn_eq syn.align t.align in
+    learn_eq syn.size t.size
+
+  let exprs_syn { ptr; align; size; _ } = [ ptr; align; size ]
+  let fresh () = failwith "Fresh unimplemented for sptr (for now)"
 
   let null_ptr () =
     {
@@ -325,14 +350,10 @@ module ArithPtr : S with type t = arithptr_t = struct
     let* () = assume [ aligned ] in
     Result.ok ptr
 
-  let iter_vars { ptr; align; size; tag = _ } f =
-    Typed.iter_vars ptr f;
-    Typed.iter_vars align f;
-    Typed.iter_vars size f
-
-  let subst subst_var p =
-    let ptr = Typed.subst subst_var p.ptr in
-    let align = Typed.subst subst_var p.align in
-    let size = Typed.subst subst_var p.size in
+  let subst subst_val p =
+    let se = Expr.subst subst_val in
+    let ptr = se p.ptr in
+    let align = se p.align in
+    let size = se p.size in
     { p with ptr; align; size }
 end

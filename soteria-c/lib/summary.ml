@@ -3,6 +3,7 @@ open Syntaxes.FunctionWrap
 module T = Typed.T
 module Var = Soteria.Symex.Var
 module Agv = Aggregate_val
+module Expr = Typed.Expr
 
 type after_exec = [ `After_exec ]
 type pruned = [ `Pruned ]
@@ -18,16 +19,16 @@ let leaks_to_error ~(loc : Cerb_location.t) leaks =
   (`Memory_leak, elements @ leak_msg)
 
 type raw = {
-  args : Agv.t list;
+  args : Agv.syn list;
       (** List of arguments values, corresponding to the formal arguments in
           order. Really a form of [(x == a0) * (y == a1)] *)
-  pre : State.serialized list;  (** Pre-condition as a list of fixes *)
-  pc : Typed.T.sbool Typed.t list;
+  pre : State.syn list;  (** Pre-condition as a list of fixes *)
+  pc : Expr.t list;
       (** Path condition. Whether it is in the post or in the pre, it doesn't
           matter for UX. *)
-  post : State.serialized list;  (** Post condition as a serialized heap *)
+  post : State.syn list;  (** Post condition as a serialized heap *)
   ret :
-    ( Agv.t,
+    ( Agv.syn,
       Error.t * (Cerb_location.t[@printer Fmt_ail.pp_loc]) Call_trace.t )
     result;
       (** Return value. If `ok` then it is the C value that the function
@@ -78,7 +79,7 @@ let filter_pc relevant_vars pc =
   ListLabels.filter pc ~f:(fun v ->
       Iter.exists
         (fun (var, _) -> Var_hashset.mem relevant_vars var)
-        (Typed.iter_vars v))
+        (Svalue.iter_vars v))
 
 module Leak_set = Hashset.Make (struct
   type t = (Cerb_location.t[@printer Fmt_ail.pp_loc]) option [@@deriving show]
@@ -89,7 +90,7 @@ end)
 
 (** Removes any bit of the state that does not any "relevant variables". i.e.,
     bits that are not reachable from the precondition. *)
-let filter_serialized_state relevant_vars (state : State.serialized list) =
+let filter_serialized_state relevant_vars (state : State.syn list) =
   (* leak_origins tracks the source code location of allocation for each heap
      location that was detected to leak. If empty, no leak is detected. *)
   let leak_origins = Leak_set.with_capacity 0 in
@@ -103,17 +104,16 @@ let filter_serialized_state relevant_vars (state : State.serialized list) =
           let relevant =
             Iter.exists
               (fun (var, _) -> Var_hashset.mem relevant_vars var)
-              (Typed.iter_vars loc)
+              (Svalue.iter_vars loc)
           in
           if relevant then true
           else
             (* If the block is not freed, we record where the object was
                allocated *)
-            let leaked = not (Block.serialized_is_freed b) in
+            let leaked = not (Block.is_freed b) in
             if leaked then Leak_set.add leak_origins b.info;
             L.trace (fun m ->
-                m "Filtering out unreachable location: %a which %a." Typed.ppa
-                  loc
+                m "Filtering out unreachable location: %a which %a." Expr.pp loc
                   (fun ft b ->
                     if b then Fmt.pf ft "leaked" else Fmt.pf ft "did not leak")
                   leaked);
@@ -136,7 +136,10 @@ let init_reachable_vars summary =
     ListLabels.iter summary.post ~f:(function
       | State_intf.Ser_heap _ -> ()
       | Ser_globs g ->
-          Globs.iter_vars_serialized g (fun (x, _) -> mark_reachable x))
+          let _, values = Globs.ins_outs g in
+          List.iter
+            (fun v -> Svalue.iter_vars v (fun (x, _) -> mark_reachable x))
+            values)
   in
   init_reachable
 
@@ -159,7 +162,7 @@ let prune (summary : after_exec t) : pruned t =
   (* For each equality [e1 = e2] in the path condition, we add a double edge
      from all variables of [e1] to all variables of [e2] *)
   ListLabels.iter summary.pc ~f:(fun v ->
-      match Typed.kind v with
+      match Svalue.kind v with
       | Binop (Eq, el, er) ->
           (* We make the second iterator peristent to avoid going over the
              structure too many times if there are many *)
@@ -176,8 +179,11 @@ let prune (summary : after_exec t) : pruned t =
     get_heaps (summary.pre @ summary.post)
   in
   ListLabels.iter all_points_tos ~f:(fun (l, b) ->
-      let b_iter = Block.iter_vars_serialized b in
-      Iter.product (Typed.iter_vars l) (Iter.persistent_lazy b_iter)
+      let b_iter =
+        let _, outs = Block.ins_outs b in
+        Iter.of_list outs |> Iter.flat_map Svalue.iter_vars
+      in
+      Iter.product (Svalue.iter_vars l) (Iter.persistent_lazy b_iter)
         (fun ((x, _), (y, _)) -> Var_graph.add_edge graph x y));
   (* [init_reachable] is the set of initially-reachable variables, and we have a
      reachability [graph]. We can compute all reachable values. *)
@@ -192,6 +198,9 @@ let prune (summary : after_exec t) : pruned t =
     | _ -> None
   in
   Pruned { raw = { summary with pc = new_pc; post = new_post }; memory_leaks }
+
+module Logic = Soteria.Logic.Make (Csymex.CSYMEX)
+module Execute = Logic.Asrt.Execute (State)
 
 (** Current criterion: a bug is manifest if its path condition is a consequence
     of the heap's and function arguments well-formedness conditions *)
@@ -221,41 +230,35 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           in
           Analysed { raw = summary; manifest_bugs = manifest_leak }
       | Error error ->
-          let module Subst = Soteria.Symex.Substs.Subst in
-          let module From_iter = Subst.From_iter (Csymex) in
-          let iter_pc f = List.iter (fun v -> Typed.iter_vars v f) summary.pc in
-          let iter_post f =
-            List.iter (fun s -> State.iter_vars_serialized s f) summary.post
-          in
-          let iter_args f =
-            List.iter (fun cval -> Agv.iter_vars cval f) summary.args
-          in
+          (* This code could be slightly better if we make syntactic constraints
+             on the arguments as the "pure" thing here, instead of building it
+             separately *)
+          let post_asrt = Logic.Asrt.make ~spatial:summary.post ~pure:[] in
           let process =
             let open Csymex.Syntax in
-            let* subst =
-              From_iter.from_iter
-                (Iter.append iter_pc (Iter.append iter_post iter_args))
+            let producer =
+              let open Csymex.Producer in
+              let open Syntax in
+              let args = List.combine summary.args arg_tys in
+              let* constrs =
+                fold_list args ~init:[] ~f:(fun acc (arg, ty) ->
+                    let+ arg = apply_subst Agv.subst arg in
+                    let constr = Option.get (Layout.constraints ~ty arg) in
+                    constr @ acc)
+              in
+              let*^ () = Csymex.assume constrs in
+              (* We don't need the produced heap, just its wf condition *)
+              (* We might want to use another symex monad, à grisette, that
+                 produces the condition as a writer monad in an \/ or
+                 something *)
+              let* _ = Execute.produce post_asrt State.empty in
+              (* At the end, we need to apply the current substitution to subst
+                 the PC as well! *)
+              fold_list summary.pc ~init:[] ~f:(fun acc sv ->
+                  let+ v = apply_subst Expr.subst sv in
+                  v :: acc)
             in
-            let subst = Subst.to_fn subst in
-            let args = List.map (Agv.subst subst) summary.args in
-            let constrs =
-              List.map2
-                (fun arg ty -> Option.get (Layout.constraints ~ty arg))
-                args arg_tys
-            in
-            let constrs = List.concat constrs in
-            let* () = Csymex.assume constrs in
-            let serialized_heap =
-              List.map (State.subst_serialized subst) summary.post
-            in
-            (* We don't need the produced heap, just its wf condition *)
-            (* We might want to use another symex monad, à grisette,
-           that produces the condition as a writer monad in an \/ or something *)
-            let* (), _ =
-              Csymex.fold_list serialized_heap ~init:((), State.empty)
-                ~f:(fun ((), st) ser -> State.produce ser st)
-            in
-            let pc = List.map (Typed.subst subst) summary.pc in
+            let* pc, _ = Csymex.Producer.run ~subst:Expr.Subst.empty producer in
             L.trace (fun m ->
                 m
                   "Produced heap, about to check if path condition holds in \
@@ -265,6 +268,16 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           let is_manifest =
             try
               let result = Csymex.run_needs_stats ~mode:OX process in
+              L.debug (fun m ->
+                  let pp_pc ft pc =
+                    Fmt.pf ft "@[<2>Path condition: %a@]"
+                      (Fmt.Dump.list Typed.ppa) pc
+                  in
+                  let pp_res ft (res, pc) =
+                    Fmt.pf ft "<v 2>Branch:@.Res: %a@.%a@]" Fmt.bool res pp_pc
+                      pc
+                  in
+                  m "%a" Fmt.(list ~sep:cut pp_res) result);
               (* The bug is manifest if the test passed in every branch. *)
               (not (List.is_empty result)) && List.for_all fst result
             with Soteria.Symex.Gave_up _ -> false

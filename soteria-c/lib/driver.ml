@@ -300,7 +300,7 @@ let initialise ?soteria_config mode config f =
 
 let print_states result =
   let pp_state ft state =
-    (Fmt.Dump.list SState.pp_serialized) ft (SState.serialize state)
+    (Fmt.Dump.list SState.pp_syn) ft (SState.to_syn state)
   in
   Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@.@?@."
     Fmt.Dump.(
@@ -310,7 +310,7 @@ let print_states result =
          ~err:
            (Soteria.Symex.Or_gave_up.pp
               (pair pp_err_and_call_trace (option SState.pp)))
-         ~miss:Fmt.Dump.(list SState.pp_serialized))
+         ~miss:Fmt.Dump.(list SState.pp_syn))
         ft r)
     result
 

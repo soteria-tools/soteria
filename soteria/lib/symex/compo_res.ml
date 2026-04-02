@@ -69,6 +69,11 @@ let map_missing x f =
   | Error e -> Error e
   | Missing fixes -> Missing (List.map f fixes)
 
+let to_result_opt = function
+  | Ok x -> Some (Result.Ok x)
+  | Error e -> Some (Result.Error e)
+  | Missing _ -> None
+
 module Syntax = struct
   let ( let* ) = bind
   let ( let+ ) = map

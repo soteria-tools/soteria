@@ -7,15 +7,13 @@
 open Symex
 open Compo_res
 
+(** FIXME: This is almost verbatim the same thing as the input of excl *)
 module Codom (Symex : Symex.Base) = struct
-  module type S = sig
-    type t
+  module Abstr = Data.Abstr.M (Symex)
 
-    val pp : Format.formatter -> t -> unit
-    val fresh : unit -> t Symex.t
-    val sem_eq : t -> t -> Symex.Value.(sbool t)
-    val subst : (Var.t -> Var.t) -> t -> t
-    val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+  module type S = sig
+    include Abstr.S_with_syn
+    include Abstr.Sem_eq with type t := t
   end
 end
 
@@ -23,7 +21,7 @@ module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
   open C
 
   type t = C.t [@@deriving show]
-  type serialized = t [@@deriving show]
+  type syn = C.syn [@@deriving show]
 
   module SM =
     State_monad.Make
@@ -35,28 +33,38 @@ module Make (Symex : Symex.Base) (C : Codom(Symex).S) = struct
   open SM
   open SM.Syntax
 
-  let serialize s = [ s ]
-  let subst_serialized subst_var s = C.subst subst_var s
-  let iter_vars_serialized s f = C.iter_vars s f
+  let to_syn s = [ C.to_syn s ]
+  let ins_outs s = ([], C.exprs_syn s)
   let pp = C.pp
-  let pp_serialized = pp
+  let pp_syn = C.pp_syn
 
   let load () =
     let* st = SM.get_state () in
     match st with
     | Some x -> Result.ok x
     | None ->
-        let* x = lift @@ fresh () in
+        let*^ x = fresh () in
         let+ () = SM.set_state (Some x) in
         Ok x
 
-  let produce (serialized : serialized) : unit SM.t =
-    let* t = SM.get_state () in
-    match t with
-    | Some x -> SM.assume [ sem_eq x serialized ]
-    | None -> SM.set_state (Some serialized)
+  open Symex
 
-  let consume (serialized : serialized) =
-    let** t = load () in
-    lift @@ Symex.consume_pure (sem_eq t serialized)
+  let consume (s : syn) (t : st) : (st, syn list) Consumer.t =
+    let open Consumer.Syntax in
+    match t with
+    | None ->
+        let*^ x = C.fresh () in
+        let+ () = C.learn_eq s x in
+        Some x
+    | Some x ->
+        let+ () = C.learn_eq s x in
+        Some x
+
+  let produce (s : syn) (t : st) : st Producer.t =
+    let open Producer.Syntax in
+    match t with
+    | None ->
+        let+ x = Producer.apply_subst C.subst s in
+        Some x
+    | Some _ -> Producer.vanish ()
 end

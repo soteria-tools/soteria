@@ -12,9 +12,13 @@ module Heap =
     (struct
       include Typed
 
-      type t = T.sloc Typed.t
+      type t = T.sloc Typed.t [@@deriving show { with_path = false }]
+      type syn = Expr.t [@@deriving show { with_path = false }]
 
-      let pp = ppa
+      let to_syn (loc : t) : syn = Expr.of_value loc
+      let exprs_syn (loc : syn) : Expr.t list = [ loc ]
+      let learn_eq s l = Consumer.learn_eq s l
+      let subst = Expr.subst
 
       let fresh () =
         match Config.current_mode () with
@@ -72,7 +76,7 @@ let[@inline] check_non_null loc =
 let with_ptr (ptr : [< T.sptr ] Typed.t)
     (f :
       ofs:[< T.sint ] Typed.t -> ('a, 'err, 'fix list) Ctree_block.SM.Result.t)
-    : ('a, 'err, serialized list) SM.Result.t =
+    : ('a, 'err, syn list) SM.Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
   let** () = check_non_null loc in
@@ -182,95 +186,99 @@ let alloc_ty ty =
   let*^ size = Layout.size_of_s ty in
   alloc size
 
-let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, serialized list) SM.Result.t
-    =
+let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, syn list) SM.Result.t =
   let@ () = with_error_loc ~msg:"Invalid free" () in
   if%sat Typed.Ptr.ofs ptr ==@ Usize.(0s) then
     with_heap @@ Heap.wrap (Typed.Ptr.loc ptr) (Block.free ())
   else SM.Result.error `InvalidFree
 
-let produce_basic_val loc offset ty v =
+let produce_basic_val loc offset ty v t =
+  let open Producer.Syntax in
   let*^ len = Layout.size_of_s ty in
-  let block : Block.serialized =
+  let len = Typed.Expr.of_value len in
+  let block : Block.syn =
     { node = Alive (MemVal { offset; len; v = SInit (v, ty) }); info = None }
   in
-  let serialized : serialized = Ser_heap (loc, block) in
-  produce serialized
+  let syn : syn = Ser_heap (loc, block) in
+  produce syn t
 
 let produce_padding loc ~offset ~len =
-  let block : Block.serialized =
+  let block : Block.syn =
     { node = Alive (MemVal { offset; len; v = SUninit }); info = None }
   in
-  let serialized : serialized = Ser_heap (loc, block) in
+  let serialized : syn = Ser_heap (loc, block) in
   produce serialized
 
-let rec produce_aggregate (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) =
-  let loc = Typed.Ptr.loc ptr in
-  let offset = Typed.Ptr.ofs ptr in
+let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
+    : t option Producer.t =
+  let open Producer in
+  let open Syntax in
+  let syn v = Typed.Expr.of_value v in
+  let loc = Svalue.Ptr.loc ptr in
+  let offset = Svalue.Ptr.ofs ptr in
   match (v, ty) with
-  | Basic v, _ -> produce_basic_val loc offset ty v
+  | Basic v, _ -> produce_basic_val loc offset ty v st
   | Array elems, ty ->
-      let* elem_ty, _ =
+      let*^ elem_ty, _ =
         Layout.get_array_info ty
         |> Csymex.of_opt_not_impl ~msg:"Array element type"
-        |> SM.lift
       in
-      let+ _ =
-        SM.fold_list elems ~init:ptr ~f:(fun ptr elem ->
-            let* () = produce_aggregate ptr elem_ty elem in
+      let+ _, st =
+        fold_list elems ~init:(ptr, st) ~f:(fun (ptr, st) elem ->
+            let* st = produce_aggregate ptr elem_ty elem st in
             let+^ elem_size = Layout.size_of_s elem_ty in
-            Typed.Ptr.add_ofs ptr elem_size)
+            (Svalue.Ptr.add_ofs ptr (syn elem_size), st))
       in
-      ()
+      st
   | Struct values, ty ->
-      let* members, _ =
+      let*^ members, _ =
         Layout.get_struct_fields_ty ty
         |> Csymex.of_opt_not_impl ~msg:"Members of struct"
-        |> SM.lift
       in
-      let* layout =
-        Layout.layout_of ty |> Csymex.of_opt_not_impl ~msg:"Layout" |> SM.lift
+      let*^ layout =
+        Layout.layout_of ty |> Csymex.of_opt_not_impl ~msg:"Layout"
       in
-      let rec aux members_ofs members values =
+
+      let rec aux members_ofs members values st =
         match (members_ofs, members, values) with
-        | [], [], [] -> SM.return ()
+        | [], [], [] -> return st
         | (Layout.Padding size, ofs) :: rest_ofs, members, values ->
-            let* () =
-              produce_padding loc ~offset:(BV.usizei ofs) ~len:(BV.usizei size)
+            let* st =
+              produce_padding loc
+                ~offset:(syn @@ BV.usizei ofs)
+                ~len:(syn @@ BV.usizei size)
+                st
             in
-            aux rest_ofs members values
+            aux rest_ofs members values st
         | ( (Field _, ofs) :: rest_ofs,
             (_, (_, _, _, mem_ty)) :: rest_mems,
             value :: rest_values ) ->
-            let* () =
-              produce_aggregate (Typed.Ptr.mk loc (BV.usizei ofs)) mem_ty value
+            let* st =
+              produce_aggregate
+                (Svalue.Ptr.mk loc (syn @@ BV.usizei ofs))
+                mem_ty value st
             in
-            aux rest_ofs rest_mems rest_values
+            aux rest_ofs rest_mems rest_values st
         | _ -> failwith "Struct field mismatch"
       in
-      aux layout.members_ofs members values
+      aux layout.members_ofs members values st
 
-(* let consume (serialized : serialized) (st : t) :
- *     (t, [> Csymex.lfail ] err, serialized) Csymex.Result.t =
- *   let@ () = with_error_loc_as_call_trace () in
- *   L.debug (fun m -> m "Consuming state from %a" pp_serialized serialized);
- *   let** globs =
- *     let+ res = Globs.consume serialized.globs st.globs in
- *     match res with
- *     | Ok globs -> Soteria.Symex.Compo_res.Ok globs
- *     | Error e -> Error e
- *     | Missing fixes ->
- *         let fixes = List.map (fun fix -> { heap = []; globs = fix }) fixes in
- *         Missing fixes
- *   in
- *   let+ res = SPmap.consume Block.consume serialized.heap st.heap in
- *   match res with
- *   | Ok heap -> Soteria.Symex.Compo_res.Ok { heap; globs }
- *   | Error e -> Error e
- *   | Missing fixes ->
- *       let fixes = List.map (fun fix -> { heap = fix; globs = [] }) fixes in
- *       Missing fixes
- *)
+let consume (syn : syn) (st : t option) : (t option, syn list) Consumer.t =
+  let open Consumer.Syntax in
+  let { heap; globs } = of_opt st in
+  match syn with
+  | Ser_heap sh ->
+      let+ heap =
+        let+? fixes = Heap.consume sh heap in
+        List.map (fun f -> Ser_heap f) fixes
+      in
+      to_opt { heap; globs }
+  | Ser_globs sg ->
+      let+ globs =
+        let+? fixes = Globs.consume sg globs in
+        List.map (fun f -> Ser_globs f) fixes
+      in
+      to_opt { heap; globs }
 
 let get_global (sym : Cerb_frontend.Symbol.sym) =
   let+ loc = with_globs_sym (Globs.get sym) in
