@@ -242,17 +242,22 @@ let match_on_syn fields f e =
   in
   pexp_match e (cases @ [ irrefutable ])
 
-let syn_type_item fields =
+let syn_type_item (syn_ty : longident option) fields =
   let syn_ctor_decl (field, { sym_state; _ }) =
     let arg_ty = ptyp_constr_dot sym_state "syn" [] in
     constructor_declaration ~name:(Names.syn field.name)
       ~args:(Pcstr_tuple [ arg_ty ]) ~res:None
   in
   let fields = managed_fields fields in
+  let manifest : core_type option =
+    match syn_ty with
+    | Some ty -> Some (ptyp_constr (wloc ty) [])
+    | None -> None
+  in
   let td =
     type_declaration ~name:"syn" ~params:[] ~cstrs:[]
       ~kind:(Ptype_variant (List.map syn_ctor_decl fields))
-      ~private_:Public ~manifest:None
+      ~private_:Public ~manifest
   in
   pstr_type Recursive [ td ]
 
@@ -625,14 +630,14 @@ let consume_item ~loc fields =
       let st = of_opt st in
       [%e mk_cons_prod_match ~loc ~kind:`Consume fields]]
 
-let make_impl ~loc ~symex_module (td : type_declaration) =
+let make_impl ~loc ~symex_module ~syn_ty (td : type_declaration) =
   let@ loc = with_loc loc in
   let fields = fields_of_td_exn td in
   [
     sm_item ~loc symex_module;
     pp_item ~loc fields;
     show_item ~loc;
-    syn_type_item fields;
+    syn_type_item syn_ty fields;
     pp_syn_item ~loc fields;
     show_syn_item ~loc;
     of_opt_item ~loc fields;
@@ -646,19 +651,26 @@ let make_impl ~loc ~symex_module (td : type_declaration) =
   @ List.map with_field_item (managed_fields fields)
   @ [ produce_item ~loc fields; consume_item ~loc fields ]
 
-let str_type_decl ~loc ~path:_ (_rec, tds) symex_module =
+let str_type_decl ~loc ~path:_ (_rec, tds) symex_module syn_ty =
   let@ _ = with_loc loc in
   let symex_module =
     match symex_module with
     | Some { pexp_desc = Pexp_construct ({ txt; _ }, None); _ } -> txt
     | _ -> err "expected { symex = <Module> }"
   in
+  let syn_ty =
+    match syn_ty with
+    | Some { pexp_desc = Pexp_ident { txt; _ }; _ } -> Some txt
+    | None -> None
+    | _ -> err "expected { syn_ty = <ty> }"
+  in
   match tds with
-  | [ td ] -> make_impl ~loc ~symex_module td
+  | [ td ] -> make_impl ~loc ~symex_module ~syn_ty td
   | _ -> err "expects exactly one type declaration"
 
 let register () =
   let symex_arg = Deriving.Args.arg "symex" Ast_pattern.__ in
-  let str_args = Deriving.Args.(empty +> symex_arg) in
+  let syn_ty_arg = Deriving.Args.arg "syn" Ast_pattern.__ in
+  let str_args = Deriving.Args.(empty +> symex_arg +> syn_ty_arg) in
   let str = Deriving.Generator.make str_args str_type_decl in
   Deriving.add Names.ppx ~str_type_decl:str |> Deriving.ignore

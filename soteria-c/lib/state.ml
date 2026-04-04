@@ -34,7 +34,7 @@ module Heap =
     (Block)
 
 type t = { heap : Heap.t option; globs : Globs.t option }
-[@@deriving sym_state { symex = Csymex }]
+[@@deriving sym_state { symex = Csymex; syn = State_intf.syn }]
 
 open SM.Syntax
 

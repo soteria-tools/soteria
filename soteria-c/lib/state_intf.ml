@@ -3,7 +3,7 @@ open T
 module Agv = Aggregate_val
 module Compo_res = Soteria.Symex.Compo_res
 
-type syn = State.syn =
+type syn =
   | Ser_heap of (Expr.t * Block.syn)
   | Ser_globs of (Symbol_std.t * Expr.t)
 [@@deriving show { with_path = false }]
