@@ -9,9 +9,9 @@ boilerplate required by state modules implementing the
 {{!Soteria.Sym_states.Base.M.S}State models} repeat the same patterns:
 
 - [SM] state-monad instantiation.
-- [serialized] type, printers and helpers
+- [syn] type, printers and helpers
 - [of_opt]/[to_opt]/[empty] helpers.
-- [produce] to produce into the state from the serialized type.
+- [produce] and [consume] to support Soteria's logic.
 - [with_<field>] and [with_<field>_sym] helper wrappers.
 
 The [sym_state] PPX generates these from the state type declaration.
@@ -44,30 +44,28 @@ module SM :
     with module Symex = My_symex
      and type st = t option
 
-type serialized =
-  | Ser_heap of Heap.serialized
-  | Ser_globs of Globs.serialized
+type syn =
+  | Ser_heap of Heap.syn
+  | Ser_globs of Globs.syn
 
 val pp : Format.formatter -> t -> unit
 val show : t -> string
-val pp_serialized : Format.formatter -> serialized -> unit
-val show_serialized : serialized -> string
+val pp_syn : Format.formatter -> syn -> unit
+val show_syn : syn -> string
 
 val of_opt : t option -> t
 val to_opt : t -> t option
 val empty : t option
 
-val serialize : t -> serialized list
-val subst_serialized :
-  (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized
-val iter_vars_serialized :
-  serialized -> (Svalue.Var.t * 'a Typed.ty -> unit) -> unit
+val to_syn : t -> syn list
+val ins_outs : syn -> My_symex.Value.Expr.(t list * t list)
 
-val produce : serialized -> unit SM.t
+val produce : syn -> t option -> t option My_symex.Producer.t
+val consume : syn -> t option -> (t option, syn list) My_symex.Consumer.t
 
 val with_heap :
-  ('a, 'e, Heap.serialized list) Heap.SM.Result.t ->
-  ('a, 'e, serialized list) SM.Result.t
+  ('a, 'e, Heap.syn list) Heap.SM.Result.t ->
+  ('a, 'e, syn list) SM.Result.t
 
 val with_heap_sym : 'a Heap.SM.t -> 'a SM.t
 ]}
@@ -75,7 +73,7 @@ val with_heap_sym : 'a Heap.SM.t -> 'a SM.t
 [with_heap_sym] is a wrapper that calls a symbolic computation of type [Heap.SM.t]
 with the heap part of the state and updates it with the result.
 On the other hand, [with_heap] is a more powerful wrapper that also lifts
-missing outcomes into the right [serialized] variant.
+missing outcomes into the right [syn] variant.
 
 {2 Ignored fields}
 
@@ -91,7 +89,7 @@ type t = {
 [@@deriving sym_state { symex = My_symex }]
 ]}
 
-Ignored fields are not serialized. They are still considered in [to_opt]
+Ignored fields are not serialized in [to_syn]. They are still considered in [to_opt]
 emptiness checks using [( = )] against the provided [empty] expression, and they
 still get a [with_field_sym] wrapper that operates over the underlying monad
 (e.g. [My_symex]).
@@ -102,31 +100,24 @@ val with_functions_sym :
     ('a, 'e, 'f) SM.Result.t
 ]}
 
-{2 Lifting into nested monads}
+{2 Using other fields as context}
 
 For managed (i.e. not ignored) fields, [with_<field>] and [with_<field>_sym] can run
-through a custom lifter with [@sym_state.lift]. This can be useful if this field's
-state model has a different monad.
+through another field's state monad with [@sym_state.context]. This can be useful if this field's
+state model uses a state monad who's state type is that of another field.
 
-[@sym_state.lift] takes a record with two fields:
-- [run] is a function that takes the {i full} state and returns a handler for
-  the field's monad.
-- [state] (optional) is an additional field that is returned by the [run] function,
-  and which must be placed back into the state type.
+[@sym_state.context] takes a record with a [field] field, which specifies which field
+of the state is used. That field must also be a symbolic state (i.e. not be ignored),
+as it's monad is what is used.
 
-This enables complex state shapes; for example, with [FancyHeap] backed by a
-custom [PointerMonad] state monad:
+This enables complex state shapes; for example, here [FancyHeap] is built on top
+of the [DecayedPointers.SM] state monad:
 
 {@ocaml[
 type t = {
-  pointers : DecayedPointers.t;
-    [@sym_state.ignore { empty = DecayedPointers.empty }]
+  pointers : DecayedPointers.t option;
   heap : FancyHeap.t option;
-    [@sym_state.lift
-      {
-        run = (fun st -> PointerMonad.run_with_state ~state:st.pointers);
-        state = pointers
-      }]
+    [@sym_state.context { field = pointers }]
   globs : Globs.t option;
 }
 [@@deriving sym_state { symex = My_symex }]
@@ -139,9 +130,9 @@ let with_heap_sym f =
   let open SM.Syntax in
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
-  let { heap; _ } = st in
+  let { heap; pointers; _ } = st in
   let*^ (res, heap), pointers =
-    PointerMonad.run_with_state ~state:st.pointers (f heap)
+    DecayedPointers.SM.run_with_state ~state:pointers (f heap)
   in
   let+ () = SM.set_state (to_opt { st with heap; pointers }) in
   res

@@ -60,54 +60,42 @@ end
 
 module My_symex = Symex.Make (Tiny_solver.Z3_solver)
 
-module Heap = struct
+module Dummy_state = struct
   type t = unit
-  type serialized = unit
+  type syn = unit
 
   module SM = Soteria.Sym_states.State_monad.Make (My_symex) (struct
     type nonrec t = t option
   end)
 
   let pp _ _ = ()
-  let pp_serialized _ _ = ()
-  let serialize _ = []
-  let subst_serialized _ x = x
-  let iter_vars_serialized _ _ = ()
-  let produce (_ : serialized) (st : t option) : (unit * t option) My_symex.t =
-    My_symex.return ((), st)
+  let pp_syn _ _ = ()
+  let to_syn _ = []
+  let ins_outs _ = [], []
+  let produce _ s = My_symex.Producer.return (s)
+  let consume _ s = My_symex.Consumer.ok (s)
 end
-
-module Globs = Heap
+module Heap = Dummy_state
+module Globs = Dummy_state
 module FunBiMap = struct
   type t = unit
   let empty = ()
 end
-
-module DecayedPointers = struct
-  type t = unit
-  let empty = ()
-end
-
-module PointerMonad =
-  Soteria.Sym_states.State_monad.Make (My_symex) (DecayedPointers)
-
+module DecayedPointers = Dummy_state
 module FancyHeap = struct
   type t = unit
-  type serialized = unit
+  type syn = unit
 
-  module SM = Soteria.Sym_states.State_monad.Make (PointerMonad) (struct
+  module SM = Soteria.Sym_states.State_monad.Make (DecayedPointers.SM) (struct
     type nonrec t = t option
   end)
 
   let pp _ _ = ()
-  let pp_serialized _ _ = ()
-  let serialize _ = []
-  let subst_serialized _ x = x
-  let iter_vars_serialized _ _ = ()
-
-  let produce (_ : serialized) (heap : t option) :
-      (unit * t option) PointerMonad.t =
-   fun pointers -> My_symex.return (((), heap), pointers)
+  let pp_syn _ _ = ()
+  let to_syn _ = []
+  let ins_outs _ = [], []
+  let produce _ s = DecayedPointers.SM.Producer.return (s)
+  let consume _ s = DecayedPointers.SM.Consumer.ok (s)
 
   let load _ _ = SM.Result.ok ()
 end
