@@ -82,13 +82,13 @@ module Sym_state_base = struct
     | _ -> None
 
   let module_of_core_type_exn (ct : core_type) =
-    let@ () = with_loc ct.ptyp_loc in
     match module_of_core_type ct with
     | Some m -> m
-    | None -> err "expects record fields of type <Module>.t option"
+    | None ->
+        err ~loc:ct.ptyp_loc "expects record fields of type <Module>.t option"
 
   let ignored_empty_of_attr_exn (attr : attribute) =
-    let@ () = with_loc attr.attr_loc in
+    let@ _ = with_loc attr.attr_loc in
     let bad () = err "expects [@sym_state.ignore { empty = <expr> }]" in
     match attr.attr_payload with
     | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
@@ -123,7 +123,7 @@ module Sym_state_base = struct
     | _ -> err err_msg
 
   let context_cfg_of_attr_exn (attr : attribute) =
-    let@ () = with_loc attr.attr_loc in
+    let@ _ = with_loc attr.attr_loc in
     let err_msg = Fmt.str "expected [@%s { field = <field> }]" context_attr in
     let err () = err err_msg in
     match attr.attr_payload with
@@ -140,7 +140,7 @@ module Sym_state_base = struct
   let validate_context_attr (fields : field list) =
     fields
     |> List.iter @@ fun f ->
-       let@ () = with_loc f.loc in
+       let@ _ = with_loc f.loc in
        match (f.kind, f.context) with
        | Ignored _, Some _ ->
            err (context_attr ^ " cannot be applied to ignored fields")
@@ -166,14 +166,13 @@ module Sym_state_base = struct
     let allowed = [ ignore_attr; context_attr ] in
     ld.pld_attributes
     |> List.iter @@ fun (attr : attribute) ->
-       let@ () = with_loc attr.attr_loc in
        if not (List.exists (String.equal attr.attr_name.txt) allowed) then
          let rec pp_attrs ?(acc = "") = function
            | [] -> acc
            | [ a ] -> acc ^ "and [@" ^ a ^ "]"
            | a :: rest -> pp_attrs ~acc:(acc ^ "[@" ^ a ^ "], ") rest
          in
-         err ("only supports attributes " ^ pp_attrs allowed)
+         err ~loc:attr.attr_loc ("only supports attributes " ^ pp_attrs allowed)
 
   let context_cfg_of_label (ld : label_declaration) =
     ld.pld_attributes
@@ -188,7 +187,7 @@ module Sym_state_base = struct
     |> Option.map ignored_empty_of_attr_exn
 
   let fields_of_td_exn (td : type_declaration) =
-    let@ () = with_loc td.ptype_loc in
+    let@ _ = with_loc td.ptype_loc in
     if td.ptype_name.txt <> "t" then
       err ~loc:td.ptype_name.loc "only supports type named 't'";
     match td.ptype_kind with
@@ -426,7 +425,7 @@ module Sym_state_base = struct
      * let+ () = SM.set_state (to_opt st) in
      * Soteria.Symex.Compo_res.Ok res
      *)
-    let loc = target.loc in
+    let@ loc = with_loc target.loc in
     let updated_fields =
       match target.context with
       | None -> [ target.name ]
@@ -489,7 +488,7 @@ module Sym_state_base = struct
      * let with_field1 f =
      *   SM.Result.map_missing (with_field1_sym f) lift_field1_fixes
      *)
-    let loc = target.loc in
+    let@ loc = with_loc target.loc in
     let with_sym = evar (fn_with_sym_name target.name) in
     let lift_fixes = evar (lift_fix_name target.name) in
     [%stri
@@ -582,6 +581,7 @@ module Sym_state_base = struct
     let cases =
       List.map
         (fun (f : field) ->
+          let@ loc = with_loc f.loc in
           let ctor = lident (syn_name f.name) in
           let lhs = ppat_construct ctor (Some [%pat? v]) in
           let rhs = mk_cons_prod_item ~loc ~kind:`Produce fields f in
@@ -622,6 +622,7 @@ module Sym_state_base = struct
     let cases =
       List.map
         (fun (f : field) ->
+          let@ loc = with_loc f.loc in
           let ctor = lident (syn_name f.name) in
           let lhs = ppat_construct ctor (Some [%pat? v]) in
           let rhs = mk_cons_prod_item ~loc ~kind:`Consume fields f in
@@ -636,7 +637,7 @@ module Sym_state_base = struct
         [%e pexp_match [%expr syn] cases]]
 
   let make_impl ~loc ~symex_module (td : type_declaration) =
-    let@ () = with_loc loc in
+    let@ loc = with_loc loc in
     let fields = fields_of_td_exn td in
     validate_context_attr fields;
     [

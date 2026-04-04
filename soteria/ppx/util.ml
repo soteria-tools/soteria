@@ -10,7 +10,7 @@ module LocCtx = struct
 
   let with_loc (loc : location) f =
     let open Effect.Deep in
-    try f () with effect Get_loc, k -> continue k loc
+    try f loc with effect Get_loc, k -> continue k loc
 
   let get_loc () = Effect.perform Get_loc
   let wloc x = { loc = get_loc (); txt = x }
