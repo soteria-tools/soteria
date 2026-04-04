@@ -1,6 +1,5 @@
 open Typed
 open T
-open Cerb_frontend
 module Agv = Aggregate_val
 module Compo_res = Soteria.Symex.Compo_res
 
@@ -38,7 +37,7 @@ module type S = sig
 
   val produce_aggregate :
     Expr.t ->
-    Ctype.ctype ->
+    Cerb_frontend.Ctype.ctype ->
     Aggregate_val.syn ->
     t option ->
     t option Csymex.Producer.t

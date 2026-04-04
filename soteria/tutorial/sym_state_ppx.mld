@@ -1,0 +1,185 @@
+{1 Sym state PPX tutorial}
+
+This page explains how to use the [sym_state] deriver to generate most of the
+boilerplate required by state modules implementing the
+{{!Soteria.Sym_states.Base.M.S}symbolic state base API}.
+
+{2 What it solves}
+
+{{!Soteria.Sym_states.Base.M.S}State models} repeat the same patterns:
+
+- [SM] state-monad instantiation.
+- [syn] type, printers and helpers
+- [of_opt]/[to_opt]/[empty] helpers.
+- [produce] and [consume] to support Soteria's logic.
+- [with_<field>] and [with_<field>_sym] helper wrappers.
+
+The [sym_state] PPX generates these from the state type declaration.
+More formally, this generates a product of the state models of the
+individual fields.
+
+{2 Basic usage}
+
+Define a record type [t] where managed symbolic fields have type
+[<Module>.t option], then derive:
+
+{@ocaml[
+type t = {
+  heap : Heap.t option;
+  globs : Globs.t option;
+}
+[@@deriving sym_state { symex = My_symex }]
+]}
+
+The [symex] argument is required and indicates which symbolic monad family the
+generated [SM] module should use.
+
+{2 What gets generated}
+
+At a high level, the deriver emits:
+
+{@ocaml skip[
+module SM :
+  Soteria.Sym_states.State_monad.S
+    with module Symex = My_symex
+     and type st = t option
+
+type syn =
+  | Ser_heap of Heap.syn
+  | Ser_globs of Globs.syn
+
+val pp : Format.formatter -> t -> unit
+val show : t -> string
+val pp_syn : Format.formatter -> syn -> unit
+val show_syn : syn -> string
+
+val of_opt : t option -> t
+val to_opt : t -> t option
+val empty : t option
+
+val to_syn : t -> syn list
+val ins_outs : syn -> My_symex.Value.Expr.(t list * t list)
+
+val produce : syn -> t option -> t option My_symex.Producer.t
+val consume : syn -> t option -> (t option, syn list) My_symex.Consumer.t
+
+val with_heap :
+  ('a, 'e, Heap.syn list) Heap.SM.Result.t ->
+  ('a, 'e, syn list) SM.Result.t
+
+val with_heap_sym : 'a Heap.SM.t -> 'a SM.t
+]}
+
+[with_heap_sym] is a wrapper that calls a symbolic computation of type [Heap.SM.t]
+with the heap part of the state and updates it with the result.
+On the other hand, [with_heap] is a more powerful wrapper that also lifts
+missing outcomes into the right [syn] variant.
+
+{2 Ignored fields}
+
+You can keep non-compositional auxiliary fields in [t] and still derive everything.
+Mark them with [@sym_state.ignore], providing their empty value:
+
+{@ocaml[
+type t = {
+  heap : Heap.t option;
+  globs : Globs.t option;
+  functions : FunBiMap.t [@sym_state.ignore { empty = FunBiMap.empty }];
+}
+[@@deriving sym_state { symex = My_symex }]
+]}
+
+Ignored fields are not serialized in [to_syn]. They are still considered in [to_opt]
+emptiness checks using [( = )] against the provided [empty] expression, and they
+still get a [with_field_sym] wrapper that operates over the underlying monad
+(e.g. [My_symex]).
+
+{@ocaml skip[
+val with_functions_sym :
+    (FunBiMap.t -> ('a * FunBiMap.t, 'e, 'f) My_symex.Result.t) ->
+    ('a, 'e, 'f) SM.Result.t
+]}
+
+If physical equality is not appropriate for the field, you can also provide a
+custom equality function with [is_empty]. A custom printer can also be provided,
+with [pp] (by default the field is printed as "<ignored>").
+
+{@ocaml[
+type t = {
+  functions : FunBiMap.t;
+    [@sym_state.ignore {
+      empty = FunBiMap.empty;
+      is_empty = FunBiMap.is_empty;
+      pp = FunBiMap.pp;
+    }]
+}
+[@@deriving sym_state { symex = My_symex }]
+]}
+
+{2 Using other fields as context}
+
+For managed (i.e. not ignored) fields, [with_<field>] and [with_<field>_sym] can run
+through another field's state monad with [@sym_state.context]. This can be useful if this field's
+state model uses a state monad who's state type is that of another field.
+
+[@sym_state.context] takes a record with a [field] field, which specifies which field
+of the state is used. That field must also be a symbolic state (i.e. not be ignored),
+as it's monad is what is used.
+
+This enables complex state shapes; for example, here [FancyHeap] is built on top
+of the [DecayedPointers.SM] state monad:
+
+{@ocaml[
+type t = {
+  pointers : DecayedPointers.t option;
+  heap : FancyHeap.t option;
+    [@sym_state.context { field = pointers }]
+  globs : Globs.t option;
+}
+[@@deriving sym_state { symex = My_symex }]
+]}
+
+This makes the generated [with_heap] and [with_heap_sym] behave like this:
+
+{@ocaml[
+let with_heap_sym f =
+  let open SM.Syntax in
+  let* st_opt = SM.get_state () in
+  let st = of_opt st_opt in
+  let { heap; pointers; _ } = st in
+  let*^ (res, heap), pointers =
+    DecayedPointers.SM.run_with_state ~state:pointers (f heap)
+  in
+  let+ () = SM.set_state (to_opt { st with heap; pointers }) in
+  res
+]}
+
+Which can then easily be used:
+
+{@ocaml[
+let load addr ty =
+  with_heap_sym (FancyHeap.load addr ty)
+]}
+
+{2 [syn] type equality}
+
+Some applications may want to expose a stable [syn] type through an interface,
+without revealing the actual state type. While this PPX does not support customising
+the generated [syn], it does allow asserting [syn] is equal to a
+user-defined one, using the [syn] option:
+
+{@ocaml[
+type my_syn =
+  | Ser_heap of Heap.syn
+  | Ser_globs of Globs.syn
+
+type t = {
+  heap : Heap.t option;
+  globs : Globs.t option;
+}
+[@@deriving sym_state { symex = My_symex; syn = my_syn }]
+]}
+
+{b Note} this only asserts the generated [syn] type is equal to [my_syn], it does
+not actually change any of the generated code to use [my_syn]. If [my_syn] does
+not match [syn], this will cause a compile error.

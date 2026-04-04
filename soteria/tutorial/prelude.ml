@@ -55,3 +55,49 @@ module Ast = struct
       | BinOp (op, e1, e2) -> Fmt.pf ft "(%a %a %a)" pp e1 Binop.pp op pp e2
   end
 end
+
+(* for the PPX sym_states tutorial: *)
+
+module My_symex = Symex.Make (Tiny_solver.Z3_solver)
+
+module Dummy_state = struct
+  type t = unit
+  type syn = unit
+
+  module SM = Soteria.Sym_states.State_monad.Make (My_symex) (struct
+    type nonrec t = t option
+  end)
+
+  let pp _ _ = ()
+  let pp_syn _ _ = ()
+  let to_syn _ = []
+  let ins_outs _ = [], []
+  let produce _ s = My_symex.Producer.return (s)
+  let consume _ s = My_symex.Consumer.ok (s)
+end
+module Heap = Dummy_state
+module Globs = Dummy_state
+module FunBiMap = struct
+  type t = unit
+  let empty = ()
+  let is_empty () = true
+  let pp _ _ = ()
+end
+module DecayedPointers = Dummy_state
+module FancyHeap = struct
+  type t = unit
+  type syn = unit
+
+  module SM = Soteria.Sym_states.State_monad.Make (DecayedPointers.SM) (struct
+    type nonrec t = t option
+  end)
+
+  let pp _ _ = ()
+  let pp_syn _ _ = ()
+  let to_syn _ = []
+  let ins_outs _ = [], []
+  let produce _ s = DecayedPointers.SM.Producer.return (s)
+  let consume _ s = DecayedPointers.SM.Consumer.ok (s)
+
+  let load _ _ = SM.Result.ok ()
+end

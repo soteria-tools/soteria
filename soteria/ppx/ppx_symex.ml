@@ -8,7 +8,7 @@ let ext ext =
     Ast_pattern.(single_expr_payload __)
     (fun ~loc:_ ~path:_ ~arg:_ expr -> expand ~ext expr)
 
-(* Registring [if%sat] *)
+(* Register [if%sat] *)
 let () =
   let open Expander.If_sat in
   let register extension =
@@ -24,3 +24,6 @@ let () =
   let kind = Context_free.Rule.Constant_kind.Integer in
   let rule = Context_free.Rule.constant kind suffix rewriter in
   Driver.register_transformation ~rules:[ rule ] "sym_constants"
+
+(* Register [deriving sym_state] *)
+let () = Sym_state.register ()
