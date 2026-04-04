@@ -4,12 +4,11 @@ open Util.Syntaxes
 open Util.LocCtx
 
 module Helpers = struct
-  let lident s = wloc (Longident.Lident s)
-  let liddot base name = wloc (Longident.Ldot (base, name))
+  let lident s = wloc (Lident s)
+  let liddot base name = wloc (Ldot (base, name))
 
   let liddots base path =
-    wloc
-    @@ List.fold_left (fun acc name -> Longident.Ldot (acc, name)) base path
+    wloc @@ List.fold_left (fun acc name -> Ldot (acc, name)) base path
 
   let pexp_ident_dot base name = pexp_ident (liddot base name)
   let pexp_ident_dots base name = pexp_ident (liddots base name)
@@ -22,6 +21,23 @@ module Helpers = struct
 
   let record_of_names ?base names =
     pexp_record (List.map (fun n -> (lident n, evar n)) names) base
+
+  let find_attrib attr_name (ld : label_declaration) =
+    ld.pld_attributes
+    |> List.find_opt (fun (attr : attribute) ->
+        String.equal attr.attr_name.txt attr_name)
+
+  let find_attr_field attr field =
+    match attr.attr_payload with
+    | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
+        match expr.pexp_desc with
+        | Pexp_record (fields, None) ->
+            List.find_map
+              (fun ({ txt; _ }, v) ->
+                if txt = Lident field then Some v else None)
+              fields
+        | _ -> None)
+    | _ -> None
 end
 
 open Helpers
@@ -31,23 +47,20 @@ module Names = struct
   let lift_fixes name = "lift_" ^ name ^ "_fixes"
   let with_ name = "with_" ^ name
   let with_sym name = "with_" ^ name ^ "_sym"
-  let ignore_attr = "sym_state.ignore"
-  let context_attr = "sym_state.context"
+  let ppx = "sym_state"
+  let ignore_attr = ppx ^ ".ignore"
+  let context_attr = ppx ^ ".context"
 end
-
-type context_cfg = { field : string }
-type field_kind = Managed of Longident.t | Ignored of expression
-
-type field = {
-  name : string;
-  kind : field_kind;
-  context : context_cfg option;
-  loc : Location.t;
-}
 
 let err ?loc msg =
   let loc = match loc with Some l -> l | None -> get_loc () in
-  Location.raise_errorf ~loc "[@@deriving sym_state] %s" msg
+  Location.raise_errorf ~loc "[@@deriving %s] %s" Names.ppx msg
+
+type context_attr = { field : string; ctx_sym_state : Longident.t }
+type ignored_field = { empty : expression }
+type managed_field = { sym_state : Longident.t; context : context_attr option }
+type field_kind = Managed of managed_field | Ignored of ignored_field
+type field = { name : string; kind : field_kind; loc : Location.t }
 
 let is_managed (f : field) =
   match f.kind with Managed _ -> true | Ignored _ -> false
@@ -55,18 +68,126 @@ let is_managed (f : field) =
 let is_ignored (f : field) =
   match f.kind with Managed _ -> false | Ignored _ -> true
 
-let as_managed (f : field) =
-  match f.kind with
-  | Managed m -> m
-  | Ignored _ -> err "internal: expected managed field"
+let managed_fields =
+  List.filter_map (fun f ->
+      match f.kind with Managed m -> Some (f, m) | _ -> None)
 
-let as_ignored (f : field) =
-  match f.kind with
-  | Managed _ -> err "internal: expected ignored field"
-  | Ignored e -> e
+let ignored_fields =
+  List.filter_map (fun f ->
+      match f.kind with Ignored i -> Some (f, i) | _ -> None)
 
-let managed_fields = List.filter is_managed
-let ignored_fields = List.filter is_ignored
+module Attributes = struct
+  module Ignore = struct
+    let name = Names.ignore_attr
+
+    let find_opt ld =
+      find_attrib name ld
+      |> Option.map @@ fun (attr : attribute) ->
+         let@ loc = with_loc attr.attr_loc in
+         match find_attr_field attr "empty" with
+         | Some empty -> { empty }
+         | _ -> Fmt.kstr (err ~loc) "expects [@%s { empty = <expr> }]" name
+  end
+
+  module Context = struct
+    let name = Names.context_attr
+
+    let find_opt ld =
+      find_attrib name ld
+      |> Option.map @@ fun attr ->
+         let@ _ = with_loc attr.attr_loc in
+         match find_attr_field attr "field" with
+         | Some { pexp_desc = Pexp_ident { txt = Lident field; _ }; _ } ->
+             { field; ctx_sym_state = Lident "TEMP_PRE_VALIDATION" }
+         | _ ->
+             Fmt.kstr (err ~loc:attr.attr_loc)
+               "expects [@%s { field = <field> }]" name
+
+    let validate (fields : field list) =
+      fields
+      |> List.map @@ fun f ->
+         let@ _ = with_loc f.loc in
+         match f.kind with
+         | Managed
+             ({ context = Some { field; ctx_sym_state = _ }; _ } as
+              managed_field) -> (
+             let ctx_field =
+               match List.find_opt (fun f -> f.name = field) fields with
+               | Some f -> f
+               | None ->
+                   let valid_fields = List.map (fun f -> f.name) fields in
+                   Fmt.kstr (err ?loc:None)
+                     "%s references non-existent field '%s', expected one of %a"
+                     name field
+                     Fmt.(list ~sep:Fmt.comma Fmt.string)
+                     valid_fields
+             in
+             if ctx_field.name = f.name then
+               Fmt.kstr (err ~loc:f.loc) "%s.field cannot reference itself" name;
+             match ctx_field.kind with
+             | Ignored _ ->
+                 Fmt.kstr (err ~loc:f.loc)
+                   "%s.field cannot reference an ignored field" name
+             | Managed { sym_state = ctx_sym_state; _ } ->
+                 (* update context's sym_state *)
+                 let context = Some { field; ctx_sym_state } in
+                 { f with kind = Managed { managed_field with context } })
+         | _ -> f
+  end
+
+  let check_no_extra_attrs (ld : label_declaration) =
+    let allowed = [ Names.ignore_attr; Names.context_attr ] in
+    ld.pld_attributes
+    |> List.iter @@ fun (attr : attribute) ->
+       if not (List.exists (String.equal attr.attr_name.txt) allowed) then
+         let rec pp_attrs ?(acc = "") = function
+           | [] -> acc
+           | [ a ] -> acc ^ "and [@" ^ a ^ "]"
+           | a :: rest -> pp_attrs ~acc:(acc ^ "[@" ^ a ^ "], ") rest
+         in
+         err ~loc:attr.attr_loc ("only supports attributes " ^ pp_attrs allowed)
+
+  let validate fs = Context.validate fs
+end
+
+let parse_mod_t_option (ct : core_type) =
+  let@ _ = with_loc ct.ptyp_loc in
+  match ct.ptyp_desc with
+  | Ptyp_constr ({ txt = Lident "option"; _ }, [ { ptyp_desc; _ } ]) -> (
+      match ptyp_desc with
+      | Ptyp_constr ({ txt = Ldot (path, "t"); _ }, []) -> path
+      | _ -> err "expects record fields of type <Module>.t option")
+  | _ -> err "expects record fields of type <Module>.t option"
+
+let mk_field ld =
+  Attributes.check_no_extra_attrs ld;
+  let kind =
+    match Attributes.Ignore.find_opt ld with
+    | Some ignored -> Ignored ignored
+    | None ->
+        let sym_state = parse_mod_t_option ld.pld_type in
+        let context = Attributes.Context.find_opt ld in
+        Managed { sym_state; context }
+  in
+  { name = ld.pld_name.txt; kind; loc = ld.pld_loc }
+
+let fields_of_td_exn (td : type_declaration) =
+  let@ _ = with_loc td.ptype_loc in
+  if td.ptype_name.txt <> "t" then
+    err ~loc:td.ptype_name.loc "only supports type named 't'";
+  let labels =
+    match td.ptype_kind with
+    | Ptype_record labels -> labels
+    | _ -> err "only supports record types"
+  in
+  labels |> List.map mk_field |> Attributes.validate
+
+(** Folds over fields, applying f to each field and joining with join, with
+    empty as the base case. *)
+let fold_fields ~empty ~f ~join fields =
+  match fields with
+  | [] -> empty
+  | hd :: tl -> List.fold_left (fun acc field -> join acc (f field)) (f hd) tl
 
 (** For a field Foo, creates pattern [Ser_foo(v)] *)
 let ppat_field field =
@@ -77,168 +198,20 @@ let ppat_field field =
 let constr_field field expr =
   pexp_construct (lident (Names.syn field.name)) (Some expr)
 
-let module_expr_as_longindent ~err_msg expr =
-  match expr with
-  | Some { pexp_desc = Pexp_construct ({ txt; _ }, None); _ } -> txt
-  | _ -> err err_msg
-
-let module_of_core_type = function
-  | {
-      ptyp_desc =
-        Ptyp_constr
-          ({ txt = Longident.Lident "option"; _ }, [ { ptyp_desc; _ } ]);
-      _;
-    } -> (
-      match ptyp_desc with
-      | Ptyp_constr ({ txt = Ldot (path, "t"); _ }, []) -> Some path
-      | _ -> None)
-  | _ -> None
-
-let module_of_core_type_exn (ct : core_type) =
-  match module_of_core_type ct with
-  | Some m -> m
-  | None ->
-      err ~loc:ct.ptyp_loc "expects record fields of type <Module>.t option"
-
-let ignored_empty_of_attr_exn (attr : attribute) =
-  let@ _ = with_loc attr.attr_loc in
-  let bad () = err "expects [@sym_state.ignore { empty = <expr> }]" in
-  match attr.attr_payload with
-  | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
-      match expr.pexp_desc with
-      | Pexp_record (fields, None) -> (
-          match
-            List.find_opt
-              (fun ({ txt; _ }, _) -> txt = Longident.Lident "empty")
-              fields
-          with
-          | Some (_, e) -> e
-          | None -> bad ())
-      | _ -> bad ())
-  | _ -> bad ()
-
-let find_record_field_expr name fields =
-  fields
-  |> List.find_map (fun ({ txt; _ }, e) ->
-      match txt with
-      | Longident.Lident n when String.equal n name -> Some e
-      | _ -> None)
-
-let ident_name_exn ~err_msg = function
-  | Some
-      {
-        pexp_desc =
-          ( Pexp_ident { txt = Lident s; _ }
-          | Pexp_construct ({ txt = Lident s; _ }, None) );
-        _;
-      } ->
-      s
-  | _ -> err err_msg
-
-let context_cfg_of_attr_exn (attr : attribute) =
-  let@ _ = with_loc attr.attr_loc in
-  let err_msg =
-    Fmt.str "expected [@%s { field = <field> }]" Names.context_attr
-  in
-  let err () = err err_msg in
-  match attr.attr_payload with
-  | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
-      match expr.pexp_desc with
-      | Pexp_record (fields, None) ->
-          let field =
-            find_record_field_expr "field" fields |> ident_name_exn ~err_msg
-          in
-          { field }
-      | _ -> err ())
-  | _ -> err ()
-
-let validate_context_attr (fields : field list) =
-  fields
-  |> List.iter @@ fun f ->
-     let@ _ = with_loc f.loc in
-     match (f.kind, f.context) with
-     | Ignored _, Some _ ->
-         err (Names.context_attr ^ " cannot be applied to ignored fields")
-     | Managed _, Some { field; _ } ->
-         let ctx_field =
-           match List.find_opt (fun f -> f.name = field) fields with
-           | Some f -> f
-           | None ->
-               let valid_fields = List.map (fun f -> f.name) fields in
-               Fmt.kstr (err ?loc:None)
-                 "%s references non-existent field '%s', expected one of %a"
-                 Names.context_attr field
-                 Fmt.(list ~sep:Fmt.comma Fmt.string)
-                 valid_fields
-         in
-         if ctx_field.name = f.name then
-           err (Names.context_attr ^ " field cannot reference itself");
-         if is_ignored ctx_field then
-           err (Names.context_attr ^ " field cannot reference an ignored field")
-     | _, None -> ()
-
-let check_no_extra_attrs (ld : label_declaration) =
-  let allowed = [ Names.ignore_attr; Names.context_attr ] in
-  ld.pld_attributes
-  |> List.iter @@ fun (attr : attribute) ->
-     if not (List.exists (String.equal attr.attr_name.txt) allowed) then
-       let rec pp_attrs ?(acc = "") = function
-         | [] -> acc
-         | [ a ] -> acc ^ "and [@" ^ a ^ "]"
-         | a :: rest -> pp_attrs ~acc:(acc ^ "[@" ^ a ^ "], ") rest
-       in
-       err ~loc:attr.attr_loc ("only supports attributes " ^ pp_attrs allowed)
-
-let find_attrib (ld : label_declaration) attr_name =
-  ld.pld_attributes
-  |> List.find_opt (fun (attr : attribute) ->
-      String.equal attr.attr_name.txt attr_name)
-
-let fields_of_td_exn (td : type_declaration) =
-  let@ _ = with_loc td.ptype_loc in
-  if td.ptype_name.txt <> "t" then
-    err ~loc:td.ptype_name.loc "only supports type named 't'";
-  match td.ptype_kind with
-  | Ptype_record labels ->
-      List.map
-        (fun ld ->
-          check_no_extra_attrs ld;
-          let kind =
-            match find_attrib ld Names.ignore_attr with
-            | Some e -> Ignored (ignored_empty_of_attr_exn e)
-            | None -> Managed (module_of_core_type_exn ld.pld_type)
-          in
-          let context =
-            find_attrib ld Names.context_attr
-            |> Option.map context_cfg_of_attr_exn
-          in
-          { name = ld.pld_name.txt; kind; context; loc = ld.pld_loc })
-        labels
-  | _ -> err "only supports record types"
-
-(** Folds over fields, applying f to each field and joining with join, with
-    empty as the base case. *)
-let fold_fields ~empty ~f ~join fields =
-  match fields with
-  | [] -> empty
-  | hd :: tl -> List.fold_left (fun acc field -> join acc (f field)) (f hd) tl
-
 let match_on_syn fields f e =
   let cases =
     List.map
-      (fun (field : field) ->
-        let mod_path = as_managed field in
+      (fun (field, as_managed) ->
         let lhs = ppat_field field in
-        let rhs = f field mod_path in
+        let rhs = f field as_managed in
         case ~lhs ~guard:None ~rhs)
       (managed_fields fields)
   in
   pexp_match e cases
 
 let syn_type_item fields =
-  let syn_ctor_decl (field : field) =
-    let mod_path = as_managed field in
-    let arg_ty = ptyp_constr_dot mod_path "syn" [] in
+  let syn_ctor_decl (field, { sym_state; _ }) =
+    let arg_ty = ptyp_constr_dot sym_state "syn" [] in
     constructor_declaration ~name:(Names.syn field.name)
       ~args:(Pcstr_tuple [ arg_ty ]) ~res:None
   in
@@ -251,11 +224,11 @@ let syn_type_item fields =
   pstr_type Recursive [ td ]
 
 let pp_syn_item ~loc fields =
-  let case field mod_path =
+  let case field { sym_state; _ } =
     [%expr
       Fmt.pf ft "(@[<2>%s@ %a@])"
         [%e estring (Names.syn field.name)]
-        [%e pexp_ident_dot mod_path "pp_syn"]
+        [%e pexp_ident_dot sym_state "pp_syn"]
         v]
   in
   [%stri let pp_syn ft s = [%e match_on_syn fields case [%expr s]]]
@@ -265,12 +238,12 @@ let show_syn_item ~loc = [%stri let show_syn s = Format.asprintf "%a" pp_syn s]
 let pp_item ~loc fields =
   let f (f : field) =
     match f.kind with
-    | Managed mod_path ->
+    | Managed { sym_state; _ } ->
         [%expr
           Format.fprintf fmt "@[%s =@ " [%e estring f.name];
           (match [%e pexp_field [%expr x] (lident f.name)] with
           | None -> Format.pp_print_string fmt "empty"
-          | Some v -> [%e pexp_ident_dot mod_path "pp"] fmt v);
+          | Some v -> [%e pexp_ident_dot sym_state "pp"] fmt v);
           Format.fprintf fmt "@]"]
     | Ignored _ ->
         [%expr Format.fprintf fmt "@[%s =@ <ignored>@]" [%e estring f.name]]
@@ -296,7 +269,9 @@ let of_opt_item ~loc fields =
       (List.map
          (fun (f : field) ->
            let empty =
-             match f.kind with Managed _ -> [%expr None] | Ignored e -> e
+             match f.kind with
+             | Managed _ -> [%expr None]
+             | Ignored e -> e.empty
            in
            (lident f.name, empty))
          fields)
@@ -332,7 +307,7 @@ let to_opt_item ~loc fields =
   | [] ->
       [%stri let to_opt = function [%p all_none_pat] -> None | t -> Some t]
   | hd :: tl ->
-      let is_emp f = [%expr [%e evar f.name] = [%e as_ignored f]] in
+      let is_emp (f, i) = [%expr [%e evar f.name] = [%e i.empty]] in
       let all_ignored_are_emp =
         List.fold_left
           (fun acc f -> [%expr [%e acc] && [%e is_emp f]])
@@ -364,12 +339,12 @@ let to_syn_item ~loc fields =
    *   @ (List.map (fun v -> Ser_field2 v)
    *     (Option.fold ~none:[] ~some:Module2.to_syn st.field2))
    *)
-  let f (f : field) =
+  let f (f, m) =
     [%expr
       List.map
         (fun v -> [%e constr_field f [%expr v]])
         (Option.fold ~none:[]
-           ~some:[%e pexp_ident_dot (as_managed f) "to_syn"]
+           ~some:[%e pexp_ident_dot m.sym_state "to_syn"]
            [%e pexp_field [%expr st] (lident f.name)])]
   in
   let body =
@@ -380,16 +355,17 @@ let to_syn_item ~loc fields =
   [%stri let to_syn (st : t) : syn list = [%e body]]
 
 let ins_outs_item ~loc fields =
-  let fields = managed_fields fields in
   (*
    * let ins_outs_item = function
    *   | Ser_field1 v -> Module1.ins_outs v
    *   | Ser_field2 v -> Module2.ins_outs v
    *)
-  let case _ mod_path = [%expr [%e pexp_ident_dot mod_path "ins_outs"] v] in
+  let case _ { sym_state; _ } =
+    [%expr [%e pexp_ident_dot sym_state "ins_outs"] v]
+  in
   [%stri let ins_outs (syn : syn) = [%e match_on_syn fields case [%expr syn]]]
 
-let lift_syn_fix_item (target : field) =
+let lift_syn_fix_item (target, _) =
   (*
    * ONLY MANAGED FIELDS:
    * let lift_field1_fixes = List.map (fun v -> Ser_field1 v)
@@ -426,8 +402,13 @@ let with_field_sym_item fields (target : field) =
    * Soteria.Symex.Compo_res.Ok res
    *)
   let@ loc = with_loc target.loc in
+  let context =
+    match target.kind with
+    | Managed { context = Some context; _ } -> Some context
+    | _ -> None
+  in
   let updated_fields =
-    match target.context with
+    match context with
     | None -> [ target.name ]
     | Some { field; _ } -> [ target.name; field ]
   in
@@ -438,17 +419,16 @@ let with_field_sym_item fields (target : field) =
       (if open_pat then Open else Closed)
   in
   let bind_expr =
-    match target.context with
-    | None -> [%expr f [%e evar target.name]]
-    | Some { field } ->
-        let field = List.find (fun f -> f.name = field) fields in
-        let field_symex = as_managed field in
-        let ctx_run = pexp_ident_dots field_symex [ "SM"; "run_with_state" ] in
-        let field = evar field.name in
-        [%expr [%e ctx_run] ~state:[%e field] (f [%e evar target.name])]
+    match target.kind with
+    | Managed { context = Some { field; ctx_sym_state }; _ } ->
+        let ctx_run =
+          pexp_ident_dots ctx_sym_state [ "SM"; "run_with_state" ]
+        in
+        [%expr [%e ctx_run] ~state:[%e evar field] (f [%e evar target.name])]
+    | _ -> [%expr f [%e evar target.name]]
   in
   let bind_pat =
-    match target.context with
+    match context with
     | None -> [%pat? res, [%p pvar target.name]]
     | Some { field; _ } -> [%pat? (res, [%p pvar target.name]), [%p pvar field]]
   in
@@ -478,7 +458,7 @@ let with_field_sym_item fields (target : field) =
       let [%p st_pat] = st in
       [%e call_and_assign]]
 
-let with_field_item (target : field) =
+let with_field_item (target, _) =
   (*
    * ONLY MANAGED FIELDS:
    * let with_field1 f =
@@ -491,7 +471,7 @@ let with_field_item (target : field) =
     let [%p pvar (Names.with_ target.name)] =
      fun f -> SM.Result.map_missing ([%e with_sym] f) [%e lift_fixes]]
 
-let mk_cons_prod_item ~loc ~kind fields target target_module =
+let mk_cons_prod_item ~loc ~kind fields target managed_field =
   (*
    * Helper for produce_item/consume_item. Given a field, an option wrap
    * expression, generates:
@@ -515,20 +495,18 @@ let mk_cons_prod_item ~loc ~kind fields target target_module =
     | `Produce -> ("produce", "Producer")
     | `Consume -> ("consume", "Consumer")
   in
-  let fn_expr = pexp_ident_dot target_module fn_name in
+  let fn_expr = pexp_ident_dot managed_field.sym_state fn_name in
   let field = pexp_field [%expr st] (lident target.name) in
   let expr = [%expr [%e fn_expr] v [%e field]] in
   let expr =
-    match target.context with
-    | None -> expr
-    | Some { field = ctx_field } ->
-        let ctx_field = List.find (fun f -> f.name = ctx_field) fields in
-        let field_symex = as_managed ctx_field in
+    match target.kind with
+    | Managed { context = Some { field; ctx_sym_state }; _ } ->
         let ctx_run_with =
-          pexp_ident_dots field_symex [ "SM"; module_name; "run_with_state" ]
+          pexp_ident_dots ctx_sym_state [ "SM"; module_name; "run_with_state" ]
         in
-        let ctx_field = pexp_field [%expr st] (lident ctx_field.name) in
+        let ctx_field = pexp_field [%expr st] (lident field) in
         [%expr [%e ctx_run_with] ~state:[%e ctx_field] [%e expr]]
+    | _ -> expr
   in
   let expr =
     match kind with
@@ -540,9 +518,9 @@ let mk_cons_prod_item ~loc ~kind fields target target_module =
           [%e lift_fixes] fixes]
   in
   let updated_fields =
-    match target.context with
+    match managed_field.context with
     | None -> [ target.name ]
-    | Some { field } -> [ target.name; field ]
+    | Some { field; _ } -> [ target.name; field ]
   in
   let assign_pat = ppat_tuple (List.map pvar updated_fields) in
   let is_open = List.compare_lengths updated_fields fields <> 0 in
@@ -617,7 +595,6 @@ let consume_item ~loc fields =
 let make_impl ~loc ~symex_module (td : type_declaration) =
   let@ loc = with_loc loc in
   let fields = fields_of_td_exn td in
-  validate_context_attr fields;
   [
     sm_item ~loc symex_module;
     pp_item ~loc fields;
@@ -637,9 +614,11 @@ let make_impl ~loc ~symex_module (td : type_declaration) =
   @ [ produce_item ~loc fields; consume_item ~loc fields ]
 
 let str_type_decl ~loc ~path:_ (_rec, tds) symex_module =
+  let@ _ = with_loc loc in
   let symex_module =
-    module_expr_as_longindent ~err_msg:"expected { symex = <Module> }"
-      symex_module
+    match symex_module with
+    | Some { pexp_desc = Pexp_construct ({ txt; _ }, None); _ } -> txt
+    | _ -> err "expected { symex = <Module> }"
   in
   match tds with
   | [ td ] -> make_impl ~loc ~symex_module td
@@ -649,4 +628,4 @@ let register () =
   let symex_arg = Deriving.Args.arg "symex" Ast_pattern.__ in
   let str_args = Deriving.Args.(empty +> symex_arg) in
   let str = Deriving.Generator.make str_args str_type_decl in
-  Deriving.add "sym_state" ~str_type_decl:str |> Deriving.ignore
+  Deriving.add Names.ppx ~str_type_decl:str |> Deriving.ignore
