@@ -26,6 +26,7 @@ module LocCtx = struct
   let pexp_ident x = pexp_ident ~loc:(get_loc ()) x
   let pexp_match x y = pexp_match ~loc:(get_loc ()) x y
   let pexp_record x y = pexp_record ~loc:(get_loc ()) x y
+  let pexp_unreachable () = pexp_unreachable ~loc:(get_loc ())
   let pmod_ident x = pmod_ident ~loc:(get_loc ()) x
   let ppat_any () = ppat_any ~loc:(get_loc ())
   let ppat_construct x y = ppat_construct ~loc:(get_loc ()) x y

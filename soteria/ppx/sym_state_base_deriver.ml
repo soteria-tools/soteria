@@ -220,6 +220,7 @@ let constr_field field expr =
   pexp_construct (lident (Names.syn field.name)) (Some expr)
 
 let match_on_syn fields f e =
+  let loc = get_loc () in
   let cases =
     List.map
       (fun (field, as_managed) ->
@@ -228,7 +229,12 @@ let match_on_syn fields f e =
         case ~lhs ~guard:None ~rhs)
       (managed_fields fields)
   in
-  pexp_match e cases
+  (* we add an irrefutable case at the end, so that the pattern match is still
+     valid if there are no managed fields. *)
+  let irrefutable =
+    case ~lhs:[%pat? _] ~guard:None ~rhs:(pexp_unreachable ())
+  in
+  pexp_match e (cases @ [ irrefutable ])
 
 let syn_type_item fields =
   let syn_ctor_decl (field, { sym_state; _ }) =
