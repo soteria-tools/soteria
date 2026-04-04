@@ -26,4 +26,4 @@ let () =
   Driver.register_transformation ~rules:[ rule ] "sym_constants"
 
 (* Register [deriving sym_state] *)
-let () = Sym_state_base_deriver.register ()
+let () = Sym_state.register ()
