@@ -239,10 +239,22 @@ end
 
 type t = {
   heap : Heap.t option; [@sym_state.context { field = pointers }]
-  functions : FunBiMap.t; [@sym_state.ignore { empty = FunBiMap.empty }]
+  functions : FunBiMap.t;
+      [@sym_state.ignore
+        {
+          empty = FunBiMap.empty;
+          is_empty = FunBiMap.is_empty;
+          pp = FunBiMap.pp;
+        }]
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
-      [@sym_state.ignore { empty = GlobMap.empty }]
-  errors : Error.with_trace list; [@sym_state.ignore { empty = [] }]
+      [@sym_state.ignore
+        {
+          empty = GlobMap.empty;
+          is_empty = GlobMap.is_empty;
+          pp = GlobMap.pp (pp_full_ptr Sptr.pp);
+        }]
+  errors : Error.with_trace list;
+      [@sym_state.ignore { empty = []; pp = Fmt.Dump.list Error.pp_with_trace }]
   pointers : DecayMap.t option;
   thread_destructor :
     (unit ->
@@ -252,7 +264,11 @@ type t = {
     option;
       [@sym_state.ignore { empty = None }]
   const_generics : Sptr.t rust_val Types.ConstGenericVarId.Map.t;
-      [@sym_state.ignore { empty = Types.ConstGenericVarId.Map.empty }]
+      [@sym_state.ignore
+        {
+          empty = Types.ConstGenericVarId.Map.empty;
+          pp = Types.ConstGenericVarId.Map.pp (pp_rust_val Sptr.pp);
+        }]
 }
 [@@deriving sym_state { symex = Rustsymex }]
 

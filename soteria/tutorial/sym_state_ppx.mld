@@ -100,6 +100,22 @@ val with_functions_sym :
     ('a, 'e, 'f) SM.Result.t
 ]}
 
+If physical equality is not appropriate for the field, you can also provide a
+custom equality function with [is_empty]. A custom printer can also be provided,
+with [pp] (by default the field is printed as "<ignored>").
+
+{@ocaml[
+type t = {
+  functions : FunBiMap.t;
+    [@sym_state.ignore {
+      empty = FunBiMap.empty;
+      is_empty = FunBiMap.is_empty;
+      pp = FunBiMap.pp;
+    }]
+}
+[@@deriving sym_state { symex = My_symex }]
+]}
+
 {2 Using other fields as context}
 
 For managed (i.e. not ignored) fields, [with_<field>] and [with_<field>_sym] can run

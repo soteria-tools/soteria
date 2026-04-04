@@ -80,6 +80,8 @@ module Globs = Dummy_state
 module FunBiMap = struct
   type t = unit
   let empty = ()
+  let is_empty () = true
+  let pp _ _ = ()
 end
 module DecayedPointers = Dummy_state
 module FancyHeap = struct

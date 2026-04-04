@@ -33,23 +33,28 @@ module Helpers = struct
     |> List.find_opt (fun (attr : attribute) ->
         String.equal attr.attr_name.txt attr_name)
 
-  let find_attr_field attr field =
+  (** Given an attribute and a list of fields, returns the bindings to those
+      fields in the order they are provided, along with the list of remaining
+      bindings. Returns Err if the input attribute does not have a struct
+      associated. *)
+  let find_attr_fields attr fields =
+    let rec find_field field rest = function
+      | [] -> (None, rest)
+      | ({ txt; _ }, v) :: tl when txt = Lident field -> (Some v, rest @ tl)
+      | binding :: tl -> find_field field (rest @ [ binding ]) tl
+    in
+    let rec find_fields acc rest = function
+      | [] -> (List.rev acc, rest)
+      | field :: tl ->
+          let found, rest = find_field field [] rest in
+          find_fields (found :: acc) rest tl
+    in
     match attr.attr_payload with
     | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
         match expr.pexp_desc with
-        | Pexp_record (fields, None) ->
-            let found =
-              List.find_map
-                (fun ({ txt; _ }, v) ->
-                  if txt = Lident field then Some v else None)
-                fields
-            in
-            let others =
-              List.filter (fun ({ txt; _ }, _) -> txt <> Lident field) fields
-            in
-            (found, others)
-        | _ -> (None, []))
-    | _ -> (None, [])
+        | Pexp_record (bindings, None) -> Ok (find_fields [] bindings fields)
+        | _ -> Error ())
+    | _ -> Error ()
 end
 
 open Helpers
@@ -95,6 +100,22 @@ let ignored_fields =
       match f.kind with Ignored i -> Some (f, i) | _ -> None)
 
 module Attributes = struct
+  let validate_attr_field ~name attr fields =
+    match find_attr_fields attr fields with
+    | Ok (found, []) ->
+        assert (List.compare_lengths found fields = 0);
+        found
+    | Ok (_, extra) ->
+        Fmt.kstr (err ~loc:attr.attr_loc)
+          "unexpected field(s) '%a' in [@%s], expected one of %s"
+          Fmt.(list ~sep:(Fmt.any ", ") pp_longident)
+          (List.map (fun (f, _) -> f.txt) extra)
+          name
+          (String.concat "; " fields)
+    | Error () ->
+        Fmt.kstr (err ~loc:attr.attr_loc) "expects [@%s { %s }]" name
+          (String.concat "; " fields)
+
   module Ignore = struct
     let name = Names.ignore_attr
 
@@ -102,53 +123,11 @@ module Attributes = struct
       find_attrib name ld
       |> Option.map @@ fun (attr : attribute) ->
          let@ loc = with_loc attr.attr_loc in
-         let all_fields =
-           match attr.attr_payload with
-           | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
-               match expr.pexp_desc with
-               | Pexp_record (fields, None) -> fields
-               | _ ->
-                   Fmt.kstr (err ~loc)
-                     "expects [@%s { empty = <expr>; is_empty = <expr>?; pp = \
-                      <expr>? }]"
-                     name)
-           | _ ->
-               Fmt.kstr (err ~loc)
-                 "expects [@%s { empty = <expr>; is_empty = <expr>?; pp = \
-                  <expr>? }]"
-                 name
-         in
-         let unknown =
-           List.find_opt
-             (fun ({ txt; _ }, _) ->
-               match txt with
-               | Lident ("empty" | "is_empty" | "pp") -> false
-               | Lident _ -> true
-               | _ -> true)
-             all_fields
-         in
-         (match unknown with
-         | Some ({ txt; _ }, _) ->
-             Fmt.kstr (err ~loc)
-               "unexpected field '%a' in [@%s], expected one of empty, \
-                is_empty, pp"
-               pp_longident txt name
-         | None -> ());
-         let get_field name =
-           all_fields
-           |> List.find_map (fun ({ txt; _ }, v) ->
-               match txt with Lident n when n = name -> Some v | _ -> None)
-         in
-         let empty = get_field "empty" in
-         let is_empty = get_field "is_empty" in
-         let pp = get_field "pp" in
-         match empty with
-         | Some empty -> { empty; is_empty; pp }
-         | None ->
-             Fmt.kstr (err ~loc)
-               "expects [@%s { empty = <expr>; is_empty = <expr>?; pp = \
-                <expr>? }]"
-               name
+         match validate_attr_field ~name attr [ "empty"; "is_empty"; "pp" ] with
+         | [ None; _is_empty; _pp ] ->
+             Fmt.kstr (err ~loc) "expects [@%s { empty = <expr>; ... }]" name
+         | [ Some empty; is_empty; pp ] -> { empty; is_empty; pp }
+         | _ -> failwith "Impossible"
   end
 
   module Context = struct
@@ -157,13 +136,8 @@ module Attributes = struct
     let find_opt ld =
       find_attrib name ld
       |> Option.map @@ fun attr ->
-         let@ loc = with_loc attr.attr_loc in
-         match find_attr_field attr "field" with
-         | Some _, (a, _) :: _ ->
-             Fmt.kstr (err ~loc)
-               "unexpected field '%a' in [@%s], only 'field' expected"
-               pp_longident a.txt name
-         | Some { pexp_desc = Pexp_ident { txt = Lident field; _ }; _ }, [] ->
+         match validate_attr_field ~name attr [ "field" ] with
+         | [ Some { pexp_desc = Pexp_ident { txt = Lident field; _ }; _ } ] ->
              { field; ctx_sym_state = Lident "TEMP_PRE_VALIDATION" }
          | _ ->
              Fmt.kstr (err ~loc:attr.attr_loc)
@@ -191,7 +165,7 @@ module Attributes = struct
                      name
                      Fmt.(quote string)
                      field
-                     Fmt.(list ~sep:Fmt.comma Fmt.(quote string))
+                     Fmt.(list ~sep:(Fmt.any ", ") Fmt.(quote string))
                      valid_fields
              in
              if ctx_field.name = f.name then
@@ -314,7 +288,8 @@ let pp_syn_item ~loc fields =
         [%e pexp_ident_dot sym_state "pp_syn"]
         v]
   in
-  [%stri let pp_syn ft (s : syn) = [%e match_on_syn fields case [%expr s]]]
+  if not (List.exists is_managed fields) then [%stri let pp_syn _ _ = ()]
+  else [%stri let pp_syn ft (s : syn) = [%e match_on_syn fields case [%expr s]]]
 
 let show_syn_item ~loc = [%stri let show_syn s = Format.asprintf "%a" pp_syn s]
 
@@ -328,18 +303,13 @@ let pp_item ~loc fields =
           | None -> Format.pp_print_string fmt "empty"
           | Some v -> [%e pexp_ident_dot sym_state "pp"] fmt v);
           Format.fprintf fmt "@]"]
-    | Ignored _ -> (
-        let loc = f.loc in
-        let ignored = match f.kind with Ignored i -> i | _ -> assert false in
-        match ignored.pp with
-        | Some pp ->
-            [%expr
-              Format.fprintf fmt "@[%s =@ " [%e estring f.name];
-              [%e pp] fmt [%e pexp_field [%expr x] (lident f.name)];
-              Format.fprintf fmt "@]"]
-        | None ->
-            [%expr Format.fprintf fmt "@[%s =@ <ignored>@]" [%e estring f.name]]
-        )
+    | Ignored { pp = Some pp; _ } ->
+        [%expr
+          Format.fprintf fmt "@[%s =@ " [%e estring f.name];
+          [%e pp] fmt [%e pexp_field [%expr x] (lident f.name)];
+          Format.fprintf fmt "@]"]
+    | Ignored { pp = None; _ } ->
+        [%expr Format.fprintf fmt "@[%s =@ <ignored>@]" [%e estring f.name]]
   in
   let body =
     fold_fields fields ~empty:[%expr ()] ~f ~join:(fun acc expr ->
@@ -449,7 +419,9 @@ let to_syn_item ~loc fields =
       ~join:(fun acc e -> [%expr [%e acc] @ [%e e]])
       (managed_fields fields)
   in
-  [%stri let to_syn (st : t) : syn list = [%e body]]
+  if not (List.exists is_managed fields) then
+    [%stri let to_syn (_ : t) : syn list = []]
+  else [%stri let to_syn (st : t) : syn list = [%e body]]
 
 let ins_outs_item ~loc fields =
   (*
@@ -651,11 +623,14 @@ let produce_item ~loc fields =
    *     in
    *     to_opt { st with field1; ctx_field }
    *)
-  [%stri
-    let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =
-      let open SM.Symex.Producer.Syntax in
-      let st = of_opt st in
-      [%e mk_cons_prod_match ~loc ~kind:`Produce fields]]
+  if not (List.exists is_managed fields) then
+    [%stri let produce (syn : syn) () = match syn with _ -> .]
+  else
+    [%stri
+      let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =
+        let open SM.Symex.Producer.Syntax in
+        let st = of_opt st in
+        [%e mk_cons_prod_match ~loc ~kind:`Produce fields]]
 
 let consume_item ~loc fields =
   (*
@@ -682,12 +657,15 @@ let consume_item ~loc fields =
    *     in
    *     to_opt { st with field1; ctx_field }
    *)
-  [%stri
-    let consume (syn : syn) (st : t option) :
-        (t option, syn list) SM.Symex.Consumer.t =
-      let open SM.Symex.Consumer.Syntax in
-      let st = of_opt st in
-      [%e mk_cons_prod_match ~loc ~kind:`Consume fields]]
+  if not (List.exists is_managed fields) then
+    [%stri let consume (syn : syn) () = match syn with _ -> .]
+  else
+    [%stri
+      let consume (syn : syn) (st : t option) :
+          (t option, syn list) SM.Symex.Consumer.t =
+        let open SM.Symex.Consumer.Syntax in
+        let st = of_opt st in
+        [%e mk_cons_prod_match ~loc ~kind:`Consume fields]]
 
 let make_impl ~loc ~symex_module ~syn_ty (td : type_declaration) =
   let@ loc = with_loc loc in

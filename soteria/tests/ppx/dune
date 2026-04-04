@@ -12,6 +12,7 @@
   ./sym_state/simple.ml
   ./sym_state/ignored.ml
   ./sym_state/ignored_single.ml
+  ./sym_state/ignored_fields.ml
   ./sym_state/context.ml
   ./sym_state/context_invalid.ml
   ./sym_state/context_missing_field.ml
