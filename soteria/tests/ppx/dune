@@ -21,4 +21,4 @@
   ./tests/syn_manifest.ml
   ./tests/syn_manifest_mismatch.ml
   ./tests/invalid_non_t.ml)
-  (applies_to :whole_subtree))
+ (applies_to :whole_subtree))
