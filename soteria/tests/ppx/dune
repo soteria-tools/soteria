@@ -18,5 +18,7 @@
   ./tests/context_self_ref.ml
   ./tests/context_on_ignored_ref.ml
   ./tests/ignore_extra_key.ml
+  ./tests/syn_manifest.ml
+  ./tests/syn_manifest_mismatch.ml
   ./tests/invalid_non_t.ml)
   (applies_to :whole_subtree))
