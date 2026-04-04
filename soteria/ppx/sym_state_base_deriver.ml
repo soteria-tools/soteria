@@ -4,6 +4,12 @@ open Util.Syntaxes
 open Util.LocCtx
 
 module Helpers = struct
+  let rec pp_longident fmt = function
+    | Lident s -> Format.pp_print_string fmt s
+    | Ldot (base, name) -> Format.fprintf fmt "%a.%s" pp_longident base name
+    | Lapply (f, arg) ->
+        Format.fprintf fmt "%a(%a)" pp_longident f pp_longident arg
+
   let lident s = wloc (Lident s)
   let liddot base name = wloc (Ldot (base, name))
 
@@ -32,12 +38,18 @@ module Helpers = struct
     | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
         match expr.pexp_desc with
         | Pexp_record (fields, None) ->
-            List.find_map
-              (fun ({ txt; _ }, v) ->
-                if txt = Lident field then Some v else None)
-              fields
-        | _ -> None)
-    | _ -> None
+            let found =
+              List.find_map
+                (fun ({ txt; _ }, v) ->
+                  if txt = Lident field then Some v else None)
+                fields
+            in
+            let others =
+              List.filter (fun ({ txt; _ }, _) -> txt <> Lident field) fields
+            in
+            (found, others)
+        | _ -> (None, []))
+    | _ -> (None, [])
 end
 
 open Helpers
@@ -85,8 +97,13 @@ module Attributes = struct
       |> Option.map @@ fun (attr : attribute) ->
          let@ loc = with_loc attr.attr_loc in
          match find_attr_field attr "empty" with
-         | Some empty -> { empty }
-         | _ -> Fmt.kstr (err ~loc) "expects [@%s { empty = <expr> }]" name
+         | Some _, (a, _) :: _ ->
+             Fmt.kstr (err ~loc)
+               "unexpected field '%a' in [@%s], only 'field' expected"
+               pp_longident a.txt name
+         | Some empty, [] -> { empty }
+         | None, _ ->
+             Fmt.kstr (err ~loc) "expects [@%s { empty = <expr> }]" name
   end
 
   module Context = struct
@@ -95,9 +112,13 @@ module Attributes = struct
     let find_opt ld =
       find_attrib name ld
       |> Option.map @@ fun attr ->
-         let@ _ = with_loc attr.attr_loc in
+         let@ loc = with_loc attr.attr_loc in
          match find_attr_field attr "field" with
-         | Some { pexp_desc = Pexp_ident { txt = Lident field; _ }; _ } ->
+         | Some _, (a, _) :: _ ->
+             Fmt.kstr (err ~loc)
+               "unexpected field '%a' in [@%s], only 'field' expected"
+               pp_longident a.txt name
+         | Some { pexp_desc = Pexp_ident { txt = Lident field; _ }; _ }, [] ->
              { field; ctx_sym_state = Lident "TEMP_PRE_VALIDATION" }
          | _ ->
              Fmt.kstr (err ~loc:attr.attr_loc)
