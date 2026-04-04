@@ -312,13 +312,6 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all
   @@ parser ~offset
 
-let with_decay_map (f : 'a DecayMap.SM.t) : 'a SM.t =
-  let* st = SM.get_state () in
-  let st = of_opt st in
-  let*^ v, pointers = f st.pointers in
-  let+ () = SM.set_state (Some { st with pointers }) in
-  v
-
 let with_ptr ptr f = with_heap @@ Heap.with_ptr ptr f
 
 let uninit ((ptr, _) : Sptr.t * 'a) (ty : Types.ty) :
