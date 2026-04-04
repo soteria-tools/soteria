@@ -258,7 +258,7 @@ let pp_syn_item ~loc fields =
         [%e pexp_ident_dot sym_state "pp_syn"]
         v]
   in
-  [%stri let pp_syn ft s = [%e match_on_syn fields case [%expr s]]]
+  [%stri let pp_syn ft (s : syn) = [%e match_on_syn fields case [%expr s]]]
 
 let show_syn_item ~loc = [%stri let show_syn s = Format.asprintf "%a" pp_syn s]
 
