@@ -657,30 +657,6 @@ module Sym_state_base = struct
     @ List.map with_field_item (managed_fields fields)
     @ [ produce_item ~loc fields; consume_item ~loc fields ]
 
-  let make_intf ~loc ~symex_module (_td : type_declaration) =
-    (* make the type <symex_module>.Producer.t *)
-    let@ () = with_loc loc in
-    let symex_ty path args = symex_ty symex_module path args in
-    let expr_t = symex_ty [ "Value"; "Expr"; "t" ] [] in
-    let prod_res = symex_ty [ "Producer"; "t" ] [ [%type: t option] ] in
-    let cons_res =
-      symex_ty [ "Consumer"; "t" ] [ [%type: t option]; [%type: syn list] ]
-    in
-    [
-      [%sigi: val pp : Format.formatter -> t -> unit];
-      [%sigi: val show : t -> string];
-      [%sigi: type syn];
-      [%sigi: val pp_syn : Format.formatter -> syn -> unit];
-      [%sigi: val show_syn : syn -> string];
-      [%sigi: val of_opt : t option -> t];
-      [%sigi: val to_opt : t -> t option];
-      [%sigi: val empty : t option];
-      [%sigi: val to_syn : t -> syn list];
-      [%sigi: val ins_outs : syn -> [%t expr_t] list * [%t expr_t] list];
-      [%sigi: val produce : syn -> t option -> [%t prod_res]];
-      [%sigi: val consume : syn -> t option -> [%t cons_res]];
-    ]
-
   let str_type_decl ~loc ~path:_ (_rec, tds) symex_module =
     let symex_module =
       module_expr_as_longindent ~err_msg:"expected { symex = <Module> }"
@@ -690,21 +666,9 @@ module Sym_state_base = struct
     | [ td ] -> make_impl ~loc ~symex_module td
     | _ -> err "expects exactly one type declaration"
 
-  let sig_type_decl ~loc ~path:_ (_rec, tds) symex_module =
-    let symex_module =
-      module_expr_as_longindent ~err_msg:"expected { symex = <Module> }"
-        symex_module
-    in
-    match tds with
-    | [ td ] -> make_intf ~loc ~symex_module td
-    | _ -> err "expects exactly one type declaration"
-
   let register () =
     let symex_arg = Deriving.Args.arg "symex" Ast_pattern.__ in
     let str_args = Deriving.Args.(empty +> symex_arg) in
-    let sig_args = Deriving.Args.(empty +> symex_arg) in
     let str = Deriving.Generator.make str_args str_type_decl in
-    let sig_ = Deriving.Generator.make sig_args sig_type_decl in
-    Deriving.add "sym_state" ~str_type_decl:str ~sig_type_decl:sig_
-    |> Deriving.ignore
+    Deriving.add "sym_state" ~str_type_decl:str |> Deriving.ignore
 end
