@@ -377,7 +377,7 @@ module Make (State : State_intf.S) :
     let+ res, _ = f env in
     (res, old_env)
 
-  let[@inline] with_decay_map (f : 'a Sptr.DecayMapMonad.t) : ('a, 'env) t =
+  let[@inline] with_decay_map (f : 'a Sptr.DecayMap.SM.t) : ('a, 'env) t =
     ESM.lift (State.SM.map (State.with_decay_map f) Compo_res.ok)
 
   let[@inline] lift_symex (s : 'a Rustsymex.t) : ('a, 'env) t =

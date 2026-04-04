@@ -9,7 +9,6 @@ open Common
 
 (* State details *)
 module DecayMap = Sptr.DecayMap
-module DecayMapMonad = Sptr.DecayMapMonad
 module Sptr = Sptr.ArithPtr
 module Encoder = Value_codec.Encoder (Sptr)
 
@@ -22,14 +21,14 @@ module StateKey = struct
   type syn = Expr.t [@@deriving show]
 
   let to_syn v = Expr.of_value v
-  let learn_eq (s : syn) (v : t) = DecayMapMonad.Consumer.learn_eq s v
+  let learn_eq (s : syn) (v : t) = DecayMap.SM.Consumer.learn_eq s v
   let exprs_syn v = [ v ]
   let subst = Expr.subst
   let pp = ppa
   let show = Fmt.to_to_string pp
   let to_int = unique_tag
   let concrete_loc = ref 0
-  let simplify = DecayMapMonad.simplify
+  let simplify = DecayMap.SM.simplify
 
   let distinct vs =
     match Config.get_mode () with
@@ -38,14 +37,13 @@ module StateKey = struct
 
   let fresh () =
     match Config.get_mode () with
-    | Compositional -> DecayMapMonad.nondet (Typed.t_loc ())
+    | Compositional -> DecayMap.SM.nondet (Typed.t_loc ())
     | Whole_program ->
         incr concrete_loc;
-        DecayMapMonad.return (Ptr.loc_of_int !concrete_loc)
+        DecayMap.SM.return (Ptr.loc_of_int !concrete_loc)
 end
 
-module Freeable = Soteria.Sym_states.Freeable.Make (DecayMapMonad)
-module Bi = Soteria.Sym_states.Bi_abd.Make (DecayMapMonad)
+module Freeable = Soteria.Sym_states.Freeable.Make (DecayMap.SM)
 module Tree_block = Rtree_block.Make (Sptr)
 
 module Meta = struct
@@ -87,7 +85,7 @@ module Block = struct
     block : Tree_block.t option;
     borrow : Tree_borrow.t; [@sym_state.ignore { empty = Tree_borrow.ub_state }]
   }
-  [@@deriving sym_state { symex = DecayMapMonad }]
+  [@@deriving sym_state { symex = DecayMap.SM }]
 
   open SM
   open Syntax
@@ -98,7 +96,7 @@ module Block = struct
   let with_tree_block_read_tb
       (f :
         Tree_borrow.t -> ('a, 'err, Tree_block.syn list) Tree_block.SM.Result.t)
-      : ('a, 'err, serialized list) SM.Result.t =
+      : ('a, 'err, syn list) SM.Result.t =
     let* t_opt = SM.get_state () in
     let { block; borrow } = of_opt t_opt in
     let*^ v, block = f borrow block in
@@ -136,7 +134,7 @@ module Block = struct
       let+ () = SM.set_state (to_opt { block; borrow }) in
       Ok (ptr', meta)
     else
-      let**^ size = DecayMapMonad.lift @@ Layout.size_of pointee in
+      let**^ size = DecayMap.SM.lift @@ Layout.size_of pointee in
       if%sat size ==@ Usize.(0s) then
         let+ () = SM.set_state (to_opt { block; borrow }) in
         Ok (ptr', meta)
@@ -170,15 +168,15 @@ module Block = struct
     with_block @@ Tree_block.assert_exclusively_owned ()
 end
 
-module Freeable_block = Soteria.Sym_states.Freeable.Make (DecayMapMonad) (Block)
+module Freeable_block = Soteria.Sym_states.Freeable.Make (DecayMap.SM) (Block)
 
 module Freeable_block_with_meta = struct
   include
-    Soteria.Sym_states.With_info.Make (DecayMapMonad) (Meta) (Freeable_block)
+    Soteria.Sym_states.With_info.Make (DecayMap.SM) (Meta) (Freeable_block)
 
   let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
-      (t * Tree_borrow.tag option) DecayMapMonad.t =
-    let open DecayMapMonad.Syntax in
+      (t * Tree_borrow.tag option) DecayMap.SM.t =
+    let open DecayMap.SM.Syntax in
     let borrow, tag = Tree_borrow.init ~state:Unique () in
     let block = Some (Tree_block.alloc ?zeroed size) in
     let+^ trace = get_trace () in
@@ -191,9 +189,7 @@ end
 
 module Heap = struct
   include
-    Soteria.Sym_states.Pmap.Direct_access_patricia_tree
-      (DecayMapMonad)
-      (StateKey)
+    Soteria.Sym_states.Pmap.Direct_access_patricia_tree (DecayMap.SM) (StateKey)
       (Freeable_block_with_meta)
 
   let with_ptr (ptr : Sptr.t)
@@ -242,17 +238,12 @@ module Heap = struct
 end
 
 type t = {
-  heap : Heap.t option;
-      [@sym_state.lift
-        {
-          run = (fun st -> DecayMapMonad.run_with_state ~state:st.pointers);
-          state = pointers;
-        }]
+  heap : Heap.t option; [@sym_state.context { field = pointers }]
   functions : FunBiMap.t; [@sym_state.ignore { empty = FunBiMap.empty }]
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
       [@sym_state.ignore { empty = GlobMap.empty }]
   errors : Error.with_trace list; [@sym_state.ignore { empty = [] }]
-  pointers : DecayMap.t; [@sym_state.ignore { empty = DecayMap.empty }]
+  pointers : DecayMap.t option;
   thread_destructor :
     (unit ->
     t option ->
@@ -321,7 +312,7 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all
   @@ parser ~offset
 
-let with_decay_map (f : 'a DecayMapMonad.t) : 'a SM.t =
+let with_decay_map (f : 'a DecayMap.SM.t) : 'a SM.t =
   let* st = SM.get_state () in
   let st = of_opt st in
   let*^ v, pointers = f st.pointers in
@@ -495,7 +486,7 @@ let copy_nonoverlapping ~src:(src, _) ~dst:(dst, _) ~size :
   let** tree_to_write =
     let@ ofs = with_ptr src in
     Block.with_block (fun tree_block ->
-        let open DecayMapMonad.Syntax in
+        let open DecayMap.SM.Syntax in
         let+ res, _ = Tree_block.get_raw_tree_owned ofs size tree_block in
         (res, tree_block))
   in
@@ -538,15 +529,15 @@ let copy_nonoverlapping ~src:(src, _) ~dst:(dst, _) ~size :
              in
              { t with children; node = Owned (v, tb) }
        in
-       try DecayMapMonad.Result.ok (aux tb t)
-       with Failure msg -> DecayMapMonad.not_impl msg
+       try DecayMap.SM.Result.ok (aux tb t)
+       with Failure msg -> DecayMap.SM.not_impl msg
      in
      (* Applies all the tree borrow ranges to the tree we're writing,
         overwriting all previous states. *)
      let**^ tree_to_write =
-       DecayMapMonad.Result.fold_iter collect_tb_states ~init:tree_to_write
+       DecayMap.SM.Result.fold_iter collect_tb_states ~init:tree_to_write
          ~f:(fun tree (tb, range) ->
-           let open DecayMapMonad.Syntax in
+           let open DecayMap.SM.Syntax in
            let replace_node = put_tb tb in
            let rebuild_parent = Tree.of_children in
            let++ _, tree =
@@ -584,8 +575,8 @@ let alloc_tys ?kind ?span tys : ('a, Error.with_trace, syn list) Result.t =
   let layouts = List.rev layouts in
   with_heap
     (Heap.allocs ~els:layouts ~fn:(fun layout loc ->
-         let open DecayMapMonad in
-         let open DecayMapMonad.Syntax in
+         let open DecayMap.SM in
+         let open DecayMap.SM.Syntax in
          (* make Tree_block *)
          let { size; align; _ } : Layout.t = layout in
          let* block, tag =
@@ -730,7 +721,7 @@ let leak_check () : (unit, Error.with_trace, syn list) Result.t =
        Heap.fold
          (fun leaks (k, (v : Freeable_block_with_meta.t)) ->
            (* FIXME: This only works because our addresses are concrete *)
-           let open DecayMapMonad in
+           let open DecayMap.SM in
            match v with
            | { node = Alive _; info = Some { kind = Heap; trace; _ }; _ }
              when not (List.mem k global_addresses) ->

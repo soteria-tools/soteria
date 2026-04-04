@@ -58,7 +58,7 @@ module type S = sig
 
   val uninit : full_ptr -> Types.ty -> unit ret
   val zeros : full_ptr -> sint Typed.t -> unit ret
-  val with_decay_map : 'a DecayMapMonad.t -> 'a SM.t
+  val with_decay_map : 'a DecayMap.SM.t -> 'a SM.t
   val store_str_global : string -> full_ptr -> unit ret
   val store_global : Types.global_decl_id -> full_ptr -> unit ret
   val load_str_global : string -> full_ptr option ret

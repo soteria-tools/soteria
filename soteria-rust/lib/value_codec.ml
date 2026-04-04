@@ -5,9 +5,9 @@ open Typed.Infix
 open Common.Charon_util
 open Rust_val
 open Layout
-module DecayMapMonad = Sptr.DecayMapMonad
-open DecayMapMonad
-open DecayMapMonad.Syntax
+module DecayMap = Sptr.DecayMap
+open DecayMap.SM
+open Syntax
 
 (** Returns the variant id and variant matching the given discriminant. *)
 let variant_for_discr discr adt =
@@ -92,7 +92,7 @@ module Decoder
     (State_tys : sig
       module SM :
         Soteria.Sym_states.State_monad.S
-          with type 'a Symex.t = 'a DecayMapMonad.t
+          with type 'a Symex.t = 'a DecayMap.SM.t
            and type 'a Symex.Value.t = 'a Typed.t
            and type 'a Symex.Value.ty = 'a Typed.ty
            and type Symex.Value.sbool = Typed.sbool
@@ -156,14 +156,14 @@ struct
     let get_all (q : get_all_query) : 'a t =
      fun _ get_all state -> get_all q state
 
-    let[@inline] lift (m : 'a DecayMapMonad.t) : 'a t =
+    let[@inline] lift (m : 'a DecayMap.SM.t) : 'a t =
       let open SM.Syntax in
       fun _handler _get_all ->
         let*^ m in
         SM.Result.ok m
 
     let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) : 'a t =
-     fun _handler _get_all -> SM.lift (DecayMapMonad.lift m)
+     fun _handler _get_all -> SM.lift (DecayMap.SM.lift m)
 
     let not_impl msg = lift @@ not_impl msg
     let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
@@ -172,8 +172,7 @@ struct
 
     let assert_or_error cond err =
      fun _handler _get_all state ->
-      DecayMapMonad.Result.map (assert_or_error cond err) (fun () ->
-          ((), state))
+      DecayMap.SM.Result.map (assert_or_error cond err) (fun () -> ((), state))
 
     let fold_iter x ~init ~f =
       Monad.foldM ~bind ~return:ok ~fold:Foldable.Iter.fold x ~init ~f
@@ -186,7 +185,7 @@ struct
       module Symex_syntax = struct
         let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
          fun handler get_all state ->
-          DecayMapMonad.branch_on ?left_branch_name ?right_branch_name guard
+          DecayMap.SM.branch_on ?left_branch_name ?right_branch_name guard
             ~then_:(fun () -> then_ () handler get_all state)
             ~else_:(fun () -> else_ () handler get_all state)
       end
@@ -515,7 +514,7 @@ module Encoder (Sptr : Sptr.S) = struct
       See https://smt-lib.org/theories-FloatingPoint.shtml, "Conversions to
       other sorts" *)
   let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
-      Typed.([> T.sint ] t) DecayMapMonad.t =
+      Typed.([> T.sint ] t) DecayMap.SM.t =
     let fp = Typed.Float.fp_of f in
     let size = Svalue.FloatPrecision.size fp in
     let* bv = nondet (Typed.t_int size) in
