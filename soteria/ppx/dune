@@ -2,6 +2,6 @@
  (name ppx_symex)
  (public_name soteria.ppx)
  (kind ppx_rewriter)
- (libraries ppxlib)
+ (libraries fmt ppxlib)
  (preprocess
   (pps ppxlib.metaquot)))

@@ -2,34 +2,54 @@ open Ppxlib
 open Ast_builder.Default
 
 module Sym_state_base = struct
-  type lift_cfg = { run : expression; state_field : string option }
+  type context_cfg = { field : string }
   type field_kind = Managed of Longident.t | Ignored of expression
 
   type field = {
     name : string;
     kind : field_kind;
-    lift : lift_cfg option;
+    context : context_cfg option;
     loc : Location.t;
   }
 
-  let constr_name name = "Ser_" ^ name
+  let syn_name name = "Ser_" ^ name
+  let lift_fix_name name = "lift_" ^ name ^ "_fixes"
   let fn_with_name name = "with_" ^ name
   let fn_with_sym_name name = "with_" ^ name ^ "_sym"
   let ignore_attr = "sym_state.ignore"
-  let lift_attr = "sym_state.lift"
+  let context_attr = "sym_state.context"
   let lid ~loc txt = { loc; txt }
   let lident ~loc s = lid ~loc (Longident.Lident s)
   let liddot ~loc base name = lid ~loc (Longident.Ldot (base, name))
+
+  let liddots ~loc base names =
+    lid ~loc
+    @@ List.fold_left (fun acc name -> Longident.Ldot (acc, name)) base names
+
   let exprdot ~loc base name = pexp_ident ~loc (liddot ~loc base name)
+  let exprdots ~loc base name = pexp_ident ~loc (liddots ~loc base name)
+
+  (** Overrides ppat_tuple to also work for 1-tuples (i.e. a simple variable) *)
+  let ppat_tuple ~loc pats =
+    match pats with [ p ] -> p | _ -> ppat_tuple ~loc pats
+
+  let symex_ty ~loc symex_module path args =
+    ptyp_constr ~loc (liddots ~loc symex_module path) args
+
   let err ~loc msg = Location.raise_errorf ~loc "[@@deriving sym_state] %s" msg
 
   (** For a field Foo, creates pattern [Ser_foo(v)] *)
   let ppat_field ~loc field =
-    ppat_construct ~loc (lident ~loc (constr_name field.name)) (Some [%pat? v])
+    ppat_construct ~loc (lident ~loc (syn_name field.name)) (Some [%pat? v])
 
   (** For a field Foo and expression e, creates expression [Ser_foo(e)] *)
   let constr_field ~loc field expr =
-    pexp_construct ~loc (lident ~loc (constr_name field.name)) (Some expr)
+    pexp_construct ~loc (lident ~loc (syn_name field.name)) (Some expr)
+
+  let module_expr_as_longindent ~err_msg ~loc expr =
+    match expr with
+    | Some { pexp_desc = Pexp_construct ({ txt; _ }, None); _ } -> txt
+    | _ -> err ~loc err_msg
 
   let module_of_core_type = function
     | {
@@ -74,37 +94,60 @@ module Sym_state_base = struct
         | Longident.Lident n when String.equal n name -> Some e
         | _ -> None)
 
-  let ident_name_exn ~loc = function
-    | { pexp_desc = Pexp_ident { txt = Longident.Lident s; _ }; _ } -> s
-    | { pexp_desc = Pexp_construct ({ txt = Longident.Lident s; _ }, None); _ }
-      ->
+  let ident_name_exn ~err_msg ~loc = function
+    | Some
+        {
+          pexp_desc =
+            ( Pexp_ident { txt = Lident s; _ }
+            | Pexp_construct ({ txt = Lident s; _ }, None) );
+          _;
+        } ->
         s
-    | _ -> err ~loc "expected an identifier"
+    | _ -> err ~loc err_msg
 
-  let lift_cfg_of_attr_exn (attr : attribute) =
-    let err () =
-      err ~loc:attr.attr_loc
-        "expects [@sym_state.lift { run = <expr>; state = <field>? }]"
-    in
+  let context_cfg_of_attr_exn (attr : attribute) =
+    let err_msg = Fmt.str "expected [@%s { field = <field> }]" context_attr in
+    let err () = err ~loc:attr.attr_loc err_msg in
     match attr.attr_payload with
     | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
         match expr.pexp_desc with
         | Pexp_record (fields, None) ->
-            let run =
-              match find_record_field_expr "run" fields with
-              | Some e -> e
-              | None -> err ()
+            let field =
+              find_record_field_expr "field" fields
+              |> ident_name_exn ~loc:attr.attr_loc ~err_msg
             in
-            let state_field =
-              find_record_field_expr "state" fields
-              |> Option.map (ident_name_exn ~loc:attr.attr_loc)
-            in
-            { run; state_field }
+            { field }
         | _ -> err ())
     | _ -> err ()
 
+  let validate_context_attr (fields : field list) =
+    fields
+    |> List.iter @@ fun f ->
+       match (f.kind, f.context) with
+       | Ignored _, Some _ ->
+           err ~loc:f.loc (context_attr ^ " cannot be applied to ignored fields")
+       | Managed _, Some { field; _ } ->
+           let ctx_field =
+             match List.find_opt (fun f -> f.name = field) fields with
+             | Some f -> f
+             | None ->
+                 let valid_fields = List.map (fun f -> f.name) fields in
+                 Fmt.kstr (err ~loc:f.loc)
+                   "%s references non-existent field '%s', expected one of %a"
+                   context_attr field
+                   Fmt.(list ~sep:Fmt.comma Fmt.string)
+                   valid_fields
+           in
+           if ctx_field.name = f.name then
+             err ~loc:f.loc (context_attr ^ " field cannot reference itself");
+           if match ctx_field.kind with Ignored _ -> true | Managed _ -> false
+           then
+             err ~loc:f.loc
+               (context_attr ^ " field cannot reference an ignored field")
+       | _, None -> ()
+
   let check_no_extra_attrs (ld : label_declaration) =
-    let allowed = [ ignore_attr; lift_attr ] in
+    let allowed = [ ignore_attr; context_attr ] in
     ld.pld_attributes
     |> List.iter @@ fun (attr : attribute) ->
        if not (List.exists (String.equal attr.attr_name.txt) allowed) then
@@ -115,11 +158,11 @@ module Sym_state_base = struct
          in
          err ~loc:attr.attr_loc ("only supports attributes " ^ pp_attrs allowed)
 
-  let lift_cfg_of_label (ld : label_declaration) =
+  let context_cfg_of_label (ld : label_declaration) =
     ld.pld_attributes
     |> List.find_opt (fun (attr : attribute) ->
-        String.equal attr.attr_name.txt lift_attr)
-    |> Option.map lift_cfg_of_attr_exn
+        String.equal attr.attr_name.txt context_attr)
+    |> Option.map context_cfg_of_attr_exn
 
   let ignored_empty_expr (ld : label_declaration) =
     ld.pld_attributes
@@ -143,7 +186,7 @@ module Sym_state_base = struct
             {
               name = ld.pld_name.txt;
               kind;
-              lift = lift_cfg_of_label ld;
+              context = context_cfg_of_label ld;
               loc = ld.pld_loc;
             })
           labels
@@ -160,25 +203,23 @@ module Sym_state_base = struct
     | Managed m -> m
     | Ignored _ -> err ~loc:f.loc "internal: expected managed field"
 
-  let serialized_ctor_decl ~loc (field : field) =
-    let mod_path = mod_path_exn field in
-    let arg_ty = ptyp_constr ~loc (liddot ~loc mod_path "serialized") [] in
-    constructor_declaration ~loc
-      ~name:{ loc; txt = constr_name field.name }
-      ~args:(Pcstr_tuple [ arg_ty ]) ~res:None
-
-  let serialized_type_item ~loc fields =
+  let syn_type_item ~loc fields =
+    let syn_ctor_decl ~loc (field : field) =
+      let mod_path = mod_path_exn field in
+      let arg_ty = symex_ty ~loc mod_path [ "syn" ] [] in
+      constructor_declaration ~loc
+        ~name:{ loc; txt = syn_name field.name }
+        ~args:(Pcstr_tuple [ arg_ty ]) ~res:None
+    in
     let fields = managed_fields fields in
     let td =
-      type_declaration ~loc
-        ~name:{ loc; txt = "serialized" }
-        ~params:[] ~cstrs:[]
-        ~kind:(Ptype_variant (List.map (serialized_ctor_decl ~loc) fields))
+      type_declaration ~loc ~name:{ loc; txt = "syn" } ~params:[] ~cstrs:[]
+        ~kind:(Ptype_variant (List.map (syn_ctor_decl ~loc) fields))
         ~private_:Public ~manifest:None
     in
     pstr_type ~loc Recursive [ td ]
 
-  let pp_serialized_item ~loc fields =
+  let pp_syn_item ~loc fields =
     let fields = managed_fields fields in
     let cases =
       List.map
@@ -188,17 +229,17 @@ module Sym_state_base = struct
           let rhs =
             [%expr
               Fmt.pf ft "(@[<2>%s@ %a@])"
-                [%e estring ~loc (constr_name field.name)]
-                [%e exprdot ~loc mod_path "pp_serialized"]
+                [%e estring ~loc (syn_name field.name)]
+                [%e exprdot ~loc mod_path "pp_syn"]
                 v]
           in
           case ~lhs ~guard:None ~rhs)
         fields
     in
-    [%stri let pp_serialized ft s = [%e pexp_match ~loc [%expr s] cases]]
+    [%stri let pp_syn ft s = [%e pexp_match ~loc [%expr s] cases]]
 
-  let show_serialized_item ~loc =
-    [%stri let show_serialized s = Format.asprintf "%a" pp_serialized s]
+  let show_syn_item ~loc =
+    [%stri let show_syn s = Format.asprintf "%a" pp_syn s]
 
   let pp_item ~loc fields =
     let field_printer (f : field) =
@@ -304,12 +345,14 @@ module Sym_state_base = struct
             type nonrec t = t option
           end)]
 
-  let serialize_item ~loc fields =
+  let to_syn_item ~loc fields =
     let fields = managed_fields fields in
     (*
-     * let serialize (st : t) : serialized list =
-     *   (List.map (fun v -> Ser_field1 v) (Module1.serialize st.field1))
-     *   @ (List.map (fun v -> Ser_field2 v) (Module2.serialize st.field2))
+     * let to_syn (st : t) : syn list =
+     *   (List.map (fun v -> Ser_field1 v)
+     *     (Option.fold ~none:[] ~some:Module1.to_syn st.field1))
+     *   @ (List.map (fun v -> Ser_field2 v)
+     *     (Option.fold ~none:[] ~some:Module2.to_syn st.field2))
      *)
     let per_field (f : field) =
       let field_expr = pexp_field ~loc [%expr st] (lident ~loc f.name) in
@@ -317,7 +360,7 @@ module Sym_state_base = struct
         List.map
           (fun v -> [%e constr_field ~loc f [%expr v]])
           (Option.fold ~none:[]
-             ~some:[%e exprdot ~loc (mod_path_exn f) "serialize"]
+             ~some:[%e exprdot ~loc (mod_path_exn f) "to_syn"]
              [%e field_expr])]
     in
     let body =
@@ -326,54 +369,41 @@ module Sym_state_base = struct
       | hd :: tl ->
           List.fold_left (fun acc e -> [%expr [%e acc] @ [%e e]]) hd tl
     in
-    [%stri let serialize (st : t) : serialized list = [%e body]]
+    [%stri let to_syn (st : t) : syn list = [%e body]]
 
-  let subst_serialized_item ~loc fields =
+  let ins_outs_item ~loc fields =
     let fields = managed_fields fields in
     (*
-     * let subst_serialized subst_var (serialized : serialized) : serialized =
-     *   match serialized with
-     *   | Ser_field1 v -> Ser_field1 (subst_serialized subst_var v)
-     *   | Ser_field2 v -> Ser_field2 (subst_serialized subst_var v)
+     * let ins_outs_item = function
+     *   | Ser_field1 v -> Module1.ins_outs v
+     *   | Ser_field2 v -> Module2.ins_outs v
      *)
     let cases =
       List.map
         (fun (f : field) ->
-          let subst_ser = exprdot ~loc (mod_path_exn f) "subst_serialized" in
+          let ins_outs = exprdot ~loc (mod_path_exn f) "ins_outs" in
           let lhs = ppat_field ~loc f in
-          let rhs = constr_field ~loc f [%expr [%e subst_ser] subst_var v] in
+          let rhs = [%expr [%e ins_outs] v] in
           case ~lhs ~guard:None ~rhs)
         fields
     in
-    [%stri
-      let subst_serialized subst_var (serialized : serialized) : serialized =
-        [%e pexp_match ~loc [%expr serialized] cases]]
+    [%stri let ins_outs (syn : syn) = [%e pexp_match ~loc [%expr syn] cases]]
 
-  let iter_vars_serialized_item ~loc fields =
-    let fields = managed_fields fields in
+  let lift_syn_fix_item (target : field) =
     (*
-     * let iter_vars_serialized (serialized : serialized) iter =
-     *   match serialized with
-     *   | Ser_field1 v -> iter_vars_serialized v iter
-     *   | Ser_field2 v -> iter_vars_serialized v iter
+     * ONLY MANAGED FIELDS:
+     * let lift_field1_fixes = List.map (fun v -> Ser_field1 v)
      *)
-    let cases =
-      List.map
-        (fun (f : field) ->
-          let ctor = lident ~loc (constr_name f.name) in
-          let lhs = ppat_construct ~loc ctor (Some [%pat? v]) in
-          let iter_vars =
-            exprdot ~loc (mod_path_exn f) "iter_vars_serialized"
-          in
-          let rhs = [%expr [%e iter_vars] v iter] in
-          case ~lhs ~guard:None ~rhs)
-        fields
-    in
-    [%stri
-      let iter_vars_serialized (serialized : serialized) iter =
-        [%e pexp_match ~loc [%expr serialized] cases]]
+    let loc = target.loc in
+    pstr_value ~loc Nonrecursive
+      [
+        value_binding ~loc
+          ~pat:(pvar ~loc (lift_fix_name target.name))
+          ~expr:
+            [%expr List.map (fun v -> [%e constr_field ~loc target [%expr v]])];
+      ]
 
-  let with_field_sym_item ~loc fields (target : field) =
+  let with_field_sym_item fields (target : field) =
     (*
      * DEFAULT:
      * let with_field1_sym f =
@@ -385,15 +415,12 @@ module Sym_state_base = struct
      *   let+ () = SM.set_state (to_opt { st with field1 }) in
      *   res
      *
-     * IF LIFT FN BUT NO STATE FIELD:
+     * IF CONTEXT:
      * ...
-     * let*^ res, field1 = (lift_fn st) (f field1) in
-     * ...
-     *
-     * IF LIFT FN AND STATE FIELD:
-     * ...
-     * let*^ (res, field1), state_field = (lift_fn st) (f field1) in
-     * let+ () = SM.set_state (to_opt { st with field1; state_field }) in
+     * let*^ (res, field1), ctx_field =
+     *  CtxField.SM.run_with_state ~state:st.ctx_field (f field1)
+     * in
+     * let+ () = SM.set_state (to_opt { st with field1; ctx_field }) in
      * ...
      *
      * IF IGNORED:
@@ -402,27 +429,42 @@ module Sym_state_base = struct
      * let+ () = SM.set_state (to_opt st) in
      * Soteria.Symex.Compo_res.Ok res
      *)
+    let loc = target.loc in
+    let updated_fields =
+      match target.context with
+      | None -> [ target.name ]
+      | Some { field; _ } -> [ target.name; field ]
+    in
+    let open_pat = List.compare_lengths updated_fields fields <> 0 in
     let st_pat =
-      ppat_record ~loc [ (lident ~loc target.name, pvar ~loc target.name) ] Open
+      ppat_record ~loc
+        (List.map (fun l -> (lident ~loc l, pvar ~loc l)) updated_fields)
+        (if open_pat then Open else Closed)
     in
     let bind_expr =
-      match target.lift with
+      match target.context with
       | None -> [%expr f [%e evar ~loc target.name]]
-      | Some lift -> [%expr ([%e lift.run] st) (f [%e evar ~loc target.name])]
+      | Some { field } ->
+          let field = List.find (fun f -> f.name = field) fields in
+          let field_symex =
+            match field.kind with
+            | Managed m -> m
+            | Ignored _ -> failwith "checked before"
+          in
+          let ctx_run = exprdots ~loc field_symex [ "SM"; "run_with_state" ] in
+          let field = evar ~loc field.name in
+          [%expr [%e ctx_run] ~state:[%e field] (f [%e evar ~loc target.name])]
     in
-    let bind_pat, updated_fields =
-      match target.lift with
-      | None | Some { state_field = None; _ } ->
-          ([%pat? res, [%p pvar ~loc target.name]], [ target.name ])
-      | Some { state_field = Some sf; _ } ->
-          ( [%pat? (res, [%p pvar ~loc target.name]), [%p pvar ~loc sf]],
-            [ target.name; sf ] )
+    let bind_pat =
+      match target.context with
+      | None -> [%pat? res, [%p pvar ~loc target.name]]
+      | Some { field; _ } ->
+          [%pat? (res, [%p pvar ~loc target.name]), [%p pvar ~loc field]]
     in
     let updated =
       pexp_record ~loc
         (List.map (fun l -> (lident ~loc l, evar ~loc l)) updated_fields)
-        (if List.compare_lengths updated_fields fields = 0 then None
-         else Some [%expr st])
+        (if open_pat then Some [%expr st] else None)
     in
     let call_and_assign =
       match target.kind with
@@ -446,21 +488,17 @@ module Sym_state_base = struct
         let [%p st_pat] = st in
         [%e call_and_assign]]
 
-  let with_field_item ~loc (target : field) =
+  let with_field_item (target : field) =
     (*
+     * ONLY MANAGED FIELDS:
      * let with_field1 f =
-     *   SM.Result.map_missing (with_field1_sym f)
-     *     (List.map (fun v -> Ser_field1 v))
-     *
-     * IF managed, otherwise nothing
+     *   SM.Result.map_missing (with_field1_sym f) lift_field1_fixes
      *)
+    let loc = target.loc in
     let with_sym = evar ~loc (fn_with_sym_name target.name) in
+    let lift_fixes = evar ~loc (lift_fix_name target.name) in
     let body =
-      [%expr
-        SM.Result.map_missing
-          ([%e with_sym] f)
-          (List.map (fun v : serialized ->
-               [%e constr_field ~loc target [%expr v]]))]
+      [%expr SM.Result.map_missing ([%e with_sym] f) [%e lift_fixes]]
     in
 
     pstr_value ~loc Nonrecursive
@@ -470,87 +508,211 @@ module Sym_state_base = struct
           ~expr:(pexp_fun ~loc Nolabel None [%pat? f] body);
       ]
 
-  let produce_item ~loc fields =
-    let fields = managed_fields fields in
+  let mk_cons_prod_item ~loc ~kind fields target =
     (*
-     * let produce (serialized : serialized) : unit SM.t =
-     *   match serialized with
-     *   | Ser_field1 v -> with_field1_sym (produce v)
-     *   | Ser_field2 v -> with_field2_sym (produce v)
+     * Helper for produce_item/consume_item. Given a field, an option wrap
+     * expression, generates:
+     *
+     * let+ field1 = <lift_expr> (Module1.<produce/consume> v st.field1) in
+     * to_opt { st with field1 }
+     *
+     * OR, if context field:
+     * let+ (field1, ctx_field) =
+     *   <lift_expr>
+     *   @@ CtxField.<Producer/Consumer>.run_with_state ~state:st.ctx_field
+     *   @@ Module1.<produce/consume> v st.field1
+     * in
+     * to_opt { st with field1; ctx_field }
+     *
+     * where <lift_expr> is either identity (for produce) or a fixes-lifting
+     * function (for consume)
+     *)
+    let fn_name, module_name =
+      match kind with
+      | `Produce -> ("produce", "Producer")
+      | `Consume -> ("consume", "Consumer")
+    in
+    let fn_expr = exprdot ~loc (mod_path_exn target) fn_name in
+    let field = pexp_field ~loc [%expr st] (lident ~loc target.name) in
+    let expr = [%expr [%e fn_expr] v [%e field]] in
+    let expr =
+      match target.context with
+      | None -> expr
+      | Some { field = ctx_field } ->
+          let ctx_field = List.find (fun f -> f.name = ctx_field) fields in
+          let field_symex =
+            match ctx_field.kind with
+            | Managed m -> m
+            | Ignored _ -> failwith "checked before"
+          in
+          let ctx_run_with =
+            exprdots ~loc field_symex [ "SM"; module_name; "run_with_state" ]
+          in
+          let ctx_field =
+            pexp_field ~loc [%expr st] (lident ~loc ctx_field.name)
+          in
+          [%expr [%e ctx_run_with] ~state:[%e ctx_field] [%e expr]]
+    in
+    let expr =
+      match kind with
+      | `Produce -> expr
+      | `Consume ->
+          let lift_fixes = evar ~loc (lift_fix_name target.name) in
+          [%expr
+            let+? fixes = [%e expr] in
+            [%e lift_fixes] fixes]
+    in
+    let updated_fields =
+      match target.context with
+      | None -> [ target.name ]
+      | Some { field } -> [ target.name; field ]
+    in
+    let assign_pat = ppat_tuple ~loc (List.map (pvar ~loc) updated_fields) in
+    let updated =
+      pexp_record ~loc
+        (List.map (fun l -> (lident ~loc l, evar ~loc l)) updated_fields)
+        (if List.compare_lengths fields updated_fields = 0 then None
+         else Some [%expr st])
+    in
+    [%expr
+      let+ [%p assign_pat] = [%e expr] in
+      to_opt [%e updated]]
+
+  let produce_item ~loc fields =
+    (*
+     * let produce (syn : syn) (st : t option) =
+     *   let open SM.Symex.Producer.Syntax in
+     *   let st = of_opt st in
+     *   match syn with
+     *   | Ser_field1 v ->
+     *     let+ field1 = Module1.produce v st.field1 in
+     *     to_opt { st with field1 }
+     *   | Ser_field2 v -> ...
+     *
+     * IF CONTEXT FIELD:
+     *   | Ser_field1 v ->
+     *     let+ (field1, ctx_field) =
+     *       CtxField.Producer.run_with_state ~state:st.ctx_field
+     *         (Module1.produce v st.field1)
+     *     in
+     *     to_opt { st with field1; ctx_field }
      *)
     let cases =
       List.map
         (fun (f : field) ->
-          let ctor = lident ~loc (constr_name f.name) in
+          let ctor = lident ~loc (syn_name f.name) in
           let lhs = ppat_construct ~loc ctor (Some [%pat? v]) in
-          let produce = exprdot ~loc (mod_path_exn f) "produce" in
-          let rhs =
-            [%expr [%e evar ~loc (fn_with_sym_name f.name)] ([%e produce] v)]
-          in
+          let rhs = mk_cons_prod_item ~loc ~kind:`Produce fields f in
           case ~lhs ~guard:None ~rhs)
-        fields
+        (managed_fields fields)
     in
     [%stri
-      let produce (serialized : serialized) : unit SM.t =
-        [%e pexp_match ~loc [%expr serialized] cases]]
+      let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =
+        let open SM.Symex.Producer.Syntax in
+        let st = of_opt st in
+        [%e pexp_match ~loc [%expr syn] cases]]
+
+  let consume_item ~loc fields =
+    (*
+     * let consume (syn : syn) (st : t option) =
+     *   let open SM.Symex.Consumer.Syntax in
+     *   let st = of_opt st in
+     *   match syn with
+     *   | Ser_field1 v ->
+     *       let+ field1 =
+     *         let+? fixes = Module1.consume v st.field1 in
+     *         lift_field1_fixes fixes
+     *       in
+     *       to_opt { st with field1 }
+     *  | Ser_field2 v -> ...
+     *
+     * IF CONTEXT FIELD:
+     *   | Ser_field1 v ->
+     *     let+ (field1, ctx_field) =
+     *       let+? fixes =
+     *         CtxField.Consumer.run_with_state ~state:st.ctx_field
+     *           (Module1.consume v st.field1)
+     *       in
+     *       lift_field1_fixes fixes
+     *     in
+     *     to_opt { st with field1; ctx_field }
+     *)
+    let cases =
+      List.map
+        (fun (f : field) ->
+          let ctor = lident ~loc (syn_name f.name) in
+          let lhs = ppat_construct ~loc ctor (Some [%pat? v]) in
+          let rhs = mk_cons_prod_item ~loc ~kind:`Consume fields f in
+          case ~lhs ~guard:None ~rhs)
+        (managed_fields fields)
+    in
+    [%stri
+      let consume (syn : syn) (st : t option) :
+          (t option, syn list) SM.Symex.Consumer.t =
+        let open SM.Symex.Consumer.Syntax in
+        let st = of_opt st in
+        [%e pexp_match ~loc [%expr syn] cases]]
 
   let make_impl ~loc ~symex_module (td : type_declaration) =
     let fields = fields_of_td_exn td in
+    validate_context_attr fields;
     [
       sm_item ~loc symex_module;
       pp_item ~loc fields;
       show_item ~loc;
-      serialized_type_item ~loc fields;
-      pp_serialized_item ~loc fields;
-      show_serialized_item ~loc;
+      syn_type_item ~loc fields;
+      pp_syn_item ~loc fields;
+      show_syn_item ~loc;
       of_opt_item ~loc fields;
       to_opt_item ~loc fields;
       empty_item ~loc;
-      serialize_item ~loc fields;
-      subst_serialized_item ~loc fields;
-      iter_vars_serialized_item ~loc fields;
+      to_syn_item ~loc fields;
+      ins_outs_item ~loc fields;
     ]
-    @ List.map (with_field_sym_item ~loc fields) fields
-    @ List.map (with_field_item ~loc) (managed_fields fields)
-    @ [ produce_item ~loc fields ]
+    @ List.map lift_syn_fix_item (managed_fields fields)
+    @ List.map (with_field_sym_item fields) fields
+    @ List.map with_field_item (managed_fields fields)
+    @ [ produce_item ~loc fields; consume_item ~loc fields ]
 
-  let make_intf ~loc ~symex_module:_ (_td : type_declaration) =
+  let make_intf ~loc ~symex_module (_td : type_declaration) =
+    (* make the type <symex_module>.Producer.t *)
+    let symex_ty path args =
+      ptyp_constr ~loc (liddots ~loc symex_module path) args
+    in
+    let expr_t = symex_ty [ "Value"; "Expr"; "t" ] [] in
+    let prod_res = symex_ty [ "Producer"; "t" ] [ [%type: t option] ] in
+    let cons_res =
+      symex_ty [ "Consumer"; "t" ] [ [%type: t option]; [%type: syn list] ]
+    in
     [
       [%sigi: val pp : Format.formatter -> t -> unit];
       [%sigi: val show : t -> string];
-      [%sigi: type serialized];
-      [%sigi: val pp_serialized : Format.formatter -> serialized -> unit];
-      [%sigi: val show_serialized : serialized -> string];
+      [%sigi: type syn];
+      [%sigi: val pp_syn : Format.formatter -> syn -> unit];
+      [%sigi: val show_syn : syn -> string];
       [%sigi: val of_opt : t option -> t];
       [%sigi: val to_opt : t -> t option];
       [%sigi: val empty : t option];
-      [%sigi: val serialize : t -> serialized list];
-      [%sigi:
-        val subst_serialized :
-          (Svalue.Var.t -> Svalue.Var.t) -> serialized -> serialized];
-      [%sigi:
-        val iter_vars_serialized :
-          serialized -> (Svalue.Var.t * 'a Typed.ty -> unit) -> unit];
-      [%sigi: val produce : serialized -> unit SM.t];
+      [%sigi: val to_syn : t -> syn list];
+      [%sigi: val ins_outs : syn -> [%t expr_t] list * [%t expr_t] list];
+      [%sigi: val produce : syn -> t option -> [%t prod_res]];
+      [%sigi: val consume : syn -> t option -> [%t cons_res]];
     ]
 
-  let module_expr_as_longindent ~loc expr =
-    match expr with
-    | Some { pexp_desc = Pexp_construct ({ txt; _ }, None); _ } -> txt
-    | Some expr -> err ~loc:expr.pexp_loc "expected { symex = <Module> }"
-    | None ->
-        err ~loc
-          "requires a 'symex' argument specifying the symbolic execution \
-           module to use"
-
   let str_type_decl ~loc ~path:_ (_rec, tds) symex_module =
-    let symex_module = module_expr_as_longindent ~loc symex_module in
+    let symex_module =
+      module_expr_as_longindent ~err_msg:"expected { symex = <Module> }" ~loc
+        symex_module
+    in
     match tds with
     | [ td ] -> make_impl ~loc ~symex_module td
     | _ -> err ~loc "expects exactly one type declaration"
 
   let sig_type_decl ~loc ~path:_ (_rec, tds) symex_module =
-    let symex_module = module_expr_as_longindent ~loc symex_module in
+    let symex_module =
+      module_expr_as_longindent ~err_msg:"expected { symex = <Module> }" ~loc
+        symex_module
+    in
     match tds with
     | [ td ] -> make_intf ~loc ~symex_module td
     | _ -> err ~loc "expects exactly one type declaration"
