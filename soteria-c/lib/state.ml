@@ -263,23 +263,6 @@ let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
       in
       aux layout.members_ofs members values st
 
-let consume (syn : syn) (st : t option) : (t option, syn list) Consumer.t =
-  let open Consumer.Syntax in
-  let { heap; globs } = of_opt st in
-  match syn with
-  | Ser_heap sh ->
-      let+ heap =
-        let+? fixes = Heap.consume sh heap in
-        List.map (fun f -> Ser_heap f) fixes
-      in
-      to_opt { heap; globs }
-  | Ser_globs sg ->
-      let+ globs =
-        let+? fixes = Globs.consume sg globs in
-        List.map (fun f -> Ser_globs f) fixes
-      in
-      to_opt { heap; globs }
-
 let get_global (sym : Cerb_frontend.Symbol.sym) =
   let+ loc = with_globs_sym (Globs.get sym) in
   Typed.Ptr.mk loc Usize.(0s)
