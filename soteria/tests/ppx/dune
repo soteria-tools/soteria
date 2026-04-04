@@ -14,5 +14,9 @@
   ./tests/ignored_single.ml
   ./tests/context.ml
   ./tests/context_invalid.ml
+  ./tests/context_missing_field.ml
+  ./tests/context_self_ref.ml
+  ./tests/context_on_ignored_ref.ml
+  ./tests/ignore_extra_key.ml
   ./tests/invalid_non_t.ml)
- (applies_to :whole_subtree))
+  (applies_to :whole_subtree))

@@ -136,11 +136,17 @@ module Attributes = struct
                match List.find_opt (fun f -> f.name = field) fields with
                | Some f -> f
                | None ->
-                   let valid_fields = List.map (fun f -> f.name) fields in
+                   let valid_fields =
+                     fields
+                     |> List.filter_map (fun cf ->
+                         if f.name = cf.name then None else Some cf.name)
+                   in
                    Fmt.kstr (err ?loc:None)
-                     "%s references non-existent field '%s', expected one of %a"
-                     name field
-                     Fmt.(list ~sep:Fmt.comma Fmt.string)
+                     "%s references non-existent field %a, expected one of %a"
+                     name
+                     Fmt.(quote string)
+                     field
+                     Fmt.(list ~sep:Fmt.comma Fmt.(quote string))
                      valid_fields
              in
              if ctx_field.name = f.name then
