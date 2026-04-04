@@ -1,5 +1,5 @@
 Context field usage
-  $ ./test.sh context.ml
+  $ ../test.sh context.ml
   open Prelude
   
   type t = {

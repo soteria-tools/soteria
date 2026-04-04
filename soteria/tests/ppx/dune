@@ -7,18 +7,19 @@
 (cram
  (deps
   ./standalone.exe
-  ./tests/test.sh
-  ./tests/prelude.ml
-  ./tests/simple.ml
-  ./tests/ignored.ml
-  ./tests/ignored_single.ml
-  ./tests/context.ml
-  ./tests/context_invalid.ml
-  ./tests/context_missing_field.ml
-  ./tests/context_self_ref.ml
-  ./tests/context_on_ignored_ref.ml
-  ./tests/ignore_extra_key.ml
-  ./tests/syn_manifest.ml
-  ./tests/syn_manifest_mismatch.ml
-  ./tests/invalid_non_t.ml)
+  ./test.sh
+  ./sym_state/prelude.ml
+  ./sym_state/simple.ml
+  ./sym_state/ignored.ml
+  ./sym_state/ignored_single.ml
+  ./sym_state/context.ml
+  ./sym_state/context_invalid.ml
+  ./sym_state/context_missing_field.ml
+  ./sym_state/context_self_ref.ml
+  ./sym_state/context_on_ignored_ref.ml
+  ./sym_state/ignore_extra_key.ml
+  ./sym_state/ignored_is_empty_pp.ml
+  ./sym_state/syn_manifest.ml
+  ./sym_state/syn_manifest_mismatch.ml
+  ./sym_state/invalid_non_t.ml)
  (applies_to :whole_subtree))

@@ -1,5 +1,5 @@
 Ignored field usage
-  $ ./test.sh ignored_single.ml
+  $ ../test.sh ignored_single.ml
   open Prelude
   
   type t = { steps : int [@sym_state.ignore { empty = 0 }] }

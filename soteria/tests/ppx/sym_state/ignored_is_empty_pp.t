@@ -1,13 +1,21 @@
-Reject manifest syn mismatch
-  $ ./test.sh syn_manifest_mismatch.ml
+Ignored field with is_empty and pp
+  $ ../test.sh ignored_is_empty_pp.ml
   open Prelude
   
-  module Syn = struct
-    type t = Ser_heap of Heap.syn | Ser_steps of Typed.Expr.t
+  module Steps = struct
+    type t = { v : int }
+  
+    let pp ft { v } = Fmt.pf ft "Steps(%d)" v
+    let is_empty { v } = v = 0
   end
   
-  type t = { heap : Heap.t option; steps : int [@sym_state.ignore { empty = 0 }] }
-  [@@deriving sym_state { symex = Symex; syn = Syn.t }]
+  type t = {
+    heap : Heap.t option;
+    steps : Steps.t;
+        [@sym_state.ignore
+          { empty = { Steps.v = 0 }; is_empty = Steps.is_empty; pp = Steps.pp }]
+  }
+  [@@deriving sym_state { symex = Symex }]
   
   include struct
     [@@@ocaml.warning "-60"]
@@ -29,14 +37,16 @@ Reject manifest syn mismatch
       | Some v -> Heap.pp fmt v);
       Format.fprintf fmt "@]";
       Format.fprintf fmt ";@ ";
-      Format.fprintf fmt "@[%s =@ <ignored>@]" "steps";
+      Format.fprintf fmt "@[%s =@ " "steps";
+      Steps.pp fmt x.steps;
+      Format.fprintf fmt "@]";
       Format.fprintf fmt "@ }@]"
   
     let _ = pp
     let show x = Format.asprintf "%a" pp x
     let _ = show
   
-    type syn = Syn.t = Ser_heap of Heap.syn
+    type syn = Ser_heap of Heap.syn
   
     let pp_syn ft (s : syn) =
       match s with
@@ -46,11 +56,15 @@ Reject manifest syn mismatch
     let _ = pp_syn
     let show_syn s = Format.asprintf "%a" pp_syn s
     let _ = show_syn
-    let of_opt = function None -> { heap = None; steps = 0 } | Some v -> v
+  
+    let of_opt = function
+      | None -> { heap = None; steps = { Steps.v = 0 } }
+      | Some v -> v
+  
     let _ = of_opt
   
     let to_opt = function
-      | { heap = None; steps } when steps = 0 -> None
+      | { heap = None; steps } when Steps.is_empty steps -> None
       | t -> Some t
   
     let _ = to_opt
@@ -121,10 +135,4 @@ Reject manifest syn mismatch
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]
-  ocamlfind: [WARNING] Package `mtime.clock.os': Deprecated, use the mtime.clock library.
-  File "out.ml", lines 36-37, characters 4-28:
-  36 | ....type syn = Syn.t =
-  37 |       | Ser_heap of Heap.syn.
-  Error: This variant or record definition does not match that of type Syn.t
-         An extra constructor, Ser_steps, is provided in the original definition.
-  [1]
+  Success ✅
