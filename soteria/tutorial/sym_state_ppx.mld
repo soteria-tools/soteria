@@ -144,3 +144,26 @@ Which can then easily be used:
 let load addr ty =
   with_heap_sym (FancyHeap.load addr ty)
 ]}
+
+{2 [syn] type equality}
+
+Some applications may want to expose a stable [syn] type through an interface,
+without revealing the actual state type. While this PPX does not support customising
+the [syn] type, it does allow asserting the generated [syn] type is equal to a
+user-defined one, using the [syn] option:
+
+{@ocaml[
+type my_syn =
+  | Ser_heap of Heap.syn
+  | Ser_globs of Globs.syn
+
+type t = {
+  heap : Heap.t option;
+  globs : Globs.t option;
+}
+[@@deriving sym_state { symex = My_symex; syn = my_syn }]
+]}
+
+{b Note} this only asserts the generated [syn] type is equal to [my_syn], it does
+not actually change any of the generated code to use [my_syn]. If [my_syn] does
+not match the generated [syn] type, this will cause a compile error.
