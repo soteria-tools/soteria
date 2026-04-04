@@ -281,6 +281,16 @@ module type Base = sig
     val run : subst:subst -> 'a t -> ('a * subst) symex
     val run_identity : 'a t -> 'a symex
 
+    (** Exposes the underlying type of this producer monad. This is unsafe and
+        shouldn't be used in clients, it is only available to enable the
+        implementation of the state monad transformer. *)
+    val leak_UNSAFE : 'a t -> subst option -> ('a * subst option) symex
+
+    (** The dual of [leak_UNSAFE] for producers. This is unsafe and shouldn't be
+        used in clients, it is only available to enable the implementation of
+        the state monad transformer. *)
+    val unleak_UNSAFE : (subst option -> ('a * subst option) symex) -> 'a t
+
     module Syntax : sig
       include module type of Syntax
 
@@ -329,6 +339,18 @@ module type Base = sig
 
     val run :
       subst:subst -> ('a, 'fix) t -> ('a * subst, cons_fail, 'fix) Result.t
+
+    (** Exposes the underlying type of this consumer monad. This is unsafe and
+        shouldn't be used in clients, it is only available to enable the
+        implementation of the state monad transformer. *)
+    val leak_UNSAFE :
+      ('a, 'fix) t -> subst -> ('a * subst, cons_fail, 'fix) Result.t
+
+    (** The dual of [leak_UNSAFE] for consumers. This is unsafe and shouldn't be
+        used in clients, it is only available to enable the implementation of
+        the state monad transformer. *)
+    val unleak_UNSAFE :
+      (subst -> ('a * subst, cons_fail, 'fix) Result.t) -> ('a, 'fix) t
 
     module Syntax : sig
       val ( let* ) : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
@@ -924,6 +946,9 @@ module Base_extension (Core : Core) = struct
       let ( let+ ) = Core.map in
       let+ x, _s = p None in
       x
+
+    let leak_UNSAFE x = x
+    let unleak_UNSAFE x = x
   end
 
   module Consumer = struct
@@ -1051,6 +1076,8 @@ module Base_extension (Core : Core) = struct
       assert_pure (Value.sem_eq_untyped v v') subst
 
     let expose_subst () : (subst, 'fix) t = fun subst -> Result.ok (subst, subst)
+    let leak_UNSAFE x = x
+    let unleak_UNSAFE x = x
   end
 end
 
