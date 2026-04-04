@@ -1,59 +1,50 @@
 type t =
   [ `NullDereference
+    [@diag.kind "NULL_DEREFERENCE"]
+    [@diag.format "Null pointer dereference"]
   | `OutOfBounds
+    [@diag.kind "BUFFER_OVERFLOW"]
+    [@diag.format "Buffer overflow or underflow"]
   | `UninitializedMemoryAccess
-  | `UseAfterFree
+    [@diag.kind "UNINITIALIZED_VALUE"]
+    [@diag.format "Accessing uninitialized memory"]
+  | `UseAfterFree [@diag.kind "USE_AFTER_FREE"] [@diag.format "Use after free"]
   | `DivisionByZero
+    [@diag.kind "DIVISION_BY_ZERO"]
+    [@diag.format "Division by zero"]
   | `ParsingError of string
+    [@diag.kind "PARSING_ERROR"]
+    [@diag.format "Parsing Error: %a"]
   | `LinkError of string
+    [@diag.kind "LINK_ERROR"]
+    [@diag.format "Linker Error: %a"]
   | `UBPointerComparison
+    [@diag.kind "POINTER_COMPARISON_UB"]
+    [@diag.format "Invalid pointer comparison (UB)"]
   | `UBPointerArithmetic
+    [@diag.kind "POINTER_ARITHMETIC_UB"]
+    [@diag.format "Invalid pointer arithmetic (UB)"]
   | `InvalidFunctionPtr
+    [@diag.kind "INVALID_FUNCTION_POINTER"]
+    [@diag.format "Using invalid function pointer"]
   | `DoubleFree
+    [@diag.kind "DOUBLE_FREE"]
+    [@diag.format "Freeing a pointer twice (double free)"]
   | `InvalidFree
+    [@diag.kind "INVALID_FREE"]
+    [@diag.format "Freeing a pointer that was not obtained from malloc"]
   | `Memory_leak
+    [@diag.kind "MEMORY_LEAK"]
+    [@diag.severity Warning]
+    [@diag.format "Memory leak"]
   | `FailedAssert
-  | `Overflow
-  | `Gave_up of string ]
-
-let pp ft = function
-  | `NullDereference -> Fmt.string ft "Null pointer dereference"
-  | `OutOfBounds -> Fmt.string ft "Buffer overflow or underflow"
-  | `UninitializedMemoryAccess -> Fmt.string ft "Accessing uninitialized memory"
-  | `UseAfterFree -> Fmt.string ft "Use after free"
-  | `DivisionByZero -> Fmt.string ft "Division by zero"
-  | `ParsingError s -> Fmt.pf ft "Parsing Error: %s" s
-  | `LinkError s -> Fmt.pf ft "Linker Error: %s" s
-  | `UBPointerComparison -> Fmt.string ft "Invalid pointer comparison (UB)"
-  | `UBPointerArithmetic -> Fmt.string ft "Invalid pointer arithmetic (UB)"
-  | `InvalidFunctionPtr -> Fmt.string ft "Using invalid function pointer"
-  | `DoubleFree -> Fmt.string ft "Freeing a pointer twice (double free)"
-  | `InvalidFree ->
-      Fmt.string ft "Freeing a pointer that was not obtained from malloc"
-  | `Memory_leak -> Fmt.string ft "Memory leak"
-  | `FailedAssert -> Fmt.string ft "Failed assertion"
-  | `Overflow -> Fmt.string ft "Integer overflow"
-  | `Gave_up s -> Fmt.pf ft "Analysis gave up: %s" s
-
-(** Same as `show` but does not include details about the error, only the kind.
-*)
-let kind_string = function
-  | `NullDereference -> "NULL_DEREFERENCE"
-  | `OutOfBounds -> "BUFFER_OVERFLOW"
-  | `UninitializedMemoryAccess -> "UNINITIALIZED_VALUE"
-  | `UseAfterFree -> "USE_AFTER_FREE"
-  | `DivisionByZero -> "DIVISION_BY_ZERO"
-  | `ParsingError _ -> "PARSING_ERROR"
-  | `LinkError _ -> "LINK_ERROR"
-  | `UBPointerComparison -> "POINTER_COMPARISON_UB"
-  | `UBPointerArithmetic -> "POINTER_ARITHMETIC_UB"
-  | `InvalidFunctionPtr -> "INVALID_FUNCTION_POINTER"
-  | `DoubleFree -> "DOUBLE_FREE"
-  | `InvalidFree -> "INVALID_FREE"
-  | `Memory_leak -> "MEMORY_LEAK"
-  | `FailedAssert -> "ASSERTION_FAILURE"
-  | `Overflow -> "INTEGER_OVERFLOW"
-  | `Gave_up _ -> "GAVE_UP"
+    [@diag.kind "ASSERTION_FAILURE"]
+    [@diag.format "Failed assertion"]
+  | `Overflow [@diag.kind "INTEGER_OVERFLOW"] [@diag.format "Integer overflow"]
+  | `Gave_up of string
+    [@diag.kind "GAVE_UP"]
+    [@diag.format "Analysis gave up: %a"] ]
+[@@deriving diagnostic]
 
 let is_ub = function
   | `NullDereference | `OutOfBounds | `UninitializedMemoryAccess | `UseAfterFree
@@ -62,10 +53,6 @@ let is_ub = function
   | `Memory_leak (* Not really UB but we want to ignore it in Test-Comp *) ->
       true
   | `LinkError _ | `FailedAssert | `ParsingError _ | `Gave_up _ -> false
-
-let severity : t -> Soteria.Terminal.Diagnostic.severity = function
-  | `Memory_leak -> Warning
-  | _ -> Error
 
 type with_trace = t * Cerb_location.t Soteria.Terminal.Call_trace.t
 

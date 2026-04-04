@@ -27,3 +27,6 @@ let () =
 
 (* Register [deriving sym_state] *)
 let () = Sym_state_base_deriver.register ()
+
+(* Register [deriving diagnostic] *)
+let () = Diagnostic_deriver.register ()

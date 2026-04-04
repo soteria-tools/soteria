@@ -2,67 +2,159 @@ open Charon
 open Common.Charon_util
 
 type t =
-  [ `DoubleFree  (** Tried freeing the same allocation twice *)
-  | `InvalidFree  (** Tried freeing memory at a non-0 offset *)
-  | `MemoryLeak  (** Dynamically allocated memory was not freed *)
+  [ `DoubleFree
+    [@diag.format "Double free"]
+    [@diag.severity Bug]
+    (** Tried freeing the same allocation twice *)
+  | `InvalidFree
+    [@diag.format "Invalid free"]
+    [@diag.severity Bug]
+    (** Tried freeing memory at a non-0 offset *)
+  | `MemoryLeak
+    [@diag.format "Memory leak"]
+    [@diag.severity Warning]
+    (** Dynamically allocated memory was not freed *)
   | `MisalignedPointer of
     Typed.T.nonzero Typed.t * Typed.T.nonzero Typed.t * Typed.T.sint Typed.t
+    [@diag.format "Misaligned pointer; expected %a, received %a with offset %a"]
+    [@diag.severity Bug]
     (** Tried accessing memory with a misaligned pointer
         [(expected, received, offset)] *)
-  | `NullDereference  (** Dereferenced a null pointer *)
-  | `OutOfBounds  (** Tried accessing memory outside the allocation bounds *)
-  | `UninitializedMemoryAccess  (** Accessed uninitialised memory *)
-  | `UseAfterFree  (** Use a location in memory after it was freed *)
+  | `NullDereference
+    [@diag.format "Null dereference"]
+    (** Dereferenced a null pointer *)
+  | `OutOfBounds
+    [@diag.format "Out of bounds"]
+    (** Tried accessing memory outside the allocation bounds *)
+  | `UninitializedMemoryAccess
+    [@diag.format "Uninitialized memory access"]
+    [@diag.severity Bug]
+    (** Accessed uninitialised memory *)
+  | `UseAfterFree
+    [@diag.format "Use after free"]
+    [@diag.severity Bug]
+    (** Use a location in memory after it was freed *)
   | `MisalignedFnPointer
+    [@diag.format "Misaligned function pointer"]
+    [@diag.severity Bug]
     (** Tried calling a function pointer with a non-0 offset *)
   | `NotAFnPointer
+    [@diag.format "Not a function pointer"]
+    [@diag.severity Bug]
     (** Tried calling a function pointer, but it doesn't represent a function *)
-  | `AccessedFnPointer  (** Tried accessing a function pointer's pointee *)
+  | `AccessedFnPointer
+    [@diag.format "Accessed function pointer's pointee"]
+    [@diag.severity Bug]
+    (** Tried accessing a function pointer's pointee *)
   | `InvalidFnArgCount of int * int
+    [@diag.format
+      "Wrong number of arguments in function call; expected %a, received %a"]
+    [@diag.severity Bug]
     (** Invalid argument count for function (function pointers only)
         [(expected, received)] *)
-  | `InvalidFnArgTys of Types.ty * Types.ty
+  | `InvalidFnArgTys of (Types.ty[@printer pp_ty]) * (Types.ty[@printer pp_ty])
+    [@diag.format
+      "Mismatch in types expected of function; expected %a, received %a"]
+    [@diag.severity Bug]
     (** Invalid arguments for function (function pointers only)
         [(expected, received)] *)
-  | `DivisionByZero  (** Integer division by zero *)
+  | `DivisionByZero
+    [@diag.format "Division by zero"]
+    (** Integer division by zero *)
   | `InvalidShift
+    [@diag.format "Invalid binary shift"]
+    [@diag.severity Bug]
     (** Binary shift that is less than 0 or that exceeds the bit size of the
         type *)
-  | `Overflow  (** Arithmetic over or underflow *)
-  | `RefToUninhabited of Types.ty
+  | `Overflow [@diag.format "Overflow"]  (** Arithmetic over or underflow *)
+  | `RefToUninhabited of (Types.ty[@printer pp_ty])
+    [@diag.format "Ref to uninhabited type: %a"]
+    [@diag.severity Bug]
     (** Attempt to have a reference to an uninhabited value *)
   | `InvalidRef of t
+    [@diag.format "Invalid reference: %a"]
+    [@diag.severity Bug]
     (** Attempt to have a reference that is not valid, e.g. because it points to
         uninitialised memory. Keeps track of the inner error *)
   | `StdErr of string
+    [@diag.format "UB in std: %a"]
+    [@diag.severity Bug]
     (** Error caused by the std library (mainly intrinsics); kind of equivalent
         to `Panic *)
-  | `UBAbort  (** Abort caused by an UB trap being triggered *)
-  | `UBDanglingPointer  (** Pointer was offset outside of its allocation *)
-  | `UBPointerArithmetic  (** Arithmetics on two pointers *)
+  | `UBAbort
+    [@diag.format "UB: undefined behaviour trap reached"]
+    [@diag.severity Bug]
+    (** Abort caused by an UB trap being triggered *)
+  | `UBDanglingPointer
+    [@diag.format "Dangling pointer"]
+    [@diag.severity Bug]
+    (** Pointer was offset outside of its allocation *)
+  | `UBPointerArithmetic
+    [@diag.format "UB: pointer arithmetic"]
+    [@diag.severity Bug]
+    (** Arithmetics on two pointers *)
   | `UBPointerComparison
+    [@diag.format "UB: pointer comparison"]
+    [@diag.severity Bug]
     (** Comparison of pointers with different provenance *)
   | `UBIntToPointerNoProvenance of Typed.T.sint Typed.t
+    [@diag.format "UB: int to pointer without exposed address: %a"]
+    [@diag.severity Bug]
     (** Integer to pointer cast with no provenance *)
-  | `UBIntToPointerStrict  (** Integer to pointer cast with strict provenance *)
+  | `UBIntToPointerStrict
+    [@diag.format
+      "Attempted to cast an integer to an pointer with strict provenance"]
+    [@diag.severity Bug]
+    (** Integer to pointer cast with strict provenance *)
   | `UBTransmute of string
+    [@diag.format "UB: Transmute: %a"]
+    [@diag.severity Bug]
     (** Invalid transmute, e.g. null reference, wrong enum discriminant *)
-  | `AliasingError  (** Tree borrow violation that lead to UB *)
+  | `AliasingError
+    [@diag.format "Aliasing error"]
+    [@diag.severity Bug]
+    (** Tree borrow violation that lead to UB *)
   | `RefInvalidatedEarly
+    [@diag.format "Protected ref invalidated before function ended"]
+    [@diag.severity Bug]
     (** A protected reference was invalidated before the end of the function *)
   | `InvalidFreeStrongProtector
+    [@diag.format
+      "Tried freeing an allocation which was passed to a function by reference"]
+    [@diag.severity Bug]
     (** Tried freeing an allocation when a strongly protected reference to it
         still exists *)
-  | `FailedAssert of string option  (** Failed assert!(cond) *)
-  | `Panic of string option  (** Regular panic, with a message *)
-  | `UnwindTerminate  (** Unwinding terminated *)
-  | `DeadVariable  (** Local was not initialised (impossible without `mir!`) *)
-  | `Breakpoint  (** Breakpoint intrinsic *)
+  | `FailedAssert of string option
+    [@diag.format "Failed assertion: %a"]
+    (** Failed assert!(cond) *)
+  | `Panic of string option
+    [@diag.format "Panic: %a"]
+    (** Regular panic, with a message *)
+  | `UnwindTerminate
+    [@diag.format "Terminated unwind"]
+    [@diag.severity Bug]
+    (** Unwinding terminated *)
+  | `DeadVariable
+    [@diag.format "Dead variable accessed"]
+    [@diag.severity Bug]
+    (** Local was not initialised (impossible without `mir!`) *)
+  | `Breakpoint
+    [@diag.format "Breakpoint hit"]
+    [@diag.severity Bug]
+    (** Breakpoint intrinsic *)
   | `MetaExpectedError
+    [@diag.format "Meta: expected an error"]
+    [@diag.severity Bug]
     (** Function was marked as expecting an error; none happened *)
-  | `InvalidLayout of Types.ty  (** Type is too large for memory *)
+  | `InvalidLayout of (Types.ty[@printer pp_ty])
+    [@diag.format "Invalid layout: %a"]
+    [@diag.severity Bug]
+    (** Type is too large for memory *)
   | `InvalidAlloc
+    [@diag.format "Invalid allocation, wrong size or align provided"]
+    [@diag.severity Bug]
     (** Error in alloc/realloc; a wrong alignment or size was provided *) ]
+[@@deriving diagnostic]
 
 type warn_reason = InvalidReference of Typed.T.sloc Typed.t [@@deriving hash]
 
@@ -71,68 +163,6 @@ let is_unwindable : [> t ] -> bool = function
   | `Panic _ | `Overflow ->
       true
   | _ -> false
-
-let rec pp ft : [> t ] -> unit = function
-  | `AccessedFnPointer -> Fmt.string ft "Accessed function pointer's pointee"
-  | `AliasingError -> Fmt.string ft "Aliasing error"
-  | `Breakpoint -> Fmt.string ft "Breakpoint hit"
-  | `DeadVariable -> Fmt.string ft "Dead variable accessed"
-  | `DivisionByZero -> Fmt.string ft "Division by zero"
-  | `DoubleFree -> Fmt.string ft "Double free"
-  | `FailedAssert (Some msg) -> Fmt.pf ft "Failed assertion: %s" msg
-  | `FailedAssert None -> Fmt.string ft "Failed assertion"
-  | `InvalidAlloc ->
-      Fmt.string ft "Invalid allocation, wrong size or align provided"
-  | `InvalidFnArgCount (exp, got) ->
-      Fmt.pf ft
-        "Wrong number of arguments in function call; expected %d, received %d"
-        exp got
-  | `InvalidFnArgTys (exp, got) ->
-      Fmt.pf ft
-        "Mismatch in types expected of function; expected %a, received %a" pp_ty
-        exp pp_ty got
-  | `InvalidFree -> Fmt.string ft "Invalid free"
-  | `InvalidFreeStrongProtector ->
-      Fmt.string ft
-        "Tried freeing an allocation which was passed to a function by \
-         reference"
-  | `InvalidLayout ty -> Fmt.pf ft "Invalid layout: %a" pp_ty ty
-  | `InvalidRef e -> Fmt.pf ft "Invalid reference: %a" pp e
-  | `InvalidShift -> Fmt.string ft "Invalid binary shift"
-  | `MemoryLeak -> Fmt.string ft "Memory leak"
-  | `MetaExpectedError -> Fmt.string ft "Meta: expected an error"
-  | `MisalignedFnPointer -> Fmt.string ft "Misaligned function pointer"
-  | `MisalignedPointer (exp, got, ofs) ->
-      Fmt.pf ft "Misaligned pointer; expected %a, received %a with offset %a"
-        Typed.ppa exp Typed.ppa got Typed.ppa ofs
-  | `NotAFnPointer -> Fmt.string ft "Not a function pointer"
-  | `NullDereference -> Fmt.string ft "Null dereference"
-  | `OutOfBounds -> Fmt.string ft "Out of bounds"
-  | `Overflow -> Fmt.string ft "Overflow"
-  | `Panic (Some msg) -> Fmt.pf ft "Panic: %s" msg
-  | `Panic None -> Fmt.pf ft "Panic"
-  | `RefInvalidatedEarly ->
-      Fmt.string ft "Protected ref invalidated before function ended"
-  | `RefToUninhabited ty -> Fmt.pf ft "Ref to uninhabited type: %a" pp_ty ty
-  | `StdErr msg -> Fmt.pf ft "UB in std: %s" msg
-  | `UninitializedMemoryAccess -> Fmt.string ft "Uninitialized memory access"
-  | `UBAbort -> Fmt.string ft "UB: undefined behaviour trap reached"
-  | `UBDanglingPointer -> Fmt.string ft "Dangling pointer"
-  | `UBPointerArithmetic -> Fmt.string ft "UB: pointer arithmetic"
-  | `UBPointerComparison -> Fmt.string ft "UB: pointer comparison"
-  | `UBIntToPointerNoProvenance addr ->
-      Fmt.pf ft "UB: int to pointer without exposed address: %a" Typed.ppa addr
-  | `UBIntToPointerStrict ->
-      Fmt.string ft
-        "Attempted to cast an integer to an pointer with strict provenance"
-  | `UBTransmute msg -> Fmt.pf ft "UB: Transmute: %s" msg
-  | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
-  | `UseAfterFree -> Fmt.string ft "Use after free"
-
-let severity : t -> Soteria.Terminal.Diagnostic.severity = function
-  | `MemoryLeak -> Warning
-  | e when is_unwindable e -> Error
-  | _ -> Bug
 
 type with_trace = t * Meta.span_data Soteria.Terminal.Call_trace.t
 

@@ -21,5 +21,11 @@
   ./sym_state/ignored_is_empty_pp.ml
   ./sym_state/syn_manifest.ml
   ./sym_state/syn_manifest_mismatch.ml
-  ./sym_state/invalid_non_t.ml)
+  ./sym_state/invalid_non_t.ml
+  ./diagnostic/simple.ml
+  ./diagnostic/guess.ml
+  ./diagnostic/lambda.ml
+  ./diagnostic/poly_variant.ml
+  ./diagnostic/printer_attr.ml
+  ./diagnostic/invalid_format.ml)
  (applies_to :whole_subtree))
