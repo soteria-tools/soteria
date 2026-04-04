@@ -1,9 +1,13 @@
-Ignored field usage
-  $ ./test.sh ignored.ml
+Reject manifest syn mismatch
+  $ ../test.sh syn_manifest_mismatch.ml
   open Prelude
   
+  module Syn = struct
+    type t = Ser_heap of Heap.syn | Ser_steps of Typed.Expr.t
+  end
+  
   type t = { heap : Heap.t option; steps : int [@sym_state.ignore { empty = 0 }] }
-  [@@deriving sym_state { symex = Symex }]
+  [@@deriving sym_state { symex = Symex; syn = Syn.t }]
   
   include struct
     [@@@ocaml.warning "-60"]
@@ -32,7 +36,7 @@ Ignored field usage
     let show x = Format.asprintf "%a" pp x
     let _ = show
   
-    type syn = Ser_heap of Heap.syn
+    type syn = Syn.t = Ser_heap of Heap.syn
   
     let pp_syn ft (s : syn) =
       match s with
@@ -117,4 +121,10 @@ Ignored field usage
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]
-  Success ✅
+  ocamlfind: [WARNING] Package `mtime.clock.os': Deprecated, use the mtime.clock library.
+  File "out.ml", lines 36-37, characters 4-28:
+  36 | ....type syn = Syn.t =
+  37 |       | Ser_heap of Heap.syn.
+  Error: This variant or record definition does not match that of type Syn.t
+         An extra constructor, Ser_steps, is provided in the original definition.
+  [1]

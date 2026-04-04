@@ -69,7 +69,13 @@ let err ?loc msg =
   Location.raise_errorf ~loc "[@@deriving %s] %s" Names.ppx msg
 
 type context_attr = { field : string; ctx_sym_state : Longident.t }
-type ignored_field = { empty : expression }
+
+type ignored_field = {
+  empty : expression;
+  is_empty : expression option;
+  pp : expression option;
+}
+
 type managed_field = { sym_state : Longident.t; context : context_attr option }
 type field_kind = Managed of managed_field | Ignored of ignored_field
 type field = { name : string; kind : field_kind; loc : Location.t }
@@ -96,14 +102,53 @@ module Attributes = struct
       find_attrib name ld
       |> Option.map @@ fun (attr : attribute) ->
          let@ loc = with_loc attr.attr_loc in
-         match find_attr_field attr "empty" with
-         | Some _, (a, _) :: _ ->
+         let all_fields =
+           match attr.attr_payload with
+           | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
+               match expr.pexp_desc with
+               | Pexp_record (fields, None) -> fields
+               | _ ->
+                   Fmt.kstr (err ~loc)
+                     "expects [@%s { empty = <expr>; is_empty = <expr>?; pp = \
+                      <expr>? }]"
+                     name)
+           | _ ->
+               Fmt.kstr (err ~loc)
+                 "expects [@%s { empty = <expr>; is_empty = <expr>?; pp = \
+                  <expr>? }]"
+                 name
+         in
+         let unknown =
+           List.find_opt
+             (fun ({ txt; _ }, _) ->
+               match txt with
+               | Lident ("empty" | "is_empty" | "pp") -> false
+               | Lident _ -> true
+               | _ -> true)
+             all_fields
+         in
+         (match unknown with
+         | Some ({ txt; _ }, _) ->
              Fmt.kstr (err ~loc)
-               "unexpected field '%a' in [@%s], only 'field' expected"
-               pp_longident a.txt name
-         | Some empty, [] -> { empty }
-         | None, _ ->
-             Fmt.kstr (err ~loc) "expects [@%s { empty = <expr> }]" name
+               "unexpected field '%a' in [@%s], expected one of empty, \
+                is_empty, pp"
+               pp_longident txt name
+         | None -> ());
+         let get_field name =
+           all_fields
+           |> List.find_map (fun ({ txt; _ }, v) ->
+               match txt with Lident n when n = name -> Some v | _ -> None)
+         in
+         let empty = get_field "empty" in
+         let is_empty = get_field "is_empty" in
+         let pp = get_field "pp" in
+         match empty with
+         | Some empty -> { empty; is_empty; pp }
+         | None ->
+             Fmt.kstr (err ~loc)
+               "expects [@%s { empty = <expr>; is_empty = <expr>?; pp = \
+                <expr>? }]"
+               name
   end
 
   module Context = struct
@@ -283,8 +328,18 @@ let pp_item ~loc fields =
           | None -> Format.pp_print_string fmt "empty"
           | Some v -> [%e pexp_ident_dot sym_state "pp"] fmt v);
           Format.fprintf fmt "@]"]
-    | Ignored _ ->
-        [%expr Format.fprintf fmt "@[%s =@ <ignored>@]" [%e estring f.name]]
+    | Ignored _ -> (
+        let loc = f.loc in
+        let ignored = match f.kind with Ignored i -> i | _ -> assert false in
+        match ignored.pp with
+        | Some pp ->
+            [%expr
+              Format.fprintf fmt "@[%s =@ " [%e estring f.name];
+              [%e pp] fmt [%e pexp_field [%expr x] (lident f.name)];
+              Format.fprintf fmt "@]"]
+        | None ->
+            [%expr Format.fprintf fmt "@[%s =@ <ignored>@]" [%e estring f.name]]
+        )
   in
   let body =
     fold_fields fields ~empty:[%expr ()] ~f ~join:(fun acc expr ->
@@ -345,7 +400,11 @@ let to_opt_item ~loc fields =
   | [] ->
       [%stri let to_opt = function [%p all_none_pat] -> None | t -> Some t]
   | hd :: tl ->
-      let is_emp (f, i) = [%expr [%e evar f.name] = [%e i.empty]] in
+      let is_emp (f, i) =
+        match i.is_empty with
+        | Some is_empty -> [%expr [%e is_empty] [%e evar f.name]]
+        | None -> [%expr [%e evar f.name] = [%e i.empty]]
+      in
       let all_ignored_are_emp =
         List.fold_left
           (fun acc f -> [%expr [%e acc] && [%e is_emp f]])

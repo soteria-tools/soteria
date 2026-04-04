@@ -1,8 +1,9 @@
-Simple usage
-  $ ./test.sh simple.ml
+Ignored field usage
+  $ ../test.sh ignored.ml
   open Prelude
   
-  type t = { heap : Heap.t option } [@@deriving sym_state { symex = Symex }]
+  type t = { heap : Heap.t option; steps : int [@sym_state.ignore { empty = 0 }] }
+  [@@deriving sym_state { symex = Symex }]
   
   include struct
     [@@@ocaml.warning "-60"]
@@ -23,6 +24,8 @@ Simple usage
       | None -> Format.pp_print_string fmt "empty"
       | Some v -> Heap.pp fmt v);
       Format.fprintf fmt "@]";
+      Format.fprintf fmt ";@ ";
+      Format.fprintf fmt "@[%s =@ <ignored>@]" "steps";
       Format.fprintf fmt "@ }@]"
   
     let _ = pp
@@ -39,9 +42,13 @@ Simple usage
     let _ = pp_syn
     let show_syn s = Format.asprintf "%a" pp_syn s
     let _ = show_syn
-    let of_opt = function None -> { heap = None } | Some v -> v
+    let of_opt = function None -> { heap = None; steps = 0 } | Some v -> v
     let _ = of_opt
-    let to_opt = function { heap = None } -> None | t -> Some t
+  
+    let to_opt = function
+      | { heap = None; steps } when steps = 0 -> None
+      | t -> Some t
+  
     let _ = to_opt
     let empty = None
     let _ = empty
@@ -64,12 +71,23 @@ Simple usage
       let open SM.Syntax in
       let* st_opt = SM.get_state () in
       let st = of_opt st_opt in
-      let { heap } = st in
+      let { heap; _ } = st in
       let*^ res, heap = f heap in
-      let+ () = SM.set_state (to_opt { heap }) in
+      let+ () = SM.set_state (to_opt { st with heap }) in
       res
   
     let _ = with_heap_sym
+  
+    let with_steps_sym f =
+      let open SM.Syntax in
+      let* st_opt = SM.get_state () in
+      let st = of_opt st_opt in
+      let { steps; _ } = st in
+      let**^ res, steps = f steps in
+      let+ () = SM.set_state (to_opt { st with steps }) in
+      Soteria.Symex.Compo_res.Ok res
+  
+    let _ = with_steps_sym
     let with_heap f = SM.Result.map_missing (with_heap_sym f) lift_heap_fixes
     let _ = with_heap
   
@@ -79,7 +97,7 @@ Simple usage
       match syn with
       | Ser_heap v ->
           let+ heap = Heap.produce v st.heap in
-          to_opt { heap }
+          to_opt { st with heap }
       | _ -> .
   
     let _ = produce
@@ -94,7 +112,7 @@ Simple usage
             let+? fixes = Heap.consume v st.heap in
             lift_heap_fixes fixes
           in
-          to_opt { heap }
+          to_opt { st with heap }
       | _ -> .
   
     let _ = consume

@@ -1,5 +1,5 @@
 Context that doesn't match the monad type
-  $ ./test.sh context_invalid.ml
+  $ ../test.sh context_invalid.ml
   open Prelude
   
   type t = {
