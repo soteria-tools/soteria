@@ -10,17 +10,10 @@ end
 let has_ignore_attr =
   List.exists (fun (attr : attribute) -> attr.attr_name.txt = Names.ignore_attr)
 
-let strip_t = function Ldot (path, "t") -> Some path | _ -> None
-
-let module_of_core_type (ct : core_type) =
-  match ct.ptyp_desc with
-  | Ptyp_constr ({ txt; _ }, []) -> strip_t txt
-  | _ -> None
-
 let module_of_core_type_exn (ct : core_type) =
-  match module_of_core_type ct with
-  | Some m -> m
-  | None ->
+  match ct.ptyp_desc with
+  | Ptyp_constr ({ txt = Ldot (path, "t"); _ }, []) -> path
+  | _ ->
       Location.raise_errorf ~loc:ct.ptyp_loc
         "[@@deriving %s] expects fields/components to have type <Module>.t"
         Names.ppx
@@ -42,15 +35,17 @@ let seq_of_exprs ~loc = function
 let map_fields f =
   List.map (fun ((_, _, loc, _) as field) -> with_loc loc (fun _ -> f field))
 
+let mk_field name ty loc attrs =
+  let mod_path = module_of_core_type_exn ty in
+  (name, mod_path, loc, has_ignore_attr attrs)
+
+let init_of_field (_, mod_path, _, _) = module_call mod_path "init" [ eunit () ]
+
 let mk_record_impl ~loc labels =
   let fields =
-    List.map
-      (fun ld ->
-        ( ld.pld_name.txt,
-          module_of_core_type_exn ld.pld_type,
-          ld.pld_loc,
-          has_ignore_attr ld.pld_attributes ))
-      labels
+    labels
+    |> List.map (fun ld ->
+        mk_field ld.pld_name.txt ld.pld_type ld.pld_loc ld.pld_attributes)
   in
   if List.for_all (fun (_, _, _, i) -> i) fields then
     Location.raise_errorf ~loc
@@ -58,11 +53,10 @@ let mk_record_impl ~loc labels =
       Names.ppx;
   let arg_pattern () = [%pat? state] in
   let mk_init () =
-    pexp_record
-      (fields
-      |> map_fields (fun (name, mod_path, _, _) ->
-          (wloc (Lident name), module_call mod_path "init" [ eunit () ])))
-      None
+    fields
+    |> map_fields (fun ((name, _, _, _) as f) ->
+        (wloc (Lident name), init_of_field f))
+    |> Fun.flip pexp_record None
   in
   let call_on_fields fn args =
     fields
@@ -76,13 +70,9 @@ let mk_record_impl ~loc labels =
 
 let mk_tuple_impl ~loc tys =
   let fields =
-    List.mapi
-      (fun i ty ->
-        ( Printf.sprintf "x%d" i,
-          module_of_core_type_exn ty,
-          ty.ptyp_loc,
-          has_ignore_attr ty.ptyp_attributes ))
-      tys
+    tys
+    |> List.mapi (fun i ty ->
+        mk_field (Printf.sprintf "x%d" i) ty ty.ptyp_loc ty.ptyp_attributes)
   in
   if List.for_all (fun (_, _, _, i) -> i) fields then
     Location.raise_errorf ~loc
@@ -94,12 +84,7 @@ let mk_tuple_impl ~loc tys =
         if ignore then ppat_any () else pvar name)
     |> ppat_tuple
   in
-  let mk_init () =
-    fields
-    |> map_fields (fun (_, mod_path, _, _) ->
-        module_call mod_path "init" [ eunit () ])
-    |> pexp_tuple
-  in
+  let mk_init () = fields |> map_fields init_of_field |> pexp_tuple in
   let call_on_fields fn args =
     fields
     |> List.filter (fun (_, _, _, ignore) -> not ignore)
