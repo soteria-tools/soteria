@@ -74,48 +74,18 @@ struct
     state : Solver_state.t;
     analysis : Analysis.t;
   }
-
-  let init () =
-    let z3_exe = Intf.init () in
-    Intf.push z3_exe 1;
-    {
-      z3_exe;
-      save_counter = Save_counter.init ();
-      var_counter = Var_counter.init ();
-      state = Solver_state.init ();
-      analysis = Analysis.init ();
-    }
-
-  let save solver =
-    Var_counter.save solver.var_counter;
-    Save_counter.save solver.save_counter;
-    Solver_state.save solver.state;
-    Analysis.save solver.analysis;
-    Intf.push solver.z3_exe 1
-
-  let backtrack_n solver n =
-    Var_counter.backtrack_n solver.var_counter n;
-    Solver_state.backtrack_n solver.state n;
-    Save_counter.backtrack_n solver.save_counter n;
-    Analysis.backtrack_n solver.analysis n;
-    Intf.pop solver.z3_exe n
+  [@@deriving reversible]
 
   (* Initialise and reset *)
 
+  let init () =
+    let s = init () in
+    Intf.push s.z3_exe 1;
+    s
+
   let reset solver =
-    (* We want to go back to 1, meaning after the first push which saved the
-       declarations *)
-    let save_counter = !(solver.save_counter) in
-    if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
-    Save_counter.reset solver.save_counter;
-    Var_counter.reset solver.var_counter;
-    Solver_state.reset solver.state;
-    Analysis.reset solver.analysis;
-    (* We need to pop the initial push, so we go back to the state before the
-       first push *)
-    Intf.pop solver.z3_exe (save_counter + 1);
-    (* Make sure the basic definitions are saved again *)
-    Intf.pop solver.z3_exe 1
+    reset solver;
+    Intf.push solver.z3_exe 1
 
   let fresh_var solver ty =
     let v_id = Var_counter.get_next solver.var_counter in
@@ -395,47 +365,13 @@ struct
   end
 
   type t = {
-    z3_exe : Intf.t;
+    z3_exe : Intf.t; [@reversible.ignore]
     vars : Declared_vars.t;
     save_counter : Save_counter.t;
     state : Solver_state.t;
     analysis : Analysis.t;
   }
-
-  let init () =
-    let z3_exe = Intf.init () in
-    (* Before every check-sat we pop then push again. *)
-    {
-      z3_exe;
-      save_counter = Save_counter.init ();
-      vars = Declared_vars.init ();
-      state = Solver_state.init ();
-      analysis = Analysis.init ();
-    }
-
-  let save solver =
-    Declared_vars.save solver.vars;
-    Save_counter.save solver.save_counter;
-    Solver_state.save solver.state;
-    Analysis.save solver.analysis
-
-  let backtrack_n solver n =
-    Declared_vars.backtrack_n solver.vars n;
-    Solver_state.backtrack_n solver.state n;
-    Save_counter.backtrack_n solver.save_counter n;
-    Analysis.backtrack_n solver.analysis n
-
-  (* Initialise and reset *)
-
-  let reset solver =
-    (* We want to go back to 1, meaning after the first push which saved the
-       declarations *)
-    let save_counter = !(solver.save_counter) in
-    if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
-    Save_counter.reset solver.save_counter;
-    Declared_vars.reset solver.vars;
-    Solver_state.reset solver.state;
-    Analysis.reset solver.analysis
+  [@@deriving reversible]
 
   let fresh_var solver ty =
     Declared_vars.fresh solver.vars (Typed.untype_type ty)
