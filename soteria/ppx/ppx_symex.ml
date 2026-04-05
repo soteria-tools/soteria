@@ -18,11 +18,12 @@ let () =
   in
   List.iter register [ Sat; Sat1; Sure ]
 
-let () = Expander.Reversible.register ()
-
 (* Register [0s], [1s] etc. *)
 let () =
   let open Expander.Sym_constants in
   let kind = Context_free.Rule.Constant_kind.Integer in
   let rule = Context_free.Rule.constant kind suffix rewriter in
   Driver.register_transformation ~rules:[ rule ] "sym_constants"
+
+(* Register [@@deriving reversible] *)
+let () = Reversible.register ()
