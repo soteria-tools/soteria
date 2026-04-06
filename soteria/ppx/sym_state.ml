@@ -28,16 +28,11 @@ module Helpers = struct
   let record_of_names ?base names =
     pexp_record (List.map (fun n -> (lident n, evar n)) names) base
 
-  let find_attrib attr_name (ld : label_declaration) =
-    ld.pld_attributes
-    |> List.find_opt (fun (attr : attribute) ->
-        String.equal attr.attr_name.txt attr_name)
-
   (** Given an attribute and a list of fields, returns the bindings to those
       fields in the order they are provided, along with the list of remaining
       bindings. Returns Err if the input attribute does not have a struct
       associated. *)
-  let find_attr_fields attr fields =
+  let find_expr_fields expr fields =
     let rec find_field field rest = function
       | [] -> (None, rest)
       | ({ txt; _ }, v) :: tl when txt = Lident field -> (Some v, rest @ tl)
@@ -49,11 +44,8 @@ module Helpers = struct
           let found, rest = find_field field [] rest in
           find_fields (found :: acc) rest tl
     in
-    match attr.attr_payload with
-    | PStr [ { pstr_desc = Pstr_eval (expr, _); _ } ] -> (
-        match expr.pexp_desc with
-        | Pexp_record (bindings, None) -> Ok (find_fields [] bindings fields)
-        | _ -> Error ())
+    match expr.pexp_desc with
+    | Pexp_record (bindings, None) -> Ok (find_fields [] bindings fields)
     | _ -> Error ()
 end
 
@@ -100,30 +92,37 @@ let ignored_fields =
       match f.kind with Ignored i -> Some (f, i) | _ -> None)
 
 module Attributes = struct
-  let validate_attr_field ~name attr fields =
-    match find_attr_fields attr fields with
+  let validate_attr_field ~name ~loc expr fields =
+    match find_expr_fields expr fields with
     | Ok (found, []) ->
         assert (List.compare_lengths found fields = 0);
         found
     | Ok (_, extra) ->
-        Fmt.kstr (err ~loc:attr.attr_loc)
+        Fmt.kstr (err ~loc)
           "unexpected field(s) '%a' in [@%s], expected one of %s"
           Fmt.(list ~sep:(Fmt.any ", ") pp_longident)
           (List.map (fun (f, _) -> f.txt) extra)
           name
           (String.concat "; " fields)
     | Error () ->
-        Fmt.kstr (err ~loc:attr.attr_loc) "expects [@%s { %s }]" name
+        Fmt.kstr (err ~loc) "expects [@%s { %s }]" name
           (String.concat "; " fields)
 
   module Ignore = struct
     let name = Names.ignore_attr
 
+    let attr =
+      Attribute.declare_with_attr_loc name Attribute.Context.label_declaration
+        Ast_pattern.(single_expr_payload __)
+        (fun ~attr_loc expr -> (attr_loc, expr))
+
     let find_opt ld =
-      find_attrib name ld
-      |> Option.map @@ fun (attr : attribute) ->
-         let@ loc = with_loc attr.attr_loc in
-         match validate_attr_field ~name attr [ "empty"; "is_empty"; "pp" ] with
+      Attribute.get attr ld
+      |> Option.map @@ fun (attr_loc, expr) ->
+         let@ loc = with_loc attr_loc in
+         match
+           validate_attr_field ~name ~loc expr [ "empty"; "is_empty"; "pp" ]
+         with
          | [ None; _is_empty; _pp ] ->
              Fmt.kstr (err ~loc) "expects [@%s { empty = <expr>; ... }]" name
          | [ Some empty; is_empty; pp ] -> { empty; is_empty; pp }
@@ -133,15 +132,20 @@ module Attributes = struct
   module Context = struct
     let name = Names.context_attr
 
+    let attr =
+      Attribute.declare_with_attr_loc name Attribute.Context.label_declaration
+        Ast_pattern.(single_expr_payload __)
+        (fun ~attr_loc expr -> (attr_loc, expr))
+
     let find_opt ld =
-      find_attrib name ld
-      |> Option.map @@ fun attr ->
-         match validate_attr_field ~name attr [ "field" ] with
+      Attribute.get attr ld
+      |> Option.map @@ fun (attr_loc, expr) ->
+         match validate_attr_field ~name ~loc:attr_loc expr [ "field" ] with
          | [ Some { pexp_desc = Pexp_ident { txt = Lident field; _ }; _ } ] ->
              { field; ctx_sym_state = Lident "TEMP_PRE_VALIDATION" }
          | _ ->
-             Fmt.kstr (err ~loc:attr.attr_loc)
-               "expects [@%s { field = <field> }]" name
+             Fmt.kstr (err ~loc:attr_loc) "expects [@%s { field = <field> }]"
+               name
 
     let validate (fields : field list) =
       fields
@@ -191,7 +195,8 @@ module Attributes = struct
            | [ a ] -> acc ^ "and [@" ^ a ^ "]"
            | a :: rest -> pp_attrs ~acc:(acc ^ "[@" ^ a ^ "], ") rest
          in
-         err ~loc:attr.attr_loc ("only supports attributes " ^ pp_attrs allowed)
+         Fmt.kstr (err ~loc:attr.attr_loc) "only supports attributes %s, got %s"
+           (pp_attrs allowed) attr.attr_name.txt
 
   let validate fs = Context.validate fs
 end
