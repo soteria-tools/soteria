@@ -2,6 +2,8 @@
 
 Welcome to the Soteria logging tutorial! This tutorial will guide you through using the {{!Soteria.Logs}Logs} module for debugging and analyzing your symbolic execution programs.
 
+Soteria's logging interface is inspired by the {{:https://opam.ocaml.org/packages/logs/}[logs]} library, but its implementation is adapted to integrate with symbolic execution and produce structured HTML output.
+
 Today you'll be learning how to:
 - {{!basic}Log messages} at different levels
 - {{!config}Configure} logging for your needs
@@ -66,7 +68,7 @@ L.error (fun m -> m "Failed to parse input");
 (* -> [ERROR] Failed to parse input *)
 ]}
 
-The {{!Soteria.Logs.L.smt}smt} level is special: it's designed for logging SMT solver interactions, which can be extremely verbose but crucial for understanding solver behavior:
+The {{!Soteria.Logs.L.smt}smt} level is special: it's designed for logging SMT solver interactions, which can be extremely verbose but crucial for understanding solver behavior. Unless you're implementing a solver backend, you usually shouldn't need this level:
 
 {@ocaml[
 L.smt (fun m -> m "Querying solver: (assert (> x 0))");;
@@ -77,7 +79,7 @@ L.smt (fun m -> m "Querying solver: (assert (> x 0))");;
 
 Logging behavior is controlled by {{!Soteria.Logs.Config}Logs.Config}. You can configure:
 
-- The minimum log level to display
+- The maximum verbosity level to display
 - The output format (text to stderr or HTML)
 - Whether to always log SMT queries regardless of level
 - Whether to use colors in text output
@@ -94,6 +96,8 @@ let log_config = Soteria.Logs.Config.make
   ();;
 Soteria.Logs.Config.set_and_lock log_config;
 ]}
+
+{b Important:} configuration is global and can only be set once. After calling [set_and_lock], trying to set it again will raise an exception.
 
 For command-line applications, Soteria provides Cmdliner integration via {{!Soteria.Logs.Config.cmdliner_term}Logs.Config.cmdliner_term}.
 
@@ -124,7 +128,7 @@ L.with_section "Analyzing Module" (fun () ->
 );;
 ]}
 
-In HTML mode, each call to [with_section] renders as a collapsible [<details>] block that can be expanded or collapsed in the browser. For instance, the above code would generate the following HTML (you can click around!):
+In HTML mode, each call to [with_section] renders as a collapsible block that can be expanded or collapsed in the browser. For instance, the above code would generate the following HTML (you can click around!):
 
 {%html:
     <!-- This is copied from a generated .html file, if we update the HTML output we must update it here. -->
@@ -240,7 +244,7 @@ In HTML mode, each call to [with_section] renders as a collapsible [<details>] b
 
 {b Important:} Do not use [with_section] inside symbolic processes (functions that return ['a Symex.t]) that may branch, because the section will be opened once but closed multiple times. Soteria will automatically create sections when branching occurs inside a process.
 
-{b Note:} {{!Soteria.Logs.L.with_section}with_section} has a [?is_branch] parameter, that is meant only for use when writing your own {{!Soteria.Symex.S}Symex} implementation; it usually doesn't need to be specified.
+{b Note:} {{!Soteria.Logs.L.with_section}with_section} has a [?is_branch] parameter, that is meant only for use when writing your own {{!Soteria.Symex.S}Symex} implementation; most users should {i never} use this parameter.
 
 {2:printers Pretty Printing and Formatting}
 

@@ -84,15 +84,16 @@ Now we can read the statistics back; {!Soteria.Stats} exposes several helper get
 
 Use {{!Soteria.Stats.As_ctx.add_time_of_to}[add_time_of_to]} to measure how long an operation takes:
 
-{@ocaml skip[
+{@ocaml[
 # let slow_computation () =
     let rec fib n = if n <= 1 then n else fib (n-1) + fib (n-2) in
     fib 30
   in
-  let result =
-    let@ () = Stats.As_ctx.with_stats () in
-    Stats.As_ctx.add_time_of_to "compute_time" slow_computation;;
-val result : int Stats.with_stats = {Stats.res = 832040; stats = <abstr>}
+  let@ () = Stats.As_ctx.with_stats () in
+  Stats.As_ctx.add_time_of_to "compute_time" slow_computation;;
+- : int Stats.with_stats = {res = 832040; stats = <stats>}
+]}
+{@ocaml skip[
 # let time_taken = Stats.get_float result.stats "compute_time";;
 val time_taken : float = 0.024188995361328125
 ]}
@@ -141,39 +142,6 @@ Maps allow you to organize statistics hierarchically. Use {{!Soteria.Stats.As_ct
 - : Stats.stat_entry Soteria_std.Hashtbl.Hstring.t =
   main -> Stats.Int 8
   helper -> Stats.Int 12
-]}
-
-{3 How Statistics Merge}
-
-A crucial feature of the statistics system is automatic merging when multiple branches of execution contribute statistics. Let's see this in action:
-
-{@ocaml[
-let merged_stats =
-  let res_1 = Stats.As_ctx.with_stats () (fun () ->
-    Stats.As_ctx.add_int "branch_steps" 10;
-    Stats.As_ctx.push_str "paths" "branch_1";
-    ()
-  ) in
-
-  let res_2 = Stats.As_ctx.with_stats () (fun () ->
-    Stats.As_ctx.add_int "branch_steps" 15;
-    Stats.As_ctx.push_str "paths" "branch_2";
-    ()
-  ) in
-
-  Stats.merge res_1.stats res_2.stats
-]}
-
-After merging:
-- Int values are added: 10 + 15 = 25 steps
-- StrSeq values are concatenated: ["branch_1"; "branch_2"]
-- Map entries are merged recursively
-
-{@ocaml[
-# Stats.get_int merged_stats "branch_steps";;
-- : int = 25
-# Stats.get_strseq merged_stats "paths";;
-- : string Dynarray.t = ["branch_1", "branch_2"]
 ]}
 
 {2:custom Custom Printers}
