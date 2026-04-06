@@ -72,10 +72,8 @@ let ignored_fields =
       match f.kind with Ignored i -> Some (f, i) | _ -> None)
 
 module Attributes = struct
-  (** Given an attribute and a list of fields, returns the bindings to those
-      fields in the order they are provided, along with the list of remaining
-      bindings. Returns Err if the input attribute does not have a struct
-      associated. *)
+  (** Given a list of fields, returns their bindings in order and all extra
+      bindings. *)
   let find_expr_fields bindings fields =
     let rec find_field field rest = function
       | [] -> (None, rest)
@@ -90,12 +88,51 @@ module Attributes = struct
     in
     find_fields [] bindings fields
 
-  let validate_attr_field ~name fields ~attr_loc bindings =
+  type _ arg =
+    | Must : string -> expression arg
+    | May : string -> expression option arg
+    | Pair : 'a arg * 'b arg -> ('a * 'b) arg
+
+  let must name = Must name
+  let may name = May name
+  let ( ** ) lhs rhs = Pair (lhs, rhs)
+
+  let rec arg_names : type a. a arg -> string list = function
+    | Must name -> [ name ]
+    | May name -> [ name ]
+    | Pair (lhs, rhs) -> arg_names lhs @ arg_names rhs
+
+  let rec parse_args : type a.
+      name:string -> loc:Location.t -> a arg -> expression option list -> a =
+   fun ~name ~loc arg values ->
+    let split_at n xs =
+      let rec go i left = function
+        | right when i <= 0 -> (List.rev left, right)
+        | [] -> (List.rev left, [])
+        | x :: right -> go (i - 1) (x :: left) right
+      in
+      go n [] xs
+    in
+    match (arg, values) with
+    | Must _, Some v :: _tl -> v
+    | Must field, None :: _tl ->
+        Fmt.kstr (err ~loc) "expects [@%s { %s = <expr>; ... }]" name field
+    | May _, v :: _tl -> v
+    | Pair (lhs, rhs), _ ->
+        let lhs_names = arg_names lhs in
+        let lhs_count = List.length lhs_names in
+        let lhs_values, rhs_values = split_at lhs_count values in
+        ( parse_args ~name ~loc lhs lhs_values,
+          parse_args ~name ~loc rhs rhs_values )
+    | _, [] -> failwith "Impossible"
+
+  let validate_attr_field ~name args ~attr_loc bindings =
     let@ loc = with_loc attr_loc in
+    let fields = arg_names args in
     match find_expr_fields bindings fields with
     | found, [] ->
         assert (List.compare_lengths found fields = 0);
-        found
+        parse_args ~name ~loc args found
     | _, extra ->
         Fmt.kstr (err ~loc)
           "unexpected field(s) '%a' in [@%s], expected one of %s"
@@ -104,33 +141,28 @@ module Attributes = struct
           name
           (String.concat "; " fields)
 
-  let declare_record name fields =
+  let declare_record name args =
     Attribute.declare_with_attr_loc name Attribute.Context.label_declaration
       Ast_pattern.(single_expr_payload (pexp_record __ drop))
-      (validate_attr_field ~name fields)
+      (validate_attr_field ~name args)
 
   module Ignore = struct
     let name = Names.ignore_attr
-    let attr = declare_record name [ "empty"; "is_empty"; "pp" ]
+    let attr = declare_record name (must "empty" ** may "is_empty" ** may "pp")
 
     let find_opt ld =
       Attribute.get attr ld
-      |> Option.map @@ function
-         | [ None; _is_empty; _pp ] ->
-             Fmt.kstr (err ?loc:None) "expects [@%s { empty = <expr>; ... }]"
-               name
-         | [ Some empty; is_empty; pp ] -> { empty; is_empty; pp }
-         | _ -> failwith "Impossible"
+      |> Option.map @@ fun (empty, (is_empty, pp)) -> { empty; is_empty; pp }
   end
 
   module Context = struct
     let name = Names.context_attr
-    let attr = declare_record name [ "field" ]
+    let attr = declare_record name (must "field")
 
     let find_opt ld =
       Attribute.get attr ld
       |> Option.map @@ function
-         | [ Some { pexp_desc = Pexp_ident { txt = Lident field; _ }; _ } ] ->
+         | { pexp_desc = Pexp_ident { txt = Lident field; _ }; _ } ->
              { field; ctx_sym_state = Lident "TEMP_PRE_VALIDATION" }
          | _ ->
              Fmt.kstr (err ?loc:None) "expects [@%s { field = <field> }]" name
