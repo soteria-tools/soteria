@@ -11,6 +11,6 @@
   ./reversible/prelude.ml
   ./reversible/simple.ml
   ./reversible/ignored.ml
-  ./reversible/err_all_ignored.ml
+  ./reversible/all_ignored.ml
   ./reversible/err_non_t.ml)
  (applies_to :whole_subtree))
