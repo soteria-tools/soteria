@@ -19,8 +19,14 @@ module StateKey = struct
   include Typed
 
   type t = T.sloc Typed.t
+  type syn = Expr.t [@@deriving show]
 
+  let to_syn v = Expr.of_value v
+  let learn_eq (s : syn) (v : t) = DecayMapMonad.Consumer.learn_eq s v
+  let exprs_syn v = [ v ]
+  let subst = Expr.subst
   let pp = ppa
+  let show = Fmt.to_to_string pp
   let to_int = unique_tag
   let concrete_loc = ref 0
   let simplify = DecayMapMonad.simplify
@@ -55,7 +61,7 @@ end
 
 type global = String of string | Global of Types.global_decl_id
 
-module GlobMap = Map.MakePp (struct
+module GlobMap = Map.Make (struct
   type t = global = String of string | Global of Types.global_decl_id
   [@@deriving show { with_path = false }, ord]
 end)
@@ -68,6 +74,7 @@ module FunBiMap = struct
 
         let compare = Typed.compare
         let pp = Typed.ppa
+        let show = Fmt.to_to_string pp
       end)
       (Fun_kind)
 
@@ -79,6 +86,11 @@ module Block = struct
   type t = Tree_block.t option * Tree_borrow.t
   [@@deriving show { with_path = false }]
 
+  type syn = Tree_block.syn [@@deriving show]
+
+  let to_syn (b, _) = Option.fold ~none:[] ~some:Tree_block.to_syn b
+  let ins_outs b = Tree_block.ins_outs b
+
   let of_opt = function
     | None -> (None, Tree_borrow.ub_state)
     | Some (b1, b2) -> (b1, b2)
@@ -88,10 +100,6 @@ module Block = struct
     function
     | None, _b -> None
     | b1, b2 -> Some (b1, b2)
-
-  type serialized = Tree_block.serialized
-  [@@deriving show { with_path = false }]
-  (* TODO: serialize Tree_borrow as well *)
 
   module SM =
     Soteria.Sym_states.State_monad.Make
@@ -183,15 +191,8 @@ module Block = struct
     let a, _ = of_opt t_opt in
     Tree_block.assert_exclusively_owned a
 
-  let serialize (x, _) = Option.fold ~none:[] ~some:Tree_block.serialize x
-  let subst_serialized f a = Tree_block.subst_serialized f a
-  let iter_vars_serialized f a = Tree_block.iter_vars_serialized f a
-
-  let produce s =
-    let* st = get_state () in
-    let st, tb = of_opt st in
-    let*^ (), st' = Tree_block.produce s st in
-    set_state (to_opt (st', tb))
+  let produce _ _ = failwith "Not implemented"
+  let consume _ _ = failwith "Not implemented"
 end
 
 module Freeable_block = Soteria.Sym_states.Freeable.Make (DecayMapMonad) (Block)
@@ -222,7 +223,7 @@ module Heap = struct
 
   let with_ptr (ptr : Sptr.t)
       (f : [< T.sint ] Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
-      ('a, 'err, serialized list) SM.Result.t =
+      ('a, 'err, syn list) SM.Result.t =
     let open SM in
     let open SM.Syntax in
     let** () =
@@ -261,18 +262,11 @@ module Heap = struct
       (struct
         module SM = SM
 
-        type fix = serialized list
+        type fix = syn list
       end)
 end
 
-type serialized = Heap of Heap.serialized
-[@@deriving show { with_path = false }]
-
-let subst_serialized subst = function
-  | Heap s -> Heap (Heap.subst_serialized subst s)
-
-let iter_vars_serialized ser iter =
-  match ser with Heap s -> Heap.iter_vars_serialized s iter
+type syn = Heap of Heap.syn [@@deriving show { with_path = false }]
 
 type t = {
   heap : Heap.t option;
@@ -283,8 +277,7 @@ type t = {
   thread_destructor :
     unit ->
     t option ->
-    ((unit, Error.with_trace, serialized list) Soteria.Symex.Compo_res.t
-    * t option)
+    ((unit, Error.with_trace, syn list) Soteria.Symex.Compo_res.t * t option)
     Rustsymex.t;
       [@printer Fmt.any "code"]
   const_generics : Sptr.t rust_val Types.ConstGenericVarId.Map.t;
@@ -364,14 +357,14 @@ let with_heap_symex (f : 'a Heap.SM.t) : 'a SM.t =
   let+ () = SM.set_state (Some { st with heap; pointers }) in
   res
 
-let with_heap (f : ('a, 'b, Heap.serialized list) Heap.SM.Result.t) :
-    ('a, 'b, serialized list) Result.t =
+let with_heap (f : ('a, 'b, Heap.syn list) Heap.SM.Result.t) :
+    ('a, 'b, syn list) Result.t =
   SM.Result.map_missing (with_heap_symex f) (fun fix ->
       List.map (fun h -> Heap h) fix)
 
 let apply_parser (type a) ?(ignore_borrow = false) ptr
     (parser : offset:T.sint Typed.t -> a Heap.Decoder.ParserMonad.t) :
-    (a, Error.t, serialized list) Result.t =
+    (a, Error.t, syn list) Result.t =
   let* () = log "load" ptr in
   let handler (ty, ofs) =
     let@ _ofs = Heap.with_ptr ptr in
@@ -430,7 +423,7 @@ and check_non_dangling ((ptr : Sptr.t), meta) (ty : Types.ty) =
     `UBDanglingPointer
 
 and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
-    (Sptr.t rust_val, Error.t, serialized list) Result.t =
+    (Sptr.t rust_val, Error.t, syn list) Result.t =
   let** () = check_ptr_align fptr ty in
   let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
   let** value = apply_parser ?ignore_borrow ptr parser in
@@ -511,7 +504,7 @@ let tb_load ((ptr : Sptr.t), _) ty =
   tb_load_untyped ptr size
 
 let store ((ptr, _) as fptr) ty sval :
-    (unit, Error.with_trace, serialized list) Result.t =
+    (unit, Error.with_trace, syn list) Result.t =
   let@ () = with_loc_err ~trace:"Memory store" () in
   let**^ parts = Encoder.encode ~offset:Usize.(0s) sval ty in
   if Iter.is_empty parts then Result.ok ()
@@ -558,7 +551,7 @@ let fake_read ptr ty =
   fake_read ptr ty
 
 let copy_nonoverlapping ~src:(src, _) ~dst:(dst, _) ~size :
-    (unit, Error.with_trace, serialized list) Result.t =
+    (unit, Error.with_trace, syn list) Result.t =
   let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
   let** tree_to_write =
     let@ ofs = with_ptr src in
@@ -646,8 +639,7 @@ let alloc_ty ?kind ?span ty =
   let**^ layout = Layout.layout_of ty in
   alloc ?kind ?span layout.size layout.align
 
-let alloc_tys ?kind ?span tys : ('a, Error.with_trace, serialized list) Result.t
-    =
+let alloc_tys ?kind ?span tys : ('a, Error.with_trace, syn list) Result.t =
   let@ () = with_loc_err ~trace:"Allocation" () in
   let**^ layouts = Rustsymex.Result.map_list tys ~f:Layout.layout_of in
   let layouts = List.rev layouts in
@@ -771,7 +763,7 @@ let with_exposed addr =
                  let ptr : Sptr.t = { ptr; tag = None; align; size } in
                  Result.ok (ptr, Thin)))
 
-let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
+let leak_check () : (unit, Error.with_trace, syn list) Result.t =
   (* FIXME: this is an unnecessarily complicated function; what we should do is
      properly track what allocations come from a const/static (with Alloc_kind),
      and then simply iterate over all allocations and look for non-const/static
@@ -829,7 +821,7 @@ let leak_check () : (unit, Error.with_trace, serialized list) Result.t =
        Result.error (Error.decorate leak_trace `MemoryLeak)))
 
 let with_errors () (f : Error.with_trace list -> 'a * Error.with_trace list) :
-    ('a, Error.with_trace, serialized list) Result.t =
+    ('a, Error.with_trace, syn list) Result.t =
   let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
   let res, errors = f st.errors in
@@ -928,7 +920,9 @@ let run_thread_exits () =
   let st = of_opt st_opt in
   st.thread_destructor () st_opt
 
-let serialize { heap; _ } =
-  Heap.of_opt heap |> Heap.serialize |> List.map (fun h -> Heap h)
+let to_syn { heap; _ } =
+  Heap.of_opt heap |> Heap.to_syn |> List.map (fun h -> Heap h)
 
-let produce s st = match s with Heap h -> with_heap_symex (Heap.produce h) st
+let ins_outs (Heap r) = Heap.ins_outs r
+let produce _ _ = failwith "TODO: Tree_state.produce"
+let consume _ _ = failwith "TODO: Tree_state.consume"

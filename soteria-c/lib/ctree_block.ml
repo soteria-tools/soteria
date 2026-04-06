@@ -1,7 +1,6 @@
 open Soteria.Symex.Compo_res
 open Csymex.Syntax
 open Typed
-open Typed.Infix
 open Csymex
 open Csymex.Result
 module Ctype = Cerb_frontend.Ctype
@@ -29,6 +28,7 @@ module MemVal = struct
     let sub = Typed.Infix.( -!!@ )
 
     let is_in_bound (v : t Typed.t) : sbool Typed.t =
+      let open Typed.Infix in
       v <=@ Typed.BitVec.isize_max
   end
 
@@ -105,25 +105,24 @@ module MemVal = struct
            uninitialised. We have to approximate and vanish. *)
         Csymex.not_impl "Reading from Any memory, vanishing."
 
-  type serialized =
-    | SInit of (T.cval Typed.t * Ctype.ctype)
-        [@printer Fmt.(pair ~sep:(Fmt.any " : ") Typed.ppa Fmt_ail.pp_ty)]
+  type syn =
+    | SInit of (Expr.t * Ctype.ctype)
+        [@printer Fmt.(pair ~sep:(Fmt.any " : ") Expr.pp Fmt_ail.pp_ty)]
     | SUninit
     | SZeros
     | SAny
   [@@deriving show { with_path = false }]
 
-  let subst_serialized f = function
-    | SInit (v, ty) -> SInit (Typed.subst f v, ty)
-    | v -> v
-
-  let iter_vars_serialized v f =
-    match v with SInit (v, _) -> Typed.iter_vars v f | _ -> ()
+  let ins_outs = function
+    | SInit (v, _) -> ([], [ v ])
+    | SUninit | SZeros | SAny -> ([], [])
 
   (* TODO: serialize tree borrow information! *)
-  let serialize (t : t) : serialized Seq.t option =
+  let to_syn (t : t) : syn Seq.t option =
     match t with
-    | Init v -> Some (Seq.return (SInit v))
+    | Init (v, ty) ->
+        let v = Expr.of_value v in
+        Some (Seq.return (SInit (v, ty)))
     | Uninit Totally -> Some (Seq.return SUninit)
     | Zeros -> Some (Seq.return SZeros)
     | Any -> Some (Seq.return SAny)
@@ -131,7 +130,7 @@ module MemVal = struct
 
   let mk_fix_typed ty () =
     let* v = Layout.nondet_c_ty ty in
-    return [ SInit (v, ty) ]
+    return [ SInit (Expr.of_value v, ty) ]
 
   let mk_fix_any () = [ Any ]
 
@@ -143,49 +142,55 @@ module MemVal = struct
   let owned (t : tree) (v : t) : tree =
     { t with node = Owned v; children = None }
 
-  let consume (s : serialized) (t : tree) : (tree, 'e, 'f) Result.t =
+  let consume (s : syn) (t : tree) : (tree, syn list) Consumer.t =
+    let open Consumer in
+    let open Syntax in
     match (s, t.node) with
     (* init *)
-    | SInit (_, ty), NotOwned _ ->
-        let+ fixes = mk_fix_typed ty () in
-        Missing fixes
+    | s, NotOwned Totally -> miss [ [ s ] ]
+    | _, NotOwned Partially ->
+        miss_no_fix ~reason:"partially missing consume" ()
     | SInit (v, ty), Owned node -> (
-        let* sval_res = decode ~ty node in
+        let*^ sval_res = decode ~ty node in
         match sval_res with
         | Ok sv ->
-            let+ () = assume [ sv ==?@ v ] in
-            Ok (not_owned t)
+            let+ () = learn_eq v sv in
+            not_owned t
         | Missing f -> miss f
-        | Error `UninitializedMemoryAccess -> vanish ())
+        | Error `UninitializedMemoryAccess ->
+            L.info (fun m -> m "Consuming a value from uninit, logical failure");
+            lfail Typed.v_false)
     (* any *)
-    | SAny, NotOwned _ -> miss_no_fix ~reason:"consume_any" ()
     | SAny, Owned _ -> ok (not_owned t)
     (* uninit *)
-    | SUninit, NotOwned _ -> miss_no_fix ~reason:"consume_uninit" ()
     | SUninit, Owned (Uninit Totally) -> ok (not_owned t)
     | SUninit, _ ->
-        L.info (fun m -> m "Consuming uninit but no uninit, vanishing");
-        vanish ()
+        L.info (fun m -> m "Consuming uninit but no uninit, logical failure");
+        lfail Typed.v_false
     (* zeros *)
-    | SZeros, NotOwned _ -> miss_no_fix ~reason:"consume_zeros" ()
     | SZeros, Owned Zeros -> ok (not_owned t)
     | SZeros, Owned (Init (v, cty)) ->
-        let* size = Layout.size_of_s cty in
-        let* size =
+        let*^ size = Layout.size_of_s cty in
+        let*^ size =
           of_opt_not_impl ~msg:"Consuming zeros with unknown size"
           @@ Typed.BitVec.to_z size
         in
         let size = Z.to_int size in
-        let+ () = Csymex.assume [ v ==?@ BitVec.zero (8 * size) ] in
-        Ok (not_owned t)
+        let zero = Expr.of_value @@ BitVec.zero (8 * size) in
+        let+ () = learn_eq zero v in
+        not_owned t
     | SZeros, _ ->
-        L.info (fun m -> m "Consuming zero but not zero, vanishing");
-        vanish ()
+        L.info (fun m -> m "Consuming zero but not zero, logical failure");
+        lfail Typed.v_false
 
-  let produce (s : serialized) (t : tree) : tree Csymex.t =
+  let produce (s : syn) (t : tree) : tree Producer.t =
+    let open Producer in
+    let open Syntax in
     match (s, t.node) with
     | _, (Owned _ | NotOwned Partially) -> vanish ()
-    | SInit v, NotOwned Totally -> return (owned t (Init v))
+    | SInit (v, ty), NotOwned Totally ->
+        let+ v = Producer.apply_subst Expr.subst v in
+        owned t (Init (v, ty))
     | SZeros, NotOwned Totally -> return (owned t Zeros)
     | SUninit, NotOwned Totally -> return (owned t (Uninit Totally))
     | SAny, NotOwned Totally -> return (owned t Any)
@@ -198,7 +203,7 @@ include Tree_block (MemVal)
 
 let log_fixes fixes =
   L.trace (fun m ->
-      m "MISSING WITH FIXES: %a" Fmt.Dump.(list @@ list pp_serialized) fixes);
+      m "MISSING WITH FIXES: %a" Fmt.Dump.(list @@ list pp_syn) fixes);
   fixes
 
 let range_of_low_and_type low ty =
@@ -213,12 +218,12 @@ let sval_leaf ~range ~value ~ty =
 let zeros ~range = Tree.make ~node:(Owned Zeros) ~range ()
 let uninit ~range = Tree.make ~node:(Owned (Uninit Totally)) ~range ()
 
-let mk_fix_typed ofs ty () =
+let mk_fix_typed offset ty () =
   let* len = Layout.size_of_s ty in
   let+ fixes = mk_fix_typed ty () in
-  List.map (fun v -> [ MemVal { offset = ofs; len; v } ]) fixes
+  [ lift_fixes ~offset ~len fixes ]
 
-let mk_fix_any ofs len () = [ [ MemVal { offset = ofs; len; v = SAny } ] ]
+let mk_fix_any offset len () = [ lift_fixes ~offset ~len [ SAny ] ]
 
 let mk_fix_any_s ofs len () =
   let fixes = mk_fix_any ofs len () in
@@ -232,7 +237,7 @@ let decode ~ty ~ofs node =
       Soteria.Symex.Compo_res.miss (log_fixes fixes)
 
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
-    (T.cval Typed.t, 'err, serialized list) SM.Result.t =
+    (T.cval Typed.t, 'err, syn list) SM.Result.t =
   let open SM.Syntax in
   let*^ ((_, bound) as range) = range_of_low_and_type ofs ty in
   with_bound_check ~mk_fixes:(mk_fix_typed ofs ty) bound (fun t ->
@@ -246,7 +251,7 @@ let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
       ((sval :> T.cval Typed.t), tree))
 
 let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
-    (sval : [< T.cval ] Typed.t) : (unit, 'err, serialized list) SM.Result.t =
+    (sval : [< T.cval ] Typed.t) : (unit, 'err, syn list) SM.Result.t =
   let open SM.Syntax in
   let*^ ((_, bound) as range) = range_of_low_and_type low ty in
   let len = Range.size range in
@@ -269,7 +274,7 @@ let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
       ((), tree))
 
 let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
-    (unit, 'err, serialized list) SM.Result.t =
+    (unit, 'err, syn list) SM.Result.t =
   let ((_, bound) as range) = Range.of_low_and_size ofs size in
   let len = Range.size range in
   with_bound_check ~mk_fixes:(mk_fix_any_s ofs len) bound (fun t ->

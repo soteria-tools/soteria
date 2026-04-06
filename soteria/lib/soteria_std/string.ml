@@ -3,6 +3,7 @@ include Stdlib.String
 type t = string
 
 let pp ft s = Format.pp_print_string ft s
+let show s = s
 
 let index_of ~sub_str s =
   let re = Str.regexp_string sub_str in

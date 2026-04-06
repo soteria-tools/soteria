@@ -27,8 +27,7 @@ module M (State : State_intf.S) = struct
   let of_opt_not_impl ~msg x = SM.lift @@ of_opt_not_impl ~msg x
 
   type 'err fun_exec =
-    args:Agv.t list ->
-    (Agv.t, Error.with_trace, State.serialized list) SM.Result.t
+    args:Agv.t list -> (Agv.t, Error.with_trace, State.syn list) SM.Result.t
 
   let failed_alloc_case () =
     if (Config.current ()).alloc_cannot_fail then []

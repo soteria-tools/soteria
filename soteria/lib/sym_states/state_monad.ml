@@ -60,7 +60,8 @@ module Make
     module Symex = Sym
     module Value = Sym.Value
 
-    type lfail = Sym.lfail
+    type lfail = Sym.lfail [@@deriving show { with_path = false }]
+    type cons_fail = Sym.cons_fail [@@deriving show { with_path = false }]
     type st = State.t
 
     include Monad.StateT_base (State) (Sym)
@@ -68,8 +69,7 @@ module Make
     let[@inline] assume b = lift (Sym.assume b)
     let[@inline] vanish () = lift (Sym.vanish ())
     let[@inline] assert_ b = lift (Sym.assert_ b)
-    let[@inline] consume_pure b = lift (Sym.consume_pure b)
-    let[@inline] consume_false () = lift (Sym.consume_false ())
+    let[@inline] nondet_UNSAFE ty = Sym.nondet_UNSAFE ty
     let[@inline] nondet ty = lift (Sym.nondet ty)
     let[@inline] simplify v = lift (Sym.simplify v)
     let[@inline] fresh_var ty = lift (Sym.fresh_var ty)
