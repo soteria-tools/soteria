@@ -3,5 +3,5 @@ Reject extra key in ignore attribute
   File "ignore_extra_key.ml", line 5, characters 6-58:
   5 |       [@sym_state.ignore { empty = None; field = my_int }]
             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  Error: [@deriving sym_state] unexpected field(s) 'field' in [@sym_state.ignore], expected one of empty; is_empty; pp
+  Error: [@deriving sym_state] unexpected field(s) 'field' in [@soteria.sym_state.ignore], expected one of empty; is_empty; pp
   [1]

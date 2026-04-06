@@ -22,5 +22,7 @@
   ./sym_state/ignored_is_empty_pp.ml
   ./sym_state/syn_manifest.ml
   ./sym_state/syn_manifest_mismatch.ml
-  ./sym_state/invalid_non_t.ml)
+  ./sym_state/invalid_non_t.ml
+  ./sym_state/ignore_missing_empty.ml
+  ./sym_state/unused_attrib.ml)
  (applies_to :whole_subtree))

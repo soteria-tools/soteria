@@ -27,26 +27,6 @@ module Helpers = struct
 
   let record_of_names ?base names =
     pexp_record (List.map (fun n -> (lident n, evar n)) names) base
-
-  (** Given an attribute and a list of fields, returns the bindings to those
-      fields in the order they are provided, along with the list of remaining
-      bindings. Returns Err if the input attribute does not have a struct
-      associated. *)
-  let find_expr_fields expr fields =
-    let rec find_field field rest = function
-      | [] -> (None, rest)
-      | ({ txt; _ }, v) :: tl when txt = Lident field -> (Some v, rest @ tl)
-      | binding :: tl -> find_field field (rest @ [ binding ]) tl
-    in
-    let rec find_fields acc rest = function
-      | [] -> (List.rev acc, rest)
-      | field :: tl ->
-          let found, rest = find_field field [] rest in
-          find_fields (found :: acc) rest tl
-    in
-    match expr.pexp_desc with
-    | Pexp_record (bindings, None) -> Ok (find_fields [] bindings fields)
-    | _ -> Error ()
 end
 
 open Helpers
@@ -57,8 +37,8 @@ module Names = struct
   let with_ name = "with_" ^ name
   let with_sym name = "with_" ^ name ^ "_sym"
   let ppx = "sym_state"
-  let ignore_attr = ppx ^ ".ignore"
-  let context_attr = ppx ^ ".context"
+  let ignore_attr = "soteria." ^ ppx ^ ".ignore"
+  let context_attr = "soteria." ^ ppx ^ ".context"
 end
 
 let err ?loc msg =
@@ -92,111 +72,109 @@ let ignored_fields =
       match f.kind with Ignored i -> Some (f, i) | _ -> None)
 
 module Attributes = struct
-  let validate_attr_field ~name ~loc expr fields =
-    match find_expr_fields expr fields with
-    | Ok (found, []) ->
+  (** Given an attribute and a list of fields, returns the bindings to those
+      fields in the order they are provided, along with the list of remaining
+      bindings. Returns Err if the input attribute does not have a struct
+      associated. *)
+  let find_expr_fields bindings fields =
+    let rec find_field field rest = function
+      | [] -> (None, rest)
+      | ({ txt; _ }, v) :: tl when txt = Lident field -> (Some v, rest @ tl)
+      | binding :: tl -> find_field field (rest @ [ binding ]) tl
+    in
+    let rec find_fields acc rest = function
+      | [] -> (List.rev acc, rest)
+      | field :: tl ->
+          let found, rest = find_field field [] rest in
+          find_fields (found :: acc) rest tl
+    in
+    find_fields [] bindings fields
+
+  let validate_attr_field ~name fields ~attr_loc bindings =
+    let@ loc = with_loc attr_loc in
+    match find_expr_fields bindings fields with
+    | found, [] ->
         assert (List.compare_lengths found fields = 0);
         found
-    | Ok (_, extra) ->
+    | _, extra ->
         Fmt.kstr (err ~loc)
           "unexpected field(s) '%a' in [@%s], expected one of %s"
           Fmt.(list ~sep:(Fmt.any ", ") pp_longident)
           (List.map (fun (f, _) -> f.txt) extra)
           name
           (String.concat "; " fields)
-    | Error () ->
-        Fmt.kstr (err ~loc) "expects [@%s { %s }]" name
-          (String.concat "; " fields)
+
+  let declare_record name fields =
+    Attribute.declare_with_attr_loc name Attribute.Context.label_declaration
+      Ast_pattern.(single_expr_payload (pexp_record __ drop))
+      (validate_attr_field ~name fields)
 
   module Ignore = struct
     let name = Names.ignore_attr
-
-    let attr =
-      Attribute.declare_with_attr_loc name Attribute.Context.label_declaration
-        Ast_pattern.(single_expr_payload __)
-        (fun ~attr_loc expr -> (attr_loc, expr))
+    let attr = declare_record name [ "empty"; "is_empty"; "pp" ]
 
     let find_opt ld =
       Attribute.get attr ld
-      |> Option.map @@ fun (attr_loc, expr) ->
-         let@ loc = with_loc attr_loc in
-         match
-           validate_attr_field ~name ~loc expr [ "empty"; "is_empty"; "pp" ]
-         with
+      |> Option.map @@ function
          | [ None; _is_empty; _pp ] ->
-             Fmt.kstr (err ~loc) "expects [@%s { empty = <expr>; ... }]" name
+             Fmt.kstr (err ?loc:None) "expects [@%s { empty = <expr>; ... }]"
+               name
          | [ Some empty; is_empty; pp ] -> { empty; is_empty; pp }
          | _ -> failwith "Impossible"
   end
 
   module Context = struct
     let name = Names.context_attr
-
-    let attr =
-      Attribute.declare_with_attr_loc name Attribute.Context.label_declaration
-        Ast_pattern.(single_expr_payload __)
-        (fun ~attr_loc expr -> (attr_loc, expr))
+    let attr = declare_record name [ "field" ]
 
     let find_opt ld =
       Attribute.get attr ld
-      |> Option.map @@ fun (attr_loc, expr) ->
-         match validate_attr_field ~name ~loc:attr_loc expr [ "field" ] with
+      |> Option.map @@ function
          | [ Some { pexp_desc = Pexp_ident { txt = Lident field; _ }; _ } ] ->
              { field; ctx_sym_state = Lident "TEMP_PRE_VALIDATION" }
          | _ ->
-             Fmt.kstr (err ~loc:attr_loc) "expects [@%s { field = <field> }]"
-               name
+             Fmt.kstr (err ?loc:None) "expects [@%s { field = <field> }]" name
+
+    let validate_field fields f { field; ctx_sym_state = _ } managed_field =
+      let@ _ = with_loc f.loc in
+      let ctx_field =
+        match List.find_opt (fun f -> f.name = field) fields with
+        | Some f -> f
+        | None ->
+            let valid_fields =
+              fields
+              |> List.filter_map (fun cf ->
+                  if f.name = cf.name then None else Some cf.name)
+            in
+            Fmt.kstr (err ?loc:None)
+              "%s references non-existent field %a, expected one of %a" name
+              Fmt.(quote string)
+              field
+              Fmt.(list ~sep:(Fmt.any ", ") Fmt.(quote string))
+              valid_fields
+      in
+      if ctx_field.name = f.name then
+        Fmt.kstr (err ~loc:f.loc) "%s.field cannot reference itself" name;
+      match ctx_field.kind with
+      | Ignored _ ->
+          Fmt.kstr (err ~loc:f.loc) "%s.field cannot reference an ignored field"
+            name
+      | Managed { sym_state = ctx_sym_state; _ } ->
+          (* update context's sym_state *)
+          let context = Some { field; ctx_sym_state } in
+          { f with kind = Managed { managed_field with context } }
 
     let validate (fields : field list) =
       fields
       |> List.map @@ fun f ->
-         let@ _ = with_loc f.loc in
          match f.kind with
-         | Managed
-             ({ context = Some { field; ctx_sym_state = _ }; _ } as
-              managed_field) -> (
-             let ctx_field =
-               match List.find_opt (fun f -> f.name = field) fields with
-               | Some f -> f
-               | None ->
-                   let valid_fields =
-                     fields
-                     |> List.filter_map (fun cf ->
-                         if f.name = cf.name then None else Some cf.name)
-                   in
-                   Fmt.kstr (err ?loc:None)
-                     "%s references non-existent field %a, expected one of %a"
-                     name
-                     Fmt.(quote string)
-                     field
-                     Fmt.(list ~sep:(Fmt.any ", ") Fmt.(quote string))
-                     valid_fields
-             in
-             if ctx_field.name = f.name then
-               Fmt.kstr (err ~loc:f.loc) "%s.field cannot reference itself" name;
-             match ctx_field.kind with
-             | Ignored _ ->
-                 Fmt.kstr (err ~loc:f.loc)
-                   "%s.field cannot reference an ignored field" name
-             | Managed { sym_state = ctx_sym_state; _ } ->
-                 (* update context's sym_state *)
-                 let context = Some { field; ctx_sym_state } in
-                 { f with kind = Managed { managed_field with context } })
-         | _ -> f
+         | Managed ({ context = Some context; _ } as managed_field) ->
+             validate_field fields f context managed_field
+         | Managed { context = None; _ } | Ignored _ -> f
   end
 
   let check_no_extra_attrs (ld : label_declaration) =
-    let allowed = [ Names.ignore_attr; Names.context_attr ] in
-    ld.pld_attributes
-    |> List.iter @@ fun (attr : attribute) ->
-       if not (List.exists (String.equal attr.attr_name.txt) allowed) then
-         let rec pp_attrs ?(acc = "") = function
-           | [] -> acc
-           | [ a ] -> acc ^ "and [@" ^ a ^ "]"
-           | a :: rest -> pp_attrs ~acc:(acc ^ "[@" ^ a ^ "], ") rest
-         in
-         Fmt.kstr (err ~loc:attr.attr_loc) "only supports attributes %s, got %s"
-           (pp_attrs allowed) attr.attr_name.txt
+    Attribute.check_unused#label_declaration ld
 
   let validate fs = Context.validate fs
 end
