@@ -52,55 +52,32 @@ struct
   end)
 
   module Solver_state = struct
-    type t = Typed.sbool Typed.t Dynarray.t Dynarray.t
+    include Reversible.Make_mutable_array (struct
+      type t = Typed.(sbool t)
+    end)
 
-    let init () =
-      let t = Dynarray.create () in
-      Dynarray.add_last t (Dynarray.create ());
-      t
-
-    let reset t =
-      Dynarray.clear t;
-      Dynarray.add_last t (Dynarray.create ())
-
-    let save t = Dynarray.add_last t (Dynarray.create ())
-    let backtrack_n t n = Dynarray.truncate t (Dynarray.length t - n)
-
-    let add_constraint (t : t) v =
+    let add_constraint t v =
       if Typed.equal v Typed.v_true then ()
-      else
-        match Dynarray.find_last t with
-        | None -> failwith "add_constraint: empty array"
-        | Some last ->
-            if Typed.equal v Typed.v_false then (
-              Dynarray.clear last;
-              Dynarray.add_last last Typed.v_false)
-            else Dynarray.add_last last v
+      else (
+        if Typed.equal v Typed.v_false then truncate_to_checkpoint t;
+        add t v)
 
     (** This function returns [Some b] if the solver state is trivially [b]
         (true or false). We maintain solver state such that trivial truths are
         never added to the state, and false is false erases everything else.
         Therefore, it is enough to check either for emptyness of the topmost
         layer or falseness of the latest element. *)
-    let trivial_truthiness (t : t) =
-      match Dynarray.find_last t with
-      | None -> Some true
-      | Some last -> (
-          match Dynarray.find_last last with
-          | None -> Some true
-          | Some v when Typed.equal v Typed.v_false -> Some false
-          | _ -> None)
+    let trivial_truthiness t =
+      if is_at_checkpoint t then Some true
+      else if Typed.equal (peek_last t) Typed.v_false then Some false
+      else None
 
-    let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
-
-    let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
+    let trivial_truthiness_of t v =
       let neg_v = Typed.not v in
-      Dynarray.find_map
-        (Dynarray.find_map (fun value ->
-             if Typed.equal value v then Some true
-             else if Typed.equal value neg_v then Some false
-             else None))
-        t
+      find_map t (fun value ->
+          if Typed.equal value v then Some true
+          else if Typed.equal value neg_v then Some false
+          else None)
   end
 
   type t = {
@@ -229,41 +206,17 @@ struct
     (* Invariants: the PC only has checked things, and then only unchecked
        things. *)
 
-    type t = slot Dynarray.t Dynarray.t [@@deriving show]
+    include Reversible.Make_mutable_array (struct
+      type t = slot
+    end)
 
-    let init () =
-      let t = Dynarray.create () in
-      Dynarray.add_last t (Dynarray.create ());
-      t
-
-    let reset t =
-      Dynarray.clear t;
-      Dynarray.add_last t (Dynarray.create ())
-
-    let save t = Dynarray.add_last t (Dynarray.create ())
-    let backtrack_n t n = Dynarray.truncate t (Dynarray.length t - n)
-
-    let add_constraint (t : t) v =
+    let add_constraint arr v =
       if Typed.equal v Typed.v_true then ()
-      else
-        match Dynarray.find_last t with
-        | None -> failwith "add_constraint: empty array"
-        | Some last ->
-            if Typed.equal v Typed.v_false then (
-              Dynarray.clear last;
-              (* We mark false as unchecked to make sure trivial_truthiness
-                 doesn't infer the wrong thing. *)
-              Dynarray.add_last last
-                { value = Asrt Typed.v_false; checked = false })
-            else Dynarray.add_last last { value = Asrt v; checked = false }
+      else (
+        if Typed.equal v Typed.v_false then truncate_to_checkpoint arr;
+        add arr { value = Asrt v; checked = false })
 
-    let dirty_variable (t : t) v =
-      match Dynarray.find_last t with
-      | None -> failwith "dirty_variable: empty array"
-      | Some last -> Dynarray.add_last last { value = Dirty v; checked = false }
-
-    let to_seq_rev (t : t) =
-      Seq.concat_map Dynarray.to_seq_rev (Dynarray.to_seq_rev t)
+    let dirty_variable (t : t) v = add t { value = Dirty v; checked = false }
 
     (** This function returns [Some b] if the solver state is trivially [b]
         (true or false). We maintain solver state such that trivial truths are
@@ -282,22 +235,19 @@ struct
     (* We check if the thing contains the value itself, or its negation. *)
     let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
       let neg_v = Typed.not v in
-      Dynarray.find_map
-        (Dynarray.find_map (function
-          | { value = Asrt value; _ } ->
-              if Typed.equal value v then Some true
-              else if Typed.equal value neg_v then Some false
-              else None
-          | _ -> None))
-        t
+      find_map t @@ function
+      | { value = Asrt value; _ } ->
+          if Typed.equal value v then Some true
+          else if Typed.equal value neg_v then Some false
+          else None
+      | _ -> None
 
     (** Iterate over the assertions in the PC. *)
-    let iter (t : t) f =
-      Dynarray.iter
-        (Dynarray.iter (function
-          | { value = Asrt value; _ } -> f value
-          | { value = Dirty _; _ } -> ()))
-        t
+    let iter (t : t) =
+      iter t
+      |> Iter.filter_map @@ function
+         | { value = Asrt value; _ } -> Some value
+         | { value = Dirty _; _ } -> None
 
     (** If we have checked sat and obtaied SAT, we can mark all elements of the
         list as checked! *)
