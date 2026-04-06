@@ -33,4 +33,36 @@
       let _ = reset
     end [@@ocaml.doc "@inline"] [@@merlin.hide]
   end
+  
+  module JustIgnore = struct
+    type t = (Foo.t[@ignore]) * Bar.t [@@deriving reversible]
+  
+    include struct
+      let _ = fun (_ : t) -> ()
+      let init () = (Foo.init (), Bar.init ())
+      let _ = init
+      let save (_, x1) = Bar.save x1
+      let _ = save
+      let backtrack_n (_, x1) n = Bar.backtrack_n x1 n
+      let _ = backtrack_n
+      let reset (_, x1) = Bar.reset x1
+      let _ = reset
+    end [@@ocaml.doc "@inline"] [@@merlin.hide]
+  end
+  
+  module SoteriaReversibleIgnore = struct
+    type t = (Foo.t[@soteria.reversible.ignore]) * Bar.t [@@deriving reversible]
+  
+    include struct
+      let _ = fun (_ : t) -> ()
+      let init () = (Foo.init (), Bar.init ())
+      let _ = init
+      let save (_, x1) = Bar.save x1
+      let _ = save
+      let backtrack_n (_, x1) n = Bar.backtrack_n x1 n
+      let _ = backtrack_n
+      let reset (_, x1) = Bar.reset x1
+      let _ = reset
+    end [@@ocaml.doc "@inline"] [@@merlin.hide]
+  end
   Success ✅

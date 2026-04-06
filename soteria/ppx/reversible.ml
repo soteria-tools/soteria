@@ -4,11 +4,14 @@ open Util.LocCtx
 
 module Names = struct
   let ppx = "reversible"
-  let ignore_attr = "reversible.ignore"
+  let ignore_attr = "soteria.reversible.ignore"
 end
 
-let has_ignore_attr =
-  List.exists (fun (attr : attribute) -> attr.attr_name.txt = Names.ignore_attr)
+let mk_ignore_attr ctx =
+  Attribute.declare Names.ignore_attr ctx Ast_pattern.(pstr nil) ()
+
+let ignore_label_decl_attr = mk_ignore_attr Attribute.Context.label_declaration
+let ignore_core_type_attr = mk_ignore_attr Attribute.Context.core_type
 
 let module_of_core_type_exn (ct : core_type) =
   match ct.ptyp_desc with
@@ -35,9 +38,10 @@ let seq_of_exprs ~loc = function
 let map_fields f =
   List.map (fun ((_, _, loc, _) as field) -> with_loc loc (fun _ -> f field))
 
-let mk_field name ty loc attrs =
+let mk_field name ty loc ignored =
   let mod_path = module_of_core_type_exn ty in
-  (name, mod_path, loc, has_ignore_attr attrs)
+  let is_ignored = Option.is_some ignored in
+  (name, mod_path, loc, is_ignored)
 
 let init_of_field (_, mod_path, _, _) = module_call mod_path "init" [ eunit () ]
 
@@ -45,7 +49,8 @@ let mk_record_impl ~loc labels =
   let fields =
     labels
     |> List.map (fun ld ->
-        mk_field ld.pld_name.txt ld.pld_type ld.pld_loc ld.pld_attributes)
+        mk_field ld.pld_name.txt ld.pld_type ld.pld_loc
+          (Attribute.get ignore_label_decl_attr ld))
   in
   if List.for_all (fun (_, _, _, i) -> i) fields then
     Location.raise_errorf ~loc
@@ -72,7 +77,8 @@ let mk_tuple_impl ~loc tys =
   let fields =
     tys
     |> List.mapi (fun i ty ->
-        mk_field (Printf.sprintf "x%d" i) ty ty.ptyp_loc ty.ptyp_attributes)
+        mk_field (Printf.sprintf "x%d" i) ty ty.ptyp_loc
+          (Attribute.get ignore_core_type_attr ty))
   in
   if List.for_all (fun (_, _, _, i) -> i) fields then
     Location.raise_errorf ~loc
