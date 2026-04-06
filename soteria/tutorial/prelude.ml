@@ -4,9 +4,21 @@ open Tiny_values;;
 let pp_stats _pp_inner ft (_t: Soteria.Stats.t) =
   Fmt.pf ft "...";;
 
+let pp_with_stats pp_res ft ({ res; stats = _ }: 'a Soteria.Stats.with_stats) =
+  Fmt.pf ft "{res = %a; stats = <stats>}" pp_res res;;
+
+let pp_hstring pp_v ft m =
+  let pp_pair = Fmt.(pair ~sep:(any " -> ") Fmt.string pp_v) in
+  Fmt.pf ft "@.  @[<v>%a@]"
+    (Fmt.iter_bindings  Soteria_std.Hashtbl.Hstring.iter pp_pair) m;;
+
+
 #install_printer pp_stats;;
+#install_printer pp_with_stats;;
 #install_printer pp_run_results;;
 #install_printer Soteria.Tiny_values.Typed.ppa;;
+#install_printer Soteria.Soteria_std.Dynarray.pp;;
+#install_printer pp_hstring;;
 #require "soteria.ppx";;
 
 
