@@ -1,5 +1,3 @@
-open Symex
-
 module Make (Symex : Symex.Base) (E : Data.Abstr.M(Symex).S_with_syn) = struct
   type t = E.t [@@deriving show { with_path = false }]
   type syn = E.syn [@@deriving show { with_path = false }]
@@ -22,10 +20,9 @@ module Make (Symex : Symex.Base) (E : Data.Abstr.M(Symex).S_with_syn) = struct
   open SM
   open SM.Syntax
 
-  let assert_exclusively_owned st : (unit, 'err, syn list) Symex.Result.t =
-    let open Symex.Syntax in
-    let+ res, _ = unwrap () st in
-    Compo_res.map res (fun _ -> ())
+  let assert_exclusively_owned () : (unit, 'err, syn list) Result.t =
+    let++ _ = unwrap () in
+    ()
 
   let load = unwrap
 

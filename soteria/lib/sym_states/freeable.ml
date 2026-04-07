@@ -13,8 +13,11 @@ module Make
     (I : sig
       include Base.M(Symex).S
 
-      val assert_exclusively_owned :
-        t option -> (unit, 'err, syn list) Symex.Result.t
+      (** Checks this state is exclusively owned, returning if it is exclusively
+          owned and otherwise missing with the fixes required to make this state
+          exclusively owned.
+          {b This function is expected to not be modify the state.} *)
+      val assert_exclusively_owned : unit -> (unit, 'err, syn list) SM.Result.t
     end) =
 struct
   type t = I.t freeable [@@deriving show { with_path = false }]
@@ -60,12 +63,7 @@ struct
     return (lift_fix_r res)
 
   let free () : (unit, 'err, syn list) SM.Result.t =
-    let** () =
-      wrap (fun st ->
-          let open Symex.Syntax in
-          let+ res = I.assert_exclusively_owned st in
-          (res, st))
-    in
+    let** () = wrap (I.assert_exclusively_owned ()) in
     SM.Result.set_state (Some Freed)
 
   let produce (syn : syn) st : st Symex.Producer.t =

@@ -188,9 +188,8 @@ module Block = struct
     in
     SM.Result.set_state (to_opt { block; borrow })
 
-  let assert_exclusively_owned t_opt =
-    let { block; _ } = of_opt t_opt in
-    Tree_block.assert_exclusively_owned block
+  let assert_exclusively_owned () =
+    with_block @@ Tree_block.assert_exclusively_owned ()
 
   let produce _ _ = failwith "Not implemented"
   let consume _ _ = failwith "Not implemented"
