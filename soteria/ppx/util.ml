@@ -50,6 +50,20 @@ module LocCtx = struct
   let type_declaration ~name ~params ~cstrs ~kind ~private_ ~manifest =
     type_declaration ~loc:(get_loc ()) ~name:(wloc name) ~params ~cstrs ~kind
       ~private_ ~manifest
+
+  (* convenience helpers *)
+
+  let lident s = wloc (Lident s)
+  let liddot base name = wloc (Ldot (base, name))
+
+  let liddots base path =
+    wloc @@ List.fold_left (fun acc name -> Ldot (acc, name)) base path
+
+  let pexp_ident_dot base name = pexp_ident (liddot base name)
+  let pexp_ident_dots base name = pexp_ident (liddots base name)
+
+  let ptyp_constr_dot symex_module path args =
+    ptyp_constr (liddot symex_module path) args
 end
 
 module Printers = struct

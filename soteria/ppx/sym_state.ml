@@ -3,28 +3,6 @@ open Ast_builder.Default
 open Util.Syntaxes
 open Util.LocCtx
 
-module Helpers = struct
-  let lident s = wloc (Lident s)
-  let liddot base name = wloc (Ldot (base, name))
-
-  let liddots base path =
-    wloc @@ List.fold_left (fun acc name -> Ldot (acc, name)) base path
-
-  let pexp_ident_dot base name = pexp_ident (liddot base name)
-  let pexp_ident_dots base name = pexp_ident (liddots base name)
-
-  let ptyp_constr_dot symex_module path args =
-    ptyp_constr (liddot symex_module path) args
-
-  let ptyp_constr_dots symex_module path args =
-    ptyp_constr (liddots symex_module path) args
-
-  let record_of_names ?base names =
-    pexp_record (List.map (fun n -> (lident n, evar n)) names) base
-end
-
-open Helpers
-
 module Names = struct
   let syn name = "Ser_" ^ name
   let lift_fixes name = "lift_" ^ name ^ "_fixes"
@@ -34,6 +12,9 @@ module Names = struct
   let ignore_attr = "soteria." ^ ppx ^ ".ignore"
   let context_attr = "soteria." ^ ppx ^ ".context"
 end
+
+let record_of_names ?base names =
+  pexp_record (List.map (fun n -> (lident n, evar n)) names) base
 
 let err ?loc msg =
   let loc = match loc with Some l -> l | None -> get_loc () in
