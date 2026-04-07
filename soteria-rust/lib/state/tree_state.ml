@@ -264,7 +264,8 @@ module Heap = struct
       end)
 end
 
-type syn = Heap of Heap.syn [@@deriving show { with_path = false }]
+type syn = Heap of Heap.syn | Pointers of DecayMap.syn
+[@@deriving show { with_path = false }]
 
 type t = {
   heap : Heap.t option;
@@ -910,9 +911,39 @@ let run_thread_exits () =
   let st = of_opt st_opt in
   st.thread_destructor () st_opt
 
-let to_syn { heap; _ } =
-  Heap.of_opt heap |> Heap.to_syn |> List.map (fun h -> Heap h)
+let to_syn st : syn list =
+  List.map (fun v -> Heap v) (Option.fold ~none:[] ~some:Heap.to_syn st.heap)
+  @ List.map
+      (fun v -> Pointers v)
+      (Option.fold ~none:[] ~some:DecayMap.to_syn st.pointers)
 
-let ins_outs (Heap r) = Heap.ins_outs r
-let produce _ _ = failwith "TODO: Tree_state.produce"
-let consume _ _ = failwith "TODO: Tree_state.consume"
+let ins_outs (syn : syn) =
+  match syn with Heap v -> Heap.ins_outs v | Pointers v -> DecayMap.ins_outs v
+
+let produce (syn : syn) st =
+  let open SM.Symex.Producer.Syntax in
+  let st = of_opt st in
+  match syn with
+  | Heap _ ->
+      let+ heap, pointers = failwith "Can't be implemented" in
+      Some { st with heap; pointers }
+  | Pointers v ->
+      let+ pointers = DecayMap.produce v st.pointers in
+      Some { st with pointers }
+
+let consume (syn : syn) st =
+  let open SM.Symex.Consumer.Syntax in
+  let st = of_opt st in
+  match syn with
+  | Heap _ ->
+      let+ heap, pointers =
+        let+? fixes = failwith "Can't be implemented" in
+        List.map (fun s -> Heap s) fixes
+      in
+      Some { st with heap; pointers }
+  | Pointers v ->
+      let+ pointers =
+        let+? fixes = DecayMap.consume v st.pointers in
+        List.map (fun s -> Pointers s) fixes
+      in
+      Some { st with pointers }
