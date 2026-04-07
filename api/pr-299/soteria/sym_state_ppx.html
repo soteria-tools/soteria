@@ -40,7 +40,15 @@ val with_heap_sym : 'a Heap.SM.t -&gt; 'a SM.t</code></pre><p><code>with_heap_sy
 }
 [@@deriving sym_state { symex = My_symex }]</code></pre><p>Ignored fields are not serialized in <code>to_syn</code>. They are still considered in <code>to_opt</code> emptiness checks using <code>( = )</code> against the provided <code>empty</code> expression, and they still get a <code>with_field_sym</code> wrapper that operates over the underlying monad (e.g. <code>My_symex</code>).</p><pre class="language-ocaml"><code>val with_functions_sym :
     (FunBiMap.t -&gt; ('a * FunBiMap.t, 'e, 'f) My_symex.Result.t) -&gt;
-    ('a, 'e, 'f) SM.Result.t</code></pre><h3 id="using-other-fields-as-context"><a href="#using-other-fields-as-context" class="anchor"></a>Using other fields as context</h3><p>For managed (i.e. not ignored) fields, <code>with_&lt;field&gt;</code> and <code>with_&lt;field&gt;_sym</code> can run through another field's state monad with <code>@sym_state.context</code>. This can be useful if this field's state model uses a state monad who's state type is that of another field.</p><p><code>@sym_state.context</code> takes a record with a <code>field</code> field, which specifies which field of the state is used. That field must also be a symbolic state (i.e. not be ignored), as it's monad is what is used.</p><p>This enables complex state shapes; for example, here <code>FancyHeap</code> is built on top of the <code>DecayedPointers.SM</code> state monad:</p><pre class="language-ocaml"><code>type t = {
+    ('a, 'e, 'f) SM.Result.t</code></pre><p>If physical equality is not appropriate for the field, you can also provide a custom equality function with <code>is_empty</code>. A custom printer can also be provided, with <code>pp</code> (by default the field is printed as &quot;&lt;ignored&gt;&quot;).</p><pre class="language-ocaml"><code>type t = {
+  functions : FunBiMap.t;
+    [@sym_state.ignore {
+      empty = FunBiMap.empty;
+      is_empty = FunBiMap.is_empty;
+      pp = FunBiMap.pp;
+    }]
+}
+[@@deriving sym_state { symex = My_symex }]</code></pre><h3 id="using-other-fields-as-context"><a href="#using-other-fields-as-context" class="anchor"></a>Using other fields as context</h3><p>For managed (i.e. not ignored) fields, <code>with_&lt;field&gt;</code> and <code>with_&lt;field&gt;_sym</code> can run through another field's state monad with <code>@sym_state.context</code>. This can be useful if this field's state model uses a state monad who's state type is that of another field.</p><p><code>@sym_state.context</code> takes a record with a <code>field</code> field, which specifies which field of the state is used. That field must also be a symbolic state (i.e. not be ignored), as it's monad is what is used.</p><p>This enables complex state shapes; for example, here <code>FancyHeap</code> is built on top of the <code>DecayedPointers.SM</code> state monad:</p><pre class="language-ocaml"><code>type t = {
   pointers : DecayedPointers.t option;
   heap : FancyHeap.t option;
     [@sym_state.context { field = pointers }]
@@ -56,7 +64,7 @@ val with_heap_sym : 'a Heap.SM.t -&gt; 'a SM.t</code></pre><p><code>with_heap_sy
   in
   let+ () = SM.set_state (to_opt { st with heap; pointers }) in
   res</code></pre><p>Which can then easily be used:</p><pre class="language-ocaml"><code>let load addr ty =
-  with_heap_sym (FancyHeap.load addr ty)</code></pre><h3 id="syn-type-equality"><a href="#syn-type-equality" class="anchor"></a><code>syn</code> type equality</h3><p>Some applications may want to expose a stable <code>syn</code> type through an interface, without revealing the actual state type. While this PPX does not support customising the <code>syn</code> type, it does allow asserting the generated <code>syn</code> type is equal to a user-defined one, using the <code>syn</code> option:</p><pre class="language-ocaml"><code>type my_syn =
+  with_heap_sym (FancyHeap.load addr ty)</code></pre><h3 id="syn-type-equality"><a href="#syn-type-equality" class="anchor"></a><code>syn</code> type equality</h3><p>Some applications may want to expose a stable <code>syn</code> type through an interface, without revealing the actual state type. While this PPX does not support customising the generated <code>syn</code>, it does allow asserting <code>syn</code> is equal to a user-defined one, using the <code>syn</code> option:</p><pre class="language-ocaml"><code>type my_syn =
   | Ser_heap of Heap.syn
   | Ser_globs of Globs.syn
 
@@ -64,4 +72,4 @@ type t = {
   heap : Heap.t option;
   globs : Globs.t option;
 }
-[@@deriving sym_state { symex = My_symex; syn = my_syn }]</code></pre><p><b>Note</b> this only asserts the generated <code>syn</code> type is equal to <code>my_syn</code>, it does not actually change any of the generated code to use <code>my_syn</code>. If <code>my_syn</code> does not match the generated <code>syn</code> type, this will cause a compile error.</p></div></body></html>
+[@@deriving sym_state { symex = My_symex; syn = my_syn }]</code></pre><p><b>Note</b> this only asserts the generated <code>syn</code> type is equal to <code>my_syn</code>, it does not actually change any of the generated code to use <code>my_syn</code>. If <code>my_syn</code> does not match <code>syn</code>, this will cause a compile error.</p></div></body></html>
