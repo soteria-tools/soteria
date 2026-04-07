@@ -1,8 +1,6 @@
 {1 Sym state PPX tutorial}
 
-This page explains how to use the [sym_state] deriver to generate most of the
-boilerplate required by state modules implementing the
-{{!Soteria.Sym_states.Base.M.S}symbolic state base API}.
+This page explains how to use the [sym_state] deriver to generate most of the boilerplate required by state modules implementing the {{!Soteria.Sym_states.Base.M.S}symbolic state base API}.
 
 {2 What it solves}
 
@@ -14,14 +12,11 @@ boilerplate required by state modules implementing the
 - [produce] and [consume] to support Soteria's logic.
 - [with_<field>] and [with_<field>_sym] helper wrappers.
 
-The [sym_state] PPX generates these from the state type declaration.
-More formally, this generates a product of the state models of the
-individual fields.
+The [sym_state] PPX generates these from the state type declaration. More formally, this generates a product of the state models of the individual fields.
 
 {2 Basic usage}
 
-Define a record type [t] where managed symbolic fields have type
-[<Module>.t option], then derive:
+Define a record type [t] where managed symbolic fields have type [<Module>.t option], then derive:
 
 {@ocaml[
 type t = {
@@ -31,8 +26,7 @@ type t = {
 [@@deriving sym_state { symex = My_symex }]
 ]}
 
-The [symex] argument is required and indicates which symbolic monad family the
-generated [SM] module should use.
+The [symex] argument is required and indicates which symbolic monad family the generated [SM] module should use.
 
 {2 What gets generated}
 
@@ -70,15 +64,11 @@ val with_heap :
 val with_heap_sym : 'a Heap.SM.t -> 'a SM.t
 ]}
 
-[with_heap_sym] is a wrapper that calls a symbolic computation of type [Heap.SM.t]
-with the heap part of the state and updates it with the result.
-On the other hand, [with_heap] is a more powerful wrapper that also lifts
-missing outcomes into the right [syn] variant.
+[with_heap_sym] is a wrapper that calls a symbolic computation of type [Heap.SM.t] with the heap part of the state and updates it with the result. On the other hand, [with_heap] is a more powerful wrapper that also lifts missing outcomes into the right [syn] variant.
 
 {2 Ignored fields}
 
-You can keep non-compositional auxiliary fields in [t] and still derive everything.
-Mark them with [@sym_state.ignore], providing their empty value:
+You can keep non-compositional auxiliary fields in [t] and still derive everything. Mark them with [@sym_state.ignore], providing their empty value:
 
 {@ocaml[
 type t = {
@@ -89,10 +79,7 @@ type t = {
 [@@deriving sym_state { symex = My_symex }]
 ]}
 
-Ignored fields are not serialized in [to_syn]. They are still considered in [to_opt]
-emptiness checks using [( = )] against the provided [empty] expression, and they
-still get a [with_field_sym] wrapper that operates over the underlying monad
-(e.g. [My_symex]).
+Ignored fields are not serialized in [to_syn]. They are still considered in [to_opt] emptiness checks using [( = )] against the provided [empty] expression, and they still get a [with_field_sym] wrapper that operates over the underlying monad (e.g. [My_symex]).
 
 {@ocaml skip[
 val with_functions_sym :
@@ -100,9 +87,7 @@ val with_functions_sym :
     ('a, 'e, 'f) SM.Result.t
 ]}
 
-If physical equality is not appropriate for the field, you can also provide a
-custom equality function with [is_empty]. A custom printer can also be provided,
-with [pp] (by default the field is printed as "<ignored>").
+If physical equality is not appropriate for the field, you can also provide a custom equality function with [is_empty]. A custom printer can also be provided, with [pp] (by default the field is printed as "<ignored>").
 
 {@ocaml[
 type t = {
@@ -118,16 +103,11 @@ type t = {
 
 {2 Using other fields as context}
 
-For managed (i.e. not ignored) fields, [with_<field>] and [with_<field>_sym] can run
-through another field's state monad with [@sym_state.context]. This can be useful if this field's
-state model uses a state monad who's state type is that of another field.
+For managed (i.e. not ignored) fields, [with_<field>] and [with_<field>_sym] can run through another field's state monad with [@sym_state.context]. This can be useful if this field's state model uses a state monad who's state type is that of another field.
 
-[@sym_state.context] takes a record with a [field] field, which specifies which field
-of the state is used. That field must also be a symbolic state (i.e. not be ignored),
-as it's monad is what is used.
+[@sym_state.context] takes a record with a [field] field, which specifies which field of the state is used. That field must also be a symbolic state (i.e. not be ignored), as it's monad is what is used.
 
-This enables complex state shapes; for example, here [FancyHeap] is built on top
-of the [DecayedPointers.SM] state monad:
+This enables complex state shapes; for example, here [FancyHeap] is built on top of the [DecayedPointers.SM] state monad:
 
 {@ocaml[
 type t = {
@@ -163,10 +143,7 @@ let load addr ty =
 
 {2 [syn] type equality}
 
-Some applications may want to expose a stable [syn] type through an interface,
-without revealing the actual state type. While this PPX does not support customising
-the generated [syn], it does allow asserting [syn] is equal to a
-user-defined one, using the [syn] option:
+Some applications may want to expose a stable [syn] type through an interface, without revealing the actual state type. While this PPX does not support customising the generated [syn], it does allow asserting [syn] is equal to a user-defined one, using the [syn] option:
 
 {@ocaml[
 type my_syn =
@@ -180,6 +157,4 @@ type t = {
 [@@deriving sym_state { symex = My_symex; syn = my_syn }]
 ]}
 
-{b Note} this only asserts the generated [syn] type is equal to [my_syn], it does
-not actually change any of the generated code to use [my_syn]. If [my_syn] does
-not match [syn], this will cause a compile error.
+{b Note} this only asserts the generated [syn] type is equal to [my_syn], it does not actually change any of the generated code to use [my_syn]. If [my_syn] does not match [syn], this will cause a compile error.
