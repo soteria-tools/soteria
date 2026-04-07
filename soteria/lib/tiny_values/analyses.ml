@@ -14,21 +14,7 @@ module type S = sig
 end
 
 module Merge (A1 : S) (A2 : S) : S = struct
-  type t = A1.t * A2.t
-
-  let init () = (A1.init (), A2.init ())
-
-  let backtrack_n (a1, a2) n =
-    A1.backtrack_n a1 n;
-    A2.backtrack_n a2 n
-
-  let save (a1, a2) =
-    A1.save a1;
-    A2.save a2
-
-  let reset (a1, a2) =
-    A1.reset a1;
-    A2.reset a2
+  type t = A1.t * A2.t [@@deriving reversible]
 
   let simplify (a1, a2) v = v |> A1.simplify a1 |> A2.simplify a2
 

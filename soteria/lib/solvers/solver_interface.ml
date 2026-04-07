@@ -5,19 +5,23 @@
     which represents a solver at a more abstract level (where a solver is
     broadly a path condition). Here instead, a solver is an interface into an
     actual SMT-LIB solver, and exposes the usual operations to declare
-    variables, assert values, and check satisfiability. *)
+    variables, assert values, and check satisfiability.
+
+    To make usage of solvers easier in {{!Soteria_std.Reversible}Reversible}
+    contexts, this signature also includes the usual reversible functions.
+    {{!Soteria_std.Reversible.Mutable.save}[save]} is [push 1], and
+    {{!Soteria_std.Reversible.Mutable.backtrack_n}[backtrack_n]} is [pop n]. *)
 module type S = sig
   (** The solver state type. *)
   type t
+
+  include Soteria_std.Reversible.Mutable with type t := t
 
   (** The type of symbolic expressions. *)
   type value
 
   (** The type of value types (for variable declarations). *)
   type ty
-
-  (** [init ()] creates a new solver instance. *)
-  val init : unit -> t
 
   (** [add_constraint solver v] adds constraint [v] to the solver.*)
   val add_constraint : t -> value -> unit
@@ -39,9 +43,4 @@ module type S = sig
 
       Removes all constraints added since the corresponding {!push}. *)
   val pop : t -> int -> unit
-
-  (** [reset solver] clears all constraints and declarations.
-
-      Returns the solver to its initial state. *)
-  val reset : t -> unit
 end

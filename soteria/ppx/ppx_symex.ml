@@ -24,3 +24,6 @@ let () =
   let kind = Context_free.Rule.Constant_kind.Integer in
   let rule = Context_free.Rule.constant kind suffix rewriter in
   Driver.register_transformation ~rules:[ rule ] "sym_constants"
+
+(* Register [@@deriving reversible] *)
+let () = Reversible.register ()
