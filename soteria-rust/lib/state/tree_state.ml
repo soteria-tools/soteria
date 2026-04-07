@@ -81,23 +81,26 @@ module FunBiMap = struct
 end
 
 module Block = struct
-  type t = Tree_block.t option * Tree_borrow.t
+  type t = { block : Tree_block.t option; borrow : Tree_borrow.t }
   [@@deriving show { with_path = false }]
+
+  let pp_pretty ft { block; _ } =
+    Fmt.option ~none:(Fmt.any "Empty Block") Tree_block.pp_pretty ft block
 
   type syn = Tree_block.syn [@@deriving show]
 
-  let to_syn (b, _) = Option.fold ~none:[] ~some:Tree_block.to_syn b
+  let to_syn { block; _ } = Option.fold ~none:[] ~some:Tree_block.to_syn block
   let ins_outs b = Tree_block.ins_outs b
 
   let of_opt = function
-    | None -> (None, Tree_borrow.ub_state)
-    | Some (b1, b2) -> (b1, b2)
+    | None -> { block = None; borrow = Tree_borrow.ub_state }
+    | Some st -> st
 
   let to_opt : t -> t option =
     (* FIXME: This is off for compositionality, there is no zero in TBs yet. *)
     function
-    | None, _b -> None
-    | b1, b2 -> Some (b1, b2)
+    | { block = None; borrow = _b } -> None
+    | st -> Some st
 
   module SM =
     Soteria.Sym_states.State_monad.Make
@@ -109,21 +112,21 @@ module Block = struct
   open SM
   open Syntax
 
-  let with_tree_block (f : ('a, 'err, 'fix) Tree_block.SM.Result.t) :
+  let with_block (f : ('a, 'err, 'fix) Tree_block.SM.Result.t) :
       ('a, 'err, 'fix) Result.t =
     let* t_opt = SM.get_state () in
-    let tree, tb = of_opt t_opt in
-    let*^ v, tree = f tree in
-    let+ () = SM.set_state (to_opt (tree, tb)) in
+    let { block; borrow } = of_opt t_opt in
+    let*^ v, block = f block in
+    let+ () = SM.set_state (to_opt { block; borrow }) in
     v
 
-  let with_tree_block_read_tb
+  let with_block_read_tb
       (f : Tree_borrow.t -> ('a, 'err, 'fix) Tree_block.SM.Result.t) :
       ('a, 'err, 'fix) SM.Result.t =
     let* t_opt = SM.get_state () in
-    let tree, tb = of_opt t_opt in
-    let*^ v, tree = f tb tree in
-    let+ () = SM.set_state (to_opt (tree, tb)) in
+    let { block; borrow } = of_opt t_opt in
+    let*^ v, block = f borrow block in
+    let+ () = SM.set_state (to_opt { block; borrow }) in
     v
 
   (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
@@ -145,49 +148,49 @@ module Block = struct
       | true, _ -> failwith "Non-ref or box in borrow?"
     in
     let* t_opt = SM.get_state () in
-    let block, tb = of_opt t_opt in
+    let { block; borrow } = of_opt t_opt in
     let parent = Option.get ptr.tag in
-    let tb', tag = Tree_borrow.add_child ~parent ~state ?protector tb in
+    let borrow, tag = Tree_borrow.add_child ~parent ~state ?protector borrow in
     let ptr' = { ptr with tag = Some tag } in
     L.debug (fun m ->
         m "%s pointer %a -> %a (%a)"
           (if protect then "Protecting" else "Borrowing")
           Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state state);
     if not protect then
-      let+ () = SM.set_state (to_opt (block, tb')) in
+      let+ () = SM.set_state (to_opt { block; borrow }) in
       Ok (ptr', meta)
     else
-      let**^ size = DecayMapMonad.lift @@ Layout.size_of pointee in
+      let**^ size = DecayMap.SM.lift @@ Layout.size_of pointee in
       if%sat size ==@ Usize.(0s) then
-        let+ () = SM.set_state (to_opt (block, tb')) in
+        let+ () = SM.set_state (to_opt { block; borrow }) in
         Ok (ptr', meta)
       else
-        let*^ res, block' = Tree_block.protect ofs size tag tb' block in
+        let*^ res, block = Tree_block.protect ofs size tag borrow block in
         match res with
         | Ok () ->
-            let+ () = SM.set_state (to_opt (block', tb')) in
+            let+ () = SM.set_state (to_opt { block; borrow }) in
             Ok (ptr', meta)
         | Error e -> Result.error e
         | Missing f -> Result.miss f
 
   let unprotect ofs tag size =
     let* t_opt = SM.get_state () in
-    let block, tb = of_opt t_opt in
-    let tb' = Tree_borrow.unprotect tag tb in
-    let** (), block' =
+    let { block; borrow } = of_opt t_opt in
+    let borrow = Tree_borrow.unprotect tag borrow in
+    let** (), block =
       if%sat size ==@ Usize.(0s) then SM.Result.ok ((), block)
       else
-        let*^ res, block' = Tree_block.unprotect ofs size tag tb' block in
+        let*^ res, block = Tree_block.unprotect ofs size tag borrow block in
         match res with
-        | Ok () -> Result.ok ((), block')
+        | Ok () -> Result.ok ((), block)
         | Error e -> Result.error e
         | Missing f -> Result.miss f
     in
-    SM.Result.set_state (to_opt (block', tb'))
+    SM.Result.set_state (to_opt { block; borrow })
 
   let assert_exclusively_owned t_opt =
-    let a, _ = of_opt t_opt in
-    Tree_block.assert_exclusively_owned a
+    let { block; _ } = of_opt t_opt in
+    Tree_block.assert_exclusively_owned block
 
   let produce _ _ = failwith "Not implemented"
   let consume _ _ = failwith "Not implemented"
@@ -202,14 +205,14 @@ module Freeable_block_with_meta = struct
   let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
       (t * Tree_borrow.tag option) DecayMap.SM.t =
     let open DecayMap.SM.Syntax in
-    let tb, tag = Tree_borrow.init ~state:Unique () in
-    let block = Tree_block.alloc ?zeroed size in
+    let borrow, tag = Tree_borrow.init ~state:Unique () in
+    let block = Some (Tree_block.alloc ?zeroed size) in
     let+^ trace = get_trace () in
     let trace = Trace.rename 0 "Allocation" trace in
     let trace = Trace.move_to_opt span trace in
     let info : Meta.t = { align; size; kind; trace; tb_root = tag } in
     let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
-    (({ node = Alive (Some block, tb); info = Some info } : t), tag)
+    (({ node = Alive { block; borrow }; info = Some info } : t), tag)
 end
 
 module Heap = struct
@@ -300,12 +303,7 @@ let pp_pretty ~ignore_freed ft { heap; _ } =
           match (block : Freeable_block_with_meta.t) with
           | { info = Some { kind = Function fn; _ }; _ } ->
               Fmt.pf ft "function %a" Fun_kind.pp fn
-          | { node; _ } ->
-              Freeable_block.pp'
-                ~inner:(fun fmt (tb, _) ->
-                  Fmt.option ~none:(Fmt.any "Empty Block") Tree_block.pp_pretty
-                    fmt tb)
-                ft node)
+          | { node; _ } -> Freeable_block.pp' ~inner:Block.pp_pretty ft node)
         ft st
 
 let empty_state =
@@ -364,12 +362,11 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   let* () = log "load" ptr in
   let handler (ty, ofs) =
     let@ _ofs = Heap.with_ptr ptr in
-    Block.with_tree_block_read_tb
-      (Tree_block.load ~ignore_borrow ofs ty ptr.tag)
+    Block.with_block_read_tb (Tree_block.load ~ignore_borrow ofs ty ptr.tag)
   in
   let get_all (size, ofs) =
     let@ _ofs = Heap.with_ptr ptr in
-    Block.with_tree_block (Tree_block.get_init_leaves ofs size)
+    Block.with_block (Tree_block.get_init_leaves ofs size)
   in
   let offset = Typed.Ptr.ofs ptr.ptr in
   with_heap
@@ -391,7 +388,7 @@ let uninit ((ptr, _) : Sptr.t * 'a) (ty : Types.ty) :
   let* () = log "uninit" ptr in
   let**^ size = Layout.size_of ty in
   let@ ofs = with_ptr ptr in
-  Block.with_tree_block @@ Tree_block.uninit_range ofs size
+  Block.with_block @@ Tree_block.uninit_range ofs size
 
 let rec size_and_align_of_val ty meta =
   let load = load ~ignore_borrow:true ~check_refs:false in
@@ -413,9 +410,7 @@ and check_non_dangling ((ptr : Sptr.t), meta) (ty : Types.ty) =
   else
     let open Block.SM.Syntax in
     let@ ofs = with_ptr ptr in
-    let+- _ =
-      Block.with_tree_block (Tree_block.check_owned ofs (Typed.cast size))
-    in
+    let+- _ = Block.with_block (Tree_block.check_owned ofs (Typed.cast size)) in
     `UBDanglingPointer
 
 and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
@@ -489,7 +484,7 @@ let tb_load_untyped (ptr : Sptr.t) size =
       else
         let* () = log "tb_load" ptr in
         let@ ofs = with_ptr ptr in
-        Block.with_tree_block_read_tb (Tree_block.tb_access ofs size tag)
+        Block.with_block_read_tb (Tree_block.tb_access ofs size tag)
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
@@ -513,7 +508,7 @@ let store ((ptr, _) as fptr) ty sval :
     let* () = log "store" ptr in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr ptr in
-    Block.with_tree_block_read_tb (fun tb ->
+    Block.with_block_read_tb (fun tb ->
         let open Tree_block.SM in
         let open Tree_block.SM.Syntax in
         (* We uninitialise the whole range before writing, to ensure padding
@@ -551,13 +546,13 @@ let copy_nonoverlapping ~src:(src, _) ~dst:(dst, _) ~size :
   let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
   let** tree_to_write =
     let@ ofs = with_ptr src in
-    Block.with_tree_block (fun tree_block ->
+    Block.with_block (fun tree_block ->
         let open DecayMap.SM.Syntax in
         let+ res, _ = Tree_block.get_raw_tree_owned ofs size tree_block in
         (res, tree_block))
   in
   let@ ofs = with_ptr dst in
-  Block.with_tree_block
+  Block.with_block
     (let open Tree_block.SM in
      let open Tree_block.SM.Syntax in
      (* We need to be careful about tree borrows; the tree we copy has a tree
@@ -669,7 +664,7 @@ let free ((ptr : Sptr.t), _) =
 
   (* let** () =
    *   with_ptr ptr (fun _ ->
-   *       Block.with_tree_block_read_tb (fun tb ->
+   *       Block.with_block_read_tb (fun tb ->
    *           L.warn (fun m -> m "%a" Tree_borrow.pp tb);
    *           if Tree_borrow.strong_protector_exists tb then
    *             Tree_block.SM.Result.error `InvalidFreeStrongProtector
@@ -683,7 +678,7 @@ let zeros (ptr, _) size =
   let@ () = with_loc_err ~trace:"Memory store (0s)" () in
   let* () = log "zeroes" ptr in
   let@ ofs = with_ptr ptr in
-  Block.with_tree_block (Tree_block.zero_range ofs size)
+  Block.with_block (Tree_block.zero_range ofs size)
 
 let with_globals () f =
   let* st = SM.get_state () in
