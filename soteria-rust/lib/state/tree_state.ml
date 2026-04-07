@@ -924,8 +924,11 @@ let produce (syn : syn) st =
   let open SM.Symex.Producer.Syntax in
   let st = of_opt st in
   match syn with
-  | Heap _ ->
-      let+ heap, pointers = failwith "Can't be implemented" in
+  | Heap v ->
+      let+ heap, pointers =
+        DecayMap.SM.Producer.run_with_state ~state:st.pointers
+          (Heap.produce v st.heap)
+      in
       Some { st with heap; pointers }
   | Pointers v ->
       let+ pointers = DecayMap.produce v st.pointers in
@@ -935,9 +938,12 @@ let consume (syn : syn) st =
   let open SM.Symex.Consumer.Syntax in
   let st = of_opt st in
   match syn with
-  | Heap _ ->
+  | Heap v ->
       let+ heap, pointers =
-        let+? fixes = failwith "Can't be implemented" in
+        let+? fixes =
+          DecayMap.SM.Consumer.run_with_state ~state:st.pointers
+            (Heap.consume v st.heap)
+        in
         List.map (fun s -> Heap s) fixes
       in
       Some { st with heap; pointers }
