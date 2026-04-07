@@ -24,5 +24,10 @@
   ./sym_state/syn_manifest_mismatch.ml
   ./sym_state/invalid_non_t.ml
   ./sym_state/ignore_missing_empty.ml
-  ./sym_state/unused_attrib.ml)
+  ./sym_state/unused_attrib.ml
+  ./reversible/prelude.ml
+  ./reversible/simple.ml
+  ./reversible/ignored.ml
+  ./reversible/all_ignored.ml
+  ./reversible/err_non_t.ml)
  (applies_to :whole_subtree))

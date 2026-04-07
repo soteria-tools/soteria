@@ -137,6 +137,8 @@ module Make (Value : Value.S) :
 
   let push solver n = ack_command solver (Simple_smt.push n)
   let pop solver n = ack_command solver (Simple_smt.pop n)
+  let save solver = push solver 1
+  let backtrack_n solver n = pop solver n
 
   let reset solver =
     ack_command solver Smt_utils.reset;

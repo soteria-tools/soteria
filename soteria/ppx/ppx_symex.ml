@@ -25,5 +25,8 @@ let () =
   let rule = Context_free.Rule.constant kind suffix rewriter in
   Driver.register_transformation ~rules:[ rule ] "sym_constants"
 
-(* Register [deriving sym_state] *)
+(* Register [@@deriving reversible] *)
+let () = Reversible.register ()
+
+(* Register [@@deriving sym_state] *)
 let () = Sym_state.register ()
