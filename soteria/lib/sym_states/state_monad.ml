@@ -30,6 +30,19 @@ module type S = sig
       state:st -> ('a, 'e, 'f) t -> ('a * st, 'e * st, 'f) Symex.Result.t
   end
 
+  module Producer : sig
+    include module type of Producer
+
+    val run_with_state : state:st -> 'a t -> ('a * st) Symex.Producer.t
+  end
+
+  module Consumer : sig
+    include module type of Consumer
+
+    val run_with_state :
+      state:st -> ('a, 'f) t -> ('a * st, 'f) Symex.Consumer.t
+  end
+
   module Syntax : sig
     include module type of Syntax
 
@@ -113,6 +126,39 @@ module Make
       | Compo_res.Ok res, state -> Compo_res.Ok (res, state)
       | Error e, state -> Error (e, state)
       | Missing f, _ -> Missing f
+  end
+
+  module Producer = struct
+    open Syntax
+    include Producer
+
+    let leak m = function
+      | None ->
+          let+ res = run_identity m in
+          (res, None)
+      | Some subst ->
+          let+ res, subst = run ~subst m in
+          (res, Some subst)
+
+    let[@inline] run_with_state ~state (x : 'a t) : ('a * st) Symex.Producer.t =
+      Symex.Producer.from_raw_UNSAFE (fun subst ->
+          let open Symex.Syntax in
+          let+ (res, subst), state = leak x subst state in
+          ((res, state), subst))
+  end
+
+  module Consumer = struct
+    include Consumer
+
+    let[@inline] run_with_state ~state (x : ('a, 'f) t) :
+        ('a * st, 'f) Symex.Consumer.t =
+      let open Symex.Syntax in
+      Symex.Consumer.from_raw_UNSAFE (fun subst ->
+          let+ res, state = run ~subst x state in
+          match res with
+          | Compo_res.Ok (res, subst) -> Compo_res.Ok ((res, state), subst)
+          | Error e -> Error e
+          | Missing f -> Missing f)
   end
 
   module Syntax = struct
