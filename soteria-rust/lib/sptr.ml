@@ -67,6 +67,9 @@ module DecayMap = struct
     let to_syn ({ address; exposed } : t) =
       { address = Expr.of_value address; exposed }
 
+    let sem_eq (s1 : t) (s2 : t) =
+      Typed.of_bool (s1.exposed = s2.exposed) &&@ (s1.address ==@ s2.address)
+
     let learn_eq (s : syn) (st : t) =
       if s.exposed <> st.exposed then Consumer.lfail Typed.v_false
       else Consumer.learn_eq s.address st.address
@@ -77,7 +80,7 @@ module DecayMap = struct
       { address = Expr.subst s address; exposed }
   end
 
-  module EntryExcl = Soteria.Sym_states.Excl.Make (Rustsymex) (Entry)
+  module EntryExcl = Soteria.Sym_states.Agree.Make (Rustsymex) (Entry)
 
   include
     Soteria.Sym_states.Pmap.Direct_access_patricia_tree (Rustsymex) (MapKey)
