@@ -151,10 +151,10 @@ module Block = struct
     let parent = Option.get ptr.tag in
     let tb', tag = Tree_borrow.add_child ~parent ~state ?protector tb in
     let ptr' = { ptr with tag = Some tag } in
-    L.debug (fun m ->
-        m "%s pointer %a -> %a (%a)"
-          (if protect then "Protecting" else "Borrowing")
-          Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state state);
+    [%l.debug
+      "%s pointer %a -> %a (%a)"
+        (if protect then "Protecting" else "Borrowing")
+        Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state state];
     if not protect then
       let+ () = SM.set_state (to_opt (block, tb')) in
       Ok (ptr', meta)
@@ -331,11 +331,10 @@ open SM.Syntax
 
 let log action ptr =
   let+ st = SM.get_state () in
-  L.trace (fun m ->
-      m "About to execute action: %s (%a)@\n@[<2>STATE:@ %a@]" action Sptr.pp
-        ptr
-        (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
-        st)
+  [%trace
+    "About to execute action: %s (%a)@\n@[<2>STATE:@ %a@]" action Sptr.pp ptr
+      (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
+      st]
 
 let[@inline] with_loc_err ?trace:msg ()
     (f : unit -> ('a, Error.t, 'f) SM.Result.t) :
@@ -405,9 +404,9 @@ let rec size_and_align_of_val ty meta =
 and check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   (* The expected alignment of a dyn pointer is stored inside the VTable *)
   let** _, exp_align = size_and_align_of_val ty meta in
-  L.debug (fun m ->
-      m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
-        Typed.ppa exp_align Common.Charon_util.pp_ty ty);
+  [%l.debug
+    "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
+      exp_align Common.Charon_util.pp_ty ty];
   let aligned, err = Sptr.is_aligned exp_align ptr in
   assert_or_error aligned err
 
@@ -427,8 +426,7 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
   let** () = check_ptr_align fptr ty in
   let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
   let** value = apply_parser ?ignore_borrow ptr parser in
-  L.debug (fun f ->
-      f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
+  [%l.debug "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value];
   let check_ref =
     if (Config.get ()).recursive_validity <> Allow && check_refs then
       fun ptr ty ->
@@ -464,9 +462,9 @@ and fake_read ((ptr, meta) as fptr) ty =
   in
   if skip_check then Result.ok ()
   else (
-    L.debug (fun m ->
-        m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) fptr
-          Charon_util.pp_ty ty);
+    [%l.debug
+      "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) fptr
+        Charon_util.pp_ty ty];
     let*- err =
       let++ _ = load ~ignore_borrow:true ~check_refs:false fptr ty in
       ()
@@ -510,10 +508,10 @@ let store ((ptr, _) as fptr) ty sval :
   if Iter.is_empty parts then Result.ok ()
   else
     let** () = check_ptr_align fptr ty in
-    (* L.debug (fun f ->
-     *   f "Parsed to parts [%a]"
-     *     Fmt.(list ~sep:comma Encoder.pp_cval_info)
-     *     parts); *)
+    (* [%l.debug
+     *   "Parsed to parts [%a]"
+     *   Fmt.(list ~sep:comma Encoder.pp_cval_info)
+     *   parts]; *)
     let* () = log "store" ptr in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr ptr in
@@ -674,12 +672,12 @@ let free ((ptr : Sptr.t), _) =
   (* let** () =
    *   with_ptr ptr (fun _ ->
    *       Block.with_tree_block_read_tb (fun tb ->
-   *           L.warn (fun m -> m "%a" Tree_borrow.pp tb);
+   *           [%l.warn "%a" Tree_borrow.pp tb];
    *           if Tree_borrow.strong_protector_exists tb then
    *             Tree_block.SM.Result.error `InvalidFreeStrongProtector
    *           else Tree_block.SM.Result.ok ()))
    * in *)
-  L.debug (fun m -> m "Freeing pointer %a" Sptr.pp ptr);
+  [%l.debug "Freeing pointer %a" Sptr.pp ptr];
   with_heap
     (Heap.wrap loc (Freeable_block_with_meta.wrap (Freeable_block.free ())))
 
@@ -734,7 +732,7 @@ let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) =
       else
         let**^ size = Layout.size_of ty in
         let@ ofs = with_ptr ptr in
-        L.debug (fun m -> m "Unprotecting pointer %a" Sptr.pp ptr);
+        [%l.debug "Unprotecting pointer %a" Sptr.pp ptr];
         Block.unprotect ofs tag size
 
 let with_exposed addr =
@@ -807,18 +805,17 @@ let leak_check () : (unit, Error.with_trace, syn list) Result.t =
          [] heap
      in
      if List.is_empty leaks then Result.ok ()
-     else (
-       L.info (fun m ->
-           let pp_leak ft (k, trace) =
-             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp trace
-           in
-           m "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks);
+     else
+       let pp_leak ft (k, trace) =
+         Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp trace
+       in
+       [%l.info "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks];
        let wheres = List.map snd leaks in
        let* leak_trace = branches (List.map (fun t () -> return t) wheres) in
        let leak_trace =
          Trace.rename ~rev:true 0 "Leaking function" leak_trace
        in
-       Result.error (Error.decorate leak_trace `MemoryLeak)))
+       Result.error (Error.decorate leak_trace `MemoryLeak))
 
 let with_errors () (f : Error.with_trace list -> 'a * Error.with_trace list) :
     ('a, Error.with_trace, syn list) Result.t =

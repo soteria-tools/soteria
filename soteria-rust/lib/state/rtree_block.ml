@@ -217,7 +217,7 @@ module Make (Sptr : Sptr.S) = struct
             Ok ((Rust_val.Int value, offset) :: vs)
         | Owned (Init value, _) -> Result.ok ((value, offset) :: vs)
         | Owned (Any, _) ->
-            L.info (fun m -> m "Reading from Any memory, vanishing.");
+            [%l.info "Reading from Any memory, vanishing."];
             vanish ()
         | NotOwned Partially | Owned ((Lazy | Uninit Partially), _) ->
             failwith "Iterating over an intermediate node?")

@@ -29,24 +29,24 @@ module Make (StateImpl : State.S) = struct
     let binding = Store.find var_id store in
     match binding.kind with
     | Stackptr ptr ->
-        L.debug (fun m ->
-            m "Variable %a has pointer %a" Expressions.pp_var_id var_id
-              pp_full_ptr ptr);
+        [%l.debug
+          "Variable %a has pointer %a" Expressions.pp_var_id var_id pp_full_ptr
+            ptr];
         ok ptr
     | Uninit ->
         let* ptr = State.alloc_ty binding.ty in
         let+ () = map_env (Store.declare_ptr var_id ptr) in
-        L.debug (fun m ->
-            m "Variable %a was uninitialized, allocated pointer %a"
-              Expressions.pp_var_id var_id pp_full_ptr ptr);
+        [%l.debug
+          "Variable %a was uninitialized, allocated pointer %a"
+            Expressions.pp_var_id var_id pp_full_ptr ptr];
         ptr
     | Value v ->
         let* ptr = State.alloc_ty binding.ty in
         let* () = State.store ptr binding.ty v in
         let+ () = map_env (Store.declare_ptr var_id ptr) in
-        L.debug (fun m ->
-            m "Variable %a had value, allocated pointer %a"
-              Expressions.pp_var_id var_id pp_full_ptr ptr);
+        [%l.debug
+          "Variable %a had value, allocated pointer %a" Expressions.pp_var_id
+            var_id pp_full_ptr ptr];
         ptr
     | Dead -> error `DeadVariable
 
@@ -318,14 +318,13 @@ module Make (StateImpl : State.S) = struct
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
         let* ptr = resolve_place base in
-        L.debug (fun f ->
-            f "Dereferencing ptr %a of %a" pp_full_ptr ptr pp_ty base.ty);
+        [%l.debug "Dereferencing ptr %a of %a" pp_full_ptr ptr pp_ty base.ty];
         let* v = State.load ptr base.ty in
         match v with
         | Ptr fptr -> (
-            L.debug (fun f ->
-                f "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
-                  pp_full_ptr fptr);
+            [%l.debug
+              "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
+                pp_full_ptr fptr];
             let pointee = get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
@@ -341,9 +340,8 @@ module Make (StateImpl : State.S) = struct
     | PlaceProjection (base, PtrMetadata) ->
         let* ((ptr, _) as fptr) = resolve_place base in
         let* () = State.fake_read fptr base.ty in
-        L.debug (fun f ->
-            f "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty
-              base.ty);
+        [%l.debug
+          "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty base.ty];
         let+ ptr' =
           Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
             ptr
@@ -353,14 +351,14 @@ module Make (StateImpl : State.S) = struct
     | PlaceProjection (base, Field (kind, field)) ->
         let* ((ptr, meta) as fptr) = resolve_place base in
         let* () = State.check_ptr_align fptr base.ty in
-        L.debug (fun f ->
-            f "Projecting field %a (kind %a) for %a" Types.pp_field_id field
-              Expressions.pp_field_proj_kind kind Sptr.pp ptr);
+        [%l.debug
+          "Projecting field %a (kind %a) for %a" Types.pp_field_id field
+            Expressions.pp_field_proj_kind kind Sptr.pp ptr];
         let* ptr' = Sptr.project base.ty kind field ptr in
-        L.debug (fun f ->
-            f "Projecting ADT %a, field %a, with pointer %a to pointer %a"
-              Expressions.pp_field_proj_kind kind Types.pp_field_id field
-              Sptr.pp ptr Sptr.pp ptr');
+        [%l.debug
+          "Projecting ADT %a, field %a, with pointer %a to pointer %a"
+            Expressions.pp_field_proj_kind kind Types.pp_field_id field Sptr.pp
+            ptr Sptr.pp ptr'];
         if Layout.is_dst place.ty then ok (ptr', meta) else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
@@ -380,9 +378,9 @@ module Make (StateImpl : State.S) = struct
           assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
         let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty ptr idx in
-        L.debug (fun f ->
-            f "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
-              Sptr.pp ptr');
+        [%l.debug
+          "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
+            Sptr.pp ptr'];
         (ptr', Thin)
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr, meta = resolve_place base in
@@ -407,11 +405,11 @@ module Make (StateImpl : State.S) = struct
         in
         let+ ptr' = Sptr.offset ~signed:false ~ty ptr from in
         let slice_len = to_ -!@ from in
-        L.debug (fun f ->
-            f "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp ptr
-              Typed.ppa from Typed.ppa to_
-              (if from_end then "(from end)" else "")
-              Sptr.pp ptr' Typed.ppa slice_len);
+        [%l.debug
+          "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp ptr
+            Typed.ppa from Typed.ppa to_
+            (if from_end then "(from end)" else "")
+            Sptr.pp ptr' Typed.ppa slice_len];
         (ptr', Len slice_len)
 
   and resolve_place_lazy (place : Expressions.place) : lazy_ptr t =
@@ -466,9 +464,8 @@ module Make (StateImpl : State.S) = struct
             Poly.push_generics ~params:fundef.generics ~args:fn.generics
             @@ Poly.subst_tys fundef.signature.inputs
           in
-          L.info (fun g ->
-              g "Resolved function call to %a" Crate.pp_name
-                fundef.item_meta.name);
+          [%l.info
+            "Resolved function call to %a" Crate.pp_name fundef.item_meta.name];
           let fun_maybe_stubbed =
             Std_funs.std_fun_eval fundef fn.generics exec_fun
           in
@@ -504,9 +501,8 @@ module Make (StateImpl : State.S) = struct
         (* Same as with strings -- here we need to somehow cache where we store
            the globals *)
         let fundef = Crate.get_fun decl.init in
-        L.info (fun g ->
-            g "Resolved global init call to %a" Crate.pp_name
-              fundef.item_meta.name);
+        [%l.info
+          "Resolved global init call to %a" Crate.pp_name fundef.item_meta.name];
         let global_fn = Std_funs.std_fun_eval fundef glob.generics exec_fun in
         (* First we allocate the global and store it in the State *)
         let* ptr =
@@ -517,9 +513,9 @@ module Make (StateImpl : State.S) = struct
         (* And only after we compute it; this enables recursive globals *)
         let* v = with_env ~env:() @@ global_fn [] in
         let+ () = State.store ptr decl.ty v in
-        L.info (fun g ->
-            g "Initialized global %a at %a to %a" Crate.pp_name
-              decl.item_meta.name pp_full_ptr ptr pp_rust_val v);
+        [%l.info
+          "Initialized global %a at %a to %a" Crate.pp_name decl.item_meta.name
+            pp_full_ptr ptr pp_rust_val v];
         ptr
 
   and eval_operand (op : Expressions.operand) =
@@ -907,14 +903,14 @@ module Make (StateImpl : State.S) = struct
         | _ -> not_impl "Unexpected len rvalue")
 
   and exec_stmt (stmt : UllbcAst.statement) : unit t =
-    L.info (fun m -> m "Statement: %a" Crate.pp_statement stmt);
+    [%l.info "Statement: %a" Crate.pp_statement stmt];
     let@ () = with_loc ~loc:stmt.span.data in
     match stmt.kind with
     | Nop -> ok ()
     | Assign (place, rval) ->
         let* ptr = resolve_place_lazy place in
         let* v = eval_rvalue rval place.ty in
-        L.info (fun m -> m "Assigning %a <- %a" pp_lazy_ptr ptr pp_rust_val v);
+        [%l.info "Assigning %a <- %a" pp_lazy_ptr ptr pp_rust_val v];
         store_lazy ptr place.ty v
     | StorageLive local ->
         let* store = get_env () in
@@ -970,7 +966,7 @@ module Make (StateImpl : State.S) = struct
       ({ statements; terminator } : UllbcAst.block) =
     let*^ () = Rustsymex.consume_fuel_steps 1 in
     let* () = iter_list statements ~f:exec_stmt in
-    L.info (fun f -> f "Terminator: %a" Crate.pp_terminator terminator);
+    [%l.info "Terminator: %a" Crate.pp_terminator terminator];
     let@ () = with_loc ~loc:terminator.span.data in
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
@@ -987,10 +983,10 @@ module Make (StateImpl : State.S) = struct
               if Types.equal_ty from_ty to_ty then ok arg
               else Core.transmute ~from_ty ~to_ty arg)
         in
-        L.info (fun g ->
-            g "Executing function with arguments [%a]"
-              Fmt.(list ~sep:(any ", ") pp_rust_val)
-              args);
+        [%l.info
+          "Executing function with arguments [%a]"
+            Fmt.(list ~sep:(any ", ") pp_rust_val)
+            args];
         let fun_exec =
           with_extra_call_trace ~loc:terminator.span.data ~msg:"Call trace"
           @@ with_env ~env:()
@@ -999,15 +995,15 @@ module Make (StateImpl : State.S) = struct
         unwind_with fun_exec
           ~f:(fun v ->
             let* ptr = resolve_place_lazy dest in
-            L.info (fun m ->
-                m "Returned %a <- %a from %a" Crate.pp_place dest pp_rust_val v
-                  Crate.pp_fn_operand func);
+            [%l.info
+              "Returned %a <- %a from %a" Crate.pp_place dest pp_rust_val v
+                Crate.pp_fn_operand func];
             let* () = store_lazy ptr dest.ty v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
             let* () = State.add_error err in
-            L.info (fun m -> m "Unwinding from %a" Crate.pp_fn_operand func);
+            [%l.info "Unwinding from %a" Crate.pp_fn_operand func];
             let block = UllbcAst.BlockId.nth body.body on_unwind in
             exec_block ~body block)
     | Goto b ->
@@ -1025,9 +1021,9 @@ module Make (StateImpl : State.S) = struct
         let* discr = eval_operand discr in
         match switch with
         | If (if_block, else_block) ->
-            L.info (fun g ->
-                g "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
-                  UllbcAst.pp_block_id else_block pp_rust_val discr);
+            [%l.info
+              "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
+                UllbcAst.pp_block_id else_block pp_rust_val discr];
             let bool_discr =
               match discr with
               | Int discr -> BV.to_bool (Typed.cast_lit TBool discr)
@@ -1041,17 +1037,15 @@ module Make (StateImpl : State.S) = struct
               let block = UllbcAst.BlockId.nth body.body else_block in
               exec_block ~body block
         | SwitchInt (_, options, default) ->
-            L.info (fun g ->
-                let options =
-                  List.map
-                    (fun (v, b) -> (PrintValues.literal_to_string v, b))
-                    options
-                in
-                g "Switch options %a (else %a) for %a"
-                  Fmt.(
-                    list ~sep:comma
-                    @@ pair ~sep:(any "->") string UllbcAst.pp_block_id)
-                  options UllbcAst.pp_block_id default pp_rust_val discr);
+            [%l.info
+              "Switch options %a (else %a) for %a"
+                Fmt.(
+                  list ~sep:comma
+                  @@ pair ~sep:(any "->") string UllbcAst.pp_block_id)
+                (List.map
+                   (fun (v, b) -> (PrintValues.literal_to_string v, b))
+                   options)
+                UllbcAst.pp_block_id default pp_rust_val discr];
             let compare_discr =
               match discr with
               | Int discr -> fun (v, _) -> discr ==@ BV.of_literal v
@@ -1100,11 +1094,11 @@ module Make (StateImpl : State.S) = struct
             unwind_with fun_exec
               ~f:(fun _ ->
                 let block = UllbcAst.BlockId.nth body.body target in
-                L.info (fun m -> m "Dropped with %a" Fun_kind.pp drop);
+                [%l.info "Dropped with %a" Fun_kind.pp drop];
                 exec_block ~body block)
               ~fe:(fun err ->
                 let* () = State.add_error err in
-                L.info (fun m -> m "Unwinding drop from %a" Fun_kind.pp drop);
+                [%l.info "Unwinding drop from %a" Fun_kind.pp drop];
                 let block = UllbcAst.BlockId.nth body.body on_unwind in
                 exec_block ~body block)
         | None ->

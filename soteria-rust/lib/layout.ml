@@ -94,8 +94,7 @@ let mk_concrete ~size ~align =
 let not_impl_layout msg ty =
   Fmt.kstr not_impl "Can't compute layout: %s %a" msg pp_ty ty
 
-let layout_warning msg ty =
-  L.warn (fun m -> m "Layout: %s@.Type: %a" msg pp_ty ty)
+let layout_warning msg ty = [%l.warn "Layout: %s@.Type: %a" msg pp_ty ty]
 
 let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   let* ty = Poly.subst_ty ty in

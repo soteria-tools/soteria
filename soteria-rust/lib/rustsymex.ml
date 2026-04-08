@@ -96,7 +96,7 @@ module Poly = struct
     if (Config.get ()).polymorphic then (
       let* ({ subst; _ } as st) = get_state () in
       let args' = generic_args_substitute subst args in
-      L.debug (fun m -> m "Pushing generics %a" Crate.pp_generic_args args');
+      [%l.debug "Pushing generics %a" Crate.pp_generic_args args'];
       let subst =
         subst_at_binder_zero (make_sb_subst_from_generics params args' Self)
       in

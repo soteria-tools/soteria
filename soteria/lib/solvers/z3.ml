@@ -124,15 +124,15 @@ module Make (Value : Value.S) :
     let smt_res =
       try check solver
       with Simple_smt.UnexpectedSolverResponse s ->
-        L.error (fun m ->
-            m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
+        [%l.error
+          "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s)];
         Unknown
     in
     match smt_res with
     | Sat -> Sat
     | Unsat -> Unsat
     | Unknown ->
-        L.info (fun m -> m "Solver returned unknown");
+        [%l.info "Solver returned unknown"];
         Unknown
 
   let push solver n = ack_command solver (Simple_smt.push n)
