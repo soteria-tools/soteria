@@ -129,12 +129,21 @@ module Make
   end
 
   module Producer = struct
+    open Syntax
     include Producer
 
+    let leak m = function
+      | None ->
+          let+ res = run_identity m in
+          (res, None)
+      | Some subst ->
+          let+ res, subst = run ~subst m in
+          (res, Some subst)
+
     let[@inline] run_with_state ~state (x : 'a t) : ('a * st) Symex.Producer.t =
-      let open Symex.Syntax in
-      Symex.Producer.unleak_UNSAFE (fun subst ->
-          let+ (res, subst), state = leak_UNSAFE x subst state in
+      Symex.Producer.from_raw_UNSAFE (fun subst ->
+          let open Symex.Syntax in
+          let+ (res, subst), state = leak x subst state in
           ((res, state), subst))
   end
 
@@ -144,8 +153,8 @@ module Make
     let[@inline] run_with_state ~state (x : ('a, 'f) t) :
         ('a * st, 'f) Symex.Consumer.t =
       let open Symex.Syntax in
-      Symex.Consumer.unleak_UNSAFE (fun subst ->
-          let+ res, state = leak_UNSAFE x subst state in
+      Symex.Consumer.from_raw_UNSAFE (fun subst ->
+          let+ res, state = run ~subst x state in
           match res with
           | Compo_res.Ok (res, subst) -> Compo_res.Ok ((res, state), subst)
           | Error e -> Error e
