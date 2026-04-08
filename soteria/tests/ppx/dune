@@ -12,5 +12,9 @@
   ./reversible/simple.ml
   ./reversible/ignored.ml
   ./reversible/all_ignored.ml
-  ./reversible/err_non_t.ml)
+  ./reversible/err_non_t.ml
+  ./logs/prelude.ml
+  ./logs/simple.ml
+  ./logs/err_function_payload.ml
+  ./logs/err_labelled.ml)
  (applies_to :whole_subtree))
