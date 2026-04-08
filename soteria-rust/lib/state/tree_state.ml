@@ -87,11 +87,11 @@ module Block = struct
   }
   [@@deriving sym_state { symex = DecayMap.SM }]
 
-  open SM
-  open Syntax
-
   let pp_pretty ft { block; _ } =
     Fmt.option ~none:(Fmt.any "Empty Block") Tree_block.pp_pretty ft block
+
+  open SM
+  open Syntax
 
   let with_block_read_tb
       (f :
