@@ -62,13 +62,14 @@ let produce syn (t : t option) : t option Producer.t =
   let open Producer.Syntax in
   let* t = produce syn t in
   (* Bit heavy-handed but we just massively assume the well-formedness *)
-  let to_assume =
+  let distinct_locs =
     syntactic_bindings (Option.value ~default:empty t)
     |> Seq.map snd
     |> List.of_seq
     |> Typed.distinct
   in
-  let+^ () = assume [ to_assume ] in
+  let* loc = Producer.apply_subst Loc.subst (snd syn) in
+  let+^ () = assume [ distinct_locs; Typed.(not (Ptr.is_null_loc loc)) ] in
   t
 
 let empty = None
