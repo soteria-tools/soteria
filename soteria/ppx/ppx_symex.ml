@@ -18,13 +18,10 @@ let log_ext ext =
 
 (* Registring [if%sat] *)
 let () =
-  let open Expander.If_sat in
-  let register extension =
-    Driver.register_transformation
-      (Extension_name.to_string extension)
-      ~extensions:[ ext extension ]
+  let extensions =
+    List.map ext Expander.If_sat.Extension_name.[ Sat; Sat1; Sure ]
   in
-  List.iter register [ Sat; Sat1; Sure ]
+  Driver.register_transformation "if_sat" ~extensions
 
 (* Register [0s], [1s] etc. *)
 let () =
@@ -38,10 +35,8 @@ let () = Reversible.register ()
 
 (* Register [%l.debug], [%l.info], ... *)
 let () =
-  let open Logs in
-  let register extension =
-    Driver.register_transformation
-      (Extension_name.to_string extension)
-      ~extensions:[ log_ext extension ]
+  let extensions =
+    List.map log_ext
+      Logs.Extension_name.[ Debug; Info; Warn; Error; Trace; Smt ]
   in
-  List.iter register [ Debug; Info; Warn; Error; Trace; Smt ]
+  Driver.register_transformation "logs" ~extensions
