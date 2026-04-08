@@ -8,6 +8,14 @@ let ext ext =
     Ast_pattern.(single_expr_payload __)
     (fun ~loc:_ ~path:_ ~arg:_ expr -> expand ~ext expr)
 
+let log_ext ext =
+  let open Logs in
+  Extension.declare_with_path_arg
+    (Extension_name.to_string ext)
+    Extension.Context.expression
+    Ast_pattern.(single_expr_payload __)
+    (fun ~loc:_ ~path:_ ~arg:_ expr -> expand ~ext expr)
+
 (* Registring [if%sat] *)
 let () =
   let open Expander.If_sat in
@@ -27,3 +35,13 @@ let () =
 
 (* Register [@@deriving reversible] *)
 let () = Reversible.register ()
+
+(* Register [%l.debug], [%l.info], ... *)
+let () =
+  let open Logs in
+  let register extension =
+    Driver.register_transformation
+      (Extension_name.to_string extension)
+      ~extensions:[ log_ext extension ]
+  in
+  List.iter register [ Debug; Info; Warn; Error; Trace; Smt ]
