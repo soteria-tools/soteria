@@ -13,6 +13,10 @@ module Make
     (I : sig
       include Base.M(Symex).S
 
+      (** Checks this state is exclusively owned, returning if it is exclusively
+          owned and otherwise missing with the fixes required to make this state
+          exclusively owned.
+          {b This function is expected to not be modify the state.} *)
       val assert_exclusively_owned : unit -> (unit, 'err, syn list) SM.Result.t
     end) =
 struct

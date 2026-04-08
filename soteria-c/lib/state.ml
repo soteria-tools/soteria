@@ -7,31 +7,40 @@ module T = Typed.T
 open Csymex
 module Agv = Aggregate_val
 
-module Heap =
-  Pmap_direct_access
-    (struct
-      include Typed
+module Heap = struct
+  include
+    Pmap_direct_access
+      (struct
+        include Typed
 
-      type t = T.sloc Typed.t [@@deriving show { with_path = false }]
-      type syn = Expr.t [@@deriving show { with_path = false }]
+        type t = T.sloc Typed.t [@@deriving show { with_path = false }]
+        type syn = Expr.t [@@deriving show { with_path = false }]
 
-      let to_syn (loc : t) : syn = Expr.of_value loc
-      let exprs_syn (loc : syn) : Expr.t list = [ loc ]
-      let learn_eq s l = Consumer.learn_eq s l
-      let subst = Expr.subst
+        let to_syn (loc : t) : syn = Expr.of_value loc
+        let exprs_syn (loc : syn) : Expr.t list = [ loc ]
+        let learn_eq s l = Consumer.learn_eq s l
+        let subst = Expr.subst
 
-      let fresh () =
-        match Config.current_mode () with
-        | Compositional -> Csymex.nondet Typed.t_loc
-        | Whole_program ->
-            (* If we are in non-compositional execution, we can use concrete
-               locations. *)
-            return (Csymex.Concrete_alloc_id.get_next ())
+        let fresh () =
+          match Config.current_mode () with
+          | Compositional -> Csymex.nondet Typed.t_loc
+          | Whole_program ->
+              (* If we are in non-compositional execution, we can use concrete
+                 locations. *)
+              return (Csymex.Concrete_alloc_id.get_next ())
 
-      let simplify = Csymex.simplify
-      let to_int = unique_tag
-    end)
-    (Block)
+        let simplify = Csymex.simplify
+        let to_int = unique_tag
+      end)
+      (Block)
+
+  let produce ((loc, _) as syn) st =
+    let open Producer in
+    let open Syntax in
+    let* loc = apply_subst Typed.Expr.subst loc in
+    let*^ () = assume [ Typed.not (Typed.Ptr.is_null_loc loc) ] in
+    produce syn st
+end
 
 type t = { heap : Heap.t option; globs : Globs.t option }
 [@@deriving sym_state { symex = Csymex; syn = State_intf.syn }]

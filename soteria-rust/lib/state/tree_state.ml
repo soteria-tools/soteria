@@ -93,7 +93,7 @@ module Block = struct
   let pp_pretty ft { block; _ } =
     Fmt.option ~none:(Fmt.any "Empty Block") Tree_block.pp_pretty ft block
 
-  let with_tree_block_read_tb
+  let with_block_read_tb
       (f :
         Tree_borrow.t -> ('a, 'err, Tree_block.syn list) Tree_block.SM.Result.t)
       : ('a, 'err, syn list) SM.Result.t =
@@ -101,7 +101,7 @@ module Block = struct
     let { block; borrow } = of_opt t_opt in
     let*^ v, block = f borrow block in
     let+ () = SM.set_state (to_opt { block; borrow }) in
-    Soteria.Symex.Compo_res.map_missing v (List.map (fun s -> Ser_block s))
+    Soteria.Symex.Compo_res.map_missing v lift_block_fixes
 
   (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
       being reborrowed. *)
@@ -316,8 +316,7 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   let* () = log "load" ptr in
   let handler (ty, ofs) =
     let@ _ofs = Heap.with_ptr ptr in
-    Block.with_tree_block_read_tb
-      (Tree_block.load ~ignore_borrow ofs ty ptr.tag)
+    Block.with_block_read_tb (Tree_block.load ~ignore_borrow ofs ty ptr.tag)
   in
   let get_all (size, ofs) =
     let@ _ofs = Heap.with_ptr ptr in
@@ -432,7 +431,7 @@ let tb_load_untyped (ptr : Sptr.t) size =
       else
         let* () = log "tb_load" ptr in
         let@ ofs = with_ptr ptr in
-        Block.with_tree_block_read_tb (Tree_block.tb_access ofs size tag)
+        Block.with_block_read_tb (Tree_block.tb_access ofs size tag)
 
 (** Performs a load at the tree borrow level, by updating the borrow state,
     without attempting to validate the values or checking uninitialised memory
@@ -456,7 +455,7 @@ let store ((ptr, _) as fptr) ty sval :
     let* () = log "store" ptr in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr ptr in
-    Block.with_tree_block_read_tb (fun tb ->
+    Block.with_block_read_tb (fun tb ->
         let open Tree_block.SM in
         let open Tree_block.SM.Syntax in
         (* We uninitialise the whole range before writing, to ensure padding
@@ -612,7 +611,7 @@ let free ((ptr : Sptr.t), _) =
 
   (* let** () =
    *   with_ptr ptr (fun _ ->
-   *       Block.with_tree_block_read_tb (fun tb ->
+   *       Block.with_block_read_tb (fun tb ->
    *           L.warn (fun m -> m "%a" Tree_borrow.pp tb);
    *           if Tree_borrow.strong_protector_exists tb then
    *             Tree_block.SM.Result.error `InvalidFreeStrongProtector
