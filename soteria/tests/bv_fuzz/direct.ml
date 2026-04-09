@@ -116,14 +116,6 @@ module BitVec = struct
     let min = Z.(neg (one lsl Stdlib.( - ) n 1)) in
     Binop (Binop.Eq, v, BitVec.mk_masked n min) <| TBool
 
-  let sub_overflows ~signed v1 v2 =
-    if Stdlib.not signed then lt ~signed v1 v2
-    else
-      let neg_ovf = neg_overflows v2 in
-      let neg_v2 = neg v2 in
-      let add_ovf = add_overflows ~signed v1 neg_v2 in
-      Bool.or_ neg_ovf add_ovf
-
   (* Bool-bv conversions *)
   let of_bool n v = Unop (BvOfBool n, v) <| t_bv n
 
