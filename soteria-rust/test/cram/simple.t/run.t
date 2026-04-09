@@ -404,3 +404,10 @@ Test approximation of complex float operations -- allowed
         ((V|2| ==. 1.0f) || !((V|1| ==. 0.0f))) /\ (-1.0f <=. V|2|) /\
         (V|2| <=. 1.0f) /\ (-1f <=. V|2|) /\ (V|2| <=. 1f)
   
+Test enum constructors as functions; this broke with a rust toolchain update
+  $ soteria-rust exec enum_constructor.rs
+  Compiling... done in <time>
+  => Running enum_constructor::main...
+  note: enum_constructor::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
