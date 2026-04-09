@@ -11,7 +11,8 @@ let default_abductor_fuel =
   Soteria.Symex.Fuel_gauge.{ steps = Finite 1000; branching = Finite 4 }
 
 (** Generates summaries for a function given a function definitions. Has to be
-    run within {{!Soteria.Stats.As_ctx.with_stats}with_stats} *)
+    run within {{!Soteria.Stats.As_ctx.with_stats}[with_stats]} and
+    {{!Soteria.Coverage.As_ctx.with_coverage}[with_coverage]} *)
 let generate_summaries_for (fundef : fundef) =
   let open Syntaxes.List in
   let fid, (floc, _, _, _, _) = fundef in
@@ -29,7 +30,7 @@ let generate_summaries_for (fundef : fundef) =
         []
     | Some arg_tys -> [ arg_tys ]
   in
-  let process =
+  let process () =
     let open Csymex.Syntax in
     let* args = Csymex.all Layout.nondet_c_ty_aggregate arg_tys in
     let* result, state = Bi_interp.exec_fun fundef ~args Bi_state.empty in
@@ -40,7 +41,8 @@ let generate_summaries_for (fundef : fundef) =
   in
   let res =
     let@ () = L.with_section "Running symbolic execution" in
-    Csymex.run_needs_stats ~mode:UX ~fuel:default_abductor_fuel process
+    Csymex.run ~mode:UX ~fuel:default_abductor_fuel ~stats:Handled
+      ~coverage:Handled process
   in
   let+ (args, ret, bi_state), pc = res in
   let args = List.map Aggregate_val.to_syn args in

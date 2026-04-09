@@ -57,7 +57,7 @@ and analyse_function ~context fname (func_dec : Lang.Fun_def.t) =
         ()
     | None ->
         let@ () = with_context ~fun_interps context in
-        let process =
+        let process () =
           let open Bi_interp in
           let open LSymex.Syntax in
           let* args =

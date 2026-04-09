@@ -36,7 +36,7 @@ let exec file =
     | Some f -> f
     | None -> failwith "No main function found"
   in
-  let process =
+  let process () =
     let@@ () = Exec_interp.SM.Result.run_with_state ~state:State.empty in
     Exec_interp.eval_function main []
   in

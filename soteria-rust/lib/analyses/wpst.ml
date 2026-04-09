@@ -91,11 +91,10 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let { res = branches; stats } : 'res Soteria.Stats.with_stats =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
-    let@@ () =
-      Rustsymex.Result.run_with_stats ~mode:OX ~fuel
-        ~fail_fast:(Config.get ()).fail_fast
-    in
-    exec_fun fun_decl ~args
+    let@ () = Soteria.Stats.As_ctx.with_stats () in
+    Rustsymex.Result.run ~mode:OX ~fuel ~stats:Handled
+      ~fail_fast:(Config.get ()).fail_fast
+    @@ fun () -> exec_fun fun_decl ~args
   in
   Soteria.Stats.output stats;
 

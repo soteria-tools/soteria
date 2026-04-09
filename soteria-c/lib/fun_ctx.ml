@@ -57,3 +57,50 @@ let get_sym sv t =
     | _ -> None
   in
   Csymex.of_opt_not_impl ~msg:"Could not resolve function" @@ res
+
+let reachable_lines (stmt : Ail_tys.stmt) : Soteria.Coverage.code_item Iter.t =
+ fun f ->
+  let rec aux stmt =
+    let Cerb_frontend.AilSyntax.{ loc; node; _ } = stmt in
+    let () =
+      match Error.Diagnostic.extract_location loc with
+      | Some (_, line, _loc) -> f (Line line)
+      | None -> ()
+    in
+    match node with
+    | AilSlabel (_, stmt, _)
+    | AilScase (_, stmt)
+    | AilSmarker (_, stmt)
+    | AilSwhile (_, stmt, _)
+    | AilSswitch (_, stmt)
+    | AilSdo (stmt, _, _) ->
+        aux stmt
+    | AilSif (_, then_stmt, else_stmt) ->
+        aux then_stmt;
+        aux else_stmt
+    | AilSblock (_, stmtl) | AilSpar stmtl -> List.iter aux stmtl
+    | AilSskip | AilSreturn _ | AilSreturnVoid | AilSexpr _ | AilSdeclaration _
+    | AilSbreak | AilScontinue | AilSgoto _
+    | AilScase_rangeGNU (_, _, _)
+    | AilSdefault _
+    | AilSreg_store (_, _) ->
+        ()
+  in
+  aux stmt
+
+let reachable_lines_iter (prog : Ail_tys.linked_program) =
+ fun f ->
+  prog.sigma.function_definitions
+  |> List.iter @@ fun ((_, (_, _, _, _, body)) as fn) ->
+     Csymex.fn_cov_info fn
+     |> Option.iter @@ fun fn ->
+        f (Soteria.Coverage.Function fn, reachable_lines body)
+
+let register_functions (prog : Ail_tys.linked_program) =
+  prog.sigma.function_definitions
+  |> List.iter @@ fun fn ->
+     Csymex.fn_cov_info fn
+     |> Option.iter @@ fun fn -> Soteria.Coverage.As_ctx.register_function fn
+
+let mark_files_lines_reachable (prog : Ail_tys.linked_program) =
+  Soteria.Coverage.As_ctx.register_bulk @@ reachable_lines_iter prog

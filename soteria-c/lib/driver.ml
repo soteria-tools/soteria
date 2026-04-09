@@ -238,6 +238,8 @@ let resolve_function (linked : Ail_tys.linked_program) entry_point =
 let with_function_context prog f =
   let open Effect.Deep in
   let fctx = Fun_ctx.of_linked_program prog in
+  let () = Fun_ctx.mark_files_lines_reachable prog in
+  let () = Fun_ctx.register_functions prog in
   Layout.Tag_defs.run_with_prog prog.sigma @@ fun () ->
   Ail_helpers.run_with_prog prog @@ fun () ->
   try f () with effect Interp.Get_fun_ctx, k -> continue k fctx
@@ -250,7 +252,7 @@ let exec_function ~includes ~fuel file_names function_name =
     else
       let* entry_point = resolve_function linked function_name in
       let open Wpst_interp.InterpM in
-      let symex =
+      let symex () =
         let open StateM.Syntax in
         let@@ () = StateM.Result.run_with_state ~state:SState.empty in
         let** () = Wpst_interp.init_prog_state linked in
@@ -260,7 +262,8 @@ let exec_function ~includes ~fuel file_names function_name =
         Wpst_interp.exec_fun entry_point ~args:[]
       in
       let@ () = with_function_context linked in
-      Ok (Csymex.Result.run_needs_stats ~mode:OX ~fuel symex)
+      Ok
+        (Csymex.Result.run ~mode:OX ~fuel ~stats:Handled ~coverage:Handled symex)
   in
   match result with
   | Ok v -> v
@@ -296,6 +299,7 @@ let generate_errors content =
 let initialise ?soteria_config mode config f =
   Option.iter Soteria.Config.set_and_lock soteria_config;
   let@ () = Config.with_config ~config ~mode in
+  let@ () = Soteria.Coverage.As_ctx.with_coverage_dumped () in
   Soteria.Stats.As_ctx.with_stats_dumped () f
 
 let print_states result =

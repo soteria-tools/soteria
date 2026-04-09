@@ -57,6 +57,16 @@
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
   
+         --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
+  
+         --output-coverage=VAL, --dump-coverage=VAL, --coverage=VAL (absent
+         SOTERIA_OUTPUT_COVERAGE env)
+             If coverage should be output. If the value is "stdout", prints the
+             coverage report to stdout; otherwise, stores it in the specified
+             file.
+  
          --output-crate
              Pretty-print the compiled crate to a file
   
@@ -246,8 +256,14 @@
          SOTERIA_COMPACT_DIAGNOSTICS
              See option --compact.
   
+         SOTERIA_COVERAGE_FORMAT
+             See option --coverage-format.
+  
          SOTERIA_OBOL_PATH
              See option --obol-path.
+  
+         SOTERIA_OUTPUT_COVERAGE
+             See option --output-coverage.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.
@@ -300,6 +316,16 @@
   OUTPUT OPTIONS
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
+  
+         --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
+  
+         --output-coverage=VAL, --dump-coverage=VAL, --coverage=VAL (absent
+         SOTERIA_OUTPUT_COVERAGE env)
+             If coverage should be output. If the value is "stdout", prints the
+             coverage report to stdout; otherwise, stores it in the specified
+             file.
   
          --output-crate
              Pretty-print the compiled crate to a file
@@ -487,8 +513,14 @@
          SOTERIA_COMPACT_DIAGNOSTICS
              See option --compact.
   
+         SOTERIA_COVERAGE_FORMAT
+             See option --coverage-format.
+  
          SOTERIA_OBOL_PATH
              See option --obol-path.
+  
+         SOTERIA_OUTPUT_COVERAGE
+             See option --output-coverage.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.

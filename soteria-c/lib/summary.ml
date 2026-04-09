@@ -234,7 +234,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
              on the arguments as the "pure" thing here, instead of building it
              separately *)
           let post_asrt = Logic.Asrt.make ~spatial:summary.post ~pure:[] in
-          let process =
+          let process () =
             let open Csymex.Syntax in
             let producer =
               let open Csymex.Producer in
@@ -267,7 +267,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           in
           let is_manifest =
             try
-              let result = Csymex.run_needs_stats ~mode:OX process in
+              let result = Csymex.run ~mode:OX ~stats:Handled process in
               L.debug (fun m ->
                   let pp_pc ft pc =
                     Fmt.pf ft "@[<2>Path condition: %a@]"

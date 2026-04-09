@@ -67,7 +67,7 @@ let consumer asrt a heap =
   let* () = learn_eq x a in
   Execute.consume asrt heap
 
-let run_asrt asrt =
+let run_asrt asrt () =
   let open Symex.Syntax in
   let* a_res, heap = first_and_heap () None in
   let** a = Symex.return a_res in

@@ -4,6 +4,7 @@
 type t = {
   logs : Logs.Config.cli; [@term Logs.Config.cmdliner_term ()]
   stats : Stats.Config.t; [@term Stats.Config.cmdliner_term ()]
+  coverage : Coverage.Config.t; [@term Coverage.Config.cmdliner_term ()]
   terminal : Terminal.Config.t; [@term Terminal.Config.cmdliner_term ()]
   solver : Solvers.Config.t; [@term Solvers.Config.cmdliner_term ()]
 }
@@ -13,4 +14,5 @@ let set_and_lock (config : t) =
   Solvers.Config.set_and_lock config.solver;
   Logs.Config.check_set_and_lock config.logs;
   Terminal.Config.set_and_lock config.terminal;
-  Stats.Config.set_and_lock config.stats
+  Stats.Config.set_and_lock config.stats;
+  Coverage.Config.set_and_lock config.coverage

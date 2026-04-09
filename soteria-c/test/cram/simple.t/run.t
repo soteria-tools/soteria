@@ -1310,6 +1310,124 @@ Checking that code cannot branch infinitely
   Executed 112 statements
   Verification Success!
 
+Coverage test -- JSON
+  $ soteria-c exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --coverage stdout --coverage-format json
+  Executed 11 statements
+  Verification Success!
+  {
+    "per_file": {},
+    "per_function": {
+      "sym.c:main": {
+        "lines": { "20": 1, "19": 1, "18": 1 },
+        "branches": {},
+        "meta": { "hits": 1, "line": 17, "end_line": null }
+      },
+      "sym.c:simple": {
+        "lines": {
+          "6": 0,
+          "2": 1,
+          "7": 0,
+          "3": 1,
+          "13": 1,
+          "12": 1,
+          "5": 2,
+          "4": 1,
+          "9": 1
+        },
+        "branches": {
+          "sym.c-3-3": { "line": 3, "then_hits": 1, "else_hits": 1 },
+          "sym.c-5-5": { "line": 5, "then_hits": 0, "else_hits": 1 }
+        },
+        "meta": { "hits": 1, "line": 1, "end_line": null }
+      }
+    }
+  }
+
+Coverage test -- Cobertura
+  $ soteria-c exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --coverage stdout --coverage-format cobertura
+  Executed 11 statements
+  Verification Success!
+  <?xml version="1.0" ?>
+  <coverage lines-valid="12" lines-covered="10" line-rate="0.833333" branches-valid="4" branches-covered="3" branch-rate="0.750000" version="soteria">
+    <packages>
+      <package name="soteria" line-rate="0.833333" branch-rate="0.750000">
+        <classes>
+          <class name="sym.c" filename="sym.c" line-rate="0.0" branch-rate="0.0">
+            <methods>
+              <method name="main" signature="" line-rate="1.000000" branch-rate="1.000000" complexity="0.0">
+                <lines>
+                  <line number="18" hits="1"/>
+                  <line number="19" hits="1"/>
+                  <line number="20" hits="1"/>
+                </lines>
+              </method>
+              <method name="simple" signature="" line-rate="0.777778" branch-rate="0.750000" complexity="0.0">
+                <lines>
+                  <line number="2" hits="1"/>
+                  <line number="3" hits="3" branch="true" condition-coverage="100% (2/2)"/>
+                  <line number="4" hits="1"/>
+                  <line number="5" hits="3" branch="true" condition-coverage="50% (1/2)"/>
+                  <line number="6" hits="0"/>
+                  <line number="7" hits="0"/>
+                  <line number="9" hits="1"/>
+                  <line number="12" hits="1"/>
+                  <line number="13" hits="1"/>
+                </lines>
+              </method>
+            </methods>
+            <lines>
+              <line number="2" hits="1"/>
+              <line number="3" hits="3" branch="true" condition-coverage="100% (2/2)"/>
+              <line number="4" hits="1"/>
+              <line number="5" hits="3" branch="true" condition-coverage="50% (1/2)"/>
+              <line number="6" hits="0"/>
+              <line number="7" hits="0"/>
+              <line number="9" hits="1"/>
+              <line number="12" hits="1"/>
+              <line number="13" hits="1"/>
+              <line number="18" hits="1"/>
+              <line number="19" hits="1"/>
+              <line number="20" hits="1"/>
+            </lines>
+          </class>
+        </classes>
+      </package>
+    </packages>
+  </coverage>
+
+Coverage test -- LCOV
+  $ soteria-c exec sym.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --coverage stdout --coverage-format lcov
+  Executed 11 statements
+  Verification Success!
+  SF:sym.c
+  FN:17,main
+  FNDA:1,main
+  FN:1,simple
+  FNDA:1,simple
+  FNF:2
+  FNH:2
+  BRDA:3,0,then,1
+  BRDA:3,0,else,1
+  BRDA:5,0,then,0
+  BRDA:5,0,else,1
+  DA:2,1
+  DA:3,3
+  DA:4,1
+  DA:5,3
+  DA:6,0
+  DA:7,0
+  DA:9,1
+  DA:12,1
+  DA:13,1
+  DA:18,1
+  DA:19,1
+  DA:20,1
+  BRF:4
+  BRH:3
+  LF:12
+  LH:10
+  end_of_record
+
   $ soteria-c exec global.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
     [Ok: (0x00000001,

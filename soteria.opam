@@ -36,6 +36,7 @@ depends: [
   "ppxlib" {>= "0.38.0"}
   "hc" {>= "0.5"}
   "yojson" {< "3.0"}
+  "xml-light"
   "unionFind"
   "ppx_deriving_yojson"
   "ocamlformat" {with-dev-setup & = "0.28.1"}

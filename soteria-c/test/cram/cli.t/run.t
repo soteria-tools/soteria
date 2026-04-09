@@ -64,6 +64,10 @@
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
   
+         --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
+  
          --dump-report=FILE (absent SOTERIA_DUMP_REPORT env)
              Write a JSON report of all diagnostics (bugs and errors) to the
              specified file
@@ -71,6 +75,12 @@
          --dump-summaries-to=FILE, --dump-summaries=FILE (absent
          SOTERIA_DUMP_SUMMARIES_FILE env)
              Dump the generated summaries to a file
+  
+         --output-coverage=VAL, --dump-coverage=VAL, --coverage=VAL (absent
+         SOTERIA_OUTPUT_COVERAGE env)
+             If coverage should be output. If the value is "stdout", prints the
+             coverage report to stdout; otherwise, stores it in the specified
+             file.
   
          --print-states (absent SOTERIA_PRINT_STATES env)
              Print final program states after whole-program symbolic testing
@@ -200,6 +210,9 @@
          SOTERIA_COMPACT_DIAGNOSTICS
              See option --compact.
   
+         SOTERIA_COVERAGE_FORMAT
+             See option --coverage-format.
+  
          SOTERIA_DUMP_REPORT
              See option --dump-report.
   
@@ -217,6 +230,9 @@
   
          SOTERIA_NO_IGNORE_PARSE_FAILURES
              See option --no-ignore-parse-failures.
+  
+         SOTERIA_OUTPUT_COVERAGE
+             See option --output-coverage.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.
@@ -270,6 +286,10 @@
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
   
+         --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
+  
          --dump-report=FILE (absent SOTERIA_DUMP_REPORT env)
              Write a JSON report of all diagnostics (bugs and errors) to the
              specified file
@@ -277,6 +297,12 @@
          --dump-summaries-to=FILE, --dump-summaries=FILE (absent
          SOTERIA_DUMP_SUMMARIES_FILE env)
              Dump the generated summaries to a file
+  
+         --output-coverage=VAL, --dump-coverage=VAL, --coverage=VAL (absent
+         SOTERIA_OUTPUT_COVERAGE env)
+             If coverage should be output. If the value is "stdout", prints the
+             coverage report to stdout; otherwise, stores it in the specified
+             file.
   
          --print-states (absent SOTERIA_PRINT_STATES env)
              Print final program states after whole-program symbolic testing
@@ -424,6 +450,9 @@
          SOTERIA_COMPACT_DIAGNOSTICS
              See option --compact.
   
+         SOTERIA_COVERAGE_FORMAT
+             See option --coverage-format.
+  
          SOTERIA_DUMP_REPORT
              See option --dump-report.
   
@@ -444,6 +473,9 @@
   
          SOTERIA_NO_IGNORE_PARSE_FAILURES
              See option --no-ignore-parse-failures.
+  
+         SOTERIA_OUTPUT_COVERAGE
+             See option --output-coverage.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.
@@ -502,6 +534,10 @@
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
   
+         --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
+  
          --dump-report=FILE (absent SOTERIA_DUMP_REPORT env)
              Write a JSON report of all diagnostics (bugs and errors) to the
              specified file
@@ -509,6 +545,12 @@
          --dump-summaries-to=FILE, --dump-summaries=FILE (absent
          SOTERIA_DUMP_SUMMARIES_FILE env)
              Dump the generated summaries to a file
+  
+         --output-coverage=VAL, --dump-coverage=VAL, --coverage=VAL (absent
+         SOTERIA_OUTPUT_COVERAGE env)
+             If coverage should be output. If the value is "stdout", prints the
+             coverage report to stdout; otherwise, stores it in the specified
+             file.
   
          --print-states (absent SOTERIA_PRINT_STATES env)
              Print final program states after whole-program symbolic testing
@@ -641,6 +683,9 @@
          SOTERIA_COMPACT_DIAGNOSTICS
              See option --compact.
   
+         SOTERIA_COVERAGE_FORMAT
+             See option --coverage-format.
+  
          SOTERIA_DUMP_REPORT
              See option --dump-report.
   
@@ -658,6 +703,9 @@
   
          SOTERIA_NO_IGNORE_PARSE_FAILURES
              See option --no-ignore-parse-failures.
+  
+         SOTERIA_OUTPUT_COVERAGE
+             See option --output-coverage.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.
@@ -856,6 +904,10 @@
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
   
+         --coverage-format=ENUM (absent=json or SOTERIA_COVERAGE_FORMAT env)
+             Coverage output format. Options are "json", "cobertura", and
+             "lcov".
+  
          --dump-report=FILE (absent SOTERIA_DUMP_REPORT env)
              Write a JSON report of all diagnostics (bugs and errors) to the
              specified file
@@ -863,6 +915,12 @@
          --dump-summaries-to=FILE, --dump-summaries=FILE (absent
          SOTERIA_DUMP_SUMMARIES_FILE env)
              Dump the generated summaries to a file
+  
+         --output-coverage=VAL, --dump-coverage=VAL, --coverage=VAL (absent
+         SOTERIA_OUTPUT_COVERAGE env)
+             If coverage should be output. If the value is "stdout", prints the
+             coverage report to stdout; otherwise, stores it in the specified
+             file.
   
          --print-states (absent SOTERIA_PRINT_STATES env)
              Print final program states after whole-program symbolic testing
@@ -992,6 +1050,9 @@
          SOTERIA_COMPACT_DIAGNOSTICS
              See option --compact.
   
+         SOTERIA_COVERAGE_FORMAT
+             See option --coverage-format.
+  
          SOTERIA_DUMP_REPORT
              See option --dump-report.
   
@@ -1009,6 +1070,9 @@
   
          SOTERIA_NO_IGNORE_PARSE_FAILURES
              See option --no-ignore-parse-failures.
+  
+         SOTERIA_OUTPUT_COVERAGE
+             See option --output-coverage.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.
