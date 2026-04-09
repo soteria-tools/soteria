@@ -9,14 +9,14 @@ module Concrete_alloc_id = struct
     Typed.Ptr.loc_of_int id
 end
 
-(* Adding the current location being executed to the general execution state *)
-module CSYMEX =
-  Soteria.Sym_states.State_monad.Make
-    (SYMEX)
-    (struct
-      type t = Cerb_location.t
-    end)
+module MonadState = struct
+  type t = { loc : Cerb_location.t; fn : Ail_tys.sym option }
 
+  let empty = { loc = Cerb_location.unknown; fn = None }
+end
+
+(* Adding the current location being executed to the general execution state *)
+module CSYMEX = Soteria.Sym_states.State_monad.Make (SYMEX) (MonadState)
 include CSYMEX
 include Syntaxes.FunctionWrap
 
@@ -43,19 +43,64 @@ let check_nonzero (t : Typed.T.sint Typed.t) :
     Result.error `NonZeroIsZero
   else Result.ok (Typed.cast t)
 
-let get_loc () = get_state ()
+let get_loc () =
+  let open Syntax in
+  let+ { loc; _ } = get_state () in
+  loc
 
-let with_loc ~(loc : Cerb_location.t) f =
-  Option.iter
-    (fun (file, line, _col) -> Soteria.Coverage.As_ctx.mark ~file (Line line))
+let with_loc ~(loc : Cerb_location.t) (f : 'a t) : 'a t =
+ fun st ->
+  let open SYMEX.Syntax in
+  let old_loc = st.loc in
+  let+ x, st = f { st with loc } in
+  (x, { st with loc = old_loc })
+
+let current_cov_loc (st : MonadState.t) : Soteria.Coverage.location option =
+  match Error.Diagnostic.extract_location st.loc with
+  | None -> None
+  | Some (file, _, _) -> (
+      match st.fn with
+      | None -> Some (File file)
+      | Some sym ->
+          let fn_name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym in
+          Some (Function { file; name = fn_name; line = None; end_line = None })
+      )
+
+let with_loc_covered ~loc (f : 'a t) : 'a t =
+  let open Syntax in
+  let@@ () = with_loc ~loc in
+  let* st = get_state () in
+  Option.iter2
+    (fun loc (_, line, _) -> Soteria.Coverage.As_ctx.mark loc (Line line))
+    (current_cov_loc st)
     (Error.Diagnostic.extract_location loc);
-  with_state ~state:loc f
+  f
+
+let with_function ~fn:((sym, (loc, _, _, _, _)) : Ail_tys.fundef) (f : 'a t) :
+    'a t =
+ fun st ->
+  let open SYMEX.Syntax in
+  Option.iter
+    (fun (file, line, _col) ->
+      Soteria.Coverage.As_ctx.mark_function
+        {
+          file;
+          name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym;
+          line = Some line;
+          end_line = None;
+        })
+    (Error.Diagnostic.extract_location loc);
+  let+ x, { fn = _; loc = _ } = f { fn = Some sym; loc } in
+  (x, st)
 
 let branch_span_of_loc (loc : Cerb_location.t) :
-    Soteria.Coverage.branch_span option =
-  Option.map
-    (fun (file, line, _col) : Soteria.Coverage.branch_span ->
-      { file; line; branch_id = Fmt.to_to_string Fmt_ail.pp_loc loc })
+    Soteria.Coverage.branch_span option t =
+  let open Syntax in
+  let+ st = get_state () in
+  Option.map2
+    (fun loc (file, line, col) : Soteria.Coverage.branch_span ->
+      { loc; line; branch_id = Fmt.str "%s-%d-%d" file line col })
+    (current_cov_loc st)
     (Error.Diagnostic.extract_location loc)
 
 let not_impl msg =
@@ -70,7 +115,7 @@ let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 
 let run ?fuel ?stats ?coverage ~mode process =
   SYMEX.run ?fuel ?stats ?coverage ~mode @@ fun () ->
-  run_with_state ~state:Cerb_location.unknown (process ())
+  run_with_state ~state:MonadState.empty (process ())
   |> (Fun.flip SYMEX.map) fst
 
 module Result = struct
@@ -79,7 +124,7 @@ module Result = struct
   let run ?fuel ?stats ?coverage ?fail_fast ~mode
       (process : unit -> ('a, 'b, 'c) CSYMEX.Result.t) =
     SYMEX.Result.run ?fuel ?stats ?coverage ?fail_fast ~mode @@ fun () ->
-    CSYMEX.run_with_state ~state:Cerb_location.unknown (process ())
+    CSYMEX.run_with_state ~state:MonadState.empty (process ())
     |> (Fun.flip SYMEX.map) fst
 
   let error_with_loc ?msg err =

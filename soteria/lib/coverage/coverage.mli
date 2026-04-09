@@ -27,39 +27,32 @@
     trustworthy). Avoid volatile ids tied to solver state or fresh-variable
     naming. *)
 
-open Soteria_std.Hashtbl
-
 type branch_side = Then | Else
 
+type function_info = {
+  file : string;
+  name : string;
+  line : int option;
+  end_line : int option;
+}
+
+type location = File of string | Function of function_info
+
+type code_item =
+  | Line of int
+  | Conditional of { line : int; branch_id : string; side : branch_side option }
+
 type branch_span = {
-  file : string;  (** Source file path as reported by the frontend. *)
+  loc : location;
+      (** Where the branch point is located; used for reporting and
+          disambiguation. *)
   line : int;  (** 1-based source line for human-facing reporting. *)
   branch_id : string;
       (** Stable identifier for the branch point; used for disambiguation and
           aggregation. *)
 }
 
-type code_item =
-  | Line of int
-  | Conditional of { line : int; branch_id : string; side : branch_side option }
-  | Function of { name : string; line : int; end_line : int option }
-
-type branch_coverage = { line : int; then_hits : int; else_hits : int }
-type function_coverage = { line : int; end_line : int option; hits : int }
-
-type file_hits = {
-  lines : int Hint.t;
-      (** Reachable lines with hit counts. A value of [0] means reachable but
-          not reached. *)
-  branches : branch_coverage Hstring.t;
-      (** For each conditional id, then/else hit counters and the source line
-          where that conditional lives. Note this cannot be stored along the
-          lines, as there may be several conditionals on one line. *)
-  functions : function_coverage Hstring.t;
-      (** Registered function definitions and their hit counts. *)
-}
-
-type t = file_hits Hstring.t
+type t
 type 'a with_coverage = { res : 'a; coverage : t }
 
 val create : unit -> t
@@ -95,23 +88,29 @@ module As_ctx : sig
       coverage according to current configuration if enabled. *)
   val with_coverage_dumped : unit -> (unit -> 'a) -> 'a
 
-  (** [register ~file item] registers [item] as a valid/reachable code entity in
-      [file] without incrementing execution counters. *)
-  val register : file:string -> code_item -> unit
+  (** [register loc item] registers [item] as a valid/reachable code entity in
+      [loc] (a file or function) without incrementing execution counters. *)
+  val register : location -> code_item -> unit
 
-  (** [register_bulk items] registers many [(file, item)] pairs. *)
-  val register_bulk : (string * code_item) Iter.t -> unit
+  (** [register_function fn] registers function metadata, or updates existing
+      metadata if the function is already registered. *)
+  val register_function : function_info -> unit
 
-  (** [register_file_bulk files] registers many [(file, items)] pairs, where
+  (** [register_bulk locations] registers many [(loc, items)] pairs, where
       [items] is an iterable collection of [code_item]s. This is the most
       efficient way to register coverage for a large number of items. *)
-  val register_file_bulk : (string * code_item Iter.t) Iter.t -> unit
+  val register_bulk : (location * code_item Iter.t) Iter.t -> unit
 
-  (** [mark ~file item] records an execution hit for [item] in [file]. *)
-  val mark : file:string -> code_item -> unit
+  (** [mark loc item] records an execution hit for [item] in [file]. *)
+  val mark : location -> code_item -> unit
+
+  (** [mark_function fn_info] registers or updates a function and its metadata,
+      and increments function hit count. *)
+  val mark_function : function_info -> unit
 
   (** [mark_branch side span] records an execution hit for a branch point
-      identified by [span] and [side]. This is an alternative to [mark]. *)
+      identified by [span] and [side]. This is an alternative to [mark], used in
+      the [if%sat[@span _]] PPX. *)
   val mark_branch : branch_side -> branch_span -> unit
 
   (** [get_copy ()] retrieves a copy of the coverage aggregated in the current

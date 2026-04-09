@@ -58,72 +58,56 @@ let get_sym sv t =
   in
   Csymex.of_opt_not_impl ~msg:"Could not resolve function" @@ res
 
-let rec reachable_lines ~file (stmt : Ail_tys.stmt) =
+let reachable_lines (stmt : Ail_tys.stmt) : Soteria.Coverage.code_item Iter.t =
  fun f ->
-  let Cerb_frontend.AilSyntax.{ loc; node; _ } = stmt in
-  let () =
-    match Error.Diagnostic.extract_location loc with
-    | Some (file', line, _loc) ->
-        (* sanity check: we are still in the same file *)
-        assert (file = file');
-        f (Soteria.Coverage.Line line)
-    | None -> ()
+  let rec aux stmt =
+    let Cerb_frontend.AilSyntax.{ loc; node; _ } = stmt in
+    let () =
+      match Error.Diagnostic.extract_location loc with
+      | Some (_, line, _loc) -> f (Line line)
+      | None -> ()
+    in
+    match node with
+    | AilSlabel (_, stmt, _)
+    | AilScase (_, stmt)
+    | AilSmarker (_, stmt)
+    | AilSwhile (_, stmt, _)
+    | AilSswitch (_, stmt)
+    | AilSdo (stmt, _, _) ->
+        aux stmt
+    | AilSif (_, then_stmt, else_stmt) ->
+        aux then_stmt;
+        aux else_stmt
+    | AilSblock (_, stmtl) | AilSpar stmtl -> List.iter aux stmtl
+    | AilSskip | AilSreturn _ | AilSreturnVoid | AilSexpr _ | AilSdeclaration _
+    | AilSbreak | AilScontinue | AilSgoto _
+    | AilScase_rangeGNU (_, _, _)
+    | AilSdefault _
+    | AilSreg_store (_, _) ->
+        ()
   in
-  match node with
-  | AilSlabel (_, stmt, _)
-  | AilScase (_, stmt)
-  | AilSmarker (_, stmt)
-  | AilSwhile (_, stmt, _)
-  | AilSswitch (_, stmt)
-  | AilSdo (stmt, _, _) ->
-      reachable_lines ~file stmt f
-  | AilSif (_, then_stmt, else_stmt) ->
-      reachable_lines ~file then_stmt f;
-      reachable_lines ~file else_stmt f
-  | AilSblock (_, stmtl) | AilSpar stmtl ->
-      List.iter (fun s -> reachable_lines ~file s f) stmtl
-  | AilSskip | AilSreturn _ | AilSreturnVoid | AilSexpr _ | AilSdeclaration _
-  | AilSbreak | AilScontinue | AilSgoto _
-  | AilScase_rangeGNU (_, _, _)
-  | AilSdefault _
-  | AilSreg_store (_, _) ->
-      ()
+  aux stmt
 
-let reachable_stmt_lines_by_file_iter (stmt : Ail_tys.stmt) =
- fun f ->
-  let Cerb_frontend.AilSyntax.{ loc; _ } = stmt in
-  match Error.Diagnostic.extract_location loc with
-  | None -> ()
-  | Some (file, _, _) -> f (file, reachable_lines ~file stmt)
+let fn_cov_info fn : Soteria.Coverage.function_info option =
+  let sym, (loc, _, _, _, _) = fn in
+  Error.Diagnostic.extract_location loc
+  |> Option.map (fun (file, line, _col) ->
+      let name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym in
+      { Soteria.Coverage.file; name; line = Some line; end_line = None })
 
 let reachable_lines_iter (prog : Ail_tys.linked_program) =
  fun f ->
   prog.sigma.function_definitions
-  |> List.iter @@ fun (_sym, (_loc, _storage, _inline, _params, body)) ->
-     reachable_stmt_lines_by_file_iter body f
-
-let register_functions_iter (prog : Ail_tys.linked_program) :
-    (string * Soteria.Coverage.code_item) Iter.t =
- fun f ->
-  prog.sigma.function_definitions
-  |> List.iter @@ fun (sym, (loc, _, _, _, _)) ->
-     match Error.Diagnostic.extract_location loc with
-     | None -> ()
-     | Some (file, line, _col) ->
-         let fn_name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym in
-         f (file, Function { name = fn_name; line; end_line = None })
+  |> List.iter @@ fun ((_, (_, _, _, _, body)) as fn) ->
+     fn_cov_info fn
+     |> Option.iter @@ fun fn ->
+        f (Soteria.Coverage.Function fn, reachable_lines body)
 
 let register_functions (prog : Ail_tys.linked_program) =
-  Soteria.Coverage.As_ctx.register_bulk (register_functions_iter prog)
-
-let mark_function_hit (prog : Ail_tys.fundef) =
-  let sym, (loc, _, _, _, _) = prog in
-  match Error.Diagnostic.extract_location loc with
-  | None -> ()
-  | Some (file, line, _col) ->
-      let name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym in
-      Soteria.Coverage.As_ctx.mark ~file
-        (Function { name; line; end_line = None })
+  prog.sigma.function_definitions
+  |> List.iter @@ fun fn ->
+     fn_cov_info fn
+     |> Option.iter @@ fun fn -> Soteria.Coverage.As_ctx.register_function fn
 
 let mark_files_lines_reachable (prog : Ail_tys.linked_program) =
-  Soteria.Coverage.As_ctx.register_file_bulk @@ reachable_lines_iter prog
+  Soteria.Coverage.As_ctx.register_bulk @@ reachable_lines_iter prog

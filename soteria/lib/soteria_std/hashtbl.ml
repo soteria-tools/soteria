@@ -2,6 +2,33 @@
 
 include Stdlib.Hashtbl
 
+module type S = sig
+  include S
+
+  val exists : (key -> 'a -> bool) -> 'a t -> bool
+  val for_all : (key -> 'a -> bool) -> 'a t -> bool
+end
+
+module Make (Key : HashedType) = struct
+  include Make (Key)
+
+  (** Check if there exists a key-value pair in the hash table that satisfies
+      the given predicate. *)
+  let exists (f : key -> 'a -> bool) (tbl : 'a t) : bool =
+    try
+      iter (fun k v -> if f k v then raise Exit) tbl;
+      false
+    with Exit -> true
+
+  (** Check if all key-value pairs in the hash table satisfy the given
+      predicate. *)
+  let for_all (f : key -> 'a -> bool) (tbl : 'a t) : bool =
+    try
+      iter (fun k v -> if not (f k v) then raise Exit) tbl;
+      true
+    with Exit -> false
+end
+
 module type HashedAndStringEncodable = sig
   include Stdlib.Hashtbl.HashedType
 
@@ -10,7 +37,7 @@ module type HashedAndStringEncodable = sig
 end
 
 module MakeYojsonable (Key : HashedAndStringEncodable) = struct
-  include Stdlib.Hashtbl.Make (Key)
+  include Make (Key)
 
   (** Convert a hash table to a Yojson object. *)
   let to_yojson (value_to_yojson : 'a -> Yojson.Safe.t) (tbl : 'a t) :

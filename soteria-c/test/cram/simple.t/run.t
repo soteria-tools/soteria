@@ -1315,28 +1315,30 @@ Coverage test -- JSON
   Executed 11 statements
   Verification Success!
   {
-    "sym.c": {
-      "lines": {
-        "2": 1,
-        "3": 6,
-        "4": 1,
-        "5": 6,
-        "6": 0,
-        "7": 0,
-        "9": 2,
-        "12": 1,
-        "13": 2,
-        "18": 1,
-        "19": 5,
-        "20": 4
+    "per_file": {},
+    "per_function": {
+      "sym.c:main": {
+        "lines": { "20": 1, "19": 1, "18": 1 },
+        "branches": {},
+        "meta": { "hits": 1, "line": 17, "end_line": null }
       },
-      "branches": {
-        "sym.c:3:3-14:4": { "line": 3, "then_hits": 1, "else_hits": 1 },
-        "sym.c:5:5-8:6": { "line": 5, "then_hits": 0, "else_hits": 1 }
-      },
-      "functions": {
-        "main": { "line": 17, "hits": 1 },
-        "simple": { "line": 1, "hits": 1 }
+      "sym.c:simple": {
+        "lines": {
+          "6": 0,
+          "2": 1,
+          "7": 0,
+          "3": 1,
+          "13": 1,
+          "12": 1,
+          "5": 2,
+          "4": 1,
+          "9": 1
+        },
+        "branches": {
+          "sym.c-3-3": { "line": 3, "then_hits": 1, "else_hits": 1 },
+          "sym.c-5-5": { "line": 5, "then_hits": 0, "else_hits": 1 }
+        },
+        "meta": { "hits": 1, "line": 1, "end_line": null }
       }
     }
   }
@@ -1352,30 +1354,40 @@ Coverage test -- Cobertura
         <classes>
           <class name="sym.c" filename="sym.c" line-rate="0.0" branch-rate="0.0">
             <methods>
-              <method name="main" signature="" line-rate="1.0" branch-rate="0.0">
+              <method name="main" signature="" line-rate="1.000000" branch-rate="1.000000" complexity="0.0">
                 <lines>
-                  <line number="17" hits="1"/>
+                  <line number="18" hits="1"/>
+                  <line number="19" hits="1"/>
+                  <line number="20" hits="1"/>
                 </lines>
               </method>
-              <method name="simple" signature="" line-rate="1.0" branch-rate="0.0">
+              <method name="simple" signature="" line-rate="0.777778" branch-rate="0.750000" complexity="0.0">
                 <lines>
-                  <line number="1" hits="1"/>
+                  <line number="2" hits="1"/>
+                  <line number="3" hits="3" branch="true" condition-coverage="100% (2/2)"/>
+                  <line number="4" hits="1"/>
+                  <line number="5" hits="3" branch="true" condition-coverage="50% (1/2)"/>
+                  <line number="6" hits="0"/>
+                  <line number="7" hits="0"/>
+                  <line number="9" hits="1"/>
+                  <line number="12" hits="1"/>
+                  <line number="13" hits="1"/>
                 </lines>
               </method>
             </methods>
             <lines>
               <line number="2" hits="1"/>
-              <line number="3" hits="6" branch="true" condition-coverage="100% (2/2)"/>
+              <line number="3" hits="3" branch="true" condition-coverage="100% (2/2)"/>
               <line number="4" hits="1"/>
-              <line number="5" hits="6" branch="true" condition-coverage="50% (1/2)"/>
+              <line number="5" hits="3" branch="true" condition-coverage="50% (1/2)"/>
               <line number="6" hits="0"/>
               <line number="7" hits="0"/>
-              <line number="9" hits="2"/>
+              <line number="9" hits="1"/>
               <line number="12" hits="1"/>
-              <line number="13" hits="2"/>
+              <line number="13" hits="1"/>
               <line number="18" hits="1"/>
-              <line number="19" hits="5"/>
-              <line number="20" hits="4"/>
+              <line number="19" hits="1"/>
+              <line number="20" hits="1"/>
             </lines>
           </class>
         </classes>
@@ -1399,17 +1411,17 @@ Coverage test -- LCOV
   BRDA:5,0,then,0
   BRDA:5,0,else,1
   DA:2,1
-  DA:3,6
+  DA:3,3
   DA:4,1
-  DA:5,6
+  DA:5,3
   DA:6,0
   DA:7,0
-  DA:9,2
+  DA:9,1
   DA:12,1
-  DA:13,2
+  DA:13,1
   DA:18,1
-  DA:19,5
-  DA:20,4
+  DA:19,1
+  DA:20,1
   BRF:4
   BRH:3
   LF:12
