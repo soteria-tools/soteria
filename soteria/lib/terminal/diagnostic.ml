@@ -97,8 +97,9 @@ let mk_range_file ?filename ?content file from_ to_ =
     in
     create ~source (bi idx1) (bi idx2)
   with Sys_error _ ->
+    let name = Option.value ~default:file filename in
     create
-      ~source:(`String { name = Some file; content = "File not found" })
+      ~source:(`String { name = Some name; content = "File not found" })
       (bi 0) (bi 14)
 
 let call_trace_to_labels ~as_ranges (call_trace : 'a Call_trace.t) =

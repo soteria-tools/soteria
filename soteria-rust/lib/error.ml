@@ -184,16 +184,25 @@ module Diagnostic = struct
 
   let as_ranges (span : Charon.Meta.span_data) =
     match span.file.name with
-    | Local file when String.starts_with ~prefix:"/rustc/" file -> []
     | Local file ->
         let ( / ) = Filename.concat in
         let filename =
-          match replace_subpath_opt ("lib" / "rustlib") "$RUSTLIB" file with
+          match replace_subpath_opt "rustc" "$RUSTLIB" file with
           | Some f -> Some f
           | None ->
               replace_subpath_opt
                 ("soteria-rust" / "plugins")
                 "$SOTERIA-RUST" file
+        in
+        let file =
+          if String.starts_with ~prefix:"/rustc/" file then
+            let toolchain = Lazy.force Frontend_runtime.Cmd.toolchain_path in
+            let prefix_len = String.length "/rustc/" in
+            let file =
+              String.sub file prefix_len (String.length file - prefix_len)
+            in
+            toolchain / "lib" / "rustlib" / "src" / "rust" / file
+          else file
         in
         [
           Soteria.Terminal.Diagnostic.mk_range_file ?filename

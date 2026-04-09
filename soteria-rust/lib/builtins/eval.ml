@@ -127,6 +127,7 @@ let std_fun_pair_list =
     ("core::panicking::panic", Optim Panic);
     ("core::panicking::panic_fmt", Optim Panic);
     ("core::panicking::panic_nounwind_fmt", Optim Panic);
+    ("core::panicking::assert_failed_inner", Optim Panic);
     ("core::slice::index::slice_start_index_len_fail", Optim Panic);
     ("core::slice::index::slice_end_index_len_fail", Optim Panic);
     ("core::slice::index::slice_end_index_overflow_fail", Optim Panic);
@@ -136,6 +137,7 @@ let std_fun_pair_list =
     ("std::option::unwrap_failed", Optim Panic);
     ("std::result::unwrap_failed", Optim Panic);
     ("std::rt::panic_fmt", Optim Panic);
+    ("std::rt::begin_panic", Optim Panic);
     ("std::vec::Vec::_::remove::assert_failed", Optim Panic);
     (* This uses async stuff we would like to ignore, for now we patch it *)
     ("std::panicking::catch_unwind::cleanup", Fixme CatchUnwindCleanup);
