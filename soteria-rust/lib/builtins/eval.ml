@@ -53,6 +53,8 @@ let std_fun_pair_list =
     ("kani::panic", Soteria Panic);
     (* Miri builtins *)
     ("std::intrinsics::miri_promise_symbolic_alignment", Miri PromiseAlignement);
+    (* TODO: once https://github.com/AeneasVerif/charon/pull/1088 is merged,
+       this should be handled through extern bodies. *)
     ("miristd::miri_get_alloc_id", Miri AllocId);
     ("miristd::miri_pointer_name", Miri Nop);
     ("miristd::miri_print_borrow_state", Miri Nop);
@@ -70,6 +72,8 @@ let std_fun_pair_list =
     ("utils::miri_extern::miri_alloc", Miri Alloc);
     ("utils::miri_extern::miri_dealloc", Miri Dealloc);
     (* Allocator *)
+    (* TODO: once https://github.com/AeneasVerif/charon/pull/1088 is merged,
+       this should be handled through extern bodies. *)
     ("__rust_alloc", Alloc (Alloc { zeroed = false }));
     ("__rust_alloc_zeroed", Alloc (Alloc { zeroed = true }));
     ("__rust_dealloc", Alloc Dealloc);
