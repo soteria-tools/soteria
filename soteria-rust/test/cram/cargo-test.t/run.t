@@ -66,3 +66,10 @@ Test running Soteria Rust on a crate with tests
   PC 1: (V|1| != 0x0000002a)
   
   [1]
+
+  $ soteria-rust exec . --test lib --cargo="--features my_feature"
+  Compiling... done in <time>
+  => Running my_crate::test::test_in_src...
+  note: my_crate::test::test_in_src: done in <time>, ran 1 branch
+  PC 1: empty
+  

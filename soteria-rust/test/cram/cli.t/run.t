@@ -95,6 +95,9 @@
              Disables coloured output.
   
   FRONTEND OPTIONS
+         --cargo=[,…] (absent CARGO_FLAGS env)
+             Additional flags to pass to Cargo when analysing a crate
+  
          --charon-path=VAL (absent=charon or SOTERIA_CHARON_PATH env)
              Path to the charon binary. Defaults to "charon", i.e. looked up in
              PATH.
@@ -154,8 +157,8 @@
   
          --test=VAL
              The test profile to use to compile the crate; this only has an
-             effect if analysing a crate. By default, the crate's source is
-             analysed, not the tests.
+             effect if analysing a crate. Use [lib] for unit tests in [src/].
+             By default, the crate's source is analysed, not the tests.
   
   ANALYSIS OPTIONS
          --approx-floating-ops=ENUM (absent=warn)
@@ -222,6 +225,9 @@
          BRANCH_FUEL
              See option --branch-fuel.
   
+         CARGO_FLAGS
+             See option --cargo.
+  
          FAIL_FAST
              See option --fail-fast.
   
@@ -273,6 +279,10 @@
   SEE ALSO
          soteria-rust(1)
   
+
+
+
+
 
   $ soteria-rust build-plugins --help
   NAME
@@ -339,6 +349,9 @@
              Disables coloured output.
   
   FRONTEND OPTIONS
+         --cargo=[,…] (absent CARGO_FLAGS env)
+             Additional flags to pass to Cargo when analysing a crate
+  
          --charon-path=VAL (absent=charon or SOTERIA_CHARON_PATH env)
              Path to the charon binary. Defaults to "charon", i.e. looked up in
              PATH.
@@ -398,8 +411,8 @@
   
          --test=VAL
              The test profile to use to compile the crate; this only has an
-             effect if analysing a crate. By default, the crate's source is
-             analysed, not the tests.
+             effect if analysing a crate. Use [lib] for unit tests in [src/].
+             By default, the crate's source is analysed, not the tests.
   
   ANALYSIS OPTIONS
          --approx-floating-ops=ENUM (absent=warn)
@@ -462,6 +475,9 @@
   
          BRANCH_FUEL
              See option --branch-fuel.
+  
+         CARGO_FLAGS
+             See option --cargo.
   
          FAIL_FAST
              See option --fail-fast.

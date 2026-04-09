@@ -183,16 +183,18 @@ module Cmd = struct
   let cargo () = Lazy.force toolchain_path / "bin" / "cargo"
   let rustc () = Lazy.force toolchain_path / "bin" / "rustc"
   let rustc_as_env () = [ "RUSTC=" ^ rustc () ]
+  let split_on_space s = String.split_on_char ' ' s |> List.filter (( <> ) "")
 
   let current_rustc_flags () =
     let rustc = (Config.get ()).rustc_flags in
     let sysroot =
       match (Config.get ()).sysroot with
-      | Some path -> [ "--sysroot=" ^ path ]
+      | Some path -> [ "--sysroot"; path ]
       | None -> []
     in
     rustc @ sysroot
 
+  let cargo_flags () = (Config.get ()).cargo_flags
   let is_crate_type_flag = String.starts_with ~prefix:"--crate-type"
   let is_edition_flag = String.starts_with ~prefix:"--edition"
 
@@ -257,9 +259,11 @@ module Cmd = struct
     | Cargo ->
         let cargo =
           match (Config.get ()).test with
+          | Some "lib" -> [ "--lib" ]
           | Some test -> [ "--test"; test ]
           | None -> []
         in
+        let cargo = cargo @ cargo_flags () in
         let rustc = flags_for_cargo rustc in
         let env = rustc_as_env () @ flags_as_rustc_env rustc in
         (cmd, ("cargo" :: args) @ [ "--" ] @ cargo, env)

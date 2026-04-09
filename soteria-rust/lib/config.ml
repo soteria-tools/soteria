@@ -59,6 +59,13 @@ type t = {
       [@names [ "rustc" ]]
       [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)
+  cargo_flags : string list;
+      [@docs Sections.frontend]
+      [@default []]
+      [@optall]
+      [@names [ "cargo" ]]
+      [@env "CARGO_FLAGS"]
+      (** Additional flags to pass to Cargo when analysing a crate *)
   frontend : (frontend[@conv frontend_cmdliner_conv ()]);
       [@docs Sections.frontend]
       [@default Obol]
@@ -87,8 +94,8 @@ type t = {
           sysroot is used. *)
   test : string option; [@docs Sections.frontend] [@names [ "test" ]]
       (** The test profile to use to compile the crate; this only has an effect
-          if analysing a crate. By default, the crate's source is analysed, not
-          the tests. *)
+          if analysing a crate. Use [lib] for unit tests in [src/]. By default,
+          the crate's source is analysed, not the tests. *)
   (* Plugins *)
   with_kani : bool;
       [@docs Sections.frontend] [@make.default false] [@names [ "kani" ]]
