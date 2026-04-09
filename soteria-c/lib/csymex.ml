@@ -10,7 +10,7 @@ module Concrete_alloc_id = struct
 end
 
 module MonadState = struct
-  type t = { loc : Cerb_location.t; fn : Ail_tys.sym option }
+  type t = { loc : Cerb_location.t; fn : Ail_tys.fundef option }
 
   let empty = { loc = Cerb_location.unknown; fn = None }
 end
@@ -55,16 +55,20 @@ let with_loc ~(loc : Cerb_location.t) (f : 'a t) : 'a t =
   let+ x, st = f { st with loc } in
   (x, { st with loc = old_loc })
 
+let fn_cov_info (fn : Ail_tys.fundef) : Soteria.Coverage.function_info option =
+  let sym, (loc, _, _, _, _) = fn in
+  Error.Diagnostic.extract_location loc
+  |> Option.map (fun (file, line, _col) ->
+      let name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym in
+      Soteria.Coverage.make_function_info ~file ~name ~line ())
+
 let current_cov_loc (st : MonadState.t) : Soteria.Coverage.location option =
-  match Error.Diagnostic.extract_location st.loc with
-  | None -> None
-  | Some (file, _, _) -> (
-      match st.fn with
-      | None -> Some (File file)
-      | Some sym ->
-          let fn_name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym in
-          Some (Function { file; name = fn_name; line = None; end_line = None })
-      )
+  match Option.bind st.fn fn_cov_info with
+  | Some fn -> Some (Function fn)
+  | None -> (
+      match Error.Diagnostic.extract_location st.loc with
+      | Some (file, _line, _col) -> Some (File file)
+      | None -> None)
 
 let with_loc_covered ~loc (f : 'a t) : 'a t =
   let open Syntax in
@@ -76,21 +80,12 @@ let with_loc_covered ~loc (f : 'a t) : 'a t =
     (Error.Diagnostic.extract_location loc);
   f
 
-let with_function ~fn:((sym, (loc, _, _, _, _)) : Ail_tys.fundef) (f : 'a t) :
-    'a t =
+let with_function ~(fn : Ail_tys.fundef) (f : 'a t) : 'a t =
  fun st ->
   let open SYMEX.Syntax in
-  Option.iter
-    (fun (file, line, _col) ->
-      Soteria.Coverage.As_ctx.mark_function
-        {
-          file;
-          name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym;
-          line = Some line;
-          end_line = None;
-        })
-    (Error.Diagnostic.extract_location loc);
-  let+ x, { fn = _; loc = _ } = f { fn = Some sym; loc } in
+  Option.iter Soteria.Coverage.As_ctx.mark_function (fn_cov_info fn);
+  let _, (fn_loc, _, _, _, _) = fn in
+  let+ x, { fn = _; loc = _ } = f { fn = Some fn; loc = fn_loc } in
   (x, st)
 
 let branch_span_of_loc (loc : Cerb_location.t) :

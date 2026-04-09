@@ -15,8 +15,8 @@ let create () = { per_file = Hstring.create 8; per_function = Hfun.create 8 }
 let merge_function_meta m1 m2 =
   {
     hits = m1.hits + m2.hits;
-    line = Option.either m1.line m2.line;
-    end_line = Option.either m1.end_line m2.end_line;
+    line = Option.or_ m1.line m2.line;
+    end_line = Option.or_ m1.end_line m2.end_line;
   }
 
 let copy_file_hits ~copy_meta (file_hits : 'a file_hits) : 'b file_hits =
@@ -120,6 +120,7 @@ type function_info = {
   line : int option;
   end_line : int option;
 }
+[@@deriving make]
 
 type location = File of string | Function of function_info
 type branch_side = Then | Else
@@ -143,11 +144,20 @@ let get_or_create_file_hits_per_function (coverage : t)
   let fn_meta = make_function_meta ?line ?end_line () in
   match Hfun.find_opt coverage.per_function id with
   | Some file_hits ->
-      { file_hits with meta = merge_function_meta fn_meta file_hits.meta }
+      file_hits.meta <- merge_function_meta fn_meta file_hits.meta;
+      file_hits
   | None ->
       let hits = empty_file_hits fn_meta in
       Hfun.replace coverage.per_function id hits;
       hits
+
+(* TODO: can be removed once we get polymorphic function parameters *)
+type file_hits_consumer = { f : 'a. 'a file_hits -> unit }
+
+let with_file_hits loc ({ f } : file_hits_consumer) coverage =
+  match loc with
+  | File file -> f (get_or_create_file_hits_per_file coverage file)
+  | Function info -> f (get_or_create_file_hits_per_function coverage info)
 
 let update_file_hits (file_hits : 'a file_hits) incr (item : code_item) =
   match item with
@@ -184,14 +194,9 @@ module As_ctx = struct
   let[@inline] apply f = Effect.perform (Apply f)
 
   let register loc item =
-    apply (fun coverage ->
-        match loc with
-        | File file ->
-            let target = get_or_create_file_hits_per_file coverage file in
-            update_file_hits target 0 item
-        | Function info ->
-            let target = get_or_create_file_hits_per_function coverage info in
-            update_file_hits target 0 item)
+    apply
+      (with_file_hits loc
+         { f = (fun file_hits -> update_file_hits file_hits 0 item) })
 
   let register_function info =
     apply (fun coverage ->
@@ -200,30 +205,19 @@ module As_ctx = struct
   let register_bulk (files : (location * code_item Iter.t) Iter.t) =
     apply (fun coverage ->
         files (fun (loc, items) ->
-            match loc with
-            | File file ->
-                let hits = get_or_create_file_hits_per_file coverage file in
-                items (update_file_hits hits 0)
-            | Function info ->
-                let hits = get_or_create_file_hits_per_function coverage info in
-                items (update_file_hits hits 0)))
+            with_file_hits loc
+              { f = (fun file_hits -> items (update_file_hits file_hits 0)) }
+              coverage))
 
   let mark loc item =
-    apply (fun coverage ->
-        match loc with
-        | File file ->
-            let target = get_or_create_file_hits_per_file coverage file in
-            update_file_hits target 1 item
-        | Function info ->
-            let target = get_or_create_file_hits_per_function coverage info in
-            update_file_hits target 1 item)
+    apply
+      (with_file_hits loc
+         { f = (fun file_hits -> update_file_hits file_hits 1 item) })
 
   let mark_function info =
     apply (fun coverage ->
         let target = get_or_create_file_hits_per_function coverage info in
-        let meta = { target.meta with hits = target.meta.hits + 1 } in
-        let id = { file = info.file; name = info.name } in
-        Hfun.replace coverage.per_function id { target with meta })
+        target.meta <- { target.meta with hits = target.meta.hits + 1 })
 
   let mark_branch side { loc; line; branch_id } =
     mark loc (Conditional { line; branch_id; side = Some side })

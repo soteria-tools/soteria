@@ -88,25 +88,18 @@ let reachable_lines (stmt : Ail_tys.stmt) : Soteria.Coverage.code_item Iter.t =
   in
   aux stmt
 
-let fn_cov_info fn : Soteria.Coverage.function_info option =
-  let sym, (loc, _, _, _, _) = fn in
-  Error.Diagnostic.extract_location loc
-  |> Option.map (fun (file, line, _col) ->
-      let name = Fmt.to_to_string Ail_helpers.pp_sym_hum sym in
-      { Soteria.Coverage.file; name; line = Some line; end_line = None })
-
 let reachable_lines_iter (prog : Ail_tys.linked_program) =
  fun f ->
   prog.sigma.function_definitions
   |> List.iter @@ fun ((_, (_, _, _, _, body)) as fn) ->
-     fn_cov_info fn
+     Csymex.fn_cov_info fn
      |> Option.iter @@ fun fn ->
         f (Soteria.Coverage.Function fn, reachable_lines body)
 
 let register_functions (prog : Ail_tys.linked_program) =
   prog.sigma.function_definitions
   |> List.iter @@ fun fn ->
-     fn_cov_info fn
+     Csymex.fn_cov_info fn
      |> Option.iter @@ fun fn -> Soteria.Coverage.As_ctx.register_function fn
 
 let mark_files_lines_reachable (prog : Ail_tys.linked_program) =

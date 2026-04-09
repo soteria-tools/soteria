@@ -55,7 +55,13 @@ type branch_span = {
 type t
 type 'a with_coverage = { res : 'a; coverage : t }
 
-val create : unit -> t
+val make_function_info :
+  file:string ->
+  name:string ->
+  ?line:int ->
+  ?end_line:int ->
+  unit ->
+  function_info
 
 (** [merge c1 c2] merges two coverage collections [c1] and [c2] into a single
     coverage object by combining hit counts and reached branches. *)

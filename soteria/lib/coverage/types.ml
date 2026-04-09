@@ -30,7 +30,7 @@ type function_meta = {
 type 'meta file_hits = {
   lines : int Hashtbl.Hint.t;
   branches : branch_coverage Hashtbl.Hstring.t;
-  meta : 'meta;
+  mutable meta : 'meta;
 }
 [@@deriving yojson]
 

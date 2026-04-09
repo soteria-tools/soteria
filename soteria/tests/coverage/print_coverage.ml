@@ -14,10 +14,8 @@ let branch_span fn line id : Soteria.Coverage.branch_span =
 let process () : (unit, 'e, 'f) Result.t =
   let open Soteria.Coverage in
   let open Soteria.Coverage.As_ctx in
-  let my_fun = { file; name = "my_fun"; line = Some 1; end_line = None } in
-  let other_fun =
-    { file; name = "other_fun"; line = Some 15; end_line = None }
-  in
+  let my_fun = make_function_info ~file ~name:"my_fun" ~line:1 () in
+  let other_fun = make_function_info ~file ~name:"other_fun" ~line:15 () in
   register_function other_fun;
   register_function my_fun;
   register_bulk

@@ -25,6 +25,10 @@ let get ?(msg = "Option.get None") = function
   | Some x -> x
   | None -> raise (Invalid_argument ("Option.get None:" ^ msg))
 
-(** Merge two options, preferring the first if it is [Some]. Equivalent to
+(** [or_ x y] returns [x] if it is some, otherwise returns [y]. Equivalent to
     [merge (fun l _ -> l)] *)
-let[@inline] either x y = match x with Some _ -> x | _ -> y
+let[@inline] or_ x y = match x with Some _ -> x | _ -> y
+
+(** Merge two options, preferring the first if it is [Some], otherwise calling a
+    function to get the second. Lazy version of {!or_}. *)
+let[@inline] or_else x f = match x with Some _ -> x | None -> f ()
