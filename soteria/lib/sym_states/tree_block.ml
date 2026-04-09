@@ -621,15 +621,18 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     | Error e -> (Error e, st)
     | Missing f -> (Missing f, st)
 
-  let assert_exclusively_owned t =
-    let** t = of_opt t in
-    match t.bound with
-    | None ->
+  let assert_exclusively_owned () =
+    let open SM in
+    let open Syntax in
+    let* t = get_state () in
+    match t with
+    | None | Some { bound = None; _ } ->
         Result.miss_no_fix ~reason:"assert_exclusively_owned - no bound" ()
-    | Some bound ->
-        let { range = low, high; node; _ } = t.root in
+    | Some { bound = Some bound; root = { range = low, high; node; _ } } ->
         if%sat low ==@ 0s &&@ (high ==@ bound) then
-          lift_miss ~offset:0s ~len:bound @@ Node.assert_exclusively_owned node
+          lift
+          @@ lift_miss ~offset:0s ~len:bound
+          @@ Node.assert_exclusively_owned node
         else
           Result.miss_no_fix
             ~reason:"assert_exclusively_owned - tree does not span [0; bound["

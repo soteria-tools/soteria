@@ -3,10 +3,10 @@ open Typed
 open Typed.Infix
 open Charon
 open Syntaxes.FunctionWrap
-module DecayMapMonad = Sptr.DecayMapMonad
-open DecayMapMonad
-open DecayMapMonad.Result
-open DecayMapMonad.Syntax
+module DecayMap = Sptr.DecayMap
+open DecayMap.SM
+open DecayMap.SM.Result
+open DecayMap.SM.Syntax
 
 module Make (Sptr : Sptr.S) = struct
   module Encoder = Value_codec.Encoder (Sptr)
@@ -178,8 +178,8 @@ module Make (Sptr : Sptr.S) = struct
        SZeros, Owned (Zeros, _) -> ok (not_owned t) | SZeros, Owned (Init _, _)
        -> not_impl "Assume rust_val == 0s" | SZeros, _ -> vanish () *)
 
-    let produce (syn : syn) (tree : tree) : tree DecayMapMonad.Producer.t =
-      let open DecayMapMonad.Producer in
+    let produce (syn : syn) (tree : tree) : tree DecayMap.SM.Producer.t =
+      let open DecayMap.SM.Producer in
       let open Syntax in
       match (syn, tree.node) with
       | _, (Owned _ | NotOwned Partially) -> vanish ()
@@ -191,13 +191,13 @@ module Make (Sptr : Sptr.S) = struct
       | Any, NotOwned Totally -> return (owned tree Any)
       | (Uninit Partially | Lazy), _ -> failwith "Unreachable!"
 
-    let assert_exclusively_owned _ = Result.ok ()
+    let assert_exclusively_owned _ = ok ()
   end
 
   open MemVal
-  include Soteria.Sym_states.Tree_block.Make (DecayMapMonad) (MemVal)
+  include Soteria.Sym_states.Tree_block.Make (DecayMap.SM) (MemVal)
 
-  let lift_symex x = SM.lift @@ DecayMapMonad.lift x
+  let lift_symex x = SM.lift @@ DecayMap.SM.lift x
 
   let sint_to_int v =
     match BitVec.to_z v with
@@ -205,17 +205,17 @@ module Make (Sptr : Sptr.S) = struct
     | None -> not_impl "Cannot convert size to int"
 
   let collect_leaves (t : Tree.t) =
-    Result.fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
+    fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs leaf ->
         let offset, _ = leaf.range in
         let offset = offset -!@ fst t.range in
         match leaf.node with
         | NotOwned Totally -> miss_no_fix ~reason:"decode" ()
-        | Owned (Uninit Totally, _) -> Result.ok vs
+        | Owned (Uninit Totally, _) -> ok vs
         | Owned (Zeros, _) ->
             let+ size = sint_to_int (Range.size leaf.range) in
             let value = BitVec.zero (size * 8) in
             Ok ((Rust_val.Int value, offset) :: vs)
-        | Owned (Init value, _) -> Result.ok ((value, offset) :: vs)
+        | Owned (Init value, _) -> ok ((value, offset) :: vs)
         | Owned (Any, _) ->
             [%l.info "Reading from Any memory, vanishing."];
             vanish ()
@@ -232,7 +232,7 @@ module Make (Sptr : Sptr.S) = struct
         let zero = BV.zero (size * 8) in
         let+ res = Encoder.transmute_one ~to_ty:ty (Int zero) in
         Ok res
-    | Uninit _ -> Result.error `UninitializedMemoryAccess
+    | Uninit _ -> error `UninitializedMemoryAccess
     | Any ->
         (* We don't know if this read is valid, as memory could be
            uninitialised. We have to approximate and vanish. *)
@@ -246,7 +246,7 @@ module Make (Sptr : Sptr.S) = struct
        concatenate them and call the encoder to decode the full value. *)
     let** leaves = collect_leaves t in
     let* leaves =
-      DecayMapMonad.map_list leaves ~f:(fun (v, _) ->
+      DecayMap.SM.map_list leaves ~f:(fun (v, _) ->
           match v with
           | Int bv -> return bv
           | Ptr (ptr, Thin) -> Sptr.decay ptr
@@ -294,7 +294,7 @@ module Make (Sptr : Sptr.S) = struct
 
   let check_owned (ofs : [< T.sint ] Typed.t) (size : [< T.nonzero ] Typed.t) =
     let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
-    with_bound_check bound (fun t -> DecayMapMonad.Result.ok ((), t))
+    with_bound_check bound (fun t -> ok ((), t))
 
   (* Memory operations *)
 
@@ -305,7 +305,7 @@ module Make (Sptr : Sptr.S) = struct
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_typed ofs ty in
     with_bound_check ~mk_fixes bound (fun t ->
-        let open DecayMapMonad.Syntax in
+        let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ v, tb_st = as_owned ~mk_fixes t in
           let++^ tb_st' =
@@ -330,7 +330,7 @@ module Make (Sptr : Sptr.S) = struct
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
-        let open DecayMapMonad.Syntax in
+        let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ _, tb_st = as_owned ~mk_fixes t in
           let++^ tb_st' =
@@ -347,7 +347,7 @@ module Make (Sptr : Sptr.S) = struct
         let++ () =
           match node.node with
           | NotOwned _ -> miss_no_fix ~reason:"store" ()
-          | _ -> Result.ok ()
+          | _ -> ok ()
         in
         ((), tree))
 
@@ -356,8 +356,8 @@ module Make (Sptr : Sptr.S) = struct
       ((rust_val * T.sint Typed.t) list, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs (Typed.cast size) in
     with_bound_check bound (fun t ->
-        let open DecayMapMonad.Syntax in
-        let replace_node node = Result.ok node in
+        let open DecayMap.SM.Syntax in
+        let replace_node node = ok node in
         let rebuild_parent = Tree.with_children in
         let** framed, tree =
           Tree.frame_range t ~replace_node ~rebuild_parent range
@@ -370,12 +370,12 @@ module Make (Sptr : Sptr.S) = struct
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
-        let open DecayMapMonad.Syntax in
+        let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ _ = as_owned ~mk_fixes t in
           Tree.map_leaves t @@ fun tt ->
           match tt.node with
-          | Owned (_, tb) -> Result.ok (uninit tt.range tb)
+          | Owned (_, tb) -> ok (uninit tt.range tb)
           | _ -> assert false
         in
         let rebuild_parent = Tree.of_children in
@@ -389,11 +389,11 @@ module Make (Sptr : Sptr.S) = struct
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
-        let open DecayMapMonad.Syntax in
+        let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ _, tb = as_owned ~mk_fixes t in
           (* Is there something to do with the tree borrow here? *)
-          Result.ok @@ zeros range tb
+          ok @@ zeros range tb
         in
         let rebuild_parent = Tree.of_children in
         let++ _, tree =
@@ -412,7 +412,7 @@ module Make (Sptr : Sptr.S) = struct
     (* TODO: figure out [mk_fixes] for tree borrows state! *)
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     with_bound_check bound (fun t ->
-        let open DecayMapMonad.Syntax in
+        let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ v, tb_st = as_owned t in
           let++^ tb_st' = f tb_st in
