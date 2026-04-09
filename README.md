@@ -51,7 +51,8 @@ For **Soteria Rust**, you will also need:
 
 ### Installing from Source
 
-For users who want to install and use Soteria:
+<details>
+<summary>For users who want to install and use Soteria</summary>
 
 1. **Clone the repository:**
    ```sh
@@ -70,10 +71,12 @@ For users who want to install and use Soteria:
    eval $(opam env --switch=soteria-install)
    ```
    Add this line to your shell profile (`.bashrc`, `.zshrc`, etc.) to make it permanent, or run `opam switch soteria-install` to switch to it in your current shell.
+</details>
 
 ### Building from Source for Development
 
-For developers who want to contribute to Soteria:
+<details>
+<summary>For developers who want to contribute to Soteria</summary>
 
 1. **Clone the repository:**
    ```sh
@@ -107,10 +110,15 @@ For developers who want to contribute to Soteria:
    > dune test soteria      # Core library tests only
    > dune test soteria-c    # Soteria-C tests only
    > ```
+</details>
 
 ### Installing Rust Frontends
 
-To use Soteria Rust, you need a frontend to translate Rust code to an intermediate representation. We support two frontends:
+<details>
+<summary>To use Soteria Rust, you need to install the supported frontends</summary>
+To use Soteria Rust, you need a frontend to translate Rust code to an intermediate representation. 
+
+We support two frontends: [Obol](https://github.com/soteria-tools/obol) and [Charon](https://github.com/AeneasVerif/charon).
 
 > **Quick Setup:** Use the versionsync script to automatically install both frontends:
 > ```sh
@@ -129,12 +137,12 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
 
 **Manual installation:**
 1. **Clone Obol at the correct commit:**
-   <!-- [versionsync: OBOL_COMMIT_HASH=bd47db0c3a7092cccac25b9432c9db82a3c18e38] -->
+   <!-- [versionsync: OBOL_COMMIT_HASH=745a7e8f59596f4e656169e5b1b4f9e834c4c671] -->
    ```sh
    cd ..
    git clone https://github.com/soteria-tools/obol.git
    cd obol
-   git checkout bd47db0c3a7092cccac25b9432c9db82a3c18e38
+   git checkout 745a7e8f59596f4e656169e5b1b4f9e834c4c671
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `OBOL_COMMIT_HASH`.
 
@@ -160,12 +168,12 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
 
 **Manual installation:**
 1. **Clone Charon at the correct commit:**
-   <!-- [versionsync: CHARON_COMMIT_HASH=79077103ea9d0493bc72315462a1c84fcdf014e0] -->
+   <!-- [versionsync: CHARON_COMMIT_HASH=6aee301e2c0365f48f27194c50df1398f9d5647c] -->
    ```sh
    cd ..
    git clone https://github.com/soteria-tools/charon.git
    cd charon
-   git checkout 79077103ea9d0493bc72315462a1c84fcdf014e0
+   git checkout 6aee301e2c0365f48f27194c50df1398f9d5647c
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `CHARON_COMMIT_HASH`.
 
@@ -179,6 +187,7 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
    export PATH="$PATH:$(pwd)/bin"
    ```
    Add this line to your shell profile (`.bashrc`, `.zshrc`, etc.) to make it permanent.
+</details>
 
 ## Using Soteria as a Library
 
@@ -192,23 +201,22 @@ Soteria Rust is a Kani-like symbolic execution engine for Rust. It is in heavy d
 
 Run on a standalone Rust file, symbolically executing the `main` function:
 ```sh
-soteria-rust rustc <file.rs>
+soteria-rust exec <file.rs>
 ```
 
 Run in Kani mode to execute any function with the `#[kani::proof]` attribute:
 ```sh
-soteria-rust rustc --kani <file.rs>
+soteria-rust exec --kani <file.rs>
 ```
 
 Run all tests in a crate:
 ```sh
-soteria-rust cargo <crate-dir>
+soteria-rust exec <crate-dir>
 ```
 
 Use `--help` with any command for a full list of options:
 ```sh
-soteria-rust rustc --help
-soteria-rust cargo --help
+soteria-rust exec --help
 ```
 
 ### Testing Against External Suites

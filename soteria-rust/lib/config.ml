@@ -1,3 +1,5 @@
+open Cmdliner_helpers
+
 (* Cmdliner.deriving opens Cmdliner.Arg for the frontend argument, without using
    it. We ignore the warning here. *)
 [@@@warning "-unused-open"]
@@ -6,40 +8,65 @@ type frontend = Charon | Obol
 [@@deriving subliner_enum, show { with_path = false }]
 
 type provenance = Strict | Permissive [@@deriving subliner_enum]
+type check_level = Deny | Warn | Allow [@@deriving subliner_enum]
 
 type t = {
   (* Compilation flags *)
   cleanup : bool;
-      [@make.default false] [@names [ "clean" ]] [@env "SOTERIA_RUST_CLEANUP"]
+      [@docs Sections.frontend]
+      [@make.default false]
+      [@names [ "clean" ]]
+      [@env "SOTERIA_RUST_CLEANUP"]
       (** Clean up compiled files after execution *)
-  log_compilation : bool; [@make.default false] [@names [ "log-compilation" ]]
+  log_compilation : bool;
+      [@docs Sections.frontend]
+      [@make.default false]
+      [@names [ "log-compilation" ]]
       (** Log the compilation process *)
-  no_compile : bool; [@make.default false] [@names [ "no-compile" ]]
+  no_compile : bool;
+      [@docs Sections.frontend] [@make.default false] [@names [ "no-compile" ]]
       (** Do not compile the Rust code, as it is already compiled *)
   no_compile_plugins : bool;
-      [@make.default false] [@names [ "no-compile-plugins" ]]
+      [@docs Sections.frontend]
+      [@make.default false]
+      [@names [ "no-compile-plugins" ]]
       (** Do not compile the plugins, as they are already compiled *)
   plugin_directory : string option;
-      [@names [ "plugins" ]] [@env "SOTERIA_RUST_PLUGINS"]
+      [@docs Sections.frontend]
+      [@names [ "plugins" ]]
+      [@env "SOTERIA_RUST_PLUGINS"]
       (** The directory in which plugins are and should be compiled; defaults to
           the current dune-managed site. *)
-  target : string option; [@names [ "target" ]] [@env "TARGET"]
+  target : string option;
+      [@docs Sections.frontend] [@names [ "target" ]] [@env "TARGET"]
       (** The compilation target triple to use, e.g. x86_64-unknown-linux-gnu.
           If not provided, the default target for the current machine is used.
       *)
-  polymorphic : bool; [@make.default false] [@names [ "polymorphic"; "poly" ]]
+  polymorphic : bool;
+      [@docs Sections.analysis]
+      [@make.default false]
+      [@names [ "polymorphic"; "poly" ]]
       (** Whether compilation (and thus analysis) should be done on polymorphic
           code (experimental), rather than on monomorphic code (with generics
           substituted). *)
-  output_crate : bool; [@make.default false] [@names [ "output-crate" ]]
+  output_crate : bool;
+      [@docs Sections.output] [@make.default false] [@names [ "output-crate" ]]
       (** Pretty-print the compiled crate to a file *)
   rustc_flags : string list;
-      [@default []] [@names [ "rustc" ]] [@env "RUSTC_FLAGS"]
+      [@docs Sections.frontend]
+      [@default []]
+      [@optall]
+      [@names [ "rustc" ]]
+      [@env "RUSTC_FLAGS"]
       (** Additional flags to pass to the Rustc compiler *)
   frontend : (frontend[@conv frontend_cmdliner_conv ()]);
-      [@default Obol] [@make.default Obol] [@names [ "frontend" ]]
+      [@docs Sections.frontend]
+      [@default Obol]
+      [@make.default Obol]
+      [@names [ "frontend" ]]
       (** Choose the frontend to use: Charon or Obol *)
   obol_path : string;
+      [@docs Sections.frontend]
       [@default "obol"]
       [@make.default "obol"]
       [@names [ "obol-path" ]]
@@ -47,55 +74,109 @@ type t = {
       (** Path to the obol binary. Defaults to "obol", i.e. looked up in PATH.
       *)
   charon_path : string;
+      [@docs Sections.frontend]
       [@default "charon"]
       [@make.default "charon"]
       [@names [ "charon-path" ]]
       [@env "SOTERIA_CHARON_PATH"]
       (** Path to the charon binary. Defaults to "charon", i.e. looked up in
           PATH. *)
-  sysroot : string option; [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
+  sysroot : string option;
+      [@docs Sections.frontend] [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
       (** The sysroot to use for compilation. If not provided, the default
           sysroot is used. *)
+  test : string option; [@docs Sections.frontend] [@names [ "test" ]]
+      (** The test profile to use to compile the crate; this only has an effect
+          if analysing a crate. By default, the crate's source is analysed, not
+          the tests. *)
   (* Plugins *)
-  with_kani : bool; [@make.default false] [@names [ "kani" ]]
+  with_kani : bool;
+      [@docs Sections.frontend] [@make.default false] [@names [ "kani" ]]
       (** Use the Kani library *)
-  with_miri : bool; [@make.default false] [@names [ "miri" ]]
+  with_miri : bool;
+      [@docs Sections.frontend] [@make.default false] [@names [ "miri" ]]
       (** Use the Miri library *)
   (* Printing settings *)
-  filter : string list; [@default []] [@names [ "filter" ]]
+  filter : (Str.regexp[@conv Cmdliner_helpers.regex]) list;
+      [@docs Sections.frontend] [@default []] [@optall] [@names [ "filter" ]]
       (** Filter the entrypoints to run, by name. If empty, all entrypoints are
-          run. Multiple filters can be provided; tests matching any will be
-          selected. The filters are treated as regexes. *)
-  print_summary : bool; [@make.default false] [@names [ "summary" ]]
+          run. Multiple filters can be provided, comma-separated; tests matching
+          any will be selected. The filters are treated as regexes. Opposite of
+          --exclude. *)
+  exclude : (Str.regexp[@conv Cmdliner_helpers.regex]) list;
+      [@docs Sections.frontend] [@default []] [@optall] [@names [ "exclude" ]]
+      (** Filter the entrypoints to exclude, by name. If empty, no entrypoints
+          are excluded. Multiple filters can be provided, comma-separated; tests
+          matching any will be excluded. The filters are treated as regexes.
+          Opposite of --filter. *)
+  print_summary : bool;
+      [@docs Sections.output] [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
+  show_pcs : bool;
+      [@docs Sections.output]
+      [@make.default false]
+      [@names [ "show-pcs"; "pcs" ]]
+      [@env "SHOW_PCS"]
+      (** Whether to show the path conditions for outcomes at the end of
+          execution. *)
   (* Symbolic execution behaviour *)
-  ignore_leaks : bool; [@make.default false] [@names [ "ignore-leaks" ]]
+  ignore_leaks : bool;
+      [@docs Sections.analysis]
+      [@make.default false]
+      [@names [ "ignore-leaks" ]]
       (** Ignore memory leaks *)
-  ignore_aliasing : bool; [@make.default false] [@names [ "ignore-aliasing" ]]
+  ignore_aliasing : bool;
+      [@docs Sections.analysis]
+      [@make.default false]
+      [@names [ "ignore-aliasing" ]]
       (** Ignore pointer aliasing rules (tree borrows) *)
   provenance : (provenance[@conv provenance_cmdliner_conv ()]);
-      [@default Permissive] [@names [ "provenance" ]]
+      [@docs Sections.analysis] [@default Permissive] [@names [ "provenance" ]]
       (** The provenance model to use for pointers. If not provided, the default
           is permissive. *)
-  step_fuel : int option; [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
+  recursive_validity : (check_level[@conv check_level_cmdliner_conv ()]);
+      [@docs Sections.analysis]
+      [@default Warn]
+      [@names [ "recursive-validity" ]]
+      (** Whether to check the validity of the addressed memory when obtaining a
+          reference to it. We only go one level deep. *)
+  approx_floating_ops : (check_level[@conv check_level_cmdliner_conv ()]);
+      [@docs Sections.analysis]
+      [@default Warn]
+      [@names [ "approx-floating-ops" ]]
+      (** Whether to allow complex floating-point operations to be
+          over-approximated. Applies to e.g. sqrt, exp, pow and trigonometric
+          functions. If deny, will vanish execution when encountering them. *)
+  step_fuel : int option;
+      [@docs Sections.analysis] [@names [ "step-fuel" ]] [@env "STEP_FUEL"]
       (** The default step fuel for each entrypoint -- every control flow jump
           counts as one fuel. Defaults to infinite fuel. *)
-  branch_fuel : int option; [@names [ "branch-fuel" ]] [@env "BRANCH_FUEL"]
+  branch_fuel : int option;
+      [@docs Sections.analysis] [@names [ "branch-fuel" ]] [@env "BRANCH_FUEL"]
       (** The default branch fuel for each entrypoint -- every symbolic
           execution branching point counts as one fuel. Defaults to infinite
           fuel. *)
   fail_fast : bool;
-      [@make.default false] [@names [ "fail-fast" ]] [@env "FAIL_FAST"]
+      [@docs Sections.analysis]
+      [@make.default false]
+      [@names [ "fail-fast" ]]
+      [@env "FAIL_FAST"]
       (** Stop symbolic execution upon the first error encountered. *)
 }
 [@@deriving make, subliner]
+
+type mode = Compositional | Whole_program
 
 let term = cmdliner_term ()
 let default = make ()
 
 let get, set_and_lock =
   Soteria.Soteria_std.Write_once.make ~name:"Soteria-Rust" ~default ()
+
+let get_mode, set_mode_and_lock =
+  Soteria.Soteria_std.Write_once.make ~name:"Soteria-Rust mode"
+    ~default:Whole_program ()
 
 type global = {
   soteria : Soteria.Config.t; [@term Soteria.Config.cmdliner_term ()]
@@ -105,9 +186,10 @@ type global = {
 
 let global_term = global_cmdliner_term ()
 
-let set_and_lock_global (config : global) =
+let set_and_lock_global (mode : mode) (config : global) =
   Soteria.Config.set_and_lock config.soteria;
   if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
     Exn.config_error
       "Obol does not support polymorphic analyses; use --frontend charon";
+  set_mode_and_lock mode;
   set_and_lock config.soteria_rust

@@ -76,8 +76,8 @@ def pptable(rows: list[list[tuple[str, Optional[str]]]]):
 
 PWD = Path(os.path.dirname(os.path.abspath(__file__)))
 
-ToolName = Literal["Rusteria", "Kani", "Miri"]
-TOOL_NAMES: list[ToolName] = ["Rusteria", "Kani", "Miri"]
+ToolName = Literal["Soteria", "Kani", "Miri"]
+TOOL_NAMES: list[ToolName] = ["Soteria", "Kani", "Miri"]
 SuiteName = Literal["kani", "miri", "custom"]
 SUITE_NAMES: list[SuiteName] = ["miri", "kani", "custom"]
 
@@ -118,6 +118,9 @@ class Outcome(enum.Enum):
     def is_fail(self) -> bool:
         return self == Outcome.FAIL
 
+    def is_unsupported(self) -> bool:
+        return self == Outcome.UNSUPPORTED
+
     def is_expected(self) -> bool:
         return self in (Outcome.PASS, Outcome.FAIL)
 
@@ -128,14 +131,19 @@ class Outcome(enum.Enum):
         return self == Outcome.TOOL
 
     def is_simple(self) -> bool:
-        return self in (Outcome.PASS, Outcome.FAIL, Outcome.TIME_OUT, Outcome.CRASH)
+        return self in (
+            Outcome.PASS,
+            Outcome.FAIL,
+            Outcome.TIME_OUT,
+            Outcome.UNSUPPORTED,
+        )
 
     def simplify(self) -> "Outcome":
         return {
             Outcome.PASS: Outcome.PASS,
             Outcome.FAIL: Outcome.FAIL,
             Outcome.TIME_OUT: Outcome.TIME_OUT,
-        }.get(self, Outcome.CRASH)
+        }.get(self, Outcome.UNSUPPORTED)
 
     txt: str
     clr: str
@@ -155,6 +163,13 @@ class Outcome(enum.Enum):
 T = TypeVar("T")
 
 
+def get_env_path_or(key: str, fallback: Path) -> Path:
+    e = os.environ.get(key)
+    if e:
+        return Path(e).resolve()
+    return fallback.resolve()
+
+
 def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
     for k in d:
         if key.endswith(k):
@@ -162,29 +177,29 @@ def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
     return None
 
 
-def build_rusteria():
-    charon_path = PWD / ".." / ".." / ".." / "charon"
-    miri_sysroot = (
-        subprocess.check_output(
-            f"cd {charon_path} && cargo miri setup --print-sysroot", shell=True
-        )
-        .decode()
-        .strip()
+def get_toolchain() -> str:
+    toolchain_path = (
+        subprocess.check_output("obol toolchain-path", shell=True).decode().strip()
     )
-    os.environ["RUST_SYSROOT"] = miri_sysroot
+    return "-".join(os.path.basename(toolchain_path).split("-")[0:4])
 
-    env = (
-        subprocess.check_output(
-            "opam exec -- dune exec -- env 2> /dev/null", shell=True
-        )
-        .decode()
-        .split("\n")
-    )
-    for line in env:
-        if "=" not in line:
-            continue
-        name, value = line.split("=", 1)
-        os.environ[name] = value
+
+def get_sysroot(toolchain: str) -> str:
+    if not toolchain.startswith("+"):
+        toolchain = "+" + toolchain
+    return subprocess.run(
+        ["cargo", toolchain, "miri", "setup", "--print-sysroot"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def build_soteria():
+    if not os.environ.get("RUST_SYSROOT"):
+        toolchain = get_toolchain()
+        sysroot = get_sysroot(toolchain)
+        os.environ["RUST_SYSROOT"] = sysroot
 
     # find line starting with "host: "
     targets = (
@@ -197,26 +212,13 @@ def build_rusteria():
             os.environ["TARGET"] = line[6:]
             break
 
-    os.environ["RUSTERIA_PLUGINS"] = str((PWD / ".." / "plugins").resolve())
     try:
-        subprocess.check_call("dune build > /dev/null 2> /dev/null", shell=True)
-        subprocess.check_call("soteria-rust build-plugins > /dev/null", shell=True)
+        subprocess.check_call(
+            "soteria-rust build-plugins", shell=True, stdout=subprocess.DEVNULL
+        )
     except subprocess.CalledProcessError:
-        print(f"{RED}Rusteria couldn't build")
+        print(f"{RED}Soteria couldn't build")
         exit(1)
-
-
-def determine_failure_expect(filepath: str) -> bool:
-    if "kani" in filepath:
-        try:
-            with open(filepath, "r") as f:
-                content = f.read()
-                return "kani-verify-fail" in content
-        except Exception:
-            ...
-    elif "miri" in filepath:
-        return "/tests/fail/" in filepath or "/tests/panic/" in filepath
-    return False
 
 
 def subprocess_run(

@@ -1,4 +1,4 @@
-(** Global configuration module *)
+(** Global configuration module. *)
 
 (** An object that captures configuration from all submodules of Soteria. *)
 type t = {

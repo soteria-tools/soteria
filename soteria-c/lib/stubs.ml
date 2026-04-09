@@ -27,8 +27,7 @@ module M (State : State_intf.S) = struct
   let of_opt_not_impl ~msg x = SM.lift @@ of_opt_not_impl ~msg x
 
   type 'err fun_exec =
-    args:Agv.t list ->
-    (Agv.t, Error.with_trace, State.serialized list) SM.Result.t
+    args:Agv.t list -> (Agv.t, Error.with_trace, State.syn list) SM.Result.t
 
   let failed_alloc_case () =
     if (Config.current ()).alloc_cannot_fail then []
@@ -271,21 +270,29 @@ module M (State : State_intf.S) = struct
       | Some f -> List.filteri (fun i _ -> f i) args
   end
 
-  let with_cbmc_support x =
-    if (Config.current ()).cbmc_compat then Some x
-    else (
-      Soteria.Terminal.Warn.warn_once
+  let with_cbmc_support =
+    let cprover_warning =
+      String.Interned.intern
         "CBMC support is not enabled, but detected use of the __CPROVER API. \
-         Soteria will consider the function as missing a body.";
-      None)
+         Soteria will consider the function as missing a body."
+    in
+    fun x ->
+      if (Config.current ()).cbmc_compat then Some x
+      else (
+        Soteria.Terminal.Warn.warn_once cprover_warning;
+        None)
 
-  let with_testcomp_support x =
-    if (Config.current ()).testcomp_compat then Some x
-    else (
-      Soteria.Terminal.Warn.warn_once
+  let with_testcomp_support =
+    let testcomp_warning =
+      String.Interned.intern
         "Test-Comp support is not enabled, but detected use of the __VERIFIER \
-         API. Soteria will consider the function as missing a body.";
-      None)
+         API. Soteria will consider the function as missing a body."
+    in
+    fun x ->
+      if (Config.current ()).testcomp_compat then Some x
+      else (
+        Soteria.Terminal.Warn.warn_once testcomp_warning;
+        None)
 
   let find_stub (fname : Cerb_frontend.Symbol.sym) :
       ('err fun_exec * Arg_filter.t) option =

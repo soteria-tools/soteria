@@ -2,20 +2,16 @@ open Charon
 open Typed.Infix
 open Typed.Syntax
 open Soteria.Symex.Compo_res
-module T = Typed.T
-module BV = Typed.BitVec
+module BV = Typed.BV
 open Rustsymex
 open Rustsymex.Result
 open Rustsymex.Syntax
-open Charon_util
+open Common.Charon_util
 
 (* Import types *)
 include Layout_common
 
 module Session = struct
-  (* TODO: allow different caches for different crates *)
-  (* FIXME: inter-test mutability *)
-
   (** Cache of (type or variant) -> layout *)
   type cache = (Types.ty, t) Hashtbl.t
 
@@ -99,7 +95,7 @@ let not_impl_layout msg ty =
   Fmt.kstr not_impl "Can't compute layout: %s %a" msg pp_ty ty
 
 let layout_warning msg ty =
-  L.debug (fun m -> m "⚠️ Layout: %s@.Type: %a" msg pp_ty ty)
+  L.warn (fun m -> m "Layout: %s@.Type: %a" msg pp_ty ty)
 
 let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   let* ty = Poly.subst_ty ty in
@@ -150,8 +146,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
          fields don't. To avoid this, we *never* consider layouts of generic
          types, even if one is provided. This avoids inconsistent layouts. *)
       | Some layout, _
-        when (not (Config.get ()).polymorphic)
-             || Charon_util.ty_is_monomorphic ty ->
+        when (not (Config.get ()).polymorphic) || ty_is_monomorphic ty ->
           translate_layout ty layout
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
       | _, Union fields -> compute_union_layout ty (field_tys fields)
@@ -276,24 +271,28 @@ and compute_arbitrary_layout ?fst_size ?fst_align
   (* Calculates the offsets, size and alignment for a tuple-like type with fields of
      the given types. Also returns a symbolic boolean to assert this calculation did
      not overflow. *)
-  let rec aux offsets curr_size curr_align overflowed = function
-    | [] -> ok (List.rev offsets, curr_size, curr_align, overflowed)
+  let rec aux offsets curr_size curr_align overflowed uninhabited = function
+    | [] -> ok (List.rev offsets, curr_size, curr_align, overflowed, uninhabited)
     | ty :: rest ->
-        let** { size; align; _ } = layout_of ty in
-        let offset = size_to_fit ~size:curr_size ~align in
-        let new_size, ovf = offset +$?@ size in
-        let new_align = BV.max ~signed:false align curr_align in
-        aux (offset :: offsets) new_size new_align (ovf ||@ overflowed) rest
+        let** layout = layout_of ty in
+        let offset = size_to_fit ~size:curr_size ~align:layout.align in
+        let new_size, ovf = offset +$?@ layout.size in
+        let new_align = BV.max ~signed:false layout.align curr_align in
+        aux (offset :: offsets) new_size new_align (ovf ||@ overflowed)
+          (uninhabited || layout.uninhabited)
+          rest
   in
   let fst_size = Option.value fst_size ~default:(BV.usizei 0) in
   let fst_align = Option.value fst_align ~default:(BV.usizeinz 1) in
-  let** offsets, size, align, overflowed =
-    aux [] fst_size fst_align Typed.v_false members
+  let** offsets, size, align, overflowed, uninhabited =
+    aux [] fst_size fst_align Typed.v_false false members
   in
   let++ () = assert_or_error (Typed.not overflowed) (`InvalidLayout ty) in
   let size = size_to_fit ~size ~align in
   let layout =
-    mk ~size ~align ~fields:(Arbitrary (variant, Array.of_list offsets)) ()
+    mk ~size ~align ~uninhabited
+      ~fields:(Arbitrary (variant, Array.of_list offsets))
+      ()
   in
   Fmt.kstr layout_warning "Computed an arbitrary layout:@.%a" pp layout ty;
   layout
@@ -385,11 +384,11 @@ let normalise (ty : Types.ty) =
 
 let size_of ty =
   let++ { size; _ } = layout_of ty in
-  (Typed.cast size :> [> T.sint ] Typed.t)
+  (Typed.cast size :> Typed.([> T.sint ] t))
 
 let align_of ty =
   let++ { align; _ } = layout_of ty in
-  (Typed.cast align :> [> T.nonzero ] Typed.t)
+  (Typed.cast align :> Typed.([> T.nonzero ] t))
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero
@@ -415,56 +414,6 @@ let max_value_z : Types.literal_type -> Z.t = function
   | TInt I8 -> Z.pred (Z.shift_left Z.one 7)
   | TInt Isize -> Z.pred (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
   | _ -> failwith "Invalid integer type for max_value_z"
-
-let size_to_uint : int -> Types.ty = function
-  | 1 -> TLiteral (TUInt U8)
-  | 2 -> TLiteral (TUInt U16)
-  | 4 -> TLiteral (TUInt U32)
-  | 8 -> TLiteral (TUInt U64)
-  | 16 -> TLiteral (TUInt U128)
-  | _ -> failwith "Invalid integer size"
-
-let lit_to_unsigned lit = size_to_uint @@ size_of_literal_ty lit
-
-let constraints :
-    Types.literal_type -> [< T.cval ] Typed.t -> T.sbool Typed.t list = function
-  | TInt _ | TUInt _ | TFloat (F16 | F32 | F64 | F128) -> fun _ -> []
-  | TBool ->
-      fun x ->
-        let x = Typed.cast_lit TBool x in
-        [ U8.(0s) <=@ x; (x <=@ U8.(1s)) ]
-  | TChar ->
-      (* A char is a ‘Unicode scalar value’, which is any ‘Unicode code point’
-         other than a surrogate code point. This has a fixed numerical
-         definition: code points are in the range 0 to 0x10FFFF, inclusive.
-         Surrogate code points, used by UTF-16, are in the range 0xD800 to
-         0xDFFF. See https://doc.rust-lang.org/std/primitive.char.html *)
-      let codepoint_min = U32.(0s) in
-      let codepoint_max = U32.(0x10FFFFs) in
-      let surrogate_min = U32.(0xD800s) in
-      let surrogate_max = U32.(0xDFFFs) in
-      fun x ->
-        let x = Typed.cast_lit TChar x in
-        [
-          codepoint_min <=@ x;
-          x <=@ codepoint_max;
-          Typed.not (surrogate_min <=@ x &&@ (x <=@ surrogate_max));
-        ]
-
-let nondet_literal_ty (ty : Types.literal_type) : T.cval Typed.t Rustsymex.t =
-  let open Rustsymex.Syntax in
-  let rty =
-    match ty with
-    | TInt _ | TUInt _ | TBool | TChar -> Typed.t_int (size_of_literal_ty ty * 8)
-    | TFloat F16 -> Typed.t_f16
-    | TFloat F32 -> Typed.t_f32
-    | TFloat F64 -> Typed.t_f64
-    | TFloat F128 -> Typed.t_f128
-  in
-  let constrs = constraints ty in
-  let* v = Rustsymex.nondet rty in
-  let+ () = Rustsymex.assume (constrs v) in
-  v
 
 let rec is_unsafe_cell : Types.ty -> bool = function
   | TAdt { id = TTuple; generics = { types; _ } } ->
@@ -493,11 +442,7 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   let is_ptr_like : Types.ty -> bool = function
     | TRef _ | TRawPtr _ -> true
     | TAdt { id = TBuiltin TBox; _ } -> true
-    | TAdt { id = TAdtId id; _ } ->
-        let adt = Crate.get_adt_raw id in
-        adt.item_meta.lang_item = Some "owned_box"
-        || Charon_util.meta_get_attr adt.item_meta "rustc_diagnostic_item"
-           = Some "NonNull"
+    | TAdt adt -> adt_is_box adt || adt_is_nonnull adt
     | _ -> false
   in
   match (ty1, ty2) with
@@ -510,11 +455,11 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
      type *)
   | (TRef (_, ty1, _) | TRawPtr (ty1, _)), (TRef (_, ty2, _) | TRawPtr (ty2, _))
     ->
-      ok (Typed.bool (dst_kind ty1 = dst_kind ty2))
+      ok (Typed.of_bool (dst_kind ty1 = dst_kind ty2))
   | TLiteral (TUInt uint1), TLiteral (TUInt uint2) ->
-      ok (Typed.bool (size_of_uint_ty uint1 = size_of_uint_ty uint2))
+      ok (Typed.of_bool (size_of_uint_ty uint1 = size_of_uint_ty uint2))
   | TLiteral (TInt int1), TLiteral (TInt int2) ->
-      ok (Typed.bool (size_of_int_ty int1 = size_of_int_ty int2))
+      ok (Typed.of_bool (size_of_int_ty int1 = size_of_int_ty int2))
   | TLiteral (TUInt U32), TLiteral TChar | TLiteral TChar, TLiteral (TUInt U32)
     ->
       ok Typed.v_true

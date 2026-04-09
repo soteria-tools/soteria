@@ -14,21 +14,7 @@ module type S = sig
 end
 
 module Merge (A1 : S) (A2 : S) : S = struct
-  type t = A1.t * A2.t
-
-  let init () = (A1.init (), A2.init ())
-
-  let backtrack_n (a1, a2) n =
-    A1.backtrack_n a1 n;
-    A2.backtrack_n a2 n
-
-  let save (a1, a2) =
-    A1.save a1;
-    A2.save a2
-
-  let reset (a1, a2) =
-    A1.reset a1;
-    A2.reset a2
+  type t = A1.t * A2.t [@@deriving reversible]
 
   let simplify (a1, a2) v = v |> A1.simplify a1 |> A2.simplify a2
 
@@ -205,7 +191,7 @@ module Interval : S = struct
                 (if neg then "/" else "∩")
                 Range.pp range' Range.pp new_range);
           let is_ok = not (Range.is_empty range) in
-          ((Svalue.bool (is_ok <> neg), Var.Set.empty), st)
+          ((Svalue.of_bool (is_ok <> neg), Var.Set.empty), st)
       | Some new_range -> (
           let st' = Var.Map.add var new_range st in
           log (fun m ->
@@ -233,7 +219,7 @@ module Interval : S = struct
              it -- however we must mark this variable as dirty, as maybe the
              modified range still renders the branch infeasible, e.g. because of
              some additional PC assertions. *)
-          | _ -> ((Svalue.bool (not neg), Var.Set.singleton var), st'))
+          | _ -> ((Svalue.of_bool (not neg), Var.Set.singleton var), st'))
     in
     match v.node.kind with
     | Binop

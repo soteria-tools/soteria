@@ -161,6 +161,10 @@ module Printers : sig
       [20.00%] *)
   val pp_percent : Format.formatter -> float * float -> unit
 
+  (** Same as {!pp_percent}, but for integer values (implicitly converts to
+      float). *)
+  val pp_percenti : Format.formatter -> int * int -> unit
+
   (** Prints [1 sing] if [n = 1], [n plur] otherwise. *)
   val pp_plural : sing:string -> plur:string -> Format.formatter -> int -> unit
 

@@ -1,35 +1,18 @@
 open Symex
+open Data
 
-module type MapS = sig
-  type key
-  type 'a t
-
-  val empty : 'a t
-  val is_empty : 'a t -> bool
-  val add : key -> 'a -> 'a t -> 'a t
-  val add_seq : (key * 'a) Seq.t -> 'a t -> 'a t
-  val update : key -> ('a option -> 'a option) -> 'a t -> 'a t
-  val mem : key -> 'a t -> bool
-  val find_opt : key -> 'a t -> 'a option
-  val iter : (key -> 'a -> unit) -> 'a t -> unit
-  val to_seq : 'a t -> (key * 'a) Seq.t
+module Ckey (K : sig
+  type t
+end) =
+struct
+  type t = K.t
+  type syn = K.t
 end
 
 module Key (Symex : Symex.Base) = struct
   module type S = sig
-    type t
-
-    include Stdlib.Map.OrderedType with type t := t
-
-    type sbool_v := Symex.Value.(sbool t)
-
-    val pp : Format.formatter -> t -> unit
-    val sem_eq : t -> t -> sbool_v
-    val fresh : unit -> t Symex.t
-    val simplify : t -> t Symex.t
-    val distinct : t list -> sbool_v
-    val subst : (Var.t -> Var.t) -> t -> t
-    val iter_vars : t -> 'a Symex.Value.ty Var.iter_vars
+    include S_map.Key(Symex).S
+    include Abstr.M(Symex).S_with_syn with type t := t
   end
 
   module type S_patricia_tree = sig
@@ -43,33 +26,28 @@ module M
     (Symex : Symex.Base)
     (Key : sig
       type t
+      type syn
     end) =
 struct
   module type S = sig
     type codom
-    type t
-    type codom_serialized
-    type serialized = Key.t * codom_serialized
+    type codom_syn
 
-    module SM :
-      State_monad.S
-        with module Symex = Symex
-         and module Value = Symex.Value
-         and type st = t option
+    include Base.M(Symex).S with type syn = Key.syn * codom_syn
 
-    type ('a, 'err) res := ('a, 'err, serialized list) SM.Result.t
+    type ('a, 'err) res := ('a, 'err, syn list) SM.Result.t
 
     type ('a, 'err) codom_res :=
       codom option ->
-      (('a, 'err, codom_serialized list) Compo_res.t * codom option) Symex.t
+      (('a, 'err, codom_syn list) Compo_res.t * codom option) Symex.t
 
     val empty : t
     val syntactic_bindings : t -> (Key.t * codom) Seq.t
     val syntactic_mem : Key.t -> t -> bool
 
     val pp' :
-      ?key:(Format.formatter -> Key.t -> unit) ->
       ?codom:(Format.formatter -> codom -> unit) ->
+      ?key:(Format.formatter -> Key.t -> unit) ->
       ?ignore:(Key.t * codom -> bool) ->
       Format.formatter ->
       t ->
@@ -77,16 +55,12 @@ struct
 
     val pp : Format.formatter -> t -> unit
     val show : t -> string
-    val pp_serialized : Format.formatter -> serialized -> unit
-    val show_serialized : serialized -> string
-    val serialize : t -> serialized list
-    val subst_serialized : (Var.t -> Var.t) -> serialized -> serialized
-
-    val iter_vars_serialized :
-      serialized -> (Var.t * 'b Symex.Value.ty -> unit) -> unit
-
+    val pp_syn : Format.formatter -> syn -> unit
+    val show_syn : syn -> string
+    val to_syn : t -> syn list
     val of_opt : t option -> t
     val to_opt : t -> t option
+    val ins_outs : syn -> Symex.Value.Expr.t list * Symex.Value.Expr.t list
     val alloc : new_codom:codom -> (Key.t, 'err) res
 
     val allocs :
@@ -102,7 +76,7 @@ struct
       t option ->
       'acc Symex.t
 
-    val produce : serialized -> t option -> (unit * t option) Symex.t
+    val produce : syn -> t option -> t option Symex.Producer.t
 
     (* val consume :
      *  ('inner_serialized ->

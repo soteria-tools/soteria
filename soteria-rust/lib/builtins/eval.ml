@@ -15,11 +15,11 @@ type optim_fn =
   | AllocImpl
   | Panic
 
-(* Rusteria builtin functions *)
-type rusteria_fn = Assert | Assume | NondetBytes | Panic
+(* Soteria builtin functions *)
+type soteria_fn = Assert | Assume | NondetBytes | Panic
 
 (* Miri builtin functions *)
-type miri_fn = AllocId | PromiseAlignement | Nop
+type miri_fn = Alloc | AllocId | Dealloc | PromiseAlignement | Nop
 
 (* Functions related to the allocator, see
    https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
@@ -29,38 +29,46 @@ type alloc_fn =
   | Realloc
   | NoAllocShimIsUnstable
 
-type system_fn = TlvAtexit
+type system_fn = HashmapRandomKeys | TlvAtexit
 
 type fn =
   | Alloc of alloc_fn
   | Fixme of fixme_fn
   | Miri of miri_fn
   | Optim of optim_fn
-  | Rusteria of rusteria_fn
+  | Soteria of soteria_fn
   | System of system_fn
   | DropInPlace
 
 let std_fun_pair_list =
   [
-    (* Rusteria builtins *)
-    ("rusteria::assert", Rusteria Assert);
-    ("rusteria::assume", Rusteria Assume);
-    ("rusteria::nondet_bytes", Rusteria NondetBytes);
-    ("rusteria::panic", Rusteria Panic);
+    (* Soteria builtins *)
+    ("soteria::assert", Soteria Assert);
+    ("soteria::assume", Soteria Assume);
+    ("soteria::nondet_bytes", Soteria NondetBytes);
+    ("soteria::panic", Soteria Panic);
     (* Kani builtins -- we re-define these for nicer call traces *)
-    ("kani::assert", Rusteria Assert);
-    ("kani::assume", Rusteria Assume);
-    ("kani::panic", Rusteria Panic);
+    ("kani::assert", Soteria Assert);
+    ("kani::assume", Soteria Assume);
+    ("kani::panic", Soteria Panic);
     (* Miri builtins *)
+    ("std::intrinsics::miri_promise_symbolic_alignment", Miri PromiseAlignement);
     ("miristd::miri_get_alloc_id", Miri AllocId);
     ("miristd::miri_pointer_name", Miri Nop);
     ("miristd::miri_print_borrow_state", Miri Nop);
-    ("std::intrinsics::miri_promise_symbolic_alignment", Miri PromiseAlignement);
+    ("miristd::miri_run_provenance_gc", Miri Nop);
+    ("miristd::miri_write_to_stdout", Miri Nop);
+    ("miristd::miri_alloc", Miri Alloc);
+    ("miristd::miri_dealloc", Miri Dealloc);
     (* Obol is quite bad at parsing names so this is how they're called
        there... *)
     ("utils::miri_extern::miri_get_alloc_id", Miri AllocId);
     ("utils::miri_extern::miri_pointer_name", Miri Nop);
     ("utils::miri_extern::miri_print_borrow_state", Miri Nop);
+    ("utils::miri_extern::miri_run_provenance_gc", Miri Nop);
+    ("utils::miri_extern::miri_write_to_stdout", Miri Nop);
+    ("utils::miri_extern::miri_alloc", Miri Alloc);
+    ("utils::miri_extern::miri_dealloc", Miri Dealloc);
     (* Allocator *)
     ("__rust_alloc", Alloc (Alloc { zeroed = false }));
     ("__rust_alloc_zeroed", Alloc (Alloc { zeroed = true }));
@@ -74,6 +82,7 @@ let std_fun_pair_list =
        is unsatisfactory (checking if the name starts with "__rust"). *)
     ( "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
       System TlvAtexit );
+    ("std::sys::random::hashmap_random_keys", System HashmapRandomKeys);
     (* Panic Builtins *)
     ("__rust_panic_cleanup", Fixme PanicCleanup);
     (* Dropping, in particular for the generic case, does nothing. *)
@@ -139,38 +148,39 @@ let std_fun_map =
   |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
   |> NameMatcherMap.of_list
 
-module M (Rust_state_m : Rust_state_m.S) = struct
-  module Alloc = Alloc.M (Rust_state_m)
-  module Intrinsics = Intrinsics.M (Rust_state_m)
-  module Miri = Miri.M (Rust_state_m)
-  module Rusteria = Rusteria.M (Rust_state_m)
-  module Std = Std.M (Rust_state_m)
-  module System = System.M (Rust_state_m)
+module M (StateM : State.StateM.S) = struct
+  module Alloc = Alloc.M (StateM)
+  module Intrinsics = Intrinsics.M (StateM)
+  module Miri = Miri.M (StateM)
+  module Soteria_lib = Soteria_lib.M (StateM)
+  module Std = Std.M (StateM)
+  module System = System.M (StateM)
 
-  let fn_to_stub fn_sig fn_name fun_exec =
-    let open Std in
-    function
-    | Rusteria Assert -> Rusteria.assert_
-    | Rusteria Assume -> Rusteria.assume
-    | Rusteria NondetBytes -> Rusteria.nondet_bytes fn_sig
-    | Rusteria Panic -> Rusteria.panic ?msg:None
+  let fn_to_stub fn_sig fn_name fun_exec = function
+    | Soteria Assert -> Soteria_lib.assert_
+    | Soteria Assume -> Soteria_lib.assume
+    | Soteria NondetBytes -> Soteria_lib.nondet_bytes fn_sig
+    | Soteria Panic -> Soteria_lib.panic ?msg:None
+    | Miri Alloc -> Miri.alloc
     | Miri AllocId -> Miri.alloc_id
+    | Miri Dealloc -> Miri.dealloc
     | Miri PromiseAlignement -> Miri.promise_alignement
-    | Miri Nop -> nop
-    | Optim AllocImpl -> alloc_impl
+    | Miri Nop -> Std.nop
+    | Optim AllocImpl -> Std.alloc_impl
     | Optim Panic ->
-        Rusteria.panic ~msg:(Fmt.to_to_string Crate.pp_name fn_name)
-    | Optim (FloatIs fc) -> float_is fc
-    | Optim FloatIsFinite -> float_is_finite
-    | Optim (FloatIsSign { positive }) -> float_is_sign positive
+        Soteria_lib.panic ~msg:(Fmt.to_to_string Crate.pp_name fn_name)
+    | Optim (FloatIs fc) -> Std.float_is fc
+    | Optim FloatIsFinite -> Std.float_is_finite
+    | Optim (FloatIsSign { positive }) -> Std.float_is_sign positive
     | Alloc (Alloc { zeroed }) -> Alloc.alloc ~zeroed
     | Alloc Dealloc -> Alloc.dealloc
     | Alloc NoAllocShimIsUnstable -> Alloc.no_alloc_shim_is_unstable
     | Alloc Realloc -> Alloc.realloc
-    | Fixme PanicCleanup -> fixme_panic_cleanup
-    | Fixme CatchUnwindCleanup -> fixme_catch_unwind_cleanup
+    | Fixme PanicCleanup -> Std.fixme_panic_cleanup
+    | Fixme CatchUnwindCleanup -> Std.fixme_catch_unwind_cleanup
+    | System HashmapRandomKeys -> System.hashmap_random_keys
     | System TlvAtexit -> System.tlv_atexit fun_exec
-    | DropInPlace -> nop
+    | DropInPlace -> Std.nop
 
   let std_fun_eval (f : UllbcAst.fun_decl) generics fun_exec =
     (* Rust allows defining functions and marking them as intrinsics within a
@@ -178,7 +188,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
        name. This means their path doesn't match the one we expect for the
        patterns; so instead of matching on a path, we only consider intrinsics
        from their name. *)
-    if Charon_util.decl_has_attr f "rustc_intrinsic" then
+    if Common.Charon_util.decl_has_attr f "rustc_intrinsic" then
       let name, generics =
         match List.rev f.item_meta.name with
         | PeIdent (name, _) :: _ -> (name, generics)
@@ -200,17 +210,7 @@ module M (Rust_state_m : Rust_state_m.S) = struct
       match stub with
       | Some stub ->
           fun args ->
-            Rust_state_m.Poly.push_generics ~params:f.generics ~args:generics
+            StateM.Poly.push_generics ~params:f.generics ~args:generics
             @@ fn_to_stub f.signature name fun_exec stub args
       | None -> fun_exec (Real { id = f.def_id; generics })
-
-  let builtin_fun_eval (f : Types.builtin_fun_id) generics =
-    let open Std in
-    match f with
-    | ArrayRepeat -> array_repeat generics
-    | ArrayToSliceMut -> array_slice ~mut:true generics
-    | ArrayToSliceShared -> array_slice ~mut:false generics
-    | Index idx -> array_index idx generics
-    | BoxNew -> box_new generics
-    | PtrFromParts _ -> from_raw_parts
 end

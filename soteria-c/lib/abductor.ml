@@ -43,12 +43,15 @@ let generate_summaries_for (fundef : fundef) =
     Csymex.run_needs_stats ~mode:UX ~fuel:default_abductor_fuel process
   in
   let+ (args, ret, bi_state), pc = res in
+  let args = List.map Aggregate_val.to_syn args in
+  let ret = Result.map Aggregate_val.to_syn ret in
+  let pc = List.map Typed.Expr.of_value pc in
   let@ () = L.with_section "Building summary" in
   L.trace (fun m ->
       m "@[<2>Building summary for %a using bistate:@ %a@]" Fmt_ail.pp_sym fid
         (Fmt.Dump.option Bi_state.pp)
         bi_state);
-  let pre, post = Bi_state.to_spec bi_state in
+  let ~pre, ~post = Bi_state.to_spec bi_state in
   let ret = Summary.make ~args ~ret ~pre ~post ~pc () in
   L.trace (fun m -> m "Obtained summary: %a" Summary.pp ret);
   ret
@@ -71,15 +74,19 @@ let generate_all_summaries ~functions_to_analyse prog =
          true))
       order
   in
+  (* Track number of functions to analyse *)
+  Soteria.Stats.As_ctx.add_int "soteria-c.num_functions_to_analyse" !count;
   let@ () = Progress_bar.run ~msg:"Generating summaries" ~total:!count () in
+  let results =
+    ListLabels.filter_map to_analyse ~f:(fun fid ->
+        let open Syntaxes.Option in
+        let res =
+          let+ fundef = Ail_helpers.find_fun_def fid in
+          let summaries = generate_summaries_for fundef in
+          (fid, summaries)
+        in
+        Progress_bar.signal_progress 1;
+        res)
+  in
 
-  let@ () = Soteria.Stats.As_ctx.with_stats () in
-  ListLabels.filter_map to_analyse ~f:(fun fid ->
-      let open Syntaxes.Option in
-      let res =
-        let+ fundef = Ail_helpers.find_fun_def fid in
-        let summaries = generate_summaries_for fundef in
-        (fid, summaries)
-      in
-      Progress_bar.signal_progress 1;
-      res)
+  results

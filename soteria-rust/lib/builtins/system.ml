@@ -1,8 +1,10 @@
-module BV = Typed.BitVec
+(** Builtins relating to particular operating systems. There is no central
+    documentation for these; we must instead implement them as needed. *)
+
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) = struct
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  open StateM
   open Syntax
 
   (** Used on macOS to register thread local destructors; receives a function
@@ -26,4 +28,18 @@ module M (Rust_state_m : Rust_state_m.S) = struct
           ok ())
     in
     Tuple []
+
+  let hashmap_random_keys _ =
+    Encoder.nondet_valid
+      (TAdt
+         {
+           id = TTuple;
+           generics =
+             {
+               types = [ TLiteral (TUInt U64); TLiteral (TUInt U64) ];
+               regions = [];
+               const_generics = [];
+               trait_refs = [];
+             };
+         })
 end

@@ -126,32 +126,30 @@ let call_trace_to_labels ~as_ranges (call_trace : 'a Call_trace.t) =
 
 let with_unaltered_geo f =
   let geo = Format.get_geometry () in
-  f ();
-  Format.set_geometry ~max_indent:geo.max_indent ~margin:geo.margin
+  Fun.protect
+    ~finally:(fun () ->
+      Format.set_geometry ~max_indent:geo.max_indent ~margin:geo.margin)
+    f
 
 let pp ft diag =
   let module GConfig = Grace_ansi_renderer.Config in
   let { color; utf8 } : Logs.Profile.t = Logs.Profile.get () in
   let styles, use_ansi =
-    if color then (GConfig.Style_sheet.default, true)
-    else (GConfig.Style_sheet.(no_color default), false)
+    if color then (GConfig.Style_sheet.default, Some true)
+    else (GConfig.Style_sheet.(no_color default), Some false)
   in
   let chars = if utf8 then GConfig.Chars.unicode else GConfig.Chars.ascii in
   let config = GConfig.{ chars; styles; use_ansi } in
   if (Config.get ()).compact then
-    Grace_ansi_renderer.pp_compact_diagnostic ~config () ft diag
-  else Grace_ansi_renderer.pp_diagnostic ~config () ft diag
+    Grace_ansi_renderer.pp_compact_diagnostic ~config ft diag
+  else Grace_ansi_renderer.pp_diagnostic ~config ft diag
 
-let print_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
+let print_diagnostic ~severity ~as_ranges ~msg ~call_trace =
   with_unaltered_geo @@ fun () ->
   let labels = call_trace_to_labels ~as_ranges call_trace in
-  try
-    Grace.Diagnostic.createf ~labels severity "%s in %s" error fname
-    |> Fmt.pr "%a@?" pp
+  try Grace.Diagnostic.createf ~labels severity "%s" msg |> Fmt.pr "%a@?@." pp
   with _ ->
-    Fmt.pr "%a: %a@?" pp_severity severity
-      (Logs.Printers.pp_style `Bold)
-      (error ^ " in " ^ fname)
+    Fmt.pr "%a: %a@?" pp_severity severity (Logs.Printers.pp_style `Bold) msg
 
 let print_diagnostic_simple ~severity msg =
   with_unaltered_geo @@ fun () ->

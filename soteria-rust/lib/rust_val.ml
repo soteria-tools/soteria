@@ -1,23 +1,160 @@
-module T = Typed.T
-module BV = Typed.BitVec
+open Typed
 
-type 'ptr meta = Thin | Len of T.sint Typed.t | VTable of 'ptr
+type ('v, 'ptr) meta_raw = Thin | Len of 'v | VTable of 'ptr
+type 'ptr meta = (T.sint Typed.t, 'ptr) meta_raw
+type 'ptr meta_syn = (Expr.t, 'ptr) meta_raw
+type ('v, 'ptr) full_ptr_raw = 'ptr * ('v, 'ptr) meta_raw
 type 'ptr full_ptr = 'ptr * 'ptr meta
 
-type 'ptr t =
-  | Int of T.sint Typed.t
-  | Float of T.sfloat Typed.t
-  | Ptr of 'ptr full_ptr
+type ('sint, 'sfloat, 'ptr) raw =
+  | Int of 'sint
+  | Float of 'sfloat
+  | Ptr of ('sint, 'ptr) full_ptr_raw
       (** pointer, parametric to enable Ruxt, with optional meta *)
-  | Enum of T.sint Typed.t * 'ptr t list  (** discriminant * values *)
-  | Tuple of 'ptr t list  (** contains ordered values *)
-  | Union of ('ptr t * T.sint Typed.t) list
+  | Enum of 'sint * ('sint, 'sfloat, 'ptr) raw list
+      (** discriminant * values *)
+  | Tuple of ('sint, 'sfloat, 'ptr) raw list  (** contains ordered values *)
+  | Union of (('sint, 'sfloat, 'ptr) raw * 'sint) list
       (** list of blocks in the union, with their offset *)
   | PolyVal of Charon.Types.type_var_id
       (** The opaque value of a type variable, identified by (type variable
           index, unique identifier). *)
 
+type 'ptr t = (T.sint Typed.t, T.sfloat Typed.t, 'ptr) raw
 type 'ptr rust_val = 'ptr t
+type 'ptr syn = (Expr.t, Expr.t, 'ptr) raw
+
+let pp_meta_raw pp_v pp_ptr fmt = function
+  | Thin -> Fmt.pf fmt "-"
+  | Len v -> Fmt.pf fmt "%a" pp_v v
+  | VTable p -> Fmt.pf fmt "%a" pp_ptr p
+
+let pp_meta pp_ptr = pp_meta_raw Typed.ppa pp_ptr
+let pp_meta_syn pp_ptr_syn = pp_meta_raw Expr.pp pp_ptr_syn
+
+let pp_full_ptr_raw pp_v pp_ptr fmt = function
+  | p, Thin -> Fmt.pf fmt "(%a)" pp_ptr p
+  | p, meta -> Fmt.pf fmt "(%a, %a)" pp_ptr p (pp_meta_raw pp_v pp_ptr) meta
+
+let pp_full_ptr pp_ptr = pp_full_ptr_raw Typed.ppa pp_ptr
+let pp_full_ptr_syn pp_ptr_syn = pp_full_ptr_raw Expr.pp pp_ptr_syn
+
+let rec pp pp_ptr fmt t =
+  let pp = pp pp_ptr in
+  match t with
+  | Int v -> Typed.ppa fmt v
+  | Float v -> Typed.ppa fmt v
+  | Ptr ptr -> Fmt.pf fmt "Ptr%a" (pp_full_ptr pp_ptr) ptr
+  | Enum (disc, vals) ->
+      Fmt.pf fmt "Enum(%a: %a)" Typed.ppa disc
+        (Fmt.list ~sep:(Fmt.any ", ") pp)
+        vals
+  | Tuple vals -> Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp) vals
+  | Union vs ->
+      let pp_block ft (v, ofs) = Fmt.pf ft "(%a: %a)" Typed.ppa ofs pp v in
+      Fmt.pf fmt "Union(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_block) vs
+  | PolyVal tid -> Fmt.pf fmt "PolyVal(%a)" Charon.Types.pp_type_var_id tid
+
+let pp_rust_val = pp
+
+let rec pp_syn pp_ptr fmt t =
+  let pp_syn = pp_syn pp_ptr in
+  match t with
+  | Int v -> Expr.pp fmt v
+  | Float v -> Expr.pp fmt v
+  | Ptr ptr -> Fmt.pf fmt "Ptr%a" (pp_full_ptr_raw Expr.pp pp_ptr) ptr
+  | Enum (disc, vals) ->
+      Fmt.pf fmt "Enum(%a: %a)" Expr.pp disc
+        (Fmt.list ~sep:(Fmt.any ", ") @@ pp_syn)
+        vals
+  | Tuple vals ->
+      Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") @@ pp_syn) vals
+  | Union vs ->
+      let pp_block ft (v, ofs) = Fmt.pf ft "(%a: %a)" Expr.pp ofs pp_syn v in
+      Fmt.pf fmt "Union(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_block) vs
+  | PolyVal tid -> Fmt.pf fmt "PolyVal(%a)" Charon.Types.pp_type_var_id tid
+
+let ppa_syn ft t = pp_syn (Fmt.any "?") ft t
+let ppa ft rv = pp (Fmt.any "?") ft rv
+let unit_ = Tuple []
+
+let meta_exprs_syn ptr_exprs_syn : 'ptr meta_syn -> Expr.t list = function
+  | Thin -> []
+  | Len v -> [ v ]
+  | VTable p -> ptr_exprs_syn p
+
+let rec exprs_syn ptr_exprs_syn x =
+  let exprs_syn = exprs_syn ptr_exprs_syn in
+  match x with
+  | Int v | Float v -> [ v ]
+  | Ptr (p, meta) -> ptr_exprs_syn p @ meta_exprs_syn ptr_exprs_syn meta
+  | Enum (disc, vals) -> disc :: List.concat_map exprs_syn vals
+  | Tuple vals -> List.concat_map exprs_syn vals
+  | Union vs -> List.concat_map (fun (v, ofs) -> exprs_syn v @ [ ofs ]) vs
+  | PolyVal _ -> []
+
+let rec to_syn ptr_to_syn x =
+  let meta_to_syn (m : 'ptr meta) =
+    match m with
+    | Thin -> Thin
+    | Len v -> Len (Expr.of_value v)
+    | VTable p -> VTable (ptr_to_syn p)
+  in
+  let full_ptr_to_syn (ptr, meta) = (ptr_to_syn ptr, meta_to_syn meta) in
+  let to_syn = to_syn ptr_to_syn in
+  match x with
+  | Int v -> Int (Expr.of_value v)
+  | Float v -> Float (Expr.of_value v)
+  | Enum (disc, vals) ->
+      let disc = Expr.of_value disc in
+      let vals = List.map to_syn vals in
+      Enum (disc, vals)
+  | Tuple vals -> Tuple (List.map to_syn vals)
+  | Union vs ->
+      let vs = List.map (fun (v, ofs) -> (to_syn v, Expr.of_value ofs)) vs in
+      Union vs
+  | Ptr p -> Ptr (full_ptr_to_syn p)
+  | PolyVal v -> PolyVal v
+
+module Learn_eq (Symex : Soteria.Symex.Base with module Value = Typed) = struct
+  let learn_eq_meta learn_eq_ptr s t =
+    let open Symex.Consumer in
+    match (s, t) with
+    | Thin, Thin -> ok ()
+    | Len s, Len v -> learn_eq s v
+    | VTable ps, VTable p -> learn_eq_ptr ps p
+    | _ -> lfail Typed.v_false
+
+  let rec learn_eq learn_eq_ptr syn t =
+    let rec_call = learn_eq learn_eq_ptr in
+    let open Symex.Consumer in
+    let open Syntax in
+    let learn_list ~learn ls l =
+      let* combined =
+        List.combine_or ~ok ~err:(fun () -> lfail Typed.v_false) ls l
+      in
+      iter_list ~f:(fun (a, b) -> learn a b) combined
+    in
+    match (syn, t) with
+    | Int s, Int v -> learn_eq s v
+    | Float s, Float v -> learn_eq s v
+    | Ptr (ps, meta_s), Ptr (p, meta) ->
+        let* () = learn_eq_ptr ps p in
+        learn_eq_meta learn_eq_ptr meta_s meta
+    | Enum (disc_s, vals_s), Enum (disc, vals) ->
+        let* () = learn_eq disc_s disc in
+        learn_list ~learn:rec_call vals_s vals
+    | Tuple vals_s, Tuple vals -> learn_list ~learn:rec_call vals_s vals
+    | Union vs1, Union vs2 ->
+        learn_list
+          ~learn:(fun (v1, ofs1) (v2, ofs2) ->
+            let* () = rec_call v1 v2 in
+            learn_eq ofs1 ofs2)
+          vs1 vs2
+    | PolyVal _, PolyVal _ ->
+        lift @@ Symex.give_up "Learning equality of polymorphic values"
+    | _ -> Fmt.failwith "Mismatching rust_val kinds: %a vs %a" ppa_syn syn ppa t
+end
 
 (** [is_empty v] is true if the value is "empty"; ie. it doesn't contain any
     [Base] or [Ptr] value. We also consider [Enum] to be non-empty, because of
@@ -30,85 +167,36 @@ let rec is_empty = function
   (* I'm not sure about this one *)
   | Union _ -> false
 
-let pp_meta pp_ptr fmt = function
-  | Thin -> Fmt.pf fmt "-"
-  | Len v -> Fmt.pf fmt "%a" Typed.ppa v
-  | VTable p -> Fmt.pf fmt "%a" pp_ptr p
-
-let pp_full_ptr pp_ptr fmt = function
-  | p, Thin -> Fmt.pf fmt "(%a)" pp_ptr p
-  | p, meta -> Fmt.pf fmt "(%a, %a)" pp_ptr p (pp_meta pp_ptr) meta
-
-let rec pp_rust_val pp_ptr fmt =
-  let pp_rust_val = pp_rust_val pp_ptr in
-  function
-  | Int v -> Typed.ppa fmt v
-  | Float v -> Typed.ppa fmt v
-  | Ptr ptr -> Fmt.pf fmt "Ptr%a" (pp_full_ptr pp_ptr) ptr
-  | Enum (disc, vals) ->
-      Fmt.pf fmt "Enum(%a: %a)" Typed.ppa disc
-        (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val)
-        vals
-  | Tuple vals ->
-      Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_rust_val) vals
-  | Union vs ->
-      let pp_block ft (v, ofs) =
-        Fmt.pf ft "(%a: %a)" Typed.ppa ofs pp_rust_val v
-      in
-      Fmt.pf fmt "Union(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_block) vs
-  | PolyVal tid -> Fmt.pf fmt "PolyVal(%a)" Charon.Types.pp_type_var_id tid
-
-let pp = pp_rust_val
-let ppa_rust_val ft rv = pp_rust_val (Fmt.any "?") ft rv
-let unit_ = Tuple []
-
 let as_ptr = function
   | Ptr ptr -> ptr
   | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a"
-        ppa_rust_val v
+      Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a" ppa v
 
 let as_ptr_or ~make = function
   | Ptr ptr -> ptr
   | Int v -> (make @@ Typed.cast_i Usize v, Thin)
   | v ->
       Fmt.failwith
-        "Unexpected rust_val kind, expected a pointer or base, got: %a"
-        ppa_rust_val v
+        "Unexpected rust_val kind, expected a pointer or base, got: %a" ppa v
 
 let as_base_f ty = function
   | Float v -> Typed.cast_f ty v
   | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
-        ppa_rust_val v
+      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a" ppa
+        v
 
 let as_base ty = function
   | Int v -> Typed.cast_lit ty v
   | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a"
-        ppa_rust_val v
+      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a" ppa
+        v
 
 let as_base_i ty = as_base (TUInt ty)
 
 let as_tuple = function
   | Tuple vals -> vals
   | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a tuple, got: %a"
-        ppa_rust_val v
-
-let size_of =
-  let open Rustsymex.Result in
-  function
-  | Int v -> ok (BV.usizei (Typed.size_of_int v / 8))
-  | Float f ->
-      ok (BV.usizei (Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8))
-  | Ptr (_, Thin) -> ok (BV.usizei (Crate.pointer_size ()))
-  | Ptr (_, (Len _ | VTable _)) -> ok (BV.usizei (Crate.pointer_size () * 2))
-  | PolyVal tid -> Layout.size_of (TVar (Free tid))
-  (* We can't know the size of a union/tuple/enum, because of e.g. niches, or
-     padding *)
-  | Union _ | Enum _ | Tuple _ ->
-      failwith "Impossible to get size of Enum/Tuple rust_val"
+      Fmt.failwith "Unexpected rust_val kind, expected a tuple, got: %a" ppa v
 
 let flatten v =
   let rec aux acc = function
@@ -117,45 +205,21 @@ let flatten v =
   in
   List.rev (aux [] v)
 
-let rec iter_vars ptr_iter_vars rv f =
-  let iter_vars = iter_vars ptr_iter_vars in
+let rec subst subst_ptr subst_val rv =
+  let subst = subst subst_ptr subst_val in
+  let subst_expr = Expr.subst subst_val in
   match rv with
-  | Int v -> Typed.iter_vars v f
-  | Float v -> Typed.iter_vars v f
-  | PolyVal _ -> ()
-  | Union vs ->
-      List.iter
-        (fun (v, ofs) ->
-          iter_vars v f;
-          Typed.iter_vars ofs f)
-        vs
-  | Enum (disc, vals) ->
-      Typed.iter_vars disc f;
-      List.iter (fun v -> iter_vars v f) vals
-  | Tuple vals -> List.iter (fun v -> iter_vars v f) vals
-  | Ptr (p, meta) ->
-      (match meta with
-      | Thin -> ()
-      | Len v -> Typed.iter_vars v f
-      | VTable v -> ptr_iter_vars v f);
-      ptr_iter_vars p f
-
-let rec subst ptr_subst subst_var rv =
-  let subst = subst ptr_subst subst_var in
-  let map_subst vals = List.map subst vals in
-  match rv with
-  | Int v -> Int (Typed.subst subst_var v)
-  | Float v -> Float (Typed.subst subst_var v)
-  | PolyVal _ -> rv
-  | Union vs ->
-      Union (List.map (fun (v, ofs) -> (subst v, Typed.subst subst_var ofs)) vs)
-  | Enum (disc, vals) -> Enum (Typed.subst subst_var disc, map_subst vals)
-  | Tuple vals -> Tuple (map_subst vals)
+  | Int v -> Int (subst_expr v)
+  | Float v -> Float (subst_expr v)
+  | PolyVal i -> PolyVal i
+  | Union vs -> Union (List.map (fun (v, ofs) -> (subst v, subst_expr ofs)) vs)
+  | Enum (disc, vals) -> Enum (subst_expr disc, List.map subst vals)
+  | Tuple vals -> Tuple (List.map subst vals)
   | Ptr (p, meta) ->
       let meta =
         match meta with
         | Thin -> Thin
-        | Len len -> Len (Typed.subst subst_var len)
-        | VTable ptr -> VTable (ptr_subst subst_var ptr)
+        | Len len -> Len (subst_expr len)
+        | VTable ptr -> VTable (subst_ptr subst_val ptr)
       in
-      Ptr (ptr_subst subst_var p, meta)
+      Ptr (subst_ptr subst_val p, meta)

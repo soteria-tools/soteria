@@ -73,6 +73,7 @@ let all_bv_cmp_ops =
     D.BitVec.leq;
     (fun ~signed:_ -> D.Bool.eq);
     D.BitVec.add_overflows;
+    D.BitVec.sub_overflows;
     D.BitVec.mul_overflows;
   |]
 

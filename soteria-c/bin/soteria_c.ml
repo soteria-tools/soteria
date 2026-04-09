@@ -1,5 +1,6 @@
 open Soteria_c_lib
 open Cmdliner
+open Soteria.Soteria_std.Cmdliner_helpers
 module Exit_code = Error.Exit_code
 
 let exits =
@@ -11,7 +12,8 @@ let exits =
 let functions_arg =
   let doc = "List of functions to analyse" in
   let docv = "FUNCTION_NAME" in
-  Arg.(value & opt_all string [] & info [ "f" ] ~doc ~docv)
+  Arg.(
+    value & opt_all string [] & info [ "f" ] ~docs:Sections.frontend ~doc ~docv)
 
 let files_arg =
   let doc = "FILES" in
@@ -23,7 +25,10 @@ let version_arg =
 
 let includes_arg =
   let doc = "Add a directory to the include path" in
-  Arg.(value & opt_all dir [] & info [ "I" ] ~doc ~docv:"DIR")
+  Arg.(
+    value
+    & opt_all dir []
+    & info [ "I" ] ~docs:Sections.frontend ~doc ~docv:"DIR")
 
 module Exec_main = struct
   let entry_point_arg =
@@ -32,7 +37,9 @@ module Exec_main = struct
     Arg.(
       value
       & opt string "main"
-      & info [ "entry"; "entry-point"; "harness" ] ~doc ~docv)
+      & info
+          [ "entry"; "entry-point"; "harness" ]
+          ~docs:Sections.frontend ~doc ~docv)
 
   let term =
     Term.(

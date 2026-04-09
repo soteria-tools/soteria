@@ -1,8 +1,14 @@
+(** Miri-related intrinsics.
+
+    See https://github.com/rust-lang/miri/blob/master/tests/utils/miri_extern.rs
+*)
+
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) = struct
-  open Rust_state_m
+module M (StateM : State.StateM.S) = struct
+  open StateM
   open Syntax
+  module Alloc = Alloc.M (StateM)
 
   let alloc_id args =
     match args with
@@ -13,8 +19,11 @@ module M (Rust_state_m : Rust_state_m.S) = struct
     match args with
     | [ Ptr (ptr, _); Int align ] ->
         let align = Typed.cast @@ Typed.cast_i Usize align in
-        let is_aligned = Sptr.is_aligned align ptr in
+        let is_aligned, _err = Sptr.is_aligned align ptr in
         let+ () = assume [ is_aligned ] in
         Tuple []
     | _ -> not_impl "miri_promise_symbolic_alignment: invalid arguments"
+
+  let alloc args = Alloc.alloc ~zeroed:false args
+  let dealloc args = Alloc.dealloc args
 end

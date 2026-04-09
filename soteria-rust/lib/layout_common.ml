@@ -12,7 +12,7 @@ module Tag_layout = struct
 
   and t = {
     offset : T.sint Typed.t;
-    ty : Types.literal_type; [@printer Charon_util.pp_literal_ty]
+    ty : Types.literal_type; [@printer Common.Charon_util.pp_literal_ty]
     encoding : encoding;
     tags : T.sint Typed.t option Array.t;
         [@printer

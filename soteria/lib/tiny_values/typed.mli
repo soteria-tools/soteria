@@ -30,6 +30,8 @@ val t_int : [> sint ] ty
 type +'a t
 type sbool = T.sbool
 
+val is_bool_ty : 'a ty -> bool
+
 (** Basic value operations *)
 
 val get_ty : 'a t -> Svalue.ty
@@ -37,7 +39,6 @@ val untype_type : 'a ty -> Svalue.ty
 val kind : 'a t -> Svalue.t_kind
 val mk_var : Svalue.Var.t -> 'a ty -> 'a t
 val iter_vars : 'a t -> (Svalue.Var.t * 'b ty -> unit) -> unit
-val subst : (Svalue.Var.t -> Svalue.Var.t) -> 'a t -> 'a t
 val type_ : Svalue.t -> 'a t
 val type_checked : Svalue.t -> 'a ty -> 'a t option
 val cast : 'a t -> 'b t
@@ -54,11 +55,11 @@ val hash : [< any ] t -> int
 (** Typed constructors *)
 
 val sem_eq : 'a t -> 'a t -> sbool t
-val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
+val sem_eq_untyped : 'a t -> 'b t -> [> sbool ] t
 val v_true : [> sbool ] t
 val v_false : [> sbool ] t
-val bool : bool -> [> sbool ] t
-val as_bool : 'a t -> bool option
+val of_bool : bool -> [> sbool ] t
+val to_bool : 'a t -> bool option
 val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val conj : [< sbool ] t list -> [> sbool ] t
 val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
@@ -111,3 +112,9 @@ module Syntax : sig
     val one : unit -> [> sint ] t
   end
 end
+
+module Expr :
+  Symex.Value.Expr
+    with type 'a v := 'a t
+     and type 'a ty := 'a ty
+     and type t = Svalue.t
