@@ -13,7 +13,22 @@ module Solver_result = Solver_result
 module Value = Value
 module Var = Var
 
+exception Tool_bug of string
 exception Gave_up of string
+
+let tool_bug reason = raise (Tool_bug reason)
+
+let () =
+  Printexc.register_printer (function
+    | Gave_up reason ->
+        Some (Fmt.str "Analysis gave up (and was not caught): %s" reason)
+    | Tool_bug reason ->
+        Some
+          (Fmt.str
+             "@[<v>Tool Bug : %s@.This is due to an invalid use of the Soteria \
+              API, please report this with the tool developer.@]"
+             reason)
+    | _ -> None)
 
 module Or_gave_up = struct
   type 'err t = E of 'err | Gave_up of string
@@ -25,6 +40,35 @@ module Or_gave_up = struct
   let unwrap_exn = function
     | E e -> e
     | Gave_up reason -> raise (Gave_up reason)
+end
+
+module type Symex_syntax_S = sig
+  type sbool_v
+  type ('a, 'b) t
+
+  val branch_on :
+    ?left_branch_name:string ->
+    ?right_branch_name:string ->
+    sbool_v ->
+    then_:(unit -> ('a, 'b) t) ->
+    else_:(unit -> ('a, 'b) t) ->
+    ('a, 'b) t
+
+  val branch_on_take_one :
+    ?left_branch_name:string ->
+    ?right_branch_name:string ->
+    sbool_v ->
+    then_:(unit -> ('a, 'b) t) ->
+    else_:(unit -> ('a, 'b) t) ->
+    ('a, 'b) t
+
+  val if_sure :
+    ?left_branch_name:string ->
+    ?right_branch_name:string ->
+    sbool_v ->
+    then_:(unit -> ('a, 'b) t) ->
+    else_:(unit -> ('a, 'b) t) ->
+    ('a, 'b) t
 end
 
 module type Core = sig
@@ -43,6 +87,10 @@ module type Core = sig
       potential typos such as [`LFail] which will take precious time to debug...
       trust me. *)
   type lfail = [ `Lfail of Value.(sbool t) ]
+  [@@deriving show { with_path = false }]
+
+  type cons_fail = [ lfail | `Missing_subst of Var.t ]
+  [@@deriving show { with_path = false }]
 
   type 'a v := 'a Value.t
   type 'a vt := 'a Value.ty
@@ -60,20 +108,12 @@ module type Core = sig
         {b unsatisfiable}. *)
   val assert_ : sbool v -> bool t
 
-  (** [consume_pure v] is somewhat equivalent to
-      [if%sat v then ok () else error (`Lfail v)]. The difference is that it
-      does not branch:
-      - In UX, analysis gives up in case of [`Lfail], and the error branch is
-        discarded. Because of that, doing two sat checks is not required, and
-        [consume_pure] is just an [assume].
-      - In OX, the error case is enough to know the proof cannot be concluded,
-        and the ok branch is discarded. Therefore, in OX, it is equivalent to
-        [assert_]. *)
-  val consume_pure : sbool v -> (unit, [> lfail ], 'a) Compo_res.t t
-
-  (** [consume_false] is [consume_pure (Value.bool false)], but with a signature
-      that is easier to manipulate. *)
-  val consume_false : unit -> ('a, [> lfail ], 'b) Compo_res.t t
+  (** Do not use [nondet_UNSAFE]. *)
+  val nondet_UNSAFE : 'a vt -> 'a v
+  (* [nondet_UNSAFE] creates a nondet value but does not wrap it inside a symex
+     monad. This could be used unsafely, because it's not lazy. It is exposed
+     because we use it in Producer. TODO: this may be removable when we have
+     modular explicit, and we can thread a monad through all our definitions *)
 
   (** [nondet ty] creates a fresh variable of type [ty]. *)
   val nondet : 'a vt -> 'a v t
@@ -219,32 +259,103 @@ module type Base = sig
 
     val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
 
-    module Symex_syntax : sig
-      type sbool_v := Value.(sbool t)
+    module Symex_syntax :
+      Symex_syntax_S
+        with type ('a, 'b) t := 'a t
+         and type sbool_v := Value.(sbool t)
+  end
 
-      val branch_on :
-        ?left_branch_name:string ->
-        ?right_branch_name:string ->
-        sbool_v ->
-        then_:(unit -> 'a t) ->
-        else_:(unit -> 'a t) ->
-        'a t
+  module Producer : sig
+    type 'a symex := 'a t
+    type subst := Value.Expr.Subst.t
 
-      val branch_on_take_one :
-        ?left_branch_name:string ->
-        ?right_branch_name:string ->
-        sbool_v ->
-        then_:(unit -> 'a t) ->
-        else_:(unit -> 'a t) ->
-        'a t
+    include Monad.S
 
-      val if_sure :
-        ?left_branch_name:string ->
-        ?right_branch_name:string ->
-        sbool_v ->
-        then_:(unit -> 'a t) ->
-        else_:(unit -> 'a t) ->
-        'a t
+    val lift : 'a symex -> 'a t
+    val vanish : unit -> 'a t
+
+    val apply_subst :
+      ((Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
+
+    val produce_pure : Value.Expr.t -> unit t
+    val run : subst:subst -> 'a t -> ('a * subst) symex
+    val run_identity : 'a t -> 'a symex
+
+    (** This is unsafe and shouldn't be used in clients, it is only available to
+        enable the implementation of the state monad transformer. *)
+    val from_raw_UNSAFE : (subst option -> ('a * subst option) symex) -> 'a t
+
+    module Syntax : sig
+      include module type of Syntax
+
+      val ( let*^ ) : 'a symex -> ('a -> 'b t) -> 'b t
+      val ( let+^ ) : 'a symex -> ('a -> 'b) -> 'b t
+
+      module Symex_syntax :
+        Symex_syntax_S
+          with type ('a, 'b) t := 'a t
+           and type sbool_v := Value.(sbool t)
+    end
+  end
+
+  module Consumer : sig
+    type subst := Value.Expr.Subst.t
+    type 'a symex := 'a t
+    type ('a, 'fix) t
+
+    val apply_subst :
+      ((Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
+
+    val assert_pure : Value.(sbool t) -> (unit, 'fix) t
+    val consume_pure : Value.Expr.t -> (unit, 'fix) t
+    val learn_eq : Value.Expr.t -> 'a Value.t -> (unit, 'fix) t
+    val expose_subst : unit -> (subst, 'fix) t
+    val lift_res : ('a, cons_fail, 'fix) Result.t -> ('a, 'fix) t
+    val lift : 'a symex -> ('a, 'fix) t
+    val branches : (unit -> ('a, 'fix) t) list -> ('a, 'fix) t
+    val ok : 'a -> ('a, 'fix) t
+    val lfail : Value.sbool Value.t -> ('a, 'fix) t
+    val miss : 'fix list -> ('a, 'fix) t
+    val miss_no_fix : reason:string -> unit -> ('a, 'fix) t
+    val map : ('a, 'fix) t -> ('a -> 'b) -> ('b, 'fix) t
+    val map_missing : ('a, 'fix) t -> ('fix -> 'g) -> ('a, 'g) t
+    val bind : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+
+    val fold_list :
+      'a list -> init:'b -> f:('b -> 'a -> ('b, 'fix) t) -> ('b, 'fix) t
+
+    val iter_list : 'a list -> f:('a -> (unit, 'fix) t) -> (unit, 'fix) t
+
+    val bind_res :
+      ('a, 'fix) t ->
+      (('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) ->
+      ('b, 'fix2) t
+
+    val run :
+      subst:subst -> ('a, 'fix) t -> ('a * subst, cons_fail, 'fix) Result.t
+
+    (** This is unsafe and shouldn't be used in clients, it is only available to
+        enable the implementation of the state monad transformer. *)
+    val from_raw_UNSAFE :
+      (subst -> ('a * subst, cons_fail, 'fix) Result.t) -> ('a, 'fix) t
+
+    module Syntax : sig
+      val ( let* ) : ('a, 'fix) t -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+      val ( let+ ) : ('a, 'fix) t -> ('a -> 'b) -> ('b, 'fix) t
+      val ( let+? ) : ('a, 'fix) t -> ('fix -> 'g) -> ('a, 'g) t
+
+      val ( let*! ) :
+        ('a, 'fix) t ->
+        (('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) ->
+        ('b, 'fix2) t
+
+      val ( let*^ ) : 'a symex -> ('a -> ('b, 'fix) t) -> ('b, 'fix) t
+      val ( let+^ ) : 'a symex -> ('a -> 'b) -> ('b, 'fix) t
+
+      module Symex_syntax :
+        Symex_syntax_S
+          with type ('a, 'b) t := ('a, 'b) t
+           and type sbool_v := Value.(sbool t)
     end
   end
 end
@@ -447,7 +558,12 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   end
 
   type 'a t = 'a Iter.t
-  type lfail = [ `Lfail of Value.(sbool t) ]
+
+  type lfail = [ `Lfail of (Value.(sbool t)[@printer Value.ppa]) ]
+  [@@deriving show { with_path = false }]
+
+  type cons_fail = [ lfail | `Missing_subst of Var.t ]
+  [@@deriving show { with_path = false }]
 
   module Symex_state = struct
     let backtrack_n n =
@@ -516,22 +632,11 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       returns [true] if (not value) is {b unsatisfiable}. *)
   let assert_ value f = f (assert_raw value)
 
-  let consume_pure value f =
-    if Approx.As_ctx.is_ux () then
-      assume [ value ] (fun () -> f (Compo_res.Ok ()))
-    else
-      let assert_passed = assert_raw value in
-      if assert_passed then f (Ok ()) else f (Error (`Lfail value))
-
-  let consume_false () f =
-    if Approx.As_ctx.is_ux () then ()
-    else f (Compo_res.Error (`Lfail (Value.of_bool false)))
-
-  let nondet ty f =
+  let nondet_UNSAFE ty =
     let v = Solver.fresh_var ty in
-    let v = Value.mk_var v ty in
-    f v
+    Value.mk_var v ty
 
+  let nondet ty f = f (nondet_UNSAFE ty)
   let simplify v f = f (Solver.simplify v)
   let fresh_var ty f = f (Solver.fresh_var ty)
 
@@ -738,6 +843,233 @@ module Base_extension (Core : Core) = struct
       let if_sure = if_sure
     end
   end
+
+  module Producer = struct
+    module P =
+      Monad.StateT_base
+        (struct
+          type t = Value.Expr.Subst.t option
+        end)
+        (Core)
+
+    include P
+    include Monad.Extend (P)
+
+    module Syntax = struct
+      include Syntax
+
+      let ( let*^ ) x f = bind (lift x) f
+      let ( let+^ ) x f = map (lift x) f
+
+      module Symex_syntax = struct
+        let[@inline] branch_on ?left_branch_name ?right_branch_name guard ~then_
+            ~else_ =
+         fun st ->
+          branch_on ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () st)
+            ~else_:(fun () -> else_ () st)
+
+        let[@inline] branch_on_take_one ?left_branch_name ?right_branch_name
+            guard ~then_ ~else_ =
+         fun st ->
+          branch_on_take_one ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () st)
+            ~else_:(fun () -> else_ () st)
+
+        let[@inline] if_sure ?left_branch_name ?right_branch_name guard ~then_
+            ~else_ =
+         fun st ->
+          if_sure ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () st)
+            ~else_:(fun () -> else_ () st)
+      end
+    end
+
+    let vanish () = lift (vanish ())
+
+    let apply_subst (sf : (Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : 'sem t =
+     fun s ->
+      (* There's maybe a safer version with effects and no reference? *)
+      match s with
+      | None ->
+          let vsf e =
+            let v, _ =
+              let open Value.Expr.Subst in
+              apply ~missing_var:(fun v ty -> Value.mk_var v ty) empty e
+            in
+            v
+          in
+          let res = sf vsf e in
+          Core.return (res, None)
+      | Some s ->
+          let s = ref s in
+          let vsf e =
+            let v, s' =
+              Value.Expr.Subst.apply
+                ~missing_var:(fun _ ty -> nondet_UNSAFE ty)
+                !s e
+            in
+            s := s';
+            v
+          in
+          let res = sf vsf e in
+          Core.return (res, Some !s)
+
+    let produce_pure e : unit t =
+      let open Syntax in
+      let is_bool = Value.is_bool_ty @@ Value.Expr.ty e in
+      if not is_bool then (
+        L.error (fun m ->
+            m
+              "Producing non-boolean pure value!! This is quite probably a \
+               tool bug, please report it. Expr: %a"
+              Value.Expr.pp e);
+        vanish ())
+      else
+        let* v = apply_subst Fun.id e in
+        lift (assume [ v ])
+
+    let run ~subst p =
+      let ( let+ ) = Core.map in
+      let+ x, s = p (Some subst) in
+      (x, Option.get s)
+
+    let run_identity p =
+      let ( let+ ) = Core.map in
+      let+ x, _s = p None in
+      x
+
+    let from_raw_UNSAFE x = x
+  end
+
+  module Consumer = struct
+    type 'a symex = 'a t
+    type subst = Value.Expr.Subst.t
+    type ('a, 'fix) t = subst -> ('a * subst, cons_fail, 'fix) Result.t
+
+    let lift_res (r : ('a, cons_fail, 'fix) Result.t) : ('a, 'fix) t =
+     fun subst -> Result.map r (fun a -> (a, subst))
+
+    let lift (m : 'a symex) : ('a, 'fix) t =
+     fun subst -> Core.map m (fun a -> Compo_res.ok (a, subst))
+
+    let branches (l : (unit -> ('a, 'fix) t) list) : ('a, 'fix) t =
+     fun s -> branches (List.map (fun f () -> f () s) l)
+
+    let ok x = fun subst -> Result.ok (x, subst)
+    let lfail v = lift_res (Result.error (`Lfail v))
+    let miss fixes = lift_res (Result.miss fixes)
+    let miss_no_fix ~reason () = lift_res (Result.miss_no_fix ~reason ())
+
+    let map (m : ('a, 'fix) t) (f : 'a -> 'b) : ('b, 'fix) t =
+     fun s -> Result.map (m s) (fun (a, s) -> (f a, s))
+
+    let map_missing (m : ('a, 'fix) t) (f : 'fix -> 'g) : ('a, 'g) t =
+     fun s -> Result.map_missing (m s) f
+
+    let bind (m : ('a, 'fix) t) (f : 'a -> ('b, 'fix) t) : ('b, 'fix) t =
+     fun s -> Result.bind (m s) (fun (a, s) -> f a s)
+
+    let bind_res (m : ('a, 'fix) t)
+        (f : ('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) : ('b, 'fix2) t
+        =
+     fun s ->
+      Core.bind (m s) (fun r ->
+          match r with
+          | Compo_res.Ok (a, s) -> f (Compo_res.Ok a) s
+          | Error e -> f (Compo_res.Error e) s
+          | Missing fixes -> f (Compo_res.Missing fixes) s)
+
+    let fold_list x ~init ~f =
+      Monad.foldM ~return:ok ~bind ~fold:Foldable.List.fold x ~init ~f
+
+    let iter_list x ~f = fold_list x ~init:() ~f:(fun () a -> f a)
+    let run ~subst p = p subst
+
+    module Syntax = struct
+      let ( let* ) = bind
+      let ( let+ ) = map
+      let ( let+? ) = map_missing
+      let ( let*! ) = bind_res
+      let ( let*^ ) m k = bind (lift m) k
+      let ( let+^ ) m k = map (lift m) k
+
+      module Symex_syntax = struct
+        let[@inline] branch_on ?left_branch_name ?right_branch_name guard ~then_
+            ~else_ =
+         fun st ->
+          branch_on ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () st)
+            ~else_:(fun () -> else_ () st)
+
+        let[@inline] branch_on_take_one ?left_branch_name ?right_branch_name
+            guard ~then_ ~else_ =
+         fun st ->
+          branch_on_take_one ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () st)
+            ~else_:(fun () -> else_ () st)
+
+        let[@inline] if_sure ?left_branch_name ?right_branch_name guard ~then_
+            ~else_ =
+         fun st ->
+          if_sure ?left_branch_name ?right_branch_name guard
+            ~then_:(fun () -> then_ () st)
+            ~else_:(fun () -> else_ () st)
+      end
+    end
+
+    let apply_subst (sf : (Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem)
+        (e : 'syn) : ('sem, 'fix) t =
+      let exception Missing_subst of Var.t in
+      fun s ->
+        let vsf e =
+          let v, _ =
+            Value.Expr.Subst.apply
+              ~missing_var:(fun v _ -> raise (Missing_subst v))
+              s e
+          in
+          v
+        in
+        try
+          let res = sf vsf e in
+          Result.ok (res, s)
+        with Missing_subst v -> Result.error (`Missing_subst v)
+
+    let assert_pure v : (unit, 'fix) t =
+      if Approx.As_ctx.is_ux () then lift (assume [ v ])
+      else
+        bind (lift (assert_ v)) @@ fun assert_passed ->
+        if assert_passed then ok () else lfail v
+
+    let consume_pure e : (unit, 'fix) t =
+      let open Syntax in
+      let* v = apply_subst Fun.id e in
+      assert_pure v
+
+    let learn_eq expr v : (unit, 'fix) t =
+     fun subst ->
+      let subst =
+        match Value.Expr.Subst.learn subst expr v with
+        | Some s -> s
+        | None ->
+            tool_bug
+              "Consumed something that was not yet consumable, this is a tool \
+               bug!"
+      in
+      let v', subst =
+        Value.Expr.Subst.apply
+          ~missing_var:(fun _ _ ->
+            tool_bug
+              "Tool Bug: learned substitution does not cover expression's free \
+               variables.")
+          subst expr
+      in
+      assert_pure (Value.sem_eq_untyped v v') subst
+
+    let expose_subst () : (subst, 'fix) t = fun subst -> Result.ok (subst, subst)
+    let from_raw_UNSAFE x = x
+  end
 end
 
 module Make (Sol : Solver.Mutable_incremental) :
@@ -809,145 +1141,5 @@ module Make (Sol : Solver.Mutable_incremental) :
         | Fail_fast -> ()
       in
       List.rev !l
-  end
-end
-
-module Substs = struct
-  module type From_iter = sig
-    type t
-    type 'a ty
-    type 'a symex
-
-    val from_iter : 'a ty Var.iter_vars -> t symex
-  end
-
-  module Subst = struct
-    include Map.Make (Var)
-
-    let pp = Fmt.Dump.iter_bindings iter Fmt.nop Var.pp Var.pp
-
-    let substitute_extensible ~f ~subst x =
-      let next =
-        ref
-          (match max_binding_opt subst with
-          | None -> 0
-          | Some (x, _) -> Var.to_int x)
-      in
-      let subst = ref subst in
-      let subst_var =
-        match find_opt x !subst with
-        | Some x' -> x'
-        | None ->
-            let x' = Var.of_int !next in
-            incr next;
-            subst := add x x' !subst;
-            x'
-      in
-      let res = f subst_var x in
-      (res, !subst)
-
-    let to_fn subst x = find x subst
-
-    module From_iter (Symex : Base) :
-      From_iter
-        with type t := Var.t t
-         and type 'a ty := 'a Symex.Value.ty
-         and type 'a symex := 'a Symex.t = struct
-      let from_iter iter_vars =
-        let open Symex.Syntax in
-        Symex.fold_iter iter_vars ~init:empty ~f:(fun subst (var, ty) ->
-            if mem var subst then Symex.return subst
-            else
-              let+ var' = Symex.fresh_var ty in
-              add var var' subst)
-    end
-  end
-
-  module Subst_mut = struct
-    include Hashtbl.Make (Var)
-
-    let add = replace
-
-    let substitute_extensible ~f ~subst x =
-      let next =
-        ref (to_seq_keys subst |> Seq.map Var.to_int |> Seq.fold_left max 0)
-      in
-      let subst_var =
-        match find_opt subst x with
-        | Some x' -> x'
-        | None ->
-            let x' = Var.of_int !next in
-            incr next;
-            add subst x x';
-            x'
-      in
-      let res = f subst_var x in
-      (res, subst)
-
-    module From_iter (Symex : S) :
-      From_iter
-        with type t := Var.t t
-         and type 'a ty := 'a Symex.Value.ty
-         and type 'a symex := 'a Symex.t = struct
-      let from_iter iter_vars =
-        let open Symex.Syntax in
-        let subst = create 0 in
-        let+ () =
-          Symex.fold_iter iter_vars ~init:() ~f:(fun () (var, ty) ->
-              if mem subst var then Symex.return ()
-              else
-                let+ var' = Symex.fresh_var ty in
-                add subst var var')
-        in
-        subst
-    end
-  end
-
-  module Bi_subst = struct
-    type t = {
-      forward : Var.t Subst.t;
-      backward : Var.t Subst_mut.t;
-      mutable next_backward : int;
-    }
-
-    let empty () =
-      {
-        forward = Subst.empty;
-        backward = Subst_mut.create 0;
-        next_backward = 0;
-      }
-
-    module From_iter (Symex : S) :
-      From_iter
-        with type t := t
-         and type 'a ty := 'a Symex.Value.ty
-         and type 'a symex := 'a Symex.t = struct
-      open Symex.Syntax
-
-      let from_iter iter_vars =
-        Symex.fold_iter iter_vars ~init:(empty ()) ~f:(fun bi_subst (var, ty) ->
-            if Subst.mem var bi_subst.forward then Symex.return bi_subst
-            else
-              let+ var' = Symex.fresh_var ty in
-              let forward = Subst.add var var' bi_subst.forward in
-              Subst_mut.replace bi_subst.backward var' var;
-              let next_backward =
-                max bi_subst.next_backward (Var.to_int var + 1)
-              in
-              { forward; backward = bi_subst.backward; next_backward })
-    end
-
-    let is_empty bi_subst = Subst.is_empty bi_subst.forward
-    let forward bi_subst v_id = Subst.find v_id bi_subst.forward
-
-    let backward bi_subst v_id =
-      match Subst_mut.find_opt bi_subst.backward v_id with
-      | Some v -> v
-      | None ->
-          let v = bi_subst.next_backward in
-          bi_subst.next_backward <- v + 1;
-          let v = Var.of_int v in
-          Subst_mut.add bi_subst.backward v_id v;
-          v
   end
 end

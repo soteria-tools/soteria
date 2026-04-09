@@ -77,13 +77,13 @@ type sbool = T.sbool
 
 (** Basic value operations *)
 
+val is_bool_ty : 'a ty -> bool
 val get_ty : 'a t -> Svalue.ty
 val type_type : Svalue.ty -> 'a ty
 val untype_type : 'a ty -> Svalue.ty
 val kind : 'a t -> Svalue.t_kind
 val mk_var : Svalue.Var.t -> 'a ty -> 'a t
 val iter_vars : 'a t -> (Svalue.Var.t * 'b ty -> unit) -> unit
-val subst : (Svalue.Var.t -> Svalue.Var.t) -> 'a t -> 'a t
 val type_ : Svalue.t -> 'a t
 val type_checked : Svalue.t -> 'a ty -> 'a t option
 val cast : 'a t -> 'b t
@@ -106,7 +106,7 @@ val unique_tag : [< any ] t -> int
 (** Typed constructors *)
 
 val sem_eq : 'a t -> 'a t -> sbool t
-val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
+val sem_eq_untyped : 'a t -> 'b t -> sbool t
 
 (** Boolean operations *)
 
@@ -146,7 +146,6 @@ module Bool : sig
 end
 
 (** Bit vector operations *)
-
 module BitVec : sig
   (* constructor *)
   val mk : int -> Z.t -> [> sint ] t
@@ -337,3 +336,9 @@ module Infix : sig
   val ( *.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( /.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 end
+
+module Expr :
+  Symex.Value.Expr
+    with type 'a v := 'a t
+     and type 'a ty := 'a ty
+     and type t = Svalue.t

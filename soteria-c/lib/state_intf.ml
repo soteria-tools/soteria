@@ -1,29 +1,17 @@
 open Typed
 open T
-open Cerb_frontend
 module Agv = Aggregate_val
 module Compo_res = Soteria.Symex.Compo_res
 
-type serialized =
-  | Ser_heap of (sloc Typed.t * Block.serialized)
-  | Ser_globs of (Symbol_std.t * sloc Typed.t)
+type syn =
+  | Ser_heap of (Expr.t * Block.syn)
+  | Ser_globs of (Symbol_std.t * Expr.t)
 [@@deriving show { with_path = false }]
 
 module type S = sig
-  type t
-  type nonrec serialized = serialized
+  include Soteria.Sym_states.Base.M(Csymex).S with type syn = syn
 
-  module SM :
-    Soteria.Sym_states.State_monad.S
-      with type 'a Symex.t = 'a Csymex.t
-       and type st = t option
-       and module Symex.Value = Csymex.Value
-       and module Value = Csymex.Value
-
-  type 'a res := ('a, Error.with_trace, serialized list) SM.Result.t
-
-  val pp : Format.formatter -> t -> unit
-  val show : t -> string
+  type 'a res := ('a, Error.with_trace, syn list) SM.Result.t
 
   (** Prettier but expensive printing. *)
   val pp_pretty : ignore_freed:bool -> Format.formatter -> t -> unit
@@ -47,15 +35,10 @@ module type S = sig
     size:sint Typed.t ->
     unit res
 
-  val produce : serialized -> t option -> (unit * t option) Csymex.t
-
   val produce_aggregate :
-    sptr Typed.t ->
-    Ctype.ctype ->
-    Aggregate_val.t ->
+    Expr.t ->
+    Cerb_frontend.Ctype.ctype ->
+    Aggregate_val.syn ->
     t option ->
-    (unit * t option) Csymex.t
-
-  (* val consume : serialized -> t -> (t, [> Csymex.lfail ] err, serialized)
-     Csymex.Result.t *)
+    t option Csymex.Producer.t
 end

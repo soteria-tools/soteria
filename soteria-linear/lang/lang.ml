@@ -1,5 +1,5 @@
 open Soteria.Soteria_std
-module String_map = Map.MakePp (Soteria.Soteria_std.String)
+module String_map = Map.Make (Soteria.Soteria_std.String)
 
 module BinOp = struct
   type t = Add | Sub | Mul | Div | And | Or | Eq | Lt

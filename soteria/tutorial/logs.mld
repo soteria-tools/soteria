@@ -1,0 +1,339 @@
+{0 Soteria Logging Tutorial}
+
+Welcome to the Soteria logging tutorial! This tutorial will guide you through using the {{!Soteria.Logs}Logs} module for debugging and analyzing your symbolic execution programs.
+
+Soteria's logging interface is inspired by the {{:https://opam.ocaml.org/packages/logs/}[logs]} library, but its implementation is adapted to integrate with symbolic execution and produce structured HTML output.
+
+Today you'll be learning how to:
+- {{!basic}Log messages} at different levels
+- {{!config}Configure} logging for your needs
+- {{!html}Output to HTML} with collapsible sections
+- {{!printers}Format output} with colors and styles
+- {{!performance}Write efficient logging} that won't slow your programs down
+
+{2:basic Basic Logging}
+
+The Soteria logging system provides a simple, flexible way to output diagnostic information. To get started, you need to open the {{!Soteria.Logs.Import}Logs.Import} module, which brings the [L] logging module into scope:
+
+{@ocaml[
+open Soteria.Logs.Import;;
+]}
+
+To ensure this import is always available in your project, you can instead also add it to your [dune] file:
+
+{@dune[
+(flags :standard -open Soteria.Logs.Import)
+]}
+
+The [L] module provides logging functions for different severity levels. The most common one is {{!Soteria.Logs.L.info}info}, which logs informational messages:
+
+{@ocaml[
+L.info (fun m -> m "Starting symbolic execution");;
+(* -> Starting symbolic execution *)
+]}
+
+The logging API uses a callback pattern: you pass a function that receives a formatter function [m], which you then call with a format string and arguments. This design allows the logging system to avoid formatting work when a log level is disabled.
+
+Let's log a message with a value:
+
+{@ocaml[
+let x = 42 in
+L.info (fun m -> m "The answer is %d" x);;
+(* -> The answer is 42 *)
+]}
+
+{2:levels Log Levels}
+
+Soteria provides six log levels, from most verbose to least verbose:
+
+- {{!Soteria.Logs.Level.Smt}Smt}: For messages about SMT solver interactions (queries, results)
+- {{!Soteria.Logs.Level.Trace}Trace}: For very detailed execution traces
+- {{!Soteria.Logs.Level.Debug}Debug}: For debugging information
+- {{!Soteria.Logs.Level.Info}Info}: For general informational messages
+- {{!Soteria.Logs.Level.Warn}Warn}: For warnings about potential issues
+- {{!Soteria.Logs.Level.Error}Error}: For errors and exceptions
+
+Each level has a corresponding logging function in the [L] module:
+
+{@ocaml[
+L.trace (fun m -> m "Detailed trace: entering function");
+(* -> [TRACE] Detailed trace: entering function *)
+L.debug (fun m -> m "Variable x = %d" 10);
+(* -> [DEBUG] Variable x = 10 *)
+L.info (fun m -> m "Processing completed successfully");
+(* -> [INFO ] Processing completed successfully *)
+L.warn (fun m -> m "This operation may be slow");
+(* -> [WARN ] This operation may be slow *)
+L.error (fun m -> m "Failed to parse input");
+(* -> [ERROR] Failed to parse input *)
+]}
+
+The {{!Soteria.Logs.L.smt}smt} level is special: it's designed for logging SMT solver interactions, which can be extremely verbose but crucial for understanding solver behavior. Unless you're implementing a solver backend, you usually shouldn't need this level:
+
+{@ocaml[
+L.smt (fun m -> m "Querying solver: (assert (> x 0))");;
+(* -> [SMT  ] Querying solver: (assert (> x 0)) *)
+]}
+
+{2:config Configuration}
+
+Logging behavior is controlled by {{!Soteria.Logs.Config}Logs.Config}. You can configure:
+
+- The maximum verbosity level to display
+- The output format (text to stderr or HTML)
+- Whether to always log SMT queries regardless of level
+- Whether to use colors in text output
+- Whether to hide unstable values like timestamps (useful for diffing)
+
+Here's how to configure logging programmatically:
+
+{@ocaml[
+(* Create a configuration that logs at Debug level and above *)
+let log_config = Soteria.Logs.Config.make
+  ~level:(Some Debug)
+  ~kind:Stderr
+  ~no_color:false
+  ();;
+Soteria.Logs.Config.set_and_lock log_config;
+]}
+
+{b Important:} configuration is global and can only be set once. After calling [set_and_lock], trying to set it again will raise an exception.
+
+For command-line applications, Soteria provides Cmdliner integration via {{!Soteria.Logs.Config.cmdliner_term}Logs.Config.cmdliner_term}.
+
+{2:html HTML Output}
+
+Soteria natively supports outputting logs in HTML format. This allows you to
+view logs in a browser, with a search/filter bar, and {i collapsible sections}.
+
+You can organize output into collapsible sections using {{!Soteria.Logs.L.with_section}with_section}:
+
+{@ocaml[
+L.with_section "Analyzing Module" (fun () ->
+  L.info (fun m -> m "Starting analysis");
+
+  L.with_section "Function: main" (fun () ->
+    L.debug (fun m -> m "Analyzing function body");
+    L.trace (fun m -> m "Thinking about it...");
+    L.debug (fun m -> m "Found 3 branches")
+  );
+
+  L.with_section "Function: helper" (fun () ->
+    L.debug (fun m -> m "Analyzing function body");
+    L.warn (fun m -> m "Something bad is brewing...");
+    L.error (fun m -> m "Oh no!")
+  );
+
+  L.info (fun m -> m "Analysis complete")
+);;
+]}
+
+In HTML mode, each call to [with_section] renders as a collapsible block that can be expanded or collapsed in the browser. For instance, the above code would generate the following HTML (you can click around!):
+
+{%html:
+    <!-- This is copied from a generated .html file, if we update the HTML output we must update it here. -->
+    <style>
+    .html-demo {
+        font-family: system-ui;
+        font-size: 0.8rem;
+    }
+
+    .html-demo .log-msg {
+        font-family: monospace;
+        white-space: pre-wrap;
+        margin: 2px 0;
+        padding: 2px;
+        border-radius: 4px;
+        position: relative;
+    }
+
+    .html-demo summary {
+        font-style: italic;
+        cursor: pointer;
+    }
+    .html-demo summary::after {
+        display: none;
+    }
+
+    .html-demo details {
+        margin: 0.5em 0;
+        padding: 0.5em;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+    }
+
+    .html-demo details.active-branch {
+        margin: 0;
+        padding: 0;
+        border: none;
+    }
+
+    .html-demo details.hidden-branch,
+    .html-demo .hidden-filter,
+    .html-demo .hidden-search {
+        display: none;
+    }
+
+    .html-demo .timestamp {
+        position: absolute;
+        top: 0;
+        right: 0;
+        background: #ffffff80;
+        color: #000;
+        font-weight: normal;
+        font-size: 0.8em;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
+    .html-demo .timestamp:hover {
+        opacity: 0;
+    }
+
+    .html-demo .log-msg.branch {
+        font-style: italic;
+        color: #888;
+    }
+
+    .html-demo .TRACE {
+        background-color: #c4c4c4;
+    }
+
+    .html-demo .DEBUG {
+        background-color: #dee;
+        color: #777;
+    }
+
+    .html-demo .INFO {
+        background-color: #fff;
+    }
+
+    .html-demo .WARN {
+        background-color: #ffeb3b;
+    }
+
+    .html-demo .ERROR {
+        background-color: #ed3e3e;
+        font-weight: bold;
+    }
+
+    .html-demo .SMT {
+        background-color: #ddd;
+    }
+    </style>
+    <div class="html-demo">
+    <details>
+    <summary><span class="log-msg">Analyzing Module</span></summary>
+    <div class="log-msg INFO ">Starting analysis<span class="timestamp">11:43:16.163</span></div>
+    <details>
+    <summary><span class="log-msg">Function: main</span></summary>
+    <div class="log-msg DEBUG">Analyzing function body<span class="timestamp">11:43:16.164</span></div>
+    <div class="log-msg TRACE">Thinking about it...<span class="timestamp">11:43:16.175</span></div>
+    <div class="log-msg DEBUG">Found 3 branches<span class="timestamp">11:43:17.271</span></div>
+    </details>
+    <details>
+    <summary><span class="log-msg">Function: helper</span></summary>
+    <div class="log-msg DEBUG">Analyzing function body<span class="timestamp">11:43:17.285</span></div>
+    <div class="log-msg WARN ">Something bad is brewing...<span class="timestamp">11:43:18.629</span></div>
+    <div class="log-msg ERROR">Oh no!<span class="timestamp">11:43:19.382</span></div>
+    </details>
+    <div class="log-msg INFO ">Analysis complete<span class="timestamp">11:43:19.382</span></div>
+    </details>
+    </div>
+%}
+
+{b Important:} Do not use [with_section] inside symbolic processes (functions that return ['a Symex.t]) that may branch, because the section will be opened once but closed multiple times. Soteria will automatically create sections when branching occurs inside a process.
+
+{b Note:} {{!Soteria.Logs.L.with_section}with_section} has a [?is_branch] parameter, that is meant only for use when writing your own {{!Soteria.Symex.S}Symex} implementation; most users should {i never} use this parameter.
+
+{2:printers Pretty Printing and Formatting}
+
+The {{!Soteria.Logs.Printers}Logs.Printers} module provides utilities for formatting output with colors, styles, and special formatting:
+
+{3 Colors and Styles}
+
+{b Note:} colored text only works in stderr mode ([~kind:Stderr]); colors are not applied in HTML mode.
+
+You can print colored text using {{!Soteria.Logs.Printers.pp_clr}pp_clr}, apply text styles with {{!Soteria.Logs.Printers.pp_style}pp_style}, or combine both with {{!Soteria.Logs.Printers.pp_clr2}pp_clr2}:
+
+{@ocaml[
+let open Soteria.Logs.Printers in
+L.info (fun m -> m "%a, %a, %a"
+  (pp_clr `Green) "Success"
+  (pp_style `Bold) "Important"
+  (pp_clr2 `Red `Bold) "Critical");;
+]}
+
+{3 Semantic Colors}
+
+For common message types, use semantic color functions ([pp_ok], [pp_warn], [pp_err], [pp_fatal]):
+
+{@ocaml[
+let open Soteria.Logs.Printers in
+L.info (fun m -> m "%a, %a, %a, %a"
+  pp_ok "OK"
+  pp_warn "Warning"
+  pp_err "Error"
+  pp_fatal "Fatal");;
+]}
+
+{3 Special Formatters}
+
+The following formatters are available for common value types:
+
+- {{!Soteria.Logs.Printers.pp_time}pp_time}: formats float seconds as [12ms] or [1.54s]
+- {{!Soteria.Logs.Printers.pp_percent}pp_percent}: formats a [(total, part)] float pair as a percentage, and {{!Soteria.Logs.Printers.pp_percenti}pp_percenti} does the same with integers
+- {{!Soteria.Logs.Printers.pp_plural}pp_plural}: handles singular/plural forms based on count
+- {{!Soteria.Logs.Printers.pp_unstable}pp_unstable}: hides values that change between runs (when [hide_unstable] is set in config)
+
+{@ocaml[
+let open Soteria.Logs.Printers in
+L.info (fun m -> m "Time: %a, Coverage: %a, Found: %a"
+  pp_time 1.543
+  pp_percent (10.0, 2.5)
+  (pp_plural ~sing:"branch" ~plur:"branches") 5);;
+(* -> Time: 1.54s, Coverage: 25.00%, Found: 5 branches *)
+]}
+
+{3 Unstable Values}
+
+When writing tests or generating reproducible output, you can hide values that change between runs (like timestamps or durations) using {{!Soteria.Logs.Printers.pp_unstable}pp_unstable}. Note that {{!Soteria.Logs.Printers.pp_time}pp_time} is already predefined as an unstable printer.
+
+{@ocaml[
+let open Soteria.Logs.Printers in
+let current_time = Unix.gettimeofday () in
+
+L.info (fun m -> m "Completed at %a"
+  (pp_unstable ~name:"timestamp" Fmt.float) current_time);;
+(* hide_unstable = false -> Completed at 1775127711.926
+   hide_unstable = true  -> Completed at <timestamp> *)
+]}
+
+{2:performance Performance Considerations}
+
+Logging is designed to be efficient when disabled; avoid doing expensive work for printing before calling the logging function. Instead, do that work inside the logging lambda, so it only runs if the log level is enabled:
+
+{@ocaml[
+(* BAD: Always computes the string, even if logging is disabled *)
+let expensive_string = String.concat ", " (List.init 1000 string_of_int) in
+L.trace (fun m -> m "Generated: %s" expensive_string);;
+
+(* GOOD: Only computes if needed *)
+L.trace (fun m ->
+  let expensive_string = String.concat ", " (List.init 1000 string_of_int) in
+  m "Generated: %s" expensive_string
+);;
+]}
+
+{2 That's it!}
+
+You now know how to effectively use Soteria's logging system! Key takeaways:
+
+- Use the [L] module from [Logs.Import] for all logging
+- Choose appropriate log levels for different types of information
+- Configure logging behavior with [Logs.Config]
+- Organize verbose output with sections in HTML mode
+- Use pretty printing utilities for formatted, colorful output
+- Keep performance in mind by doing expensive work inside the logging lambda
+
+For more details, see the {{!Soteria.Logs}Logs API documentation}.

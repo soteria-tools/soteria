@@ -9,13 +9,12 @@ module Build
     (Key : Key(Symex).S)
     (S_map : Data.S_map.S(Symex)(Key).S)
     (Codom : Base.M(Symex).S) :
-  S(Symex)(Key).S
-    with type codom := Codom.t
-     and type codom_serialized := Codom.serialized = struct
+  S(Symex)(Key).S with type codom := Codom.t and type codom_syn := Codom.syn =
+struct
   include S_map
 
   type t = Codom.t S_map.t
-  type serialized = Key.t * Codom.serialized
+  type syn = Key.syn * Codom.syn
 
   module SM =
     State_monad.Make
@@ -27,26 +26,28 @@ module Build
   open SM
   open SM.Syntax
 
-  let lift_fixes ~key : Codom.serialized list list -> serialized list list =
-    List.map (List.map (fun v_ser -> (key, v_ser)))
+  let lift_fix ~key (fix : Codom.syn list) : syn list =
+    List.map (fun v_ser -> (Key.to_syn key, v_ser)) fix
 
-  let pp_serialized : Format.formatter -> serialized -> unit =
-    Fmt.Dump.(pair Key.pp Codom.pp_serialized)
+  let lift_fixes ~key (fix : Codom.syn list list) : syn list list =
+    List.map (lift_fix ~key) fix
 
-  let show_serialized = Fmt.to_to_string pp_serialized
+  let pp_syn : Format.formatter -> syn -> unit =
+    Fmt.Dump.(pair Key.pp_syn Codom.pp_syn)
 
-  let serialize m =
+  let show_syn = Fmt.to_to_string pp_syn
+
+  let ins_outs ((k, c) : syn) =
+    let k_ins = Key.exprs_syn k in
+    let codom_ins, codom_outs = Codom.ins_outs c in
+    (k_ins @ codom_ins, codom_outs)
+
+  let to_syn m =
     syntactic_bindings m
     |> Seq.concat_map (fun (k, v) ->
-        List.to_seq (Codom.serialize v) |> Seq.map (fun v_ser -> (k, v_ser)))
+        List.to_seq (Codom.to_syn v)
+        |> Seq.map (fun v_ser -> (Key.to_syn k, v_ser)))
     |> List.of_seq
-
-  let subst_serialized subst_var (key, v) =
-    (Key.subst subst_var key, Codom.subst_serialized subst_var v)
-
-  let iter_vars_serialized (key, v) f =
-    Key.iter_vars key f;
-    Codom.iter_vars_serialized v f
 
   let pp' ?(codom = Codom.pp) ?key ?ignore = pp' ?key ?ignore codom
   let pp ft t = pp' ft t
@@ -54,11 +55,10 @@ module Build
   let of_opt = function None -> empty | Some m -> m
   let to_opt m = if is_empty m then None else Some m
 
-  let alloc ~(new_codom : Codom.t) : (Key.t, 'err, serialized list) SM.Result.t
-      =
+  let alloc ~(new_codom : Codom.t) : (Key.t, 'err, syn list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in
-    let* key = lift @@ Key.fresh () in
+    let*^ key = Key.fresh () in
     let* () =
       SM.assume
         [
@@ -70,7 +70,7 @@ module Build
     Ok key
 
   let allocs (type a k) ~(fn : a -> Key.t -> (k * Codom.t) Symex.t)
-      ~(els : a list) : (k list, 'err, serialized list) SM.Result.t =
+      ~(els : a list) : (k list, 'err, syn list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in
     let*^ bindings, out_keys =
@@ -92,8 +92,8 @@ module Build
     Ok out_keys
 
   let wrap (type a err) (key : Key.t)
-      (f : (a, err, Codom.serialized list) Codom.SM.Result.t) :
-      (a, err, serialized list) SM.Result.t =
+      (f : (a, err, Codom.syn list) Codom.SM.Result.t) :
+      (a, err, syn list) SM.Result.t =
     let* st = SM.get_state () in
     let st = of_opt st in
     let* key, codom = lift @@ find_opt key st in
@@ -106,33 +106,29 @@ module Build
     | Error e -> SM.Result.error e
     | Missing fixes -> SM.Result.miss (lift_fixes ~key fixes)
 
-  let produce (serialized : serialized) : unit SM.t =
-    let* st = SM.get_state () in
-    let st = of_opt st in
-    let key, inner_ser = serialized in
-    let* key, codom = lift @@ find_opt key st in
-    let* (), codom = lift @@ Codom.produce inner_ser codom in
-    let st = syntactic_add_opt key codom st in
-    SM.set_state (to_opt st)
+  open Symex
 
-  (* let consume
-   *    (cons :
-   *      'inner_serialized ->
-   *      'inner_st option ->
-   *      ('inner_st option, [> Symex.lfail ], 'inner_serialized) Symex.Result.t)
-   *    (serialized : 'inner_serialized serialized) (st : 'inner_st t option) :
-   *    ( 'inner_st t option,
-   *      [> Symex.lfail ],
-   *      'inner_serialized serialized )
-   *    Symex.Result.t =
-   *  let st = of_opt st in
-   *  let++ st =
-   *    Result.fold_list serialized ~init:st ~f:(fun st (key, inner_ser) ->
-   *        let* key, codom = Find_opt_sym.f key st in
-   *        let++ codom = cons inner_ser codom |> lift_fix_s ~key in
-   *        add_opt key codom st)
-   *  in
-   *  to_opt st *)
+  let produce (syn : syn) (st : Codom.t S_map.t option) :
+      Codom.t S_map.t option Producer.t =
+    let open Producer.Syntax in
+    let st = of_opt st in
+    let key, inner_ser = syn in
+    let* key = Producer.apply_subst Key.subst key in
+    let*^ key, codom = find_opt key st in
+    let+ codom = Codom.produce inner_ser codom in
+    to_opt (syntactic_add_opt key codom st)
+
+  let consume (syn : syn) (st : st) : (st, syn list) Symex.Consumer.t =
+    let open Consumer.Syntax in
+    let st = of_opt st in
+    let key, inner_ser = syn in
+    let* key = Consumer.apply_subst Key.subst key in
+    let*^ key, codom = find_opt key st in
+    let+ codom =
+      let+? fix = Codom.consume inner_ser codom in
+      lift_fix ~key fix
+    in
+    to_opt @@ syntactic_add_opt key codom st
 end
 
 module Make (Symex : Symex.Base) (Key : Key(Symex).S) =
@@ -159,9 +155,16 @@ struct
   module Key' = struct
     include S_map.Mk_concrete_key (Symex) (Key)
 
+    type syn = t [@@deriving show { with_path = false }]
+
+    let to_syn t = t
     let fresh () = failwith "Fresh not implemented for concrete keys"
     let subst _ x = x
-    let iter_vars _ _ = ()
+    let exprs_syn _ = []
+
+    let learn_eq syn t =
+      if compare syn t = 0 then Symex.Consumer.ok ()
+      else Symex.Consumer.lfail (Symex.Value.of_bool false)
   end
 
   include Build (Symex) (Key') (S_map.Concrete (Symex) (Key')) (Codom)

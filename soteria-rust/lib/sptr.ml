@@ -15,10 +15,9 @@ open T
     [from_exposed] is partial: if a provenance cannot be guessed from the
     integer, [None] is returned. *)
 module type DecayMapS = sig
-  type t
+  include Soteria.Sym_states.Base.M(Rustsymex).S
 
   val empty : t
-  val pp : Format.formatter -> t -> unit
 
   (** Decays the given location into an integer, updating the decay map
       accordingly. If [expose] is true, the provenance is marked as exposed, and
@@ -29,65 +28,106 @@ module type DecayMapS = sig
     size:[< sint ] Typed.t ->
     align:[< nonzero ] Typed.t ->
     [< sloc ] Typed.t ->
-    t ->
-    (sint Typed.t * t) Rustsymex.t
+    sint Typed.t SM.t
 
   (** Tries finding, for the given integer, the matching provenance in the decay
       map. If found, it returns that provenance, along with the exposed address
       for that allocation at offset 0. Otherwise returns [None]. *)
   val from_exposed :
-    [< sint ] Typed.t ->
-    t ->
-    ((sloc Typed.t * sint Typed.t) option * t) Rustsymex.t
+    [< sint ] Typed.t -> (sloc Typed.t * sint Typed.t) option SM.t
 end
 
-module DecayMap : DecayMapS = struct
+module DecayMap = struct
   module MapKey = struct
     include Typed
 
     type t = sloc Typed.t
+    type syn = Expr.t [@@deriving show { with_path = false }]
 
     let to_int = unique_tag
     let pp = ppa
+    let show = Fmt.to_to_string pp
     let simplify = Rustsymex.simplify
+    let fresh _ = failwith "Cannot allocate in DecayMap"
+    let to_syn = Expr.of_value
+    let learn_eq s l = Consumer.learn_eq s l
+    let exprs_syn s : Expr.t list = [ s ]
+    let subst = Expr.subst
   end
 
-  type entry = { address : sint Typed.t; exposed : bool }
-  [@@deriving show { with_path = false }]
+  module Entry = struct
+    type t = { address : sint Typed.t; exposed : bool }
+    [@@deriving show { with_path = false }]
 
-  module Map =
-    Soteria.Data.S_map.Direct_access_patricia_tree (Rustsymex) (MapKey)
+    type syn = { address : Expr.t; exposed : bool }
+    [@@deriving show { with_path = false }]
 
-  type t = entry Map.t
+    let fresh () = failwith "No fresh for DecayMap.SM.Entry"
 
-  let pp = Map.pp pp_entry
-  let empty = Map.empty
+    let to_syn ({ address; exposed } : t) =
+      { address = Expr.of_value address; exposed }
 
-  let decay ~expose ~size ~align (loc : [< sloc ] Typed.t) (map : t) :
-      (T.sint Typed.t * t) Rustsymex.t =
-    if%sat Typed.Ptr.is_null_loc loc then return (Usize.(0s), map)
+    let sem_eq (s1 : t) (s2 : t) =
+      Typed.of_bool (s1.exposed = s2.exposed) &&@ (s1.address ==@ s2.address)
+
+    let learn_eq (s : syn) (st : t) =
+      if s.exposed <> st.exposed then Consumer.lfail Typed.v_false
+      else Consumer.learn_eq s.address st.address
+
+    let exprs_syn ({ address; exposed = _ } : syn) : Expr.t list = [ address ]
+
+    let subst s ({ address; exposed } : syn) : t =
+      { address = Expr.subst s address; exposed }
+  end
+
+  module EntryExcl = Soteria.Sym_states.Agree.Make (Rustsymex) (Entry)
+
+  include
+    Soteria.Sym_states.Pmap.Direct_access_patricia_tree (Rustsymex) (MapKey)
+      (EntryExcl)
+
+  module SM = struct
+    include SM
+
+    let[@inline] not_impl msg = lift @@ not_impl msg
+    let[@inline] of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
+    let[@inline] match_on xs ~constr = lift @@ match_on xs ~constr
+    let[@inline] get_where () = lift @@ get_trace ()
+  end
+
+  open SM
+  open Syntax
+
+  let decay ~expose ~size ~align (loc : [< sloc ] Typed.t) : T.sint Typed.t SM.t
+      =
+    if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
     else
-      let* key, entry = Map.find_opt (cast loc) map in
-      match entry with
-      | Some { address; exposed } when Stdlib.not exposed && expose ->
-          let map = Map.syntactic_add key { address; exposed = true } map in
-          return (address, map)
-      | Some { address; exposed = _ } -> return (address, map)
-      | None ->
-          let* address = nondet (Typed.t_usize ()) in
-          let isize_max = Layout.max_value_z (TInt Isize) in
-          let+ () =
-            assume
-              [
-                (address %@ align ==@ Usize.(0s));
-                align <=@ address;
-                address <@ Typed.BitVec.usize isize_max -!@ size;
-              ]
-          in
-          let map = Map.syntactic_add key { address; exposed = expose } map in
-          (address, map)
+      wrap loc
+        (let open EntryExcl.SM in
+         let open Syntax in
+         let* entry = get_state () in
+         match entry with
+         | Some { address; exposed } when Stdlib.not exposed && expose ->
+             let* () = set_state (Some { address; exposed = true }) in
+             Result.ok address
+         | Some { address; exposed = _ } -> Result.ok address
+         | None ->
+             let* address = nondet (Typed.t_usize ()) in
+             let isize_max = Layout.max_value_z (TInt Isize) in
+             let* () =
+               assume
+                 [
+                   (address %@ align ==@ Usize.(0s));
+                   align <=@ address;
+                   address <@ Typed.BitVec.usize isize_max -!@ size;
+                 ]
+             in
+             let* () = set_state (Some { address; exposed = expose }) in
+             Result.ok address)
+      |> Fun.flip map Soteria.Symex.Compo_res.get_ok
 
-  let from_exposed (loc_int : [< sint ] Typed.t) (map : t) =
+  let from_exposed (loc_int : [< sint ] Typed.t) :
+      (sloc Typed.t * sint Typed.t) option SM.t =
     (* UX: we only consider the first one; this is more or less correct, as per
        the documentation of [with_exposed_provenance]: "The provenance of the
        returned pointer is that of some pointer that was previously exposed"
@@ -95,40 +135,28 @@ module DecayMap : DecayMapS = struct
        See
        https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html *)
     let usize_ty = Typed.t_usize () in
-    let bindings = Map.syntactic_bindings map in
-    let binding =
-      Typed.iter_vars loc_int
-      |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
-      |> Iter.filter_map (fun (var, ty) ->
-          let v = Typed.mk_var var ty in
-          Seq.find
-            (fun (_, { address; exposed }) -> exposed && Typed.equal v address)
-            bindings)
-      |> Iter.map (fun (loc, { address; _ }) -> (loc, address))
-      |> Iter.to_opt
-    in
-    return (binding, map)
+    let+ map = get_state () in
+    let bindings = syntactic_bindings (of_opt map) in
+    Typed.iter_vars loc_int
+    |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
+    |> Iter.filter_map (fun (var, _) ->
+        let v = Typed.mk_var var usize_ty in
+        Seq.find
+          (fun (_, ({ address; exposed } : Entry.t)) ->
+            exposed && Typed.equal v address)
+          bindings)
+    |> Iter.map (fun (loc, ({ address; _ } : Entry.t)) -> (loc, address))
+    |> Iter.to_opt
 end
 
-module DecayMapMonad = struct
-  include
-    Soteria.Sym_states.State_monad.Make
-      (Rustsymex)
-      (struct
-        type t = DecayMap.t
-      end)
-
-  let not_impl msg = lift @@ not_impl msg
-  let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
-  let match_on xs ~constr = lift @@ match_on xs ~constr
-  let get_where () = lift @@ get_trace ()
-end
+module D_abstr = Soteria.Data.Abstr.M (DecayMap.SM)
 
 module type S = sig
   (** pointer type *)
-  type t
+  include D_abstr.S_with_syn
 
-  val pp : t Fmt.t
+  include D_abstr.Sem_eq with type t := t
+
   val null_ptr : unit -> t
   val null_ptr_of : [< sint ] Typed.t -> t
 
@@ -148,7 +176,7 @@ module type S = sig
 
   (** The distance, in bytes, between two pointers; if they point to different
       allocations, they are decayed and substracted. *)
-  val distance : t -> t -> sint Typed.t DecayMapMonad.t
+  val distance : t -> t -> sint Typed.t DecayMap.SM.t
 
   (** The symbolic constraints needed for the pointer to be valid. *)
   val constraints : t -> sbool Typed.t
@@ -181,12 +209,12 @@ module type S = sig
   (** Decay a pointer into an integer value, losing provenance.
       {b This does not expose the address of the allocation; for that, use
          [expose]} *)
-  val decay : t -> [> sint ] Typed.t DecayMapMonad.t
+  val decay : t -> [> sint ] Typed.t DecayMap.SM.t
 
   (** Decay a pointer into an integer value, exposing the address of the
       allocation, allowing it to be retrieved with [DecayMapS.from_exposed]
       later. *)
-  val expose : t -> [> sint ] Typed.t DecayMapMonad.t
+  val expose : t -> [> sint ] Typed.t DecayMap.SM.t
 
   (** For Miri: the allocation ID of this location, as a u64 *)
   val as_id : t -> [> sint ] Typed.t
@@ -197,32 +225,52 @@ module type S = sig
 
   (** Get the allocation info for this pointer: its size and alignment *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
-
-  val iter_vars : t -> (Svalue.Var.t * 'b ty -> unit) -> unit
-  val subst : (Svalue.Var.t -> Svalue.Var.t) -> t -> t
 end
 
-type arithptr_t = {
-  ptr : sptr Typed.t;
+type ('sptr, 'snonzero, 'sint) arithptr = {
+  ptr : 'sptr;
   tag : Tree_borrow.tag option;
-  align : nonzero Typed.t;
-  size : sint Typed.t;
+  align : 'snonzero;
+  size : 'sint;
 }
 
 (** A pointer that can perform pointer arithmetics -- all pointers are a pair of
     location and offset, along with an optional metadata. *)
-module ArithPtr : S with type t = arithptr_t = struct
-  type t = arithptr_t = {
-    ptr : sptr Typed.t;
-    tag : Tree_borrow.tag option;
-    align : nonzero Typed.t;
-    size : sint Typed.t;
-  }
+module ArithPtr :
+  S
+    with type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t) arithptr
+     and type syn = (Expr.t, Expr.t, Expr.t) arithptr = struct
+  type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t) arithptr
+  type syn = (Expr.t, Expr.t, Expr.t) arithptr
 
-  let pp fmt { ptr; tag; _ } =
-    Fmt.pf fmt "%a[%a]" Typed.ppa ptr
+  let pp' pp_v fmt { ptr; tag; _ } =
+    Fmt.pf fmt "%a[%a]" pp_v ptr
       Fmt.(option ~none:(any "*") Tree_borrow.pp_tag)
       tag
+
+  let pp : t Fmt.t = pp' Typed.ppa
+  let show = Fmt.to_to_string pp
+  let pp_syn : syn Fmt.t = pp' Expr.pp
+  let show_syn = Fmt.to_to_string pp_syn
+
+  let to_syn { ptr; tag; align; size } =
+    {
+      ptr = Expr.of_value ptr;
+      align = Expr.of_value align;
+      size = Expr.of_value size;
+      tag;
+    }
+
+  let learn_eq syn t =
+    let open DecayMap.SM.Consumer in
+    let open Syntax in
+    let* () = if syn.tag = t.tag then ok () else lfail Typed.v_false in
+    let* () = learn_eq syn.ptr t.ptr in
+    let* () = learn_eq syn.align t.align in
+    learn_eq syn.size t.size
+
+  let exprs_syn { ptr; align; size; _ } = [ ptr; align; size ]
+  let fresh () = failwith "Fresh unimplemented for sptr (for now)"
 
   let null_ptr () =
     {
@@ -293,9 +341,9 @@ module ArithPtr : S with type t = arithptr_t = struct
   let expose p = _decay ~expose:true p
 
   let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
-    let open DecayMapMonad.Syntax in
+    let open DecayMap.SM.Syntax in
     if%sat Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2 then
-      DecayMapMonad.return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
+      DecayMap.SM.return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
     else
       let* ptr1 = decay p1 in
       let+ ptr2 = decay p2 in
@@ -325,14 +373,10 @@ module ArithPtr : S with type t = arithptr_t = struct
     let* () = assume [ aligned ] in
     Result.ok ptr
 
-  let iter_vars { ptr; align; size; tag = _ } f =
-    Typed.iter_vars ptr f;
-    Typed.iter_vars align f;
-    Typed.iter_vars size f
-
-  let subst subst_var p =
-    let ptr = Typed.subst subst_var p.ptr in
-    let align = Typed.subst subst_var p.align in
-    let size = Typed.subst subst_var p.size in
+  let subst subst_val p =
+    let se = Expr.subst subst_val in
+    let ptr = se p.ptr in
+    let align = se p.align in
+    let size = se p.size in
     { p with ptr; align; size }
 end

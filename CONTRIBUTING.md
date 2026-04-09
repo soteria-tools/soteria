@@ -175,6 +175,13 @@ If you want to upgrade a version, say of OCaml, see `./scripts/versionsync.py li
 
 ## Coding Guidelines
 
+### Naming conventions
+
+
+**Identifiers**: We use OCaml standard naming practices. Every identifier should be in `snake_case`, except modules and constructor names that are snake case but start with a capital letter, such as `Module_name`.
+
+**Types**: In OCaml, types live in a different namespace from other identifiers. Therefore, we avoid `name_t` for a type, and use `name`. For instance, for the pointer type, avoid `sptr_t` and use `sptr` instead.
+
 ### Exception Handling
 
 The library and executables should **never** raise uncaught exceptions unless they correspond to an internal error that should be fixed in the tool.

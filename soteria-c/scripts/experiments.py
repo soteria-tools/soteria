@@ -123,6 +123,13 @@ run_parser.add_argument(
     help="Run experiments using hyperfine for benchmarking",
 )
 
+run_parser.add_argument(
+    "--use-installed-exe",
+    "--use-installed",
+    action="store_true",
+    help="Use the installed soteria-c executable instead of 'dune exec -- soteria-c'",
+)
+
 # Infer subcommand
 infer_parser = subparsers.add_parser(
     "infer", help="Run Infer on experiment using parsed compilation database"
@@ -189,6 +196,7 @@ class GlobalConfig:
     cleanup_results_first: bool
     cleanup_builds_first: bool
     benchmark: bool
+    in_source: bool
 
     def __init__(self):
         self.experiment_folder = default_experiment_folder.resolve()
@@ -197,9 +205,22 @@ class GlobalConfig:
         self.cleanup_results_first = False
         self.cleanup_builds_first = False
         self.benchmark = False
+        self.in_source = True
 
     def result_folder(self) -> Path:
         return self.experiment_folder / "results"
+
+    def soteria_c_cmd(self) -> str:
+        """Return the soteria-c executable, prefixed with 'dune exec -- ' unless --use-installed-exe is set."""
+        if self.in_source:
+            return "dune exec -- soteria-c"
+        return "soteria-c"
+
+    def soteria_c_argv(self) -> list[str]:
+        """Return the soteria-c argv prefix for subprocess calls."""
+        if self.in_source:
+            return ["dune", "exec", "--", "soteria-c"]
+        return ["soteria-c"]
 
     def set_from_args(self, args):
         self.experiment_folder = args.experiment_folder.resolve()
@@ -208,6 +229,7 @@ class GlobalConfig:
         self.cleanup_results_first = args.cleanup_results_first or args.cleanup_first
         self.cleanup_builds_first = args.cleanup_builds_first or args.cleanup_first
         self.benchmark = args.benchmark
+        self.in_source = not args.use_installed_exe
 
     def to_dict(self):
         return {
@@ -217,6 +239,7 @@ class GlobalConfig:
             "cleanup_results_first": self.cleanup_results_first,
             "cleanup_builds_first": self.cleanup_builds_first,
             "benchmark": self.benchmark,
+            "in_source": self.in_source,
         }
 
 
@@ -361,7 +384,7 @@ class Experiment(PrintersMixin):
         self.print_info(f"Running Soteria-C with compile_commands: {compile_db}")
         os.makedirs(self.result_folder, exist_ok=True)
         cmd = (
-            "soteria-c capture-db "
+            f"{global_config.soteria_c_cmd()} capture-db "
             f"{compile_db} "
             f"--solver-timeout {global_config.solver_timeout} "
             "--dump-stats "
@@ -391,7 +414,7 @@ class Experiment(PrintersMixin):
             exit(3)
         self.print_info(f"Generating parsed compilation database from: {compile_db}")
         cmd = (
-            "soteria-c capture-db "
+            f"{global_config.soteria_c_cmd()} capture-db "
             f"{compile_db} "
             "--parse-only "
             f"--write-parsed-db {self.compile_commands_parsed} "
@@ -433,14 +456,17 @@ class Experiment(PrintersMixin):
 
         # Step 1: Generate parsed compilation database with --parse-only (not timed)
         self.print_info(f"Parsing compilation database: {compile_db}")
-        parse_cmd = [
-            "soteria-c",
-            "capture-db",
-            str(compile_db),
-            "--parse-only",
-            "--write-parsed-db",
-            str(self.compile_commands_parsed),
-        ] + self.config.soteria_args
+        parse_cmd = (
+            global_config.soteria_c_argv()
+            + [
+                "capture-db",
+                str(compile_db),
+                "--parse-only",
+                "--write-parsed-db",
+                str(self.compile_commands_parsed),
+            ]
+            + self.config.soteria_args
+        )
 
         result = subprocess.run(parse_cmd, capture_output=True, text=True)
         if result.returncode != 0:
@@ -473,17 +499,20 @@ class Experiment(PrintersMixin):
 
         # Step 2: Run analysis on parsed database and time this part
         self.print_info("Running Soteria-C analysis on parsed database")
-        analysis_cmd = [
-            "soteria-c",
-            "capture-db",
-            str(self.compile_commands_parsed),
-            "--solver-timeout",
-            str(global_config.solver_timeout),
-            "--dump-stats",
-            str(self.result_folder / "stats.json"),
-            "--dump-report",
-            str(self.result_folder / "report.json"),
-        ] + self.config.soteria_args
+        analysis_cmd = (
+            global_config.soteria_c_argv()
+            + [
+                "capture-db",
+                str(self.compile_commands_parsed),
+                "--solver-timeout",
+                str(global_config.solver_timeout),
+                "--dump-stats",
+                str(self.result_folder / "stats.json"),
+                "--dump-report",
+                str(self.result_folder / "report.json"),
+            ]
+            + self.config.soteria_args
+        )
 
         start_time = time.time()
         subprocess.run(analysis_cmd, capture_output=False)
@@ -583,7 +612,7 @@ class Experiment(PrintersMixin):
 ########## List experiments ##########
 
 
-def simple_config(name):
+def simple_config(name) -> ExperimentConfig:
     return ExperimentConfig(
         name=name, path=Path(name), cmake_args=["-DBUILD_TESTING=OFF"]
     )
@@ -647,7 +676,9 @@ def at_start():
     # If first arg is not a subcommand, treat it as 'run' command
     import sys
 
-    if len(sys.argv) > 1 and sys.argv[1] not in ["run", "infer", "compare"]:
+    if len(sys.argv) <= 1 or (
+        len(sys.argv) > 1 and sys.argv[1] not in ["run", "infer", "compare"]
+    ):
         # Insert 'run' as the subcommand
         sys.argv.insert(1, "run")
 

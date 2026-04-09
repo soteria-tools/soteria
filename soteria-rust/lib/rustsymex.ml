@@ -18,7 +18,7 @@ end
 module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver)
 
 module TypeMap = Map.Make (struct
-  type t = Charon.Types.ty
+  type t = Charon.Types.ty [@@deriving show]
 
   let compare = Charon.Types.compare_ty
 end)

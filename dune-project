@@ -50,15 +50,16 @@
   (grace
    (>= 0.3.0))
   (odoc :with-doc)
-   (mdx :with-test)
-   (alcotest :with-test)
-   (qcheck-core :with-test)
-   (qcheck-alcotest :with-test)
-   (dune
+  (mdx :with-test)
+  (alcotest :with-test)
+  (qcheck-core :with-test)
+  (qcheck-alcotest :with-test)
+  (dune
    (and
     :build
     (>= 3.14.0)))
-  ppxlib
+  (ppxlib
+   (>= 0.38.0))
   (hc
    (>= 0.5))
   (yojson
@@ -100,7 +101,7 @@
   (odoc :with-doc)
   (alcotest :with-test)
   (ppx_blob
-    (>= 0.9.0))
+   (>= 0.9.0))
   (yojson
    (< 3.0))
   (dune
