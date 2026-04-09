@@ -280,9 +280,9 @@ module Make (StateImpl : State.S) = struct
            integers *)
         let ptr_size = Crate.pointer_size () in
         let ptr_of_provenance : Types.provenance -> full_ptr t = function
-          | Global g -> resolve_global g
-          | Function f -> State.declare_fn (Real f)
-          | Unknown -> not_impl "Unknown provenance in RawMemory"
+          | ProvGlobal g -> resolve_global g
+          | ProvFunction f -> State.declare_fn (Real f)
+          | ProvUnknown -> not_impl "Unknown provenance in RawMemory"
         in
         let+ blocks =
           map_list blocks ~f:(fun block ->
@@ -300,11 +300,14 @@ module Make (StateImpl : State.S) = struct
                     (Int ptr_frag, BV.usizei ofs))
         in
         Union blocks
+    | CGlobal glob ->
+        let+ ptr = resolve_global glob in
+        Ptr ptr
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
-    | CAdt _ | CArray _ | CGlobal _ | CRef _ | CPtr _ | CFnPtr _
-    | CPtrNoProvenance _ ->
+    | CAdt _ | CArray _ | CRef _ | CPtr _ | CFnPtr _ | CPtrNoProvenance _
+    | CVTableRef _ ->
         Fmt.kstr not_impl "TODO: complex constant %a" Crate.pp_constant_expr
           const
 
@@ -614,10 +617,10 @@ module Make (StateImpl : State.S) = struct
               | MetaLength length ->
                   let+ len = resolve_constant length in
                   Len (as_base_i Usize len)
-              | MetaVTable (_, glob) ->
+              | MetaVTable (_, const) ->
                   (* the global adds one level of indirection *)
-                  let* glob = of_opt_not_impl "Missing VTable global" glob in
-                  let* ptr = resolve_global glob in
+                  let* ptr = resolve_constant const in
+                  let ptr = as_ptr ptr in
                   let+ vtable = State.load ptr unit_ptr in
                   let vtable, _ = as_ptr vtable in
                   VTable vtable
