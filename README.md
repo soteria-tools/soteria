@@ -137,12 +137,12 @@ We support two frontends: [Obol](https://github.com/soteria-tools/obol) and [Cha
 
 **Manual installation:**
 1. **Clone Obol at the correct commit:**
-   <!-- [versionsync: OBOL_COMMIT_HASH=dce99709ce02e7e3662590fa52f32cae14c118ef] -->
+   <!-- [versionsync: OBOL_COMMIT_HASH=26623ec4753f82f0a0ea21ec4fd11011531271a8] -->
    ```sh
    cd ..
    git clone https://github.com/soteria-tools/obol.git
    cd obol
-   git checkout dce99709ce02e7e3662590fa52f32cae14c118ef
+   git checkout 26623ec4753f82f0a0ea21ec4fd11011531271a8
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `OBOL_COMMIT_HASH`.
 
