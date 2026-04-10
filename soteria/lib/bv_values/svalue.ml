@@ -821,16 +821,21 @@ and BitVec : BitVec = struct
     | (BitVec z, Unop (BvNot, v) | Unop (BvNot, v), BitVec z)
       when Z.equal z Z.one ->
         neg v
-    | Binop (Add _, ({ node = { kind = BitVec _; _ }; _ } as c1), r), BitVec _
-    | Binop (Add _, r, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
-      ->
-        add ~checked (add c1 v2) r
-    | Binop (Sub _, l, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
-      ->
-        add ~checked l (sub v2 c1)
-    | Binop (Sub _, ({ node = { kind = BitVec _; _ }; _ } as c1), r), BitVec _
-      ->
-        sub ~checked (add c1 v2) r
+    | ( Binop
+          (Add { checked = c }, ({ node = { kind = BitVec _; _ }; _ } as c1), r),
+        BitVec _ )
+    | ( Binop
+          (Add { checked = c }, r, ({ node = { kind = BitVec _; _ }; _ } as c1)),
+        BitVec _ ) ->
+        add ~checked:(checked && c) (add c1 v2) r
+    | ( Binop
+          (Sub { checked = c }, l, ({ node = { kind = BitVec _; _ }; _ } as c1)),
+        BitVec _ ) ->
+        add ~checked:(checked && c) l (sub v2 c1)
+    | ( Binop
+          (Sub { checked = c }, ({ node = { kind = BitVec _; _ }; _ } as c1), r),
+        BitVec _ ) ->
+        sub ~checked:(checked && c) (add c1 v2) r
     | _, Binop (Sub _, l, r) when equal r v1 -> l
     | Binop (Sub _, l, r), _ when equal r v2 -> l
     | Binop (Mul _, l1, r1), Binop (Mul _, l2, r2)
@@ -893,23 +898,33 @@ and BitVec : BitVec = struct
     | _, _ when equal v1 v2 -> zero (size_of v1.node.ty)
     (* BAD PERF:!!!! *)
     | _, Unop (Neg, v2) -> add v1 v2
-    | Binop (Sub _, ({ node = { kind = BitVec _; _ }; _ } as c1), s), BitVec _
-      ->
-        sub ~checked (sub c1 v2) s
-    | Binop (Sub _, s, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
-      ->
-        sub ~checked s (add c1 v2)
-    | BitVec _, Binop (Add _, ({ node = { kind = BitVec _; _ }; _ } as r), c)
-    | BitVec _, Binop (Add _, c, ({ node = { kind = BitVec _; _ }; _ } as r)) ->
-        sub ~checked (sub v1 r) c
-    | ( Binop (Add _, ({ node = { kind = BitVec bv1; _ }; _ } as r), c),
+    | ( Binop
+          (Sub { checked = c }, ({ node = { kind = BitVec _; _ }; _ } as c1), s),
+        BitVec _ ) ->
+        sub ~checked:(c && checked) (sub c1 v2) s
+    | ( Binop
+          (Sub { checked = c }, s, ({ node = { kind = BitVec _; _ }; _ } as c1)),
+        BitVec _ ) ->
+        sub ~checked:(c && checked) s (add c1 v2)
+    | ( BitVec _,
+        Binop
+          (Add { checked = c }, ({ node = { kind = BitVec _; _ }; _ } as r), l)
+      )
+    | ( BitVec _,
+        Binop
+          (Add { checked = c }, l, ({ node = { kind = BitVec _; _ }; _ } as r))
+      ) ->
+        sub ~checked:(c && checked) (sub v1 r) l
+    | ( Binop
+          (Add { checked = c }, ({ node = { kind = BitVec bv1; _ }; _ } as r), l),
         BitVec bv2 )
-    | ( Binop (Add _, c, ({ node = { kind = BitVec bv1; _ }; _ } as r)),
+    | ( Binop
+          (Add { checked = c }, l, ({ node = { kind = BitVec bv1; _ }; _ } as r)),
         BitVec bv2 ) ->
         (* if bv1 < bv2 there would be an overflow which causes problems since
            the operation can't be deemed checked anymore. *)
-        if Z.lt bv1 bv2 then sub ~checked c (neg (sub r v2))
-        else add ~checked c (sub r v2)
+        if Z.lt bv1 bv2 then sub ~checked:(c && checked) l (neg (sub r v2))
+        else add ~checked:(c && checked) l (sub r v2)
     | Binop (Add _, l, r), _ when equal l v2 -> r
     | Binop (Add _, l, r), _ when equal r v2 -> l
     | Binop (Add _, l1, r1), Binop (Add _, l2, r2) when equal l1 l2 ->
