@@ -13,7 +13,9 @@ type optim_fn =
   | FloatIsFinite
   | FloatIsSign of { positive : bool }
   | AllocImpl
+  | Nop
   | Panic
+  | PrintToBufferIfCaptureUsed
 
 (* Soteria builtin functions *)
 type soteria_fn = Assert | Assume | NondetBytes | Panic
@@ -127,6 +129,11 @@ let std_fun_pair_list =
     ("core::f128::_::is_subnormal", Optim (FloatIs Subnormal));
     (* Compiling these would import a lot of formatting code, so we override
        them *)
+    ("std::io::_eprint", Optim Nop);
+    ("std::io::_print", Optim Nop);
+    ("std::io::stdio::print_to", Optim Nop);
+    ( "std::io::stdio::print_to_buffer_if_capture_used",
+      Optim PrintToBufferIfCaptureUsed );
     ("alloc::raw_vec::handle_error", Optim Panic);
     ("core::panicking::panic", Optim Panic);
     ("core::panicking::panic_fmt", Optim Panic);
@@ -178,6 +185,8 @@ module M (StateM : State.StateM.S) = struct
     | Optim (FloatIs fc) -> Std.float_is fc
     | Optim FloatIsFinite -> Std.float_is_finite
     | Optim (FloatIsSign { positive }) -> Std.float_is_sign positive
+    | Optim Nop -> Std.nop
+    | Optim PrintToBufferIfCaptureUsed -> Std.to_buffer_if_capture_used
     | Alloc (Alloc { zeroed }) -> Alloc.alloc ~zeroed
     | Alloc Dealloc -> Alloc.dealloc
     | Alloc NoAllocShimIsUnstable -> Alloc.no_alloc_shim_is_unstable

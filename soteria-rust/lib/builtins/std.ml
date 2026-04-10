@@ -124,4 +124,6 @@ module M (StateM : State.StateM.S) = struct
       State.store (align_ptr, Thin) Charon_util.unit_ptr (Int Usize.(1s))
     in
     _mk_box (Ptr (ptr, VTable vtable))
+
+  let to_buffer_if_capture_used _ = ok (Int (Typed.BV.of_bool Typed.v_true))
 end
