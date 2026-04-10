@@ -230,9 +230,9 @@ and gen_bool_leaf : Sv.t Gen.t =
 
 let depth = Gen.int_bound 6
 
-(* We could restrict to 8 and 16, but this means the generator can then shrink
-   the inputs to bvs of size 2 if it can reproduce it there and that's really
-   nice. *)
+(* NOTE: We could restrict to 8 and 16, but this means the generator can then
+   shrink the inputs to bvs of size 2 if it can reproduce it there and that's
+   really nice. *)
 let bv_size = Gen.int_range 1 16
 
 let gen_bv : Sv.t Gen.t =
