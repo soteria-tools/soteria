@@ -35,9 +35,14 @@ module Lib = struct
       | None, root :: _ -> root
       | None, [] -> plugin_err "Couldn't find plugin directory")
 
-  type t = Std | Kani | Miri
+  type t = Std | Soteria | Kani | Miri
 
-  let name = function Std -> "std" | Kani -> "kani" | Miri -> "miri"
+  let name = function
+    | Std -> "std"
+    | Soteria -> "soteria"
+    | Kani -> "kani"
+    | Miri -> "miri"
+
   let path lib = Lazy.force root / name lib
 
   (** [exec_cargo ?env lib args] executes the command [cargo <args>] for the
@@ -101,7 +106,7 @@ type entry_point = {
 type mk_cmd = ?input:string -> output:string -> unit -> Cmd.t
 
 let default () =
-  let@ std_lib_path, target = Lib.with_compiled Std in
+  let@ _ = Lib.with_compiled Soteria in
   let opaque_names =
     List.concat_map (fun n -> [ "--opaque"; n ]) Builtins.Eval.opaque_names
   in
@@ -140,9 +145,9 @@ let default () =
         "--extern";
         "soteria";
         (* include the std *)
-        "--extern";
+        (* "--extern";
         "noprelude:std="
-        ^ (std_lib_path / "target" / target / "debug" / "libstd.rlib");
+        ^ (std_lib_path / "target" / target / "debug" / "libstd.rlib"); *)
       ]
     ()
 
