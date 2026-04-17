@@ -80,7 +80,7 @@ module MemVal = struct
   let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
     match t with
     | Uninit _ ->
-        L.trace (fun m -> m "Uninitialized Memory Access detected!");
+        [%l.trace "Uninitialized Memory Access detected!"];
         Result.error `UninitializedMemoryAccess
     | Zeros -> (
         match ty with
@@ -158,14 +158,14 @@ module MemVal = struct
             not_owned t
         | Missing f -> miss f
         | Error `UninitializedMemoryAccess ->
-            L.info (fun m -> m "Consuming a value from uninit, logical failure");
+            [%l.info "Consuming a value from uninit, logical failure"];
             lfail Typed.v_false)
     (* any *)
     | SAny, Owned _ -> ok (not_owned t)
     (* uninit *)
     | SUninit, Owned (Uninit Totally) -> ok (not_owned t)
     | SUninit, _ ->
-        L.info (fun m -> m "Consuming uninit but no uninit, logical failure");
+        [%l.info "Consuming uninit but no uninit, logical failure"];
         lfail Typed.v_false
     (* zeros *)
     | SZeros, Owned Zeros -> ok (not_owned t)
@@ -180,7 +180,7 @@ module MemVal = struct
         let+ () = learn_eq zero v in
         not_owned t
     | SZeros, _ ->
-        L.info (fun m -> m "Consuming zero but not zero, logical failure");
+        [%l.info "Consuming zero but not zero, logical failure"];
         lfail Typed.v_false
 
   let produce (s : syn) (t : tree) : tree Producer.t =
@@ -202,8 +202,7 @@ open MemVal
 include Tree_block (MemVal)
 
 let log_fixes fixes =
-  L.trace (fun m ->
-      m "MISSING WITH FIXES: %a" Fmt.Dump.(list @@ list pp_syn) fixes);
+  [%l.trace "MISSING WITH FIXES: %a" Fmt.Dump.(list @@ list pp_syn) fixes];
   fixes
 
 let range_of_low_and_type low ty =

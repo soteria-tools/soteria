@@ -98,11 +98,11 @@ let log action ptr =
   let open SM.Syntax in
   let* st = SM.get_state () in
   let+^ loc = Csymex.get_loc () in
-  L.debug (fun m ->
-      m "About to execute action: %s at %a (%a)@\n@[<2>HEAP:@ %a@]" action
-        Typed.ppa ptr Fmt_ail.pp_loc loc
-        (Fmt.option ~none:(Fmt.any "Empty heap") (pp_pretty ~ignore_freed:true))
-        st)
+  [%l.debug
+    "About to execute action: %s at %a (%a)@\n@[<2>HEAP:@ %a@]" action Typed.ppa
+      ptr Fmt_ail.pp_loc loc
+      (Fmt.option ~none:(Fmt.any "Empty heap") (pp_pretty ~ignore_freed:true))
+      st]
 
 let with_heap (f : ('a, 'err, Heap.syn list) Heap.SM.Result.t) :
     ('a, 'err, syn list) SM.Result.t =
@@ -116,7 +116,7 @@ let with_heap (f : ('a, 'err, Heap.syn list) Heap.SM.Result.t) :
 let[@inline] check_non_null loc =
   let open SM.Syntax in
   if%sat Typed.Ptr.is_null_loc loc then (
-    (L.debug (fun m -> m "Null dereference detected");
+    ([%l.debug "Null dereference detected"];
      SM.Result.error `NullDereference)
     [@name "Null-deref case"])
   else SM.Result.ok () [@name "Non-null case"]
@@ -203,9 +203,9 @@ let rec store (ptr : [< T.sptr ] Typed.t) ty v =
 
 let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size =
   let open Typed.Infix in
-  L.trace (fun m ->
-      m "copy_nonoverlapping: copying %a bytes from %a to %a" Typed.ppa size
-        Typed.ppa src Typed.ppa dst);
+  [%l.trace
+    "copy_nonoverlapping: copying %a bytes from %a to %a" Typed.ppa size
+      Typed.ppa src Typed.ppa dst];
   let@ () = with_error_loc ~msg:"Triggering copy" () in
   let** () =
     SM.assert_or_error
@@ -243,7 +243,7 @@ let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, syn list) SM.Result.t =
 let produce (s : syn) (t : t option) : t option Producer.t =
   let open Producer in
   let open Syntax in
-  L.debug (fun m -> m "Producing: %a" pp_syn s);
+  [%l.debug "Producing: %a" pp_syn s];
   let { heap; globs } = of_opt t in
   match s with
   | Ser_heap sh ->

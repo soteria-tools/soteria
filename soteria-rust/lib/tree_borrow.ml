@@ -174,12 +174,11 @@ let access accessed e (root : t) (st : tb_state) =
         let st' = transition ~protected st (rel, e) in
         if st' = UB then (
           ub_happened := true;
-          L.debug (fun m ->
-              m
-                "TB: Undefined behavior encountered for %a, %a %a (protected? \
-                 %b): %a -> %a in structure@.%a"
-                pp_tag tag pp_locality rel pp_access e protected pp_state st
-                pp_state st' pp root));
+          [%l.debug
+            "TB: Undefined behavior encountered for %a, %a %a (protected? %b): \
+             %a -> %a in structure@.%a"
+            pp_tag tag pp_locality rel pp_access e protected pp_state st
+              pp_state st' pp root]);
         if (not protected) && st' = initial_state then None
         else Some (protected, st'))
       root

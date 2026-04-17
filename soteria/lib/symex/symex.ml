@@ -577,7 +577,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     match Fuel.consume_fuel_steps n with
     | Exhausted ->
         Stats.As_ctx.incr StatKeys.unexplored_branches;
-        L.debug (fun m -> m "Exhausted step fuel")
+        [%l.debug "Exhausted step fuel"]
     | Not_exhausted ->
         Stats.As_ctx.add_int StatKeys.steps n;
         f ()
@@ -592,8 +592,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
           let l = Solver.simplify l in
           match Value.to_bool l with
           | Some true -> aux acc ls
-          | Some false ->
-              L.trace (fun m -> m "Assuming false, stopping this branch")
+          | Some false -> [%l.trace "Assuming false, stopping this branch"]
           | None -> aux (l :: acc) ls)
     in
     aux [] learned
@@ -614,8 +613,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         Solver.add_constraints [ Value.(not value) ];
         let sat_result = Solver.sat () in
         let () =
-          L.debug (fun m ->
-              m "Entailment SAT check returned %a" Solver_result.pp sat_result)
+          [%l.debug
+            "Entailment SAT check returned %a" Solver_result.pp sat_result]
         in
         Symex_state.backtrack_n 1;
         if Approx.As_ctx.is_ux () then not (Solver_result.is_sat sat_result)
@@ -653,7 +652,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
             let sat_res = Solver.sat () in
             left_unsat := Solver_result.is_unsat sat_res;
             if Solver_result.is_sat sat_res then then_ () f
-            else L.trace (fun m -> m "Branch is not feasible"));
+            else [%l.trace "Branch is not feasible"]);
         Symex_state.backtrack_n 1;
         L.with_section ~is_branch:true right_branch_name (fun () ->
             Solver.add_constraints [ Value.(not guard) ];
@@ -666,12 +665,11 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
               match Fuel.consume_branching 1 with
               | Exhausted ->
                   Stats.As_ctx.incr StatKeys.unexplored_branches;
-                  L.debug (fun m ->
-                      m "Exhausted branching fuel, not continuing")
+                  [%l.debug "Exhausted branching fuel, not continuing"]
               | Not_exhausted ->
                   Stats.As_ctx.incr StatKeys.branches;
                   if Solver_result.is_sat (Solver.sat ()) then else_ () f
-                  else L.trace (fun m -> m "Branch is not feasible")))
+                  else [%l.trace "Branch is not feasible"]))
 
   let if_sure ?left_branch_name:_ ?right_branch_name:_ guard
       ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
@@ -759,7 +757,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let give_up reason _f =
     (* The bind ensures that the side effect will not be enacted before the
        whole process is ran. *)
-    L.warn (fun m -> m "Gave up: %s" reason);
+    [%l.warn "Gave up: %s" reason];
     Stats.As_ctx.push_str StatKeys.give_up_reasons reason;
     if
       Approx.As_ctx.is_ox ()
@@ -803,7 +801,7 @@ module Base_extension (Core : Core) = struct
     let miss_no_fix ~reason () =
       bind (ok ()) @@ fun () ->
       Stats.As_ctx.push_str StatKeys.miss_without_fix reason;
-      L.debug (fun m -> m "Missing without fix: %s" reason);
+      [%l.debug "Missing without fix: %s" reason];
       miss []
 
     let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
@@ -914,11 +912,10 @@ module Base_extension (Core : Core) = struct
       let open Syntax in
       let is_bool = Value.is_bool_ty @@ Value.Expr.ty e in
       if not is_bool then (
-        L.error (fun m ->
-            m
-              "Producing non-boolean pure value!! This is quite probably a \
-               tool bug, please report it. Expr: %a"
-              Value.Expr.pp e);
+        [%l.error
+          "Producing non-boolean pure value!! This is quite probably a tool \
+           bug, please report it. Expr: %a"
+          Value.Expr.pp e];
         vanish ())
       else
         let* v = apply_subst Fun.id e in

@@ -118,7 +118,7 @@ struct
         | Sat -> Sat
         | Unsat -> Unsat
         | Unknown ->
-            L.info (fun m -> m "Solver returned unknown");
+            [%l.info "Solver returned unknown"];
             Unknown)
 
   let as_values solver =
