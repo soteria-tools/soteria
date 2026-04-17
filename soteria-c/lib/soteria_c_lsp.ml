@@ -92,7 +92,7 @@ class soteria_lsp_server generate_errors =
     method! on_unknown_notification ~notify_back notif =
       match notif.method_ with
       | "soteria/toggleDebugMode" ->
-          L.debug (fun m -> m "Toggling debug mode");
+          [%l.debug "Toggling debug mode"];
           debug_mode <- not debug_mode
       | _ -> super#on_unknown_notification ~notify_back notif
   end

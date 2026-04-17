@@ -25,7 +25,7 @@ module Tag_defs = struct
     match Hashtbl.find_opt tbl id with
     | Some x -> Some x
     | None ->
-        L.debug (fun m -> m "Cannot find definition for %a" Fmt_ail.pp_sym id);
+        [%l.debug "Cannot find definition for %a" Fmt_ail.pp_sym id];
         None
 
   let add_defs defs tbl =
@@ -121,7 +121,7 @@ let rec layout_of ty =
         match def with
         | UnionDef members -> Some members
         | StructDef _ ->
-            L.debug (fun m -> m "Don't have definition of union");
+            [%l.debug "Don't have definition of union"];
             None
       in
       union_layout_of_members members
@@ -131,7 +131,7 @@ let rec layout_of ty =
       let align = elem_layout.align in
       Some { size; align; members_ofs = [] }
   | _ ->
-      L.debug (fun m -> m "Cannot compute layout of %a" Fmt_ail.pp_ty_ ty);
+      [%l.debug "Cannot compute layout of %a" Fmt_ail.pp_ty_ ty];
       None
 
 and union_layout_of_members members =
@@ -170,7 +170,7 @@ and layout_of_struct tag =
     match def with
     | StructDef (m, fam) -> Some (m, fam)
     | _ ->
-        L.debug (fun m -> m "Don't have a definition of structure");
+        [%l.debug "Don't have a definition of structure"];
         None
   in
   let* () =
@@ -268,8 +268,7 @@ let is_int_ty_signed (int_ty : integerType) =
   | Signed _ -> true
   | Char | Bool | Unsigned _ -> false
   | _ ->
-      L.debug (fun m ->
-          m "Cannot determine signedness of %a" Fmt_ail.pp_int_ty int_ty);
+      [%l.debug "Cannot determine signedness of %a" Fmt_ail.pp_int_ty int_ty];
       false
 
 let int_bv_info (int_ty : integerType) =
@@ -289,7 +288,7 @@ let int_constraints (int_ty : integerType) =
   | Bool -> Some (fun x -> [ U8.(0s) <=@ x; (x <@ U8.(2s)) ])
   | Char | Signed _ | Unsigned _ -> Some (fun _ -> [])
   | _ ->
-      L.debug (fun m -> m "No int constraints for %a" Fmt_ail.pp_int_ty int_ty);
+      [%l.debug "No int constraints for %a" Fmt_ail.pp_int_ty int_ty];
       None
 
 exception Unsupported of string
@@ -331,7 +330,7 @@ let constraints_exn ~(ty : ctype) (v : Agv.t) : Typed.T.sbool Typed.t list =
 let constraints ~ty v =
   try Some (constraints_exn ~ty v)
   with Unsupported msg ->
-    L.debug (fun m -> m "Constraints for %a: %s" Fmt_ail.pp_ty ty msg);
+    [%l.debug "Constraints for %a: %s" Fmt_ail.pp_ty ty msg];
     None
 
 let nondet_c_ty_ (ty : ctype_) : Typed.T.cval Typed.t Csymex.t =

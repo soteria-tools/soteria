@@ -230,8 +230,7 @@ module Make (State : State_intf.S) = struct
   let mk_store params =
     ListLabels.fold_left params ~init:Store.empty
       ~f:(fun store (pname, ty, value) ->
-        L.trace (fun m ->
-            m "Putting variable to the store: %a" Fmt_ail.pp_sym pname);
+        [%l.trace "Putting variable to the store: %a" Fmt_ail.pp_sym pname];
         Store.add_value pname value ty store)
 
   let dealloc_store () : unit InterpM.t =
@@ -265,7 +264,7 @@ module Make (State : State_intf.S) = struct
         let* binding = IStore.find_opt id in
         match binding with
         | Some { kind = Value v; _ } ->
-            L.trace (fun m -> m "Immediate load: %a" Agv.pp v);
+            [%l.trace "Immediate load: %a" Agv.pp v];
             ok (Some v)
         | Some { kind = Uninit; _ } -> InterpM.error `UninitializedMemoryAccess
         | _ -> ok None)
@@ -278,7 +277,7 @@ module Make (State : State_intf.S) = struct
     match lvalue with
     | AilEident id -> (
         let id = Ail_helpers.resolve_sym id in
-        L.trace (fun m -> m "Trying immediate store at %a" Fmt_ail.pp_sym id);
+        [%l.trace "Trying immediate store at %a" Fmt_ail.pp_sym id];
         let* binding = IStore.find_opt id in
         match binding with
         | Some { kind = Value _ | Uninit; ty } ->
@@ -699,10 +698,9 @@ module Make (State : State_intf.S) = struct
           ok (loc, fname)
       | _ ->
           (* Some function pointer *)
-          L.trace (fun m ->
-              m "Resolving function pointer: %a" Fmt_ail.pp_expr fexpr);
+          [%l.trace "Resolving function pointer: %a" Fmt_ail.pp_expr fexpr];
           let* fptr = eval_expr fexpr in
-          L.trace (fun m -> m "Function pointer is value: %a" Agv.pp fptr);
+          [%l.trace "Function pointer is value: %a" Agv.pp fptr];
           let*^ fptr = cast_aggregate_to_ptr fptr in
           let* () =
             assert_or_error
@@ -758,7 +756,7 @@ module Make (State : State_intf.S) = struct
           @@ lift_state_op
           @@ exec_fun ~args
         in
-        L.debug (fun m -> m "returned %a from %a" Agv.pp v Fmt_ail.pp_expr f);
+        [%l.debug "returned %a from %a" Agv.pp v Fmt_ail.pp_expr f];
         v
     | AilEunary (Address, e) -> (
         match unwrap_expr e with
@@ -1106,7 +1104,7 @@ module Make (State : State_intf.S) = struct
   and exec_body ~ret_ty (body : stmt) : Agv.t InterpM.t =
     let open Stmt_exec_result in
     let rec aux res =
-      L.trace (fun m -> m "Body execution result: %a" Stmt_exec_result.pp res);
+      [%l.trace "Body execution result: %a" Stmt_exec_result.pp res];
       match res with
       | Returned (v, old_ty) -> (
           match ret_ty with
@@ -1116,8 +1114,7 @@ module Make (State : State_intf.S) = struct
           (* Function didn't return, we return void (encoded as 0) *)
           InterpM.ok Agv.void
       | Goto label ->
-          L.trace (fun m ->
-              m "Body terminated with Goto %a" Fmt_ail.pp_sym label);
+          [%l.trace "Body terminated with Goto %a" Fmt_ail.pp_sym label];
           let* res = exec_goto label body in
           aux res
       | Break | Continue | Case _ ->
@@ -1143,9 +1140,9 @@ module Make (State : State_intf.S) = struct
 
   and exec_goto (label : sym) (astmt : stmt) : Stmt_exec_result.t InterpM.t =
     let open Stmt_exec_result in
-    L.trace (fun m ->
-        m "Trying to find label %a, currently at %a" Fmt_ail.pp_sym label
-          Fmt_ail.pp_stmt astmt);
+    [%l.trace
+      "Trying to find label %a, currently at %a" Fmt_ail.pp_sym label
+        Fmt_ail.pp_stmt astmt];
     let AilSyntax.{ node = stmt; _ } = astmt in
     match stmt with
     | AilSlabel (label', stmt, _annot) when Symbol_std.equal label label' ->
@@ -1186,9 +1183,9 @@ module Make (State : State_intf.S) = struct
       if guard != guard' then failwith "Returned a different case?"
     in
     let open Stmt_exec_result in
-    L.trace (fun m ->
-        m "Trying to find case corresponding to guard %a, currently at %a"
-          Typed.ppa guard Fmt_ail.pp_stmt astmt);
+    [%l.trace
+      "Trying to find case corresponding to guard %a, currently at %a" Typed.ppa
+        guard Fmt_ail.pp_stmt astmt];
     let AilSyntax.{ node = stmt; _ } = astmt in
     match stmt with
     | AilScase (case, stmt) ->
@@ -1242,10 +1239,10 @@ module Make (State : State_intf.S) = struct
     let open Stmt_exec_result in
     let exec_stmt = exec_stmt in
     let*^ () = Csymex.consume_fuel_steps 1 in
-    L.debug (fun m -> m "Executing statement: %a" Fmt_ail.pp_stmt astmt);
+    [%l.debug "Executing statement: %a" Fmt_ail.pp_stmt astmt];
     let* () =
       let+ store = get_store () in
-      L.debug (fun m -> m "@[<v 2>STORE:@ %a@]" Store.pp store)
+      [%l.debug "@[<v 2>STORE:@ %a@]" Store.pp store]
     in
     let AilSyntax.{ loc; node = stmt; _ } = astmt in
     let@@ () = with_loc ~loc in
@@ -1253,7 +1250,7 @@ module Make (State : State_intf.S) = struct
     | AilSskip -> ok Normal
     | AilSreturn e ->
         let+ v = eval_expr e in
-        L.debug (fun m -> m "Returning: %a" Agv.pp v);
+        [%l.debug "Returning: %a" Agv.pp v];
         Returned (v, type_of e)
     | AilSreturnVoid -> ok (Returned (Agv.void, Ctype.void))
     | AilSblock (bindings, stmtl) ->
@@ -1283,7 +1280,7 @@ module Make (State : State_intf.S) = struct
           let neg_cond = Typed.not cond_v in
           if%sat neg_cond then ok Normal
           else
-            let () = L.trace (fun m -> m "Condition is SAT!") in
+            let () = [%l.trace "Condition is SAT!"] in
             let* res = exec_stmt stmt in
             match res with
             | Returned _ | Goto _ -> ok res
@@ -1346,8 +1343,8 @@ module Make (State : State_intf.S) = struct
     let name, (_loc, _, _, params, stmt) = fundef in
     let ret_ty = Ail_helpers.get_return_ty name in
     (* FIXME: let@ () = with_loc ~loc in *)
-    L.debug (fun m -> m "Executing function %a" Fmt_ail.pp_sym name);
-    L.trace (fun m -> m "Was given arguments: %a" (Fmt.Dump.list Agv.pp) args);
+    [%l.debug "Executing function %a" Fmt_ail.pp_sym name];
+    [%l.trace "Was given arguments: %a" (Fmt.Dump.list Agv.pp) args];
     let* ptys = get_param_tys name in
     let ps = List.combine3 params ptys args in
     let store = mk_store ps in
