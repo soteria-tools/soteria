@@ -412,10 +412,10 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let copy_ nonoverlapping ~t ~src:((src, _) as fsrc : full_ptr)
       ~dst:((dst, _) as fdst : full_ptr) ~count : unit ret =
-    L.debug (fun m ->
-        m "Performing copy%s: %a -> %a, count %a"
-          (if nonoverlapping then "_non_overlapping" else "")
-          pp_full_ptr fsrc pp_full_ptr fdst Typed.ppa count);
+    [%l.debug
+      "Performing copy%s: %a -> %a, count %a"
+        (if nonoverlapping then "_non_overlapping" else "")
+        pp_full_ptr fsrc pp_full_ptr fdst Typed.ppa count];
     let zero = Usize.(0s) in
     let* () = State.check_ptr_align fsrc t in
     let* () = State.check_ptr_align fdst t in

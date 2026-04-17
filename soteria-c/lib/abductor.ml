@@ -19,13 +19,13 @@ let generate_summaries_for (fundef : fundef) =
     "Generate summaries for " ^ Cerb_frontend.Symbol.show_symbol fid
   in
   let@ () = L.with_section section_name in
-  L.info (fun m -> m "%s" section_name);
+  [%l.info "%s" section_name];
   let* arg_tys =
     match Ail_helpers.get_param_tys fid with
     | None ->
-        L.info (fun m ->
-            m "No argument types found for %a at loc %a" Fmt_ail.pp_sym fid
-              Fmt_ail.pp_loc floc);
+        [%l.info
+          "No argument types found for %a at loc %a" Fmt_ail.pp_sym fid
+            Fmt_ail.pp_loc floc];
         []
     | Some arg_tys -> [ arg_tys ]
   in
@@ -47,13 +47,13 @@ let generate_summaries_for (fundef : fundef) =
   let ret = Result.map Aggregate_val.to_syn ret in
   let pc = List.map Typed.Expr.of_value pc in
   let@ () = L.with_section "Building summary" in
-  L.trace (fun m ->
-      m "@[<2>Building summary for %a using bistate:@ %a@]" Fmt_ail.pp_sym fid
-        (Fmt.Dump.option Bi_state.pp)
-        bi_state);
+  [%l.trace
+    "@[<2>Building summary for %a using bistate:@ %a@]" Fmt_ail.pp_sym fid
+      (Fmt.Dump.option Bi_state.pp)
+      bi_state];
   let ~pre, ~post = Bi_state.to_spec bi_state in
   let ret = Summary.make ~args ~ret ~pre ~post ~pc () in
-  L.trace (fun m -> m "Obtained summary: %a" Summary.pp ret);
+  [%l.trace "Obtained summary: %a" Summary.pp ret];
   ret
 
 let generate_all_summaries ~functions_to_analyse prog =

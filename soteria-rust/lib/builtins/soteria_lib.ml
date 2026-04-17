@@ -48,7 +48,7 @@ module M (StateM : State.StateM.S) = struct
       | [ Int t ] -> Typed.cast_lit TBool t
       | _ -> failwith "assume with non-one arguments"
     in
-    L.debug (fun g -> g "Assuming: %a\n" Typed.ppa to_assume);
+    [%l.debug "Assuming: %a\n" Typed.ppa to_assume];
     let+ () = assume [ Typed.BitVec.to_bool to_assume ] in
     unit_
 

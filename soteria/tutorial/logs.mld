@@ -10,6 +10,7 @@ Today you'll be learning how to:
 - {{!html}Output to HTML} with collapsible sections
 - {{!printers}Format output} with colors and styles
 - {{!performance}Write efficient logging} that won't slow your programs down
+- {{!ppx}Use the PPX extension} for convenient logging
 
 {2:basic Basic Logging}
 
@@ -323,6 +324,24 @@ L.trace (fun m ->
   let expensive_string = String.concat ", " (List.init 1000 string_of_int) in
   m "Generated: %s" expensive_string
 );;
+]}
+
+{2:ppx PPX Extension}
+
+Writing calls to the logging function can be a bit verbose, with the need to wrap everything in a lambda. Soteria provides a PPX extension that allows you to write more concise logging statements using [[%l.info]], [[%l.debug]], etc. To use it, first add the PPX dependency to your [dune] file:
+
+{@dune[
+(preprocess (pps ppx_symex))
+]}
+
+This is purely syntactic sugar to save some typing and improve readability. It does not supporting declarations within the logging statement, so if you need to do any let-bindings or computations, you should still use the full lambda form.
+
+{@ocaml[
+[%l.info "Starting symbolic execution"];;
+[%l.debug "Variable x = %d" 67];;
+(* Expands to: *)
+L.info (fun m -> m "Starting symbolic execution");;
+L.debug (fun m -> m "Variable x = %d" 67);;
 ]}
 
 {2 That's it!}

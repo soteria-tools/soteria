@@ -33,9 +33,8 @@ let make_spec_opt (((~args, ~res), pc) : branch) : Context.spec option =
 let make_spec_opt x =
   let res = make_spec_opt x in
   (match res with
-  | None -> L.debug (fun m -> m "Discarding a spec because miss")
-  | Some res ->
-      L.debug (fun m -> m "Constructed a spec:@ %a" Context.pp_spec res));
+  | None -> [%l.debug "Discarding a spec because miss"]
+  | Some res -> [%l.debug "Constructed a spec:@ %a" Context.pp_spec res]);
   res
 
 let rec fun_interps ~(context : Context.t) fname =
@@ -53,7 +52,7 @@ and analyse_function ~context fname (func_dec : Lang.Fun_def.t) =
   let () =
     match Hashtbl.Hstring.find_opt context.specs fname with
     | Some _ ->
-        L.info (fun m -> m "%s has already been analysed, doing nothing." fname);
+        [%l.info "%s has already been analysed, doing nothing." fname];
         ()
     | None ->
         let@ () = with_context ~fun_interps context in
