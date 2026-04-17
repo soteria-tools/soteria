@@ -157,7 +157,6 @@ module type S = sig
   [@@mixins
     D_abstr.S_with_syn;
     D_abstr.Sem_eq]
-  [@@deriving show { with_path = false }]
 
   val null_ptr : unit -> t
   val null_ptr_of : [< sint ] Typed.t -> t
