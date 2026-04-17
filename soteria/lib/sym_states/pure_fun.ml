@@ -12,10 +12,7 @@ module Codom (Symex : Symex.Base) = struct
   module Abstr = Data.Abstr.M (Symex)
 
   module type S = sig
-    type t
-    [@@mixins
-      Abstr.S_with_syn;
-      Abstr.Sem_eq]
+    type t [@@mixins Abstr.S_with_syn + Abstr.Sem_eq]
   end
 end
 

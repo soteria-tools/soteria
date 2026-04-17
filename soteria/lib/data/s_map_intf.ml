@@ -26,10 +26,7 @@ module Key (Symex : Symex.Base) = struct
 
   module type S = sig
     type t
-    [@@mixins
-      Stdlib.Map.OrderedType;
-      Abstr.Sem_eq;
-      Abstr.Simplifiable]
+    [@@mixins Stdlib.Map.OrderedType + Abstr.Sem_eq + Abstr.Simplifiable]
     [@@deriving show]
 
     val distinct : t list -> Symex.Value.(sbool t)

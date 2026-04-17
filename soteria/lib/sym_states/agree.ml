@@ -3,10 +3,7 @@ module Make
     (E : sig
       module Abstr := Data.Abstr.M(Symex)
 
-      type t
-      [@@mixins
-        Abstr.S_with_syn;
-        Abstr.Sem_eq]
+      type t [@@mixins Abstr.S_with_syn + Abstr.Sem_eq]
     end) =
 struct
   type t = E.t [@@deriving show { with_path = false }]

@@ -14,10 +14,7 @@ module Key (Symex : Symex.Base) = struct
   module Abstr = Abstr.M (Symex)
 
   module type S = sig
-    type t
-    [@@mixins
-      Key_S.S;
-      Abstr.S_with_syn]
+    type t [@@mixins Key_S.S + Abstr.S_with_syn]
   end
 
   module type S_patricia_tree = sig
