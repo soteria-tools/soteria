@@ -8,9 +8,11 @@ module SInt_sig (Symex : Symex.Base) = struct
     (** Symbolic integers *)
     open Symex
 
-    include Abstr.S_with_syn
-    include Stdlib.Map.OrderedType with type t := t
-    include Abstr.Sem_eq with type t := t
+    type t
+    [@@mixins
+      Abstr.S_with_syn;
+      Abstr.Sem_eq;
+      Stdlib.Map.OrderedType]
 
     val of_int : int -> t
     val in_range : t -> t * t -> Value.(sbool t)

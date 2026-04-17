@@ -25,12 +25,13 @@ module Key (Symex : Symex.Base) = struct
   module Abstr = Abstr.M (Symex)
 
   module type S = sig
-    include Stdlib.Map.OrderedType
-    include Abstr.Sem_eq with type t := t
-    include Abstr.Simplifiable with type t := t
+    type t
+    [@@mixins
+      Stdlib.Map.OrderedType;
+      Abstr.Sem_eq;
+      Abstr.Simplifiable]
+    [@@deriving show]
 
-    val pp : Format.formatter -> t -> unit
-    val show : t -> string
     val distinct : t list -> Symex.Value.(sbool t)
   end
 
