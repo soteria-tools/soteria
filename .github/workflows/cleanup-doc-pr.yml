@@ -6,7 +6,11 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   cleanup-pr-doc:
@@ -14,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout gh-pages branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: gh-pages
 
@@ -44,14 +48,17 @@ jobs:
           git commit -m "Remove documentation for PR #${{ github.event.pull_request.number }}"
           git push
 
+      - name: Checkout default branch for local actions
+        if: steps.check.outputs.found == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: source-repo
+
       - name: Post comment on PR
         if: steps.check.outputs.found == 'true'
-        uses: actions/github-script@v7
+        uses: ./source-repo/.github/actions/post-pr-status-comment
         with:
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.payload.pull_request.number,
-              body: 'Documentation for this PR has been removed.'
-            });
+          issue-number: ${{ github.event.pull_request.number }}
+          marker: soteria:pr-doc-cleanup
+          body: Documentation for this PR has been removed.

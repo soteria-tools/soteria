@@ -7,7 +7,12 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
 
 env:
   # [versionsync: OCAML_VERSION=5.4.0]
@@ -49,7 +54,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'issue_comment' && steps.pr.outputs.sha || 'main' }}
 
@@ -93,21 +98,21 @@ jobs:
               content: 'rocket'
             });
 
-      - name: Post success comment
-        if: success() && github.event_name == 'issue_comment'
-        uses: actions/github-script@v7
+      - name: Checkout default branch for local actions
+        if: always() && github.event_name == 'issue_comment'
+        uses: actions/checkout@v5
         with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const prNumber = context.payload.issue.number;
-            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${{ github.run_id }}`;
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: prNumber,
-              body: `✅ BV fuzzer tests passed! See [workflow run](${runUrl}) for details.`
-            });
+          ref: ${{ github.event.repository.default_branch }}
+          path: source-repo
+
+      - name: Post BV fuzzer status comment
+        if: always() && github.event_name == 'issue_comment'
+        uses: ./source-repo/.github/actions/post-pr-status-comment
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          marker: soteria:bv-fuzzer-status
+          body: |
+            ${{ job.status == 'success' && format('✅ BV fuzzer tests passed! See [workflow run](https://github.com/{0}/actions/runs/{1}) for details.', github.repository, github.run_id) || format('❌ BV fuzzer tests failed. See [workflow run](https://github.com/{0}/actions/runs/{1}) for details.', github.repository, github.run_id) }}
 
       - name: Add failure reaction
         if: failure() && github.event_name == 'issue_comment'
@@ -119,20 +124,4 @@ jobs:
               repo: context.repo.repo,
               comment_id: context.payload.comment.id,
               content: '-1'
-            });
-
-      - name: Post failure comment
-        if: failure() && github.event_name == 'issue_comment'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const prNumber = context.payload.issue.number;
-            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${{ github.run_id }}`;
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: prNumber,
-              body: `❌ BV fuzzer tests failed. See [workflow run](${runUrl}) for details.`
             });

@@ -3,6 +3,9 @@ name: Build
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 env:
   # [versionsync: OCAML_VERSION=5.4.0]
   OCAML_VERSION: 5.4.0
@@ -24,7 +27,7 @@ jobs:
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3, node, ocaml and opam
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Check versions.json sync
         run: python3 scripts/versionsync.py check
       - name: Setup Z3

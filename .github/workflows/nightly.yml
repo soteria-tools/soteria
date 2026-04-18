@@ -7,21 +7,90 @@ on:
   schedule:
     - cron: '0 2 * * *'
   workflow_dispatch:
+    inputs:
+      force:
+        description: Force a nightly release even if no new commits were pushed
+        required: false
+        default: false
+        type: boolean
 
 jobs:
+  check-new-commits:
+    name: Check for new commits since nightly
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+      previous_sha: ${{ steps.check.outputs.previous_sha }}
+      current_sha: ${{ steps.check.outputs.current_sha }}
+    steps:
+      - name: Determine whether a new nightly is needed
+        id: check
+        env:
+          FORCE_NIGHTLY: ${{ github.event.inputs.force || 'false' }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$FORCE_NIGHTLY" = "true" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Forced nightly release requested"
+            exit 0
+          fi
+
+          CURRENT_SHA="${{ github.sha }}"
+          echo "current_sha=$CURRENT_SHA" >> "$GITHUB_OUTPUT"
+          REF_DATA=$(gh api \
+            repos/${{ github.repository }}/git/ref/tags/nightly \
+            --jq '{sha: .object.sha, type: .object.type}' 2>/dev/null || true)
+
+          PREVIOUS_NIGHTLY_SHA=""
+          if [ -n "$REF_DATA" ] && [ "$REF_DATA" != "null" ]; then
+            PREVIOUS_NIGHTLY_OBJ_SHA=$(echo "$REF_DATA" | jq -r '.sha // empty')
+            PREVIOUS_NIGHTLY_OBJ_TYPE=$(echo "$REF_DATA" | jq -r '.type // empty')
+
+            if [ "$PREVIOUS_NIGHTLY_OBJ_TYPE" = "tag" ]; then
+              PREVIOUS_NIGHTLY_SHA=$(gh api \
+                repos/${{ github.repository }}/git/tags/${PREVIOUS_NIGHTLY_OBJ_SHA} \
+                --jq '.object.sha' 2>/dev/null || true)
+            else
+              PREVIOUS_NIGHTLY_SHA="$PREVIOUS_NIGHTLY_OBJ_SHA"
+            fi
+          fi
+
+          if [ -z "$PREVIOUS_NIGHTLY_SHA" ]; then
+            echo "previous_sha=" >> "$GITHUB_OUTPUT"
+            echo "No existing nightly tag found; will create first nightly release"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "previous_sha=$PREVIOUS_NIGHTLY_SHA" >> "$GITHUB_OUTPUT"
+
+          if [ "$CURRENT_SHA" = "$PREVIOUS_NIGHTLY_SHA" ]; then
+            echo "No new commits since previous nightly ($CURRENT_SHA); skipping release"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New commits detected since previous nightly"
+            echo "Current:  $CURRENT_SHA"
+            echo "Previous: $PREVIOUS_NIGHTLY_SHA"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: check-new-commits
+    if: needs.check-new-commits.outputs.should_run == 'true'
     uses: ./.github/workflows/build.yml
 
   test-packages:
-    needs: build
+    needs: [check-new-commits, build]
+    if: needs.check-new-commits.outputs.should_run == 'true'
     uses: ./.github/workflows/test-packages.yml
 
   nightly-release:
     name: Nightly Release
     runs-on: ubuntu-latest
-    needs: test-packages
+    needs: [check-new-commits, test-packages]
+    if: needs.check-new-commits.outputs.should_run == 'true'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download soteria-c package
         uses: actions/download-artifact@v4
@@ -52,9 +121,61 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          PREVIOUS_SHA="${{ needs.check-new-commits.outputs.previous_sha }}"
+          CURRENT_SHA="${{ needs.check-new-commits.outputs.current_sha }}"
+
+          if [ -n "$PREVIOUS_SHA" ]; then
+            RANGE="$PREVIOUS_SHA..$CURRENT_SHA"
+            PR_LINES=$(gh pr list \
+              --repo "${{ github.repository }}" \
+              --state merged \
+              --base main \
+              --search "merged:>=$(date -u -v-14d +%Y-%m-%d)" \
+              --json title,url,author,mergeCommit \
+              --jq '.[] | select(.mergeCommit.oid != null) | [.mergeCommit.oid, .title, .url, (.author.login // "unknown")] | @tsv' | \
+              while IFS=$'\t' read -r oid title url author; do
+                if git merge-base --is-ancestor "$oid" "$CURRENT_SHA" && ! git merge-base --is-ancestor "$oid" "$PREVIOUS_SHA"; then
+                  printf -- '- %s (%s) by %s\n' "$title" "$url" "$author"
+                fi
+              done)
+          else
+            RANGE="(first nightly release in this repository)"
+            PR_LINES=$(gh pr list \
+              --repo "${{ github.repository }}" \
+              --state merged \
+              --base main \
+              --search "merged:>=$(date -u -v-7d +%Y-%m-%d)" \
+              --limit 20 \
+              --json title,url,author \
+              --jq '.[] | "- \(.title) (\(.url)) by \(.author.login // \"unknown\")"')
+          fi
+
+          if [ -z "$PR_LINES" ]; then
+            PR_LINES="- No merged pull requests found in this nightly range"
+          fi
+
+          NOTES_FILE=$(mktemp)
+          {
+            echo "Automated nightly build from \`main\` on $(date -u +%Y-%m-%d)."
+            echo
+            echo "Commit range: $RANGE"
+            echo
+            echo "Merged PRs in this release:"
+            echo "$PR_LINES"
+          } > "$NOTES_FILE"
+
           gh release create nightly \
             --title "Nightly $(date -u +%Y-%m-%d)" \
-            --notes "Automated nightly build from \`main\` on $(date -u +%Y-%m-%d)." \
+            --notes-file "$NOTES_FILE" \
             --prerelease \
             release-artifacts/soteria-c-macos.zip \
             release-artifacts/soteria-rust-macos.zip
+
+  nightly-skip:
+    name: Skip Nightly Release
+    runs-on: ubuntu-latest
+    needs: check-new-commits
+    if: needs.check-new-commits.outputs.should_run != 'true'
+    steps:
+      - name: Explain why nightly release was skipped
+        run: echo "No new commits since the previous nightly tag; skipping release."
