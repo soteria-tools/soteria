@@ -30,9 +30,7 @@ module Incr_counter_mut : (_ : sig
                            end)
   -> sig
   type var = t
-  type t
-
-  include Reversible.Mutable with type t := t
+  type t [@@mixins Reversible.Mutable]
 
   val get_next : t -> var
 end

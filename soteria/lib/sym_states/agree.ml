@@ -2,8 +2,8 @@ module Make
     (Symex : Symex.Base)
     (E : sig
       module Abstr := Data.Abstr.M(Symex)
-      include Abstr.S_with_syn
-      include Abstr.Sem_eq with type t := t
+
+      type t [@@mixins Abstr.S_with_syn + Abstr.Sem_eq]
     end) =
 struct
   type t = E.t [@@deriving show { with_path = false }]
