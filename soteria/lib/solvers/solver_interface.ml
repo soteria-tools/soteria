@@ -41,4 +41,7 @@ module type S = sig
 
       Removes all constraints added since the corresponding {!push}. *)
   val pop : t -> int -> unit
+
+  (** Gets the model from the last satisfiability check, if available. *)
+  val get_model : t -> Sexplib.Sexp.t option
 end
