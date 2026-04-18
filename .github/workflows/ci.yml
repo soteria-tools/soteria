@@ -1,9 +1,6 @@
 name: CI
 
-permissions:
-  contents: write
-  pages: write
-  id-token: write
+permissions: read-all
 
 on:
   push:

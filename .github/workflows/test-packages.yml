@@ -3,6 +3,9 @@ name: Test Packages
 on:
   workflow_call:
 
+permissions:
+  contents: read
+
 env:
   # [versionsync: OBOL_REPO=soteria-tools/obol]
   OBOL_REPO: soteria-tools/obol
