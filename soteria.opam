@@ -34,6 +34,7 @@ depends: [
   "qcheck-alcotest" {with-test}
   "dune" {>= "3.14" & build & >= "3.14.0"}
   "ppxlib" {>= "0.38.0"}
+  "ppx_mixins"
   "hc" {>= "0.5"}
   "yojson" {< "3.0"}
   "unionFind"
@@ -60,4 +61,5 @@ build: [
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
 pin-depends: [
   ["simple_smt.~dev" "git+https://github.com/NatKarmios/simple-smt-ocaml#9db7ef0bb61a76010de255af3cbe4066dd8dd622"]
+  ["ppx_mixins.~dev" "git+https://github.com/soteria-tools/ppx_mixins#788dd89abb98e4dd1c0e5ee830cbb15edb5ff93c"]
 ]

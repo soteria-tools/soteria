@@ -13,9 +13,7 @@
     {{!Soteria_std.Reversible.Mutable.backtrack_n}[backtrack_n]} is [pop n]. *)
 module type S = sig
   (** The solver state type. *)
-  type t
-
-  include Soteria_std.Reversible.Mutable with type t := t
+  type t [@@mixins Soteria_std.Reversible.Mutable]
 
   (** The type of symbolic expressions. *)
   type value
