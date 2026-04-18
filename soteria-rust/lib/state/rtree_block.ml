@@ -7,6 +7,7 @@ module DecayMap = Sptr.DecayMap
 open DecayMap.SM
 open Result
 open Syntax
+module Tree_borrow = Tree_borrows.Raw
 
 module Make (Sptr : Sptr.S) = struct
   module Encoder = Value_codec.Encoder (Sptr)
@@ -299,7 +300,7 @@ module Make (Sptr : Sptr.S) = struct
   (* Memory operations *)
 
   let load ~(ignore_borrow : bool) (ofs : [< T.sint ] Typed.t) (ty : Types.ty)
-      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) =
+      (tag : Tree_borrow.Tag.t option) (tb : Tree_borrow.t) =
     let open SM.Syntax in
     let** size = lift_symex @@ Layout.size_of ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
@@ -308,10 +309,13 @@ module Make (Sptr : Sptr.S) = struct
         let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ v, tb_st = as_owned ~mk_fixes t in
-          let++^ tb_st' =
+          let++ tb_st' =
             match (ignore_borrow, tag) with
-            | false, Some tag -> Tree_borrow.access tag Read tb tb_st
-            | true, _ | _, None -> Rustsymex.Result.ok tb_st
+            | false, Some tag ->
+                return
+                @@ Soteria.Symex.Compo_res.of_result
+                @@ Tree_borrow.access tag Read tb tb_st
+            | true, _ | _, None -> ok tb_st
           in
           { t with node = Owned (v, tb_st') }
         in
@@ -323,7 +327,7 @@ module Make (Sptr : Sptr.S) = struct
         (sval, tree))
 
   let store (ofs : [< T.sint ] Typed.t) (value : rust_val)
-      (tag : Tree_borrow.tag option) (tb : Tree_borrow.t) :
+      (tag : Tree_borrow.Tag.t option) (tb : Tree_borrow.t) :
       (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
     let** size = lift_symex @@ Value_codec.size_of value in
@@ -333,10 +337,13 @@ module Make (Sptr : Sptr.S) = struct
         let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ _, tb_st = as_owned ~mk_fixes t in
-          let++^ tb_st' =
+          let++ tb_st' =
             match tag with
-            | Some tag -> Tree_borrow.access tag Write tb tb_st
-            | None -> Rustsymex.Result.ok tb_st
+            | Some tag ->
+                return
+                @@ Soteria.Symex.Compo_res.of_result
+                @@ Tree_borrow.access tag Write tb tb_st
+            | None -> ok tb_st
           in
           { node = Owned (Init value, tb_st'); range; children = None }
         in
@@ -429,7 +436,9 @@ module Make (Sptr : Sptr.S) = struct
         (* We need to do two things: protect this tag for the block, and perform
            a read, as all function calls perform one on the parameters. *)
         Tree_borrow.set_protector ~protected:true tag tb tb_st
-        |> Tree_borrow.access tag Read tb)
+        |> Tree_borrow.access tag Read tb
+        |> Soteria.Symex.Compo_res.of_result
+        |> Rustsymex.return)
 
   let unprotect ofs size tag tb =
     with_tb_access ofs size (fun tb_st ->
@@ -437,7 +446,10 @@ module Make (Sptr : Sptr.S) = struct
         @@ Tree_borrow.set_protector ~protected:false tag tb tb_st)
 
   let tb_access (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t)
-      (tag : Tree_borrow.tag) (tb : Tree_borrow.t) :
+      (tag : Tree_borrow.Tag.t) (tb : Tree_borrow.t) :
       (unit, 'err, 'fix) SM.Result.t =
-    with_tb_access ofs size (Tree_borrow.access tag Read tb)
+    with_tb_access ofs size (fun tb_st ->
+        Rustsymex.return
+        @@ Soteria.Symex.Compo_res.of_result
+        @@ Tree_borrow.access tag Read tb tb_st)
 end

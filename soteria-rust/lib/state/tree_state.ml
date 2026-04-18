@@ -7,6 +7,7 @@ open Rustsymex
 open Charon
 open Common
 open Sptr
+module Tree_borrow = Tree_borrows.Raw
 
 module Make () = struct
   (* Pointer implementation *)
@@ -22,16 +23,21 @@ module Make () = struct
     }
 
     type t =
-      (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t, Tree_borrow.tag) base
+      ( T.sptr Typed.t,
+        T.nonzero Typed.t,
+        T.sint Typed.t,
+        Tree_borrow.Tag.t )
+      base
 
-    type syn = (Typed.Expr.t, Typed.Expr.t, Typed.Expr.t, Tree_borrow.tag) base
+    type syn =
+      (Typed.Expr.t, Typed.Expr.t, Typed.Expr.t, Tree_borrow.Tag.t) base
 
     let pp' pp_v pp_tag fmt { ptr; tag; _ } =
       Fmt.pf fmt "%a[%a]" pp_v ptr Fmt.(option ~none:(any "*") pp_tag) tag
 
-    let pp = pp' Typed.ppa Tree_borrow.pp_tag
+    let pp = pp' Typed.ppa Tree_borrow.Tag.pp
     let show = Fmt.to_to_string pp
-    let pp_syn = pp' Typed.Expr.pp Tree_borrow.pp_tag
+    let pp_syn = pp' Typed.Expr.pp Tree_borrow.Tag.pp
     let show_syn = Fmt.to_to_string pp_syn
 
     let to_syn { ptr; tag; align; size } =
@@ -160,7 +166,7 @@ module Make () = struct
     type t = {
       align : Typed.T.nonzero Typed.t;
       size : Typed.T.sint Typed.t;
-      tb_root : Tree_borrow.tag;
+      tb_root : Tree_borrow.Tag.t;
       kind : Alloc_kind.t;
       trace : Trace.t;
     }
@@ -220,26 +226,25 @@ module Make () = struct
     let borrow ?(protect = false) ((ptr : Sptr_base.t), meta) parent
         (ty : Types.ty) ofs =
       let pointee = Charon_util.get_pointee ty in
-      let state =
+      (* FIXME: this logic is tree borrows relaed and should be handled
+         there. *)
+      let state : Tree_borrows.state =
         match (ty, Layout.is_unsafe_cell pointee) with
-        | TRef (_, _, RShared), false -> Tree_borrow.Frozen
-        | TRef (_, _, RShared), true -> Tree_borrow.Cell
-        | _, false -> Tree_borrow.Reserved false
-        | _, true -> Tree_borrow.ReservedIM
+        | TRef (_, _, RShared), false -> Frozen
+        | TRef (_, _, RShared), true -> Cell
+        | _, false -> Reserved false
+        | _, true -> ReservedIM
       in
-      let protector =
+      let protector : Tree_borrows.protector option =
         match (protect, ty) with
         | false, _ -> None
-        | true, TRef _ -> Some Tree_borrow.Strong
-        | true, TAdt adt when Charon_util.adt_is_box adt ->
-            Some Tree_borrow.Weak
+        | true, TRef _ -> Some Strong
+        | true, TAdt adt when Charon_util.adt_is_box adt -> Some Weak
         | true, _ -> failwith "Non-ref or box in borrow?"
       in
       let* t_opt = SM.get_state () in
       let { block; borrow } = of_opt t_opt in
-      let borrow, tag =
-        Tree_borrow.add_child ~parent ~state ?protector borrow
-      in
+      let borrow, tag = Tree_borrow.borrow ?protector ~state parent borrow in
       let ptr' = { ptr with tag = Some tag } in
       [%l.debug
         "%s pointer %a -> %a (%a)"
@@ -290,9 +295,9 @@ module Make () = struct
       Soteria.Sym_states.With_info.Make (DecayMap.SM) (Meta) (Freeable_block)
 
     let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
-        (t * Tree_borrow.tag option) DecayMap.SM.t =
+        (t * Tree_borrow.Tag.t option) DecayMap.SM.t =
       let open DecayMap.SM.Syntax in
-      let borrow, tag = Tree_borrow.init ~state:Unique () in
+      let borrow, tag = Tree_borrow.init () in
       let block = Some (Tree_block.alloc ?zeroed size) in
       let+^ trace = get_trace () in
       let trace = Trace.rename 0 "Allocation" trace in
