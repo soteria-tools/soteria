@@ -144,9 +144,10 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
          polymorphic mode, meaning some types may have a layout while their
          fields don't. To avoid this, we *never* consider layouts of generic
          types, even if one is provided. This avoids inconsistent layouts. *)
-      | Some layout, _
+      | [ (_triple, layout) ], _
         when (not (Config.get ()).polymorphic) || ty_is_monomorphic ty ->
           translate_layout ty layout
+      | _ :: _ :: _, _ -> failwith "multiple layouts for the same ADT"
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
       | _, Union fields -> compute_union_layout ty (field_tys fields)
       | _, Enum variants -> compute_enum_layout ty variants

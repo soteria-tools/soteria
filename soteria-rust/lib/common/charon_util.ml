@@ -235,7 +235,7 @@ let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
     if List.compare_length_with parts 3 <= 0 then name
     else
       let last_3 = List.rev (List.take 3 (List.rev parts)) in
-      "../" ^ String.concat "/" last_3
+      ".../" ^ String.concat "/" last_3
   in
   let pp_filename ft ({ name; _ } : Meta.file) =
     match name with

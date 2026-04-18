@@ -8,12 +8,12 @@ env:
   OCAML_VERSION: 5.4.0
   # [versionsync: OBOL_REPO=soteria-tools/obol]
   OBOL_REPO: soteria-tools/obol
-  # [versionsync: OBOL_COMMIT_HASH=745a7e8f59596f4e656169e5b1b4f9e834c4c671]
-  OBOL_COMMIT_HASH: 745a7e8f59596f4e656169e5b1b4f9e834c4c671
+  # [versionsync: OBOL_COMMIT_HASH=3d2266de79f1e2e601b7a82f6803b649cbe6953c]
+  OBOL_COMMIT_HASH: 3d2266de79f1e2e601b7a82f6803b649cbe6953c
   # [versionsync: CHARON_REPO=soteria-tools/charon]
   CHARON_REPO: soteria-tools/charon
-  # [versionsync: CHARON_COMMIT_HASH=6aee301e2c0365f48f27194c50df1398f9d5647c]
-  CHARON_COMMIT_HASH: 6aee301e2c0365f48f27194c50df1398f9d5647c
+  # [versionsync: CHARON_COMMIT_HASH=fbd54169205bf97e3c42cbfef95ca5807d697bfb]
+  CHARON_COMMIT_HASH: fbd54169205bf97e3c42cbfef95ca5807d697bfb
 
 jobs:
   build:
