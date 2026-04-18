@@ -2064,6 +2064,11 @@ and BitVec : BitVec = struct
             let maxn = Z.pred (Z.shift_left Z.one n) in
             let bound = Z.(maxn / z) in
             gt ~signed (x <| v1.node.ty) (mk n bound)
+    (* `x * (y / x)` cannot overflow with unsigned ops *)
+    | _, Binop (Div false, _, v2) when Stdlib.not signed && equal v1 v2 ->
+        Bool.v_false
+    | Binop (Div false, _, v1), _ when Stdlib.not signed && equal v1 v2 ->
+        Bool.v_false
     | _ -> mk_commut_binop (MulOvf signed) v1 v2 <| TBool
 
   let neg_overflows v =

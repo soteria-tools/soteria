@@ -112,11 +112,11 @@ let filter_serialized_state relevant_vars (state : State.syn list) =
                allocated *)
             let leaked = not (Block.is_freed b) in
             if leaked then Leak_set.add leak_origins b.info;
-            L.trace (fun m ->
-                m "Filtering out unreachable location: %a which %a." Expr.pp loc
-                  (fun ft b ->
-                    if b then Fmt.pf ft "leaked" else Fmt.pf ft "did not leak")
-                  leaked);
+            [%l.trace
+              "Filtering out unreachable location: %a which %a." Expr.pp loc
+                (fun ft b ->
+                  if b then Fmt.pf ft "leaked" else Fmt.pf ft "did not leak")
+                leaked];
             false)
   in
   let leaked = List.of_seq (Leak_set.to_seq leak_origins) in
@@ -155,7 +155,7 @@ let make ~args ~pre ~pc ~post ~ret () = After_exec { args; pre; pc; post; ret }
     leak is detected if there was an unreachable block that was not freed. *)
 let prune (summary : after_exec t) : pruned t =
   let (After_exec summary) = summary in
-  L.trace (fun m -> m "Pruning summary %a" pp_raw summary);
+  [%l.trace "Pruning summary %a" pp_raw summary];
   let module Var_graph = Graph.Make_in_place (Var) in
   let graph = Var_graph.with_node_capacity 0 in
   let init_reachable = init_reachable_vars summary in
@@ -214,10 +214,10 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
         L.with_section
           ("Analysing a summary for " ^ Cerb_frontend.Symbol.show_symbol fid)
       in
-      L.debug (fun m ->
-          m "Analysing a summary for %s@\n%a"
-            (Cerb_frontend.Symbol.show_symbol fid)
-            pp_raw summary);
+      [%l.debug
+        "Analysing a summary for %s@\n%a"
+          (Cerb_frontend.Symbol.show_symbol fid)
+          pp_raw summary];
       let arg_tys = Option.get (Ail_helpers.get_param_tys fid) in
       match summary.ret with
       | Ok _ ->
@@ -259,30 +259,30 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
                   v :: acc)
             in
             let* pc, _ = Csymex.Producer.run ~subst:Expr.Subst.empty producer in
-            L.trace (fun m ->
-                m
-                  "Produced heap, about to check if path condition holds in \
-                   every branch");
+            [%l.trace
+              "Produced heap, about to check if path condition holds in every \
+               branch"];
             Csymex.assert_ (Typed.conj pc)
           in
           let is_manifest =
             try
               let result = Csymex.run_needs_stats ~mode:OX process in
-              L.debug (fun m ->
-                  let pp_pc ft pc =
-                    Fmt.pf ft "@[<2>Path condition: %a@]"
-                      (Fmt.Dump.list Typed.ppa) pc
-                  in
-                  let pp_res ft (res, pc) =
-                    Fmt.pf ft "<v 2>Branch:@.Res: %a@.%a@]" Fmt.bool res pp_pc
-                      pc
-                  in
-                  m "%a" Fmt.(list ~sep:cut pp_res) result);
+              [%l.debug
+                "%a"
+                  Fmt.(
+                    list ~sep:cut (fun ft (res, pc) ->
+                        let pp_pc ft pc =
+                          Fmt.pf ft "@[<2>Path condition: %a@]"
+                            (Fmt.Dump.list Typed.ppa) pc
+                        in
+                        Fmt.pf ft "<v 2>Branch:@.Res: %a@.%a@]" Fmt.bool res
+                          pp_pc pc))
+                  result];
               (* The bug is manifest if the test passed in every branch. *)
               (not (List.is_empty result)) && List.for_all fst result
             with Soteria.Symex.Gave_up _ -> false
           in
-          if is_manifest then L.debug (fun m -> m "Bug is manifest!!");
+          if is_manifest then [%l.debug "Bug is manifest!!"];
           let manifest_bugs = if is_manifest then [ error ] else [] in
           Analysed { raw = summary; manifest_bugs })
 

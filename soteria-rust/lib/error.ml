@@ -158,7 +158,7 @@ let log_at (where : Trace.t) error =
     | Some op -> Fmt.pf ft " due to %s" op
     | None -> Fmt.string ft ""
   in
-  L.error (fun m -> m "Error %a%a%a" pp error pp_loc where.loc pp_op where.op)
+  [%l.error "Error %a%a%a" pp error pp_loc where.loc pp_op where.op]
 
 let decorate (where : Trace.t) (e : t) : with_trace =
   let msg = Option.value ~default:"Triggering operation" where.op in

@@ -188,9 +188,9 @@ module M (StateM : State.StateM.S) = struct
      *    validity checks we need the current state to have these addresses!
      *  - we need to take the max of either types for the alignment, to ensure
      *    that transmuting e.g. from [u16; 2] to (u32) works. *)
-    L.debug (fun m ->
-        m "Transmuting %a: %a -> %a" pp_rust_val v Common.Charon_util.pp_ty
-          from_ty Common.Charon_util.pp_ty to_ty);
+    [%l.debug
+      "Transmuting %a: %a -> %a" pp_rust_val v Common.Charon_util.pp_ty from_ty
+        Common.Charon_util.pp_ty to_ty];
     let* { size; align; _ } = Layout.layout_of from_ty in
     let* { align = align_2; _ } = Layout.layout_of to_ty in
     let align = BV.max ~signed:false align align_2 in

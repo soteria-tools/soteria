@@ -7,7 +7,7 @@ open Rust_val
 open Layout
 module DecayMap = Sptr.DecayMap
 open DecayMap.SM
-open DecayMap.SM.Syntax
+open Syntax
 
 (** Returns the variant id and variant matching the given discriminant. *)
 let variant_for_discr discr adt =
