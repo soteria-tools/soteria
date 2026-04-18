@@ -19,8 +19,7 @@ let log_ext ext =
 (* Register [if%sat] *)
 let () =
   let extensions =
-    List.map if_sat_ext 
-      Expander.If_sat.Extension_name.[ Sat; Sat1; Sure ]
+    List.map if_sat_ext Expander.If_sat.Extension_name.[ Sat; Sat1; Sure ]
   in
   Driver.register_transformation "if_sat" ~extensions
 
