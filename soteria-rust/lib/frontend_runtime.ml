@@ -17,7 +17,7 @@ module Exe = struct
       (fun () ->
         Unix.chdir path;
         if (Config.get ()).log_compilation then
-          L.info (fun g -> g "Changed working directory to %s" path);
+          [%l.info "Changed working directory to %s" path];
         f ())
 
   let pp_status ft = function
@@ -73,22 +73,22 @@ module Exe = struct
     let current_env = Unix.environment () in
     let cmd = String.concat " " (cmd :: args) in
     if (Config.get ()).log_compilation then
-      L.info (fun g ->
-          g "Running command: %s@.With env:@.%a@." cmd
-            Fmt.(list ~sep:(any "@.") string)
-            env);
+      [%l.info
+        "Running command: %s@.With env:@.%a@." cmd
+          Fmt.(list ~sep:(any "@.") string)
+          env];
     let env = Array.append current_env (Array.of_list env) in
     let out, inp, err = Unix.open_process_full cmd env in
     let output, error = read_both_nonblocking out err in
     let status = Unix.close_process_full (out, inp, err) in
     if (Config.get ()).log_compilation then
-      L.info (fun g ->
-          g "Command finished with status: %a@.stdout:@.%a@.stderr:@.%a"
-            pp_status status
-            Fmt.(list ~sep:(any "@\n") string)
-            output
-            Fmt.(list ~sep:(any "@\n") string)
-            error);
+      [%l.info
+        "Command finished with status: %a@.stdout:@.%a@.stderr:@.%a" pp_status
+          status
+          Fmt.(list ~sep:(any "@\n") string)
+          output
+          Fmt.(list ~sep:(any "@\n") string)
+          error];
     (output, error, status)
 
   let exec_exn ?env cmd args =
@@ -232,10 +232,9 @@ module Cmd = struct
             | [] -> []
             | [ h ] -> [ h ]
             | h :: _ ->
-                L.warn (fun m ->
-                    m
-                      "Charon currently only support one entry attribute; more \
-                       than one was specified, only the first will be used");
+                [%l.warn
+                  "Charon currently only support one entry attribute; more \
+                   than one was specified, only the first will be used"];
                 [ h ]
           in
           let entries = List.concat_map entry_as_flag (attribs @ non_attribs) in
