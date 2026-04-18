@@ -18,7 +18,7 @@ jobs:
     runs-on: ${{ matrix.operating-system }}
     steps:
       - name: Checkout Collections-C, version where we find a bug
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: srdja/Collections-C
           ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
@@ -57,7 +57,7 @@ jobs:
           fi
           echo "✓ Collections-C test passed (found expected bug, exit code 13)"
       - name: Checkout Soteria repository for test files
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: soteria-repo
       - name: Test symbolic execution with sym.c (nondet test)
@@ -79,7 +79,7 @@ jobs:
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       - name: Download package
         uses: actions/download-artifact@v4
         with:
