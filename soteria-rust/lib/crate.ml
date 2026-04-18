@@ -13,7 +13,9 @@ let with_crate (crate : t) f =
 
 let pointer_size () =
   let crate = get_crate () in
-  crate.target_information.target_pointer_size
+  assert (List.length crate.target_information = 1);
+  let _triple, info = List.hd crate.target_information in
+  info.target_pointer_size
 
 let as_namematcher_ctx () = NameMatcher.ctx_from_crate (get_crate ())
 

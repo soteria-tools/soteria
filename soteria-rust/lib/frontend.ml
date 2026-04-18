@@ -120,7 +120,6 @@ let default () =
          "--reconstruct-asserts";
          "--desugar-drops";
          "--precise-drops";
-         "--lax-start-from";
        ]
       @ opaque_names
       @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])

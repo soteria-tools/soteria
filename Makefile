@@ -124,9 +124,9 @@ soteria-core-deps:
 
 .PHONY: ocaml-deps
 ocaml-deps:
-	$(OPAM) install . --deps-only --with-test --with-doc
-	$(OPAM) install ocamlformat.$(OCAMLFORMAT_VERSION)
-	$(OPAM) install sherlodoc
+	$(OPAM) install . --deps-only --with-test --with-doc -y
+	$(OPAM) install ocamlformat.$(OCAMLFORMAT_VERSION) -y
+	$(OPAM) install sherlodoc -y
 
 ##### JavaScript stuff #####
 

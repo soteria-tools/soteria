@@ -121,7 +121,10 @@ module Cmd = struct
 
   let entry_as_flag = function
     | Attrib a -> [ "--start-from-attribute=" ^ a ]
-    | Name n -> [ "--start-from"; n ]
+    | Name n -> (
+        match (Config.get ()).frontend with
+        | Obol -> [ "--start-from"; n ]
+        | Charon -> [ "--start-from-if-exists"; n ])
     | Pub -> [ "--start-from-pub" ]
 
   let entry_matches_fn (fn : UllbcAst.fun_decl) = function
