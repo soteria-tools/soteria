@@ -9,7 +9,12 @@ permissions:
   pages: write
   id-token: write
   pull-requests: write
+  issues: write
   actions: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number }}
+  cancel-in-progress: true
 
 jobs:
   publish-pr-doc:
@@ -101,19 +106,66 @@ jobs:
               content: 'rocket'
             });
 
-      - name: Post documentation URL
+      - name: Post documentation status comment
+        if: always()
         uses: actions/github-script@v7
+        env:
+          RUN_STATUS: ${{ job.status }}
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const prNumber = context.payload.issue.number;
+            const marker = '<!-- soteria:pr-doc-status -->';
+            const outdatedMarker = '<!-- soteria:outdated -->';
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
             const url = `https://${owner}.github.io/${repo}/api/pr-${prNumber}`;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: prNumber,
+              per_page: 100
+            });
+
+            const previousComments = comments.filter((comment) =>
+              comment.user?.login === 'github-actions[bot]' &&
+              comment.body?.includes(marker)
+            );
+
+            for (const comment of previousComments) {
+              if (comment.body.includes(outdatedMarker)) {
+                continue;
+              }
+
+              const cleanBody = comment.body.replace(marker, '').trim();
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: comment.id,
+                body: `${marker}\n${outdatedMarker}\n⚠️ Outdated: superseded by a newer documentation workflow run.\n\n${cleanBody}`
+              });
+
+              try {
+                await github.graphql(
+                  'mutation($subjectId: ID!) { minimizeComment(input: { subjectId: $subjectId, classifier: OUTDATED }) { minimizedComment { isMinimized } } }',
+                  { subjectId: comment.node_id }
+                );
+              } catch (error) {
+                core.info(`Unable to minimize comment ${comment.id}: ${error.message}`);
+              }
+            }
+
+            const status = process.env.RUN_STATUS;
+            const body = status === 'success'
+              ? `${marker}\nDocumentation published at: ${url}. It should appear online in a few minutes.\n\nRun: ${runUrl}`
+              : `${marker}\nFailed to publish documentation. See [workflow run](${runUrl}) for details.`;
+
             await github.rest.issues.createComment({
               owner,
               repo,
               issue_number: prNumber,
-              body: `Documentation published at: ${url}. It should appear online in a few minutes.`
+              body
             });
 
       - name: Add failure reaction
@@ -126,20 +178,4 @@ jobs:
               repo: context.repo.repo,
               comment_id: context.payload.comment.id,
               content: '-1'
-            });
-
-      - name: Post failure comment
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const prNumber = context.payload.issue.number;
-            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${{ github.run_id }}`;
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: prNumber,
-              body: `Failed to publish documentation. See [workflow run](${runUrl}) for details.`
             });

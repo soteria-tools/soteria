@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
   pull-requests: write
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: true
 
 env:
   # [versionsync: OCAML_VERSION=5.4.0]
@@ -49,7 +54,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event_name == 'issue_comment' && steps.pr.outputs.sha || 'main' }}
 
@@ -93,20 +98,65 @@ jobs:
               content: 'rocket'
             });
 
-      - name: Post success comment
-        if: success() && github.event_name == 'issue_comment'
+      - name: Post BV fuzzer status comment
+        if: always() && github.event_name == 'issue_comment'
         uses: actions/github-script@v7
+        env:
+          RUN_STATUS: ${{ job.status }}
         with:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
             const prNumber = context.payload.issue.number;
-            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${{ github.run_id }}`;
+            const marker = '<!-- soteria:bv-fuzzer-status -->';
+            const outdatedMarker = '<!-- soteria:outdated -->';
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number: prNumber,
+              per_page: 100
+            });
+
+            const previousComments = comments.filter((comment) =>
+              comment.user?.login === 'github-actions[bot]' &&
+              comment.body?.includes(marker)
+            );
+
+            for (const comment of previousComments) {
+              if (comment.body.includes(outdatedMarker)) {
+                continue;
+              }
+
+              const cleanBody = comment.body.replace(marker, '').trim();
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: comment.id,
+                body: `${marker}\n${outdatedMarker}\n⚠️ Outdated: superseded by a newer BV fuzzer run.\n\n${cleanBody}`
+              });
+
+              try {
+                await github.graphql(
+                  'mutation($subjectId: ID!) { minimizeComment(input: { subjectId: $subjectId, classifier: OUTDATED }) { minimizedComment { isMinimized } } }',
+                  { subjectId: comment.node_id }
+                );
+              } catch (error) {
+                core.info(`Unable to minimize comment ${comment.id}: ${error.message}`);
+              }
+            }
+
+            const status = process.env.RUN_STATUS;
+            const body = status === 'success'
+              ? `${marker}\n✅ BV fuzzer tests passed! See [workflow run](${runUrl}) for details.`
+              : `${marker}\n❌ BV fuzzer tests failed. See [workflow run](${runUrl}) for details.`;
+
             await github.rest.issues.createComment({
               owner,
               repo,
               issue_number: prNumber,
-              body: `✅ BV fuzzer tests passed! See [workflow run](${runUrl}) for details.`
+              body
             });
 
       - name: Add failure reaction
@@ -119,20 +169,4 @@ jobs:
               repo: context.repo.repo,
               comment_id: context.payload.comment.id,
               content: '-1'
-            });
-
-      - name: Post failure comment
-        if: failure() && github.event_name == 'issue_comment'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const prNumber = context.payload.issue.number;
-            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${{ github.run_id }}`;
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: prNumber,
-              body: `❌ BV fuzzer tests failed. See [workflow run](${runUrl}) for details.`
             });
