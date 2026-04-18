@@ -346,13 +346,16 @@ module Encoder (Sptr : Sptr.S) = struct
       associates to it the error to be raised if the requirement is not met.
 
       An optional [check_refs] function can be provided, to further check the
-      validity of references and boxes relative to some state; this allows
-      checking that references are not dangling, and that their pointees are
-      valid. By default this function already checks references are well-aligned
-      and non-null. Note that this check will raise errors in the outside monad,
-      rather than in the returned list, since it is not possible to represent
-      constraints in the state in first order logic. We provide this possibility
-      here, to avoid re-implementing value traversal elsewhere.
+      validity of references and boxes; this allows checking that references are
+      not dangling, well-aligned, and that their pointees are valid. Note that
+      this check will raise errors in the outside monad, rather than in the
+      returned list, since it is not possible to represent constraints in the
+      state in first order logic. We provide this possibility here, to avoid
+      re-implementing value traversal elsewhere.
+
+      Note that this function doesn't (and can't) check basic validity
+      requirements of references and boxes, even alignment, as e.g. for a
+      [&dyn Trait] the alignment cannot be known without some auxiliary state.
 
       This doesn't check:
       - the fact the bytes of the value cannot be undefined, as that is checked
@@ -392,14 +395,11 @@ module Encoder (Sptr : Sptr.S) = struct
           f Typed.v_false (`UBTransmute "VTable metadata when length expected")
     in
     (* undefined.validity.reference-box *)
-    let ref_box_validity ((ptr, meta) as fptr) pointee =
+    let ref_box_validity ((_, meta) as fptr) pointee =
       let** () = metadata_validity ~is_raw_ptr:false pointee meta in
       let** layout = Layout.layout_of pointee in
       if layout.uninhabited then f Typed.v_false (`RefToUninhabited pointee)
-      else
-        let** () = check_ref fptr pointee in
-        let aligned, err = Sptr.is_aligned layout.align ptr in
-        f aligned err
+      else check_ref fptr pointee
     in
     let** ty = Layout.normalise ty in
     match (v, (ty : Types.ty)) with
@@ -407,8 +407,7 @@ module Encoder (Sptr : Sptr.S) = struct
     | Int v, TLiteral TBool ->
         f U8.(0s <=@ v &&@ (v <=@ 1s)) (`UBTransmute "Invalid bool value")
     (* undefined.validity.fn-pointer *)
-    | Ptr (p, _), TFnPtr _ ->
-        f (Typed.not Sptr.(sem_eq (null_ptr ()) p)) `UBDanglingPointer
+    | Ptr (p, _), TFnPtr _ -> f (Typed.not (Sptr.is_null p)) `UBDanglingPointer
     (* undefined.validity.char *)
     | Int v, TLiteral TChar ->
         let is_surrogate = U32.(0xD800s <=@ v &&@ (v <=@ 0xDFFFs)) in
@@ -540,7 +539,7 @@ module Encoder (Sptr : Sptr.S) = struct
         Int v
     | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> return v
     | (TRawPtr _ | TRef _ | TFnPtr _), Int v ->
-        return (Ptr (Sptr.null_ptr_of v, Thin))
+        return (Ptr (Sptr.of_address v, Thin))
     | TVar (Free type_var_id), (PolyVal tid as v) ->
         if Types.TypeVarId.equal_id type_var_id tid then return v
         else
@@ -776,7 +775,7 @@ module Encoder (Sptr : Sptr.S) = struct
   (** Calculates the size and alignment of a type [t], according to the pointer
       metadata [meta]. Receives an arbitrary state and [load] function, to
       possibly access a heap to get VTable information. *)
-  let rec size_and_align_of_val ~load ~t ~meta st =
+  let rec size_and_align_of_val ~load_vtable ~t ~meta =
     let open Rustsymex in
     let open Rustsymex.Syntax in
     (* Takes inspiration from rustc, to calculate the size and alignment of
@@ -802,17 +801,8 @@ module Encoder (Sptr : Sptr.S) = struct
       | TDynTrait _, (Thin | Len _) ->
           failwith "size_and_align_of_val: Invalid metadata for dyn type"
       | TDynTrait _, VTable vtable ->
-          let usize = Types.TLiteral (TUInt Usize) in
-          let** size_ptr =
-            Sptr.offset ~signed:true ~ty:usize vtable Usize.(1s)
-          in
-          let** align_ptr =
-            Sptr.offset ~signed:true ~ty:usize vtable Usize.(2s)
-          in
-          let* size, _ = load (size_ptr, Thin) usize st in
-          let** size = return size in
-          let* align, _ = load (align_ptr, Thin) usize st in
-          let++ align = return align in
+          let** size = load_vtable `Size vtable in
+          let++ align = load_vtable `Align vtable in
           let size = as_base_i Usize size in
           let align = as_base_i Usize align in
           (size, Typed.cast align)
@@ -830,7 +820,7 @@ module Encoder (Sptr : Sptr.S) = struct
             | _ -> failwith "size_and_align_of_val: Unexpected layout for ADT"
           in
           let++ unsized_size, unsized_align =
-            size_and_align_of_val ~load ~t:last_field_ty ~meta st
+            size_and_align_of_val ~load_vtable ~t:last_field_ty ~meta
           in
           (* TODO: we need to check if [layout] is packed, in which case
              unsized_align is 1! See 113-125 of above function. *)

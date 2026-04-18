@@ -1,5 +1,4 @@
 open Rustsymex
-open Rustsymex.Syntax
 open Charon
 open Typed
 open Typed.Syntax
@@ -151,58 +150,34 @@ end
 
 module D_abstr = Soteria.Data.Abstr.M (DecayMap.SM)
 
+(** The base type of pointers, permitting simple operations on the pointer type.
+    The majority of relevant operations are exposed via the state monad's
+    pointer module, {!Rust_state_m.S.Sptr}. *)
 module type S = sig
   (** pointer type *)
-  type t [@@mixins D_abstr.S_with_syn + D_abstr.Sem_eq]
+  type t [@@mixins D_abstr.S_with_syn]
 
-  val null_ptr : unit -> t
-  val null_ptr_of : [< sint ] Typed.t -> t
+  (** Converts an address into a pointer, without provenance. *)
+  val of_address : [< sint ] Typed.t -> t
 
-  (** Pointer equality. This comparison is structural, i.e. it is aware of
-      provenance.
+  (** Whether this is the null pointer, meaning it always decays to 0. *)
+  val is_null : t -> sbool Typed.t
 
-      In other words, given [addr = decay ptr] and [ptr' = of_exposed addr],
-      [sem_eq ptr ptr'] will be false, even though they would have the same
-      address, as [ptr] has provenance and [ptr'] does not. *)
-  val sem_eq : t -> t -> sbool Typed.t
+  (** Whether this pointer has provenance, i.e. points to some allocation. *)
+  val has_provenance : t -> sbool Typed.t
 
-  (** If this pointer is at a null location, i.e. has no provenance *)
-  val is_at_null_loc : t -> sbool Typed.t
-
-  (** If these two pointers are at the same location (ie. same allocation) *)
-  val is_same_loc : t -> t -> sbool Typed.t
+  (** If these two pointers have the same provenance, i.e. point to the same
+      allocation (or if they both have no provenance). *)
+  val have_same_provenance : t -> t -> sbool Typed.t
 
   (** The distance, in bytes, between two pointers; if they point to different
       allocations, they are decayed and substracted. *)
   val distance : t -> t -> sint Typed.t DecayMap.SM.t
 
-  (** The symbolic constraints needed for the pointer to be valid. *)
-  val constraints : t -> sbool Typed.t
-
   (** Generates a nondeterministic pointer, that is valid for accesses to the
       given type. The location of the pointer is nondeterministic; it could
       point to any allocation. *)
   val nondet : Types.ty -> (t, [> Error.t ], 'a) Result.t
-
-  (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
-      [off], interpreting [off] as a [signed] integer. [ty] defaults to u8. May
-      result in a dangling pointer error if the pointer goes over the allocation
-      limit. This check can be disabled with [~check:false]. *)
-  val offset :
-    ?check:bool ->
-    ?ty:Charon.Types.ty ->
-    signed:bool ->
-    t ->
-    [< sint ] Typed.t ->
-    (t, [> Error.t ], 'a) Result.t
-
-  (** Project a pointer to a field of the given type. *)
-  val project :
-    Types.ty ->
-    Expressions.field_proj_kind ->
-    Types.field_id ->
-    t ->
-    (t, [> Error.t ], 'a) Result.t
 
   (** Decay a pointer into an integer value, losing provenance.
       {b This does not expose the address of the allocation; for that, use
@@ -217,164 +192,7 @@ module type S = sig
   (** For Miri: the allocation ID of this location, as a u64 *)
   val as_id : t -> [> sint ] Typed.t
 
-  (** Returns a symbolic boolean to check whether this pointer has the given
-      alignment, along with the error to raise otherwise. *)
-  val is_aligned : nonzero Typed.t -> t -> [> sbool ] Typed.t * Error.t
-
-  (** Get the allocation info for this pointer: its size and alignment *)
+  (** For Miri: get the allocation info for this pointer: its size and alignment
+  *)
   val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
-end
-
-type ('sptr, 'snonzero, 'sint) arithptr = {
-  ptr : 'sptr;
-  tag : Tree_borrow.tag option;
-  align : 'snonzero;
-  size : 'sint;
-}
-
-(** A pointer that can perform pointer arithmetics -- all pointers are a pair of
-    location and offset, along with an optional metadata. *)
-module ArithPtr :
-  S
-    with type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t) arithptr
-     and type syn = (Expr.t, Expr.t, Expr.t) arithptr = struct
-  type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t) arithptr
-  type syn = (Expr.t, Expr.t, Expr.t) arithptr
-
-  let pp' pp_v fmt { ptr; tag; _ } =
-    Fmt.pf fmt "%a[%a]" pp_v ptr
-      Fmt.(option ~none:(any "*") Tree_borrow.pp_tag)
-      tag
-
-  let pp : t Fmt.t = pp' Typed.ppa
-  let show = Fmt.to_to_string pp
-  let pp_syn : syn Fmt.t = pp' Expr.pp
-  let show_syn = Fmt.to_to_string pp_syn
-
-  let to_syn { ptr; tag; align; size } =
-    {
-      ptr = Expr.of_value ptr;
-      align = Expr.of_value align;
-      size = Expr.of_value size;
-      tag;
-    }
-
-  let learn_eq syn t =
-    let open DecayMap.SM.Consumer in
-    let open Syntax in
-    let* () = if syn.tag = t.tag then ok () else lfail Typed.v_false in
-    let* () = learn_eq syn.ptr t.ptr in
-    let* () = learn_eq syn.align t.align in
-    learn_eq syn.size t.size
-
-  let exprs_syn { ptr; align; size; _ } = [ ptr; align; size ]
-  let fresh () = failwith "Fresh unimplemented for sptr (for now)"
-
-  let null_ptr () =
-    {
-      ptr = Typed.Ptr.null ();
-      tag = None;
-      align = Usize.(1s);
-      size = Usize.(0s);
-    }
-
-  let null_ptr_of ofs =
-    let null_ptr = null_ptr () in
-    let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
-    { null_ptr with ptr }
-
-  let sem_eq { ptr = ptr1; _ } { ptr = ptr2; _ } = ptr1 ==@ ptr2
-  let is_at_null_loc { ptr; _ } = Typed.Ptr.is_at_null_loc ptr
-
-  let is_same_loc { ptr = ptr1; _ } { ptr = ptr2; _ } =
-    Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
-
-  let constraints { ptr; size; _ } =
-    let ofs = Typed.Ptr.ofs ptr in
-    Typed.conj [ Usize.(0s) <=$@ ofs; ofs <=$@ size ]
-
-  let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8)) ~signed
-      ({ ptr; _ } as fptr) off_by =
-    let** size = Layout.size_of ty in
-    let loc, off = Typed.Ptr.decompose ptr in
-    let ( *? ), ( +? ) =
-      if signed then (( *$?@ ), ( +$?@ )) else (( *?@ ), ( +?@ ))
-    in
-    let off_by, off_by_ovf = size *? off_by in
-    let off, off_ovf = off +? off_by in
-    let ptr = Typed.Ptr.mk loc off in
-    let ptr = { fptr with ptr } in
-    if check then
-      let++ () =
-        assert_or_error
-          (off_by
-          ==@ Usize.(0s)
-          ||@ ((not off_by_ovf) &&@ not off_ovf &&@ constraints ptr))
-          `UBDanglingPointer
-      in
-      ptr
-    else Result.ok ptr
-
-  let project ty kind field ptr =
-    let field = Types.FieldId.to_int field in
-    let** layout = Layout.layout_of ty in
-    let fields =
-      match kind with
-      | Expressions.ProjAdt (_, Some variant) ->
-          Layout.Fields_shape.shape_for_variant variant layout.fields
-      | ProjAdt (_, None) | ProjTuple _ -> layout.fields
-    in
-    let off = Layout.Fields_shape.offset_of field fields in
-    offset ~signed:false ptr off
-
-  let[@inline] _decay ~expose { ptr; align; size; _ } decay_map =
-    let loc, ofs = Typed.Ptr.decompose ptr in
-    let+ loc_int, decay_map =
-      DecayMap.decay ~expose ~size ~align loc decay_map
-    in
-    [%l.debug "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int];
-    (loc_int +!!@ ofs, decay_map)
-
-  let decay p = _decay ~expose:false p
-  let expose p = _decay ~expose:true p
-
-  let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
-    let open DecayMap.SM.Syntax in
-    if%sat Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2 then
-      DecayMap.SM.return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
-    else
-      let* ptr1 = decay p1 in
-      let+ ptr2 = decay p2 in
-      ptr1 -!@ ptr2
-
-  let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
-  let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
-
-  let is_aligned exp_align { ptr; align; _ } =
-    let loc, ofs = Typed.Ptr.decompose ptr in
-    (* A pointer with no provenance is alignd to it's offset *)
-    let align =
-      Typed.ite (Typed.Ptr.is_null_loc loc) exp_align (Typed.cast align)
-    in
-    let is_aligned =
-      ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
-    in
-    (is_aligned, `MisalignedPointer (exp_align, align, ofs))
-
-  let nondet ty =
-    let** layout = Layout.layout_of ty in
-    let* loc = nondet (Typed.t_loc ()) in
-    let* ofs = nondet (Typed.t_usize ()) in
-    let ptr = Typed.Ptr.mk loc ofs in
-    let ptr = { ptr; tag = None; align = layout.align; size = layout.size } in
-    let aligned, _ = is_aligned layout.align ptr in
-    let* () = assume [ aligned ] in
-    Result.ok ptr
-
-  let subst subst_val p =
-    let se = Expr.subst subst_val in
-    let ptr = se p.ptr in
-    let align = se p.align in
-    let size = se p.size in
-    { p with ptr; align; size }
 end
