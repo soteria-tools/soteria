@@ -8,6 +8,23 @@
  (deps
   ./standalone.exe
   ./test.sh
+  ./sym_state/prelude.ml
+  ./sym_state/simple.ml
+  ./sym_state/ignored.ml
+  ./sym_state/ignored_single.ml
+  ./sym_state/ignored_fields.ml
+  ./sym_state/context.ml
+  ./sym_state/context_invalid.ml
+  ./sym_state/context_missing_field.ml
+  ./sym_state/context_self_ref.ml
+  ./sym_state/context_on_ignored_ref.ml
+  ./sym_state/ignore_extra_key.ml
+  ./sym_state/ignored_is_empty_pp.ml
+  ./sym_state/syn_manifest.ml
+  ./sym_state/syn_manifest_mismatch.ml
+  ./sym_state/invalid_non_t.ml
+  ./sym_state/ignore_missing_empty.ml
+  ./sym_state/unused_attrib.ml
   ./reversible/prelude.ml
   ./reversible/simple.ml
   ./reversible/ignored.ml

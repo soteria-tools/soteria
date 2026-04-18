@@ -1,6 +1,6 @@
 open Ppxlib
 
-let ext ext =
+let if_sat_ext ext =
   let open Expander.If_sat in
   Extension.declare_with_path_arg
     (Extension_name.to_string ext)
@@ -16,10 +16,10 @@ let log_ext ext =
     Ast_pattern.(single_expr_payload __)
     (fun ~loc:_ ~path:_ ~arg:_ expr -> expand ~ext expr)
 
-(* Registring [if%sat] *)
+(* Register [if%sat] *)
 let () =
   let extensions =
-    List.map ext Expander.If_sat.Extension_name.[ Sat; Sat1; Sure ]
+    List.map if_sat_ext Expander.If_sat.Extension_name.[ Sat; Sat1; Sure ]
   in
   Driver.register_transformation "if_sat" ~extensions
 
@@ -40,3 +40,6 @@ let () =
       Logs.Extension_name.[ Debug; Info; Warn; Error; Trace; Smt ]
   in
   Driver.register_transformation "logs" ~extensions
+
+(* Register [@@deriving sym_state] *)
+let () = Sym_state.register ()
