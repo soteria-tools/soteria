@@ -5,8 +5,8 @@ open Charon
 open Syntaxes.FunctionWrap
 module DecayMap = Sptr.DecayMap
 open DecayMap.SM
-open DecayMap.SM.Result
-open DecayMap.SM.Syntax
+open Result
+open Syntax
 
 module Make (Sptr : Sptr.S) = struct
   module Encoder = Value_codec.Encoder (Sptr)

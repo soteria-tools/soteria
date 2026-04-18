@@ -43,20 +43,7 @@ module Heap = struct
 end
 
 type t = { heap : Heap.t option; globs : Globs.t option }
-[@@deriving show { with_path = false }]
-
-let of_opt = function None -> { heap = None; globs = None } | Some v -> v
-let to_opt = function { heap = None; globs = None } -> None | t -> Some t
-
-type syn = State_intf.syn = Ser_heap of Heap.syn | Ser_globs of Globs.syn
-[@@deriving show { with_path = false }]
-
-module SM =
-  Soteria.Sym_states.State_monad.Make
-    (Csymex)
-    (struct
-      type nonrec t = t option
-    end)
+[@@deriving sym_state { symex = Csymex; syn = State_intf.syn }]
 
 open SM.Syntax
 
@@ -64,21 +51,6 @@ let[@inline] with_error_loc ?msg () (f : unit -> ('a, 'b, 'c) SM.Result.t) =
   let*^ loc = Csymex.get_loc () in
   let+- e = f () in
   Error.with_trace ?msg e loc
-
-let to_syn (st : t) : syn list =
-  let heaps =
-    Option.fold ~none:[] ~some:Heap.to_syn st.heap
-    |> List.map (fun h -> Ser_heap h)
-  in
-  let globs =
-    Option.fold ~none:[] ~some:Globs.to_syn st.globs
-    |> List.map (fun g -> Ser_globs g)
-  in
-  heaps @ globs
-
-let ins_outs = function
-  | Ser_heap sh -> Heap.ins_outs sh
-  | Ser_globs sg -> Globs.ins_outs sg
 
 let pp_pretty ~ignore_freed ft st =
   let ignore =
@@ -92,8 +64,6 @@ let pp_pretty ~ignore_freed ft st =
          parametrise the heap printer anymore... *)
       Heap.pp' ~ignore ~codom:Block.pp_pretty ft st
 
-let empty = None
-
 let log action ptr =
   let open SM.Syntax in
   let* st = SM.get_state () in
@@ -103,15 +73,6 @@ let log action ptr =
       ptr Fmt_ail.pp_loc loc
       (Fmt.option ~none:(Fmt.any "Empty heap") (pp_pretty ~ignore_freed:true))
       st]
-
-let with_heap (f : ('a, 'err, Heap.syn list) Heap.SM.Result.t) :
-    ('a, 'err, syn list) SM.Result.t =
-  let open SM.Syntax in
-  let* st_opt = SM.get_state () in
-  let { heap; globs } = of_opt st_opt in
-  let*^ res, heap = f heap in
-  let+ () = SM.set_state (to_opt { heap; globs }) in
-  Compo_res.map_missing res (fun fix -> List.map (fun h -> Ser_heap h) fix)
 
 let[@inline] check_non_null loc =
   let open SM.Syntax in
@@ -240,19 +201,6 @@ let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, syn list) SM.Result.t =
     with_heap @@ Heap.wrap (Typed.Ptr.loc ptr) (Block.free ())
   else SM.Result.error `InvalidFree
 
-let produce (s : syn) (t : t option) : t option Producer.t =
-  let open Producer in
-  let open Syntax in
-  [%l.debug "Producing: %a" pp_syn s];
-  let { heap; globs } = of_opt t in
-  match s with
-  | Ser_heap sh ->
-      let+ heap = Heap.produce sh heap in
-      to_opt { heap; globs }
-  | Ser_globs sg ->
-      let+ globs = Globs.produce sg globs in
-      to_opt { heap; globs }
-
 let produce_basic_val loc offset ty v t =
   let open Producer.Syntax in
   let*^ len = Layout.size_of_s ty in
@@ -324,27 +272,6 @@ let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
       in
       aux layout.members_ofs members values st
 
-let consume (syn : syn) (st : t option) : (t option, syn list) Consumer.t =
-  let open Consumer.Syntax in
-  let { heap; globs } = of_opt st in
-  match syn with
-  | Ser_heap sh ->
-      let+ heap =
-        let+? fixes = Heap.consume sh heap in
-        List.map (fun f -> Ser_heap f) fixes
-      in
-      to_opt { heap; globs }
-  | Ser_globs sg ->
-      let+ globs =
-        let+? fixes = Globs.consume sg globs in
-        List.map (fun f -> Ser_globs f) fixes
-      in
-      to_opt { heap; globs }
-
 let get_global (sym : Cerb_frontend.Symbol.sym) =
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
-  let*^ loc, globs = Globs.get sym st.globs in
-  let ptr = Typed.Ptr.mk loc Usize.(0s) in
-  let+ () = SM.set_state (to_opt { st with globs }) in
-  ptr
+  let+ loc = with_globs_sym (Globs.get sym) in
+  Typed.Ptr.mk loc Usize.(0s)
