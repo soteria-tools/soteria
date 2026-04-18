@@ -3,13 +3,13 @@
 module Base = Base
 module State_monad = State_monad
 
-(** Primitive (leaf) state modules. *)
+(** {2 Primitive state modules} *)
 
 module Excl = Excl
 module Agree = Agree
 module Pure_fun = Pure_fun
 
-(** Combinators, that lift state modules to a more complex form. *)
+(** {2 Combinators} *)
 
 module Freeable = Freeable
 module Pmap = Pmap
