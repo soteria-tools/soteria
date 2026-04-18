@@ -2,7 +2,6 @@
 #![feature(linked_list_remove)]
 #![feature(allocator_api)]
 
-// Kani: RUSTFLAGS="--edition 2024" kani ./demo/dll_test.rs --unwind 30 --no-unwinding-checks  --harness "test"
 // Soteria Rust: dune exec -- soteria-rust exec demo/dll_test.rs --kani --rustc="--edition=2024" --summary --compact
 
 // Some tests taken from Rust's test suite, to test doubly linked list

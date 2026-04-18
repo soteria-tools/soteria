@@ -1,4 +1,3 @@
-// Kani: kani demo/aliasing.rs --output-format terse
 // Soteria Rust: dune exec -- soteria-rust exec demo/aliasing.rs --kani
 
 /// An example of Tree Borrows violation, according to the paper.

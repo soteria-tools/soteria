@@ -8,18 +8,6 @@ fn with_capacity_wrong<T>() {
     assert!(my_vec.capacity() == 10);
 }
 
-//
-
-//
-
-//
-
-//
-
-//
-
-//
-
 #[soteria::test]
 fn with_capacity<T>() {
     let my_vec: Vec<T> = Vec::with_capacity(10);
