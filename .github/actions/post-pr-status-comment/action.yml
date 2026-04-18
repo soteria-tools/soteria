@@ -1,0 +1,71 @@
+name: Post PR status comment
+description: Marks previous bot status comments outdated, minimizes them, and posts a new status comment
+inputs:
+  issue-number:
+    description: Pull request number to post the comment on
+    required: true
+  marker:
+    description: Marker identifier used to identify previous comments for this status family
+    required: true
+  body:
+    description: New comment body (without marker)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Replace previous status comment
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const owner = context.repo.owner;
+          const repo = context.repo.repo;
+          const issueNumber = Number(core.getInput('issue-number'));
+          const markerInput = core.getInput('marker').trim();
+          const marker = markerInput.startsWith('<!--')
+            ? markerInput
+            : `<!-- ${markerInput} -->`;
+          const body = core.getInput('body');
+          const outdatedMarker = '<!-- soteria:outdated -->';
+          const outdatedNotice = '###### This comment is outdated and has been superseded by a newer run.';
+
+          const comments = await github.paginate(github.rest.issues.listComments, {
+            owner,
+            repo,
+            issue_number: issueNumber,
+            per_page: 100
+          });
+
+          const previousComments = comments.filter((comment) =>
+            comment.user?.login === 'github-actions[bot]' &&
+            comment.body?.includes(marker)
+          );
+
+          for (const comment of previousComments) {
+            if (comment.body.includes(outdatedMarker)) {
+              continue;
+            }
+
+            const cleanBody = comment.body.replace(marker, '').trim();
+            await github.rest.issues.updateComment({
+              owner,
+              repo,
+              comment_id: comment.id,
+              body: `${marker}\n${outdatedMarker}\n${outdatedNotice}\n\n${cleanBody}`
+            });
+
+            try {
+              await github.graphql(
+                'mutation($subjectId: ID!) { minimizeComment(input: { subjectId: $subjectId, classifier: OUTDATED }) { minimizedComment { isMinimized } } }',
+                { subjectId: comment.node_id }
+              );
+            } catch (error) {
+              core.info(`Unable to minimize comment ${comment.id}: ${error.message}`);
+            }
+          }
+
+          await github.rest.issues.createComment({
+            owner,
+            repo,
+            issue_number: issueNumber,
+            body: `${marker}\n${body}`
+          });
