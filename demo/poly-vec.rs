@@ -1,3 +1,5 @@
+// dune exec -- soteria-rust exec demo/poly-vec.rs --frontend charon --poly --pcs
+
 use std::mem;
 
 #[soteria::test]

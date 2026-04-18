@@ -13,7 +13,9 @@ type optim_fn =
   | FloatIsFinite
   | FloatIsSign of { positive : bool }
   | AllocImpl
+  | Nop
   | Panic
+  | PrintToBufferIfCaptureUsed
 
 (* Soteria builtin functions *)
 type soteria_fn = Assert | Assume | NondetBytes | Panic
@@ -53,6 +55,8 @@ let std_fun_pair_list =
     ("kani::panic", Soteria Panic);
     (* Miri builtins *)
     ("std::intrinsics::miri_promise_symbolic_alignment", Miri PromiseAlignement);
+    (* TODO: once https://github.com/AeneasVerif/charon/pull/1088 is merged,
+       this should be handled through extern bodies. *)
     ("miristd::miri_get_alloc_id", Miri AllocId);
     ("miristd::miri_pointer_name", Miri Nop);
     ("miristd::miri_print_borrow_state", Miri Nop);
@@ -70,6 +74,8 @@ let std_fun_pair_list =
     ("utils::miri_extern::miri_alloc", Miri Alloc);
     ("utils::miri_extern::miri_dealloc", Miri Dealloc);
     (* Allocator *)
+    (* TODO: once https://github.com/AeneasVerif/charon/pull/1088 is merged,
+       this should be handled through extern bodies. *)
     ("__rust_alloc", Alloc (Alloc { zeroed = false }));
     ("__rust_alloc_zeroed", Alloc (Alloc { zeroed = true }));
     ("__rust_dealloc", Alloc Dealloc);
@@ -123,10 +129,16 @@ let std_fun_pair_list =
     ("core::f128::_::is_subnormal", Optim (FloatIs Subnormal));
     (* Compiling these would import a lot of formatting code, so we override
        them *)
+    ("std::io::_eprint", Optim Nop);
+    ("std::io::_print", Optim Nop);
+    ("std::io::stdio::print_to", Optim Nop);
+    ( "std::io::stdio::print_to_buffer_if_capture_used",
+      Optim PrintToBufferIfCaptureUsed );
     ("alloc::raw_vec::handle_error", Optim Panic);
     ("core::panicking::panic", Optim Panic);
     ("core::panicking::panic_fmt", Optim Panic);
     ("core::panicking::panic_nounwind_fmt", Optim Panic);
+    ("core::panicking::assert_failed_inner", Optim Panic);
     ("core::slice::index::slice_start_index_len_fail", Optim Panic);
     ("core::slice::index::slice_end_index_len_fail", Optim Panic);
     ("core::slice::index::slice_end_index_overflow_fail", Optim Panic);
@@ -136,6 +148,7 @@ let std_fun_pair_list =
     ("std::option::unwrap_failed", Optim Panic);
     ("std::result::unwrap_failed", Optim Panic);
     ("std::rt::panic_fmt", Optim Panic);
+    ("std::rt::begin_panic", Optim Panic);
     ("std::vec::Vec::_::remove::assert_failed", Optim Panic);
     (* This uses async stuff we would like to ignore, for now we patch it *)
     ("std::panicking::catch_unwind::cleanup", Fixme CatchUnwindCleanup);
@@ -172,6 +185,8 @@ module M (StateM : State.StateM.S) = struct
     | Optim (FloatIs fc) -> Std.float_is fc
     | Optim FloatIsFinite -> Std.float_is_finite
     | Optim (FloatIsSign { positive }) -> Std.float_is_sign positive
+    | Optim Nop -> Std.nop
+    | Optim PrintToBufferIfCaptureUsed -> Std.to_buffer_if_capture_used
     | Alloc (Alloc { zeroed }) -> Alloc.alloc ~zeroed
     | Alloc Dealloc -> Alloc.dealloc
     | Alloc NoAllocShimIsUnstable -> Alloc.no_alloc_shim_is_unstable
