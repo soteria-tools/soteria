@@ -2,7 +2,7 @@ module Stats = Soteria.Stats
 module Compo_res = Soteria.Symex.Compo_res
 open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap
-module State = State.Tree_state
+module State = State.Tree_state.Make ()
 module Interp = Interp.Make (State)
 open Error.Diagnostic
 open Util
