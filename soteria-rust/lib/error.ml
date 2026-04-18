@@ -204,7 +204,6 @@ module Diagnostic = struct
             toolchain / "lib" / "rustlib" / "src" / "rust" / file
           else file
         in
-        L.warn (fun m -> m "file: %s" file);
         [
           Soteria.Terminal.Diagnostic.mk_range_file ?filename
             ?content:span.file.contents file (to_loc span.beg_loc)

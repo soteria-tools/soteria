@@ -17,7 +17,7 @@ module Exe = struct
       (fun () ->
         Unix.chdir path;
         if (Config.get ()).log_compilation then
-          L.info (fun g -> g "Changed working directory to %s" path);
+          [%l.info "Changed working directory to %s" path];
         f ())
 
   let pp_status ft = function
@@ -73,22 +73,22 @@ module Exe = struct
     let current_env = Unix.environment () in
     let cmd = String.concat " " (cmd :: args) in
     if (Config.get ()).log_compilation then
-      L.info (fun g ->
-          g "Running command: %s@.With env:@.%a@." cmd
-            Fmt.(list ~sep:(any "@.") string)
-            env);
+      [%l.info
+        "Running command: %s@.With env:@.%a@." cmd
+          Fmt.(list ~sep:(any "@.") string)
+          env];
     let env = Array.append current_env (Array.of_list env) in
     let out, inp, err = Unix.open_process_full cmd env in
     let output, error = read_both_nonblocking out err in
     let status = Unix.close_process_full (out, inp, err) in
     if (Config.get ()).log_compilation then
-      L.info (fun g ->
-          g "Command finished with status: %a@.stdout:@.%a@.stderr:@.%a"
-            pp_status status
-            Fmt.(list ~sep:(any "@\n") string)
-            output
-            Fmt.(list ~sep:(any "@\n") string)
-            error);
+      [%l.info
+        "Command finished with status: %a@.stdout:@.%a@.stderr:@.%a" pp_status
+          status
+          Fmt.(list ~sep:(any "@\n") string)
+          output
+          Fmt.(list ~sep:(any "@\n") string)
+          error];
     (output, error, status)
 
   let exec_exn ?env cmd args =
@@ -121,7 +121,10 @@ module Cmd = struct
 
   let entry_as_flag = function
     | Attrib a -> [ "--start-from-attribute=" ^ a ]
-    | Name n -> [ "--start-from"; n ]
+    | Name n -> (
+        match (Config.get ()).frontend with
+        | Obol -> [ "--start-from"; n ]
+        | Charon -> [ "--start-from-if-exists"; n ])
     | Pub -> [ "--start-from-pub" ]
 
   let entry_matches_fn (fn : UllbcAst.fun_decl) = function
@@ -183,16 +186,18 @@ module Cmd = struct
   let cargo () = Lazy.force toolchain_path / "bin" / "cargo"
   let rustc () = Lazy.force toolchain_path / "bin" / "rustc"
   let rustc_as_env () = [ "RUSTC=" ^ rustc () ]
+  let split_on_space s = String.split_on_char ' ' s |> List.filter (( <> ) "")
 
   let current_rustc_flags () =
     let rustc = (Config.get ()).rustc_flags in
     let sysroot =
       match (Config.get ()).sysroot with
-      | Some path -> [ "--sysroot=" ^ path ]
+      | Some path -> [ "--sysroot"; path ]
       | None -> []
     in
     rustc @ sysroot
 
+  let cargo_flags () = (Config.get ()).cargo_flags
   let is_crate_type_flag = String.starts_with ~prefix:"--crate-type"
   let is_edition_flag = String.starts_with ~prefix:"--edition"
 
@@ -230,10 +235,9 @@ module Cmd = struct
             | [] -> []
             | [ h ] -> [ h ]
             | h :: _ ->
-                L.warn (fun m ->
-                    m
-                      "Charon currently only support one entry attribute; more \
-                       than one was specified, only the first will be used");
+                [%l.warn
+                  "Charon currently only support one entry attribute; more \
+                   than one was specified, only the first will be used"];
                 [ h ]
           in
           let entries = List.concat_map entry_as_flag (attribs @ non_attribs) in
@@ -257,9 +261,11 @@ module Cmd = struct
     | Cargo ->
         let cargo =
           match (Config.get ()).test with
+          | Some "lib" -> [ "--lib" ]
           | Some test -> [ "--test"; test ]
           | None -> []
         in
+        let cargo = cargo @ cargo_flags () in
         let rustc = flags_for_cargo rustc in
         let env = rustc_as_env () @ flags_as_rustc_env rustc in
         (cmd, ("cargo" :: args) @ [ "--" ] @ cargo, env)
