@@ -22,7 +22,7 @@ let module_of_core_type_exn (ct : core_type) =
         Names.ppx
 
 let module_call mod_path fn args =
-  let id = pexp_ident (wloc (Ldot (mod_path, fn))) in
+  let id = pexp_ident_dot mod_path fn in
   pexp_apply id (List.map (fun arg -> (Nolabel, arg)) args)
 
 let seq_of_exprs ~loc = function
@@ -55,13 +55,10 @@ let mk_record_impl labels =
   let arg_pattern = pvar "state" in
   let init =
     fields
-    |> map_fields (fun ((name, _, _, _) as f) ->
-        (wloc (Lident name), init_of_field f))
+    |> map_fields (fun ((name, _, _, _) as f) -> (lident name, init_of_field f))
     |> Fun.flip pexp_record None
   in
-  let access_field (name, _, _, _) =
-    pexp_field (evar "state") (wloc (Lident name))
-  in
+  let access_field (name, _, _, _) = pexp_field (evar "state") (lident name) in
   (fields, init, arg_pattern, access_field)
 
 let mk_tuple_impl tys =

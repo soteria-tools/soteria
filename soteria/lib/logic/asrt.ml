@@ -76,7 +76,7 @@ module M (Symex : Symex.Base) = struct
 
     let consume_atom atom st =
       let open Consumer.Syntax in
-      L.debug (fun m -> m "@[Consuming atom:@ %a@]" (pp_atom B.pp_syn) atom);
+      [%l.debug "@[Consuming atom:@ %a@]" (pp_atom B.pp_syn) atom];
       match atom with
       | Spatial pred -> B.consume pred st
       | Pure f ->
@@ -87,12 +87,10 @@ module M (Symex : Symex.Base) = struct
         (B.t option, B.syn list) Consumer.t =
       let open Consumer.Syntax in
       let* subst = Consumer.expose_subst () in
-      L.debug (fun m ->
-          m
-            "@[<v>@[About to consume asrt:@ %a@]@ @[in subst:@ %a@]@ @[and \
-             current state:@ %a@]@]"
-            (pp B.pp_syn) asrt Value.Expr.Subst.pp subst (Fmt.Dump.option B.pp)
-            st);
+      [%l.debug
+        "@[<v>@[About to consume asrt:@ %a@]@ @[in subst:@ %a@]@ @[and current \
+         state:@ %a@]@]"
+        (pp B.pp_syn) asrt Value.Expr.Subst.pp subst (Fmt.Dump.option B.pp) st];
       let rec aux (remaining : B.syn t) (st : B.t option) :
           (B.t option, B.syn list) Consumer.t =
         if List.is_empty remaining then Consumer.ok st
@@ -100,12 +98,11 @@ module M (Symex : Symex.Base) = struct
           let* subst = Consumer.expose_subst () in
           match List.find_with_rest (is_consumable subst) remaining with
           | None ->
-              L.info (fun m ->
-                  m
-                    "@[<v>Failed to consume assertion because I can't find any \
-                     consumable atom left given my current substitution.@.@[<v \
-                     2>Substitution:@ %a@]@.@[<v 2>Atoms left:@ %a@]@]"
-                    Value.Expr.Subst.pp subst (pp B.pp_syn) remaining);
+              [%l.info
+                "@[<v>Failed to consume assertion because I can't find any \
+                 consumable atom left given my current substitution.@.@[<v \
+                 2>Substitution:@ %a@]@.@[<v 2>Atoms left:@ %a@]@]"
+                Value.Expr.Subst.pp subst (pp B.pp_syn) remaining];
               Consumer.lfail @@ Value.of_bool false
           | Some (atom, rest) ->
               let* st' = consume_atom atom st in

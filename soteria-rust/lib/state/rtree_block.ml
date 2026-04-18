@@ -5,8 +5,8 @@ open Charon
 open Syntaxes.FunctionWrap
 module DecayMap = Sptr.DecayMap
 open DecayMap.SM
-open DecayMap.SM.Result
-open DecayMap.SM.Syntax
+open Result
+open Syntax
 
 module Make (Sptr : Sptr.S) = struct
   module Encoder = Value_codec.Encoder (Sptr)
@@ -217,7 +217,7 @@ module Make (Sptr : Sptr.S) = struct
             Ok ((Rust_val.Int value, offset) :: vs)
         | Owned (Init value, _) -> ok ((value, offset) :: vs)
         | Owned (Any, _) ->
-            L.info (fun m -> m "Reading from Any memory, vanishing.");
+            [%l.info "Reading from Any memory, vanishing."];
             vanish ()
         | NotOwned Partially | Owned ((Lazy | Uninit Partially), _) ->
             failwith "Iterating over an intermediate node?")

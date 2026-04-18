@@ -10,9 +10,11 @@ struct
 end
 
 module Key (Symex : Symex.Base) = struct
+  module Key_S = S_map.Key (Symex)
+  module Abstr = Abstr.M (Symex)
+
   module type S = sig
-    include S_map.Key(Symex).S
-    include Abstr.M(Symex).S_with_syn with type t := t
+    type t [@@mixins Key_S.S + Abstr.S_with_syn]
   end
 
   module type S_patricia_tree = sig

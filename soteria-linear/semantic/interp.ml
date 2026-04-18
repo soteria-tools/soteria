@@ -85,8 +85,7 @@ module Make (State : State_intf.S) = struct
        better interface. *)
     let open Symex in
     let open Syntax in
-    L.debug (fun m ->
-        m "@[<v 2>Executing specification:@ %a@]" Context.pp_spec spec);
+    [%l.debug "@[<v 2>Executing specification:@ %a@]" Context.pp_spec spec];
     let Context.{ args = params; pre; post; pc; ret } = spec in
     let asrt = Logic.Asrt.make ~spatial:pre ~pure:[] in
     let* frame =
@@ -116,9 +115,9 @@ module Make (State : State_intf.S) = struct
 
   let rec eval_expr (subst : subst) expr : (S_val.t, 'err, 'fix) SM.Result.t =
     let* () = SM.consume_fuel_steps 1 in
-    L.debug (fun m ->
-        m "@[<v 0>@[<v 2>Interp expr:@ %a@]@.@[<v 2>In subst:@ %a@]@]" Expr.pp
-          expr pp_subst subst);
+    [%l.debug
+      "@[<v 0>@[<v 2>Interp expr:@ %a@]@.@[<v 2>In subst:@ %a@]@]" Expr.pp expr
+        pp_subst subst];
     match expr with
     | Expr.Pure_expr e -> eval_pure_expr subst e
     | Let (x, e1, e2) ->
@@ -166,11 +165,10 @@ module Make (State : State_intf.S) = struct
 
   and eval_function func args =
     let subst = List.combine func.Fun_def.args args |> String_map.of_list in
-    L.debug (fun m ->
-        m "@[<v 2>Running function %s with args:@ %a@]" func.Fun_def.name
-          pp_subst subst);
+    [%l.debug
+      "@[<v 2>Running function %s with args:@ %a@]" func.Fun_def.name pp_subst
+        subst];
     let++ r = eval_expr subst func.Fun_def.body in
-    L.debug (fun m ->
-        m "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name S_val.pp r);
+    [%l.debug "@[<v 2>Function %s returned:@ %a@]" func.Fun_def.name S_val.pp r];
     r
 end

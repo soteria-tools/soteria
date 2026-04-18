@@ -153,9 +153,7 @@ module D_abstr = Soteria.Data.Abstr.M (DecayMap.SM)
 
 module type S = sig
   (** pointer type *)
-  include D_abstr.S_with_syn
-
-  include D_abstr.Sem_eq with type t := t
+  type t [@@mixins D_abstr.S_with_syn + D_abstr.Sem_eq]
 
   val null_ptr : unit -> t
   val null_ptr_of : [< sint ] Typed.t -> t
@@ -334,7 +332,7 @@ module ArithPtr :
     let+ loc_int, decay_map =
       DecayMap.decay ~expose ~size ~align loc decay_map
     in
-    L.debug (fun fmt -> fmt "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int);
+    [%l.debug "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int];
     (loc_int +!!@ ofs, decay_map)
 
   let decay p = _decay ~expose:false p

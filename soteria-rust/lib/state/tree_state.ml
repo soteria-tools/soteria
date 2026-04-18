@@ -81,53 +81,27 @@ module FunBiMap = struct
 end
 
 module Block = struct
-  type t = { block : Tree_block.t option; borrow : Tree_borrow.t }
-  [@@deriving show { with_path = false }]
+  type t = {
+    block : Tree_block.t option;
+    borrow : Tree_borrow.t; [@sym_state.ignore { empty = Tree_borrow.ub_state }]
+  }
+  [@@deriving sym_state { symex = DecayMap.SM }]
 
   let pp_pretty ft { block; _ } =
     Fmt.option ~none:(Fmt.any "Empty Block") Tree_block.pp_pretty ft block
 
-  type syn = Tree_block.syn [@@deriving show]
-
-  let to_syn { block; _ } = Option.fold ~none:[] ~some:Tree_block.to_syn block
-  let ins_outs b = Tree_block.ins_outs b
-
-  let of_opt = function
-    | None -> { block = None; borrow = Tree_borrow.ub_state }
-    | Some st -> st
-
-  let to_opt : t -> t option =
-    (* FIXME: This is off for compositionality, there is no zero in TBs yet. *)
-    function
-    | { block = None; borrow = _b } -> None
-    | st -> Some st
-
-  module SM =
-    Soteria.Sym_states.State_monad.Make
-      (DecayMap.SM)
-      (struct
-        type nonrec t = t option
-      end)
-
   open SM
   open Syntax
 
-  let with_block (f : ('a, 'err, 'fix) Tree_block.SM.Result.t) :
-      ('a, 'err, 'fix) Result.t =
-    let* t_opt = SM.get_state () in
-    let { block; borrow } = of_opt t_opt in
-    let*^ v, block = f block in
-    let+ () = SM.set_state (to_opt { block; borrow }) in
-    v
-
   let with_block_read_tb
-      (f : Tree_borrow.t -> ('a, 'err, 'fix) Tree_block.SM.Result.t) :
-      ('a, 'err, 'fix) SM.Result.t =
+      (f :
+        Tree_borrow.t -> ('a, 'err, Tree_block.syn list) Tree_block.SM.Result.t)
+      : ('a, 'err, syn list) SM.Result.t =
     let* t_opt = SM.get_state () in
     let { block; borrow } = of_opt t_opt in
     let*^ v, block = f borrow block in
     let+ () = SM.set_state (to_opt { block; borrow }) in
-    v
+    Soteria.Symex.Compo_res.map_missing v lift_block_fixes
 
   (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
       being reborrowed. *)
@@ -152,10 +126,10 @@ module Block = struct
     let parent = Option.get ptr.tag in
     let borrow, tag = Tree_borrow.add_child ~parent ~state ?protector borrow in
     let ptr' = { ptr with tag = Some tag } in
-    L.debug (fun m ->
-        m "%s pointer %a -> %a (%a)"
-          (if protect then "Protecting" else "Borrowing")
-          Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state state);
+    [%l.debug
+      "%s pointer %a -> %a (%a)"
+        (if protect then "Protecting" else "Borrowing")
+        Sptr.pp ptr Sptr.pp ptr' Tree_borrow.pp_state state];
     if not protect then
       let+ () = SM.set_state (to_opt { block; borrow }) in
       Ok (ptr', meta)
@@ -171,7 +145,8 @@ module Block = struct
             let+ () = SM.set_state (to_opt { block; borrow }) in
             Ok (ptr', meta)
         | Error e -> Result.error e
-        | Missing f -> Result.miss f
+        | Missing f ->
+            Result.miss (List.map (List.map (fun s -> Ser_block s)) f)
 
   let unprotect ofs tag size =
     let* t_opt = SM.get_state () in
@@ -184,15 +159,13 @@ module Block = struct
         match res with
         | Ok () -> Result.ok ((), block)
         | Error e -> Result.error e
-        | Missing f -> Result.miss f
+        | Missing f ->
+            Result.miss (List.map (List.map (fun s -> Ser_block s)) f)
     in
     SM.Result.set_state (to_opt { block; borrow })
 
   let assert_exclusively_owned () =
     with_block @@ Tree_block.assert_exclusively_owned ()
-
-  let produce _ _ = failwith "Not implemented"
-  let consume _ _ = failwith "Not implemented"
 end
 
 module Freeable_block = Soteria.Sym_states.Freeable.Make (DecayMap.SM) (Block)
@@ -264,31 +237,40 @@ module Heap = struct
       end)
 end
 
-type syn = Heap of Heap.syn | Pointers of DecayMap.syn
-[@@deriving show { with_path = false }]
-
 type t = {
-  heap : Heap.t option;
+  heap : Heap.t option; [@sym_state.context { field = pointers }]
   functions : FunBiMap.t;
+      [@sym_state.ignore
+        {
+          empty = FunBiMap.empty;
+          is_empty = FunBiMap.is_empty;
+          pp = FunBiMap.pp;
+        }]
   globals : Sptr.t Rust_val.full_ptr GlobMap.t;
+      [@sym_state.ignore
+        {
+          empty = GlobMap.empty;
+          is_empty = GlobMap.is_empty;
+          pp = GlobMap.pp (pp_full_ptr Sptr.pp);
+        }]
   errors : Error.with_trace list;
+      [@sym_state.ignore { empty = []; pp = Fmt.Dump.list Error.pp_with_trace }]
   pointers : DecayMap.t option;
   thread_destructor :
-    unit ->
+    (unit ->
     t option ->
-    ((unit, Error.with_trace, syn list) Soteria.Symex.Compo_res.t * t option)
-    Rustsymex.t;
-      [@printer Fmt.any "code"]
+    ((unit, Error.with_trace, unit) Soteria.Symex.Compo_res.t * t option)
+    Rustsymex.t)
+    option;
+      [@sym_state.ignore { empty = None }]
   const_generics : Sptr.t rust_val Types.ConstGenericVarId.Map.t;
+      [@sym_state.ignore
+        {
+          empty = Types.ConstGenericVarId.Map.empty;
+          pp = Types.ConstGenericVarId.Map.pp (pp_rust_val Sptr.pp);
+        }]
 }
-[@@deriving show { with_path = false }]
-
-module SM =
-  Soteria.Sym_states.State_monad.Make
-    (Rustsymex)
-    (struct
-      type nonrec t = t option
-    end)
+[@@deriving sym_state { symex = Rustsymex }]
 
 let pp_pretty ~ignore_freed ft { heap; _ } =
   let (ignore : 'a * Freeable_block_with_meta.t -> bool) =
@@ -306,30 +288,15 @@ let pp_pretty ~ignore_freed ft { heap; _ } =
           | { node; _ } -> Freeable_block.pp' ~inner:Block.pp_pretty ft node)
         ft st
 
-let empty_state =
-  {
-    heap = None;
-    functions = FunBiMap.empty;
-    globals = GlobMap.empty;
-    errors = [];
-    pointers = None;
-    thread_destructor = (fun () -> SM.Result.ok ());
-    const_generics = Types.ConstGenericVarId.Map.empty;
-  }
-
-let empty : t option = None
-let of_opt = function None -> empty_state | Some st -> st
-
 open SM
 open SM.Syntax
 
 let log action ptr =
   let+ st = SM.get_state () in
-  L.trace (fun m ->
-      m "About to execute action: %s (%a)@\n@[<2>STATE:@ %a@]" action Sptr.pp
-        ptr
-        (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
-        st)
+  [%trace
+    "About to execute action: %s (%a)@\n@[<2>STATE:@ %a@]" action Sptr.pp ptr
+      (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
+      st]
 
 let[@inline] with_loc_err ?trace:msg ()
     (f : unit -> ('a, Error.t, 'f) SM.Result.t) :
@@ -341,20 +308,6 @@ let[@inline] with_loc_err ?trace:msg ()
   in
   Error.log_at trace err;
   Error (Error.decorate trace err)
-
-let with_heap_symex (f : 'a Heap.SM.t) : 'a SM.t =
-  let* st = SM.get_state () in
-  let st = of_opt st in
-  let*^ (res, heap), pointers =
-    DecayMap.SM.run_with_state ~state:st.pointers @@ f st.heap
-  in
-  let+ () = SM.set_state (Some { st with heap; pointers }) in
-  res
-
-let with_heap (f : ('a, 'b, Heap.syn list) Heap.SM.Result.t) :
-    ('a, 'b, syn list) Result.t =
-  SM.Result.map_missing (with_heap_symex f) (fun fix ->
-      List.map (fun h -> Heap h) fix)
 
 let apply_parser (type a) ?(ignore_borrow = false) ptr
     (parser : offset:T.sint Typed.t -> a Heap.Decoder.ParserMonad.t) :
@@ -372,13 +325,6 @@ let apply_parser (type a) ?(ignore_borrow = false) ptr
   with_heap
   @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all
   @@ parser ~offset
-
-let with_pointers_sym (f : 'a DecayMap.SM.t) : 'a SM.t =
-  let* st = SM.get_state () in
-  let st = of_opt st in
-  let*^ v, pointers = f st.pointers in
-  let+ () = SM.set_state (Some { st with pointers }) in
-  v
 
 let with_ptr ptr f = with_heap @@ Heap.with_ptr ptr f
 
@@ -398,9 +344,9 @@ let rec size_and_align_of_val ty meta =
 and check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
   (* The expected alignment of a dyn pointer is stored inside the VTable *)
   let** _, exp_align = size_and_align_of_val ty meta in
-  L.debug (fun m ->
-      m "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr
-        Typed.ppa exp_align Common.Charon_util.pp_ty ty);
+  [%l.debug
+    "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
+      exp_align Common.Charon_util.pp_ty ty];
   let aligned, err = Sptr.is_aligned exp_align ptr in
   assert_or_error aligned err
 
@@ -418,8 +364,7 @@ and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
   let** () = check_ptr_align fptr ty in
   let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
   let** value = apply_parser ?ignore_borrow ptr parser in
-  L.debug (fun f ->
-      f "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value);
+  [%l.debug "Finished reading rust value %a" (Rust_val.pp Sptr.pp) value];
   let check_ref =
     if (Config.get ()).recursive_validity <> Allow && check_refs then
       fun ptr ty ->
@@ -455,9 +400,9 @@ and fake_read ((ptr, meta) as fptr) ty =
   in
   if skip_check then Result.ok ()
   else (
-    L.debug (fun m ->
-        m "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) fptr
-          Charon_util.pp_ty ty);
+    [%l.debug
+      "Checking validity of %a for %a" (pp_full_ptr Sptr.pp) fptr
+        Charon_util.pp_ty ty];
     let*- err =
       let++ _ = load ~ignore_borrow:true ~check_refs:false fptr ty in
       ()
@@ -501,10 +446,10 @@ let store ((ptr, _) as fptr) ty sval :
   if Iter.is_empty parts then Result.ok ()
   else
     let** () = check_ptr_align fptr ty in
-    (* L.debug (fun f ->
-     *   f "Parsed to parts [%a]"
-     *     Fmt.(list ~sep:comma Encoder.pp_cval_info)
-     *     parts); *)
+    (* [%l.debug
+     *   "Parsed to parts [%a]"
+     *   Fmt.(list ~sep:comma Encoder.pp_cval_info)
+     *   parts]; *)
     let* () = log "store" ptr in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr ptr in
@@ -665,12 +610,12 @@ let free ((ptr : Sptr.t), _) =
   (* let** () =
    *   with_ptr ptr (fun _ ->
    *       Block.with_block_read_tb (fun tb ->
-   *           L.warn (fun m -> m "%a" Tree_borrow.pp tb);
+   *           [%l.warn "%a" Tree_borrow.pp tb];
    *           if Tree_borrow.strong_protector_exists tb then
    *             Tree_block.SM.Result.error `InvalidFreeStrongProtector
    *           else Tree_block.SM.Result.ok ()))
    * in *)
-  L.debug (fun m -> m "Freeing pointer %a" Sptr.pp ptr);
+  [%l.debug "Freeing pointer %a" Sptr.pp ptr];
   with_heap
     (Heap.wrap loc (Freeable_block_with_meta.wrap (Freeable_block.free ())))
 
@@ -680,32 +625,25 @@ let zeros (ptr, _) size =
   let@ ofs = with_ptr ptr in
   Block.with_block (Tree_block.zero_range ofs size)
 
-let with_globals () f =
-  let* st = SM.get_state () in
-  let st = of_opt st in
-  let res, globals = f st.globals in
-  let+ () = SM.set_state (Some { st with globals }) in
-  Ok res
-
 let store_str_global str ptr =
-  let@ globals = with_globals () in
+  let@ globals = with_globals_sym in
   let globals = GlobMap.add (String str) ptr globals in
-  ((), globals)
+  Rustsymex.Result.ok ((), globals)
 
 let store_global g ptr =
-  let@ globals = with_globals () in
+  let@ globals = with_globals_sym in
   let globals = GlobMap.add (Global g) ptr globals in
-  ((), globals)
+  Rustsymex.Result.ok ((), globals)
 
 let load_str_global str =
-  let@ globals = with_globals () in
+  let@ globals = with_globals_sym in
   let ptr = GlobMap.find_opt (String str) globals in
-  (ptr, globals)
+  Rustsymex.Result.ok (ptr, globals)
 
 let load_global g =
-  let@ globals = with_globals () in
+  let@ globals = with_globals_sym in
   let ptr = GlobMap.find_opt (Global g) globals in
-  (ptr, globals)
+  Rustsymex.Result.ok (ptr, globals)
 
 let borrow ?protect (((ptr : Sptr.t), _) as fptr) (ty : Types.ty) =
   let@ () = with_loc_err ~trace:"Borrow" () in
@@ -725,7 +663,7 @@ let unprotect ((ptr : Sptr.t), _) (ty : Types.ty) =
       else
         let**^ size = Layout.size_of ty in
         let@ ofs = with_ptr ptr in
-        L.debug (fun m -> m "Unprotecting pointer %a" Sptr.pp ptr);
+        [%l.debug "Unprotecting pointer %a" Sptr.pp ptr];
         Block.unprotect ofs tag size
 
 let with_exposed addr =
@@ -798,51 +736,36 @@ let leak_check () : (unit, Error.with_trace, syn list) Result.t =
          [] heap
      in
      if List.is_empty leaks then Result.ok ()
-     else (
-       L.info (fun m ->
-           let pp_leak ft (k, trace) =
-             Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp trace
-           in
-           m "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks);
+     else
+       let pp_leak ft (k, trace) =
+         Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp trace
+       in
+       [%l.info "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks];
        let wheres = List.map snd leaks in
        let* leak_trace = branches (List.map (fun t () -> return t) wheres) in
        let leak_trace =
          Trace.rename ~rev:true 0 "Leaking function" leak_trace
        in
-       Result.error (Error.decorate leak_trace `MemoryLeak)))
-
-let with_errors () (f : Error.with_trace list -> 'a * Error.with_trace list) :
-    ('a, Error.with_trace, syn list) Result.t =
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
-  let res, errors = f st.errors in
-  let+ () = SM.set_state (Some { st with errors }) in
-  Ok res
+       Result.error (Error.decorate leak_trace `MemoryLeak))
 
 let add_error e =
-  let@ errors = with_errors () in
-  ((), e :: errors)
+  let@ errors = with_errors_sym in
+  Rustsymex.Result.ok ((), e :: errors)
 
 let pop_error () =
   let** error =
-    let@ errors = with_errors () in
+    let@ errors = with_errors_sym in
     match errors with
-    | e :: rest -> (e, rest)
+    | e :: rest -> Rustsymex.Result.ok (e, rest)
     | _ -> failwith "pop_error with no errors?"
   in
   Result.error error
 
-let with_functions (type a) (f : FunBiMap.t -> a * FunBiMap.t) : a SM.t =
-  let* st = SM.get_state () in
-  let st = of_opt st in
-  let res, functions = f st.functions in
-  let+ () = SM.set_state (Some { st with functions }) in
-  res
-
 let declare_fn fn_def =
   let align = Usize.(16s) in
-  let* result =
-    with_functions (fun fns -> (FunBiMap.get_loc fn_def fns, fns))
+  let** result =
+    with_functions_sym (fun fns ->
+        Rustsymex.Result.ok (FunBiMap.get_loc fn_def fns, fns))
   in
   match result with
   | Some loc ->
@@ -868,88 +791,53 @@ let declare_fn fn_def =
       in
       let ptr = { ptr with tag = None } in
       let loc = Typed.Ptr.loc ptr.ptr in
-      let* () = with_functions (fun fns -> ((), FunBiMap.add loc fn_def fns)) in
-      Result.ok (ptr, meta)
+      with_functions_sym (fun fns ->
+          Rustsymex.Result.ok ((ptr, meta), FunBiMap.add loc fn_def fns))
 
 let lookup_fn (({ ptr; _ } : Sptr.t), _) =
+  let open Rustsymex in
+  let open Syntax in
   let@ () = with_loc_err ~trace:"Accessing function pointer" () in
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
+  let@ functions = with_functions_sym in
   let** () =
     assert_or_error (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `MisalignedFnPointer
   in
   let loc = Typed.Ptr.loc ptr in
-  match FunBiMap.get_fn loc st.functions with
-  | Some fn -> Result.ok fn
+  match FunBiMap.get_fn loc functions with
+  | Some fn -> Result.ok (fn, functions)
   | None -> Result.error `NotAFnPointer
 
 let lookup_const_generic id ty =
+  let open Rustsymex in
+  let open Syntax in
   let@ () = with_loc_err ~trace:"Accessing const generic" () in
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
-  match Types.ConstGenericVarId.Map.find_opt id st.const_generics with
-  | Some v -> Result.ok v
+  let@ const_generics = with_const_generics_sym in
+  match Types.ConstGenericVarId.Map.find_opt id const_generics with
+  | Some v -> Result.ok (v, const_generics)
   | None ->
-      let**^ v = Encoder.nondet_valid ty in
-      let const_generics =
-        Types.ConstGenericVarId.Map.add id v st.const_generics
-      in
-      let+ () = SM.set_state (Some { st with const_generics }) in
-      Ok v
+      let++ v = Encoder.nondet_valid ty in
+      (v, Types.ConstGenericVarId.Map.add id v const_generics)
 
 let register_thread_exit callback =
-  let* st_opt = SM.get_state () in
-  let st = of_opt st_opt in
-  let thread_destructor () =
-    let** () = st.thread_destructor () in
-    callback ()
+  (* HACK: we cannot expect thread exit callbacks to miss with syn, because when
+     we define the callback type the syn type has not yet been defined. Instead
+     we expect it to return unit; for now we fail, while we figure out a
+     solution. *)
+  let@ thread_destructor = with_thread_destructor_sym in
+  let callback () =
+    SM.Result.map_missing (callback ()) (fun _ ->
+        failwith "TODO: Miss in thread exit")
   in
-  SM.Result.set_state (Some { st with thread_destructor })
+  let destructor =
+    match thread_destructor with
+    | None -> callback
+    | Some destructor -> fun () -> Result.bind (destructor ()) callback
+  in
+  Rustsymex.Result.ok ((), Some destructor)
 
 let run_thread_exits () =
- fun st_opt ->
+  let* st_opt = SM.get_state () in
   let st = of_opt st_opt in
-  st.thread_destructor () st_opt
-
-let to_syn st : syn list =
-  List.map (fun v -> Heap v) (Option.fold ~none:[] ~some:Heap.to_syn st.heap)
-  @ List.map
-      (fun v -> Pointers v)
-      (Option.fold ~none:[] ~some:DecayMap.to_syn st.pointers)
-
-let ins_outs (syn : syn) =
-  match syn with Heap v -> Heap.ins_outs v | Pointers v -> DecayMap.ins_outs v
-
-let produce (syn : syn) st =
-  let open SM.Symex.Producer.Syntax in
-  let st = of_opt st in
-  match syn with
-  | Heap v ->
-      let+ heap, pointers =
-        DecayMap.SM.Producer.run_with_state ~state:st.pointers
-          (Heap.produce v st.heap)
-      in
-      Some { st with heap; pointers }
-  | Pointers v ->
-      let+ pointers = DecayMap.produce v st.pointers in
-      Some { st with pointers }
-
-let consume (syn : syn) st =
-  let open SM.Symex.Consumer.Syntax in
-  let st = of_opt st in
-  match syn with
-  | Heap v ->
-      let+ heap, pointers =
-        let+? fixes =
-          DecayMap.SM.Consumer.run_with_state ~state:st.pointers
-            (Heap.consume v st.heap)
-        in
-        List.map (fun s -> Heap s) fixes
-      in
-      Some { st with heap; pointers }
-  | Pointers v ->
-      let+ pointers =
-        let+? fixes = DecayMap.consume v st.pointers in
-        List.map (fun s -> Pointers s) fixes
-      in
-      Some { st with pointers }
+  match st.thread_destructor with
+  | None -> Result.ok ()
+  | Some destructor -> SM.Result.map_missing (destructor ()) (fun () -> [])

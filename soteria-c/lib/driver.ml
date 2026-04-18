@@ -55,16 +55,16 @@ let io : Cerb_backend.Pipeline.io_helpers =
     return ()
   in
   let print_endline str =
-    L.debug (fun m -> m "%s" str);
+    [%l.debug "%s" str];
     return ()
   in
   let print_debug n mk_str =
     (* Cerb_debug.print_debug n [] mk_str; *)
-    if n == 0 then L.debug (fun m -> m "%s" (mk_str ()));
+    if n == 0 then [%l.debug "%s" (mk_str ())];
     return ()
   in
   let warn ?always:_ mk_str =
-    L.warn (fun m -> m "%s" (mk_str ()));
+    [%l.warn "%s" (mk_str ())];
     return ()
   in
   { pass_message; set_progress; run_pp; print_endline; print_debug; warn }
@@ -146,7 +146,7 @@ module Frontend = struct
   let frontend = lazy (init ())
 
   let frontend ?cwd ~cpp_cmd filename =
-    L.debug (fun m -> m "Parsing %s" filename);
+    [%l.debug "Parsing %s" filename];
     try
       let cerb_res =
         match cwd with
@@ -165,7 +165,7 @@ module Frontend = struct
   let simple_frontend ~includes filename =
     let cmd = "cc" :: List.map (fun s -> "-I" ^ s) includes in
     let cpp_cmd = String.concat " " cmd in
-    L.trace (fun m -> m "Cpp_cmd: %s" cpp_cmd);
+    [%l.trace "Cpp_cmd: %s" cpp_cmd];
     frontend ~cpp_cmd filename
 end
 
@@ -255,8 +255,7 @@ let exec_function ~includes ~fuel file_names function_name =
         let@@ () = StateM.Result.run_with_state ~state:SState.empty in
         let** () = Wpst_interp.init_prog_state linked in
         let* state = StateM.get_state () in
-        L.debug (fun m ->
-            m "@[<2>Initial state:@ %a@]" (Fmt.Dump.option SState.pp) state);
+        [%l.debug "@[<2>Initial state:@ %a@]" (Fmt.Dump.option SState.pp) state];
         Wpst_interp.exec_fun entry_point ~args:[]
       in
       let@ () = with_function_context linked in
@@ -513,9 +512,9 @@ let linked_prog_of_db json_file =
             match parse_and_signal item with
             | Ok ail -> Some (ail, item)
             | Error (`ParsingError msg, _loc) ->
-                L.debug (fun m ->
-                    m "Ignoring file that did not parse correctly: %s@\n%s"
-                      item.file msg);
+                [%l.debug
+                  "Ignoring file that did not parse correctly: %s@\n%s"
+                    item.file msg];
                 None)
           db
       in
