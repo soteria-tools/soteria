@@ -60,7 +60,8 @@
     (>= 3.14.0)))
   (ppxlib
    (>= 0.38.0))
-  ppx_mixins
+  (ppx_mixins
+   (>= 0.1))
   (hc
    (>= 0.5))
   (yojson
@@ -93,9 +94,9 @@
   ppx_deriving
   fmt
   (linol
-   (>= 0.10))
+   (= 0.10))
   (linol-eio
-   (>= 0.10))
+   (= 0.10))
   (ppx_subliner
    (>= 0.2.1))
   (odoc :with-doc)
