@@ -60,7 +60,8 @@
     (>= 3.14.0)))
   (ppxlib
    (>= 0.38.0))
-  ppx_mixins
+  (ppx_mixins
+   (>= 0.1))
   (hc
    (>= 0.5))
   (yojson
