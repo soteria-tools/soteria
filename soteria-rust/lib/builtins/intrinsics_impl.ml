@@ -92,6 +92,39 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     let+ () = State.store dst t src in
     old
 
+  let atomic_xadd ~t ~(u : Types.ty) ~ord:_ ~(dst : full_ptr) ~(src : rust_val)
+      =
+    atomic_warn ();
+    let* old = State.load dst t in
+    match (t, u) with
+    (* - `T` must be an integer or pointer *)
+    (* - `U` must be the same as `T`if it is an integer, or `usize` if it is a pointer. *)
+    | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
+        (* The operation adds `src` without multiplying by the size of the
+           data. *)
+        let src = as_base_i Usize src in
+        let old_v =
+          match as_ptr old with
+          | old, Thin -> old
+          | _ -> failwith "atomic_xadd: pointer with metadata other than Thin"
+        in
+        (* Wrapping add: no overflow check *)
+        let* new_ = Sptr.offset ~check:false ~signed:false old_v src in
+        let new_ = Ptr (new_, Thin) in
+        let* () = State.store dst t new_ in
+        ok old
+    | TLiteral lit, TLiteral lit' when Types.equal_literal_type lit lit' ->
+        let src = as_base lit src in
+        let old_v = as_base lit old in
+        (* Wrapping add. *)
+        let* new_ = Core.eval_lit_binop (Add OWrap) lit old_v src in
+        let+ () = State.store dst t (Int new_) in
+        old
+    | _ ->
+        failwith
+          "atomic_xadd: invalid types, expects to follow the rules of \
+           atomic_xadd"
+
   let atomic_cxchgweak ~t ~ord_succ:_ ~ord_fail:_ ~_dst ~_old ~_src =
     atomic_warn ();
     let* curr = State.load _dst t in

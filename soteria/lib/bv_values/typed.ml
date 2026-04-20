@@ -84,6 +84,8 @@ module BitVec = struct
 
   let mki_nz n i =
     if i = 0 then failwith "Zero value in mki_nonzero" else mki_masked n i
+
+  let no_ovf_unsafe x = x
 end
 
 module Infix = struct
