@@ -98,7 +98,7 @@ module M (StateM : State.StateM.S) = struct
     in
     (* SAFETY: Overflows were either already checked for, or it was expected to
        properly wrap. *)
-    ok (Typed.BitVec.no_ovf_unsafe res)
+    ok (BV.no_ovf_unsafe res)
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
   let eval_checked_lit_binop (op : Expressions.binop) ty l r =
