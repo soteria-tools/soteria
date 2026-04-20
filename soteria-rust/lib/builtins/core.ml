@@ -85,9 +85,6 @@ module M (StateM : State.StateM.S) = struct
             `InvalidShift
       | _ -> ok ()
     in
-    let noovf (x : [< T.sint_ovf ] Typed.t) : [< T.sint ] Typed.t =
-      Typed.cast x
-    in
     let res =
       match bop with
       | Add om -> BV.add ~checked:(om <> OWrap) l r |> Typed.cast
@@ -99,9 +96,9 @@ module M (StateM : State.StateM.S) = struct
       | Shr _ -> if signed then BV.ashr l r else BV.lshr l r
       | _ -> failwith "Invalid binop in binop_fn"
     in
-    (* Overflows were either already checked for, or it was expected to properly
-       wrap. *)
-    ok (noovf res)
+    (* SAFETY: Overflows were either already checked for, or it was expected to
+       properly wrap. *)
+    ok (Typed.BitVec.no_ovf_unsafe res)
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
   let eval_checked_lit_binop (op : Expressions.binop) ty l r =

@@ -174,6 +174,9 @@ module BitVec : sig
   val mul_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
   val neg_overflows : [< sint ] t -> [> sbool ] t
 
+  (* Unsafe mark as not overflow *)
+  val no_ovf_unsafe : [< sint_ovf ] t -> [> sint ] t
+
   (* inequalities *)
   val lt : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
   val leq : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
