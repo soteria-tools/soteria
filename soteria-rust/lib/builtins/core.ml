@@ -85,15 +85,23 @@ module M (StateM : State.StateM.S) = struct
             `InvalidShift
       | _ -> ok ()
     in
-    match bop with
-    | Add om -> ok (BV.add ~checked:(om <> OWrap) l r)
-    | Sub om -> ok (BV.sub ~checked:(om <> OWrap) l r)
-    | Mul om -> ok (BV.mul ~checked:(om <> OWrap) l r)
-    | Div _ -> ok (BV.div ~signed l (cast r))
-    | Rem _ -> ok (BV.rem ~signed l (cast r))
-    | Shl _ -> ok (BV.shl l r)
-    | Shr _ -> ok (if signed then BV.ashr l r else BV.lshr l r)
-    | _ -> failwith "Invalid binop in binop_fn"
+    let noovf (x : [< T.sint_ovf ] Typed.t) : [< T.sint ] Typed.t =
+      Typed.cast x
+    in
+    let res =
+      match bop with
+      | Add om -> BV.add ~checked:(om <> OWrap) l r |> Typed.cast
+      | Sub om -> BV.sub ~checked:(om <> OWrap) l r
+      | Mul om -> BV.mul ~checked:(om <> OWrap) l r
+      | Div _ -> BV.div ~signed l (cast r)
+      | Rem _ -> BV.rem ~signed l (cast r)
+      | Shl _ -> BV.shl l r
+      | Shr _ -> if signed then BV.ashr l r else BV.lshr l r
+      | _ -> failwith "Invalid binop in binop_fn"
+    in
+    (* Overflows were either already checked for, or it was expected to properly
+       wrap. *)
+    ok (noovf res)
 
   (** Evaluates the checked operation, returning (wrapped value, overflowed). *)
   let eval_checked_lit_binop (op : Expressions.binop) ty l r =
@@ -108,7 +116,9 @@ module M (StateM : State.StateM.S) = struct
       | SubChecked, true -> l -$?@ r
       | MulChecked, false -> l *?@ r
       | MulChecked, true -> l *$?@ r
-      | _ -> failwith "Invalid checked op"
+      | _ ->
+          Fmt.failwith "Invalid checked op: (%a, %b)" Expressions.pp_binop op
+            signed
     in
     ok (Tuple [ Int wrapped; Int (BV.of_bool overflowed) ])
 
