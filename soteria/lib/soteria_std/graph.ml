@@ -69,3 +69,77 @@ module Make_in_place (Node : Hashset.PrintableHashedType) = struct
        it for now. *)
     List.concat sorted_components
 end
+
+(** Node type extended with display names for DOT serialization. *)
+module type With_names = sig
+  type t
+
+  (** A short label used as the visible node label in the graph. *)
+  val short_name : t -> string
+
+  (** The full name used as the tooltip (visible on hover). *)
+  val long_name : t -> string
+end
+
+module Make_with_dot (Node : [%mixins Hashset.PrintableHashedType + With_names]) =
+struct
+  include Make_in_place (Node)
+
+  (** Escape a string for use as a DOT double-quoted attribute value. *)
+  let dot_escape s =
+    let buf = Buffer.create (String.length s) in
+    String.iter
+      (fun c ->
+        match c with
+        | '"' -> Buffer.add_string buf "\\\""
+        | '\\' -> Buffer.add_string buf "\\\\"
+        | '\n' -> Buffer.add_string buf "\\n"
+        | c -> Buffer.add_char buf c)
+      s;
+    Buffer.contents buf
+
+  (** Serialize the graph to DOT format for visualization.
+
+      Each node is rendered with [Node.short_name] as its visible label and
+      [Node.long_name] as its tooltip, so that interactive renderers (e.g.
+      d3-graphviz, xdot) show the full name on hover while keeping the graph
+      layout readable. *)
+  let to_dot ?(graph_name = "callgraph") fmt graph =
+    (* Assign a stable integer ID to each node to avoid quoting issues with
+       arbitrary node names. *)
+    let ids : int Hashtbl.t = Hashtbl.create (Hashtbl.length graph) in
+    let next_id = ref 0 in
+    let id_of node =
+      match Hashtbl.find_opt ids node with
+      | Some id -> id
+      | None ->
+          let id = !next_id in
+          Hashtbl.replace ids node id;
+          incr next_id;
+          id
+    in
+    (* Collect all nodes (both sources and targets). *)
+    Hashtbl.iter
+      (fun from tos ->
+        ignore (id_of from);
+        Node_set.iter (fun to_ -> ignore (id_of to_)) tos)
+      graph;
+    Fmt.pf fmt "digraph %s {@\n" graph_name;
+    Fmt.pf fmt "  node [shape=box fontname=\"monospace\"];@\n";
+    (* Emit node declarations. *)
+    Hashtbl.iter
+      (fun node id ->
+        Fmt.pf fmt "  n%d [label=\"%s\" tooltip=\"%s\"];@\n" id
+          (dot_escape (Node.short_name node))
+          (dot_escape (Node.long_name node)))
+      ids;
+    (* Emit edges. *)
+    Hashtbl.iter
+      (fun from tos ->
+        let from_id = id_of from in
+        Node_set.iter
+          (fun to_ -> Fmt.pf fmt "  n%d -> n%d;@\n" from_id (id_of to_))
+          tos)
+      graph;
+    Fmt.pf fmt "}@\n"
+end
