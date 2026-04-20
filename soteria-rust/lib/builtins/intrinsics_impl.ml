@@ -108,14 +108,16 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
           | old, Thin -> old
           | _ -> failwith "atomic_xadd: pointer with metadata other than Thin"
         in
-        let* new_ = Sptr.offset ~signed:false old_v src in
+        (* Wrapping add: no overflow check *)
+        let* new_ = Sptr.offset ~check:false ~signed:false old_v src in
         let new_ = Ptr (new_, Thin) in
         let* () = State.store dst t new_ in
         ok old
     | TLiteral lit, TLiteral lit' when Types.equal_literal_type lit lit' ->
         let src = as_base lit src in
         let old_v = as_base lit old in
-        let* new_ = Core.eval_lit_binop (Add OUB) lit old_v src in
+        (* Wrapping add. *)
+        let* new_ = Core.eval_lit_binop (Add OWrap) lit old_v src in
         let+ () = State.store dst t (Int new_) in
         old
     | _ ->

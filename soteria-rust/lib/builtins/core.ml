@@ -87,7 +87,7 @@ module M (StateM : State.StateM.S) = struct
     in
     let res =
       match bop with
-      | Add om -> BV.add ~checked:(om <> OWrap) l r |> Typed.cast
+      | Add om -> BV.add ~checked:(om <> OWrap) l r
       | Sub om -> BV.sub ~checked:(om <> OWrap) l r
       | Mul om -> BV.mul ~checked:(om <> OWrap) l r
       | Div _ -> BV.div ~signed l (cast r)
