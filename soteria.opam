@@ -34,7 +34,7 @@ depends: [
   "qcheck-alcotest" {with-test}
   "dune" {>= "3.14" & build & >= "3.14.0"}
   "ppxlib" {>= "0.38.0"}
-  "ppx_mixins" {>= "0.1"}
+  "ppx_mixins" {>= "0.2.0"}
   "hc" {>= "0.5"}
   "yojson" {< "3.0"}
   "unionFind"
