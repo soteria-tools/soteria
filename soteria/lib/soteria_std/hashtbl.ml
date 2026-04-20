@@ -2,14 +2,9 @@
 
 include Stdlib.Hashtbl
 
-module type HashedAndStringEncodable = sig
-  include Stdlib.Hashtbl.HashedType
-
-  val to_string : t -> string
-  val of_string : string -> (t, string) result
-end
-
-module MakeYojsonable (Key : HashedAndStringEncodable) = struct
+module MakeYojsonable
+    (Key : [%mixins Stdlib.Hashtbl.HashedType + Sigs.String_encodable]) =
+struct
   include Stdlib.Hashtbl.Make (Key)
 
   (** Convert a hash table to a Yojson object. *)
