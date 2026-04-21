@@ -28,6 +28,7 @@ module MonadState = struct
     trace : Trace.t;
     subst : Charon.Substitute.subst;
     generic_layouts : Layout_common.t TypeMap.t;
+    calls : Charon.Types.name list;
   }
 
   let empty =
@@ -35,6 +36,7 @@ module MonadState = struct
       trace = Trace.empty;
       subst = Charon.Substitute.empty_subst;
       generic_layouts = TypeMap.empty;
+      calls = [];
     }
 end
 
@@ -160,6 +162,22 @@ let with_extra_call_trace ~loc ~msg (f : 'a t) : 'a t =
   let new_trace = Trace.push_to_stack ~loc ~msg cur_trace in
   let+ result, st = f { st with trace = new_trace } in
   (result, { st with trace = cur_trace })
+
+let with_extra_fn_call ~name_opt (f : 'a t) : 'a t =
+  match name_opt with
+  | None -> f
+  | Some name ->
+      fun st ->
+        let open MonoSymex.Syntax in
+        let cur_calls = st.calls in
+        let new_calls = name :: cur_calls in
+        let+ result, st = f { st with calls = new_calls } in
+        (result, { st with calls = cur_calls })
+
+let current_fn_name () : Charon.Types.name option t =
+  let open Syntax in
+  let+ { calls; _ } = get_state () in
+  List.first_opt calls
 
 let not_impl = give_up
 let of_opt_not_impl = some_or_give_up

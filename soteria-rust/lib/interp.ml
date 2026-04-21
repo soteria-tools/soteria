@@ -436,7 +436,7 @@ module Make (StateImpl : State.S) = struct
       The arguments must be passed, as for calls on [&dyn Trait] types the first
       argument holds the VTable pointer. *)
   and resolve_function ~in_tys ~out_ty :
-      GAst.fn_operand -> ('err fun_exec * Types.ty list) t =
+      GAst.fn_operand -> ('err fun_exec * Types.name option * Types.ty list) t =
     let validate_call ?(is_dyn = false) (fn : Types.fun_decl_ref) =
       let fn = Crate.get_fun fn.id in
       let rec check_tys l r =
@@ -459,8 +459,10 @@ module Make (StateImpl : State.S) = struct
       in
       check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
     in
-    let perform_call : Fun_kind.t -> ('a fun_exec * Types.ty list) t = function
-      | Synthetic _ as fn -> ok (exec_fun fn, in_tys)
+    let perform_call :
+        Fun_kind.t -> ('a fun_exec * Types.name option * Types.ty list) t =
+      function
+      | Synthetic _ as fn -> ok (exec_fun fn, None, in_tys)
       | Real fn ->
           let fundef = Crate.get_fun fn.id in
           let+ inputs =
@@ -472,7 +474,7 @@ module Make (StateImpl : State.S) = struct
           let fun_maybe_stubbed =
             Std_funs.std_fun_eval fundef fn.generics exec_fun
           in
-          (fun_maybe_stubbed, inputs)
+          (fun_maybe_stubbed, Some fundef.item_meta.name, inputs)
     in
     function
     (* Handle builtins separately *)
@@ -974,7 +976,7 @@ module Make (StateImpl : State.S) = struct
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
-        let* exec_fun, exp_tys =
+        let* exec_fun, name_opt, exp_tys =
           resolve_function ~in_tys ~out_ty:dest.ty func
         in
         (* the expected types of the function may differ to those passed, e.g.
@@ -986,15 +988,19 @@ module Make (StateImpl : State.S) = struct
               if Types.equal_ty from_ty to_ty then ok arg
               else Core.transmute ~from_ty ~to_ty arg)
         in
+        [%l.info "Resolved call to %a" (Fmt.Dump.option Crate.pp_name) name_opt];
         [%l.info
           "Executing function with arguments [%a]"
             Fmt.(list ~sep:(any ", ") pp_rust_val)
             args];
         let fun_exec =
-          with_extra_call_trace ~loc:terminator.span.data ~msg:"Call trace"
+          with_extra_fn_call ~name_opt
+          @@ with_extra_call_trace ~loc:terminator.span.data ~msg:"Call trace"
           @@ with_env ~env:()
           @@ exec_fun args
         in
+        let* current_fn = current_fn_name () in
+        Call_graph.add_edge current_fn name_opt;
         unwind_with fun_exec
           ~f:(fun v ->
             let* ptr = resolve_place_lazy dest in
@@ -1156,6 +1162,7 @@ module Make (StateImpl : State.S) = struct
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
+    let@@ () = with_extra_fn_call ~name_opt:(Some fundef.item_meta.name) in
     let@@ () =
       with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
