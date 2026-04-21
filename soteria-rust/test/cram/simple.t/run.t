@@ -49,10 +49,29 @@ Test casting between integer types
 Splitting and merging, via a union
   $ soteria-rust exec split_merges.rs
   Compiling... done in <time>
-  => Running split_merges::main...
-  note: split_merges::main: done in <time>, ran 1 branch
+  => Running split_merges::endianness...
+  note: split_merges::endianness: done in <time>, ran 1 branch
   PC 1: empty
   
+  => Running split_merges::uninit_gap...
+  warning: Invalid reference: Uninitialized memory access
+      ┌─ $TESTCASE_ROOT/split_merges.rs:64:9
+   52 │  fn uninit_gap() {
+      │  --------------- 1: Entry point
+      ·  
+   64 │          assert_eq!(x.as_u32, 0x1234_5678);
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering operation
+  error: split_merges::uninit_gap: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Uninitialized memory access in split_merges::uninit_gap
+      ┌─ $TESTCASE_ROOT/split_merges.rs:64:9
+   52 │  fn uninit_gap() {
+      │  --------------- 1: Entry point
+      ·  
+   64 │          assert_eq!(x.as_u32, 0x1234_5678);
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Memory load
+  PC 1: empty
+  
+  [1]
 Test unwinding, and catching that unwind; we need to ignore leaks as this uses a Box.
   $ soteria-rust exec unwind.rs --ignore-leaks
   Compiling... done in <time>
