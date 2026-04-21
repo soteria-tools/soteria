@@ -159,7 +159,7 @@ let with_extra_call_trace ?name ~loc ~msg (f : 'a t) : 'a t =
  fun ({ trace; calls; _ } as st) ->
   let open MonoSymex.Syntax in
   let new_trace = Trace.push_to_stack ~loc ~msg trace in
-  let curr_fn = List.first_opt calls in
+  let curr_fn = List.hd_opt calls in
   let new_calls = Option.to_list name @ calls in
   Call_graph.add_edge curr_fn name;
   let+ result, st = f { st with trace = new_trace; calls = new_calls } in

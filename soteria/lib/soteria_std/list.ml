@@ -96,13 +96,18 @@ let map_changed f l =
   in
   (res, !changed)
 
-(** Return the last element of a list. *)
-let rec last l =
+(** Return the last element of a list.
+
+    @raise Invalid_argument if the list is empty. *)
+let[@tailrec] rec last l =
   match l with [] -> invalid_arg "List.last" | [ x ] -> x | _ :: l -> last l
 
 (** Return the last element of a list, if any. *)
-let rec last_opt l =
+let[@tailrec] rec last_opt l =
   match l with [] -> None | [ x ] -> Some x | _ :: l -> last_opt l
+
+(** Return the head of a list, if any. *)
+let hd_opt = function [] -> None | x :: _ -> Some x
 
 (** Apply a function to each pair of elements from two lists, concatenating all
     resulting lists.
@@ -158,5 +163,3 @@ let rec find_with_rest f l =
         match find_with_rest f xs with
         | None -> None
         | Some (found, rest) -> Some (found, x :: rest))
-
-let first_opt = function [] -> None | x :: _ -> Some x
