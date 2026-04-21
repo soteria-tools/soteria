@@ -976,7 +976,7 @@ module Make (StateImpl : State.S) = struct
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
-        let* exec_fun, name_opt, exp_tys =
+        let* exec_fun, name, exp_tys =
           resolve_function ~in_tys ~out_ty:dest.ty func
         in
         (* the expected types of the function may differ to those passed, e.g.
@@ -988,13 +988,12 @@ module Make (StateImpl : State.S) = struct
               if Types.equal_ty from_ty to_ty then ok arg
               else Core.transmute ~from_ty ~to_ty arg)
         in
-        [%l.info "Resolved call to %a" (Fmt.Dump.option Crate.pp_name) name_opt];
         [%l.info
           "Executing function with arguments [%a]"
             Fmt.(list ~sep:(any ", ") pp_rust_val)
             args];
         let fun_exec =
-          with_extra_call_trace ?name:name_opt ~loc:terminator.span.data
+          with_extra_call_trace ?name ~loc:terminator.span.data
             ~msg:"Call trace"
           @@ with_env ~env:()
           @@ exec_fun args

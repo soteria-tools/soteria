@@ -28,7 +28,6 @@ module MonadState = struct
     trace : Trace.t;
     subst : Charon.Substitute.subst;
     generic_layouts : Layout_common.t TypeMap.t;
-    calls : Charon.Types.name list;
   }
 
   let empty =
@@ -36,7 +35,6 @@ module MonadState = struct
       trace = Trace.empty;
       subst = Charon.Substitute.empty_subst;
       generic_layouts = TypeMap.empty;
-      calls = [];
     }
 end
 
@@ -156,14 +154,13 @@ let error ?trace e : ('a, Error.with_trace, 'f) Result.t =
   Soteria.Symex.Compo_res.Error e
 
 let with_extra_call_trace ?name ~loc ~msg (f : 'a t) : 'a t =
- fun ({ trace; calls; _ } as st) ->
+ fun st ->
   let open MonoSymex.Syntax in
-  let new_trace = Trace.push_to_stack ~loc ~msg trace in
-  let curr_fn = List.hd_opt calls in
-  let new_calls = Option.to_list name @ calls in
-  Call_graph.add_edge curr_fn name;
-  let+ result, st = f { st with trace = new_trace; calls = new_calls } in
-  (result, { st with trace; calls })
+  let cur_trace = st.trace in
+  let new_trace = Trace.push_to_stack ?name ~loc ~msg cur_trace in
+  Call_graph.add_edge cur_trace.name name;
+  let+ result, st = f { st with trace = new_trace } in
+  (result, { st with trace = cur_trace })
 
 let not_impl = give_up
 let of_opt_not_impl = some_or_give_up
