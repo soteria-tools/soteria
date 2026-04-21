@@ -994,13 +994,11 @@ module Make (StateImpl : State.S) = struct
             Fmt.(list ~sep:(any ", ") pp_rust_val)
             args];
         let fun_exec =
-          with_extra_fn_call ~name_opt
-          @@ with_extra_call_trace ~loc:terminator.span.data ~msg:"Call trace"
+          with_extra_call_trace ?name:name_opt ~loc:terminator.span.data
+            ~msg:"Call trace"
           @@ with_env ~env:()
           @@ exec_fun args
         in
-        let* current_fn = current_fn_name () in
-        Call_graph.add_edge current_fn name_opt;
         unwind_with fun_exec
           ~f:(fun v ->
             let* ptr = resolve_place_lazy dest in
@@ -1162,9 +1160,9 @@ module Make (StateImpl : State.S) = struct
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
-    let@@ () = with_extra_fn_call ~name_opt:(Some fundef.item_meta.name) in
     let@@ () =
-      with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
+      with_extra_call_trace ~name:fundef.item_meta.name
+        ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
     let* value = exec_real_fun fundef generics args in
