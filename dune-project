@@ -41,6 +41,10 @@
   patricia-tree
   (ppx_expect
    (>= 0.17.0))
+  (ppx_blob
+    (>= 0.9.0))
+  (ppx_subliner
+    (>= 0.2.1))
   ppx_deriving
   fmt
   printbox-text
@@ -101,8 +105,6 @@
    (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
-  (ppx_blob
-   (>= 0.9.0))
   (yojson
    (< 3.0))
   (dune
