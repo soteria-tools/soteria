@@ -104,7 +104,7 @@ let show = Fmt.to_to_string pp
 let init ?(initial_state = Unique) () =
   let tag = Tag.fresh_tag () in
   let node = { protector = None; parents = [ tag ]; initial_state } in
-  (Tag.Map.singleton tag node, tag)
+  (tag, Tag.Map.singleton tag node)
 
 let ub_state = fst @@ init ~initial_state:UB ()
 

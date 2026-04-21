@@ -7,13 +7,18 @@ open Rustsymex
 open Charon
 open Common
 open Sptr
-module Tree_borrow = Tree_borrows.Raw
 
-module Make () = struct
+module Make (Borrows : Tree_borrows.T) = struct
+  module Borrows = Borrows (DecayMap.SM)
+
   (* Pointer implementation *)
 
   module Sptr_base = struct
-    open Rustsymex.Syntax
+    module Logic = Soteria.Logic.Make (DecayMap.SM)
+    module L_option = Logic.Util.Option
+
+    (* TODO: we need a derive for S_with_syn; with the right abstractions in
+       Logic.Util it should be very straightforward. *)
 
     type ('sptr, 'snonzero, 'sint, 'tag) base = {
       ptr : 'sptr;
@@ -23,21 +28,16 @@ module Make () = struct
     }
 
     type t =
-      ( T.sptr Typed.t,
-        T.nonzero Typed.t,
-        T.sint Typed.t,
-        Tree_borrow.Tag.t )
-      base
+      (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t, Borrows.Tag.t) base
 
-    type syn =
-      (Typed.Expr.t, Typed.Expr.t, Typed.Expr.t, Tree_borrow.Tag.t) base
+    type syn = (Typed.Expr.t, Typed.Expr.t, Typed.Expr.t, Borrows.Tag.syn) base
 
     let pp' pp_v pp_tag fmt { ptr; tag; _ } =
       Fmt.pf fmt "%a[%a]" pp_v ptr Fmt.(option ~none:(any "*") pp_tag) tag
 
-    let pp = pp' Typed.ppa Tree_borrow.Tag.pp
+    let pp = pp' Typed.ppa Borrows.Tag.pp
     let show = Fmt.to_to_string pp
-    let pp_syn = pp' Typed.Expr.pp Tree_borrow.Tag.pp
+    let pp_syn = pp' Typed.Expr.pp Borrows.Tag.pp_syn
     let show_syn = Fmt.to_to_string pp_syn
 
     let to_syn { ptr; tag; align; size } =
@@ -45,17 +45,20 @@ module Make () = struct
         ptr = Typed.Expr.of_value ptr;
         align = Typed.Expr.of_value align;
         size = Typed.Expr.of_value size;
-        tag;
+        tag = L_option.to_syn Borrows.Tag.to_syn tag;
       }
 
     let learn_eq syn t =
       let open DecayMap.SM.Consumer in
       let open Syntax in
+      let* () = L_option.learn_eq Borrows.Tag.learn_eq syn.tag t.tag in
       let* () = learn_eq syn.ptr t.ptr in
       let* () = learn_eq syn.align t.align in
       learn_eq syn.size t.size
 
-    let exprs_syn { ptr; align; size; tag = _ } = [ ptr; align; size ]
+    let exprs_syn { ptr; align; size; tag } =
+      L_option.exprs_syn Borrows.Tag.exprs_syn tag @ [ ptr; align; size ]
+
     let fresh () = failwith "Fresh unimplemented for sptr (for now)"
 
     let subst subst_val p =
@@ -63,7 +66,8 @@ module Make () = struct
       let ptr = se p.ptr in
       let align = se p.align in
       let size = se p.size in
-      { ptr; align; size; tag = p.tag }
+      let tag = L_option.subst Borrows.Tag.subst subst_val p.tag in
+      { ptr; align; size; tag }
 
     let null_ptr () =
       {
@@ -87,18 +91,18 @@ module Make () = struct
     (** A simplified (and unsafe) version of [offset], that adds a signed
         bitvector to this pointer's offset. *)
     let raw_offset ptr off_by =
+      let open Rustsymex.Syntax in
       let loc, ofs = Typed.Ptr.decompose ptr.ptr in
       let ofs', ovf = ofs +$?@ off_by in
       let++ () = assert_or_error (Typed.not ovf) `UBDanglingPointer in
       { ptr with ptr = Typed.Ptr.mk loc ofs' }
 
-    let[@inline] _decay ~expose { ptr; align; size; _ } decay_map =
+    let[@inline] _decay ~expose { ptr; align; size; _ } =
+      let open DecayMap.SM.Syntax in
       let loc, ofs = Typed.Ptr.decompose ptr in
-      let+ loc_int, decay_map =
-        DecayMap.decay ~expose ~size ~align loc decay_map
-      in
+      let+ loc_int = DecayMap.decay ~expose ~size ~align loc in
       [%l.debug "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int];
-      (loc_int +!!@ ofs, decay_map)
+      loc_int +!!@ ofs
 
     let decay p = _decay ~expose:false p
     let expose p = _decay ~expose:true p
@@ -116,10 +120,13 @@ module Make () = struct
     let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
 
     let nondet ty =
+      let open Rustsymex.Syntax in
       let** layout = Layout.layout_of ty in
       let* loc = nondet (Typed.t_loc ()) in
       let* ofs = nondet (Typed.t_usize ()) in
-      let tag = None in
+      let* tag, _ =
+        DecayMap.SM.run_with_state ~state:None @@ Borrows.Tag.nondet ()
+      in
       let ptr = Typed.Ptr.mk loc ofs in
       let ptr = { ptr; tag; align = layout.align; size = layout.size } in
       Result.ok ptr
@@ -160,13 +167,13 @@ module Make () = struct
   end
 
   module Freeable = Soteria.Sym_states.Freeable.Make (DecayMap.SM)
-  module Tree_block = Rtree_block.Make (Sptr_base)
+  module Tree_block = Rtree_block.Make (Borrows) (Sptr_base)
 
   module Meta = struct
     type t = {
       align : Typed.T.nonzero Typed.t;
       size : Typed.T.sint Typed.t;
-      tb_root : Tree_borrow.Tag.t;
+      tb_root : Borrows.Tag.t;
       kind : Alloc_kind.t;
       trace : Trace.t;
     }
@@ -197,11 +204,7 @@ module Make () = struct
   end
 
   module Block = struct
-    type t = {
-      block : Tree_block.t option;
-      borrow : Tree_borrow.t;
-          [@sym_state.ignore { empty = Tree_borrow.ub_state }]
-    }
+    type t = { block : Tree_block.t option; borrow : Borrows.Tree.t option }
     [@@deriving sym_state { symex = DecayMap.SM }]
 
     let pp_pretty ft { block; _ } =
@@ -210,24 +213,48 @@ module Make () = struct
     open SM
     open Syntax
 
+    let lift_fix_block (s : Tree_block.syn) =
+      (* HACK: this is quite ugly; tree borrow misses relating to the structure
+         (not the state!) can occur within [Tree_block], however fixing them
+         there is not possible, since the structure is stored here, in [Block].
+         As such we catch those, and lift them appropriately here. *)
+      match s with
+      | MemVal { v = STree_borrow s; _ } -> Ser_borrow s
+      | s -> Ser_block s
+
+    let lift_fix_block_r r =
+      Soteria.Symex.Compo_res.map_missing r (List.map lift_fix_block)
+
+    let with_block (f : ('a, 'err, 'fix) Tree_block.SM.Result.t) :
+        ('a, 'err, syn list) Result.t =
+      let* t_opt = SM.get_state () in
+      let { block; borrow } = of_opt t_opt in
+      let*^ v, block = f block in
+      let+ () = SM.set_state (to_opt { block; borrow }) in
+      lift_fix_block_r v
+
     let with_block_read_tb
-        (f :
-          Tree_borrow.t ->
-          ('a, 'err, Tree_block.syn list) Tree_block.SM.Result.t) :
+        (f : Borrows.Tree.t option -> ('a, 'err, 'fix) Tree_block.SM.Result.t) :
         ('a, 'err, syn list) SM.Result.t =
       let* t_opt = SM.get_state () in
       let { block; borrow } = of_opt t_opt in
       let*^ v, block = f borrow block in
       let+ () = SM.set_state (to_opt { block; borrow }) in
-      Soteria.Symex.Compo_res.map_missing v lift_block_fixes
+      lift_fix_block_r v
+
+    let alloc ?zeroed size =
+      let open DecayMap.SM.Syntax in
+      let* block = Tree_block.alloc ?zeroed size in
+      let+ tag, borrow = Borrows.Tree.init () in
+      (tag, { block = Some block; borrow = Some borrow })
 
     (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
         being reborrowed. *)
-    let borrow ?(protect = false) ((ptr : Sptr_base.t), meta) parent
+    let borrow ?(protect = false) ((ptr : Sptr_base.t), meta) tag
         (ty : Types.ty) ofs =
       let pointee = Charon_util.get_pointee ty in
-      (* FIXME: this logic is tree borrows relaed and should be handled
-         there. *)
+      (* FIXME: this logic is tree borrows related and should be handled there.
+         https://github.com/soteria-tools/soteria/issues/301 *)
       let state : Tree_borrows.state =
         match (ty, Layout.is_unsafe_cell pointee) with
         | TRef (_, _, RShared), false -> Frozen
@@ -242,50 +269,28 @@ module Make () = struct
         | true, TAdt adt when Charon_util.adt_is_box adt -> Some Weak
         | true, _ -> failwith "Non-ref or box in borrow?"
       in
-      let* t_opt = SM.get_state () in
-      let { block; borrow } = of_opt t_opt in
-      let borrow, tag = Tree_borrow.borrow ?protector ~state parent borrow in
+      let** tag = with_borrow (Borrows.Tree.borrow ~state ?protector tag) in
       let ptr' = { ptr with tag = Some tag } in
       [%l.debug
         "%s pointer %a -> %a (%a)"
           (if protect then "Protecting" else "Borrowing")
-          Sptr_base.pp ptr Sptr_base.pp ptr' Tree_borrow.pp_state state];
-      if not protect then
-        let+ () = SM.set_state (to_opt { block; borrow }) in
-        Ok (ptr', meta)
+          Sptr_base.pp ptr Sptr_base.pp ptr' Tree_borrows.pp_state state];
+      if not protect then Result.ok (ptr', meta)
       else
         let**^ size = DecayMap.SM.lift @@ Layout.size_of pointee in
-        if%sat size ==@ Usize.(0s) then
-          let+ () = SM.set_state (to_opt { block; borrow }) in
-          Ok (ptr', meta)
+        if%sat size ==@ Usize.(0s) then Result.ok (ptr', meta)
         else
-          let*^ res, block = Tree_block.protect ofs size tag borrow block in
-          match res with
-          | Ok () ->
-              let+ () = SM.set_state (to_opt { block; borrow }) in
-              Ok (ptr', meta)
-          | Error e -> Result.error e
-          | Missing f ->
-              Result.miss (List.map (List.map (fun s -> Ser_block s)) f)
+          let++ () = with_block_read_tb (Tree_block.tb_access ofs size tag) in
+          (ptr', meta)
 
     let unprotect ofs tag size =
-      let* t_opt = SM.get_state () in
-      let { block; borrow } = of_opt t_opt in
-      let borrow = Tree_borrow.unprotect tag borrow in
-      let** (), block =
-        if%sat size ==@ Usize.(0s) then SM.Result.ok ((), block)
-        else
-          let*^ res, block = Tree_block.unprotect ofs size tag borrow block in
-          match res with
-          | Ok () -> Result.ok ((), block)
-          | Error e -> Result.error e
-          | Missing f ->
-              Result.miss (List.map (List.map (fun s -> Ser_block s)) f)
-      in
-      SM.Result.set_state (to_opt { block; borrow })
+      let** () = with_borrow (Borrows.Tree.unprotect tag) in
+      if%sat size ==@ Usize.(0s) then SM.Result.ok ()
+      else with_block_read_tb (Tree_block.unprotect ofs size tag)
 
     let assert_exclusively_owned () =
-      with_block @@ Tree_block.assert_exclusively_owned ()
+      let** () = with_block (Tree_block.assert_exclusively_owned ()) in
+      with_borrow (Borrows.Tree.assert_exclusively_owned ())
   end
 
   module Freeable_block = Soteria.Sym_states.Freeable.Make (DecayMap.SM) (Block)
@@ -295,16 +300,15 @@ module Make () = struct
       Soteria.Sym_states.With_info.Make (DecayMap.SM) (Meta) (Freeable_block)
 
     let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
-        (t * Tree_borrow.Tag.t option) DecayMap.SM.t =
+        (t * Borrows.Tag.t option) DecayMap.SM.t =
       let open DecayMap.SM.Syntax in
-      let borrow, tag = Tree_borrow.init () in
-      let block = Some (Tree_block.alloc ?zeroed size) in
+      let* tag, block = Block.alloc ?zeroed size in
       let+^ trace = get_trace () in
       let trace = Trace.rename 0 "Allocation" trace in
       let trace = Trace.move_to_opt span trace in
       let info : Meta.t = { align; size; kind; trace; tb_root = tag } in
       let tag = if (Config.get ()).ignore_aliasing then None else Some tag in
-      (({ node = Alive { block; borrow }; info = Some info } : t), tag)
+      (({ node = Alive block; info = Some info } : t), tag)
   end
 
   module Heap = struct
@@ -701,27 +705,21 @@ module Make () = struct
        in
        (* Iterator over the tree borrow states in a tree. *)
        let collect_tb_states f =
-         Tree.iter_leaves_rev original_tree @@ fun leaf ->
-         match leaf.node with
-         | Owned (_, tb) ->
-             let range =
-               Tree_block.Range.offset leaf.range ~-!(fst original_tree.range)
-             in
-             f (tb, range)
-         | NotOwned Totally -> failwith "Impossible: we framed the range"
-         | NotOwned Partially ->
-             failwith "Impossible: iterating over an intermediate node"
+         Tree.iter_leaves_rev original_tree @@ fun (range, _, tb) ->
+         let range =
+           Tree_block.Range.offset range ~-!(fst original_tree.range)
+         in
+         f (tb, range)
        in
        (* Update a tree and its children with the given tree borrow state. *)
        let put_tb tb t =
          let rec aux tb (t : Tree.t) =
            match t.node with
-           | NotOwned _ -> failwith "Impossible: checked before"
-           | Owned (v, _) ->
-               let children =
-                 Option.map (fun (l, r) -> (aux tb l, aux tb r)) t.children
-               in
-               { t with children; node = Owned (v, tb) }
+           | NotOwned _ -> failwith "impossible: checked before"
+           | Owned Lazy ->
+               let l, r = Option.get t.children in
+               { t with children = Some (aux tb l, aux tb r) }
+           | Owned (Leaf (v, _)) -> { t with node = Owned (Leaf (v, tb)) }
          in
          try DecayMap.SM.Result.ok (aux tb t)
          with Failure msg -> DecayMap.SM.not_impl msg
