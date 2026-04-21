@@ -158,3 +158,5 @@ let rec find_with_rest f l =
         match find_with_rest f xs with
         | None -> None
         | Some (found, rest) -> Some (found, x :: rest))
+
+let first_opt = function [] -> None | x :: _ -> Some x
