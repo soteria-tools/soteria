@@ -829,4 +829,19 @@ module Encoder (Sptr : Sptr.S) = struct
           let size = Layout.size_to_fit ~size ~align in
           (size, align)
       | _ -> not_impl "size_and_align_of_val: Unexpected type"
+
+  let type_of_discr ty =
+    let open Rustsymex in
+    let open Syntax in
+    let** layout = Layout.layout_of ty in
+    match layout.fields with
+    | Enum (tag_layout, _) -> Result.ok tag_layout.ty
+    | _ -> failwith "variant_of_enum: expected enum layout"
+
+  let mk_enum ~ty (discr : int) fields =
+    let open Rustsymex in
+    let open Syntax in
+    let** tag_ty = type_of_discr ty in
+    let discr = BV.mki_lit tag_ty discr in
+    Result.ok (Enum (discr, fields))
 end
