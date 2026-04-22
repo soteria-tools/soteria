@@ -31,7 +31,8 @@ type alloc_fn =
   | Realloc
   | NoAllocShimIsUnstable
 
-type system_fn = HashmapRandomKeys | TlvAtexit
+type system_fn = HashmapRandomKeys | TlvAtexit | EnvVar | AvailableParallelism
+type tokio_fn = RngSeedNew
 
 type fn =
   | Alloc of alloc_fn
@@ -40,6 +41,7 @@ type fn =
   | Optim of optim_fn
   | Soteria of soteria_fn
   | System of system_fn
+  | Tokio of tokio_fn
   | DropInPlace
 
 let std_fun_pair_list =
@@ -89,6 +91,8 @@ let std_fun_pair_list =
     ( "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
       System TlvAtexit );
     ("std::sys::random::hashmap_random_keys", System HashmapRandomKeys);
+    ("std::env::_var", System EnvVar);
+    ("std::thread::available_parallelism", System AvailableParallelism);
     (* Panic Builtins *)
     ("__rust_panic_cleanup", Fixme PanicCleanup);
     (* Dropping, in particular for the generic case, does nothing. *)
@@ -152,6 +156,8 @@ let std_fun_pair_list =
     ("std::vec::Vec::_::remove::assert_failed", Optim Panic);
     (* This uses async stuff we would like to ignore, for now we patch it *)
     ("std::panicking::catch_unwind::cleanup", Fixme CatchUnwindCleanup);
+    (* Tokio stubs *)
+    ("tokio::util::rand::RngSeed::new", Tokio RngSeedNew);
   ]
 
 let opaque_names = List.map fst std_fun_pair_list
@@ -168,6 +174,7 @@ module M (StateM : State.StateM.S) = struct
   module Soteria_lib = Soteria_lib.M (StateM)
   module Std = Std.M (StateM)
   module System = System.M (StateM)
+  module Tokio = Tokio.M (StateM)
 
   let fn_to_stub fn_sig fn_name fun_exec = function
     | Soteria Assert -> Soteria_lib.assert_
@@ -195,7 +202,11 @@ module M (StateM : State.StateM.S) = struct
     | Fixme CatchUnwindCleanup -> Std.fixme_catch_unwind_cleanup
     | System HashmapRandomKeys -> System.hashmap_random_keys
     | System TlvAtexit -> System.tlv_atexit fun_exec
+    | System AvailableParallelism ->
+        System.available_parallelism ~ret_ty:fn_sig.output
+    | System EnvVar -> System.env_var ~ret_ty:fn_sig.output
     | DropInPlace -> Std.nop
+    | Tokio RngSeedNew -> Tokio.rngseed_new
 
   let std_fun_eval (f : UllbcAst.fun_decl) generics fun_exec =
     (* Rust allows defining functions and marking them as intrinsics within a
