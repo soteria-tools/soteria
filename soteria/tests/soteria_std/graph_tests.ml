@@ -130,10 +130,10 @@ module GDot = Make_with_dot (StringNode)
 let node s l = StringNode.{ short = s; long = l }
 
 (** Render a graph to a DOT string. *)
-let to_dot_string ?graph_name graph =
+let to_dot_string ~graph_name graph =
   let buf = Buffer.create 256 in
   let fmt = Format.formatter_of_buffer buf in
-  GDot.to_dot ?graph_name fmt graph;
+  GDot.to_dot ~graph_name fmt graph;
   Format.pp_print_flush fmt ();
   Buffer.contents buf
 
@@ -168,7 +168,7 @@ let dot_default_graph_name =
   let@ () = register "DOT default graph name" in
   let graph = GDot.with_node_capacity 1 in
   GDot.add_edge graph (node "a" "long_a") (node "b" "long_b");
-  let dot = to_dot_string graph in
+  let dot = to_dot_string ~graph_name:"dot_default_graph_name" graph in
   check_contains "default graph name" "digraph callgraph {" dot
 
 let dot_short_name_as_label =
@@ -177,7 +177,7 @@ let dot_short_name_as_label =
   GDot.add_edge graph
     (node "short_a" "very::long::a")
     (node "short_b" "very::long::b");
-  let dot = to_dot_string graph in
+  let dot = to_dot_string ~graph_name:"dot_short_name_as_label" graph in
   check_contains "short label a" {|label="short_a"|} dot;
   check_contains "short label b" {|label="short_b"|} dot
 
@@ -187,7 +187,7 @@ let dot_long_name_as_tooltip =
   GDot.add_edge graph
     (node "short_a" "very::long::a")
     (node "short_b" "very::long::b");
-  let dot = to_dot_string graph in
+  let dot = to_dot_string ~graph_name:"dot_long_name_as_tooltip" graph in
   check_contains "tooltip a" {|tooltip="very::long::a"|} dot;
   check_contains "tooltip b" {|tooltip="very::long::b"|} dot
 
@@ -196,7 +196,7 @@ let dot_edge_present =
   let graph = GDot.with_node_capacity 2 in
   let a = node "a" "long_a" and b = node "b" "long_b" in
   GDot.add_edge graph a b;
-  let dot = to_dot_string graph in
+  let dot = to_dot_string ~graph_name:"dot_edge_present" graph in
   (* Both nodes must be declared and there must be an edge n? -> n?. *)
   check_contains "edge arrow" " -> " dot;
   check_contains "node a label" {|label="a"|} dot;
@@ -206,7 +206,7 @@ let dot_target_only_node_declared =
   let@ () = register "DOT target-only node is declared" in
   let graph = GDot.with_node_capacity 2 in
   GDot.add_edge graph (node "src" "long_src") (node "sink" "long_sink");
-  let dot = to_dot_string graph in
+  let dot = to_dot_string ~graph_name:"dot_target_only_node_declared" graph in
   (* "sink" has no outgoing edges but must still appear as a node
      declaration. *)
   check_contains "sink label" {|label="sink"|} dot
@@ -215,7 +215,7 @@ let dot_escape_double_quote =
   let@ () = register "DOT escapes double quotes in names" in
   let graph = GDot.with_node_capacity 1 in
   GDot.add_edge graph (node {|say "hi"|} {|a "quoted" name|}) (node "b" "b");
-  let dot = to_dot_string graph in
+  let dot = to_dot_string ~graph_name:"dot_escape_double_quote" graph in
   check_contains "escaped quote in label" {|label="say \"hi\""|} dot;
   check_contains "escaped quote in tooltip" {|tooltip="a \"quoted\" name"|} dot
 
@@ -223,6 +223,6 @@ let dot_escape_backslash =
   let@ () = register "DOT escapes backslashes in names" in
   let graph = GDot.with_node_capacity 1 in
   GDot.add_edge graph (node {|a\b|} {|path\to\node|}) (node "b" "b");
-  let dot = to_dot_string graph in
+  let dot = to_dot_string ~graph_name:"dot_escape_backslash" graph in
   check_contains "escaped backslash in label" {|label="a\\b"|} dot;
   check_contains "escaped backslash in tooltip" {|tooltip="path\\to\\node"|} dot

@@ -85,15 +85,23 @@ module Make_with_dot (Node : [%mixins Hashset.PrintableHashedType + With_names])
 struct
   include Make_in_place (Node)
 
+  let dot_keywords = [| "graph"; "node"; "edge"; "digraph"; "subgraph" |]
+
   (** Serialize the graph to DOT format for visualization.
 
       Each node is rendered with [Node.short_name] as its visible label and
       [Node.long_name] as its tooltip, so that interactive renderers (e.g.
       d3-graphviz, xdot) show the full name on hover while keeping the graph
       layout readable. *)
-  let to_dot ?(graph_name = "graph") fmt graph =
+  let to_dot ~graph_name fmt graph =
     (* Assign a stable integer ID to each node to avoid quoting issues with
        arbitrary node names. *)
+    if Array.mem graph_name dot_keywords then
+      failwith
+        (Printf.sprintf
+           "Graph name '%s' is a reserved DOT keyword, please choose a \
+            different name"
+           graph_name);
     let ids : int Hashtbl.t = Hashtbl.create (Hashtbl.length graph) in
     let next_id = ref 0 in
     let id_of node =

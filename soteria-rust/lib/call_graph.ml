@@ -49,7 +49,7 @@ let add_edge (from : Types.name option) (to_ : Types.name option) =
 let dump path =
   let oc = open_out path in
   let fmt = Format.formatter_of_out_channel oc in
-  G.to_dot fmt graph;
+  G.to_dot ~graph_name:"callgraph" fmt graph;
   Format.pp_print_flush fmt ();
   close_out oc
 
