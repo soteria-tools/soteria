@@ -169,7 +169,7 @@ let dot_default_graph_name =
   let graph = GDot.with_node_capacity 1 in
   GDot.add_edge graph (node "a" "long_a") (node "b" "long_b");
   let dot = to_dot_string ~graph_name:"dot_default_graph_name" graph in
-  check_contains "default graph name" "digraph callgraph {" dot
+  check_contains "default graph name" "digraph dot_default_graph_name {" dot
 
 let dot_short_name_as_label =
   let@ () = register "DOT short name used as label" in

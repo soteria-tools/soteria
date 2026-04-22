@@ -8,21 +8,28 @@ open Charon
 
 (** Node type: a fully-qualified function name rendered as a string. *)
 module FunNode = struct
-  type t = { short_name : string; long_name : string } [@@deriving eq, hash]
+  type t = { short_name : string; long_name : string }
 
+  let equal v1 v2 = String.equal v1.long_name v2.long_name
+  let hash v = String.hash v.long_name
   let pp ft { long_name; _ } = Format.pp_print_string ft long_name
   let long_name s = s.long_name
   let short_name s = s.short_name
 
-  (** The "short name" is the last identifier, if there is one (should always be
-      the case), fallbacks to the full name *)
+  (** The "short name" is the last 2 identifiers (excluding type parameters e.g.
+      `<T>`), if there are two, otherwise just the last identifier (should
+      always be the case), fallbacks to the full name. *)
   let short_name_of_name n =
-    let rec aux : Types.name -> Types.name option = function
-      | [] -> None
-      | (PeIdent _ as short) :: _ -> Some [ short ]
-      | _ :: rest -> aux rest
+    let rec aux count : Types.name -> Types.name = function
+      | [] -> []
+      | _ when count = 0 -> []
+      | (PeIdent (str, _) as short) :: rest ->
+          let new_count = if String.get str 0 = '<' then count else count - 1 in
+          short :: aux new_count rest
+      | _ :: rest -> aux count rest
     in
-    match aux (List.rev n) with None -> n | Some short -> short
+    let identifiers = aux 2 (List.rev n) in
+    if List.length identifiers = 0 then n else List.rev identifiers
 
   let of_name n =
     let name_str n = (Fmt.to_to_string Crate.pp_name) n in
