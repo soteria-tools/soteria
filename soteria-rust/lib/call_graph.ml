@@ -53,8 +53,7 @@ let dump path =
   Format.pp_print_flush fmt ();
   close_out oc
 
-let () =
-  at_exit (fun () ->
-      match (Config.get ()).dump_callgraph with
-      | None -> ()
-      | Some path -> dump path)
+let dump_if_config () =
+  match (Config.get ()).dump_callgraph with
+  | None -> ()
+  | Some path -> dump path
