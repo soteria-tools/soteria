@@ -1,11 +1,12 @@
 open Charon
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
+module SMap = Map.Make (String)
 
 let match_config =
   NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
 (* Functions we stub to avoid problems in the interpreter *)
-type fixme_fn = PanicCleanup | CatchUnwindCleanup
+type fixme_fn = CatchUnwindCleanup | PromiseAlignment | DropInPlace
 
 (* Functions we could not stub, but we do for performance *)
 type optim_fn =
@@ -21,7 +22,10 @@ type optim_fn =
 type soteria_fn = Assert | Assume | NondetBytes | Panic
 
 (* Miri builtin functions *)
-type miri_fn = Alloc | AllocId | Dealloc | PromiseAlignement | Nop
+type miri_fn = Alloc | AllocId | Dealloc | Nop
+
+(* Functions related to panics *)
+type panic_fn = PanicCleanup
 
 (* Functions related to the allocator, see
    https://doc.rust-lang.org/src/alloc/alloc.rs.html#11-36 *)
@@ -34,13 +38,33 @@ type alloc_fn =
 type system_fn = HashmapRandomKeys | TlvAtexit
 
 type fn =
-  | Alloc of alloc_fn
   | Fixme of fixme_fn
-  | Miri of miri_fn
   | Optim of optim_fn
   | Soteria of soteria_fn
   | System of system_fn
-  | DropInPlace
+
+type extern_fn = Alloc of alloc_fn | Miri of miri_fn | Panic of panic_fn
+
+let extern_functions =
+  [
+    (* Allocator *)
+    ("__rust_alloc", Alloc (Alloc { zeroed = false }));
+    ("__rust_alloc_zeroed", Alloc (Alloc { zeroed = true }));
+    ("__rust_dealloc", Alloc Dealloc);
+    ("__rust_no_alloc_shim_is_unstable_v2", Alloc NoAllocShimIsUnstable);
+    ("__rust_realloc", Alloc Realloc);
+    (* Miri builtins *)
+    ("miri_get_alloc_id", Miri AllocId);
+    ("miri_pointer_name", Miri Nop);
+    ("miri_print_borrow_state", Miri Nop);
+    ("miri_run_provenance_gc", Miri Nop);
+    ("miri_write_to_stdout", Miri Nop);
+    ("miri_alloc", Miri Alloc);
+    ("miri_dealloc", Miri Dealloc);
+    (* Panics *)
+    ("__rust_panic_cleanup", Panic PanicCleanup);
+  ]
+  |> SMap.of_list
 
 let std_fun_pair_list =
   [
@@ -54,33 +78,8 @@ let std_fun_pair_list =
     ("kani::assume", Soteria Assume);
     ("kani::panic", Soteria Panic);
     (* Miri builtins *)
-    ("std::intrinsics::miri_promise_symbolic_alignment", Miri PromiseAlignement);
-    (* TODO: once https://github.com/AeneasVerif/charon/pull/1088 is merged,
-       this should be handled through extern bodies. *)
-    ("miristd::miri_get_alloc_id", Miri AllocId);
-    ("miristd::miri_pointer_name", Miri Nop);
-    ("miristd::miri_print_borrow_state", Miri Nop);
-    ("miristd::miri_run_provenance_gc", Miri Nop);
-    ("miristd::miri_write_to_stdout", Miri Nop);
-    ("miristd::miri_alloc", Miri Alloc);
-    ("miristd::miri_dealloc", Miri Dealloc);
-    (* Obol is quite bad at parsing names so this is how they're called
-       there... *)
-    ("utils::miri_extern::miri_get_alloc_id", Miri AllocId);
-    ("utils::miri_extern::miri_pointer_name", Miri Nop);
-    ("utils::miri_extern::miri_print_borrow_state", Miri Nop);
-    ("utils::miri_extern::miri_run_provenance_gc", Miri Nop);
-    ("utils::miri_extern::miri_write_to_stdout", Miri Nop);
-    ("utils::miri_extern::miri_alloc", Miri Alloc);
-    ("utils::miri_extern::miri_dealloc", Miri Dealloc);
-    (* Allocator *)
-    (* TODO: once https://github.com/AeneasVerif/charon/pull/1088 is merged,
-       this should be handled through extern bodies. *)
-    ("__rust_alloc", Alloc (Alloc { zeroed = false }));
-    ("__rust_alloc_zeroed", Alloc (Alloc { zeroed = true }));
-    ("__rust_dealloc", Alloc Dealloc);
-    ("__rust_no_alloc_shim_is_unstable_v2", Alloc NoAllocShimIsUnstable);
-    ("__rust_realloc", Alloc Realloc);
+    (* HACK: this should be handled with intrinsics. *)
+    ("std::intrinsics::miri_promise_symbolic_alignment", Fixme PromiseAlignment);
     (* System stuff *)
     (* TODO: the name of the function is *just* _tlv_atexit, because it's an
        external function, but we don't yet have a way to detect that. This
@@ -89,10 +88,8 @@ let std_fun_pair_list =
     ( "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
       System TlvAtexit );
     ("std::sys::random::hashmap_random_keys", System HashmapRandomKeys);
-    (* Panic Builtins *)
-    ("__rust_panic_cleanup", Fixme PanicCleanup);
     (* Dropping, in particular for the generic case, does nothing. *)
-    ("core::ptr::drop_in_place", DropInPlace);
+    ("core::ptr::drop_in_place", Fixme DropInPlace);
     (* Core *)
     ("std::alloc::Global::alloc_impl", Optim AllocImpl);
     (* FIXME(OCaml): all float operations could be removed, but we lack bit
@@ -174,11 +171,6 @@ module M (StateM : State.StateM.S) = struct
     | Soteria Assume -> Soteria_lib.assume
     | Soteria NondetBytes -> Soteria_lib.nondet_bytes fn_sig
     | Soteria Panic -> Soteria_lib.panic ?msg:None
-    | Miri Alloc -> Miri.alloc
-    | Miri AllocId -> Miri.alloc_id
-    | Miri Dealloc -> Miri.dealloc
-    | Miri PromiseAlignement -> Miri.promise_alignement
-    | Miri Nop -> Std.nop
     | Optim AllocImpl -> Std.alloc_impl
     | Optim Panic ->
         Soteria_lib.panic ~msg:(Fmt.to_to_string Crate.pp_name fn_name)
@@ -187,45 +179,47 @@ module M (StateM : State.StateM.S) = struct
     | Optim (FloatIsSign { positive }) -> Std.float_is_sign positive
     | Optim Nop -> Std.nop
     | Optim PrintToBufferIfCaptureUsed -> Std.to_buffer_if_capture_used
+    | Fixme CatchUnwindCleanup -> Std.fixme_catch_unwind_cleanup
+    | Fixme DropInPlace -> Std.nop
+    | Fixme PromiseAlignment -> Miri.promise_alignement
+    | System HashmapRandomKeys -> System.hashmap_random_keys
+    | System TlvAtexit -> System.tlv_atexit fun_exec
+
+  let extern_fn_to_stub = function
     | Alloc (Alloc { zeroed }) -> Alloc.alloc ~zeroed
     | Alloc Dealloc -> Alloc.dealloc
     | Alloc NoAllocShimIsUnstable -> Alloc.no_alloc_shim_is_unstable
     | Alloc Realloc -> Alloc.realloc
-    | Fixme PanicCleanup -> Std.fixme_panic_cleanup
-    | Fixme CatchUnwindCleanup -> Std.fixme_catch_unwind_cleanup
-    | System HashmapRandomKeys -> System.hashmap_random_keys
-    | System TlvAtexit -> System.tlv_atexit fun_exec
-    | DropInPlace -> Std.nop
+    | Miri Alloc -> Miri.alloc
+    | Miri AllocId -> Miri.alloc_id
+    | Miri Dealloc -> Miri.dealloc
+    | Miri Nop -> Std.nop
+    | Panic PanicCleanup -> Std.panic_cleanup
 
-  let std_fun_eval (f : UllbcAst.fun_decl) generics fun_exec =
-    (* Rust allows defining functions and marking them as intrinsics within a
-       module, and the compiler will treat them as the intrinsic of the same
-       name. This means their path doesn't match the one we expect for the
-       patterns; so instead of matching on a path, we only consider intrinsics
-       from their name. *)
-    if Common.Charon_util.decl_has_attr f "rustc_intrinsic" then
-      let name, generics =
-        match List.rev f.item_meta.name with
-        | PeIdent (name, _) :: _ -> (name, generics)
-        | PeInstantiated mono :: PeIdent (name, _) :: _ ->
-            (name, mono.binder_value)
-        | _ -> failwith "Unexpected intrinsic shape"
-      in
-      Intrinsics.eval_fun name fun_exec generics
-    else
-      let name =
-        match List.last f.item_meta.name with
-        | PeIdent (name, _) as ident
-          when String.starts_with ~prefix:"__rust" name ->
-            [ ident ]
-        | _ -> f.item_meta.name
-      in
-      let ctx = Crate.as_namematcher_ctx () in
-      let stub = NameMatcherMap.find_opt ctx match_config name std_fun_map in
-      match stub with
-      | Some stub ->
-          fun args ->
-            StateM.Poly.push_generics ~params:f.generics ~args:generics
-            @@ fn_to_stub f.signature name fun_exec stub args
-      | None -> fun_exec (Real { id = f.def_id; generics })
+  let eval_stub (f : UllbcAst.fun_decl) fun_exec =
+    let name = f.item_meta.name in
+    let ctx = Crate.as_namematcher_ctx () in
+    let stub = NameMatcherMap.find_opt ctx match_config name std_fun_map in
+    match stub with
+    | Some stub ->
+        let stub args = fn_to_stub f.signature name fun_exec stub args in
+        Some stub
+    | None -> None
+
+  let eval_intrinsic (f : UllbcAst.fun_decl) name generics fun_exec =
+    (* In the case of monomorphised code, the generics will be empty but present
+       in the name; we need to get them there. *)
+    let generics =
+      match List.last_opt f.item_meta.name with
+      | Some (PeInstantiated mono) -> mono.binder_value
+      | _ -> generics
+    in
+    Intrinsics.eval_fun name fun_exec generics
+
+  let eval_extern name =
+    match SMap.find_opt name extern_functions with
+    | Some extern_fn -> extern_fn_to_stub extern_fn
+    | None ->
+        fun _args ->
+          Fmt.kstr StateM.not_impl "Extern function %s is not handled" name
 end

@@ -93,7 +93,7 @@ module M (StateM : State.StateM.S) = struct
       in
       mk_res ptr size
 
-  let fixme_panic_cleanup _ =
+  let panic_cleanup _ =
     (* TODO: whas is __rust_panic_cleanup meant to do and return? *)
     ok (Ptr (Sptr.null_ptr (), VTable (Sptr.null_ptr ())))
 

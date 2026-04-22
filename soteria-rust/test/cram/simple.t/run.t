@@ -227,10 +227,10 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
         (extract[0-1](V|1|) == 0b00)
   
   => Running thread_local::static_ref_cell...
-  warning: thread_local::static_ref_cell (<time>): unsupported feature, Function std::sys::thread_local::destructors::list::register is opaque
+  warning: thread_local::static_ref_cell (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::list::register: GAst.Missing
   
   => Running thread_local::pub_static_from_const_expr...
-  warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, Function std::sys::thread_local::destructors::list::register is opaque
+  warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::list::register: GAst.Missing
   
   [2]
 
