@@ -85,26 +85,13 @@ module Make_with_dot (Node : [%mixins Hashset.PrintableHashedType + With_names])
 struct
   include Make_in_place (Node)
 
-  (** Escape a string for use as a DOT double-quoted attribute value. *)
-  let dot_escape s =
-    let buf = Buffer.create (String.length s) in
-    String.iter
-      (fun c ->
-        match c with
-        | '"' -> Buffer.add_string buf "\\\""
-        | '\\' -> Buffer.add_string buf "\\\\"
-        | '\n' -> Buffer.add_string buf "\\n"
-        | c -> Buffer.add_char buf c)
-      s;
-    Buffer.contents buf
-
   (** Serialize the graph to DOT format for visualization.
 
       Each node is rendered with [Node.short_name] as its visible label and
       [Node.long_name] as its tooltip, so that interactive renderers (e.g.
       d3-graphviz, xdot) show the full name on hover while keeping the graph
       layout readable. *)
-  let to_dot ?(graph_name = "callgraph") fmt graph =
+  let to_dot ?(graph_name = "graph") fmt graph =
     (* Assign a stable integer ID to each node to avoid quoting issues with
        arbitrary node names. *)
     let ids : int Hashtbl.t = Hashtbl.create (Hashtbl.length graph) in
@@ -130,8 +117,8 @@ struct
     Hashtbl.iter
       (fun node id ->
         Fmt.pf fmt "  n%d [label=\"%s\" tooltip=\"%s\"];@\n" id
-          (dot_escape (Node.short_name node))
-          (dot_escape (Node.long_name node)))
+          (String.escaped (Node.short_name node))
+          (String.escaped (Node.long_name node)))
       ids;
     (* Emit edges. *)
     Hashtbl.iter
