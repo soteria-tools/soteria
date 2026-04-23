@@ -57,6 +57,10 @@
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
   
+         --dump-callgraph=VAL
+             If provided, dump the call graph as a DOT file to the given path
+             after analysis.
+  
          --output-crate
              Pretty-print the compiled crate to a file
   
@@ -310,6 +314,10 @@
   OUTPUT OPTIONS
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
+  
+         --dump-callgraph=VAL
+             If provided, dump the call graph as a DOT file to the given path
+             after analysis.
   
          --output-crate
              Pretty-print the compiled crate to a file
