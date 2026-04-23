@@ -1,148 +1,141 @@
 module Config_ = Config
 open Soteria_rust_lib
 module Config = Config_
-open Soteria.Symex
-open Heap.SM.Syntax
+module State = State.Tree_state
+module Logic = Soteria.Logic.Make (Rustsymex)
+module Execute = Logic.Asrt.Execute (State)
 
-type t = {
-  ret : Heap.Sptr.t Rust_val.t;
-  pcs : Typed.sbool Typed.t list;
-  state : Heap.serialized_globals;
-}
+let state_to_syn state = State.to_syn @@ State.of_opt state
 
-let pp fmt =
-  let pp_list pp_elem fmt lst =
-    Fmt.pf fmt "[\n    %a\n]" (Fmt.list ~sep:(Fmt.any ";\n    ") pp_elem) lst
-  in
-  function
-  | { ret; pcs; state } ->
-      Fmt.pf fmt "{\n ret = %a;\n pcs = %a;\n state = %a\n}"
-        (Rust_val.pp Heap.Sptr.pp) ret
-        (pp_list (Typed.pp Typed.T.pp_sbool))
-        pcs Heap.pp_serialized_globals state
+let state_iter_vars syn =
+  let ins, outs = State.ins_outs syn in
+  let iter_vars_l l = Iter.of_list l |> Iter.flat_map Svalue.iter_vars in
+  let ins, outs = (iter_vars_l ins, iter_vars_l outs) in
+  (* In our state representation, locations are single variables *)
+  assert (Iter.length ins == 1);
+  (Iter.head_exn ins, outs)
 
-let iter_vars_ret ret = Rust_val.iter_vars Heap.Sptr.iter_vars ret
-let subst_ret subst_var ret = Rust_val.subst Heap.Sptr.subst subst_var ret
+module Ret = struct
+  type t = State.Sptr.t Rust_val.t
+  type syn = State.Sptr.syn Rust_val.syn
 
-(* TODO: export this to Rust_val *)
-let rec sem_eq_ret v1 v2 =
-  let fold vs1 vs2 =
-    if List.length vs1 = List.length vs2 then
-      ListLabels.fold_left2 vs1 vs2 ~init:Typed.v_true ~f:(fun pc v1 v2 ->
-          Typed.and_ pc (sem_eq_ret v1 v2))
-    else Typed.v_false
-  in
-  let open Rust_val in
-  match (v1, v2) with
-  | Int v1, Int v2 -> Typed.sem_eq v1 v2
-  | Float v1, Float v2 -> Typed.sem_eq v1 v2
-  | Ptr (p1, _), Ptr (p2, _) -> Heap.Sptr.sem_eq p1 p2
-  | Enum (v1, vs1), Enum (v2, vs2) ->
-      Typed.and_ (Typed.sem_eq v1 v2) (fold vs1 vs2)
-  | Tuple vs1, Tuple vs2 -> fold vs1 vs2
-  | Union vs1, Union vs2 -> fold (List.map fst vs1) (List.map fst vs2)
-  | _ -> Typed.v_false
+  let pp fmt = Rust_val.pp State.Sptr.pp fmt
+  let pp_syn fmt = Rust_val.pp_syn State.Sptr.pp_syn fmt
+  let to_syn (ret : t) : syn = Rust_val.to_syn State.Sptr.to_syn ret
 
-let iter_vars summ f =
-  iter_vars_ret summ.ret f;
-  List.iter (fun v -> Typed.iter_vars v f) summ.pcs;
-  Heap.iter_vars_serialized summ.state f
+  let subst subst_var (ret : syn) : t =
+    Rust_val.subst State.Sptr.subst subst_var ret
 
-let subst subst_var summ =
-  let ret = subst_ret subst_var summ.ret in
-  let pcs = List.map (Typed.subst subst_var) summ.pcs in
-  let state = Heap.subst_serialized subst_var summ.state in
-  { ret; pcs; state }
+  let iter_vars (ret : syn) f =
+    Rust_val.exprs_syn State.Sptr.exprs_syn ret
+    |> List.iter (fun sv -> Svalue.iter_vars sv f)
+end
 
-let produce (summ : t) : Heap.Sptr.t Rust_val.t Heap.SM.t =
-  let* subst_var =
-    Heap.SM.lift @@ Subst.add_vars Subst.empty (iter_vars summ)
-  in
-  let summ = subst (Subst.to_fn subst_var) summ in
-  let* () = Heap.SM.assume summ.pcs in
-  let* () =
-    Heap.SM.fold_list (fst summ.state) ~init:() ~f:(fun () -> Heap.produce)
-  in
-  Heap.SM.return summ.ret
+type t = { ret : Ret.syn; asrt : State.syn Logic.Asrt.t }
 
-let consume (summ : t) (ret : Heap.Sptr.t Rust_val.t) :
-    (unit, [> Rustsymex.lfail ], Heap.serialized) Heap.SM.Result.t =
-  let ret_eqs = sem_eq_ret ret summ.ret |> Typed.split_ands |> Iter.to_list in
-  Consume.run summ.state (ret_eqs @ summ.pcs)
+let pp fmt = function
+  | { ret; asrt } ->
+      Fmt.pf fmt "{\n ret = %a;\n asrt = %a\n}" Ret.pp_syn ret
+        (Logic.Asrt.pp State.pp_syn)
+        asrt
 
-let make ret pcs state =
-  let module Var_graph = Soteria.Soteria_std.Graph.Make_in_place (Svalue.Var) in
-  let module Var_hashset = Var_graph.Node_set in
-  let graph = Var_graph.with_node_capacity 0 in
-  (* For each equality [e1 = e2] in the path condition, we add a double edge
-     from all variables of [e1] to all variables of [e2] *)
-  ListLabels.iter pcs ~f:(fun v ->
-      match Typed.kind v with
-      | Binop (Eq, el, er) ->
-          let module Value = Soteria.Bv_values.Svalue in
-          (* We make the second iterator peristent to avoid going over the
-             structure too many times if there are many *)
-          let r_iter = Iter.persistent_lazy @@ Value.iter_vars er in
-          let product = Iter.product (Value.iter_vars el) r_iter in
-          product (fun ((x, _), (y, _)) -> Var_graph.add_double_edge graph x y)
-      | _ -> ());
-  (* For each block $l -> B in the post state, we add a single-sided arrow from
-     all variables in $l to all variables contained in B. *)
-  let heap, globals = Heap.serialize state in
-  ListLabels.iter heap ~f:(fun (l, s) ->
-      let b_iter =
-        Iter.persistent_lazy
-        @@ Heap.Freeable_block_with_meta.iter_vars_serialized s
-      in
-      let product = Iter.product (Typed.iter_vars l) b_iter in
-      product (fun ((x, _), (y, _)) -> Var_graph.add_edge graph x y));
-  let init_reachable = Var_hashset.with_capacity 0 in
-  (* We mark all variables from the return value as reachable *)
-  iter_vars_ret ret (fun (x, _) -> Var_hashset.add init_reachable x);
-  (* [init_reachable] is the set of initially-reachable variables, and we have a
-     reachability [graph]. We can compute all reachable values. *)
-  let reachable = Var_graph.reachable_from graph init_reachable in
-  let is_relevant sv =
-    Iter.exists (fun (var, _) -> Var_hashset.mem reachable var)
-    @@ Typed.iter_vars sv
-  in
-  (* We can now filter the summary to keep only the reachable values *)
+let make (ret : Ret.t) (st : State.SM.st)
+    (pcs : Rustsymex.Value.sbool Typed.t list) : (t, [> `MemoryLeak ]) result =
   let open Result.Syntax in
-  let+ state =
-    let heap, unreachable =
-      ListLabels.partition heap ~f:(fun (loc, _) -> is_relevant loc)
+  let ret = Ret.to_syn ret in
+  let+ asrt =
+    let spatial = state_to_syn st in
+    let module Var_graph = Soteria.Soteria_std.Graph.Make_in_place (Svalue.Var) in
+    let module Var_hashset = Var_graph.Node_set in
+    let reachable =
+      let graph = Var_graph.with_node_capacity 0 in
+      (* For each equality [e1 = e2] in the path condition, we add a double edge
+         from all variables of [e1] to all variables of [e2] *)
+      ListLabels.iter pcs ~f:(fun v ->
+          match Typed.kind v with
+          | Binop (Eq, el, er) ->
+              let module Value = Soteria.Bv_values.Svalue in
+              (* We make the second iterator peristent to avoid going over the
+                 structure too many times if there are many *)
+              let r_iter = Iter.persistent_lazy @@ Value.iter_vars er in
+              let product = Iter.product (Value.iter_vars el) r_iter in
+              product (fun ((x, _), (y, _)) ->
+                  Var_graph.add_double_edge graph x y)
+          | _ -> ());
+      (* For each block $l -> B in the post state, we add a single-sided arrow
+         from the variable in $l to all variables contained in B. *)
+      ListLabels.iter spatial ~f:(fun syn ->
+          let (var, _), outs = state_iter_vars syn in
+          Iter.iter (fun (y, _) -> Var_graph.add_edge graph var y) outs);
+      (* We mark all variables from the return value as reachable *)
+      let init_reachable = Var_hashset.with_capacity 0 in
+      Ret.iter_vars ret (fun (x, _) -> Var_hashset.add init_reachable x);
+      (* [init_reachable] is the set of initially-reachable variables, and we
+         have a reachability [graph]. We can compute all reachable values. *)
+      Var_graph.reachable_from graph init_reachable
     in
-    if (Config.get ()).ignore_leaks then Result.ok (heap, globals)
-    else
-      let leaks =
-        ListLabels.filter unreachable
-          ~f:(fun (loc, Heap.Freeable_block_with_meta.{ node; _ }) ->
-            (* A leak occurs when the pointer is alive and is not global *)
-            node <> Soteria.Sym_states.Freeable.Freed
-            && not (List.mem loc globals))
+    (* We can now filter the summary to keep only the reachable values *)
+    let+ spatial =
+      let reachable, unreachable =
+        ListLabels.partition spatial ~f:(fun syn ->
+            let (var, _), _ = state_iter_vars syn in
+            Var_hashset.mem reachable var)
       in
-      if leaks <> [] then Result.error `MemoryLeak else Result.ok (heap, globals)
-  in
-  let pcs =
-    let pcs =
-      ListLabels.filter pcs ~f:(fun sv ->
-          match Typed.kind sv with
-          | Nop (Distinct, _) -> false
-          | _ -> is_relevant sv)
+      if (Config.get ()).ignore_leaks then Result.ok reachable
+      else
+        Result.fold_list unreachable ~init:reachable
+          ~f:(fun reachable -> function
+          | State.Ser_heap
+              ( _,
+                State.Freeable_block_with_meta.
+                  {
+                    (* A leak occurs when an unreachable pointer is alive *)
+                    node = Soteria.Sym_states.Freeable.Alive _;
+                    (* PEDRO: Is this good enough? Do I need info on globals? *)
+                    info = Some { kind = Heap; _ };
+                    _;
+                  } ) ->
+              Result.error `MemoryLeak
+          | _ -> Result.ok reachable)
     in
-    let locs = List.map fst (fst state) in
-    if List.length locs <= 1 then pcs else Typed.distinct locs :: pcs
+    let pure =
+      (* TODO: Filter pcs by removing useless inequalities *)
+      List.map Typed.untyped pcs
+    in
+    Logic.Asrt.make ~spatial ~pure
   in
-  { ret; pcs; state }
+  { ret; asrt }
+
+let produce (summ : t) (st : State.SM.st) :
+    (Ret.t * State.SM.st) Rustsymex.Producer.t =
+  let open Rustsymex.Producer.Syntax in
+  let* ret = Rustsymex.Producer.apply_subst Ret.subst summ.ret in
+  let* st = Execute.produce summ.asrt st in
+  Rustsymex.Producer.return (ret, st)
+
+let consume (summ : t) (ret : Ret.t) (st : State.SM.st) :
+    (State.SM.st, State.syn list) Rustsymex.Consumer.t =
+  (* FIXME: This should probably be fixed in the signature of Rustsymex *)
+  let module Rustsymex = struct
+    include Rustsymex
+    module Value = Typed
+  end in
+  let module Learn_eq = Rust_val.Learn_eq (Rustsymex) in
+  let open Rustsymex.Consumer.Syntax in
+  let* () = Learn_eq.learn_eq State.Sptr.learn_eq summ.ret ret in
+  Execute.consume summ.asrt st
 
 let implies s_pre s_post =
   let process =
-    Heap.SM.Result.run_with_state ~state:Heap.empty
-      (let* ret = produce s_pre in
-       consume s_post ret)
+    let open Rustsymex.Syntax in
+    let subst = Typed.Expr.Subst.empty in
+    let* (ret, st), subst =
+      Rustsymex.Producer.run ~subst @@ produce s_pre State.empty
+    in
+    Rustsymex.Consumer.run ~subst @@ consume s_post ret st
   in
   match Rustsymex.run_needs_stats ~mode:OX process with
-  | [ (Compo_res.Ok ((), st), _) ] -> st == Heap.empty
+  | [ (Soteria.Symex.Compo_res.Ok (st, _), _) ] -> st == State.empty
   | _ -> false
 
 module Context = struct
@@ -174,14 +167,18 @@ module Context = struct
     | ty when is_base_ty ty ->
         let nondet ty =
           let process =
-            let module Encoder = Value_codec.Encoder (Heap.Sptr) in
-            Heap.SM.Result.run_with_state ~state:Heap.empty
-              (Heap.SM.lift @@ Encoder.nondet ty)
+            let module Encoder = Value_codec.Encoder (State.Sptr) in
+            State.SM.Result.run_with_state ~state:State.empty
+              (State.SM.lift @@ Encoder.nondet_valid ty)
           in
           Rustsymex.run_needs_stats ~mode:UX process
           |> ListLabels.map ~f:(function
-            | Compo_res.Ok (ret, st), pcs ->
-                { ret; pcs; state = Heap.serialize st }
+            | Soteria.Symex.Compo_res.Ok (ret, st), pcs ->
+                let ret = Rust_val.to_syn State.Sptr.to_syn ret in
+                let spatial = State.to_syn @@ State.of_opt st in
+                let pure = List.map Typed.untyped pcs in
+                let asrt = Logic.Asrt.make ~spatial ~pure in
+                { ret; asrt }
             | _ -> failwith "Expected Ok in nondet")
         in
         Base (nondet ty)

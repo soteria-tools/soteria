@@ -1,13 +1,14 @@
-open Soteria_rust_lib
-open Charon.Types
+open Charon
 
 type t
 
 val make :
-  Frontend.fun_decl TypeDeclId.Map.t -> Frontend.fun_decl -> t * ty list
+  UllbcAst.fun_decl Types.TypeDeclId.Map.t ->
+  UllbcAst.fun_decl ->
+  t * Types.ty list
 
 val exec :
   fuel:Soteria.Symex.Fuel_gauge.t ->
   t ->
   Summary.t list ->
-  ((ty * Summary.t) list, [> `MemoryLeak | `TypeUnsound ]) result
+  ((Types.ty * Summary.t) list, [> `MemoryLeak | `TypeUnsound ]) result

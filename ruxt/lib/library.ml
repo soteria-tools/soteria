@@ -2,47 +2,47 @@ module Config_ = Config
 open Soteria_rust_lib
 module Config = Config_
 open Result.Syntax
-open Charon.Types
+open Charon
 
 type t = {
-  constructors : (Wrapper.t * ty list) list;
-  fun_decls : (Wrapper.t * ty list) list;
+  constructors : (Wrapper.t * Types.ty list) list;
+  fun_decls : (Wrapper.t * Types.ty list) list;
 }
 
 let get () =
   let crate = Crate.get_crate () in
-  let is_drop ({ src; _ } : Frontend.fun_decl) =
+  let is_drop ({ src; _ } : UllbcAst.fun_decl) =
     match src with TraitImplItem (_, _, "drop", _) -> true | _ -> false
   in
-  let update_drops (fun_decl : Frontend.fun_decl)
+  let update_drops (fun_decl : UllbcAst.fun_decl)
       (constructors, fun_decls, drops) =
     match List.hd fun_decl.signature.inputs with
     | TRef (_, TAdt { id = TAdtId id; _ }, _) ->
-        (constructors, fun_decls, TypeDeclId.Map.add id fun_decl drops)
+        (constructors, fun_decls, Types.TypeDeclId.Map.add id fun_decl drops)
     | _ -> failwith "Library with invalid drop signature"
   in
-  let can_infer ({ src; item_meta; signature; _ } : Frontend.fun_decl) =
+  let can_infer ({ src; item_meta; signature; _ } : UllbcAst.fun_decl) =
     src = TopLevelItem
     && item_meta.is_local
     && (not signature.is_unsafe)
     && (item_meta.attr_info.public || not (Config.get ()).only_public)
   in
-  let is_constructor ({ signature = { inputs; _ }; _ } : Frontend.fun_decl) =
+  let is_constructor ({ signature = { inputs; _ }; _ } : UllbcAst.fun_decl) =
     List.for_all Summary.Context.is_base_ty inputs
   in
-  let update_fun_decls (fun_decl : Frontend.fun_decl)
+  let update_fun_decls (fun_decl : UllbcAst.fun_decl)
       (constructors, fun_decls, drops) =
     if is_constructor fun_decl then (fun_decl :: constructors, fun_decls, drops)
     else (constructors, fun_decl :: fun_decls, drops)
   in
   let constructors, fun_decls, drops =
-    FunDeclId.Map.fold
-      (fun _ (fun_decl : Frontend.fun_decl) library ->
+    Types.FunDeclId.Map.fold
+      (fun _ (fun_decl : UllbcAst.fun_decl) library ->
         if is_drop fun_decl then update_drops fun_decl library
         else if can_infer fun_decl then update_fun_decls fun_decl library
         else library)
       crate.fun_decls
-      ([], [], TypeDeclId.Map.empty)
+      ([], [], Types.TypeDeclId.Map.empty)
   in
   let wrap = List.map (Wrapper.make drops) in
   { constructors = wrap constructors; fun_decls = wrap fun_decls }
