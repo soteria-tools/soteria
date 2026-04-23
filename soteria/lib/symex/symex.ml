@@ -1042,8 +1042,8 @@ module Base_extension (Core : Core) = struct
      fun subst ->
       match Value.Expr.Subst.learn subst expr v with
       | None ->
-          L.debug (fun m ->
-              m "Couldn't learn %a := %a" Value.Expr.pp expr Value.ppa v);
+          [%l.debug
+              "Couldn't learn %a := %a" Value.Expr.pp expr Value.ppa v];
           lfail (Value.of_bool false) subst
       | Some subst ->
           let v', subst =
