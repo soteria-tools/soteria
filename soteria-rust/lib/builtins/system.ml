@@ -91,6 +91,31 @@ module M (StateM : State.StateM.S) = struct
     (* `Ok(Nonzero(1))` *)
     Encoder.mk_enum ~ty:ret_ty 0 [ nonzero_one ]
 
+  let unix_time_now args =
+    let () =
+      match args with
+      | [] -> ()
+      | _ ->
+          failwith "std::sys::time::unix::Instant::now: expected no arguments"
+    in
+    (* We need to return a Instant where 
+     * ```
+     *  struct Instant(Timespec);
+     *  struct Timespec {
+     *   tv_sec: i64,
+     *   tv_nsec: core::num::niche_types::Nanoseconds,
+     * }
+     * // Max value of Nanoseconds is 999,999,999.
+     * struct Nanoseconds(u32);
+     *)
+    (* HACK: We use Unix.time for now, to be under-approximating. *)
+    let now = Unix.time () in
+    let sec = Int.of_float now in
+    let nsec = Int.of_float ((now -. Float.of_int sec) *. 1_000_000_000.) in
+    let sec = Int (Typed.BitVec.mki 64 sec) in
+    let nsec = Int (Typed.BitVec.mki 32 nsec) in
+    ok (Tuple [ Tuple [ sec; Tuple [ nsec ] ] ])
+
   let hashmap_random_keys _ =
     Encoder.nondet_valid
       (TAdt

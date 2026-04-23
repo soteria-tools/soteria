@@ -31,7 +31,13 @@ type alloc_fn =
   | Realloc
   | NoAllocShimIsUnstable
 
-type system_fn = HashmapRandomKeys | TlvAtexit | EnvVar | AvailableParallelism
+type system_fn =
+  | HashmapRandomKeys
+  | TlvAtexit
+  | EnvVar
+  | AvailableParallelism
+  | InstantNow
+
 type tokio_fn = RngSeedNew
 
 type fn =
@@ -93,6 +99,7 @@ let std_fun_pair_list =
     ("std::sys::random::hashmap_random_keys", System HashmapRandomKeys);
     ("std::env::_var", System EnvVar);
     ("std::thread::available_parallelism", System AvailableParallelism);
+    ("std::sys::time::unix::Instant::now", System InstantNow);
     (* Panic Builtins *)
     ("__rust_panic_cleanup", Fixme PanicCleanup);
     (* Dropping, in particular for the generic case, does nothing. *)
@@ -205,6 +212,7 @@ module M (StateM : State.StateM.S) = struct
     | System AvailableParallelism ->
         System.available_parallelism ~ret_ty:fn_sig.output
     | System EnvVar -> System.env_var ~ret_ty:fn_sig.output
+    | System InstantNow -> System.unix_time_now
     | DropInPlace -> Std.nop
     | Tokio RngSeedNew -> Tokio.rngseed_new
 
