@@ -98,9 +98,9 @@ struct
        arbitrary node names. *)
     if Array.mem graph_name dot_keywords then
       Fmt.failwith
-         "Graph name '%s' is a reserved DOT keyword, please choose a \
-          different name"
-         graph_name;
+        "Graph name '%s' is a reserved DOT keyword, please choose a different \
+         name"
+        graph_name;
     let ids : int Hashtbl.t = Hashtbl.create (Hashtbl.length graph) in
     let next_id = ref 0 in
     let id_of node =
