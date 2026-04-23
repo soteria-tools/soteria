@@ -19,8 +19,10 @@ let wrap_step name f =
 let with_exn_and_config mode config f =
   try
     Config.set_and_lock_global mode config;
-    let outcome = f () in
-    Call_graph.dump_if_config ();
+    let outcome =
+      let@ () = Call_graph.with_dumped_callgraph () in
+      f ()
+    in
     Analyses.Outcome.exit outcome
   with
   | Frontend.PluginError e -> fatal ~name:"Plugin" e

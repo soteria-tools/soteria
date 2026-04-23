@@ -157,7 +157,7 @@ let with_extra_call_trace ?name ~loc ~msg (f : 'a t) : 'a t =
  fun st ->
   let open MonoSymex.Syntax in
   let cur_trace = st.trace in
-  let new_name = Option.either cur_trace.name name in 
+  let new_name = Option.or_ cur_trace.name name in
   let new_trace = Trace.push_to_stack ?name:new_name ~loc ~msg cur_trace in
   Call_graph.add_edge cur_trace.name name;
   let+ result, st = f { st with trace = new_trace } in

@@ -40,27 +40,42 @@ end
 
 module G = Graph.Make_with_dot (FunNode)
 
-(** The global call graph. Nodes are fully-qualified function names as strings.
-    This is not concurrent-safe. *)
-let graph : G.t = G.with_node_capacity 64
+type _ Effect.t +=
+  | Add_edge : Types.name option * Types.name option -> unit Effect.t
+
+let with_callgraph () f : 'a * G.t =
+  let callgraph = G.with_node_capacity 64 in
+  let res =
+    try f ()
+    with effect Add_edge (from, to_), k ->
+      let () =
+        match (from, to_) with
+        | Some from, Some to_ ->
+            G.add_edge callgraph (FunNode.of_name from) (FunNode.of_name to_)
+        | _ -> ()
+      in
+      Effect.Deep.continue k ()
+  in
+  (res, callgraph)
 
 (** Adds an edge to the global callgraph. Always needs to be called within a
     crate context! *)
 let add_edge (from : Types.name option) (to_ : Types.name option) =
-  match (from, to_) with
-  | Some from, Some to_ ->
-      G.add_edge graph (FunNode.of_name from) (FunNode.of_name to_)
-  | _ -> ()
+  Effect.perform (Add_edge (from, to_))
 
 (** Dump the call graph as a DOT file at [path]. *)
-let dump path =
+let dump path graph =
   let oc = open_out path in
   let fmt = Format.formatter_of_out_channel oc in
   G.to_dot ~graph_name:"callgraph" fmt graph;
   Format.pp_print_flush fmt ();
   close_out oc
 
-let dump_if_config () =
-  match (Config.get ()).dump_callgraph with
-  | None -> ()
-  | Some path -> dump path
+let with_dumped_callgraph () (f : unit -> 'a) : 'a =
+  let res, graph = with_callgraph () f in
+  let () =
+    match (Config.get ()).dump_callgraph with
+    | None -> ()
+    | Some path -> dump path graph
+  in
+  res
