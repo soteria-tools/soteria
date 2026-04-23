@@ -61,12 +61,24 @@ module Subst = struct
         let vs, s = apply_list ~missing_var s vs in
         (v :: vs, s)
 
-  let rec learn (s : t) (e : Svalue.t) (v : Svalue.t) : t option =
-    match e.node.kind with
-    | Var _ -> if Raw_map.mem e s then Some s else Some (extend e v s)
-    | Unop (Unop.Not, e') -> learn s e' (Bool.not v)
-    (* This pattern matching can be extended for any reversible operation. *)
-    | _ -> None
+  let learn (s : t) (e : Svalue.t) (v : Svalue.t) : t option =
+    let rec aux s (e : Svalue.t) v =
+      match e.node.kind with
+      | Bool _ | Float _ | BitVec _ -> Some s
+      | Var _ -> if Raw_map.mem e s then Some s else Some (extend e v s)
+      | Unop (Unop.Not, e') -> aux s e' (Bool.not v)
+      (* This pattern matching can be extended for any reversible operation. *)
+      | _ -> None
+    in
+    let exception Not_covered in
+    try
+      (* If the substitution already covers the value, just return the input
+         substitution *)
+      let _ = apply ~missing_var:(fun _ _ -> raise_notrace Not_covered) s e in
+      Some s
+    with Not_covered ->
+      (* Otherwise, we try learning. *)
+      aux s e v
 end
 
 let subst (f : t -> t) (s : t) : t = f s

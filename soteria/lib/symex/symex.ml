@@ -1040,23 +1040,21 @@ module Base_extension (Core : Core) = struct
 
     let learn_eq expr v : (unit, 'fix) t =
      fun subst ->
-      let subst =
-        match Value.Expr.Subst.learn subst expr v with
-        | Some s -> s
-        | None ->
-            tool_bug
-              "Consumed something that was not yet consumable, this is a tool \
-               bug!"
-      in
-      let v', subst =
-        Value.Expr.Subst.apply
-          ~missing_var:(fun _ _ ->
-            tool_bug
-              "Tool Bug: learned substitution does not cover expression's free \
-               variables.")
-          subst expr
-      in
-      assert_pure (Value.sem_eq_untyped v v') subst
+      match Value.Expr.Subst.learn subst expr v with
+      | None ->
+          L.debug (fun m ->
+              m "Couldn't learn %a := %a" Value.Expr.pp expr Value.ppa v);
+          lfail (Value.of_bool false) subst
+      | Some subst ->
+          let v', subst =
+            Value.Expr.Subst.apply
+              ~missing_var:(fun _ _ ->
+                tool_bug
+                  "Tool Bug: learned substitution does not cover expression's \
+                   free variables.")
+              subst expr
+          in
+          assert_pure (Value.sem_eq_untyped v v') subst
 
     let expose_subst () : (subst, 'fix) t = fun subst -> Result.ok (subst, subst)
     let from_raw_UNSAFE x = x
