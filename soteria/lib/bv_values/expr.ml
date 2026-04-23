@@ -97,7 +97,7 @@ module Subst = struct
         if is_known s e1 then learn s e2 (BitVec.sub v e1)
         else if is_known s e2 then learn s e1 (BitVec.sub v e2)
         else None
-    (* Subtraction: e1 - c = v => e1 = v + c c - e2 = v => e2 = c - v *)
+    (* Subtraction: e1 - c = v => e1 = v + c, c - e2 = v => e2 = c - v *)
     | Binop (Binop.Sub _, e1, e2) ->
         if is_known s e1 then learn s e2 (BitVec.sub e1 v)
         else if is_known s e2 then learn s e1 (BitVec.add v e2)
