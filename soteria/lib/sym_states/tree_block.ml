@@ -146,6 +146,9 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
 
     let is_empty = function NotOwned Totally -> true | _ -> false
     let is_fully_owned = function NotOwned _ -> false | Owned _ -> true
+
+    (* NOTE: is this the right level of abstraction? Should we not pass the tree
+       and instead just recurse through the leaves? *)
     let assert_exclusively_owned = MemVal.assert_exclusively_owned
 
     let merge ~left ~right =
