@@ -131,7 +131,7 @@ let
       owner = "bn-d";
       repo = "ppx_subliner";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      hash = "sha256-swG2kCni0/r7xn3Bpkk1U+HsHIvxzsO9VxOhlNg39DQ=";
     };
     doCheck = false;
     propagatedBuildInputs = with ocamlPackages; [
