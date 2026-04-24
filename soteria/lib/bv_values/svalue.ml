@@ -714,6 +714,11 @@ module rec Bool : Bool = struct
       by [mk : t list -> t] which takes the created variables as input in the
       same order as [tys]. *)
   let exists_n ~not_in tys mk =
+    (* FIXME: Ideally, the not_in parameter would not be necessary. What we
+       should be doing is creating variables with identifiers Int.max, Int.max -
+       1, etc., then create the value, and then substitute those variables with
+       ones that are not in the rest of the value. Unfortunately, this requires
+       calling `Eval.eval`, but that creates a cycle... *)
     let max = ref 0 in
     iter_vars not_in (fun (v, _) -> max := Int.max !max (Var.to_int v));
     (* We create something high to note those are actually existentials and
