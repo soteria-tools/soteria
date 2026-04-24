@@ -1,12 +1,6 @@
 include PatriciaTree
 
-module type KEY = sig
-  include PatriciaTree.KEY
-
-  val pp : Format.formatter -> t -> unit
-end
-
-module MakeMap (Key : KEY) = struct
+module MakeMap (Key : [%mixins PatriciaTree.KEY + Sigs.Printable]) = struct
   include PatriciaTree.MakeMap (Key)
 
   let add_assert_new key value map =
