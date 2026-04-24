@@ -118,7 +118,6 @@ let rec encode_value (v : Svalue.t) =
   | Ite (c, t, e) ->
       ite (encode_value_memo c) (encode_value_memo t) (encode_value_memo e)
   | Exists (vs, sv) ->
-      let exists l x = list [ atom "exists"; list l; x ] in
       let encode_binder (v, ty) = list [ encode_var v; sort_of_ty ty ] in
       exists (List.map encode_binder vs) (encode_value_memo sv)
   | Unop (unop, v1) ->
