@@ -79,14 +79,18 @@ let rec eval ~force ~eval_var (x : t) : t =
       let guard = eval guard in
       if equal guard Bool.v_true then eval then_
       else if equal guard Bool.v_false then eval else_
-      else Bool.ite guard (eval then_) (eval else_)
+      else
+        let nthen = eval then_ in
+        let nelse = eval else_ in
+        if (not force) && then_ == nthen && else_ == nelse then x
+        else Bool.ite guard nthen nelse
   | Exists (vs, sv) ->
       let eval_var' sv v ty =
         if List.exists (fun (v', _) -> Var.equal v v') vs then sv
         else eval_var sv v ty
       in
-      let sv = eval' ~eval_var:eval_var' sv in
-      Bool.exists vs sv
+      let nsv = eval' ~eval_var:eval_var' sv in
+      if (not force) && sv == nsv then x else Bool.exists vs sv
   | Seq l ->
       let l, changed = List.map_changed eval l in
       if (not force) && not changed then x
