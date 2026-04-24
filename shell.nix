@@ -103,7 +103,7 @@ let
       owner = "soteria-tools";
       repo = "ppx_mixins";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      hash = "sha256-Kt+JAZU2JcCSzg/TOikRmGiMsPK7HnIsXSRHk7TPY8c=";
     };
     doCheck = false;
     propagatedBuildInputs = with pkgs.ocamlPackages; [
