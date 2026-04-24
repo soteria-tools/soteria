@@ -215,35 +215,28 @@ let kind t = t.node.kind
 let unique_tag t = t.tag
 let is_bool_ty = function TBool -> true | _ -> false
 
-let iter =
-  let rec aux (f : t -> unit) (sv : t) : unit =
-    f sv;
-    match sv.node.kind with
-    | Var _ | Bool _ | Float _ | BitVec _ -> ()
-    | Ptr (l, r) | Binop (_, l, r) ->
-        aux f l;
-        aux f r
-    | Unop (_, sv) -> aux f sv
-    | Nop (_, l) | Seq l -> List.iter (aux f) l
-    | Ite (c, t, e) ->
-        aux f c;
-        aux f t;
-        aux f e
-    | Exists (vs, sv) ->
-        let f sv =
-          match sv.node.kind with
-          | Var v ->
-              if List.exists (fun (v', _) -> Var.equal v v') vs then ()
-              else f sv
-          | _ -> f sv
-        in
-        aux f sv
-  in
-  Fun.flip aux
-
 let iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
-  iter sv @@ fun sv ->
-  match sv.node.kind with Var v -> f (v, sv.node.ty) | _ -> ()
+  let rec aux ~ignore (sv : t) : unit =
+    let aux' = aux ~ignore in
+    match sv.node.kind with
+    | Var v -> if Var.Set.mem v ignore then () else f (v, sv.node.ty)
+    | Bool _ | Float _ | BitVec _ -> ()
+    | Ptr (l, r) | Binop (_, l, r) ->
+        aux' l;
+        aux' r
+    | Unop (_, sv) -> aux' sv
+    | Nop (_, l) | Seq l -> List.iter aux' l
+    | Ite (c, t, e) ->
+        aux' c;
+        aux' t;
+        aux' e
+    | Exists (vs, sv) ->
+        let ignore =
+          List.fold_left (fun ignore (v, _) -> Var.Set.add v ignore) ignore vs
+        in
+        aux ~ignore sv
+  in
+  aux ~ignore:Var.Set.empty sv
 
 let pp_full ft t = pp_t_node ft t.node
 
