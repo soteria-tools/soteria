@@ -418,7 +418,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">_size</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">_align</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Deallocates a memory which allocated by `intrinsics::const_allocate` at compile time.
-   At runtime, does nothing.
+   At runtime, it does nothing.
 
    # Safety
 
@@ -485,7 +485,9 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    ```
 
    Currently such an assertion would always succeed; until Rust decides
-   otherwise, that principle should not be violated.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-const_make_global"><a href="#val-const_make_global" class="anchor"></a><code><span><span class="keyword">val</span> const_make_global : <span><span class="label">ptr</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-full_ptr">full_ptr</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-contract_check_ensures"><a href="#val-contract_check_ensures" class="anchor"></a><code><span><span class="keyword">val</span> contract_check_ensures : 
+   otherwise, that principle should not be violated.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-const_make_global"><a href="#val-const_make_global" class="anchor"></a><code><span><span class="keyword">val</span> const_make_global : <span><span class="label">ptr</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-full_ptr">full_ptr</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Convert the allocation this pointer points to into immutable global memory.
+   The pointer must point to the beginning of a heap allocation.
+   This operation only makes sense during compile time. At runtime, it does nothing.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-contract_check_ensures"><a href="#val-contract_check_ensures" class="anchor"></a><code><span><span class="keyword">val</span> contract_check_ensures : 
   <span><span class="label">c</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">t_ret</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">cond</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
@@ -1077,7 +1079,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    [`f64::ln`](../../std/primitive.f64.html#method.ln)</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maximumf128"><a href="#val-maximumf128" class="anchor"></a><code><span><span class="keyword">val</span> maximumf128 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum (IEEE 754-2019 maximum) of two `f128` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum of two `f128` values, propagating NaN.
+
+   This behaves like IEEE 754-2019 maximum. In particular:
+   If one of the arguments is NaN, then a NaN is returned using the usual NaN propagation rules.
+   For this operation, -0.0 is considered to be strictly less than +0.0.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -1085,7 +1091,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    any safety invariants.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maximumf16"><a href="#val-maximumf16" class="anchor"></a><code><span><span class="keyword">val</span> maximumf16 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum (IEEE 754-2019 maximum) of two `f16` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum of two `f16` values, propagating NaN.
+
+   This behaves like IEEE 754-2019 maximum. In particular:
+   If one of the arguments is NaN, then a NaN is returned using the usual NaN propagation rules.
+   For this operation, -0.0 is considered to be strictly less than +0.0.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -1093,7 +1103,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    any safety invariants.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maximumf32"><a href="#val-maximumf32" class="anchor"></a><code><span><span class="keyword">val</span> maximumf32 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum (IEEE 754-2019 maximum) of two `f32` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum of two `f32` values, propagating NaN.
+
+   This behaves like IEEE 754-2019 maximum. In particular:
+   If one of the arguments is NaN, then a NaN is returned using the usual NaN propagation rules.
+   For this operation, -0.0 is considered to be strictly less than +0.0.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -1101,7 +1115,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    any safety invariants.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maximumf64"><a href="#val-maximumf64" class="anchor"></a><code><span><span class="keyword">val</span> maximumf64 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum (IEEE 754-2019 maximum) of two `f64` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum of two `f64` values, propagating NaN.
+
+   This behaves like IEEE 754-2019 maximum. In particular:
+   If one of the arguments is NaN, then a NaN is returned using the usual NaN propagation rules.
+   For this operation, -0.0 is considered to be strictly less than +0.0.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -1109,51 +1127,67 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    any safety invariants.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maxnumf128"><a href="#val-maxnumf128" class="anchor"></a><code><span><span class="keyword">val</span> maxnumf128 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum (IEEE 754-2008 maxNum) of two `f128` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum of two `f128` values, ignoring NaN.
+
+   If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+   both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+   and `-0.0`), either input may be returned non-deterministically.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
    Therefore, implementations must not require the user to uphold
    any safety invariants.
 
-   The stabilized version of this intrinsic is
-   [`f128::max`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maxnumf16"><a href="#val-maxnumf16" class="anchor"></a><code><span><span class="keyword">val</span> maxnumf16 : 
+   The stabilized version of this intrinsic is [`f128::max`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maxnumf16"><a href="#val-maxnumf16" class="anchor"></a><code><span><span class="keyword">val</span> maxnumf16 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum (IEEE 754-2008 maxNum) of two `f16` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum of two `f16` values, ignoring NaN.
+
+   If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+   both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+   and `-0.0`), either input may be returned non-deterministically.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
    Therefore, implementations must not require the user to uphold
    any safety invariants.
 
-   The stabilized version of this intrinsic is
-   [`f16::max`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maxnumf32"><a href="#val-maxnumf32" class="anchor"></a><code><span><span class="keyword">val</span> maxnumf32 : 
+   The stabilized version of this intrinsic is [`f16::max`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maxnumf32"><a href="#val-maxnumf32" class="anchor"></a><code><span><span class="keyword">val</span> maxnumf32 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum (IEEE 754-2008 maxNum) of two `f32` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum of two `f32` values, ignoring NaN.
+
+   If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+   both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+   and `-0.0`), either input may be returned non-deterministically.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
    Therefore, implementations must not require the user to uphold
    any safety invariants.
 
-   The stabilized version of this intrinsic is
-   [`f32::max`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maxnumf64"><a href="#val-maxnumf64" class="anchor"></a><code><span><span class="keyword">val</span> maxnumf64 : 
+   The stabilized version of this intrinsic is [`f32::max`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-maxnumf64"><a href="#val-maxnumf64" class="anchor"></a><code><span><span class="keyword">val</span> maxnumf64 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum (IEEE 754-2008 maxNum) of two `f64` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the maximum of two `f64` values, ignoring NaN.
+
+   If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+   both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+   and `-0.0`), either input may be returned non-deterministically.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
    Therefore, implementations must not require the user to uphold
    any safety invariants.
 
-   The stabilized version of this intrinsic is
-   [`f64::max`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minimumf128"><a href="#val-minimumf128" class="anchor"></a><code><span><span class="keyword">val</span> minimumf128 : 
+   The stabilized version of this intrinsic is [`f64::max`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minimumf128"><a href="#val-minimumf128" class="anchor"></a><code><span><span class="keyword">val</span> minimumf128 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum (IEEE 754-2019 minimum) of two `f128` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum of two `f128` values, propagating NaN.
+
+   This behaves like IEEE 754-2019 minimum. In particular:
+   If one of the arguments is NaN, then a NaN is returned using the usual NaN propagation rules.
+   For this operation, -0.0 is considered to be strictly less than +0.0.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -1161,7 +1195,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    any safety invariants.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minimumf16"><a href="#val-minimumf16" class="anchor"></a><code><span><span class="keyword">val</span> minimumf16 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum (IEEE 754-2019 minimum) of two `f16` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum of two `f16` values, propagating NaN.
+
+   This behaves like IEEE 754-2019 minimum. In particular:
+   If one of the arguments is NaN, then a NaN is returned using the usual NaN propagation rules.
+   For this operation, -0.0 is considered to be strictly less than +0.0.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -1169,7 +1207,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    any safety invariants.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minimumf32"><a href="#val-minimumf32" class="anchor"></a><code><span><span class="keyword">val</span> minimumf32 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum (IEEE 754-2019 minimum) of two `f32` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum of two `f32` values, propagating NaN.
+
+   This behaves like IEEE 754-2019 minimum. In particular:
+   If one of the arguments is NaN, then a NaN is returned using the usual NaN propagation rules.
+   For this operation, -0.0 is considered to be strictly less than +0.0.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -1177,7 +1219,11 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    any safety invariants.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minimumf64"><a href="#val-minimumf64" class="anchor"></a><code><span><span class="keyword">val</span> minimumf64 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum (IEEE 754-2019 minimum) of two `f64` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum of two `f64` values, propagating NaN.
+
+   This behaves like IEEE 754-2019 minimum. In particular:
+   If one of the arguments is NaN, then a NaN is returned using the usual NaN propagation rules.
+   For this operation, -0.0 is considered to be strictly less than +0.0.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
@@ -1185,48 +1231,60 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    any safety invariants.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minnumf128"><a href="#val-minnumf128" class="anchor"></a><code><span><span class="keyword">val</span> minnumf128 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum (IEEE 754-2008 minNum) of two `f128` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum of two `f128` values, ignoring NaN.
+
+   If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+   both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+   and `-0.0`), either input may be returned non-deterministically.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
    Therefore, implementations must not require the user to uphold
    any safety invariants.
 
-   The stabilized version of this intrinsic is
-   [`f128::min`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minnumf16"><a href="#val-minnumf16" class="anchor"></a><code><span><span class="keyword">val</span> minnumf16 : 
+   The stabilized version of this intrinsic is [`f128::min`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minnumf16"><a href="#val-minnumf16" class="anchor"></a><code><span><span class="keyword">val</span> minnumf16 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum (IEEE 754-2008 minNum) of two `f16` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum of two `f16` values, ignoring NaN.
+
+   If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+   both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+   and `-0.0`), either input may be returned non-deterministically.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
    Therefore, implementations must not require the user to uphold
    any safety invariants.
 
-   The stabilized version of this intrinsic is
-   [`f16::min`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minnumf32"><a href="#val-minnumf32" class="anchor"></a><code><span><span class="keyword">val</span> minnumf32 : 
+   The stabilized version of this intrinsic is [`f16::min`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minnumf32"><a href="#val-minnumf32" class="anchor"></a><code><span><span class="keyword">val</span> minnumf32 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum (IEEE 754-2008 minNum) of two `f32` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum of two `f32` values, ignoring NaN.
+
+   If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+   both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+   and `-0.0`), either input may be returned non-deterministically.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
    Therefore, implementations must not require the user to uphold
    any safety invariants.
 
-   The stabilized version of this intrinsic is
-   [`f32::min`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minnumf64"><a href="#val-minnumf64" class="anchor"></a><code><span><span class="keyword">val</span> minnumf64 : 
+   The stabilized version of this intrinsic is [`f32::min`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-minnumf64"><a href="#val-minnumf64" class="anchor"></a><code><span><span class="keyword">val</span> minnumf64 : 
   <span><span class="label">x</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<span><span>[&lt; <a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> ]</span> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum (IEEE 754-2008 minNum) of two `f64` values.
+  <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sfloat">Soteria_rust_lib.Typed.T.sfloat</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Returns the minimum of two `f64` values, ignoring NaN.
+
+   If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+   both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+   and `-0.0`), either input may be returned non-deterministically.
 
    Note that, unlike most intrinsics, this is safe to call;
    it does not require an `unsafe` block.
    Therefore, implementations must not require the user to uphold
    any safety invariants.
 
-   The stabilized version of this intrinsic is
-   [`f64::min`]</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mul_with_overflow"><a href="#val-mul_with_overflow" class="anchor"></a><code><span><span class="keyword">val</span> mul_with_overflow : 
+   The stabilized version of this intrinsic is [`f64::min`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mul_with_overflow"><a href="#val-mul_with_overflow" class="anchor"></a><code><span><span class="keyword">val</span> mul_with_overflow : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">x</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
@@ -1262,7 +1320,48 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
    Not all architectures provide such an operation. For instance, x86 does not: while `MOVNT`
    exists, that operation is *not* equivalent to `ptr.write(val)` (`MOVNT` writes can be reordered
-   in ways that are not allowed for regular writes).</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-offset"><a href="#val-offset" class="anchor"></a><code><span><span class="keyword">val</span> offset : 
+   in ways that are not allowed for regular writes).</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-offload"><a href="#val-offload" class="anchor"></a><code><span><span class="keyword">val</span> offload : 
+  <span><span class="label">t_f</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">r</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">f</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">workgroup_dim</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">thread_dim</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">args</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Generates the LLVM body of a wrapper function to offload a kernel `f`.
+
+   Type Parameters:
+   - `F`: The kernel to offload. Must be a function item.
+   - `T`: A tuple of arguments passed to `f`.
+   - `R`: The return type of the kernel.
+
+   Arguments:
+   - `f`: The kernel function to offload.
+   - `workgroup_dim`: A 3D size specifying the number of workgroups to launch.
+   - `thread_dim`: A 3D size specifying the number of threads per workgroup.
+   - `args`: A tuple of arguments forwarded to `f`.
+
+   Example usage (pseudocode):
+
+   ```rust,ignore (pseudocode)
+   fn kernel(x: *mut [f64; 128]) {
+       core::intrinsics::offload(kernel_1, [256, 1, 1], [32, 1, 1], (x,))
+   }
+
+   #[cfg(target_os = &quot;linux&quot;)]
+   extern &quot;C&quot; {
+       pub fn kernel_1(array_b: *mut [f64; 128]);
+   }
+
+   #[cfg(not(target_os = &quot;linux&quot;))]
+   #[rustc_offload_kernel]
+   extern &quot;gpu-kernel&quot; fn kernel_1(x: *mut [f64; 128]) {
+       unsafe { ( *x)[0] = 21.0 };
+   }
+   ```
+
+   For reference, see the Clang documentation on offloading:
+   &lt;https://clang.llvm.org/docs/OffloadingDesign.html&gt;.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-offset"><a href="#val-offset" class="anchor"></a><code><span><span class="keyword">val</span> offset : 
   <span><span class="label">ptr</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">delta</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">dst</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span>
@@ -2036,7 +2135,9 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    stable counterpart) wraps this intrinsic call in a `const` block so that
    backends only see an evaluated constant.
 
-   The stabilized version of this intrinsic is [`core::any::type_name`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-typed_swap_nonoverlapping"><a href="#val-typed_swap_nonoverlapping" class="anchor"></a><code><span><span class="keyword">val</span> typed_swap_nonoverlapping : 
+   The stabilized version of this intrinsic is [`core::any::type_name`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-type_of"><a href="#val-type_of" class="anchor"></a><code><span><span class="keyword">val</span> type_of : <span><span class="label">_id</span>:<a href="#type-rust_val">rust_val</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Compute the type information of a concrete type.
+   It can only be called at compile time, the backends do
+   not implement it.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-typed_swap_nonoverlapping"><a href="#val-typed_swap_nonoverlapping" class="anchor"></a><code><span><span class="keyword">val</span> typed_swap_nonoverlapping : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">x</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">y</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span>
@@ -2207,14 +2308,21 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
    - the next argument must have a properly initialized value of type `T`.
 
    Calling this function with an incompatible type, an invalid value, or when there
-   are no more variable arguments, is unsound.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-va_copy"><a href="#val-va_copy" class="anchor"></a><code><span><span class="keyword">val</span> va_copy : <span><span class="label">dest</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><span class="label">src</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Copies the current location of arglist `src` to the arglist `dst`.
+   are no more variable arguments, is unsound.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-va_copy"><a href="#val-va_copy" class="anchor"></a><code><span><span class="keyword">val</span> va_copy : <span><span class="label">src</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Duplicates a variable argument list. The returned list is initially at the same position as
+   the one in `src`, but can be advanced independently.
 
-   # Safety
+   Codegen backends should not have custom behavior for this intrinsic, they should always use
+   this fallback implementation. This intrinsic *does not* map to the LLVM `va_copy` intrinsic.
 
-   You must check the following invariants before you call this function:
+   This intrinsic exists only as a hook for Miri and constant evaluation, and is used to detect UB
+   when a variable argument list is used incorrectly.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-va_end"><a href="#val-va_end" class="anchor"></a><code><span><span class="keyword">val</span> va_end : <span><span class="label">ap</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Destroy the variable argument list `ap` after initialization with `va_start` (part of the
+   desugaring of `...`) or `va_copy`.
 
-   - `dest` must be non-null and point to valid, writable memory.
-   - `dest` must not alias `src`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-va_end"><a href="#val-va_end" class="anchor"></a><code><span><span class="keyword">val</span> va_end : <span><span class="label">ap</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span>unit <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  Destroy the arglist `ap` after initialization with `va_start` or `va_copy`.
+   Code generation backends should not provide a custom implementation for this intrinsic. This
+   intrinsic *does not* map to the LLVM `va_end` intrinsic.
+
+   This function is a no-op on all current targets, but used as a hook for const evaluation to
+   detect UB when a variable argument list is used incorrectly.
 
    # Safety
 
@@ -2280,7 +2388,12 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
    # Safety
 
-   `ptr` must point to a vtable.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-vtable_size"><a href="#val-vtable_size" class="anchor"></a><code><span><span class="keyword">val</span> vtable_size : <span><span class="label">ptr</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The intrinsic will return the size stored in that vtable.
+   `ptr` must point to a vtable.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-vtable_for"><a href="#val-vtable_for" class="anchor"></a><code><span><span class="keyword">val</span> vtable_for : <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span> <span><a href="#type-rust_val">rust_val</a> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The intrinsic returns the `U` vtable for `T` if `T` can be coerced to the trait object type `U`.
+
+   # Compile-time failures
+   Determining whether `T` can be coerced to the trait object type `U` requires trait resolution by the compiler.
+   In some cases, that resolution can exceed the recursion limit,
+   and compilation will fail instead of this function returning `None`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-vtable_size"><a href="#val-vtable_size" class="anchor"></a><code><span><span class="keyword">val</span> vtable_size : <span><span class="label">ptr</span>:<a href="#type-full_ptr">full_ptr</a> <span class="arrow">&#45;&gt;</span></span> <span><span><a href="../../../../../soteria/Soteria/Bv_values/Typed/T/index.html#type-sint">Soteria_rust_lib.Typed.T.sint</a> <a href="../../../Typed/index.html#type-t">Typed.t</a></span> <a href="#type-ret">ret</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>  The intrinsic will return the size stored in that vtable.
 
    # Safety
 
