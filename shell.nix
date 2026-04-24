@@ -121,6 +121,7 @@ let
       hash = "sha256-Zj1X66r9eu2j1Y3bfTPxIX9Qa3w76VFSdSMmZOh3kNg=";
     };
     doCheck = false;
+    doInstallCheck = false;
   });
   soteria = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "soteria";
