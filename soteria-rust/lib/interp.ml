@@ -1134,7 +1134,7 @@ module Make (StateImpl : State.S) = struct
       | Some body -> ok body
     in
     let name_str = Fmt.to_to_string Crate.pp_name name in
-    let@ () = Rust_state_m.with_frame name_str in
+    let@ () = StateM.with_frame name_str in
     Soteria.Stats.As_ctx.incr StatKeys.function_calls;
     let@@ () = Poly.push_generics ~params:fundef.generics ~args:generics in
     let@@ () = with_env ~env:Store.empty in
