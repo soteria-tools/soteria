@@ -11,7 +11,7 @@ let
       owner = "johnyob";
       repo = "grace";
       tag = "${finalAttrs.version}";
-      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      hash = "sha256-V5K9RGk47K/R+q4wS1FU02kMi1uWSCgdUjKHk7uXuGw=";
     };
     doCheck = false;
     nativeBuildInputs = with pkgs.ocamlPackages; [
