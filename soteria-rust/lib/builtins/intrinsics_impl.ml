@@ -33,7 +33,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let align_of ~t = Layout.align_of t
 
   let arith_offset ~t ~dst:(dst, meta) ~offset =
-    let+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t dst offset in
+    let+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t offset dst in
     (dst', meta)
 
   let offset ~ptr ~delta ~dst ~offset =
@@ -41,7 +41,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     | Ptr (dst, meta) ->
         let offset = as_base_i Usize offset in
         let signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
-        let+ dst' = Sptr.offset ~signed ~ty:ptr dst offset in
+        let+ dst' = Sptr.offset ~signed ~ty:ptr offset dst in
         Ptr (dst', meta)
     | Int _ -> error `UBPointerArithmetic
     | _ -> not_impl "ptr_add: invalid arguments"
@@ -109,7 +109,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
           | _ -> failwith "atomic_xadd: pointer with metadata other than Thin"
         in
         (* Wrapping add: no overflow check *)
-        let* new_ = Sptr.offset ~check:false ~signed:false old_v src in
+        let* new_ = Sptr.offset ~check:false ~signed:false src old_v in
         let new_ = Ptr (new_, Thin) in
         let* () = State.store dst t new_ in
         ok old
@@ -128,16 +128,17 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let atomic_cxchgweak ~t ~ord_succ:_ ~ord_fail:_ ~_dst ~_old ~_src =
     atomic_warn ();
     let* curr = State.load _dst t in
-    let are_equal =
+    let* are_equal =
       match t with
       | TRawPtr _ | TRef _ ->
           let old, _ = as_ptr _old in
           let curr, _ = as_ptr curr in
-          Sptr.sem_eq old curr
+          let+ dist = Sptr.distance old curr in
+          dist ==@ Usize.(0s)
       | TLiteral lit ->
           let old = as_base lit _old in
           let curr = as_base lit curr in
-          old ==@ curr
+          ok (old ==@ curr)
       | _ -> failwith "atomic_cxchgweak: invalid type, expects ptr or integer"
     in
     if%sat are_equal then
@@ -177,7 +178,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let caller_location : full_ptr ret =
     (* TODO: we should really do something better here *)
     let+ () = ok () in
-    (Sptr.null_ptr (), Thin)
+    (Sptr.null (), Thin)
 
   let carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry =
     let t = TypesUtils.ty_as_literal t in
@@ -221,7 +222,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
            (* We can't use [null] here because this messes up with the niche of
               the return type, which checks if the pointer is 0! *)
            exec_fun "catch_unwind catch" catch_fn
-             [ Ptr data; Ptr (Sptr.null_ptr_of Usize.(1s), Thin) ]
+             [ Ptr data; Ptr (Sptr.of_address Usize.(1s), Thin) ]
            |> unwind_with
                 ~f:(fun _ -> ok U32.(1s))
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
@@ -409,8 +410,8 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     let rec aux ?res ?(inc = one) l r len =
       if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
-        let* l = Sptr.offset ~signed:false l inc in
-        let* r = Sptr.offset ~signed:false r inc in
+        let* l = Sptr.offset ~signed:false inc l in
+        let* r = Sptr.offset ~signed:false inc r in
         let* bl = State.load (l, Thin) byte in
         let* br = State.load (r, Thin) byte in
         (* compare_bytes reads all bytes and mustn't short-circuit, so we must
@@ -434,13 +435,13 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
       overlap for a range of size [size]; otherwise errors, with
       [`StdErr (name ^ " overlapped")]. *)
   let check_overlap name l r size =
-    let* l_end = Sptr.offset ~signed:false l size in
-    let* r_end = Sptr.offset ~signed:false r size in
+    let* l_end = Sptr.offset ~signed:false size l in
+    let* r_end = Sptr.offset ~signed:false size r in
     let* dist1 = Sptr.distance l r_end in
     let* dist2 = Sptr.distance r l_end in
     let zero = Usize.(0s) in
     assert_not
-      (Sptr.is_same_loc l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
+      (Sptr.have_same_provenance l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
       (`StdErr (name ^ " overlapped"))
 
   let copy_ nonoverlapping ~t ~src:((src, _) as fsrc : full_ptr)
@@ -450,18 +451,16 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
         (if nonoverlapping then "_non_overlapping" else "")
         pp_full_ptr fsrc pp_full_ptr fdst Typed.ppa count];
     let zero = Usize.(0s) in
-    let* () = State.check_ptr_align fsrc t in
-    let* () = State.check_ptr_align fdst t in
     let* ty_size = Layout.size_of t in
-    if%sat ty_size ==@ zero ||@ (count ==@ zero) then ok ()
+    if%sat ty_size ==@ zero ||@ (count ==@ zero) then
+      let* () = Sptr.check_aligned fsrc t in
+      let* () = Sptr.check_aligned fdst t in
+      ok ()
     else
-      let* () =
-        assert_not
-          (Sptr.is_at_null_loc src ||@ Sptr.is_at_null_loc dst)
-          `NullDereference
-      in
       let size, overflowed = ty_size *?@ count in
       let* () = assert_not overflowed `Overflow in
+      let* () = Sptr.check_non_dangling_untyped fsrc size in
+      let* () = Sptr.check_non_dangling_untyped fdst size in
       (* Here we can cheat a little: for copy_nonoverlapping we need to check
          for overlap, but otherwise the copy is the exact same; since the State
          makes a copy of the src tree before storing into dst, the semantics are
@@ -477,14 +476,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let typed_swap_nonoverlapping ~t ~x:((from_ptr, _) as from)
       ~y:((to_ptr, _) as to_) =
-    let* () = State.check_ptr_align from t in
-    let* () = State.check_ptr_align to_ t in
     let* size = Layout.size_of t in
-    let* () =
-      assert_not
-        (Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr)
-        `NullDereference
-    in
     let* () = check_overlap "typed_swap_nonoverlapping" from_ptr to_ptr size in
     let* v_l = State.load from t in
     let* v_r = State.load to_ t in
@@ -736,28 +728,30 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     let* off = Sptr.distance ptr base in
     (* If the pointers are not equal, they mustn't be dangling *)
     let* () =
-      assert_
-        (off ==@ zero ||@ (Sptr.constraints ptr &&@ Sptr.constraints base))
-        `UBDanglingPointer
+      if%sat off ==@ zero then ok ()
+      else
+        let* () = Sptr.check_non_dangling_untyped (base, Thin) off in
+        Sptr.check_non_dangling_untyped (ptr, Thin) (cast ~-off)
     in
     (* UB conditions:
      * 1. must be at the same address, OR derived from the same allocation
      * 2. the distance must be a multiple of sizeof(T) *)
-    let* () =
-      assert_
-        (off ==@ zero ||@ Sptr.is_same_loc ptr base &&@ (off %$@ size ==@ zero))
-        `UBPointerComparison
+    let same_addr_or_alloc =
+      off ==@ zero ||@ Sptr.have_same_provenance ptr base
     in
-    (* we cast to ignore the overflow for MIN/-1, since the size can never be
-       -1 *)
-    if Stdlib.not unsigned then ok (Typed.cast (off /$@ size))
-    else
+    let distance_multiple = off %$@ size ==@ zero in
+    let* () =
+      assert_ (same_addr_or_alloc &&@ distance_multiple) `UBPointerComparison
+    in
+    (* we cast to ignore the overflow for MIN/-1, since the size can't be -1 *)
+    if unsigned then
       let+ () =
         assert_
           (Typed.cast (off >=$@ zero))
           (`StdErr "core::intrinsics::offset_from_unsigned negative offset")
       in
       Typed.cast (off /$@ size)
+    else ok (Typed.cast (off /$@ size))
 
   let ptr_offset_from = ptr_offset_from_ ~unsigned:false
   let ptr_offset_from_unsigned = ptr_offset_from_ ~unsigned:true
@@ -908,8 +902,8 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let read_vtable ~slot ~(ptr : full_ptr) : T.sint Typed.t ret =
     let ptr, _ = ptr in
     let* ptr =
-      Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) ptr
-        (BV.usizei slot)
+      Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) (BV.usizei slot)
+        ptr
     in
     let+ align = State.load (ptr, Thin) (TLiteral (TUInt Usize)) in
     as_base_i Usize align
@@ -929,7 +923,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let write_bytes ~t ~dst:((ptr, _) as dst) ~val_ ~count =
     let zero = Usize.(0s) in
-    let* () = State.check_ptr_align dst t in
+    let* () = Sptr.check_aligned dst t in
     let* size = Layout.size_of t in
     let size, overflowed = size *?@ count in
     let* () = assert_not overflowed `Overflow in
@@ -946,7 +940,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
               Iter.(0 -- (Z.to_int bytes - 1))
               ~f:(fun i ->
                 let off = BV.usizei i in
-                let* ptr = Sptr.offset ~signed:false ptr off in
+                let* ptr = Sptr.offset ~signed:false off ptr in
                 State.store (ptr, Thin) (TLiteral (TUInt U8)) (Int val_))
         | None ->
             not_impl "write_bytes: don't know how to handle symbolic sizes"

@@ -74,6 +74,8 @@ let to_result_opt = function
   | Error e -> Some (Result.Error e)
   | Missing _ -> None
 
+let of_result = function Result.Ok x -> Ok x | Result.Error e -> Error e
+
 module Syntax = struct
   let ( let* ) = bind
   let ( let+ ) = map

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import json
+import re
 import subprocess
-from typing import Any, Literal, Sequence, TypedDict
+from typing import Any, Literal, Sequence, TypedDict, assert_never
 
 from common import *
 
@@ -88,10 +89,14 @@ class TypePtr(TypedDict):
     RawPtr: Any
 
 
+class TypeArray(TypedDict):
+    Array: tuple[UniqueType, UniqueType]
+
+
 TypeNever = Literal["Never"]
 
 
-Type = TypeAdt | TypeLiteral | TypeTypeVar | TypeRef | TypePtr | TypeNever
+Type = TypeAdt | TypeLiteral | TypeTypeVar | TypeRef | TypePtr | TypeNever | TypeArray
 
 
 class DedupedType(TypedDict):
@@ -142,12 +147,13 @@ InterpTypeBase = Literal[
     "bool",
     "float",
     "ptr",
+    "array",
     "unknown",
     "fun_exec",
     "meta_ty",
     "meta_const",
 ]
-InterpTypeMeta = Optional[str]
+InterpTypeMeta = Optional["str | InterpType"]
 InterpType = tuple[InterpTypeBase, InterpTypeMeta]
 
 type_cache: dict[int, Type] = {}
@@ -188,6 +194,10 @@ def type_of(unique_ty: UniqueType) -> InterpType:
     if "Adt" in ty:
         if ty["Adt"]["id"] == "Tuple" and len(ty["Adt"]["generics"]["types"]) == 0:
             return "unit", None
+
+    if "Array" in ty:
+        sub_ty = type_of(ty["Array"][0])
+        return "array", sub_ty
 
     ignored = ["TypeVar", "Adt", "TraitType"]
     if any(kind in ty for kind in ignored):
@@ -233,6 +243,8 @@ input_type: dict[InterpTypeBase, str] = {
     "bool": "[< Typed.T.sbool ] Typed.t",
     "ptr": "full_ptr",
     "unknown": "rust_val",
+    # todo
+    "array": "rust_val",
     "fun_exec": "fun_exec",
     "meta_ty": "Types.ty",
     "meta_const": "Types.constant_expr",
@@ -253,30 +265,52 @@ output_type: dict[InterpTypeBase, str] = {
 
 
 def input_type_cast(arg: str, ty: InterpType) -> str:
-    if ty[0] == "int":
+    base_ty = ty[0]
+    if base_ty == "int":
         int_ty = cast(str, ty[1]).replace("I", "U")
         return f"let {arg} = as_base_i {int_ty} {arg} in "
-    if ty[0] == "float":
+    if base_ty == "float":
         return f"let {arg} = as_base_f {ty[1]} {arg} in "
-    if ty[0] == "ptr":
+    if base_ty == "ptr":
         return f"let {arg} = as_ptr {arg} in "
-    if ty[0] == "bool":
+    if base_ty == "bool":
         return f"let {arg} = Typed.BitVec.to_bool (as_base TBool {arg}) in "
-    return ""
+    if base_ty == "array":
+        # todo?
+        return ""
+    if (
+        base_ty == "unknown"
+        or base_ty == "meta_const"
+        or base_ty == "meta_ty"
+        or base_ty == "fun_exec"
+    ):
+        return ""
+    if base_ty == "unit":
+        raise ValueError("Unit-typed argument?")
+
+    assert_never(base_ty)
 
 
 def output_type_cast(ty: InterpType) -> tuple[str, str]:
-    if ty[0] == "int":
+    base_ty = ty[0]
+    if base_ty == "int":
         return ("let+ ret = ", " in Int ret")
-    if ty[0] == "float":
+    if base_ty == "float":
         return ("let+ ret = ", " in Float ret")
-    if ty[0] == "bool":
+    if base_ty == "bool":
         return "let+ ret = ", " in Int (Typed.BitVec.of_bool ret)"
-    if ty[0] == "ptr":
+    if base_ty == "ptr":
         return "let+ ret = ", " in Ptr ret"
-    if ty[0] == "unit":
+    if base_ty == "unit":
         return "let+ () = ", " in Tuple []"
-    return "", ""
+    if base_ty == "unknown":
+        return "", ""
+    if base_ty == "array":
+        # todo?
+        return "", ""
+    if base_ty == "fun_exec" or base_ty == "meta_const" or base_ty == "meta_ty":
+        raise ValueError(f"Cannot return type {base_ty}")
+    assert_never(base_ty)
 
 
 # Parse the intrinsics via Charon, and return them
@@ -320,18 +354,17 @@ def get_intrinsics() -> dict[str, FunDecl]:
     return intrinsics
 
 
-# Generate the OCaml interface for the intrinsics stubs, along with the stub file itself;
-# returns [interfaces string, stubs string, main string]
-def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
-    class IntrinsicInfo(TypedDict):
-        name: str
-        path: str
-        doc: str
-        args: list[tuple[str, InterpType]]
-        types: list[str]
-        consts: list[str]
-        ret: InterpType
+class IntrinsicInfo(TypedDict):
+    name: str
+    path: str
+    doc: str
+    args: list[tuple[str, InterpType]]
+    types: list[str]
+    consts: list[str]
+    ret: InterpType
 
+
+def parse_intrinsics(intrinsics: dict[str, FunDecl]) -> list[IntrinsicInfo]:
     pprint("Generating OCaml interface and stubs...")
 
     def sanitize_comment(comment: str) -> str:
@@ -391,6 +424,12 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             }
         )
     intrinsics_info.sort(key=lambda x: x["name"])
+    return intrinsics_info
+
+
+# Generate the OCaml interface for the intrinsics stubs, along with the stub file itself;
+# returns [interfaces string, stubs string, main string]
+def generate_interface(intrinsics_info: list[IntrinsicInfo]) -> tuple[str, str, str]:
 
     prelude = """
     (** This file was generated with [scripts/intrinsics.py] -- do not edit it manually,
@@ -443,7 +482,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             | Ptr ptr -> ptr
             | Int v ->
                 let v = Typed.cast_i Usize v in
-                let ptr = Sptr.null_ptr_of v in
+                let ptr = Sptr.of_address v in
                 (ptr, Thin)
             | _ -> failwith "expected pointer"
 
@@ -557,9 +596,61 @@ def write_ocaml_file(filename: Path, content: str) -> None:
     pprint(f"Wrote OCaml file {BOLD}{filename}{RESET}")
 
 
-if __name__ == "__main__":
+def check():
     intrinsics = get_intrinsics()
-    interface, stubs, main = generate_interface(intrinsics)
+    intrinsics_info = parse_intrinsics(intrinsics)
+    ml_folder = PWD / ".." / "lib" / "builtins"
+    impl_file = ml_folder / "intrinsics_impl.ml"
+    if not impl_file.exists():
+        pprint(
+            f"{RED}{BOLD}Error{RESET}: intrinsics_impl.ml does not exist; run the script without --check to generate it."
+        )
+        return
+
+    intrinsics_checklist = {info["name"]: False for info in intrinsics_info}
+    with open(impl_file) as f:
+        for line in f:
+            line = line.strip()
+            match = re.match(r"let\s+(\w+)\s+", line)
+            if match and (name := match.group(1)) in intrinsics_checklist:
+                intrinsics_checklist[name] = True
+
+    def to_enumeration(lst: Sequence[str], max_len: int = 80) -> list[str]:
+        if not lst:
+            return ["(none)"]
+        lines = []
+        current_line = ""
+        for item in lst:
+            item_str = f"{item}, "
+            if len(current_line) + len(item_str) > max_len:
+                lines.append(current_line.rstrip(", "))
+                current_line = item_str
+            else:
+                current_line += item_str
+        if current_line:
+            lines.append(current_line.rstrip(", "))
+        return lines
+
+    missing = [name for name, found in intrinsics_checklist.items() if not found]
+    implemented = [name for name, found in intrinsics_checklist.items() if found]
+    pprint(
+        f"{GREEN}{BOLD}OK{RESET}: Implemented intrinsics ({BOLD}{len(implemented)}{RESET}):"
+    )
+    for line in to_enumeration(implemented):
+        pprint(f"  {line}")
+    if missing:
+        pprint()
+        pprint(
+            f"{ORANGE}{BOLD}WARN{RESET}: Missing implementations ({BOLD}{len(missing)}{RESET}):"
+        )
+        for line in to_enumeration(missing):
+            pprint(f"  {line}")
+
+
+def main():
+    intrinsics = get_intrinsics()
+    intrinsics_info = parse_intrinsics(intrinsics)
+    interface, stubs, main = generate_interface(intrinsics_info)
 
     ml_folder = PWD / ".." / "lib" / "builtins"
     write_ocaml_file(ml_folder / "intrinsics_intf.ml", interface)
@@ -574,3 +665,10 @@ if __name__ == "__main__":
         end
         """
         write_ocaml_file(impl_file, impl_content)
+
+
+if __name__ == "__main__":
+    if "--check" in sys.argv:
+        check()
+    else:
+        main()

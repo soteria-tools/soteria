@@ -34,7 +34,7 @@ module M (StateM : State.StateM.S) = struct
       | [ Ptr ptr; Int size; Int align ] -> (ptr, size, align)
       | [ Int ptr; Int size; Int align ] ->
           let ptr = Typed.cast_i Usize ptr in
-          let ptr = Sptr.null_ptr_of ptr in
+          let ptr = Sptr.of_address ptr in
           ((ptr, Thin), size, align)
       | _ -> failwith "dealloc: invalid arguments"
     in

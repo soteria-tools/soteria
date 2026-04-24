@@ -117,7 +117,6 @@ module MemVal = struct
     | SInit (v, _) -> ([], [ v ])
     | SUninit | SZeros | SAny -> ([], [])
 
-  (* TODO: serialize tree borrow information! *)
   let to_syn (t : t) : syn Seq.t option =
     match t with
     | Init (v, ty) ->
@@ -195,7 +194,10 @@ module MemVal = struct
     | SUninit, NotOwned Totally -> return (owned t (Uninit Totally))
     | SAny, NotOwned Totally -> return (owned t Any)
 
-  let assert_exclusively_owned _ = Result.ok ()
+  let assert_exclusively_owned (t : tree) =
+    match t.node with
+    | NotOwned _ -> miss [ [ SAny ] ]
+    | Owned _ -> Result.ok ()
 end
 
 open MemVal
