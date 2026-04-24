@@ -71,6 +71,5 @@ struct
       'acc ->
       t option ->
       'acc Symex.t
-
   end
 end
