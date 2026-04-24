@@ -52,6 +52,7 @@ let eval_unop : Unop.t -> t -> t = function
 let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct
 
 let rec eval ~force ~eval_var (x : t) : t =
+  let eval' = eval ~force in
   let eval = eval ~force ~eval_var in
   match x.node.kind with
   | Var v -> eval_var x v x.node.ty
@@ -80,7 +81,11 @@ let rec eval ~force ~eval_var (x : t) : t =
       else if equal guard Bool.v_false then eval else_
       else Bool.ite guard (eval then_) (eval else_)
   | Exists (vs, sv) ->
-      let sv = eval_without_vars vs sv in
+      let eval_var' sv v ty =
+        if List.exists (fun (v', _) -> Var.equal v v') vs then sv
+        else eval_var sv v ty
+      in
+      let sv = eval' ~eval_var:eval_var' sv in
       Bool.exists vs sv
   | Seq l ->
       let l, changed = List.map_changed eval l in
