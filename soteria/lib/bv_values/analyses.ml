@@ -562,6 +562,9 @@ module Equality : S = struct
     | Var _ -> 3
     | Float _ -> 2
     | Seq vs -> costs vs
+    | Exists (_, sv) ->
+        (* quantifiers are very expensive *)
+        cost sv + 1024
     | Ptr _ | Bool _ | BitVec _ -> 1
 
   and costs vs = List.fold_left (fun acc v -> acc + cost v) 0 vs
