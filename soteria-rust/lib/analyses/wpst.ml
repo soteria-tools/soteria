@@ -2,7 +2,7 @@ module Stats = Soteria.Stats
 module Compo_res = Soteria.Symex.Compo_res
 open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap
-module State = State.Tree_state
+module State = State.Tree_state.Make (Tree_borrows.Concrete.Make)
 module Interp = Interp.Make (State)
 open Error.Diagnostic
 open Util
@@ -80,12 +80,9 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let@ () = print_outcomes entry_name in
   Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
     ("Running " ^ entry_name ^ "...");
-  let args =
+  let args : State.Sptr.t Rust_val.t list =
     if entry_name = "miri_start" then
-      [
-        Rust_val.Int (Typed.BV.usizei 0);
-        Rust_val.Ptr (State.Sptr.null_ptr (), Thin);
-      ]
+      [ Int (Typed.BV.usizei 0); Ptr (State.Sptr.null (), Thin) ]
     else []
   in
   let { res = branches; stats } : 'res Soteria.Stats.with_stats =

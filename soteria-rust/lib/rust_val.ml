@@ -116,7 +116,8 @@ let rec to_syn ptr_to_syn x =
   | Ptr p -> Ptr (full_ptr_to_syn p)
   | PolyVal v -> PolyVal v
 
-module Learn_eq (Symex : Soteria.Symex.Base with module Value = Typed) = struct
+module Learn_eq (Symex : Soteria.Symex.Base with module Value = Rustsymex.Value) =
+struct
   let learn_eq_meta learn_eq_ptr s t =
     let open Symex.Consumer in
     match (s, t) with

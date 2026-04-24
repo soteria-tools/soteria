@@ -4,6 +4,8 @@
 *)
 
 open Rust_val
+open Typed.Infix
+open Typed.Syntax
 
 module M (StateM : State.StateM.S) = struct
   open StateM
@@ -19,8 +21,8 @@ module M (StateM : State.StateM.S) = struct
     match args with
     | [ Ptr (ptr, _); Int align ] ->
         let align = Typed.cast @@ Typed.cast_i Usize align in
-        let is_aligned, _err = Sptr.is_aligned align ptr in
-        let+ () = assume [ is_aligned ] in
+        let* addr = Sptr.decay ptr in
+        let+ () = assume [ (addr %@ align ==@ Usize.(0s)) ] in
         Tuple []
     | _ -> not_impl "miri_promise_symbolic_alignment: invalid arguments"
 
