@@ -1,10 +1,21 @@
 { pkgs ? import (builtins.fetchTarball {
-    url = "https://github.com/NixOS/nixpkgs/archive/74c309162c3bb90ba0101d9b3929d11abfe96b4d.tar.gz";
+    url = "https://github.com/NixOS/nixpkgs/archive/b12141ef619e4a5d90e636e55ca10bcc90c58289.tar.gz";
   }) {}
 }:
 
 let
-  grace = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+  ocamlPackages = pkgs.ocamlPackages.overrideScope (final: prev: {
+    ppxlib = prev.ppxlib.overrideAttrs (_: rec {
+      version = "0.38.0";
+      src = pkgs.fetchFromGitHub {
+        owner = "ocaml-ppx";
+        repo = "ppxlib";
+        tag = version;
+        hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+      };
+    });
+  });
+  grace = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "grace";
     version = "0.3.0";
     src = pkgs.fetchFromGitHub {
@@ -14,9 +25,9 @@ let
       hash = "sha256-V5K9RGk47K/R+q4wS1FU02kMi1uWSCgdUjKHk7uXuGw=";
     };
     doCheck = false;
-    nativeBuildInputs = with pkgs.ocamlPackages; [
+    nativeBuildInputs = with ocamlPackages; [
     ];
-    propagatedBuildInputs = with pkgs.ocamlPackages; [
+    propagatedBuildInputs = with ocamlPackages; [
       core_unix
       dedent
       fmt
@@ -33,18 +44,18 @@ let
       hash = "sha256-i+7gYle8G2y78GeoAnlNY5dpdONLhltuswusCbMmB/c=";
     };
     doCheck = false;
-    nativeBuildInputs = with pkgs.ocamlPackages; [
+    nativeBuildInputs = with ocamlPackages; [
       ocaml
       findlib
       ocamlbuild
       topkg
     ];
-    buildInputs = with pkgs.ocamlPackages;[ topkg ];
-    propagatedBuildInputs = with pkgs.ocamlPackages; [ astring ];
+    buildInputs = with ocamlPackages; [ topkg ];
+    propagatedBuildInputs = with ocamlPackages; [ astring ];
     strictDeps = true;
-    inherit (pkgs.ocamlPackages.topkg) buildPhase installPhase;
+    inherit (ocamlPackages.topkg) buildPhase installPhase;
   };
-  simple_smt = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+  simple_smt = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "simple_smt";
     version = "unstable-2025-12-06";
     src = pkgs.fetchFromGitHub {
@@ -54,14 +65,14 @@ let
       hash = "sha256-Nt/gMBljkL84Ic+S42VLhRH8gZ1xPdAmdLC9M5TEzco=";
     };
     doCheck = false;
-    propagatedBuildInputs = with pkgs.ocamlPackages; [
+    propagatedBuildInputs = with ocamlPackages; [
       ppx_deriving
       progress
       sexplib
       zarith
     ];
   });
-  printbox = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+  printbox = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "printbox";
     version = "0.12";
     src = pkgs.fetchFromGitHub {
@@ -72,17 +83,17 @@ let
     };
     doCheck = false;
   });
-  printbox-text = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+  printbox-text = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "printbox-text";
     inherit (printbox) version src;
     doCheck = false;
-    propagatedBuildInputs = with pkgs.ocamlPackages; [
+    propagatedBuildInputs = with ocamlPackages; [
       printbox
       uucp
       uutf
     ];
   });
-  ppx_make = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+  ppx_make = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "ppx_make";
     version = "0.3.4";
     src = pkgs.fetchFromGitHub {
@@ -92,11 +103,11 @@ let
       hash = "sha256-jR+2l5JcB3wT0YsnQCTwptarp4cZwi8GFweQEwSn4oo=";
     };
     doCheck = false;
-    propagatedBuildInputs = with pkgs.ocamlPackages; [
+    propagatedBuildInputs = with ocamlPackages; [
       ppxlib
     ];
   });
-  ppx_mixins = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+  ppx_mixins = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "ppx_mixins";
     version = "0.2.0";
     src = pkgs.fetchFromGitHub {
@@ -109,21 +120,21 @@ let
       substituteInPlace dune-project --replace-fail "(lang dune 3.21)" "(lang dune 3.16)"
     '';
     doCheck = false;
-    propagatedBuildInputs = with pkgs.ocamlPackages; [
+    propagatedBuildInputs = with ocamlPackages; [
       ppxlib
     ];
   });
-  ppx_subliner = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+  ppx_subliner = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "ppx_subliner";
-    version = "0.2.1";
+    version = "0.2.2";
     src = pkgs.fetchFromGitHub {
       owner = "bn-d";
       repo = "ppx_subliner";
       tag = "v${finalAttrs.version}";
-      hash = "sha256-uqOYn4hdkbfiP2hEg/WA+CxwRtqaV2G5rE8P9gh/4ts=";
+      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
     };
     doCheck = false;
-    propagatedBuildInputs = with pkgs.ocamlPackages; [
+    propagatedBuildInputs = with ocamlPackages; [
       cmdliner
       ppxlib
       ppx_make
@@ -140,15 +151,15 @@ let
     doCheck = false;
     doInstallCheck = false;
   });
-  soteria = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+  soteria = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "soteria";
     version = "unstable-2025-12-26";
     src = ./.;
     doCheck = false;
-    nativeBuildInputs = with pkgs.ocamlPackages; [
+    nativeBuildInputs = with ocamlPackages; [
       pkgs.git
     ];
-    propagatedBuildInputs = with pkgs.ocamlPackages; [
+    propagatedBuildInputs = with ocamlPackages; [
       grace
       hc
       htmlit
@@ -168,16 +179,16 @@ let
       zarith
     ];
   });
-  soteria-c = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+  soteria-c = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "soteria-c";
     version = "unstable-2025-12-26";
     src = ./.;
     dontDetectOcamlConflicts = true;
-    nativeBuildInputs = with pkgs.ocamlPackages; [
+    nativeBuildInputs = with ocamlPackages; [
       pkgs.git
     ];
     doCheck = false;
-    propagatedBuildInputs = with pkgs.ocamlPackages; [
+    propagatedBuildInputs = with ocamlPackages; [
       cerberus
       dune-site
       eio_main
@@ -193,7 +204,7 @@ in
 
 pkgs.mkShell {
   dontDetectOcamlConflicts = true;
-  nativeBuildInputs = with pkgs.ocamlPackages; [
+  nativeBuildInputs = with ocamlPackages; [
     soteria-c
   ];
 }
