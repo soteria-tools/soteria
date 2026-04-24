@@ -6,12 +6,12 @@
 let
   grace = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "grace";
-    version = "0.2.0";
+    version = "0.3.0";
     src = pkgs.fetchFromGitHub {
       owner = "johnyob";
       repo = "grace";
       tag = "${finalAttrs.version}";
-      hash = "sha256-jubzimeKs29Y6Di2/kpKEOnNAEzMzVpC5HMLjog4Tlg=";
+      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
     };
     doCheck = false;
     nativeBuildInputs = with pkgs.ocamlPackages; [
