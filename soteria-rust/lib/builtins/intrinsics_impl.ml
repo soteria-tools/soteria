@@ -701,9 +701,6 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
        https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
     lift_symex @@ Rustsymex.nondet Typed.t_bool
 
-  let likely ~b = ok (b :> T.sbool Typed.t)
-  let unlikely ~b = ok (b :> T.sbool Typed.t)
-
   let float_minmax ~is_min ~x ~y : T.sfloat Typed.t ret =
     let x = (x :> T.sfloat Typed.t) in
     let y = (y :> T.sfloat Typed.t) in

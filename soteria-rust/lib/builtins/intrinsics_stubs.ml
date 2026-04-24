@@ -205,7 +205,6 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let is_val_statically_known ~t:_ ~_arg:_ =
     not_impl "Unsupported intrinsic: is_val_statically_known"
 
-  let likely ~b:_ = not_impl "Unsupported intrinsic: likely"
   let log10f128 ~x:_ = not_impl "Unsupported intrinsic: log10f128"
   let log10f16 ~x:_ = not_impl "Unsupported intrinsic: log10f16"
   let log10f32 ~x:_ = not_impl "Unsupported intrinsic: log10f32"
@@ -242,6 +241,9 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let nontemporal_store ~t:_ ~ptr:_ ~val_:_ =
     not_impl "Unsupported intrinsic: nontemporal_store"
+
+  let offload ~t_f:_ ~t:_ ~r:_ ~f:_ ~workgroup_dim:_ ~thread_dim:_ ~args:_ =
+    not_impl "Unsupported intrinsic: offload"
 
   let offset ~ptr:_ ~delta:_ ~dst:_ ~offset:_ =
     not_impl "Unsupported intrinsic: offset"
@@ -357,6 +359,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let type_id ~t:_ = not_impl "Unsupported intrinsic: type_id"
   let type_id_eq ~a:_ ~b:_ = not_impl "Unsupported intrinsic: type_id_eq"
   let type_name ~t:_ = not_impl "Unsupported intrinsic: type_name"
+  let type_of ~_id:_ = not_impl "Unsupported intrinsic: type_of"
 
   let typed_swap_nonoverlapping ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: typed_swap_nonoverlapping"
@@ -396,10 +399,9 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let unchecked_sub ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: unchecked_sub"
 
-  let unlikely ~b:_ = not_impl "Unsupported intrinsic: unlikely"
   let unreachable = not_impl "Unsupported intrinsic: unreachable"
   let va_arg ~t:_ ~ap:_ = not_impl "Unsupported intrinsic: va_arg"
-  let va_copy ~dest:_ ~src:_ = not_impl "Unsupported intrinsic: va_copy"
+  let va_copy ~src:_ = not_impl "Unsupported intrinsic: va_copy"
   let va_end ~ap:_ = not_impl "Unsupported intrinsic: va_end"
   let variant_count ~t:_ = not_impl "Unsupported intrinsic: variant_count"
 
@@ -419,6 +421,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     not_impl "Unsupported intrinsic: volatile_store"
 
   let vtable_align ~ptr:_ = not_impl "Unsupported intrinsic: vtable_align"
+  let vtable_for ~t:_ ~u:_ = not_impl "Unsupported intrinsic: vtable_for"
   let vtable_size ~ptr:_ = not_impl "Unsupported intrinsic: vtable_size"
 
   let wrapping_add ~t:_ ~a:_ ~b:_ =

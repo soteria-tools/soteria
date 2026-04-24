@@ -91,7 +91,11 @@ class TypePtr(TypedDict):
 TypeNever = Literal["Never"]
 
 
-Type = TypeAdt | TypeLiteral | TypeTypeVar | TypeRef | TypePtr | TypeNever
+class TypeArray(TypedDict):
+    Array: tuple[UniqueType, UniqueType]
+
+
+Type = TypeAdt | TypeLiteral | TypeTypeVar | TypeRef | TypePtr | TypeNever | TypeArray
 
 
 class DedupedType(TypedDict):
@@ -125,8 +129,20 @@ class UnstructuredBody(TypedDict):
     locals: Locals
 
 
-class Body(TypedDict):
+class BodyUnstructuredBody(TypedDict):
     Unstructured: UnstructuredBody
+
+
+class IntrinsicBody(TypedDict):
+    name: str
+    arg_names: list[str]
+
+
+class BodyIntrinsicBody(TypedDict):
+    Intrinsic: IntrinsicBody
+
+
+Body = BodyUnstructuredBody | BodyIntrinsicBody
 
 
 class FunDecl(TypedDict):
@@ -189,7 +205,7 @@ def type_of(unique_ty: UniqueType) -> InterpType:
         if ty["Adt"]["id"] == "Tuple" and len(ty["Adt"]["generics"]["types"]) == 0:
             return "unit", None
 
-    ignored = ["TypeVar", "Adt", "TraitType"]
+    ignored = ["TypeVar", "Adt", "TraitType", "Array"]
     if any(kind in ty for kind in ignored):
         return "unknown", None
 
@@ -287,13 +303,7 @@ def get_intrinsics() -> dict[str, FunDecl]:
     else:
         pprint("Loading intrinsics...")
         file_rs = (PWD / "intrinsics.rs").resolve()
-        with open(file_rs, "w") as f:
-            f.write(
-                """
-                #![feature(core_intrinsics)]
-                pub use std::intrinsics::*;
-                """
-            )
+        file_rs.touch(exist_ok=True)
 
         charon_cmd = f"charon rustc --ullbc \
             --dest-file {file_json} \
@@ -345,6 +355,8 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
     intrinsics_info: list[IntrinsicInfo] = []
     for fun in intrinsics.values():
+        if "Intrinsic" not in fun["body"]:
+            continue
         name = fun["item_meta"]["name"][-1]["Ident"][0]
         path = "::".join(i["Ident"][0] for i in fun["item_meta"]["name"])
         doc = "\n".join(
@@ -353,12 +365,12 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             if "DocComment" in attrib
         )
         doc = sanitize_comment(doc)
-        arg_count = len(fun["signature"]["inputs"])
+        arg_and_tys = zip(
+            fun["body"]["Intrinsic"]["arg_names"], fun["signature"]["inputs"]
+        )
         args: list[tuple[str, InterpType]] = [
-            (sanitize_var_name(param["name"] or "arg"), type_of(param["ty"]))
-            for param in fun["body"]["Unstructured"]["locals"]["locals"][
-                1 : arg_count + 1
-            ]
+            (sanitize_var_name(param or "arg"), type_of(ty))
+            for (param, ty) in arg_and_tys
         ]
         arg_names = [arg for (arg, _) in args]
         types = [

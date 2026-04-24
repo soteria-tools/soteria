@@ -375,10 +375,6 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "is_val_statically_known", [ t ], [], [ _arg ] ->
         let+ ret = is_val_statically_known ~t ~_arg in
         Int (Typed.BitVec.of_bool ret)
-    | "likely", [], [], [ b ] ->
-        let b = Typed.BitVec.to_bool (as_base TBool b) in
-        let+ ret = likely ~b in
-        Int (Typed.BitVec.of_bool ret)
     | "log10f128", [], [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = log10f128 ~x in
@@ -515,6 +511,8 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
         let ptr = as_ptr ptr in
         let+ () = nontemporal_store ~t ~ptr ~val_ in
         Tuple []
+    | "offload", [ t_f; t; r ], [], [ f; workgroup_dim; thread_dim; args ] ->
+        offload ~t_f ~t ~r ~f ~workgroup_dim ~thread_dim ~args
     | "offset", [ ptr; delta ], [], [ dst; offset_ ] ->
         offset ~ptr ~delta ~dst ~offset:offset_
     | "offset_of", [ t ], [], [ variant; field ] ->
@@ -728,6 +726,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "type_name", [ t ], [], [] ->
         let+ ret = type_name ~t in
         Ptr ret
+    | "type_of", [], [], [ _id ] -> type_of ~_id
     | "typed_swap_nonoverlapping", [ t ], [], [ x; y ] ->
         let x = as_ptr x in
         let y = as_ptr y in
@@ -756,21 +755,15 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "unchecked_shl", [ t; u ], [], [ x; y ] -> unchecked_shl ~t ~u ~x ~y
     | "unchecked_shr", [ t; u ], [], [ x; y ] -> unchecked_shr ~t ~u ~x ~y
     | "unchecked_sub", [ t ], [], [ x; y ] -> unchecked_sub ~t ~x ~y
-    | "unlikely", [], [], [ b ] ->
-        let b = Typed.BitVec.to_bool (as_base TBool b) in
-        let+ ret = unlikely ~b in
-        Int (Typed.BitVec.of_bool ret)
     | "unreachable", [], [], [] ->
         let+ () = unreachable in
         Tuple []
     | "va_arg", [ t ], [], [ ap ] ->
         let ap = as_ptr ap in
         va_arg ~t ~ap
-    | "va_copy", [], [], [ dest; src ] ->
-        let dest = as_ptr dest in
+    | "va_copy", [], [], [ src ] ->
         let src = as_ptr src in
-        let+ () = va_copy ~dest ~src in
-        Tuple []
+        va_copy ~src
     | "va_end", [], [], [ ap ] ->
         let ap = as_ptr ap in
         let+ () = va_end ~ap in
@@ -807,6 +800,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
         let ptr = as_ptr ptr in
         let+ ret = vtable_align ~ptr in
         Int ret
+    | "vtable_for", [ t; u ], [], [] -> vtable_for ~t ~u
     | "vtable_size", [], [], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = vtable_size ~ptr in
