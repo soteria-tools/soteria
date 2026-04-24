@@ -1169,11 +1169,6 @@ module Make (StateImpl : State.S) = struct
       with_extra_call_trace ~name:fundef.item_meta.name
         ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
-    (* FIXME: If using this, this throws an error.
-       The abstraction is leaking, execution of immediate things is done *before* execution starts. *)
-    (* Fmt.pr "REACHED HERE@.@?";
-    let@ () = Rust_state_m.with_frame "Entry point" in
-    Fmt.pr "REACHED HERE 2@.@?"; *)
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
     let* value = exec_real_fun fundef generics args in
     let* () = State.run_thread_exits () in

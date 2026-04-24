@@ -66,7 +66,7 @@ let flamegraph_pl_name entry_name =
   (Soteria.Profiling.Config.get ()).flamegraphs
   |> Option.map (fun dirname ->
       let entry_name =
-        Str.global_replace (Str.regexp_string "::|<|>| ") "-" entry_name
+        Str.global_replace (Str.regexp_string "::") "-" entry_name
       in
       Filename.concat dirname entry_name)
 
