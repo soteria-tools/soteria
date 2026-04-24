@@ -185,8 +185,6 @@ module type S = sig
       rust_val ->
       Types.ty ->
       (rust_val * 'acc, 'env) monad
-
-    val mk_enum : ty:Types.ty -> int -> rust_val list -> (rust_val, 'env) monad
   end
 
   module State : sig
@@ -461,7 +459,6 @@ module Make (State : State_intf.S) :
     let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
     let[@inline] nondet_valid ty = lift_err (nondet_valid ty)
     let[@inline] apply_attributes v attrs = lift_err (apply_attributes v attrs)
-    let[@inline] mk_enum ~ty discr fields = lift_err (mk_enum ~ty discr fields)
 
     (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
        without having to re-define. *)

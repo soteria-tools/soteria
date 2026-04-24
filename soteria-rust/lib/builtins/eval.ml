@@ -214,7 +214,7 @@ module M (StateM : State.StateM.S) = struct
     | System EnvVar -> System.env_var ~ret_ty:fn_sig.output
     | System InstantNow -> System.unix_time_now
     | DropInPlace -> Std.nop
-    | Tokio RngSeedNew -> Tokio.rngseed_new
+    | Tokio RngSeedNew -> Tokio.rngseed_new ~ret_ty:fn_sig.output
 
   let std_fun_eval (f : UllbcAst.fun_decl) generics fun_exec =
     (* Rust allows defining functions and marking them as intrinsics within a

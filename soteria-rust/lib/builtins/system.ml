@@ -43,7 +43,6 @@ module M (StateM : State.StateM.S) = struct
     in
     let var_error_ty =
       match ret_ty with
-      (* THE FOLLOWING DOESNT MATCH, THE TYPE HAS NO GENERICS *)
       | TAdt { id = TAdtId id; _ } -> (
           let tydecl = Crate.get_adt_raw id in
           let name = tydecl.item_meta.name in
@@ -68,9 +67,9 @@ module M (StateM : State.StateM.S) = struct
        VarError { NotPresent, NotUnicode(OsString) }
 
        So the variant of NotPresent is 0 *)
-    let* var_error = Encoder.mk_enum ~ty:var_error_ty 0 [] in
-    let+ res = Encoder.mk_enum ~ty:ret_ty 1 [ var_error ] in
-    res
+    let var_error = Rust_val.mk_enum ~ty:var_error_ty "NotPresent" [] in
+    let res = Rust_val.mk_enum ~ty:ret_ty "Err" [ var_error ] in
+    StateM.ok res
 
   (** {@rust[
         pub fn available_parallelism() -> Result<NonZero<usize>>
@@ -89,7 +88,8 @@ module M (StateM : State.StateM.S) = struct
     (* `NonZero(1)` *)
     let nonzero_one = Tuple [ Tuple [ one ] ] in
     (* `Ok(Nonzero(1))` *)
-    Encoder.mk_enum ~ty:ret_ty 0 [ nonzero_one ]
+    let res = Rust_val.mk_enum ~ty:ret_ty "Ok" [ nonzero_one ] in
+    StateM.ok res
 
   let unix_time_now args =
     let () =
@@ -112,8 +112,8 @@ module M (StateM : State.StateM.S) = struct
     let now = Unix.time () in
     let sec = Int.of_float now in
     let nsec = Int.of_float ((now -. Float.of_int sec) *. 1_000_000_000.) in
-    let sec = Int (Typed.BitVec.mki 64 sec) in
-    let nsec = Int (Typed.BitVec.mki 32 nsec) in
+    let sec = Int (Typed.BitVec.u64i sec) in
+    let nsec = Int (Typed.BitVec.u32i nsec) in
     ok (Tuple [ Tuple [ sec; Tuple [ nsec ] ] ])
 
   let hashmap_random_keys _ =
