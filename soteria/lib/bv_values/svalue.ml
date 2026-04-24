@@ -693,7 +693,12 @@ module rec Bool : Bool = struct
           mk_commut_binop Eq v1 v2 <| TBool
     | _ -> mk_commut_binop Eq v1 v2 <| TBool
 
-  let exists vs body = Exists (vs, body) <| TBool
+  let exists binders body =
+    let body_vars = Var.Hashset.of_iter (iter_vars body |> Iter.map fst) in
+    let binders =
+      List.filter (fun (v, _) -> Var.Hashset.mem body_vars v) binders
+    in
+    match binders with [] -> body | _ -> Exists (binders, body) <| TBool
 
   let sem_eq_untyped v1 v2 =
     if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
