@@ -105,6 +105,9 @@ let
       tag = "v${finalAttrs.version}";
       hash = "sha256-Kt+JAZU2JcCSzg/TOikRmGiMsPK7HnIsXSRHk7TPY8c=";
     };
+    postPatch = ''
+      substituteInPlace dune-project --replace-fail "(lang dune 3.21)" "(lang dune 3.16)"
+    '';
     doCheck = false;
     propagatedBuildInputs = with pkgs.ocamlPackages; [
       ppxlib
