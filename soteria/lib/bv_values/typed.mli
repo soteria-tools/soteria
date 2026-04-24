@@ -36,6 +36,17 @@ module T : sig
     (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a sseq -> unit
 
   val pp_any : Format.formatter -> any -> unit
+  val hash_sint : sint -> int
+  val hash_sint_ovf : sint_ovf -> int
+  val hash_nonzero : nonzero -> int
+  val hash_zero : zero -> int
+  val hash_sfloat : sfloat -> int
+  val hash_sbool : sbool -> int
+  val hash_sptr : sptr -> int
+  val hash_sloc : sloc -> int
+  val hash_cval : cval -> int
+  val hash_sseq : 'a sseq -> int
+  val hash_any : any -> int
 end
 
 open T
@@ -66,13 +77,13 @@ type sbool = T.sbool
 
 (** Basic value operations *)
 
+val is_bool_ty : 'a ty -> bool
 val get_ty : 'a t -> Svalue.ty
 val type_type : Svalue.ty -> 'a ty
 val untype_type : 'a ty -> Svalue.ty
 val kind : 'a t -> Svalue.t_kind
 val mk_var : Svalue.Var.t -> 'a ty -> 'a t
 val iter_vars : 'a t -> (Svalue.Var.t * 'b ty -> unit) -> unit
-val subst : (Svalue.Var.t -> Svalue.Var.t) -> 'a t -> 'a t
 val type_ : Svalue.t -> 'a t
 val type_checked : Svalue.t -> 'a ty -> 'a t option
 val cast : 'a t -> 'b t
@@ -88,38 +99,53 @@ val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 val ppa : Format.formatter -> 'a t -> unit
 val equal : ([< any ] as 'a) t -> 'a t -> bool
 val compare : ([< any ] as 'a) t -> 'a t -> int
-val hash : [< any ] t -> int
+val hash : ('a -> int) -> 'a t -> int
+val hasha : 'a t -> int
+val unique_tag : [< any ] t -> int
 
 (** Typed constructors *)
 
 val sem_eq : 'a t -> 'a t -> sbool t
-val sem_eq_untyped : 'a t -> 'a t -> [> sbool ] t
-val v_true : [> sbool ] t
-val v_false : [> sbool ] t
-val bool : bool -> [> sbool ] t
-val as_bool : 'a t -> bool option
-val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+val sem_eq_untyped : 'a t -> 'b t -> sbool t
 
-(** Similar to [and_], but the rhs is only evaluated if the lhs is not the
-    concrete false. In other words, this is a short-circuiting and. Avoids some
-    errors, like a division by zero in [0 != x && n / x] when [x] is [0]. *)
-val and_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
+(** Boolean operations *)
 
-val conj : [< sbool ] t list -> [> sbool ] t
-val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
-val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+module type Bool_ := sig
+  val v_true : [> sbool ] t
+  val v_false : [> sbool ] t
+  val of_bool : bool -> [> sbool ] t
+  val to_bool : 'a t -> bool option
+  val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 
-(** Similar to [or_], but the rhs is only evaluated if the lhs is not the
-    concrete true. In other words, this is a short-circuiting or. Avoids some
-    errors, like a division by zero in [0 == x || n / x] when [x] is [0]. *)
-val or_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
+  (** Similar to [and_], but the rhs is only evaluated if the lhs is not the
+      concrete false. In other words, this is a short-circuiting and. Avoids
+      some errors, like a division by zero in [0 != x && n / x] when [x] is [0].
+  *)
+  val and_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
 
-val not : [< sbool ] t -> [> sbool ] t
-val distinct : 'a t list -> [> sbool ] t
-val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
+  val conj : [< sbool ] t list -> [> sbool ] t
+  val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
+  val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+
+  (** Similar to [or_], but the rhs is only evaluated if the lhs is not the
+      concrete true. In other words, this is a short-circuiting or. Avoids some
+      errors, like a division by zero in [0 == x || n / x] when [x] is [0]. *)
+  val or_lazy : [< sbool ] t -> (unit -> [< sbool ] t) -> [> sbool ] t
+
+  val not : [< sbool ] t -> [> sbool ] t
+  val distinct : 'a t list -> [> sbool ] t
+  val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
+end
+
+include Bool_
+
+module Bool : sig
+  include Bool_
+
+  type t = sbool
+end
 
 (** Bit vector operations *)
-
 module BitVec : sig
   (* constructor *)
   val mk : int -> Z.t -> [> sint ] t
@@ -147,6 +173,9 @@ module BitVec : sig
   val sub_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
   val mul_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
   val neg_overflows : [< sint ] t -> [> sbool ] t
+
+  (* Unsafe mark as not overflow *)
+  val no_ovf_unsafe : [< sint_ovf ] t -> [> sint ] t
 
   (* inequalities *)
   val lt : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
@@ -259,9 +288,9 @@ module Infix : sig
   val ( &&@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
   val ( ||@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 
-  (* arithmetic -- [$] indicates signed
-     unsigned division and remainder cannot overflow so we consider they
-     always result in-bounds (can overflow for signed with [MIN / -1]) *)
+  (* arithmetic -- [$] indicates signed unsigned division and remainder cannot
+     overflow so we consider they always result in-bounds (can overflow for
+     signed with [MIN / -1]) *)
   val ( +@ ) : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val ( -@ ) : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
   val ( ~- ) : [< sint ] t -> [> sint_ovf ] t
@@ -310,3 +339,9 @@ module Infix : sig
   val ( *.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
   val ( /.@ ) : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 end
+
+module Expr :
+  Symex.Value.Expr
+    with type 'a v := 'a t
+     and type 'a ty := 'a ty
+     and type t = Svalue.t

@@ -1,0 +1,8 @@
+(executables
+ (names print_stats)
+ (libraries soteria)
+ (preprocess
+  (pps soteria.ppx)))
+
+(cram
+ (deps ./print_stats.exe))

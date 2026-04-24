@@ -1,5 +1,5 @@
   $ soteria-c gen-summaries file1.c file2.c --dump-summaries "out.summaries" ; cat out.summaries
-  [WARN] Ignoring file that did not parse correctly: file1.c
+  warning: Ignoring file that did not parse correctly: file1.c
   Failed to parse AIL: file1.c:4:1: error: unexpected token after '?' and before '}'
   parsing "conditional_expression": seen "logical_OR_expression QUESTION", expecting "expression COLON conditional_expression"
   }
@@ -8,9 +8,7 @@
   No bugs found
   Summaries for test_559:
     Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = { heap = []; globs = [] };
-        ret = (Ok 0x00000000) };
+      raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
 We do not want to print the backtrace in the test output to reduce flakiness of the test

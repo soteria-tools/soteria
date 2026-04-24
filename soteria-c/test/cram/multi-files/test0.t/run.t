@@ -132,18 +132,21 @@
   $ soteria-c exec file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
     [Ok: (0x00000019,
-          { heap =
-            [(V|1|,
-              { node =
-                [MemVal {offset = 0x0000000000000000; len = 0x0000000000000004;
-                   v = 0x0000000d : signed int}];
-                info = None });
-             (V|2|,
-              { node =
-                [MemVal {offset = 0x0000000000000000; len = 0x0000000000000004;
-                   v = 0x0000000c : signed int}];
-                info = None })];
-            globs = [(x_560, V|2|); (x_642, V|1|)] })]
+          Some
+            [(Ser_heap
+                (0x0000000000000001,
+                 { node =
+                   MemVal {offset = 0x0000000000000000;
+                     len = 0x0000000000000004; v = 0x0000000d : signed int};
+                   info = None }));
+             (Ser_heap
+                (0x0000000000000002,
+                 { node =
+                   MemVal {offset = 0x0000000000000000;
+                     len = 0x0000000000000004; v = 0x0000000c : signed int};
+                   info = None }));
+             (Ser_globs (x_560, 0x0000000000000002));
+             (Ser_globs (x_642, 0x0000000000000001))])]
   
   Executed 7 statements
   Verification Success!

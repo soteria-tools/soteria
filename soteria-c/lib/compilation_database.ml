@@ -1,5 +1,12 @@
 (* Not quite sure this is the right abstraction but we'll do with it. *)
-type cmd = { directory : string; file : string; command : string list }
+type cmd = {
+  directory : string;
+  file : string;
+  command : string list;
+  original : Yojson.Basic.t;
+      (** We keep track of the original yojson object corresponding to this item
+          in the database, for when we need to write it out again. *)
+}
 
 (** Strings need to be properly unescaped, I think upgrading to Yojson 3.0 will
     fix this, but in the meantime the ecosystem is pretty locked... *)
@@ -61,14 +68,14 @@ let cmd_of_yojson json =
     |> String.split_on_char ' '
   in
   let c_files, command = split_c_files_args [] [] command in
-  (* TODO: This is kind of rough parsing of the compilation_commands. 
-               Let's see if we find examples that are different. *)
+  (* TODO: This is kind of rough parsing of the compilation_commands. Let's see
+     if we find examples that are different. *)
   let () =
     match c_files with
     | [ c ] when c = file -> ()
     | _ -> Fmt.failwith "Multiple -c arguments in compilation database?"
   in
-  { directory; file; command }
+  { directory; file; command; original = json }
 
 type t = cmd list
 
@@ -79,3 +86,7 @@ let of_yojson json : t =
 let from_file file =
   let json = Yojson.Basic.from_file ~fname:file file in
   of_yojson json
+
+let dump_originals file cmds =
+  let json = `List (List.map (fun cmd -> cmd.original) cmds) in
+  Yojson.Basic.to_file ~std:true file json

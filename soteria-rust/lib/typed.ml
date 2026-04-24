@@ -1,6 +1,6 @@
 open Charon
+open Common.Charon_util
 include Soteria.Bv_values.Typed
-module Lc = Layout_common
 
 (** [CastError (value, expected, got)] *)
 exception CastError of T.any t * T.any ty * T.any ty
@@ -18,8 +18,19 @@ let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
     (CastError
        ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
 
-let t_ptr () = t_ptr (8 * Lc.size_of_uint_ty Usize)
-let t_usize () = t_int (8 * Lc.size_of_uint_ty Usize)
+let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
+let t_loc () = t_loc (8 * size_of_uint_ty Usize)
+let t_usize () = t_int (8 * size_of_uint_ty Usize)
+
+let t_lit : Types.literal_type -> [< T.cval ] ty = function
+  | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
+  | TFloat F16 -> t_f16
+  | TFloat F32 -> t_f32
+  | TFloat F64 -> t_f64
+  | TFloat F128 -> t_f128
+
+let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
+  t_float (float_precision ty)
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -30,15 +41,11 @@ let cast_checked2 v1 v2 =
   | None -> cast_error v1 (type_type @@ get_ty v2)
 
 let cast_lit ty (v : 'a t) : [> T.sint ] t =
-  let size = 8 * Lc.size_of_literal_ty ty in
+  let size = 8 * size_of_literal_ty ty in
   cast_checked ~ty:(t_int size) v
 
 let cast_i uty = cast_lit (TUInt uty)
-let cast_fp fp v = cast_checked ~ty:(t_float fp) v
-
-let cast_f fty v =
-  let fp = Charon_util.float_precision fty in
-  cast_checked ~ty:(t_float fp) v
+let cast_f fty v = cast_checked ~ty:(t_float fty) v
 
 let cast_float v =
   match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
@@ -51,10 +58,10 @@ let cast_int (v : 'a t) : [> T.sint ] t * int =
 module BitVec = struct
   include BitVec
 
-  let mk_lit ty = BitVec.mk_masked (Lc.size_of_literal_ty ty * 8)
-  let mk_lit_nz ty = BitVec.mk_nz (Lc.size_of_literal_ty ty * 8)
-  let mki_lit ty = BitVec.mki_masked (Lc.size_of_literal_ty ty * 8)
-  let mki_lit_nz ty = BitVec.mki_nz (Lc.size_of_literal_ty ty * 8)
+  let mk_lit ty = BitVec.mk_masked (size_of_literal_ty ty * 8)
+  let mk_lit_nz ty = BitVec.mk_nz (size_of_literal_ty ty * 8)
+  let mki_lit ty = BitVec.mki_masked (size_of_literal_ty ty * 8)
+  let mki_lit_nz ty = BitVec.mki_nz (size_of_literal_ty ty * 8)
   let u8 = mk_lit (TUInt U8)
   let u8i = mki_lit (TUInt U8)
   let u8nz = mk_lit_nz (TUInt U8)
@@ -79,10 +86,9 @@ module BitVec = struct
   let usizei z = mki_lit (TUInt Usize) z
   let usizenz z = mk_lit_nz (TUInt Usize) z
   let usizeinz z = mki_lit_nz (TUInt Usize) z
-  let usize_of_const_generic cgen = usize (Charon_util.z_of_const_generic cgen)
 
   let of_bool : T.sbool t -> [> T.sint ] t =
-    of_bool (Lc.size_of_literal_ty TBool * 8)
+    of_bool (size_of_literal_ty TBool * 8)
 
   let of_scalar : Values.scalar_value -> [> T.sint ] t = function
     | UnsignedScalar (Usize, v) | SignedScalar (Isize, v) -> usize v
@@ -95,37 +101,35 @@ module BitVec = struct
   let of_literal : Values.literal -> [> T.sint ] t = function
     | VScalar s -> of_scalar s
     | VChar c -> u32i (Uchar.to_int c)
-    | VBool b -> of_bool (bool b)
+    | VBool b -> of_bool (Bool.of_bool b)
     | l ->
         Fmt.failwith "Cannot convert non-scalar literal %s to bitvector"
           (PrintValues.literal_to_string l)
 
-  let of_const_generic : Types.const_generic -> [> T.sint ] t = function
-    | CgValue lit -> of_literal lit
+  let of_constant_expr : Types.constant_expr -> [> T.sint ] t = function
+    | { kind = CLiteral lit; _ } -> of_literal lit
     | c ->
-        Fmt.failwith "Cannot convert non-value const generic %a to bitvector"
-          Types.pp_const_generic c
-
-  let bv_to_z ty z =
-    let tag_size = 8 * Lc.size_of_literal_ty ty in
-    let signed = Lc.is_signed ty in
-    bv_to_z signed tag_size z
+        Fmt.failwith "Cannot convert non-value const expr %a to bitvector"
+          Types.pp_constant_expr c
 
   let max ~signed l r = ite (gt ~signed l r) l r
+  let min ~signed l r = ite (lt ~signed l r) l r
 end
+
+module BV = BitVec
 
 module Float = struct
   include Float
 
-  let mk fty = mk (Charon_util.float_precision fty)
+  let mk fty = mk (float_precision fty)
 end
 
 module Ptr = struct
   include Ptr
 
-  let null_loc () = null_loc (8 * Lc.size_of_uint_ty Usize)
-  let null () = null (8 * Lc.size_of_uint_ty Usize)
-  let loc_of_int i = loc_of_int (8 * Lc.size_of_uint_ty Usize) i
+  let null_loc () = null_loc (8 * size_of_uint_ty Usize)
+  let null () = null (8 * size_of_uint_ty Usize)
+  let loc_of_int i = loc_of_int (8 * size_of_uint_ty Usize) i
 end
 
 module Syntax = struct

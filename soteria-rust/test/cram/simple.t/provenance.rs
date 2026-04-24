@@ -1,4 +1,5 @@
-fn main() {
+#[soteria::test]
+fn with_exposed() {
     let mut x: u8 = 0;
     let p = &mut x as *mut u8;
     let p_int = p.expose_provenance();

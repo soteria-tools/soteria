@@ -30,14 +30,12 @@ module Incr_counter_mut : (_ : sig
                            end)
   -> sig
   type var = t
-  type t
-
-  include Reversible.Mutable with type t := t
+  type t [@@mixins Reversible.Mutable]
 
   val get_next : t -> var
 end
 
 module Hashset : Hashset.S with type elt = t
-module Set : Set.S with type elt = t
+module Set : PatriciaTree.SET with type elt = t
 module Hashtbl : Hashtbl.S with type key = t
-module Map : Map.S with type key = t
+module Map : PatriciaTree.MAP with type key = t

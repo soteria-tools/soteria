@@ -23,10 +23,9 @@ type t = {
   branching : Fuel_value.t;
       (** Number of times branching happens. Careful, the total number of
           branches is potentially exponential in the number of branchings *)
-      (* TODO:
-          Realised that we could just have the symex monad do a
-          [Iter.take branches] and we wouldn't ever have to keep track of
-          branching inside execution since everything is lazily executed *)
+      (* TODO: Realised that we could just have the symex monad do a [Iter.take
+         branches] and we wouldn't ever have to keep track of branching inside
+         execution since everything is lazily executed *)
 }
 [@@deriving show { with_path = false }]
 
@@ -65,7 +64,7 @@ module Cli = struct
     match g with
     | Ok g -> g
     | Error e ->
-        Fmt.epr "%a" Terminal.Color.pp_fatal e;
+        Fmt.epr "%a" Logs.Printers.pp_fatal e;
         exit Cmdliner.Cmd.Exit.cli_error
 
   let fuel_value_conv =
@@ -104,7 +103,7 @@ module Cli = struct
       Cmdliner.Arg.(
         value
         & opt (some fuel_value_conv) None
-        & info [ "step-fuel" ]
+        & info [ "step-fuel" ] ~docs:Cmdliner_helpers.Sections.analysis
             ~env:(Cmdliner.Cmd.Env.info "SOTERIA_STEP_FUEL")
             ~doc:
               (Fmt.str
@@ -119,7 +118,7 @@ module Cli = struct
         & opt (some fuel_value_conv) None
         & info
             [ "branching-fuel"; "branch-fuel" ]
-            ~docv:"N"
+            ~docs:Cmdliner_helpers.Sections.analysis ~docv:"N"
             ~env:(Cmdliner.Cmd.Env.info "SOTERIA_BRANCHING_FUEL")
             ~doc:
               (Fmt.str
@@ -132,7 +131,7 @@ module Cli = struct
       Cmdliner.Arg.(
         value
         & flag
-        & info [ "infinite-fuel" ]
+        & info [ "infinite-fuel" ] ~docs:Cmdliner_helpers.Sections.analysis
             ~env:(Cmdliner.Cmd.Env.info "SOTERIA_INFINITE_FUEL")
             ~doc:
               (Fmt.str "Use infinite fuel (may not terminate). Default: %b"

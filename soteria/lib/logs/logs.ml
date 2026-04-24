@@ -1,6 +1,28 @@
 module Level = Level
 module Config = Config
-module Cli = Cli
+module Profile = Profile
+module Color = Color
+module Printers = Printers
+
+let level_color : Level.t -> Color.t = function
+  | Smt -> `Purple
+  | Trace -> `Gray
+  | Debug -> `DarkBlue
+  | Info -> `Teal
+  | Warn -> `Orange
+  | Error -> `Maroon
+
+let format_level level =
+  let level_str = Level.to_string level in
+  if (Config.get ()).no_color then Printf.sprintf "[%s]" level_str
+  else
+    let color = level_color level in
+    let buf = Buffer.create 32 in
+    let fmt = Format.formatter_of_buffer buf in
+    Fmt.set_style_renderer fmt `Ansi_tty;
+    Format.fprintf fmt "[%a]" (Printers.pp_clr color) level_str;
+    Format.pp_print_flush fmt ();
+    Buffer.contents buf
 
 type logger = { oc : Out_channel.t; mutable depth_counter : int }
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
@@ -23,7 +45,8 @@ let init () =
     match (Config.get ()).kind with
     | Html ->
         at_exit (fun () ->
-            (* If program is interrupted and not all sections have been closed, close them all! *)
+            (* If program is interrupted and not all sections have been closed,
+               close them all! *)
             for _ = 0 to logger.depth_counter - 1 do
               Out_channel.output_string oc Html.section_closing;
               Out_channel.output_char oc '\n'
@@ -43,8 +66,8 @@ let write_string str =
     Out_channel.output_char logger.oc '\n';
     Out_channel.flush logger.oc
   in
-  (* We could avoid the below by defining loggers à la Logs,
-     so that interject would be part of a given logger. *)
+  (* We could avoid the below by defining loggers à la Logs, so that interject
+     would be part of a given logger. *)
   match (Config.get ()).kind with
   | Html -> do_ ()
   | Stderr -> !Config.cur_interject do_
@@ -86,10 +109,11 @@ module L = struct
       Format.kasprintf
         (fun msg ->
           let msg =
-            (* TODO: Write a different logger for each kind, instead of pattern matching in each function *)
+            (* TODO: Write a different logger for each kind, instead of pattern
+               matching in each function *)
             match (Config.get ()).kind with
             | Html -> Html.message level msg
-            | Stderr -> Printf.sprintf "[%s] %s" (Level.to_string level) msg
+            | Stderr -> Printf.sprintf "%s %s" (format_level level) msg
           in
           write_string msg)
         fmt
@@ -98,7 +122,6 @@ module L = struct
   let debug msgf = log ~level:Level.Debug msgf
   let info msgf = log ~level:Level.Info msgf
   let warn msgf = log ~level:Level.Warn msgf
-  let app msgf = log ~level:Level.App msgf
   let error msgf = log ~level:Level.Error msgf
   let smt msgf = log ~level:Level.Smt msgf
 end

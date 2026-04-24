@@ -26,6 +26,9 @@ let take_count n l =
 let combine_opt l1 l2 =
   try Some (combine l1 l2) with Invalid_argument _ -> None
 
+let combine_or ~ok ~err l1 l2 =
+  try ok (combine l1 l2) with Invalid_argument _ -> err ()
+
 (** Aggregates results, returning all errors if any, otherwise all successful
     values. *)
 let join_results outcomes =
@@ -93,13 +96,18 @@ let map_changed f l =
   in
   (res, !changed)
 
-(** Return the last element of a list. *)
-let rec last l =
+(** Return the last element of a list.
+
+    @raise Invalid_argument if the list is empty. *)
+let[@tailrec] rec last l =
   match l with [] -> invalid_arg "List.last" | [ x ] -> x | _ :: l -> last l
 
 (** Return the last element of a list, if any. *)
-let rec last_opt l =
+let[@tailrec] rec last_opt l =
   match l with [] -> None | [ x ] -> Some x | _ :: l -> last_opt l
+
+(** Return the head of a list, if any. *)
+let hd_opt = function [] -> None | x :: _ -> Some x
 
 (** Apply a function to each pair of elements from two lists, concatenating all
     resulting lists.
@@ -116,3 +124,42 @@ and[@tail_mod_cons] prepend_concat_map2 zs f xs ys =
   match zs with
   | [] -> concat_map2 f xs ys
   | z :: zs -> z :: prepend_concat_map2 zs f xs ys
+
+(** [sub ~from ~len l] returns the sublist of [l], from index [from]
+    (inclusive), of length [n]. *)
+let sub ~from ~len l = l |> drop from |> take len
+
+(** Group a list of pairs by their first component, using the provided
+    comparison function to determine equality of keys. The resulting list
+    contains pairs of keys and lists of corresponding values. The complexity is
+    O(n log n), the list is traversed only once. *)
+let group_by (type a) ?(compare : a -> a -> int = Stdlib.compare)
+    (l : (a * 'b) list) =
+  let module Map = Map.Make (struct
+    type t = a
+
+    let compare = compare
+    let pp _ _ = ()
+    let show _ = ""
+  end) in
+  l
+  |> fold_left
+       (fun acc (k, v) ->
+         Map.update k
+           (function None -> Some [ v ] | Some l -> Some (v :: l))
+           acc)
+       Map.empty
+  |> Map.bindings
+
+(** [find_with_rest f l] will look for the first element of [l] that satisfies
+    the predicate [f]. If one is found, returns [Some (x, l')], where
+    [f x = true] and [l'] is [l] with [x] removed (order is preserved). *)
+let rec find_with_rest f l =
+  match l with
+  | [] -> None
+  | x :: xs -> (
+      if f x then Some (x, xs)
+      else
+        match find_with_rest f xs with
+        | None -> None
+        | Some (found, rest) -> Some (found, x :: rest))

@@ -1,27 +1,4 @@
-from typing import Optional
-
 from common import *
-
-# Tests that we want to skip when running tests quickly to look for regressions, in development
-# path -> (outcome, optional reason)
-SKIPPED_TESTS: dict[str, tuple[Outcome, Optional[str]]] = {
-    # Kani
-    "ArithOperators/rem_float_fixme.rs": Outcome.PASS(),
-    "FloatingPoint/main.rs": Outcome.PASS(),
-    "Intrinsics/Count/ctpop.rs": Outcome.UNKNOWN(
-        "Doesn't work in Charon, 2^N branches in Obol",
-    ),
-    "Intrinsics/FastMath/div_f64.rs": Outcome.UNKNOWN("Very slow"),
-    "Intrinsics/Math/Rounding/Round/roundf64.rs": Outcome.PASS(),
-    "Intrinsics/Math/Rounding/RoundTiesEven/round_ties_even_f64.rs": Outcome.PASS(),
-    # Miri
-    "pass/issues/issue-17877.rs": Outcome.UNKNOWN(
-        "Makes an array of size 16384, too slow",
-    ),
-    "pass/arrays.rs": Outcome.UNKNOWN(
-        "Makes an array [(), usize::MAX], which we try evaluating",
-    ),
-}
 
 KNOWN_ISSUES = {
     # Kani
@@ -29,8 +6,6 @@ KNOWN_ISSUES = {
     "ArithOperators/unsafe_mul_fail.rs": "The main function takes a parameter? Kani crashes too",
     "ArithOperators/unsafe_sub_fail.rs": "The main function takes a parameter? Kani crashes too",
     "Cleanup/unwind_fixme.rs": "The main function takes a paramter? Kani crashes too",
-    "CodegenConstValue/main.rs": "We don't translate slice constants",
-    "DynTrait/vtable_size_align_drop.rs": "The test does a ptr-int-ptr cast, which we don't support",
     "FunctionCall/type_check.rs": "We don't support TypeId",
     "FunctionCall/Variadic/fixme_main.rs": "We don't handle functions with spread arguments (not in Charon)",
     "FunctionCall/Variadic/main.rs": "We don't handle functions with spread arguments (not in Charon)",
@@ -48,12 +23,7 @@ KNOWN_ISSUES = {
     "ValidValues/write_bytes.rs": "Kani checks for validity on write, whereas Miri does on read; we copy Miri.",
     "Whitespace/main.rs": "Weird double move; maybe moving from a niched value doesn't actually move it?",
     # Miri
-    "fail/dangling_pointers/dangling_pointer_project_underscore_let.rs": "let _ = ... assignments get optimized out",
-    "fail/dangling_pointers/dangling_pointer_project_underscore_let_type_annotation.rs": "let _ = ... assignments get optimized out",
-    "fail/dangling_pointers/dangling_pointer_project_underscore_match.rs": "let _ = ... assignments get optimized out",
     "fail/dangling_pointers/deref_dangling_box.rs": "We don't check for dangling pointers for boxes",
-    "fail/dangling_pointers/deref_dangling_ref.rs": "We don't check the validity of a reference when dereferencing it?",
-    "fail/dangling_pointers/dyn_size.rs": "We don't check the validity of slice references",
     "fail/dyn-call-trait-mismatch.rs": "We don't check the validity of dyn calls",
     "fail/dyn-upcast-nop-wrong-trait.rs": "We don't check the validity of dyn casts",
     "fail/dyn-upcast-trait-mismatch.rs": "We don't check the validity of dyn casts",
@@ -63,36 +33,35 @@ KNOWN_ISSUES = {
     "fail/function_calls/return_pointer_aliasing_read.rs": "We don't check arguments don't alias with the return place",
     "fail/function_calls/return_pointer_aliasing_write.rs": "We don't check arguments don't alias with the return place",
     "fail/overlapping_assignment.rs": "MIR-only check for assignment overlap (we don't do this atm)",
-    "fail/provenance/strict_provenance_cast.rs": "Miri has a strict provenance flag, we don't",
-    "fail/uninit/uninit_alloc_diagnostic.rs": "We don't detected an uninit access that.. doesn't seem to exist?",
     "fail/validity/cast_fn_ptr_invalid_caller_ret.rs": "We don't use a fn ptr's type for checking validity",
     "fail/validity/nonzero.rs": "The valid_range_start attribute isn't parsed by Charon?",
-    "fail/validity/ref_to_uninhabited1.rs": "We don't check Boxes have an inhabited value",
-    "fail/validity/transmute_through_ptr.rs": "We don't error on an invalid enum tag?",
-    "fail/validity/uninit_float.rs": "A uninit mitigation doesn't get compiled away despite flags set?",
     "fail/validity/wrong-dyn-trait-generic.rs": "We don't check the validity of dyn casts",
     "fail/validity/wrong-dyn-trait.rs": "We don't check the validity of dyn casts",
-    "pass/align.rs": "We don't allow ptr-int-ptr conversions, Miri does (under a flag)",
-    "pass/integer-ops.rs": "Miri allows negative bit shifts, we don't (like Kani)",
+    "pass/align.rs": "We don't check the decayed address for alignment checks",
+    "pass/integer-ops.rs": "Miri allows disabling overflow checks, we don't",
     "pass/disable-alignment-check.rs": "We don't provide a way to disable alignment checks",
     "pass/dyn-traits.rs": "VTable addresses should be randomised",
-    "pass/enum_discriminant_ptr_value.rs": "We don't provide a way to disable validity checks",
+    "pass/enum_discriminant_ptr_value.rs": "We don't support disabling validation",
     "pass/extern_types.rs": "We don't handle extern types",
+    "pass/float_nan.rs": "HashSets are currently broken, unsure why",
     "pass/function_calls/abi_compat.rs": "We are too restrictive on fn pointer casts",
+    "pass/function_pointers.rs": "We don't have nondeterministic function pointers for generic functions",
+    "pass/hashmap.rs": "HashMaps are currently broken, unsure why",
+    "pass/intrinsics/fmuladd_nondeterministic.rs": "We don't implement fmuladd non-deterministically",
+    "pass/intrinsics/intrinsics.rs": "Our implementation of type_name is wrong",
     "pass/issues/issue-120337-irrefutable-let-ice.rs": "Weird ! type in a union?",
-    "pass/issues/issue-3200-packed-field-offset.rs": "We don't handle repr(packed)",
-    "pass/issues/issue-3200-packed2-field-offset.rs": "We don't handle repr(packed)",
-    "pass/issues/issue-5917.rs": "We don't handle pointers derived from globals properly, freeing referenced values",
+    "pass/issues/issue-29746.rs": "vec! hardcodes the layout of types, but we don't calculate the layout of tuples properly",
+    "pass/issues/issue-3200-packed-field-offset.rs": "We don't handle repr(packed) in dangling checks",
+    "pass/issues/issue-3200-packed2-field-offset.rs": "We don't handle repr(packed) in dangling checks",
     "pass/issues/issue-miri-1075.rs": "We don't check the status code on process::exit(N) -- 0 is ok!",
-    "pass/observed_local_mut.rs": "We don't provide a way to disable aliasing checks",
+    "pass/linked-list.rs": "Some allocation did something weird? Requires investigation",
     "pass/overflow_checks_off.rs": "We don't provide a way to disable overflow checks",
-    "pass/partially-uninit.rs": "We don't handle unions properly, and lose data on transmutes",
-    "pass/provenance.rs": "It is unclear how to properly do ptr-int-ptr conversions",
-    "pass/ptr_int_from_exposed.rs": "It is unclear how to properly do ptr-int-ptr conversions",
-    "pass/ptr_offset.rs": "It is unclear how to properly do ptr-int-ptr conversions",
-    "pass/strings.rs": "A static region gets translated as erased memory, causing a use-after-free",
-    "pass/u128.rs": "We don't do int-float-int conversions properly",
-    "panic/mir-validation.rs": "We don't validate the MIR for projections",
+    "pass/packed-struct-dyn-trait.rs": "We don't handle repr(packed) reads",
+    "pass/packed_struct.rs": "We don't handle repr(packed) reads",
+    "pass/pointers.rs": "The test expects the address to never equal 0x100, despite it being possible (https://rust-lang.zulipchat.com/#narrow/channel/269128-miri/topic/Test.20.60ptr.3A.3Aguaranteed_ne.60/near/577940570)",
+    "pass/ptr_int_from_exposed.rs": "We don't handle shifting pointers between allocations in permissive provenance",
+    "pass/u128.rs": "Formatting u128 is too slow and times out",
+    "pass/without-validation.rs": "Unsizing RefMut doesn't work",
 }
 
 
@@ -112,6 +81,7 @@ KANI_EXCLUSIONS = [
     "FunctionCall/Variadic/main.rs",
     "Static/unsafe_extern_static_uninitialized.rs",
     # unsupported: libc
+    "Cast/cast_abstract_args_to_concrete.rs",
     "/LibC/",
     "/Strings/copy_empty_string_by_intrinsic.rs",
     "Slice/pathbuf.rs",
@@ -147,8 +117,8 @@ KANI_EXCLUSIONS = [
     "Serde/main.rs",
     "Slice/drop_in_place.rs",
     "Slice/extra_checks_fail.rs",
-    # utils
     "fixme",
+    # utils
     "/Helpers/",
     "/UnsizedCoercion/defs.rs",
 ]
@@ -195,10 +165,11 @@ MIRI_EXCLUSIONS = [
     "pass/sendable-class.rs",
     "pass/send-is-not-static-par-for.rs",
     "pass/static_memory_modification.rs",
+    "pass/threadleak_ignored.rs",
     "pass/tree_borrows/read_retag_no_race.rs",
     "pass/tree_borrows/spurious_read.rs",
-    "weak_memory",
     "pass/iter_macro.rs",
+    "weak_memory",
     # unsupported: FFI
     "/native-lib/",
     "exported_symbol",
@@ -212,17 +183,22 @@ MIRI_EXCLUSIONS = [
     "fail/function_calls/check_arg_count_too_few_args.rs",
     "pass/extern_types.rs",
     # unsupported: GenMC
-    "genmc/pass/test_cxx_build.rs",
+    "genmc",
     # unsuppported: libc
     "fail/alloc/global_system_mixup.rs",
     "pass/global_allocator.rs",
     "pass/heap_allocator.rs",
+    "pass/issues/issue-miri-3680.rs",
+    "pass/path.rs",
     # unsupported: Miri builtins
     "pass/backtrace/backtrace-api-v1.rs",
     "fail/alloc/no_global_allocator.rs",
     "fail/panic/unwind_panic_abort.rs",
     "fail/unaligned_pointers/promise_alignment.rs",
     "fail/unaligned_pointers/promise_alignment_zero.rs",
+    "pass/no_std_miri_start.rs",
+    # unsupported: builtin unwind handlers
+    "pass/panic/unwind_dwarf.rs",
     # unsupported: OS builtins
     "/shims/",
     # unsupported: SIMD
@@ -243,8 +219,6 @@ MIRI_EXCLUSIONS = [
     "fail/intrinsics/typed-swap-invalid-scalar.rs",
     # ignored: tests Miri fails
     "fail/no_main.rs",
-    "pass/provenance.rs",
-    "pass/transmute_ptr.rs",
     # ignored: tests with dependencies
     "/deps/",
     "/fail-dep/",

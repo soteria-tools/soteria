@@ -1,0 +1,165 @@
+name: Build
+
+on:
+  workflow_call:
+
+env:
+  # [versionsync: OCAML_VERSION=5.4.0]
+  OCAML_VERSION: 5.4.0
+  # [versionsync: OBOL_REPO=soteria-tools/obol]
+  OBOL_REPO: soteria-tools/obol
+  # [versionsync: OBOL_COMMIT_HASH=3d2266de79f1e2e601b7a82f6803b649cbe6953c]
+  OBOL_COMMIT_HASH: 3d2266de79f1e2e601b7a82f6803b649cbe6953c
+  # [versionsync: CHARON_REPO=soteria-tools/charon]
+  CHARON_REPO: soteria-tools/charon
+  # [versionsync: CHARON_COMMIT_HASH=fbd54169205bf97e3c42cbfef95ca5807d697bfb]
+  CHARON_COMMIT_HASH: fbd54169205bf97e3c42cbfef95ca5807d697bfb
+
+jobs:
+  build:
+    name: Build and Test
+    strategy:
+      matrix:
+        operating-system: [macos-latest] # TODO: add other operating systems
+    runs-on: ${{ matrix.operating-system }}
+    steps:
+      # Setup steps: checkout, z3, node, ocaml and opam
+      - uses: actions/checkout@v4
+      - name: Check versions.json sync
+        run: python3 scripts/versionsync.py check
+      - name: Setup Z3
+        uses: cda-tum/setup-z3@v1
+        id: z3
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          cache: "yarn"
+      - name: Setup OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: ${{ env.OCAML_VERSION }}
+          dune-cache: true
+          opam-pin: false
+      - name: Restore opam cache
+        uses: actions/cache@v4
+        with:
+          path: _opam
+          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-
+      - run: opam update
+      # OCaml build
+      - name: setup dependencies
+        run: make ocaml-deps
+      - name: Build OCaml stuff
+        run: make ocaml
+      - name: Check formatting
+        run: make ocaml-format-check
+      - name: Check that opam files were up to date
+        run: make check-opam-files
+
+      # Install Rust and Obol
+      - name: Get Rust toolchain
+        run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Restore Obol cache
+        uses: actions/cache@v4
+        id: restore-obol-cache
+        with:
+          path: obol-bin
+          key: ${{ runner.os }}-${{ runner.arch }}-obol-${{ env.OBOL_COMMIT_HASH }}
+      - name: Install Obol if not cached
+        run: |
+          brew install make
+          ../soteria/scripts/versionsync.py pull obol --init
+          cp -r ../obol/bin obol-bin
+        if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
+      - name: Add Obol to path
+        run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
+
+      # Install Charon
+      - name: Restore Charon cache
+        uses: actions/cache@v4
+        id: restore-charon-cache
+        with:
+          path: charon-bin
+          key: ${{ runner.os }}-${{ runner.arch }}-charon-${{ env.CHARON_COMMIT_HASH }}
+      - name: Install Charon if not cached
+        run: |
+          brew install make
+          ../soteria/scripts/versionsync.py pull charon --init
+          cp -r ../charon/bin charon-bin
+        if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
+      - name: Add Charon to path
+        run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
+
+      # Run tests
+      - name: Test
+        run: make ocaml-test
+
+      - name: Check if bv_values files were modified
+        if: github.event_name == 'merge_group'
+        id: check-bv-files
+        run: |
+          BASE_SHA="${{ github.event.merge_group.base_sha }}"
+          HEAD_SHA="${{ github.event.merge_group.head_sha }}"
+          echo "Comparing $BASE_SHA..$HEAD_SHA"
+
+          # Use the GitHub API to compare commits (avoids needing full git history)
+          CHANGED=$(gh api repos/${{ github.repository }}/compare/${BASE_SHA}...${HEAD_SHA} \
+            --jq '.files[].filename' | grep -c "^soteria/lib/bv_values/" || true)
+
+          if [ "$CHANGED" -gt 0 ]; then
+            echo "modified=true" >> $GITHUB_OUTPUT
+            echo "Files in soteria/lib/bv_values were modified, will run slow tests"
+          else
+            echo "modified=false" >> $GITHUB_OUTPUT
+            echo "No files in soteria/lib/bv_values were modified, skipping slow tests"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Run slow tests (fuzz tests)
+        if: github.event_name == 'merge_group' && steps.check-bv-files.outputs.modified == 'true'
+        run: make ocaml-slow-tests
+
+      # Building js stuff
+      - name: Install JS dependencies
+        run: yarn install
+      - name: Build JS stuff
+        run: yarn compile
+
+      # Packaging OCaml distribution and sending it as artifact
+      - name: Create soteria-c package
+        run: make package-soteria-c
+      - name: Upload soteria-c package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-soteria-c-package
+          path: packages/soteria-c
+          if-no-files-found: error
+
+      - name: Create soteria-rust package
+        run: make package-soteria-rust
+      - name: Upload soteria-rust package
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.operating-system }}-soteria-rust-package
+          path: packages/soteria-rust
+          if-no-files-found: error
+
+      - name: Build API documentation
+        run: make doc
+
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: odoc
+          path: _build/default/_doc/_html
+          if-no-files-found: error
+        # No need to upload artifact twice
+        if: ${{ matrix.operating-system == 'macos-latest' }}
+
+      - name: Opam Cleanup
+        run: opam clean -a -r

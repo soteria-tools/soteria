@@ -14,27 +14,34 @@ license: "Apache-2.0"
 homepage: "https://github.com/soteria-tools/soteria"
 bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
-  "ocaml" {>= "5.3.0"}
+  "ocaml" {>= "5.4.0"}
   "tsort" {>= "2.1.0"}
   "eio_main"
   "simple_smt"
   "iter"
+  "patricia-tree"
   "ppx_expect" {>= "0.17.0"}
+  "ppx_blob" {>= "0.9.0"}
+  "ppx_subliner" {>= "0.2.1"}
   "ppx_deriving"
   "fmt"
   "printbox-text"
   "htmlit"
   "progress" {>= "0.5.0"}
-  "grace"
+  "grace" {>= "0.3.0"}
   "odoc" {with-doc}
   "mdx" {with-test}
+  "alcotest" {with-test}
+  "qcheck-core" {with-test}
+  "qcheck-alcotest" {with-test}
   "dune" {>= "3.14" & build & >= "3.14.0"}
-  "ppxlib"
+  "ppxlib" {>= "0.38.0"}
+  "ppx_mixins" {>= "0.2.0"}
   "hc" {>= "0.5"}
   "yojson" {< "3.0"}
   "unionFind"
   "ppx_deriving_yojson"
-  "ocamlformat" {with-dev-setup & = "0.27.0"}
+  "ocamlformat" {with-dev-setup & = "0.28.1"}
   "ocaml-lsp-server" {with-dev-setup}
 ]
 build: [

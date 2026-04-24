@@ -1,3 +1,26 @@
+(** This module defines a three-way result type for compositional symbolic
+    execution. Unlike standard [Result.t] which has two cases (Ok/Error), this
+    type adds a third case [Missing] for bi-abduction scenarios where anti-frame
+    inference is needed, or more generally to represent incompletenesses in the
+    engine.
+
+    When performing a function call, the current state may not contain all
+    resources needed by the callee. Rather than immediately failing, we can
+    infer what's missing (the "anti-frame") and continue analysis.
+
+    {b Three Cases}:
+    - {b Ok}: Operation succeeded, resources matched
+    - {b Error}: Definite error found (e.g., null dereference, assertion
+      failure)
+    - {b Missing}: Resources needed but not present; includes fixes. Missing
+      contains a {b list} of fixes, providing different ways to resolve the
+      missing resources; for instance, when accessing a location in memory, two
+      options are possible: either the location is allocated, or the location
+      has been freed.
+
+    This module also provides a functor to lift this result type into any
+    monadic context. *)
+
 open Soteria_std
 
 type ('ok, 'err, 'fix) t = Ok of 'ok | Error of 'err | Missing of 'fix list
@@ -5,7 +28,7 @@ type ('ok, 'err, 'fix) t = Ok of 'ok | Error of 'err | Missing of 'fix list
 let pp ~ok ~err ~miss fmt = function
   | Ok x -> Format.fprintf fmt "Ok: %a" ok x
   | Error e -> Format.fprintf fmt "Error: %a" err e
-  | Missing fix -> Format.fprintf fmt "Missing: %a" miss fix
+  | Missing fix -> Format.fprintf fmt "Missing: %a" (Fmt.Dump.list miss) fix
 
 let[@inline] ok x = Ok x
 let[@inline] error x = Error x
@@ -46,6 +69,11 @@ let map_missing x f =
   | Error e -> Error e
   | Missing fixes -> Missing (List.map f fixes)
 
+let to_result_opt = function
+  | Ok x -> Some (Result.Ok x)
+  | Error e -> Some (Result.Error e)
+  | Missing _ -> None
+
 module Syntax = struct
   let ( let* ) = bind
   let ( let+ ) = map
@@ -71,6 +99,12 @@ module T (M : Monad.Base) = struct
     M.bind x (function
       | Ok x -> f x
       | Error z -> fe z
+      | Missing fix -> M.return (Missing fix))
+
+  let bind_error x f =
+    M.bind x (function
+      | Ok x -> M.return (Ok x)
+      | Error e -> f e
       | Missing fix -> M.return (Missing fix))
 
   let map x f = M.map x (fun x -> map x f)

@@ -1,0 +1,22 @@
+
+let prepend l =
+  let n = alloc in
+  [n] <- l;
+  n
+  
+let append l =
+  if l == false then
+    alloc
+  else
+    let ll = [l] in
+    let t = append(ll) in
+    [l] <- t;
+    l
+    
+let empty = false   
+    
+let main =
+  let l = empty() in
+  let l = prepend(l) in
+  let l = append(l) in
+  append(l)

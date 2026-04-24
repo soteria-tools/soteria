@@ -25,6 +25,17 @@ module T = struct
   let pp_sseq _ _ _ = ()
   let pp_any _ _ = ()
   let pp_cval _ _ = ()
+  let hash_sint _ = 0
+  let hash_sint_ovf _ = 0
+  let hash_nonzero _ = 0
+  let hash_zero _ = 0
+  let hash_sfloat _ = 0
+  let hash_sbool _ = 0
+  let hash_sptr _ = 0
+  let hash_sloc _ = 0
+  let hash_sseq _ = 0
+  let hash_any _ = 0
+  let hash_cval _ = 0
 end
 
 type nonrec +'a t = t
@@ -42,6 +53,8 @@ let ppa = pp
 let pp _ = pp
 let ppa_ty = pp_ty
 let pp_ty _ = pp_ty
+let hasha = hash
+let hash _ = hash
 let[@inline] cast x = x
 let[@inline] untyped x = x
 let[@inline] untyped_list l = l
@@ -55,6 +68,12 @@ let size_of_int x = size_of x.node.ty
 let cast_checked2 x y =
   if equal_ty x.node.ty y.node.ty then Some (x, y, x.node.ty) else None
 
+module Bool = struct
+  include Bool
+
+  type t = sbool
+end
+
 module BitVec = struct
   include BitVec
 
@@ -65,6 +84,8 @@ module BitVec = struct
 
   let mki_nz n i =
     if i = 0 then failwith "Zero value in mki_nonzero" else mki_masked n i
+
+  let no_ovf_unsafe x = x
 end
 
 module Infix = struct
@@ -86,3 +107,5 @@ module Infix = struct
   let ( *$?@ ) = mk_checked_op BitVec.mul (BitVec.mul_overflows ~signed:true)
   let ( ~-? ) x = (~-x, BitVec.neg_overflows x)
 end
+
+module Expr = Expr

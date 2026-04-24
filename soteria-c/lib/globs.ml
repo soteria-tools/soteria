@@ -2,84 +2,74 @@
     immutable total map from identifier to address *)
 
 open Csymex
-open Csymex.Syntax
-module Sym_map = Concrete_map (Symbol_std)
+module Expr = Typed.Expr
 
 module Loc = struct
-  type t = Typed.T.sloc Typed.t
+  open Csymex.Syntax
 
+  type t = Typed.T.sloc Typed.t [@@deriving show { with_path = false }]
+  type syn = Expr.t [@@deriving show { with_path = false }]
+
+  let to_syn (loc : t) : syn = Expr.of_value loc
+  let learn_eq s l = Consumer.learn_eq s l
+  let exprs_syn (loc : syn) : Expr.t list = [ loc ]
+  let subst = Expr.subst
   let pp = Typed.ppa
 
   let fresh () =
-    let* loc = Csymex.nondet Typed.t_loc in
+    let* loc = Csymex.fresh_alloc_id () in
     let+ () = Csymex.assume [ Typed.not (Typed.Ptr.is_null_loc loc) ] in
     loc
 
   let sem_eq = Typed.sem_eq
-  let subst = Typed.subst
-  let iter_vars = Typed.iter_vars
 end
 
-module GlobFn = Soteria.Sym_states.Pure_fun.Make (Csymex) (Loc)
+module Glob_fn = Pure_fun (Loc)
+include Concrete_map (Symbol_std) (Glob_fn)
 
-type t = GlobFn.t Sym_map.t option [@@deriving show { with_path = false }]
+let pp ft t = pp ft t
 
-type serialized = GlobFn.serialized Sym_map.serialized
-[@@deriving show { with_path = false }]
+(* The Concrete_map [pp] function has an option ?ignore parameter *)
 
-let serialize st =
-  match st with None -> [] | Some st -> Sym_map.serialize GlobFn.serialize st
-
-let subst_serialized subst_var serialized =
-  Sym_map.subst_serialized GlobFn.subst_serialized subst_var serialized
-
-let iter_vars_serialized s =
-  (Sym_map.iter_vars_serialized GlobFn.iter_vars_serialized) s
-
-let get sym st =
-  (* TODO: This is correct, but a tiny bit of a hack.
-           We need to enforce the invariant that all symbols are different.
-           It'd be nice to enforce this modularly, but right now we do it as a wrapper.
-           Unless one has hundreds of globals, the cost is negligeable, but still. *)
-  let open Csymex.Syntax in
-  let existed = Option.fold ~none:false ~some:(Sym_map.M.mem sym) st in
-  let* res = (Sym_map.wrap GlobFn.load) sym st in
-  let loc, st = Soteria.Symex.Compo_res.get_ok res in
+let get sym =
+  (* TODO: This is correct, but a tiny bit of a hack. We need to enforce the
+     invariant that all symbols are different. It'd be nice to enforce this
+     modularly, but right now we do it as a wrapper. Unless one has hundreds of
+     globals, the cost is negligeable, but still. *)
+  let open SM.Syntax in
+  let* st = SM.get_state () in
+  let existed = Option.fold ~none:false ~some:(syntactic_mem sym) st in
+  let* res = wrap sym (Glob_fn.load ()) in
+  let loc = Soteria.Symex.Compo_res.get_ok res in
   let+ () =
-    if existed then (* We haven't created a new location *) return ()
+    if existed then (* We haven't created a new location *) SM.return ()
     else
-      (* We learn that the new location is distinct from all other global locations *)
-      let to_assume =
-        Sym_map.M.to_seq (Option.value ~default:Sym_map.M.empty st)
-        |> Seq.filter_map (fun (k, v) ->
-               let open Typed.Infix in
-               if Cerb_frontend.Symbol.equal_sym k sym then None
-               else
-                 let neq = Typed.not (v ==@ loc) in
-                 Some neq)
-        |> List.of_seq
-      in
-      assume to_assume
-  in
-  (loc, st)
-
-let produce serialized st =
-  let open Csymex.Syntax in
-  let* st' = (Sym_map.produce GlobFn.produce) serialized st in
-  let+ () =
-    (* Bit heavy-handed but we just massively assume the well-formedness *)
-    let to_assume =
-      Sym_map.M.to_seq (Option.value ~default:Sym_map.M.empty st')
-      |> Seq.self_cross_product
-      |> Seq.map (fun ((_, loca), (_, locb)) ->
-             let open Typed.Infix in
-             Typed.not (loca ==@ locb))
+      (* We learn that the new location is distinct from all other global
+         locations *)
+      syntactic_bindings (Option.value ~default:empty st)
+      |> Seq.filter_map (fun (k, v) ->
+          let open Typed.Infix in
+          if Cerb_frontend.Symbol.equal_sym k sym then None
+          else
+            let neq = Typed.not (v ==@ loc) in
+            Some neq)
       |> List.of_seq
-    in
-    assume to_assume
+      |> SM.assume
   in
-  st'
+  loc
 
-(* For pure predicates in UX, consume = produce *)
-let consume serialized st = (Sym_map.consume GlobFn.consume) serialized st
+let produce syn (t : t option) : t option Producer.t =
+  let open Producer.Syntax in
+  let* t = produce syn t in
+  (* Bit heavy-handed but we just massively assume the well-formedness *)
+  let distinct_locs =
+    syntactic_bindings (Option.value ~default:empty t)
+    |> Seq.map snd
+    |> List.of_seq
+    |> Typed.distinct
+  in
+  let* loc = Producer.apply_subst Loc.subst (snd syn) in
+  let+^ () = assume [ distinct_locs; Typed.(not (Ptr.is_null_loc loc)) ] in
+  t
+
 let empty = None

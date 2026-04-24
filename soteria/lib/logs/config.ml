@@ -1,32 +1,82 @@
+open Soteria_std
+open Level
+
 type log_kind = Stderr | Html
+[@@deriving subliner_enum, show { with_path = false }]
 
-let pp_log_kind fmt = function
-  | Stderr -> Format.fprintf fmt "stderr"
-  | Html -> Format.fprintf fmt "html"
+type t = {
+  level : Level.t option; [@default None]
+  kind : log_kind; [@default Stderr]
+  always_log_smt : bool; [@default false]
+  no_color : bool; [@default false]
+  hide_unstable : bool; [@default false]
+}
+[@@deriving make]
 
-type t = { level : Level.t option; kind : log_kind; always_log_smt : bool }
+let v_list =
+  Cmdliner.Arg.(
+    value
+    & flag_all
+    & info [ "v"; "verbose" ] ~docs:Soteria_std.Cmdliner_helpers.Sections.output
+        ~docv:"v" ~doc:"Verbosity level, clashes with -q")
 
-let set, get, lock =
-  let current_config =
-    ref { level = Some Warn; kind = Stderr; always_log_smt = false }
+type cli = {
+  v_list : bool list; [@term v_list]
+      (** Verbosity level. One -v includes ERROR, WARN, INFO, and every
+          subsequent -v then includes DEBUG, TRACE and SMT respectively *)
+  log_kind : (log_kind[@conv log_kind_cmdliner_conv ()]) option;
+      [@docs "LOGS OPTIONS"] [@names [ "l"; "log_kind" ]]
+      (** Log kind, clashes with --html *)
+  html : bool; [@docs "LOGS OPTIONS"] [@names [ "html" ]]
+      (** HTML logging, clashes with --log-kind *)
+  always_log_smt : bool; [@docs "LOGS OPTIONS"] [@names [ "log-smt" ]]
+      (** Always log SMT queries, even in silent mode *)
+  no_color : bool;
+      [@docs "LOGS OPTIONS"]
+      [@names [ "no-color"; "no-colour" ]]
+      [@env "NO_COLOR"]
+      (** Disables coloured output. *)
+  hide_unstable : bool;
+      [@docs "LOGS OPTIONS"]
+      [@names [ "hide-unstable"; "diffable" ]]
+      [@env "HIDE_UNSTABLE"]
+      (** Do not display unstable values like durations (e.g. for diffing
+          purposes). *)
+}
+[@@deriving subliner]
+
+let cmdliner_term = cli_cmdliner_term
+let default = make ()
+let get, set_and_lock = Soteria_std.Write_once.make ~name:"Logs" ~default ()
+
+let check_set_and_lock args =
+  let level =
+    match List.length args.v_list with
+    | 0 -> None
+    | 1 -> Some Info
+    | 2 -> Some Debug
+    | 3 -> Some Trace
+    | _ -> Some Smt
   in
-  let locked = ref false in
-  let lock () = locked := true in
-  let set_config config =
-    if !locked then failwith "Logging configuration cannot be changed anymore";
-    current_config := config
+  let kind =
+    match (args.log_kind, args.html) with
+    | Some _, true ->
+        Exn.config_error "Cannot use --html and --log-kind at the same time"
+    | Some k, false -> k
+    | None, true -> Html
+    | None, false -> Stderr
   in
-  let current_config () = !current_config in
-  (set_config, current_config, lock)
-
-let check_set_and_lock config =
-  match config with
-  | Ok config ->
-      set config;
-      lock ()
-  | Error msg ->
-      Fmt.epr "Invalid CLI arguments: %s" msg;
-      exit Cmdliner.Cmd.Exit.cli_error
+  let config =
+    {
+      level;
+      kind;
+      always_log_smt = args.always_log_smt;
+      no_color = args.no_color;
+      hide_unstable = args.hide_unstable;
+    }
+  in
+  set_and_lock config;
+  Profile.check_set_and_lock ~no_color:config.no_color ()
 
 let logs_enabled () =
   let conf = get () in
@@ -51,11 +101,6 @@ let channel =
             at_exit (fun () -> close_out oc);
             oc_ref := Some oc;
             oc)
-
-let console_trace : t =
-  { level = Some Trace; kind = Stderr; always_log_smt = false }
-
-let html_trace : t = { level = Some Trace; kind = Html; always_log_smt = false }
 
 type interject = (unit -> unit) -> unit
 

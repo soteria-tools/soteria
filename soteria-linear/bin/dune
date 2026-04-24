@@ -1,0 +1,4 @@
+(executable
+ (name soteria_linear)
+ (libraries soteria_linear_lib soteria cmdliner)
+ (flags :standard -open Soteria_linear_lib))

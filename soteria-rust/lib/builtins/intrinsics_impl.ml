@@ -1,35 +1,24 @@
 open Charon
-open Charon_util
-module BV = Typed.BitVec
+open Typed
 open Typed.Syntax
 open Typed.Infix
+open Common.Charon_util
 open Rust_val
 
-module M (Rust_state_m : Rust_state_m.S) :
-  Intrinsics_intf.M(Rust_state_m).Impl = struct
-  include Intrinsics_stubs.M (Rust_state_m)
-  module Core = Core.M (Rust_state_m)
-  open Rust_state_m
+module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
+  include Intrinsics_stubs.M (StateM)
+  module Core = Core.M (StateM)
+  open StateM
   open Syntax
 
   (* some utils *)
-  type 'a ret = ('a, unit) Rust_state_m.t
-
-  (* we retype these to avoid non-generalisable type variables in ['a Rust_val.t] *)
-  let[@inline] as_ptr (v : rust_val) =
-    match v with
-    | Ptr ptr -> ptr
-    | Int v ->
-        let v = Typed.cast_i Usize v in
-        let ptr = Sptr.null_ptr_of v in
-        (ptr, Thin)
-    | _ -> failwith "expected pointer"
+  type 'a ret = ('a, unit) StateM.t
 
   let as_base ty (v : rust_val) = Rust_val.as_base ty v
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
   let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
 
-  (* the intrinsics  *)
+  (* the intrinsics *)
 
   let abort : unit ret = error (`Panic (Some "aborted"))
 
@@ -42,16 +31,6 @@ module M (Rust_state_m : Rust_state_m.S) :
   let sub_with_overflow = checked_op (Sub OUB)
   let mul_with_overflow = checked_op (Mul OUB)
   let align_of ~t = Layout.align_of t
-
-  let align_of_val ~t ~ptr =
-    match (t, ptr) with
-    | Types.TDynTrait _, (_, VTable vt) ->
-        let* align_ptr =
-          Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) vt Usize.(2s)
-        in
-        let+ align = State.load (align_ptr, Thin) (TLiteral (TUInt Usize)) in
-        as_base_i Usize align
-    | _ -> Layout.align_of t
 
   let arith_offset ~t ~dst:(dst, meta) ~offset =
     let+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t dst offset in
@@ -68,8 +47,10 @@ module M (Rust_state_m : Rust_state_m.S) :
     | _ -> not_impl "ptr_add: invalid arguments"
 
   let assert_inhabited ~t =
-    if Layout.is_inhabited t then ok ()
-    else error (`Panic (Some "core::intrinsics::assert_inhabited"))
+    let* layout = Layout.layout_of t in
+    if layout.uninhabited then
+      error (`Panic (Some "core::intrinsics::assert_inhabited"))
+    else ok ()
 
   let assert_mem_uninitialized_valid ~t:_ = ok ()
 
@@ -78,8 +59,91 @@ module M (Rust_state_m : Rust_state_m.S) :
     if res then ok ()
     else error (`Panic (Some "core::intrinsics::assert_zero_valid"))
 
-  let assume ~b =
-    State.assert_ b (`StdErr "core::intrinsics::assume with false")
+  let assume ~b = assert_ b (`StdErr "core::intrinsics::assume with false")
+
+  (* TODO: atomics are, for now, single-threaded *)
+  let atomic_warn =
+    let warning =
+      String.Interned.intern
+        "An atomic intrinsic was encountered; it will be executed as \
+         sequential code"
+    in
+    fun () -> Soteria.Terminal.Warn.warn_once warning
+
+  let atomic_fence ~ord:_ =
+    atomic_warn ();
+    ok ()
+
+  let atomic_load ~t ~ord:_ ~src =
+    atomic_warn ();
+    State.load src t
+
+  let atomic_singlethreadfence ~ord:_ =
+    atomic_warn ();
+    ok ()
+
+  let atomic_store ~t ~ord:_ ~dst ~val_ =
+    atomic_warn ();
+    State.store dst t val_
+
+  let atomic_xchg ~t ~ord:_ ~dst ~src =
+    atomic_warn ();
+    let* old = State.load dst t in
+    let+ () = State.store dst t src in
+    old
+
+  let atomic_xadd ~t ~(u : Types.ty) ~ord:_ ~(dst : full_ptr) ~(src : rust_val)
+      =
+    atomic_warn ();
+    let* old = State.load dst t in
+    match (t, u) with
+    (* - `T` must be an integer or pointer *)
+    (* - `U` must be the same as `T`if it is an integer, or `usize` if it is a pointer. *)
+    | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
+        (* The operation adds `src` without multiplying by the size of the
+           data. *)
+        let src = as_base_i Usize src in
+        let old_v =
+          match as_ptr old with
+          | old, Thin -> old
+          | _ -> failwith "atomic_xadd: pointer with metadata other than Thin"
+        in
+        (* Wrapping add: no overflow check *)
+        let* new_ = Sptr.offset ~check:false ~signed:false old_v src in
+        let new_ = Ptr (new_, Thin) in
+        let* () = State.store dst t new_ in
+        ok old
+    | TLiteral lit, TLiteral lit' when Types.equal_literal_type lit lit' ->
+        let src = as_base lit src in
+        let old_v = as_base lit old in
+        (* Wrapping add. *)
+        let* new_ = Core.eval_lit_binop (Add OWrap) lit old_v src in
+        let+ () = State.store dst t (Int new_) in
+        old
+    | _ ->
+        failwith
+          "atomic_xadd: invalid types, expects to follow the rules of \
+           atomic_xadd"
+
+  let atomic_cxchgweak ~t ~ord_succ:_ ~ord_fail:_ ~_dst ~_old ~_src =
+    atomic_warn ();
+    let* curr = State.load _dst t in
+    let are_equal =
+      match t with
+      | TRawPtr _ | TRef _ ->
+          let old, _ = as_ptr _old in
+          let curr, _ = as_ptr curr in
+          Sptr.sem_eq old curr
+      | TLiteral lit ->
+          let old = as_base lit _old in
+          let curr = as_base lit curr in
+          old ==@ curr
+      | _ -> failwith "atomic_cxchgweak: invalid type, expects ptr or integer"
+    in
+    if%sat are_equal then
+      let* () = State.store _dst t _src in
+      ok (Tuple [ curr; Int (BV.of_bool Typed.v_true) ])
+    else ok (Tuple [ curr; Int (BV.of_bool Typed.v_false) ])
 
   let black_box ~t:_ ~dummy = ok dummy
   let breakpoint : unit ret = error `Breakpoint
@@ -130,10 +194,10 @@ module M (Rust_state_m : Rust_state_m.S) :
     let addend = double_bv @@ as_base t addend in
     let carry = double_bv @@ as_base t carry in
     (* This cannot overflow:
-       MAX * MAX + MAX + MAX
-       => (2ⁿ-1) × (2ⁿ-1) + (2ⁿ-1) + (2ⁿ-1)
-       => (2²ⁿ - 2ⁿ⁺¹ + 1) + (2ⁿ⁺¹ - 2)
-       => 2²ⁿ - 1 *)
+     *   MAX * MAX + MAX + MAX
+     *   => (2ⁿ-1) × (2ⁿ-1) + (2ⁿ-1) + (2ⁿ-1)
+     *   => (2²ⁿ - 2ⁿ⁺¹ + 1) + (2ⁿ⁺¹ - 2)
+     *   => 2²ⁿ - 1 *)
     let res = (multiplier *!!@ multiplicand) +!!@ addend +!!@ carry in
     let res_l, res_h =
       ( BV.extract 0 ((size_t * 8) - 1) res,
@@ -143,25 +207,178 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let catch_unwind exec_fun ~_try_fn:try_fn_ptr ~_data:data
       ~_catch_fn:catch_fn_ptr =
-    let loc = !Rustsymex.current_loc in
+    let* trace = get_trace () in
     let[@inline] exec_fun msg fn args =
-      with_extra_call_trace ~loc ~msg @@ exec_fun fn args
+      with_extra_call_trace ~loc:(Trace.loc_or_default trace) ~msg
+      @@ exec_fun fn args
     in
-    let try_fn_ptr, catch_fn_ptr = (as_ptr try_fn_ptr, as_ptr catch_fn_ptr) in
     let* try_fn = State.lookup_fn try_fn_ptr in
-    let try_fn = Crate.get_fun try_fn.id in
     let* catch_fn = State.lookup_fn catch_fn_ptr in
-    let catch_fn = Crate.get_fun catch_fn.id in
     exec_fun "catch_unwind try" try_fn [ Ptr data ]
-    |> State.unwind_with
+    |> unwind_with
          ~f:(fun _ -> ok U32.(0s))
          ~fe:(fun _ ->
+           (* We can't use [null] here because this messes up with the niche of
+              the return type, which checks if the pointer is 0! *)
            exec_fun "catch_unwind catch" catch_fn
-             [ Ptr data; Ptr (Sptr.null_ptr (), Thin) ]
-           |> State.unwind_with
+             [ Ptr data; Ptr (Sptr.null_ptr_of Usize.(1s), Thin) ]
+           |> unwind_with
                 ~f:(fun _ -> ok U32.(1s))
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
 
+  (* HACK: floating point intrinsics for complex float operations are heavily
+     approximated, à la CBMC.
+
+     See
+     https://github.com/diffblue/cbmc/blob/develop/src/ansi-c/library/math.c *)
+  let floating_inaccuracy_warn =
+    let msg =
+      String.Interned.intern
+        "A complex floating point intrinsic was encountered; it will be \
+         executed with a significant over-approximation."
+    in
+    fun () ->
+      match (Config.get ()).approx_floating_ops with
+      | Allow -> ok ()
+      | Warn ->
+          Soteria.Terminal.Warn.warn_once msg;
+          ok ()
+      | Deny -> vanish ()
+
+  let cos_ fp x =
+    let* () = floating_inaccuracy_warn () in
+    let* res = lift_symex @@ Rustsymex.nondet (Typed.t_float fp) in
+    let* to_assume =
+      if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
+        ok [ Typed.Float.is_nan res ]
+      else
+        ok
+          [
+            res <=.@ Typed.Float.mk fp "1.0";
+            res >=.@ Typed.Float.mk fp "-1.0";
+            Typed.not (x ==.@ Typed.Float.mk fp "0.0")
+            ||@ (res ==.@ Typed.Float.mk fp "1.0");
+          ]
+    in
+    let+^ () = Rustsymex.assume to_assume in
+    res
+
+  let cosf16 ~x = cos_ F16 x
+  let cosf32 ~x = cos_ F32 x
+  let cosf64 ~x = cos_ F64 x
+  let cosf128 ~x = cos_ F128 x
+
+  let sin_ fp x =
+    let* () = floating_inaccuracy_warn () in
+    let* res = lift_symex @@ Rustsymex.nondet (Typed.t_float fp) in
+    let* to_assume =
+      if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
+        ok [ Typed.Float.is_nan res ]
+      else
+        ok
+          [
+            res <=.@ Typed.Float.mk fp "1.0";
+            res >=.@ Typed.Float.mk fp "-1.0";
+            Typed.not (x ==.@ Typed.Float.mk fp "0.0")
+            ||@ (res ==.@ Typed.Float.mk fp "0.0");
+          ]
+    in
+    let+^ () = Rustsymex.assume to_assume in
+    res
+
+  let sinf16 ~x = sin_ F16 x
+  let sinf32 ~x = sin_ F32 x
+  let sinf64 ~x = sin_ F64 x
+  let sinf128 ~x = sin_ F128 x
+
+  let pow_ fp _x _y =
+    let* () = floating_inaccuracy_warn () in
+    lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
+
+  let powf16 ~a ~x = pow_ F16 a x
+  let powf32 ~a ~x = pow_ F32 a x
+  let powf64 ~a ~x = pow_ F64 a x
+  let powf128 ~a ~x = pow_ F128 a x
+
+  let powi_ fp x y =
+    let* () = floating_inaccuracy_warn () in
+    if%sat y ==@ U32.(0s) then ok (Typed.Float.mk fp "1.0")
+    else if%sat y ==@ U32.(1s) then ok (x :> Typed.T.sfloat Typed.t)
+    else lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
+
+  let powif16 ~a ~x = powi_ F16 a x
+  let powif32 ~a ~x = powi_ F32 a x
+  let powif64 ~a ~x = powi_ F64 a x
+  let powif128 ~a ~x = powi_ F128 a x
+
+  let sqrt_ fp x =
+    let* () = floating_inaccuracy_warn () in
+    if%sat x <.@ Typed.Float.mk fp "0.0" then ok (Typed.Float.mk fp "NaN")
+    else if%sat
+      Typed.Float.is_infinite x
+      ||@ (x ==.@ Typed.Float.mk fp "0.0")
+      ||@ Typed.Float.is_nan x
+    then ok (x :> Typed.T.sfloat Typed.t)
+    else lift_symex @@ Rustsymex.nondet (Typed.t_float fp)
+
+  let sqrtf16 ~x = sqrt_ F16 x
+  let sqrtf32 ~x = sqrt_ F32 x
+  let sqrtf64 ~x = sqrt_ F64 x
+  let sqrtf128 ~x = sqrt_ F128 x
+
+  let expf_ fp x =
+    let* () = floating_inaccuracy_warn () in
+    if%sat
+      Typed.Float.is_nan x
+      ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.mk fp "0.0"))
+    then ok (x :> Typed.T.sfloat Typed.t)
+    else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.mk fp "0.0")
+    then ok (Typed.Float.mk fp "0.0")
+    else
+      let*^ res = Rustsymex.nondet (Typed.t_float fp) in
+      let+^ () = Rustsymex.assume [ res >.@ Typed.Float.mk fp "0.0" ] in
+      res
+
+  let expf16 ~x = expf_ F16 x
+  let expf32 ~x = expf_ F32 x
+  let expf64 ~x = expf_ F64 x
+  let expf128 ~x = expf_ F128 x
+
+  (* we also approximate 2^x as e^x *)
+  let exp2f16 ~x = expf_ F16 x
+  let exp2f32 ~x = expf_ F32 x
+  let exp2f64 ~x = expf_ F64 x
+  let exp2f128 ~x = expf_ F128 x
+
+  let logf_ ~exp fp x =
+    let* () = floating_inaccuracy_warn () in
+    let exp = Typed.Float.mk fp exp in
+    if%sat x <.@ Typed.Float.mk fp "0.0" then ok (Typed.Float.mk fp "NaN")
+    else if%sat x ==.@ Typed.Float.mk fp "0.0" then
+      ok (Typed.Float.mk fp "-inf")
+    else if%sat Typed.Float.is_infinite x then ok (Typed.Float.mk fp "inf")
+    else if%sat x ==.@ exp then ok (Typed.Float.mk fp "1.0")
+    else
+      let*^ res = Rustsymex.nondet (Typed.t_float fp) in
+      let* to_assume =
+        if%sat x <.@ exp then ok [ res <.@ Typed.Float.mk fp "1.0" ]
+        else ok [ res >.@ Typed.Float.mk fp "1.0" ]
+      in
+      let+^ () = Rustsymex.assume to_assume in
+      res
+
+  let logf16 ~x = logf_ ~exp:"2.7182818" F16 x
+  let logf32 ~x = logf_ ~exp:"2.7182818" F32 x
+  let logf64 ~x = logf_ ~exp:"2.7182818" F64 x
+  let logf128 ~x = logf_ ~exp:"2.7182818" F128 x
+  let log10f16 ~x = logf_ ~exp:"10" F16 x
+  let log10f32 ~x = logf_ ~exp:"10" F32 x
+  let log10f64 ~x = logf_ ~exp:"10" F64 x
+  let log10f128 ~x = logf_ ~exp:"10" F128 x
+  let log2f16 ~x = logf_ ~exp:"2" F16 x
+  let log2f32 ~x = logf_ ~exp:"2" F32 x
+  let log2f64 ~x = logf_ ~exp:"2" F64 x
+  let log2f128 ~x = logf_ ~exp:"2" F128 x
   let[@inline] float_rounding rm x = ok (Typed.Float.round rm x)
   let ceilf16 ~x = float_rounding Ceil x
   let ceilf32 ~x = float_rounding Ceil x
@@ -189,17 +406,27 @@ module M (Rust_state_m : Rust_state_m.S) :
     let zero = Usize.(0s) in
     let one = Usize.(1s) in
     let byte = Types.TLiteral (TUInt U8) in
-    let rec aux ?(inc = one) l r len =
-      if%sat len ==@ zero then ok U32.(0s)
+    let rec aux ?res ?(inc = one) l r len =
+      if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
         let* l = Sptr.offset ~signed:false l inc in
         let* r = Sptr.offset ~signed:false r inc in
         let* bl = State.load (l, Thin) byte in
-        let bl = as_base_i U8 bl in
         let* br = State.load (r, Thin) byte in
-        let br = as_base_i U8 br in
-        if%sat bl ==@ br then aux l r (len -!@ one)
-        else if%sat bl <@ br then ok U32.(-1s) else ok U32.(1s)
+        (* compare_bytes reads all bytes and mustn't short-circuit, so we must
+           keep reading; here we only modify the result if we haven't reached a
+           conclusion yet *)
+        let* res =
+          match res with
+          | Some _ -> ok res
+          | None ->
+              let bl = as_base_i U8 bl in
+              let br = as_base_i U8 br in
+              if%sat bl ==@ br then ok None
+              else if%sat bl <@ br then ok (Some U32.(-1s))
+              else ok (Some U32.(1s))
+        in
+        aux ?res l r (len -!@ one)
     in
     aux ~inc:zero l r (bytes :> T.sint Typed.t)
 
@@ -212,16 +439,16 @@ module M (Rust_state_m : Rust_state_m.S) :
     let* dist1 = Sptr.distance l r_end in
     let* dist2 = Sptr.distance r l_end in
     let zero = Usize.(0s) in
-    State.assert_not
+    assert_not
       (Sptr.is_same_loc l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
       (`StdErr (name ^ " overlapped"))
 
   let copy_ nonoverlapping ~t ~src:((src, _) as fsrc : full_ptr)
       ~dst:((dst, _) as fdst : full_ptr) ~count : unit ret =
-    L.debug (fun m ->
-        m "Performing copy%s: %a -> %a, count %a"
-          (if nonoverlapping then "_non_overlapping" else "")
-          pp_full_ptr fsrc pp_full_ptr fdst Typed.ppa count);
+    [%l.debug
+      "Performing copy%s: %a -> %a, count %a"
+        (if nonoverlapping then "_non_overlapping" else "")
+        pp_full_ptr fsrc pp_full_ptr fdst Typed.ppa count];
     let zero = Usize.(0s) in
     let* () = State.check_ptr_align fsrc t in
     let* () = State.check_ptr_align fdst t in
@@ -229,18 +456,19 @@ module M (Rust_state_m : Rust_state_m.S) :
     if%sat ty_size ==@ zero ||@ (count ==@ zero) then ok ()
     else
       let* () =
-        State.assert_not
+        assert_not
           (Sptr.is_at_null_loc src ||@ Sptr.is_at_null_loc dst)
           `NullDereference
       in
       let size, overflowed = ty_size *?@ count in
-      let* () = State.assert_not overflowed `Overflow in
-      (* Here we can cheat a little: for copy_nonoverlapping we need to check for overlap,
-         but otherwise the copy is the exact same; since the State makes a copy of the src tree
-         before storing into dst, the semantics are that of copy. *)
+      let* () = assert_not overflowed `Overflow in
+      (* Here we can cheat a little: for copy_nonoverlapping we need to check
+         for overlap, but otherwise the copy is the exact same; since the State
+         makes a copy of the src tree before storing into dst, the semantics are
+         that of copy. *)
       let* () =
-        if not nonoverlapping then ok ()
-        else check_overlap "copy_nonoverlapping" src dst size
+        if nonoverlapping then check_overlap "copy_nonoverlapping" src dst size
+        else ok ()
       in
       State.copy_nonoverlapping ~dst:(dst, Thin) ~src:(src, Thin) ~size
 
@@ -253,7 +481,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let* () = State.check_ptr_align to_ t in
     let* size = Layout.size_of t in
     let* () =
-      State.assert_not
+      assert_not
         (Sptr.is_at_null_loc from_ptr ||@ Sptr.is_at_null_loc to_ptr)
         `NullDereference
     in
@@ -265,7 +493,7 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let copy_sign ~x ~y =
     let zero = Typed.Float.like y 0.0 in
-    if%sat [@lname "copy_sign < 0"] [@rname "copy_sign >=0"] y <.@ zero then
+    if%sat[@lname "copy_sign < 0"] [@rname "copy_sign >=0"] y <.@ zero then
       ok (Typed.Float.neg (Typed.Float.abs x))
     else ok (Typed.Float.abs x)
 
@@ -302,10 +530,10 @@ module M (Rust_state_m : Rust_state_m.S) :
       BV.u32i @@ if Z.equal x Z.zero then bits else Z.trailing_zeros x
     in
     (* we construct the following, from inside out:
-      ite(x[0] == 1 ? 0 :
-        ite(x[1] == 1 ? 1 :
-          ...
-          ite(x[bits-1] == 1 ? bits-1 : bits))) *)
+     *   ite(x[0] == 1 ? 0 :
+     *     ite(x[1] == 1 ? 1 :
+     *       ...
+     *       ite(x[bits-1] == 1 ? bits-1 : bits))) *)
     let symbolic bits x =
       Iter.fold
         (fun acc off ->
@@ -321,7 +549,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let tlit = TypesUtils.ty_as_literal t in
     let x_int = as_base tlit x in
     let* () =
-      State.assert_not
+      assert_not
         (x_int ==@ BV.mki_lit tlit 0)
         (`StdErr "core::intrinsics::cttz_nonzero on zero")
     in
@@ -337,10 +565,10 @@ module M (Rust_state_m : Rust_state_m.S) :
       BV.u32i @@ aux 0
     in
     (* we construct the following, from inside out:
-      ite(x[bits-1] == 1 ? 0 :
-        ite(x[bits-2] == 1 ? 1 :
-          ...
-          ite(x[0] == 1 ? bits-1 : bits))) *)
+     *   ite(x[bits-1] == 1 ? 0 :
+     *     ite(x[bits-2] == 1 ? 1 :
+     *       ...
+     *       ite(x[0] == 1 ? bits-1 : bits))) *)
     let symbolic bits x =
       Iter.fold
         (fun acc off ->
@@ -356,15 +584,15 @@ module M (Rust_state_m : Rust_state_m.S) :
     let tlit = TypesUtils.ty_as_literal t in
     let x_int = as_base tlit x in
     let* () =
-      State.assert_not
+      assert_not
         (x_int ==@ BV.mki_lit tlit 0)
         (`StdErr "core::intrinsics::ctlz_nonzero on zero")
     in
     ctlz ~t ~x
 
   let discriminant_value ~t ~v =
-    let adt_id, _ = TypesUtils.ty_as_custom_adt t in
-    let adt = Crate.get_adt adt_id in
+    let adt = ty_as_adt t in
+    let adt = Crate.get_adt adt in
     match adt.kind with
     | Enum variants ->
         let+ variant_id = State.load_discriminant v t in
@@ -378,7 +606,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let ty = TypesUtils.ty_as_literal t in
     let a, b = (as_base ty a, as_base ty b) in
     let+ () =
-      State.assert_
+      assert_
         (a &@ b ==@ BV.mki_lit ty 0)
         (`StdErr "core::intrinsics::disjoint_bitor with overlapping bits")
     in
@@ -391,7 +619,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let zero = BV.mki_lit lit 0 in
     let ( %@ ) = BV.rem ~signed:(Layout.is_signed lit) in
     let+ () =
-      State.assert_
+      assert_
         (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero))
         (`StdErr "core::intrinsics::exact_div on non divisible")
     in
@@ -421,7 +649,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     in
     let res = bop l r in
     let+ () =
-      State.assert_
+      assert_
         (is_finite l &&@ is_finite r &&@ is_finite (bop l r))
         (`StdErr (name ^ ": operands and result must be finite"))
     in
@@ -438,7 +666,7 @@ module M (Rust_state_m : Rust_state_m.S) :
     let ity = TypesUtils.ty_as_literal int in
     let f = as_base_f fty value in
     let* () =
-      State.assert_not
+      assert_not
         (Typed.Float.is_nan f ||@ Typed.Float.is_infinite f)
         (`StdErr "float_to_int_unchecked with NaN or infinite value")
     in
@@ -446,12 +674,12 @@ module M (Rust_state_m : Rust_state_m.S) :
     let size = 8 * Layout.size_of_literal_ty ity in
     let max = Z.succ @@ Layout.max_value_z ity in
     let min = Z.pred @@ Layout.min_value_z ity in
-    let max = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float max in
-    let min = Typed.Float.mk fty @@ Float.to_string @@ Z.to_float min in
-    (* we use min-1 and max+1, to be able to have a strict inequality, which avoids
-       issues in cases of float precision loss (I think?) *)
+    let max = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float max in
+    let min = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float min in
+    (* we use min-1 and max+1, to be able to have a strict inequality, which
+       avoids issues in cases of float precision loss (I think?) *)
     let+ () =
-      State.assert_
+      assert_
         (min <.@ f &&@ (f <.@ max))
         (`StdErr "float_to_int_unchecked out of int range")
     in
@@ -469,7 +697,8 @@ module M (Rust_state_m : Rust_state_m.S) :
   let forget ~t:_ ~arg:_ = ok ()
 
   let is_val_statically_known ~t:_ ~_arg:_ =
-    (* see: https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
+    (* see:
+       https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
     lift_symex @@ Rustsymex.nondet Typed.t_bool
 
   let likely ~b = ok (b :> T.sbool Typed.t)
@@ -479,11 +708,10 @@ module M (Rust_state_m : Rust_state_m.S) :
     let x = (x :> T.sfloat Typed.t) in
     let y = (y :> T.sfloat Typed.t) in
     if%sat Typed.Float.is_nan x then ok y
+    else if%sat Typed.Float.is_nan y then ok x
     else
-      if%sat Typed.Float.is_nan y then ok x
-      else
-        let op = if is_min then ( <.@ ) else ( >.@ ) in
-        ok (Typed.ite (op x y) x y)
+      let op = if is_min then ( <.@ ) else ( >.@ ) in
+      ok (Typed.ite (op x y) x y)
 
   let minnumf16 ~x ~y = float_minmax ~is_min:true ~x ~y
   let minnumf32 ~x ~y = float_minmax ~is_min:true ~x ~y
@@ -502,30 +730,30 @@ module M (Rust_state_m : Rust_state_m.S) :
     let zero = Usize.(0s) in
     let* size = Layout.size_of t in
     let* () =
-      State.assert_not (size ==@ zero)
-        (`Panic (Some "ptr_offset_from with ZST"))
+      assert_not (size ==@ zero) (`Panic (Some "ptr_offset_from with ZST"))
     in
     let size = Typed.cast size in
     let* off = Sptr.distance ptr base in
     (* If the pointers are not equal, they mustn't be dangling *)
     let* () =
-      State.assert_
+      assert_
         (off ==@ zero ||@ (Sptr.constraints ptr &&@ Sptr.constraints base))
         `UBDanglingPointer
     in
     (* UB conditions:
-       1. must be at the same address, OR derived from the same allocation
-       2. the distance must be a multiple of sizeof(T) *)
+     * 1. must be at the same address, OR derived from the same allocation
+     * 2. the distance must be a multiple of sizeof(T) *)
     let* () =
-      State.assert_
+      assert_
         (off ==@ zero ||@ Sptr.is_same_loc ptr base &&@ (off %$@ size ==@ zero))
         `UBPointerComparison
     in
-    (* we cast to ignore the overflow for MIN/-1, since the size can never be -1 *)
-    if not unsigned then ok (Typed.cast (off /$@ size))
+    (* we cast to ignore the overflow for MIN/-1, since the size can never be
+       -1 *)
+    if Stdlib.not unsigned then ok (Typed.cast (off /$@ size))
     else
       let+ () =
-        State.assert_
+        assert_
           (Typed.cast (off >=$@ zero))
           (`StdErr "core::intrinsics::offset_from_unsigned negative offset")
       in
@@ -540,9 +768,9 @@ module M (Rust_state_m : Rust_state_m.S) :
       of_opt_not_impl "raw_eq with nondet size" @@ BV.to_z layout.size
     in
     let bytes = mk_array_ty (TLiteral (TUInt U8)) size in
-    (* TODO: figure out if for these two reads we should ignore the modified state,
-       as its leaves may be split in bytes which will require ugly transmutations
-       to be read from again later. *)
+    (* TODO: figure out if for these two reads we should ignore the modified
+       state, as its leaves may be split in bytes which will require ugly
+       transmutations to be read from again later. *)
     let* l = State.load a bytes in
     let* r = State.load b bytes in
     let byte_pairs =
@@ -551,12 +779,11 @@ module M (Rust_state_m : Rust_state_m.S) :
       | _ -> failwith "Unexpected read array"
     in
     let rec aux = function
-      | [] -> ok Typed.v_true
-      | (Int l, Int r) :: rest ->
-          if%sat l ==@ r then aux rest else ok Typed.v_false
+      | [] -> Typed.v_true
+      | (Int l, Int r) :: rest -> l ==@ r &&@ aux rest
       | _ :: _ -> failwith "Unexpected read array"
     in
-    aux byte_pairs
+    ok (aux byte_pairs)
 
   let rotate_ ~(side : [ `Left | `Right ]) ~t ~x ~shift : rust_val ret =
     let t = TypesUtils.ty_as_literal t in
@@ -600,14 +827,12 @@ module M (Rust_state_m : Rust_state_m.S) :
       | Add _ ->
           let ovf = BV.add_overflows ~signed a b in
           let if_ovf =
-            if not signed then max else Typed.ite (a <$@ BV.mki_lit t 0) min max
+            if signed then Typed.ite (a <$@ BV.mki_lit t 0) min max else max
           in
           Typed.ite ovf if_ovf (a +!!@ b)
       | Sub _ ->
           let ovf = BV.sub_overflows ~signed a b in
-          let if_ovf =
-            if not signed then min else Typed.ite (a <$@ b) min max
-          in
+          let if_ovf = if signed then Typed.ite (a <$@ b) min max else min in
           Typed.ite ovf if_ovf (a -!!@ b)
       | _ -> failwith "Unreachable: not add or sub?"
     in
@@ -615,41 +840,20 @@ module M (Rust_state_m : Rust_state_m.S) :
 
   let saturating_add = saturating (Add OUB)
   let saturating_sub = saturating (Sub OUB)
+
+  let select_unpredictable ~t:_ ~b ~true_val ~false_val : rust_val ret =
+    let b = (b :> T.sbool Typed.t) in
+    if%sat b then ok true_val else ok false_val
+
   let size_of ~t = Layout.size_of t
 
   let size_of_val ~t ~ptr:(_, meta) =
-    (* for DSTs, the size of the type is the size of all non-DST fields,
-       to which we just need to add the size of the DST part. *)
-    let* base_size = Layout.size_of t in
-    match meta with
-    | Len meta -> (
-        let sub_ty = Layout.dst_slice_ty t in
-        match sub_ty with
-        | None -> ok base_size
-        | Some sub_ty ->
-            let len = Typed.cast_i Usize meta in
-            let* size = Layout.size_of sub_ty in
-            let size, ovf_mul = size *?@ len in
-            let size, ovf_add = base_size +?@ size in
-            let+ () = State.assert_not (ovf_mul ||@ ovf_add) `Overflow in
-            size)
-    | VTable vt ->
-        let* size_ptr =
-          Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) vt Usize.(1s)
-        in
-        let* dyn_size = State.load (size_ptr, Thin) (TLiteral (TUInt Usize)) in
-        let dyn_size = as_base_i Usize dyn_size in
-        let size = base_size +!@ dyn_size in
-        (* e.g. if alignment of outer container is 8, but dyn size is 1, the added size is 8.
-           the real computation is a lot more complicated, but this does the trick for general use.
-           https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
-        let+ align = Layout.align_of t in
-        let rem = size %@ align in
-        let size =
-          Typed.ite (rem ==@ Usize.(0s)) size (size +!@ (align -!@ rem))
-        in
-        size
-    | _ -> ok base_size
+    let+ size, _ = State.size_and_align_of_val t meta in
+    size
+
+  let align_of_val ~t ~ptr:(_, meta) =
+    let+ _, align = State.size_and_align_of_val t meta in
+    (align :> T.sint Typed.t)
 
   let transmute ~t_src ~dst ~src = Core.transmute ~from_ty:t_src ~to_ty:dst src
 
@@ -695,9 +899,9 @@ module M (Rust_state_m : Rust_state_m.S) :
   let unchecked_sub = unchecked_op (Sub OUB)
 
   let variant_count ~t =
-    match t with
-    | Types.TAdt { id = TAdtId id; _ } when Crate.is_enum id ->
-        let variants = Crate.as_enum id in
+    match (t : Types.ty) with
+    | TAdt adt when Crate.is_enum adt ->
+        let variants = Crate.as_enum adt in
         ok (BV.usizei (List.length variants))
     | _ -> error (`StdErr "core::intrinsics::variant_count used with non-enum")
 
@@ -728,19 +932,19 @@ module M (Rust_state_m : Rust_state_m.S) :
     let* () = State.check_ptr_align dst t in
     let* size = Layout.size_of t in
     let size, overflowed = size *?@ count in
-    let* () = State.assert_not overflowed `Overflow in
+    let* () = assert_not overflowed `Overflow in
     if%sat size ==@ zero then ok ()
     else
-      (* if v == 0, then we can replace this mess by initialising a Zeros subtree *)
+      (* if v == 0, then we can replace this mess by initialising a Zeros
+         subtree *)
       let val_ : [> T.sint ] Typed.t = Typed.cast val_ in
       if%sure val_ ==@ U8.(0s) then State.zeros dst size
       else
         match BV.to_z size with
         | Some bytes ->
-            fold_iter
+            iter_iter
               Iter.(0 -- (Z.to_int bytes - 1))
-              ~init:()
-              ~f:(fun () i ->
+              ~f:(fun i ->
                 let off = BV.usizei i in
                 let* ptr = Sptr.offset ~signed:false ptr off in
                 State.store (ptr, Thin) (TLiteral (TUInt U8)) (Int val_))

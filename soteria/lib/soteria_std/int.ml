@@ -10,3 +10,9 @@ let of_string s =
   match int_of_string_opt s with
   | Some i -> Ok i
   | None -> Error ("Invalid integer: " ^ s)
+
+(** No-op, used for [PatriciaTree] functors. *)
+let to_int = Fun.id
+
+(** Pretty printer *)
+let pp = Fmt.int

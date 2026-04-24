@@ -1,26 +1,16 @@
 module Bidirectional_map = struct
-  module SMap = Symbol_std.Map
-  module IMap = Map.Make (Z)
+  include Bimap.Make (Symbol_std) (Z)
 
-  type t = { s_to_i : Z.t SMap.t; i_to_s : Symbol_std.t IMap.t }
-
-  let empty = { s_to_i = SMap.empty; i_to_s = IMap.empty }
-  let has_sym s map = SMap.mem s map.s_to_i
-
-  let add s i map =
-    let s_to_i = SMap.add s i map.s_to_i in
-    let i_to_s = IMap.add i s map.i_to_s in
-    { s_to_i; i_to_s }
-
-  let get_loc_id s map = SMap.find_opt s map.s_to_i
-  let get_sym i map = IMap.find_opt i map.i_to_s
+  let has_sym = mem_l
+  let get_loc_id = find_l
+  let get_sym = find_r
 end
 
-(* FIXME: This is slightly off because we could have a location that is already assigned.
-          This will cause an unsoundness when testing pointer equality with other objects.
-          But, if you do this, you already have a bug! We will merely signal the wrong bug.
-          In any case, we will fix this when we have native support for disjoint addresses.
-*)
+(* FIXME: This is slightly off because we could have a location that is already
+   assigned. This will cause an unsoundness when testing pointer equality with
+   other objects. But, if you do this, you already have a bug! We will merely
+   signal the wrong bug. In any case, we will fix this when we have native
+   support for disjoint addresses. *)
 type t = { counter : Z.t; bmap : Bidirectional_map.t }
 
 let empty = { counter = Z.one; bmap = Bidirectional_map.empty }
@@ -36,7 +26,8 @@ let of_linked_program (prog : Ail_tys.linked_program) =
     ListLabels.fold_left prog.sigma.function_definitions ~init:empty
       ~f:(fun ctx (sym, _) -> declare_fn sym ctx)
   in
-  (* We also add all *declarations* of a builtin function for which there is no *definition*. *)
+  (* We also add all {declarations} of a builtin function for which there is no
+     {definition}. *)
   ListLabels.fold_left prog.sigma.declarations ~init:first_pass
     ~f:(fun ctx (sym, (_, _, decl)) ->
       match decl with

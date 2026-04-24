@@ -2,16 +2,14 @@
     manually, instead modify the script and re-run it. *)
 
 open Charon
+open Common
 
-module M (Rust_state_m : Rust_state_m.S) = struct
+module M (StateM : State.StateM.S) = struct
   module type Impl = sig
-    type rust_val := Rust_state_m.Sptr.t Rust_val.t
-    type 'a ret := ('a, unit) Rust_state_m.t
-
-    type fun_exec :=
-      UllbcAst.fun_decl -> rust_val list -> (rust_val, unit) Rust_state_m.t
-
-    type full_ptr := Rust_state_m.Sptr.t Rust_val.full_ptr
+    type rust_val := StateM.Sptr.t Rust_val.t
+    type 'a ret := ('a, unit) StateM.t
+    type fun_exec := Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+    type full_ptr := StateM.Sptr.t Rust_val.full_ptr
 
     (** {@markdown[
           Aborts the execution of the process.
@@ -152,6 +150,246 @@ module M (Rust_state_m : Rust_state_m.S) = struct
            The stabilized version of this intrinsic is [`core::hint::assert_unchecked`].
         ]} *)
     val assume : b:[< Typed.T.sbool ] Typed.t -> unit ret
+
+    (** {@markdown[
+          Bitwise and with the current value, returning the previous value.
+           `T` must be an integer or pointer type.
+           `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `fetch_and` method. For example, [`AtomicBool::fetch_and`].
+        ]} *)
+    val atomic_and :
+      t:Types.ty ->
+      u:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Stores a value if the current value is the same as the `old` value.
+           `T` must be an integer or pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `compare_exchange` method.
+           For example, [`AtomicBool::compare_exchange`].
+        ]} *)
+    val atomic_cxchg :
+      t:Types.ty ->
+      ord_succ:Types.constant_expr ->
+      ord_fail:Types.constant_expr ->
+      dst:full_ptr ->
+      old:rust_val ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Stores a value if the current value is the same as the `old` value.
+           `T` must be an integer or pointer type. The comparison may spuriously fail.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `compare_exchange_weak` method.
+           For example, [`AtomicBool::compare_exchange_weak`].
+        ]} *)
+    val atomic_cxchgweak :
+      t:Types.ty ->
+      ord_succ:Types.constant_expr ->
+      ord_fail:Types.constant_expr ->
+      _dst:full_ptr ->
+      _old:rust_val ->
+      _src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          An atomic fence.
+
+           The stabilized version of this intrinsic is available in
+           [`atomic::fence`].
+        ]} *)
+    val atomic_fence : ord:Types.constant_expr -> unit ret
+
+    (** {@markdown[
+          Loads the current value of the pointer.
+           `T` must be an integer or pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `load` method. For example, [`AtomicBool::load`].
+        ]} *)
+    val atomic_load :
+      t:Types.ty -> ord:Types.constant_expr -> src:full_ptr -> rust_val ret
+
+    (** {@markdown[
+          Maximum with the current value using a signed comparison.
+           `T` must be a signed integer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] signed integer types via the `fetch_max` method. For example, [`AtomicI32::fetch_max`].
+        ]} *)
+    val atomic_max :
+      t:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Minimum with the current value using a signed comparison.
+           `T` must be a signed integer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] signed integer types via the `fetch_min` method. For example, [`AtomicI32::fetch_min`].
+        ]} *)
+    val atomic_min :
+      t:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Bitwise nand with the current value, returning the previous value.
+           `T` must be an integer or pointer type.
+           `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`AtomicBool`] type via the `fetch_nand` method. For example, [`AtomicBool::fetch_nand`].
+        ]} *)
+    val atomic_nand :
+      t:Types.ty ->
+      u:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Bitwise or with the current value, returning the previous value.
+           `T` must be an integer or pointer type.
+           `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `fetch_or` method. For example, [`AtomicBool::fetch_or`].
+        ]} *)
+    val atomic_or :
+      t:Types.ty ->
+      u:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          An atomic fence for synchronization within a single thread.
+
+           The stabilized version of this intrinsic is available in
+           [`atomic::compiler_fence`].
+        ]} *)
+    val atomic_singlethreadfence : ord:Types.constant_expr -> unit ret
+
+    (** {@markdown[
+          Stores the value at the specified memory location.
+           `T` must be an integer or pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `store` method. For example, [`AtomicBool::store`].
+        ]} *)
+    val atomic_store :
+      t:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      val_:rust_val ->
+      unit ret
+
+    (** {@markdown[
+          Maximum with the current value using an unsigned comparison.
+           `T` must be an unsigned integer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] unsigned integer types via the `fetch_max` method. For example, [`AtomicU32::fetch_max`].
+        ]} *)
+    val atomic_umax :
+      t:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Minimum with the current value using an unsigned comparison.
+           `T` must be an unsigned integer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] unsigned integer types via the `fetch_min` method. For example, [`AtomicU32::fetch_min`].
+        ]} *)
+    val atomic_umin :
+      t:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Adds to the current value, returning the previous value.
+           `T` must be an integer or pointer type.
+           `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `fetch_add` method. For example, [`AtomicIsize::fetch_add`].
+        ]} *)
+    val atomic_xadd :
+      t:Types.ty ->
+      u:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Stores the value at the specified memory location, returning the old value.
+           `T` must be an integer or pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `swap` method. For example, [`AtomicBool::swap`].
+        ]} *)
+    val atomic_xchg :
+      t:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Bitwise xor with the current value, returning the previous value.
+           `T` must be an integer or pointer type.
+           `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `fetch_xor` method. For example, [`AtomicBool::fetch_xor`].
+        ]} *)
+    val atomic_xor :
+      t:Types.ty ->
+      u:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
+
+    (** {@markdown[
+          Subtract from the current value, returning the previous value.
+           `T` must be an integer or pointer type.
+           `U` must be the same as `T` if that is an integer type, or `usize` if `T` is a pointer type.
+
+           The stabilized version of this intrinsic is available on the
+           [`atomic`] types via the `fetch_sub` method. For example, [`AtomicIsize::fetch_sub`].
+        ]} *)
+    val atomic_xsub :
+      t:Types.ty ->
+      u:Types.ty ->
+      ord:Types.constant_expr ->
+      dst:full_ptr ->
+      src:rust_val ->
+      rust_val ret
 
     (** {@markdown[
           Generates the LLVM body for the automatic differentiation of `f` using Enzyme,
@@ -299,9 +537,9 @@ module M (Rust_state_m : Rust_state_m.S) = struct
         ]} *)
     val catch_unwind :
       fun_exec ->
-      _try_fn:rust_val ->
+      _try_fn:full_ptr ->
       _data:full_ptr ->
-      _catch_fn:rust_val ->
+      _catch_fn:full_ptr ->
       Typed.T.sint Typed.t ret
 
     (** {@markdown[
@@ -1721,7 +1959,8 @@ module M (Rust_state_m : Rust_state_m.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val prefetch_read_data : t:Types.ty -> data:full_ptr -> unit ret
+    val prefetch_read_data :
+      t:Types.ty -> locality:Types.constant_expr -> data:full_ptr -> unit ret
 
     (** {@markdown[
           The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -1734,7 +1973,8 @@ module M (Rust_state_m : Rust_state_m.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val prefetch_read_instruction : t:Types.ty -> data:full_ptr -> unit ret
+    val prefetch_read_instruction :
+      t:Types.ty -> locality:Types.constant_expr -> data:full_ptr -> unit ret
 
     (** {@markdown[
           The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -1747,7 +1987,8 @@ module M (Rust_state_m : Rust_state_m.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val prefetch_write_data : t:Types.ty -> data:full_ptr -> unit ret
+    val prefetch_write_data :
+      t:Types.ty -> locality:Types.constant_expr -> data:full_ptr -> unit ret
 
     (** {@markdown[
           The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -1760,7 +2001,8 @@ module M (Rust_state_m : Rust_state_m.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val prefetch_write_instruction : t:Types.ty -> data:full_ptr -> unit ret
+    val prefetch_write_instruction :
+      t:Types.ty -> locality:Types.constant_expr -> data:full_ptr -> unit ret
 
     (** {@markdown[
           See documentation of `<*const T>::guaranteed_eq` for details.
@@ -2934,11 +3176,9 @@ module M (Rust_state_m : Rust_state_m.S) = struct
   module type S = sig
     include Impl
 
-    type rust_val := Rust_state_m.Sptr.t Rust_val.t
-    type 'a ret := ('a, unit) Rust_state_m.t
-
-    type fun_exec :=
-      UllbcAst.fun_decl -> rust_val list -> (rust_val, unit) Rust_state_m.t
+    type rust_val := StateM.Sptr.t Rust_val.t
+    type 'a ret := ('a, unit) StateM.t
+    type fun_exec := Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
 
     val eval_fun :
       string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret

@@ -8,6 +8,8 @@
 
 (using mdx 0.4)
 
+(using menhir 3.0)
+
 (generate_opam_files)
 
 (license Apache-2.0)
@@ -28,39 +30,53 @@
  (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools")
  (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
-   (>= 5.3.0))
+   (>= 5.4.0))
   (tsort
    (>= 2.1.0))
   eio_main
   simple_smt
   iter
+  patricia-tree
   (ppx_expect
    (>= 0.17.0))
+  (ppx_blob
+    (>= 0.9.0))
+  (ppx_subliner
+    (>= 0.2.1))
   ppx_deriving
   fmt
   printbox-text
   htmlit
   (progress
    (>= 0.5.0))
-  grace
+  (grace
+   (>= 0.3.0))
   (odoc :with-doc)
   (mdx :with-test)
+  (alcotest :with-test)
+  (qcheck-core :with-test)
+  (qcheck-alcotest :with-test)
   (dune
    (and
     :build
     (>= 3.14.0)))
-  ppxlib
+  (ppxlib
+   (>= 0.38.0))
+  (ppx_mixins
+   (>= 0.2.0))
   (hc
    (>= 0.5))
   (yojson
    (< 3.0))
   unionFind
   ppx_deriving_yojson
+  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.27.0)))
+    (= 0.28.1)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -70,8 +86,9 @@
  (sites
   (share includes))
  (depends
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
-   (>= 5.3.0))
+   (>= 5.4.0))
   (shexp :build)
   eio_main
   soteria
@@ -81,27 +98,24 @@
   ppx_deriving
   fmt
   (linol
-   (>= 0.10))
+   (= 0.10))
   (linol-eio
-   (>= 0.10))
+   (= 0.10))
   (ppx_subliner
    (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
-  (ppx_blob
-   (and
-    :build
-    (>= 0.9.0)))
   (yojson
    (< 3.0))
   (dune
    (and
     :build
     (>= 3.14.0)))
+  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.27.0)))
+    (= 0.28.1)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -110,17 +124,19 @@
  (synopsis "VSCode extension for Soteria-C")
  (description "VSCode extension for Soteria-C")
  (depends
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
-   (>= 5.3.0))
+   (>= 5.4.0))
   (dune
    (and
     :build
     (>= 3.14.0)))
   (ocaml-lsp-server :with-dev-setup)
+  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.27.0)))
+    (= 0.28.1)))
   js_of_ocaml
   js_of_ocaml-ppx
   ppx_deriving
@@ -136,12 +152,14 @@
  (sites
   (share plugins))
  (depends
+  ; [versionsync: OCAML_VERSION=5.4.0]
   (ocaml
-   (>= 5.3.0))
+   (>= 5.4.0))
   (shexp :build)
   soteria
   dune-site
   zarith
+  patricia-tree
   ppx_deriving
   cmdliner
   fmt
@@ -150,6 +168,7 @@
   charon
   (ppx_subliner
    (>= 0.2.1))
+  ppx_deriving_hash
   (odoc :with-doc)
   (alcotest :with-test)
   (yojson
@@ -158,8 +177,9 @@
    (and
     :build
     (>= 3.14.0)))
+  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.27.0)))
+    (= 0.28.1)))
   (ocaml-lsp-server :with-dev-setup)))

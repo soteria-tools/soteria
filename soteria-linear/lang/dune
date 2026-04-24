@@ -1,0 +1,6 @@
+(library
+ (name soteria_linear_ast)
+ (libraries soteria)
+ (package soteria)
+ (preprocess
+  (pps ppx_deriving.std ppx_subliner soteria.ppx)))

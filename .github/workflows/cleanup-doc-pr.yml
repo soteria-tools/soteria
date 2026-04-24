@@ -1,0 +1,57 @@
+name: Cleanup PR Documentation
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup-pr-doc:
+    name: Remove PR Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Check if PR documentation exists
+        id: check
+        run: |
+          PR_DIR="api/pr-${{ github.event.pull_request.number }}"
+          if [ -d "$PR_DIR" ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "Documentation folder found: $PR_DIR"
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "No documentation found for PR #${{ github.event.pull_request.number }}"
+          fi
+
+      - name: Remove PR documentation folder
+        if: steps.check.outputs.found == 'true'
+        run: |
+          rm -rf "api/pr-${{ github.event.pull_request.number }}"
+
+      - name: Commit and push
+        if: steps.check.outputs.found == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove documentation for PR #${{ github.event.pull_request.number }}"
+          git push
+
+      - name: Post comment on PR
+        if: steps.check.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: 'Documentation for this PR has been removed.'
+            });

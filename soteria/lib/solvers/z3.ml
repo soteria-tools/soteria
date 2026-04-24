@@ -1,23 +1,17 @@
 open Simple_smt
 open Logs.Import
 
-(** The type of values the solver operators on. *)
-module type Value = sig
-  type t
-  type ty
+module StatKeys = struct
+  let check_sats = "solvers.z3.check_sats"
 
-  (** A list of commands that need to be aknowledged on start up of the solver.
-      These are also sent everytime [Solver_interface.S.reset] is called. *)
-  val init_commands : sexp list
-
-  (** Encode a type into a SMTLib sort *)
-  val sort_of_ty : ty -> sexp
-
-  (** Encode a value into a SMTLib value *)
-  val encode_value : t -> sexp
+  let () =
+    Stats.register_int_printer ~name:"Z3 check-sat calls" check_sats (fun _ ->
+        Fmt.int)
 end
 
-module Make (Value : Value) :
+(** Create a Z3 solver module from a value type. It can be configured, see
+    {!Config}. *)
+module Make (Value : Value.S) :
   Solver_interface.S with type value = Value.t and type ty = Value.ty = struct
   let initialize_solver : (Simple_smt.solver -> unit) ref =
     ref (fun solver -> List.iter (ack_command solver) Value.init_commands)
@@ -32,7 +26,7 @@ module Make (Value : Value) :
 
   let () =
     register_solver_init (fun solver ->
-        match !Config.current.solver_timeout with
+        match (Config.get ()).solver_timeout with
         | None -> ()
         | Some timeout ->
             ack_command solver (set_option ":timeout" (string_of_int timeout)))
@@ -63,8 +57,9 @@ module Make (Value : Value) :
       Some oc
 
     let channel () =
-      (* We only open if current file is not None and its different from current config *)
-      match (!Config.current.dump_smt_file, !current_channel) with
+      (* We only open if current file is not None and its different from current
+         config *)
+      match ((Config.get ()).dump_smt_file, !current_channel) with
       | None, None -> None
       | Some f, None -> open_channel f
       | Some f, Some (oc, f') ->
@@ -87,14 +82,9 @@ module Make (Value : Value) :
       match channel () with
       | None -> ()
       | Some oc ->
-          output_string oc " ; -> ";
-          Sexplib.Sexp.output_hum oc response;
-          if elapsed > 0 && not !Config.current.hide_response_times then (
-            output_string oc " (";
-            output_string oc (string_of_int elapsed);
-            output_string oc "ms)");
-          output_char oc '\n';
-          flush oc
+          let fmt = Format.formatter_of_out_channel oc in
+          Fmt.pf fmt " ; -> %a (%a)\n@?" Sexplib.Sexp.pp_hum response
+            Logs.Printers.pp_time elapsed
   end
 
   type t = Simple_smt.solver
@@ -102,7 +92,7 @@ module Make (Value : Value) :
   type ty = Value.ty
 
   let solver_config () =
-    { z3 with log = solver_log; exe = !Config.current.z3_path }
+    { z3 with log = solver_log; exe = (Config.get ()).z3_path }
 
   let init () =
     let solver = new_solver (solver_config ()) in
@@ -110,7 +100,7 @@ module Make (Value : Value) :
       Dump.log_sexp sexp;
       let now = Unix.gettimeofday () in
       let res = solver.command sexp in
-      let elapsed = Int.of_float ((Unix.gettimeofday () -. now) *. 1000.) in
+      let elapsed = Unix.gettimeofday () -. now in
       Dump.log_response res elapsed;
       res
     in
@@ -130,24 +120,29 @@ module Make (Value : Value) :
     ack_command solver sexp
 
   let check_sat solver : Symex.Solver_result.t =
+    Stats.As_ctx.incr StatKeys.check_sats;
     let smt_res =
       try check solver
       with Simple_smt.UnexpectedSolverResponse s ->
-        L.error (fun m ->
-            m "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s));
+        [%l.error
+          "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s)];
         Unknown
     in
     match smt_res with
     | Sat -> Sat
     | Unsat -> Unsat
     | Unknown ->
-        L.info (fun m -> m "Solver returned unknown");
+        [%l.info "Solver returned unknown"];
         Unknown
 
   let push solver n = ack_command solver (Simple_smt.push n)
   let pop solver n = ack_command solver (Simple_smt.pop n)
+  let save solver = push solver 1
+  let backtrack_n solver n = pop solver n
 
   let reset solver =
     ack_command solver Smt_utils.reset;
     !initialize_solver solver
+
+  let get_model solver = try Some (Simple_smt.get_model solver) with _ -> None
 end

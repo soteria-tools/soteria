@@ -1,8 +1,8 @@
 (include_subdirs qualified)
 
 (library
- (package soteria-c)
  (name soteria_c_lib)
+ (public_name soteria-c)
  (libraries
   soteria
   cmdliner
@@ -31,7 +31,7 @@
   -open
   Soteria.Logs.Import)
  (preprocess
-  (pps ppx_deriving.std ppx_subliner soteria.ppx))
+  (pps ppx_deriving.std ppx_subliner soteria.ppx ppx_mixins))
  (instrumentation
   (backend landmarks --auto)))
 

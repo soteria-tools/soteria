@@ -12,9 +12,9 @@ let pp = Fmt.of_to_string to_string
 let equal = Int.equal
 let compare = Int.compare
 
-module Set = Set.Make (Int)
+module Set = PatriciaTree.MakeSet (Int)
 module Hashset = Hashset.Hint
-module Map = Map.Make (Int)
+module Map = PatriciaTree.MakeMap (Int)
 module Hashtbl = Hashtbl.Make (Int)
 
 module Counter (Start_at : sig

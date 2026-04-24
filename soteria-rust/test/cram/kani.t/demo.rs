@@ -1,5 +1,5 @@
 // Kani: kani ./demo/darpa/simple.rs -Zuninit-checks --output-format terse
-// Soteria Rust: dune exec -- soteria-rust rustc ./demo/darpa/simple.rs --kani --summary
+// Soteria Rust: dune exec -- soteria-rust exec ./demo/darpa/simple.rs --kani --summary
 
 #![feature(core_intrinsics)]
 

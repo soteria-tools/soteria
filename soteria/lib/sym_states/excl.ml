@@ -1,41 +1,53 @@
-open Symex
+module Make (Symex : Symex.Base) (E : Data.Abstr.M(Symex).S_with_syn) = struct
+  type t = E.t [@@deriving show { with_path = false }]
+  type syn = E.syn [@@deriving show { with_path = false }]
 
-module Make (Symex : Symex.Base) = struct
-  type 'a t = 'a
-  type 'a serialized = 'a
+  module SM =
+    State_monad.Make
+      (Symex)
+      (struct
+        type nonrec t = t option
+      end)
 
-  let pp pp_value = pp_value
-
-  let load (st : 'a t option) =
-    match st with
-    | Some x -> Symex.Result.ok (x, st)
-    | None -> Symex.Result.miss []
-
-  let store x (st : 'a t option) =
-    match st with
-    | Some _ -> Symex.Result.ok ((), Some x)
-    | None -> Symex.Result.miss []
-
-  let serialize serialize_val x = serialize_val x
-  let pp_serialized = pp
-
-  let iter_vars_serialized (i : 'a -> 'b Symex.Value.ty Var.iter_vars)
-      (x : 'a serialized) : 'b Symex.Value.ty Var.iter_vars =
-   fun f -> i x f
-
-  let subst_serialized subst_inner subst_var x = subst_inner subst_var x
-
-  let consume ~sem_eq (serialized : 'a serialized) (t : 'a t option) :
-      ('a t option, [> Symex.lfail ], 'a serialized) Symex.Result.t =
+  let unwrap () st =
     let open Symex.Syntax in
-    match t with
-    | Some x ->
-        let++ () = Symex.consume_pure (sem_eq x serialized) in
-        None
-    | None -> Symex.Result.miss [ serialized ]
+    match st with
+    | Some x -> SM.Result.ok x st
+    | None ->
+        let* v = E.fresh () in
+        SM.Result.miss [ [ E.to_syn v ] ] st
 
-  let produce (serialized : 'a serialized) (t : 'a t option) =
+  open SM
+  open SM.Syntax
+
+  let assert_exclusively_owned () : (unit, 'err, syn list) Result.t =
+    let++ _ = unwrap () in
+    ()
+
+  let load = unwrap
+
+  let store x =
+    let** _ = unwrap () in
+    SM.Result.set_state (Some x)
+
+  let to_syn (s : E.t) : syn list = [ E.to_syn s ]
+  let ins_outs (s : syn) = ([], E.exprs_syn s)
+
+  open Symex
+
+  let produce (s : syn) (t : st) : st Producer.t =
+    let open Producer.Syntax in
     match t with
-    | None -> Symex.return (Some serialized)
-    | Some _ -> Symex.vanish ()
+    | None ->
+        let+ x = Producer.apply_subst E.subst s in
+        Some x
+    | Some _ -> Producer.vanish ()
+
+  let consume (s : syn) (t : st) : (st, syn list) Consumer.t =
+    let open Consumer.Syntax in
+    match t with
+    | None -> Consumer.miss [ [ s ] ]
+    | Some x ->
+        let+ () = E.learn_eq s x in
+        None
 end

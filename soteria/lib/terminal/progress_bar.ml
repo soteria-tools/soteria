@@ -1,10 +1,29 @@
+let to_progress (c : Logs.Color.t) : Terminal_ansi.Color.t =
+  (match c with
+    | `Black -> `black
+    | `Maroon -> `red
+    | `Forest -> `green
+    | `Orange -> `yellow
+    | `DarkBlue -> `blue
+    | `Purple -> `magenta
+    | `Teal -> `cyan
+    | `Silver -> `white
+    | `Gray -> `bright `black
+    | `Red -> `bright `red
+    | `Green -> `bright `green
+    | `Blue -> `bright `blue
+    | `Cyan -> `bright `cyan
+    | `Magenta -> `bright `magenta
+    | `White -> `bright `white
+    | `Yellow -> `bright `yellow)
+  |> Progress.Color.ansi
+
 let bar_style ~color:user_color () =
   let open Progress.Line in
-  let { color; utf8 } : Profile.t = !Profile.profile in
+  let { color; utf8 } : Logs.Profile.t = Logs.Profile.get () in
   let base = if utf8 then Bar_style.utf8 else Bar_style.ascii in
   let colored =
-    if color then Bar_style.with_color (Color.to_progress user_color) base
-    else base
+    if color then Bar_style.with_color (to_progress user_color) base else base
   in
   Some (`Custom colored)
 

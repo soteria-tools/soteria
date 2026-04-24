@@ -10,6 +10,8 @@ on:
     branches: ["main"]
   pull_request:
     branches: ["main"]
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
 
 # Cancel previous versions of this job that are still running.
@@ -17,165 +19,21 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  OBOL_REPO: soteria-tools/obol
-  OBOL_COMMIT_HASH: e34fe507a4be3fbec04be0c31b2c951bc2ddc904
-
 jobs:
   build:
-    strategy:
-      matrix:
-        operating-system: [macos-latest] # TODO: add other operating systems
-    runs-on: ${{ matrix.operating-system }}
-    steps:
-      # Setup steps: checkout, z3, node, ocaml and opam
-      - uses: actions/checkout@v4
-      - name: Setup Z3
-        uses: cda-tum/setup-z3@v1
-        id: z3
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          cache: "yarn"
-      - name: Setup OCaml
-        uses: ocaml/setup-ocaml@v3
-        with:
-          ocaml-compiler: 5.3.0
-          dune-cache: true
-          opam-pin: false
-      - name: Restore opam cache
-        uses: actions/cache@v4
-        with:
-          path: _opam
-          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ hashFiles('*.opam') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-opam-
-      - run: opam update
-      # OCaml build
-      - name: setup dependencies
-        run: make ocaml-deps
-      - name: Build OCaml stuff
-        run: make ocaml
-      - name: Check formatting
-        run: make ocaml-format-check
+    uses: ./.github/workflows/build.yml
 
-      # Install Rust and Obol
-      - name: Get Rust toolchain
-        run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
-      - name: Restore Obol cache
-        uses: actions/cache@v4
-        id: restore-obol-cache
-        with:
-          path: obol-bin
-          key: ${{ runner.os }}-${{ runner.arch }}-obol-${{ env.OBOL_COMMIT_HASH }}
-      - name: Install Obol if not cached
-        run: |
-          brew install make
-          cd ..
-          mkdir obol
-          cd obol
-          git init
-          git remote add origin https://github.com/$OBOL_REPO.git
-          git fetch --depth=1 origin $OBOL_COMMIT_HASH
-          git checkout $OBOL_COMMIT_HASH
-          gmake build-dev
-          cp -r bin ../soteria/obol-bin
-        if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
-      - name: Add Obol to path
-        run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
-
-      # Run tests
-      - name: Test
-        run: make ocaml-test
-
-      # Building js stuff
-      - name: Install JS dependencies
-        run: yarn install
-      - name: Build JS stuff
-        run: yarn compile
-
-      # Packaging OCaml distribution and sending it as artifact
-      - name: OCaml zip file creation
-        run: make package
-      - name: Upload zip file
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.operating-system }}-package
-          path: package
-          if-no-files-found: error
-
-      - name: Build API documentation
-        run: make doc
-
-      - name: Upload documentation artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: odoc
-          path: _build/default/_doc/_html
-          if-no-files-found: error
-        # No need to upload artifact twice
-        if: ${{ matrix.operating-system == 'macos-latest' }}
-
-      - name: Opam Cleanup
-        run: opam clean -a -r
-
-  test-package:
-    strategy:
-      matrix:
-        operating-system: [macos-latest]
-    runs-on: ${{ matrix.operating-system }}
+  test-packages:
     needs: build
-    steps:
-      - name: checkout Collections-C, version where we find a bug
-        uses: actions/checkout@v4
-        with:
-          repository: srdja/Collections-C
-          ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
-      - name: Create compilation database
-        run: |
-          mkdir -p build
-          cd build
-          cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ..
-      - name: Download package
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.operating-system }}-package
-      - name: Add executable permissions
-        run: |
-          chmod +x ./bin/soteria-c
-          chmod +x ./bin/z3
-      - name: Run soteria-c (expecting exit code 13)
-        run: |
-          set +e
-          CERB_INSTALL_PREFIX=$(pwd) DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c capture-db build/compile_commands.json
-          EXIT_CODE=$?
-          if [ $EXIT_CODE -ne 13 ]; then
-            echo "Expected exit code 13, but got $EXIT_CODE"
-            exit 1
-          fi
-          echo "Correctly received exit code 13, bug was found"
-        env:
-          SOTERIA_Z3_PATH: ./bin/z3
-          SOTERIA_AUTO_INCLUDE_PATH: ./lib/soteria-c
-          SOTERIA_SOLVER_TIMEOUT: 100
-          SOTERIA_USE_CERB_HEADERS: true
+    uses: ./.github/workflows/test-packages.yml
 
   publish-doc:
     name: Publish documentation
     runs-on: ubuntu-latest
     needs: build
+    if: github.ref == 'refs/heads/main'
     steps:
-      - name: Get current branch name
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "ENTRY_PATH=pr-${{ github.event.pull_request.number }}" >> $GITHUB_ENV
-          else
-            echo "ENTRY_PATH=${GITHUB_REF##*/}" >> $GITHUB_ENV
-          fi
-
-      - name: retrieve documentation artifact
+      - name: Retrieve documentation artifact
         uses: actions/download-artifact@v4
         with:
           name: odoc
@@ -186,6 +44,6 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
-          destination_dir: ./api/${{ env.ENTRY_PATH }}
+          destination_dir: ./api/main
 
-      - run: echo "Successfully published documentation to ${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/${{ env.ENTRY_PATH }}"
+      - run: echo "Successfully published documentation to https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/main"

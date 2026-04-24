@@ -11,22 +11,22 @@ pub use kani_macros::*;
 
 #[inline(never)]
 pub const fn panic(message: &'static str) -> ! {
-    rusteria::panic(message)
+    soteria::panic(message)
 }
 
 #[inline(never)]
 pub const fn assert(cond: bool, msg: &'static str) {
-    rusteria::assert(cond, msg);
+    soteria::assert(cond, msg);
 }
 
 #[inline(never)]
 pub const fn assume(cond: bool) {
-    rusteria::assume(cond);
+    soteria::assume(cond);
 }
 
 #[inline(never)]
 pub const fn nondet<T>() -> T {
-    rusteria::nondet::<T>()
+    soteria::nondet_bytes::<T>()
 }
 
 #[inline(never)]

@@ -52,55 +52,32 @@ struct
   end)
 
   module Solver_state = struct
-    type t = Typed.sbool Typed.t Dynarray.t Dynarray.t
+    include Reversible.Make_mutable_array (struct
+      type t = Typed.(sbool t)
+    end)
 
-    let init () =
-      let t = Dynarray.create () in
-      Dynarray.add_last t (Dynarray.create ());
-      t
-
-    let reset t =
-      Dynarray.clear t;
-      Dynarray.add_last t (Dynarray.create ())
-
-    let save t = Dynarray.add_last t (Dynarray.create ())
-    let backtrack_n t n = Dynarray.truncate t (Dynarray.length t - n)
-
-    let add_constraint (t : t) v =
+    let add_constraint t v =
       if Typed.equal v Typed.v_true then ()
-      else
-        match Dynarray.find_last t with
-        | None -> failwith "add_constraint: empty array"
-        | Some last ->
-            if Typed.equal v Typed.v_false then (
-              Dynarray.clear last;
-              Dynarray.add_last last Typed.v_false)
-            else Dynarray.add_last last v
+      else (
+        if Typed.equal v Typed.v_false then truncate_to_checkpoint t;
+        add t v)
 
     (** This function returns [Some b] if the solver state is trivially [b]
         (true or false). We maintain solver state such that trivial truths are
         never added to the state, and false is false erases everything else.
         Therefore, it is enough to check either for emptyness of the topmost
         layer or falseness of the latest element. *)
-    let trivial_truthiness (t : t) =
-      match Dynarray.find_last t with
-      | None -> Some true
-      | Some last -> (
-          match Dynarray.find_last last with
-          | None -> Some true
-          | Some v when Typed.equal v Typed.v_false -> Some false
-          | _ -> None)
+    let trivial_truthiness t =
+      if is_at_checkpoint t then Some true
+      else if Typed.equal (peek_last t) Typed.v_false then Some false
+      else None
 
-    let iter (t : t) f = Dynarray.iter (fun t -> Dynarray.iter f t) t
-
-    let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
+    let trivial_truthiness_of t v =
       let neg_v = Typed.not v in
-      Dynarray.find_map
-        (Dynarray.find_map (fun value ->
-             if Typed.equal value v then Some true
-             else if Typed.equal value neg_v then Some false
-             else None))
-        t
+      find_map t (fun value ->
+          if Typed.equal value v then Some true
+          else if Typed.equal value neg_v then Some false
+          else None)
   end
 
   type t = {
@@ -110,46 +87,16 @@ struct
     state : Solver_state.t;
     analysis : Analysis.t;
   }
+  [@@deriving reversible]
 
   let init () =
-    let z3_exe = Intf.init () in
-    Intf.push z3_exe 1;
-    {
-      z3_exe;
-      save_counter = Save_counter.init ();
-      var_counter = Var_counter.init ();
-      state = Solver_state.init ();
-      analysis = Analysis.init ();
-    }
+    let s = init () in
+    Intf.push s.z3_exe 1;
+    s
 
-  let save solver =
-    Var_counter.save solver.var_counter;
-    Save_counter.save solver.save_counter;
-    Solver_state.save solver.state;
-    Analysis.save solver.analysis;
-    Intf.push solver.z3_exe 1
-
-  let backtrack_n solver n =
-    Var_counter.backtrack_n solver.var_counter n;
-    Solver_state.backtrack_n solver.state n;
-    Save_counter.backtrack_n solver.save_counter n;
-    Analysis.backtrack_n solver.analysis n;
-    Intf.pop solver.z3_exe n
-
-  (* Initialise and reset *)
-
-  let reset solver =
-    (* We want to go back to 1, meaning after the first push which saved the declarations *)
-    let save_counter = !(solver.save_counter) in
-    if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
-    Save_counter.reset solver.save_counter;
-    Var_counter.reset solver.var_counter;
-    Solver_state.reset solver.state;
-    Analysis.reset solver.analysis;
-    (* We need to pop the initial push, so we go back to the state before the first push *)
-    Intf.pop solver.z3_exe (save_counter + 1);
-    (* Make sure the basic definitions are saved again *)
-    Intf.pop solver.z3_exe 1
+  let reset s =
+    reset s;
+    Intf.push s.z3_exe 1
 
   let fresh_var solver ty =
     let v_id = Var_counter.get_next solver.var_counter in
@@ -184,7 +131,7 @@ struct
         | Sat -> Sat
         | Unsat -> Unsat
         | Unknown ->
-            L.info (fun m -> m "Solver returned unknown");
+            [%l.info "Solver returned unknown"];
             Unknown)
 
   let as_values solver =
@@ -224,42 +171,20 @@ struct
     type slot = { value : slot_content; mutable checked : bool }
     [@@deriving show]
 
-    (* Invariants: the PC only has checked things, and then only unchecked things. *)
+    (* Invariants: the PC only has checked things, and then only unchecked
+       things. *)
 
-    type t = slot Dynarray.t Dynarray.t [@@deriving show]
+    include Reversible.Make_mutable_array (struct
+      type t = slot
+    end)
 
-    let init () =
-      let t = Dynarray.create () in
-      Dynarray.add_last t (Dynarray.create ());
-      t
-
-    let reset t =
-      Dynarray.clear t;
-      Dynarray.add_last t (Dynarray.create ())
-
-    let save t = Dynarray.add_last t (Dynarray.create ())
-    let backtrack_n t n = Dynarray.truncate t (Dynarray.length t - n)
-
-    let add_constraint (t : t) v =
+    let add_constraint arr v =
       if Typed.equal v Typed.v_true then ()
-      else
-        match Dynarray.find_last t with
-        | None -> failwith "add_constraint: empty array"
-        | Some last ->
-            if Typed.equal v Typed.v_false then (
-              Dynarray.clear last;
-              (* We mark false as unchecked to make sure trivial_truthiness doesn't infer the wrong thing. *)
-              Dynarray.add_last last
-                { value = Asrt Typed.v_false; checked = false })
-            else Dynarray.add_last last { value = Asrt v; checked = false }
+      else (
+        if Typed.equal v Typed.v_false then truncate_to_checkpoint arr;
+        add arr { value = Asrt v; checked = false })
 
-    let dirty_variable (t : t) v =
-      match Dynarray.find_last t with
-      | None -> failwith "dirty_variable: empty array"
-      | Some last -> Dynarray.add_last last { value = Dirty v; checked = false }
-
-    let to_seq_rev (t : t) =
-      Seq.concat_map Dynarray.to_seq_rev (Dynarray.to_seq_rev t)
+    let dirty_variable (t : t) v = add t { value = Dirty v; checked = false }
 
     (** This function returns [Some b] if the solver state is trivially [b]
         (true or false). We maintain solver state such that trivial truths are
@@ -278,22 +203,19 @@ struct
     (* We check if the thing contains the value itself, or its negation. *)
     let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
       let neg_v = Typed.not v in
-      Dynarray.find_map
-        (Dynarray.find_map (function
-          | { value = Asrt value; _ } ->
-              if Typed.equal value v then Some true
-              else if Typed.equal value neg_v then Some false
-              else None
-          | _ -> None))
-        t
+      find_map t @@ function
+      | { value = Asrt value; _ } ->
+          if Typed.equal value v then Some true
+          else if Typed.equal value neg_v then Some false
+          else None
+      | _ -> None
 
     (** Iterate over the assertions in the PC. *)
-    let iter (t : t) f =
-      Dynarray.iter
-        (Dynarray.iter (function
-          | { value = Asrt value; _ } -> f value
-          | { value = Dirty _; _ } -> ()))
-        t
+    let iter (t : t) =
+      iter t
+      |> Iter.filter_map @@ function
+         | { value = Asrt value; _ } -> Some value
+         | { value = Dirty _; _ } -> None
 
     (** If we have checked sat and obtaied SAT, we can mark all elements of the
         list as checked! *)
@@ -368,86 +290,16 @@ struct
       (to_encode, var_set)
   end
 
-  module Declared_vars = struct
-    module Var_counter = Var.Incr_counter_mut (struct
-      let start_at = 1
-    end)
-
-    (* Since we start addresses at one to improve trivial model hits, we need to offset to obtain an index. *)
-    let var_to_index v = Var.to_int v - 1
-
-    type t = {
-      counter : Var_counter.t;
-      types : Svalue.ty Dynarray.t;
-          (** The var_counter is keeping track of how many variables we actually
-              have in the context. We don't need to separate each bit of that
-              array by saved branch, we just fetch at the index for each
-              variable, and override when we change branch. *)
-    }
-
-    let init () = { counter = Var_counter.init (); types = Dynarray.create () }
-    let save t = Var_counter.save t.counter
-    let backtrack_n t n = Var_counter.backtrack_n t.counter n
-    let reset t = Var_counter.reset t.counter
-
-    let fresh t ty =
-      let next = Var_counter.get_next t.counter in
-      let next_i = var_to_index next in
-      let () =
-        if Dynarray.length t.types == next_i then Dynarray.add_last t.types ty
-        else if Dynarray.length t.types > next_i then
-          Dynarray.set t.types next_i ty
-        else failwith "Broke var-counter/declared-types invariant"
-      in
-      next
-
-    let get_ty t var = Dynarray.get t.types (var_to_index var)
-  end
-
   type t = {
-    z3_exe : Intf.t;
-    vars : Declared_vars.t;
+    z3_exe : Intf.t; [@reversible.ignore]
+    vars : Var_counter.t;
     save_counter : Save_counter.t;
     state : Solver_state.t;
     analysis : Analysis.t;
   }
+  [@@deriving reversible]
 
-  let init () =
-    let z3_exe = Intf.init () in
-    (* Before every check-sat we pop then push again. *)
-    {
-      z3_exe;
-      save_counter = Save_counter.init ();
-      vars = Declared_vars.init ();
-      state = Solver_state.init ();
-      analysis = Analysis.init ();
-    }
-
-  let save solver =
-    Declared_vars.save solver.vars;
-    Save_counter.save solver.save_counter;
-    Solver_state.save solver.state;
-    Analysis.save solver.analysis
-
-  let backtrack_n solver n =
-    Declared_vars.backtrack_n solver.vars n;
-    Solver_state.backtrack_n solver.state n;
-    Save_counter.backtrack_n solver.save_counter n;
-    Analysis.backtrack_n solver.analysis n
-
-  (* Initialise and reset *)
-
-  let reset solver =
-    (* We want to go back to 1, meaning after the first push which saved the declarations *)
-    let save_counter = !(solver.save_counter) in
-    if save_counter < 0 then failwith "Solver reset: save_counter < 0???";
-    Save_counter.reset solver.save_counter;
-    Declared_vars.reset solver.vars;
-    Solver_state.reset solver.state;
-    Analysis.reset solver.analysis
-
-  let fresh_var solver ty =
-    Declared_vars.fresh solver.vars (Typed.untype_type ty)
+  let fresh_var solver _ = Var_counter.get_next solver.vars
 
   let simplify solver v : 'a Typed.t =
     v
@@ -469,59 +321,76 @@ struct
   let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
     Hashtbl.Hint.create 1023
 
-  let trivial_model_works to_check =
-    (* We try a trivial model where replacing each variable with name
-    [|n|] with the corresponding integer [n]; except if an assertion
-    [|n| == v] exists, in which case we replace it with the value [v].
-    If the constraint evaluates to true, then it is satisfiable. *)
-    let v_eqs = Var.Hashtbl.create 8 in
-    Svalue.Bool.split_ands to_check (fun v ->
-        match v.node.kind with
-        | Binop
-            ( Eq,
-              { node = { kind = Var n; _ }; _ },
-              ({ node = { kind = BitVec _; _ }; _ } as x) )
-        | Binop
-            ( Eq,
-              ({ node = { kind = BitVec _; _ }; _ } as x),
-              { node = { kind = Var n; _ }; _ } ) ->
-            Var.Hashtbl.add v_eqs n x
-        | _ -> ());
-    let eval_var v_var v (ty : Svalue.ty) =
-      match ty with
-      | TBitVector n | TLoc n -> (
-          let i = Var.to_int v in
-          try Var.Hashtbl.find v_eqs v
-          with Not_found -> Svalue.BitVec.mk_masked n (Z.of_int i))
-      | _ -> v_var
+  let trivial_model_works solver to_check var_tys =
+    let exception No_model in
+    let value_generator : Svalue.ty -> unit -> Svalue.t = function
+      | TLoc n ->
+          let max = Z.(shift_left one n) in
+          fun () -> Svalue.Ptr.loc_of_z n (Z.random_int max)
+      | TBitVector n ->
+          let max = Z.(shift_left one n) in
+          fun () -> Svalue.BitVec.mk n (Z.random_int max)
+      | TBool -> fun () -> Svalue.Bool.of_bool (Random.bool ())
+      (* TODO: because we can't evaluate floats, we can never do a trivial check
+         for them. *)
+      | TFloat _ -> raise No_model
+      (* TODO: figure this out *)
+      | TPointer _ | TSeq _ -> raise No_model
     in
-    let res = Eval.eval ~eval_var to_check in
-    Svalue.equal res Svalue.Bool.v_true
+    let fuel = 3 in
+    try
+      let bindings =
+        Var.Map.fold
+          (fun v (ty : Svalue.ty) acc ->
+            let values =
+              Iter.forever (value_generator ty)
+              |> Analysis.filter solver.analysis v ty
+              |> Iter.take fuel
+              |> Iter.to_array
+            in
+            if Array.length values = 0 then raise No_model;
+            Var.Map.add v values acc)
+          var_tys Var.Map.empty
+      in
+      let rec aux i =
+        let rec eval_var _ v _ =
+          let values = Var.Map.find v bindings in
+          let index = i mod Array.length values in
+          match values.(index) with
+          | { node = { kind = Var var; ty }; _ } as v -> eval_var v var ty
+          | v -> v
+        in
+        let res = Eval.eval ~eval_var to_check in
+        if Svalue.equal res Svalue.Bool.v_true then true
+        else if i >= fuel then false
+        else aux (i + 1)
+      in
+      aux 0
+    with No_model -> false
 
-  let check_sat_raw solver relevant_vars to_check =
+  let check_sat_raw solver to_check =
     (* TODO: we shouldn't wait for ack for each command individually... *)
-    if trivial_model_works to_check then Symex.Solver_result.Sat
+    let var_tys =
+      Svalue.iter_vars to_check
+      |> Iter.fold (fun acc (v, ty) -> Var.Map.add v ty acc) Var.Map.empty
+    in
+    if trivial_model_works solver to_check var_tys then Symex.Solver_result.Sat
     else (
       (* We need to reset the state, so we can push the new constraints *)
       Intf.reset solver.z3_exe;
-
       (* Declare all relevant variables *)
-      Var.Hashset.iter
-        (fun v ->
-          let ty = Declared_vars.get_ty solver.vars v in
-          Intf.declare_var solver.z3_exe v ty)
-        relevant_vars;
+      Var.Map.iter (Intf.declare_var solver.z3_exe) var_tys;
       (* Declare the constraint *)
       Intf.add_constraint solver.z3_exe to_check;
       (* Actually check sat *)
       Intf.check_sat solver.z3_exe)
 
-  let check_sat_raw_memo solver relevant_vars to_check =
+  let check_sat_raw_memo solver to_check =
     let to_check = Typed.untyped to_check in
     match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
     | Some result -> result
     | None ->
-        let result = check_sat_raw solver relevant_vars to_check in
+        let result = check_sat_raw solver to_check in
         Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
         result
 
@@ -533,13 +402,14 @@ struct
         let to_check, relevant_vars =
           Solver_state.unchecked_constraints solver.state
         in
-        (* This will put the check in a somewhat-normal form, to increase cache hits. *)
+        (* This will put the check in a somewhat-normal form, to increase cache
+           hits. *)
         let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
         let to_check =
           Iter.fold Typed.and_ to_check
             (Analysis.encode ~vars:relevant_vars solver.analysis)
         in
-        let answer = check_sat_raw_memo solver relevant_vars to_check in
+        let answer = check_sat_raw_memo solver to_check in
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
@@ -550,8 +420,8 @@ struct
     |> Iter.to_list
 end
 
+open Analyses
+module Analysis = Merge (Interval) (Equality)
 module Z3 = Solvers.Z3.Make (Encoding)
-module Z3_incremental_solver = Make_incremental (Analyses.None) (Z3)
-
-module Z3_solver =
-  Make (Analyses.Merge (Analyses.Interval) (Analyses.Equality)) (Z3)
+module Z3_incremental_solver = Make_incremental (Analysis) (Z3)
+module Z3_solver = Make (Analysis) (Z3)

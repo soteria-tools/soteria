@@ -1,5 +1,5 @@
-(*** More standard interface to [Symbol], making it nicer for 
-   using with Stdlib functors *)
+(*** More standard interface to [Symbol], making it nicer for using with Stdlib
+  functors *)
 
 open Cerb_frontend.Symbol
 
@@ -9,7 +9,8 @@ module SELF = struct
   let equal = equal_sym
   let compare = compare_sym
   let hash = Hashtbl.hash
-  let pp = Fmt.of_to_string Cerb_frontend.Pp_symbol.to_string
+  let show = Cerb_frontend.Pp_symbol.to_string
+  let pp = Fmt.of_to_string show
 end
 
 include SELF

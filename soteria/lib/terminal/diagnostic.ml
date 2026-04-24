@@ -11,13 +11,14 @@ type severity = Grace.Diagnostic.Severity.t =
   | Warning
   | Error
   | Bug
+[@@deriving eq, ord, show { with_path = false }]
 
 let pp_severity ft = function
-  | Help -> Color.pp_clr2 `Cyan `Bold ft "help"
-  | Error -> Color.pp_clr2 `Red `Bold ft "error"
-  | Warning -> Color.pp_clr2 `Yellow `Bold ft "warning"
-  | Note -> Color.pp_clr2 `Green `Bold ft "note"
-  | Bug -> Color.pp_clr2 `Red `Bold ft "bug"
+  | Help -> Logs.Printers.pp_clr2 `Cyan `Bold ft "help"
+  | Error -> Logs.Printers.pp_err ft "error"
+  | Warning -> Logs.Printers.pp_warn ft "warning"
+  | Note -> Logs.Printers.pp_ok ft "note"
+  | Bug -> Logs.Printers.pp_err ft "bug"
 
 let read_file file =
   let ic = open_in file in
@@ -78,10 +79,9 @@ let real_index_str (content : string) ((line, col) : pos) =
 let mk_range_file ?filename ?content file from_ to_ =
   let open Grace.Range in
   let bi = Grace.Byte_index.of_int in
-  (* Could be optimised if indexes are in the same file,
-   but I don't think printing errors is what's going to take time.
-   Also, it shouldn't be required anyway, see https://github.com/johnyob/grace/issues/46
-*)
+  (* Could be optimised if indexes are in the same file, but I don't think
+     printing errors is what's going to take time. Also, it shouldn't be
+     required anyway, see https://github.com/johnyob/grace/issues/46 *)
   try
     let index_fn =
       Option.fold ~none:(real_index file) ~some:real_index_str content
@@ -97,8 +97,9 @@ let mk_range_file ?filename ?content file from_ to_ =
     in
     create ~source (bi idx1) (bi idx2)
   with Sys_error _ ->
+    let name = Option.value ~default:file filename in
     create
-      ~source:(`String { name = Some file; content = "File not found" })
+      ~source:(`String { name = Some name; content = "File not found" })
       (bi 0) (bi 14)
 
 let call_trace_to_labels ~as_ranges (call_trace : 'a Call_trace.t) =
@@ -126,33 +127,32 @@ let call_trace_to_labels ~as_ranges (call_trace : 'a Call_trace.t) =
 
 let with_unaltered_geo f =
   let geo = Format.get_geometry () in
-  f ();
-  Format.set_geometry ~max_indent:geo.max_indent ~margin:geo.margin
+  Fun.protect
+    ~finally:(fun () ->
+      Format.set_geometry ~max_indent:geo.max_indent ~margin:geo.margin)
+    f
 
 let pp ft diag =
   let module GConfig = Grace_ansi_renderer.Config in
-  let { color; utf8 } : Profile.t = !Profile.profile in
+  let { color; utf8 } : Logs.Profile.t = Logs.Profile.get () in
   let styles, use_ansi =
-    if color then (GConfig.Style_sheet.default, true)
-    else (GConfig.Style_sheet.(no_color default), false)
+    if color then (GConfig.Style_sheet.default, Some true)
+    else (GConfig.Style_sheet.(no_color default), Some false)
   in
   let chars = if utf8 then GConfig.Chars.unicode else GConfig.Chars.ascii in
   let config = GConfig.{ chars; styles; use_ansi } in
-  if Config.compact () then
-    Grace_ansi_renderer.pp_compact_diagnostic ~config () ft diag
-  else Grace_ansi_renderer.pp_diagnostic ~config () ft diag
+  if (Config.get ()).compact then
+    Grace_ansi_renderer.pp_compact_diagnostic ~config ft diag
+  else Grace_ansi_renderer.pp_diagnostic ~config ft diag
 
-let print_diagnostic ~severity ~error ~as_ranges ~fname ~call_trace =
+let print_diagnostic ~severity ~as_ranges ~msg ~call_trace =
   with_unaltered_geo @@ fun () ->
   let labels = call_trace_to_labels ~as_ranges call_trace in
-  try
-    Grace.Diagnostic.createf ~labels severity "%s in %s" error fname
-    |> Fmt.pr "%a@?" pp
+  try Grace.Diagnostic.createf ~labels severity "%s" msg |> Fmt.pr "%a@?@." pp
   with _ ->
-    Fmt.pr "%a: %a@?" pp_severity severity (Color.pp_style `Bold)
-      (error ^ " in " ^ fname)
+    Fmt.pr "%a: %a@?" pp_severity severity (Logs.Printers.pp_style `Bold) msg
 
 let print_diagnostic_simple ~severity msg =
   with_unaltered_geo @@ fun () ->
   let msg = Grace.Diagnostic.Message.create msg in
-  Grace.Diagnostic.create severity msg |> Fmt.pr "%a@?" pp
+  Grace.Diagnostic.create severity msg |> Fmt.pr "%a@\n@?" pp
