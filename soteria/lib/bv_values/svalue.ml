@@ -345,6 +345,10 @@ module type Bool = sig
   val distinct : t list -> t
   val ite : t -> t -> t -> t
   val exists : (Var.t * ty) list -> t -> t
+  val exists_n : not_in:t -> ty list -> (t list -> t) -> t
+  val exists_1 : not_in:t -> ty -> (t -> t) -> t
+  val exists_2 : not_in:t -> ty -> ty -> (t -> t -> t) -> t
+  val exists_3 : not_in:t -> ty -> ty -> ty -> (t -> t -> t -> t) -> t
   val sem_eq : t -> t -> t
   val sem_eq_untyped : t -> t -> t
 end
@@ -693,12 +697,43 @@ module rec Bool : Bool = struct
           mk_commut_binop Eq v1 v2 <| TBool
     | _ -> mk_commut_binop Eq v1 v2 <| TBool
 
+  (* TODO: merge binders if the body is an exists *)
   let exists binders body =
     let body_vars = Var.Hashset.of_iter (iter_vars body |> Iter.map fst) in
     let binders =
       List.filter (fun (v, _) -> Var.Hashset.mem body_vars v) binders
     in
     match binders with [] -> body | _ -> Exists (binders, body) <| TBool
+
+  (** * [exists_n ~not_in tys mk] creates an existential with [length tys]
+      variables of types [tys], that are not in [not_in], and with body created
+      by [mk : t list -> t] which takes the created variables as input in the
+      same order as [tys]. *)
+  let exists_n ~not_in tys mk =
+    let max = ref 0 in
+    iter_vars not_in (fun (v, _) -> max := Int.max !max (Var.to_int v));
+    (* We create something high to note those are actually existentials and
+       reduce chances of conflict *)
+    let base = !max + 10_000 in
+    let binders = List.mapi (fun i ty -> (Var.of_int (base + i), ty)) tys in
+    let binders_vs = List.map (fun (v, ty) -> mk_var v ty) binders in
+    let body = mk binders_vs in
+    exists binders body
+
+  let exists_1 ~not_in ty mk =
+    exists_n ~not_in [ ty ] (function
+      | [ v ] -> mk v
+      | _ -> failwith "exists_1: unreachable")
+
+  let exists_2 ~not_in ty1 ty2 mk =
+    exists_n ~not_in [ ty1; ty2 ] (function
+      | [ v1; v2 ] -> mk v1 v2
+      | _ -> failwith "exists_2: unreachable")
+
+  let exists_3 ~not_in ty1 ty2 ty3 mk =
+    exists_n ~not_in [ ty1; ty2; ty3 ] (function
+      | [ v1; v2; v3 ] -> mk v1 v2 v3
+      | _ -> failwith "exists_3: unreachable")
 
   let sem_eq_untyped v1 v2 =
     if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
