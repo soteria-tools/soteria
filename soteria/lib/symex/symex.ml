@@ -391,7 +391,7 @@ module type S = sig
         if the symbolic process calls [give_up] and the mode is
         {!Symex.Approx.OX}. Prefer using {!Result.run} when possible. *)
   val run :
-    ?flamegraph_svg:string ->
+    ?flamegraph_pl:string ->
     ?fuel:Fuel_gauge.t ->
     mode:Approx.t ->
     'a t ->
@@ -400,7 +400,7 @@ module type S = sig
   (** Same as {!run}, but returns additional information about execution, see
       {!Soteria.Stats}. *)
   val run_with_stats :
-    ?flamegraph_svg:string ->
+    ?flamegraph_pl:string ->
     ?fuel:Fuel_gauge.t ->
     mode:Approx.t ->
     'a t ->
@@ -410,7 +410,7 @@ module type S = sig
       throw an exception. This function is exposed should users wish to run
       several symbolic execution processes using a single [stats] record. *)
   val run_needs_stats :
-    ?flamegraph_svg:string ->
+    ?flamegraph_pl:string ->
     ?fuel:Fuel_gauge.t ->
     mode:Approx.t ->
     'a t ->
@@ -424,7 +424,7 @@ module type S = sig
         {!Symex.Or_gave_up.t}, potentially adding any path that gave up to the
         list. *)
     val run :
-      ?flamegraph_svg:string ->
+      ?flamegraph_pl:string ->
       ?fuel:Fuel_gauge.t ->
       ?fail_fast:bool ->
       mode:Approx.t ->
@@ -432,7 +432,7 @@ module type S = sig
       (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
 
     val run_with_stats :
-      ?flamegraph_svg:string ->
+      ?flamegraph_pl:string ->
       ?fuel:Fuel_gauge.t ->
       ?fail_fast:bool ->
       mode:Approx.t ->
@@ -441,7 +441,7 @@ module type S = sig
       Stats.with_stats
 
     val run_needs_stats :
-      ?flamegraph_svg:string ->
+      ?flamegraph_pl:string ->
       ?fuel:Fuel_gauge.t ->
       ?fail_fast:bool ->
       mode:Approx.t ->
@@ -587,8 +587,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       Fuel.save ();
       Flamegraph.save ()
 
-    let run ?flamegraph_svg ~init_fuel f =
-      Flamegraph.run_if_file ~flamegraph_svg @@ fun () ->
+    let run ?flamegraph_pl ~init_fuel f =
+      Flamegraph.run_if_file ~flamegraph_pl @@ fun () ->
       Solver.run @@ fun () ->
       Fuel.run ~init:init_fuel @@ fun () -> f ()
   end
@@ -1097,34 +1097,34 @@ module Make (Sol : Solver.Mutable_incremental) :
   include CORE
   include Base_extension (CORE)
 
-  let run_needs_stats_iter ?flamegraph_svg ?(fuel = Fuel_gauge.infinite) ~mode
+  let run_needs_stats_iter ?flamegraph_pl ?(fuel = Fuel_gauge.infinite) ~mode
       iter : ('a * Value.(sbool t) list) t =
    fun continue ->
     let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
-    let@ () = Symex_state.run ?flamegraph_svg ~init_fuel:fuel in
+    let@ () = Symex_state.run ?flamegraph_pl ~init_fuel:fuel in
     let@ () = Approx.As_ctx.with_mode mode in
     let@ () = Give_up.with_give_up_raising in
     let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
     iter @@ fun x -> if admissible () then continue (x, Solver.as_values ())
 
-  let run_needs_stats ?flamegraph_svg ?(fuel = Fuel_gauge.infinite) ~mode iter =
-    Iter.to_list (run_needs_stats_iter ?flamegraph_svg ~fuel ~mode iter)
+  let run_needs_stats ?flamegraph_pl ?(fuel = Fuel_gauge.infinite) ~mode iter =
+    Iter.to_list (run_needs_stats_iter ?flamegraph_pl ~fuel ~mode iter)
 
-  let run ?flamegraph_svg ?fuel ~mode iter =
+  let run ?flamegraph_pl ?fuel ~mode iter =
     let@ () = Stats.As_ctx.with_stats_ignored () in
-    run_needs_stats ?flamegraph_svg ?fuel ~mode iter
+    run_needs_stats ?flamegraph_pl ?fuel ~mode iter
 
-  let run_with_stats ?flamegraph_svg ?fuel ~mode iter =
+  let run_with_stats ?flamegraph_pl ?fuel ~mode iter =
     let@ () = Stats.As_ctx.with_stats () in
-    run_needs_stats ?flamegraph_svg ?fuel ~mode iter
+    run_needs_stats ?flamegraph_pl ?fuel ~mode iter
 
   module Result = struct
     include Result
 
-    let run_needs_stats ?flamegraph_svg ?(fuel = Fuel_gauge.infinite)
+    let run_needs_stats ?flamegraph_pl ?(fuel = Fuel_gauge.infinite)
         ?(fail_fast = false) ~mode iter =
       let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
-      let@ () = Symex_state.run ?flamegraph_svg ~init_fuel:fuel in
+      let@ () = Symex_state.run ?flamegraph_pl ~init_fuel:fuel in
       let@ () = Approx.As_ctx.with_mode mode in
       let l = ref [] in
       let () =
@@ -1146,12 +1146,12 @@ module Make (Sol : Solver.Mutable_incremental) :
       in
       List.rev !l
 
-    let run ?flamegraph_svg ?fuel ?fail_fast ~mode iter =
+    let run ?flamegraph_pl ?fuel ?fail_fast ~mode iter =
       let@ () = Stats.As_ctx.with_stats_ignored () in
-      run_needs_stats ?flamegraph_svg ?fuel ?fail_fast ~mode iter
+      run_needs_stats ?flamegraph_pl ?fuel ?fail_fast ~mode iter
 
-    let run_with_stats ?flamegraph_svg ?fuel ?fail_fast ~mode iter =
+    let run_with_stats ?flamegraph_pl ?fuel ?fail_fast ~mode iter =
       let@ () = Stats.As_ctx.with_stats () in
-      run_needs_stats ?flamegraph_svg ?fuel ?fail_fast ~mode iter
+      run_needs_stats ?flamegraph_pl ?fuel ?fail_fast ~mode iter
   end
 end
