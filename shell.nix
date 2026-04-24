@@ -140,7 +140,7 @@ let
       ppx_make
     ];
   });
-  cerberus = pkgs.cerberus.overrideAttrs (old: {
+  cerberus = (pkgs.cerberus.override { inherit ocamlPackages; }).overrideAttrs (old: {
     version = "0-unstable-2025-12-06";
     src = pkgs.fetchFromGitHub {
       owner = "kmemarian";
