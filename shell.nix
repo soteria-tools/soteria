@@ -11,7 +11,7 @@ let
         owner = "ocaml-ppx";
         repo = "ppxlib";
         tag = version;
-        hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        hash = "sha256-l6rJxmpWzwkTyQGqNKO7UcYmKLffl5aUDlwXvx6agOg=";
       };
     });
   });
