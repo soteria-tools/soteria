@@ -152,6 +152,7 @@ let
     pname = "soteria-c";
     version = "unstable-2025-12-26";
     src = ./.;
+    dontDetectOcamlConflicts = true;
     nativeBuildInputs = with pkgs.ocamlPackages; [
       pkgs.git
     ];
