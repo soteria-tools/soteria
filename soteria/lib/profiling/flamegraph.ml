@@ -1,23 +1,23 @@
 open Soteria_std
 
 type frame = string
-type stack = { frames : frame list; weight : float }
+type stack = { rev_frames : frame list; weight : float }
 
 let push_string_to_stack string (stack : stack) =
-  { stack with frames = string :: stack.frames }
+  { stack with rev_frames = string :: stack.rev_frames }
 
 let pop_stack (stack : stack) =
-  let frames = List.tl stack.frames in
-  { stack with frames }
+  let rev_frames = List.tl stack.rev_frames in
+  { stack with rev_frames }
 
 let write_folded_stacks path stacks =
   match
     Out_channel.with_open_text path (fun oc ->
         List.iter
-          (fun { frames; weight } ->
+          (fun { rev_frames; weight } ->
             let weight_us = int_of_float (weight *. 1_000_000.0) in
             if weight_us > 0 then
-              let line = String.concat ";" (List.rev frames) in
+              let line = String.concat ";" (List.rev rev_frames) in
               Printf.fprintf oc "%s %d\n" line weight_us)
           stacks)
   with
@@ -51,7 +51,9 @@ module Make () = struct
   let run ~flamegraph_pl f =
     let stacks = ref [] in
     let current_stack : stack Dynarray.t = Dynarray.create () in
-    let () = Dynarray.add_last current_stack { frames = []; weight = 0.0 } in
+    let () =
+      Dynarray.add_last current_stack { rev_frames = []; weight = 0.0 }
+    in
     let last_checkpoint = ref (Unix.gettimeofday ()) in
     let map_stack (g : stack -> stack) =
       let last = Dynarray.pop_last current_stack in
