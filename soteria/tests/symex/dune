@@ -4,6 +4,3 @@
  (flags :standard -open Soteria.Tiny_values)
  (preprocess
   (pps soteria.ppx)))
-
-(cram
- (deps ./run_twice.exe ./deep_give_up.exe ./if_sure.exe))
