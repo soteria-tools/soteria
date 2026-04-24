@@ -135,6 +135,10 @@ type t = {
       (** The default pass fuel for each library -- calling every function of
           the library with the current summaries counts as one fuel. Defaults to
           5 passes *)
+  dump_callgraph : string option;
+      [@docs Sections.output] [@names [ "dump-callgraph" ]]
+      (** If provided, dump the call graph as a DOT file to the given path after
+          analysis. *)
 }
 [@@deriving make, subliner]
 
@@ -192,6 +196,7 @@ let set_and_lock_global (config : global) =
           step_fuel = config.ruxt.step_fuel;
           branch_fuel = config.ruxt.branch_fuel;
           fail_fast = false;
+          dump_callgraph = config.ruxt.dump_callgraph;
         };
     }
   in

@@ -47,10 +47,6 @@ type t =
     State.syn list )
   State.SM.Result.t
 
-let run_producer summ subst st =
-  let symex = Rustsymex.Producer.run ~subst @@ Summary.produce summ st in
-  Rustsymex.map symex (fun ((ret, st), subst) -> ((ret, subst), st))
-
 let call (fun_decl : UllbcAst.fun_decl) summs =
   let ty = fun_decl.signature.output in
   let if_rmut ~then_ ~else_ =
@@ -65,7 +61,7 @@ let call (fun_decl : UllbcAst.fun_decl) summs =
       ~init:(State.SM.return ([], [], Typed.Expr.Subst.empty))
       ~f:(fun acc summ ty ->
         let* args, arg_ptrs, subst = acc in
-        let* arg, subst = run_producer summ subst in
+        let* arg, subst = Summary.run_producer subst summ in
         match ty with
         | Types.TRef (_, ty, _) ->
             let+ ptr = Symok.alloc ty arg in
@@ -89,8 +85,7 @@ let call (fun_decl : UllbcAst.fun_decl) summs =
         | RMut ->
             (* For mutable references, we write to the pointer with safe
                values*)
-            (* let* ret = Summary.produce (Option.get summ) in *)
-            let* ret, _ = run_producer (Option.get summ) subst in
+            let* ret, _ = Summary.run_producer subst (Option.get summ) in
             Symok.store ptr ty ret)
     | _ -> State.SM.return ()
   in

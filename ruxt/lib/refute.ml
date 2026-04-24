@@ -8,6 +8,7 @@ open Analyses.Util
 
 let exec_crate (crate : Crate.t) =
   let@ () = Crate.with_crate crate in
+  let@ () = Call_graph.with_dumped_callgraph () in
   let config = Config.get () in
   (* Set fuel for summary inference *)
   let fuel =

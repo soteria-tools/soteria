@@ -39,6 +39,22 @@ let pp fmt = function
         (Logic.Asrt.pp State.pp_syn)
         asrt
 
+let nondet ty =
+  let process =
+    let module Encoder = Value_codec.Encoder (State.Sptr) in
+    State.SM.Result.run_with_state ~state:State.empty
+      (State.SM.lift @@ Encoder.nondet_valid ty)
+  in
+  Rustsymex.run_needs_stats ~mode:UX process
+  |> ListLabels.map ~f:(function
+    | Soteria.Symex.Compo_res.Ok (ret, st), pcs ->
+        let ret = Ret.to_syn ret in
+        let spatial = state_to_syn st in
+        let pure = List.map Typed.untyped pcs in
+        let asrt = Logic.Asrt.make ~spatial ~pure in
+        { ret; asrt }
+    | _ -> failwith "Expected Ok in nondet")
+
 let make (ret : Ret.t) (st : State.SM.st)
     (pcs : Rustsymex.Value.sbool Typed.t list) : (t, [> `MemoryLeak ]) result =
   let open Result.Syntax in
@@ -125,17 +141,24 @@ let consume (summ : t) (ret : Ret.t) (st : State.SM.st) :
   let* () = Learn_eq.learn_eq State.Sptr.learn_eq summ.ret ret in
   Execute.consume summ.asrt st
 
+let run_producer (subst : Typed.Expr.Subst.t) (summ : t) :
+    (Ret.t * Typed.Expr.Subst.t) State.SM.t =
+ fun st ->
+  let symex = Rustsymex.Producer.run ~subst @@ produce summ st in
+  Rustsymex.map symex (fun ((ret, st), subst) -> ((ret, subst), st))
+
 let implies s_pre s_post =
   let process =
     let open Rustsymex.Syntax in
-    let subst = Typed.Expr.Subst.empty in
-    let* (ret, st), subst =
-      Rustsymex.Producer.run ~subst @@ produce s_pre State.empty
+    let* () = Rustsymex.return () in
+    (* Make sure we run the producer inside the symex *)
+    let* (ret, subst), st =
+      run_producer Typed.Expr.Subst.empty s_pre State.empty
     in
     Rustsymex.Consumer.run ~subst @@ consume s_post ret st
   in
   match Rustsymex.run_needs_stats ~mode:OX process with
-  | [ (Soteria.Symex.Compo_res.Ok (st, _), _) ] -> st == State.empty
+  | [ (Soteria.Symex.Compo_res.Ok (st, _), _) ] -> st = State.empty
   | _ -> false
 
 module Context = struct
@@ -164,24 +187,7 @@ module Context = struct
           Option.value ~default:([], [], []) (M.find_opt id ctx)
         in
         Custom (visited, unvisited, staged)
-    | ty when is_base_ty ty ->
-        let nondet ty =
-          let process =
-            let module Encoder = Value_codec.Encoder (State.Sptr) in
-            State.SM.Result.run_with_state ~state:State.empty
-              (State.SM.lift @@ Encoder.nondet_valid ty)
-          in
-          Rustsymex.run_needs_stats ~mode:UX process
-          |> ListLabels.map ~f:(function
-            | Soteria.Symex.Compo_res.Ok (ret, st), pcs ->
-                let ret = Rust_val.to_syn State.Sptr.to_syn ret in
-                let spatial = State.to_syn @@ State.of_opt st in
-                let pure = List.map Typed.untyped pcs in
-                let asrt = Logic.Asrt.make ~spatial ~pure in
-                { ret; asrt }
-            | _ -> failwith "Expected Ok in nondet")
-        in
-        Base (nondet ty)
+    | ty when is_base_ty ty -> Base (nondet ty)
     | ty -> type_not_supported ty
 
   let iter_summs tys (ctx : t) f =
