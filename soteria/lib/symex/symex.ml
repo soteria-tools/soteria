@@ -789,7 +789,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     Flamegraph.checkpoint ();
     if should_give_up then Give_up.perform reason
 
-  let with_frame name f = Flamegraph_with_frame.with_frame name f
+  let with_frame (name : string) (f : unit -> 'a t) : 'a t =
+   fun k -> Flamegraph_with_frame.with_frame name f k
 end
 
 module Base_extension (Core : Core) = struct
