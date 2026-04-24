@@ -62,7 +62,7 @@ let print_outcomes entry_name f =
         "%s (%a): %s, %s@.@." entry_name pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
-let flamegraph_pl_name entry_name =
+let flamegraph_name entry_name =
   (Soteria.Profiling.Config.get ()).flamegraphs
   |> Option.map (fun dirname ->
       let entry_name =
@@ -98,7 +98,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     let@ () = Layout.Session.with_layout_cache in
     let@@ () =
       Rustsymex.Result.run_with_stats
-        ?flamegraph:(flamegraph_pl_name entry_name)
+        ?flamegraph:(flamegraph_name entry_name)
         ~mode:OX ~fuel ~fail_fast:(Config.get ()).fail_fast
     in
     exec_fun fun_decl ~args

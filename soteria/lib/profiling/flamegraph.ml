@@ -12,7 +12,8 @@ let pop_stack (stack : stack) =
 
 let write_folded_stacks path stacks =
   let path =
-    if String.ends_with ~suffix:".pl" path then path else path ^ ".pl"
+    if String.ends_with ~suffix:".collapsed" path then path
+    else path ^ ".collapsed"
   in
   Unix.ensure_dir_exists (Filename.dirname path);
   match
