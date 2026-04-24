@@ -96,6 +96,20 @@ let
       ppxlib
     ];
   });
+  ppx_mixins = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
+    pname = "ppx_mixins";
+    version = "0.2.0";
+    src = pkgs.fetchFromGitHub {
+      owner = "soteria-tools";
+      repo = "ppx_mixins";
+      tag = "v${finalAttrs.version}";
+      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    };
+    doCheck = false;
+    propagatedBuildInputs = with pkgs.ocamlPackages; [
+      ppxlib
+    ];
+  });
   ppx_subliner = pkgs.ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "ppx_subliner";
     version = "0.2.1";
@@ -136,10 +150,12 @@ let
       hc
       htmlit
       iter
+      patricia-tree
       ppxlib
       ppx_blob
       ppx_deriving
       ppx_deriving_yojson
+      ppx_mixins
       ppx_subliner
       printbox-text
       simple_smt
