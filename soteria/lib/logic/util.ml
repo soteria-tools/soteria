@@ -10,7 +10,10 @@ module M (Symex : Symex.Base) = struct
     type 'a t = 'a option [@@deriving show { with_path = false }]
     type 'a syn = 'a option [@@deriving show { with_path = false }]
 
-    (* TODO: do we have [let fresh () = return None] ? *)
+    let fresh fresh () =
+      let open Symex in
+      branches
+        [ (fun () -> return None); (fun () -> map (fresh ()) Option.some) ]
 
     let to_syn to_syn = Option.map to_syn
     let subst subst s = Option.map (subst s)

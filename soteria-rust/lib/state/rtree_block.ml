@@ -196,35 +196,49 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       in
       { range = t.range; node; children = None }
 
+    module Rust_val_consumer = Rust_val.Learn_eq (DecayMap.SM)
+
     let consume (s : syn) (t : tree) : (tree, syn list) DecayMap.SM.Consumer.t =
       let open DecayMap.SM.Consumer in
       let open Syntax in
-      match (s, t.node) with
-      | _, NotOwned _ -> miss_no_fix ~reason:"rtree_block consume notowned" ()
-      | _, Owned Lazy -> lift @@ not_impl "Consume on lazy node"
-      (* init *)
-      | SInit _, _ ->
-          lift @@ not_impl "Consume typed value on rust_val equality."
-      (* any *)
-      | SAny, Owned (Leaf (_, tb)) -> ok (mk_leaf t Unowned tb)
-      (* uninit *)
-      | SUninit, Owned (Leaf (Uninit, tb)) -> ok (mk_leaf t Unowned tb)
-      | SUninit, Owned (Leaf _) -> lfail Typed.v_false
-      (* zeros *)
-      | SZeros, Owned (Leaf (Zeros, tb)) -> ok (mk_leaf t Unowned tb)
-      | SZeros, Owned (Leaf (Init _, _)) ->
-          lift @@ not_impl "Assume rust_val == 0s"
-      | SZeros, Owned (Leaf _) -> lfail Typed.v_false
-      (* tree borrows *)
-      | STree_borrow_st s, Owned (Leaf (v, tb)) ->
-          let+ tb' =
+      let* v, tb =
+        match t.node with
+        | NotOwned _ -> miss_no_fix ~reason:"rtree_block consume notowned" ()
+        | Owned Lazy -> lift @@ not_impl "Consume on lazy node"
+        | Owned (Leaf (v, tb)) -> ok (v, tb)
+      in
+      let* v =
+        match (s, v) with
+        (* init *)
+        | SInit e, Init v ->
+            let+ () = Rust_val_consumer.learn_eq Sptr.learn_eq e v in
+            Unowned
+        | SInit _, Zeros -> lift @@ not_impl "Assume rust_val.syn == 0s"
+        | SInit _, _ -> lfail Typed.v_false
+        (* any *)
+        | SAny, _ -> ok Unowned
+        (* uninit *)
+        | SUninit, Uninit -> ok Unowned
+        | SUninit, _ -> lfail Typed.v_false
+        (* zeros *)
+        | SZeros, Zeros -> ok Unowned
+        | SZeros, Init _ -> lift @@ not_impl "Assume rust_val == 0s"
+        | SZeros, _ -> lfail Typed.v_false
+        (* unrelated to value *)
+        | (STree_borrow_st _ | STree_borrow _), _ -> ok v
+      in
+      let+ tb =
+        match s with
+        | STree_borrow_st s ->
             let+? fixes = Borrows.State.consume s tb in
             List.map lift_tb_st_fix fixes
-          in
-          mk_leaf t v tb'
-      | STree_borrow _, _ ->
-          failwith
-            "TB structure syn in tree block, should have been caught before"
+        | STree_borrow _ ->
+            failwith
+              "TB structure syn in tree block, should have been caught before"
+        (* unrelated to tree borrows *)
+        | SInit _ | SZeros | SUninit | SAny -> ok tb
+      in
+      mk_leaf t v tb
 
     let rec produce (s : syn) (t : tree) : tree DecayMap.SM.Producer.t =
       let open DecayMap.SM.Producer in

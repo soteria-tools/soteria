@@ -160,6 +160,10 @@ module type S = sig
   (** Converts an address into a pointer, without provenance. *)
   val of_address : [< sint ] Typed.t -> t
 
+  (** The null pointer, which always decays to 0, and has no provenance.
+      Equivalent to [of_address 0]. *)
+  val null : unit -> t
+
   (** Whether this is the null pointer, meaning it always decays to 0. *)
   val is_null : t -> sbool Typed.t
 

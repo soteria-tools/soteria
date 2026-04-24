@@ -178,7 +178,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let caller_location : full_ptr ret =
     (* TODO: we should really do something better here *)
     let+ () = ok () in
-    (Sptr.of_address Usize.(0s), Thin)
+    (Sptr.null (), Thin)
 
   let carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry =
     let t = TypesUtils.ty_as_literal t in

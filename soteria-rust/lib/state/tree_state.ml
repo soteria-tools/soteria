@@ -69,7 +69,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       let tag = L_option.subst Borrows.Tag.subst subst_val p.tag in
       { ptr; align; size; tag }
 
-    let null_ptr () =
+    let null () =
       {
         ptr = Typed.Ptr.null ();
         tag = None;
@@ -78,7 +78,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       }
 
     let of_address ofs =
-      let null_ptr = null_ptr () in
+      let null_ptr = null () in
       let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
       { null_ptr with ptr }
 

@@ -146,13 +146,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
 
     let is_empty = function NotOwned Totally -> true | _ -> false
     let is_fully_owned = function NotOwned _ -> false | Owned _ -> true
-
-    let assert_exclusively_owned t =
-      match t.node with
-      | NotOwned _ ->
-          Result.miss_no_fix
-            ~reason:"assert_exclusively_owned - tree not fully owned" ()
-      | Owned _ -> MemVal.assert_exclusively_owned t
+    let assert_exclusively_owned = MemVal.assert_exclusively_owned
 
     let merge ~left ~right =
       match (left, right) with

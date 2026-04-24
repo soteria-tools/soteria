@@ -95,7 +95,7 @@ module M (StateM : State.StateM.S) = struct
 
   let fixme_panic_cleanup _ =
     (* TODO: whas is __rust_panic_cleanup meant to do and return? *)
-    let null = Sptr.of_address Usize.(0s) in
+    let null = Sptr.null () in
     ok (Ptr (null, VTable null))
 
   let fixme_catch_unwind_cleanup args =
