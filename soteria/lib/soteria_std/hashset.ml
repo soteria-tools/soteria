@@ -27,11 +27,7 @@ let equal lset rset = cardinal lset = cardinal rset && subseteq lset rset
 let pp pp_elt : Format.formatter -> 'a t -> unit =
   Fmt.braces @@ Fmt.iter ~sep:Fmt.comma iter pp_elt
 
-module type PrintableHashedType = sig
-  include Hashtbl.HashedType
-
-  val pp : Format.formatter -> t -> unit
-end
+module type PrintableHashedType = [%mixins Hashtbl.HashedType + Sigs.Printable]
 
 module type S = sig
   type elt

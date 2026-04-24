@@ -15,6 +15,10 @@ let merge f x y =
   | Some x, None | None, Some x -> Some x
   | None, None -> None
 
+(** [or_ x y] returns [x] if it is some, otherwise returns [y]. Equivalent to
+    [merge (fun l _ -> l)] *)
+let[@inline] or_ x y = match x with Some _ -> x | _ -> y
+
 (** Get the value of an option.
 
     @raise Invalid_argument if the option is [None]. *)

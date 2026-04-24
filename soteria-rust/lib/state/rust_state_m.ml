@@ -83,7 +83,11 @@ module type S = sig
   val get_trace : unit -> (Trace.t, 'env) t
 
   val with_extra_call_trace :
-    loc:Meta.span_data -> msg:string -> ('a, 'env) t -> ('a, 'env) t
+    ?name:Types.name ->
+    loc:Meta.span_data ->
+    msg:string ->
+    ('a, 'env) t ->
+    ('a, 'env) t
 
   val unwind_with :
     f:('a -> ('b, 'env) t) ->
@@ -390,8 +394,9 @@ module Make (State : State_intf.S) :
 
   let get_trace () : (Trace.t, 'env) t = lift_symex @@ Rustsymex.get_trace ()
 
-  let with_extra_call_trace ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
-   fun env state -> Rustsymex.with_extra_call_trace ~loc ~msg (x env state)
+  let with_extra_call_trace ?name ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
+   fun env state ->
+    Rustsymex.with_extra_call_trace ?name ~loc ~msg (x env state)
 
   let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
     ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->

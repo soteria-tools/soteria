@@ -5,6 +5,7 @@ type t = {
   op : string option;
       (** Current operation being performed, only if relevant *)
   loc : Charon.Meta.span_data option;  (** Current code location if known *)
+  name : Charon.Types.name option;  (** Current function name if known *)
   stack : Charon.Meta.span_data Soteria.Terminal.Call_trace.t;
       (** Current call stack *)
 }
@@ -29,16 +30,22 @@ let move_to_opt loc where =
 
 let set_op op where = { where with op = Some op }
 
-let push_to_stack ~loc ~msg where =
+let push_to_stack ?name ~loc ~msg where =
   let call = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
-  { where with stack = call :: where.stack }
+  { where with stack = call :: where.stack; name }
 
 let loc_or_default where =
   match where.loc with
   | Some loc -> loc
   | None -> Common.Charon_util.empty_span_data
 
-let empty = { op = None; loc = None; stack = Soteria.Terminal.Call_trace.empty }
+let empty =
+  {
+    op = None;
+    loc = None;
+    name = None;
+    stack = Soteria.Terminal.Call_trace.empty;
+  }
 
 let rename ?rev idx msg trace =
   let stack = Soteria.Terminal.Call_trace.rename ?rev idx msg trace.stack in

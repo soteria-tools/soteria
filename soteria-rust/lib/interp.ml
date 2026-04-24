@@ -445,7 +445,7 @@ module Make (StateImpl : State.S) = struct
       The arguments must be passed, as for calls on [&dyn Trait] types the first
       argument holds the VTable pointer. *)
   and resolve_function ~in_tys ~out_ty :
-      GAst.fn_operand -> ('err fun_exec * Types.ty list) t =
+      GAst.fn_operand -> ('err fun_exec * Types.name option * Types.ty list) t =
     let validate_call ?(is_dyn = false) (fn : Types.fun_decl_ref) =
       let fn = Crate.get_fun fn.id in
       let rec check_tys l r =
@@ -468,8 +468,10 @@ module Make (StateImpl : State.S) = struct
       in
       check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
     in
-    let perform_call : Fun_kind.t -> ('a fun_exec * Types.ty list) t = function
-      | Synthetic _ as fn -> ok (exec_fun fn, in_tys)
+    let perform_call :
+        Fun_kind.t -> ('a fun_exec * Types.name option * Types.ty list) t =
+      function
+      | Synthetic _ as fn -> ok (exec_fun fn, None, in_tys)
       | Real fn ->
           let fundef = Crate.get_fun fn.id in
           let+ inputs =
@@ -481,7 +483,7 @@ module Make (StateImpl : State.S) = struct
           let fun_maybe_stubbed =
             Std_funs.std_fun_eval fundef fn.generics exec_fun
           in
-          (fun_maybe_stubbed, inputs)
+          (fun_maybe_stubbed, Some fundef.item_meta.name, inputs)
     in
     function
     (* Handle builtins separately *)
@@ -979,7 +981,7 @@ module Make (StateImpl : State.S) = struct
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
-        let* exec_fun, exp_tys =
+        let* exec_fun, name, exp_tys =
           resolve_function ~in_tys ~out_ty:dest.ty func
         in
         (* the expected types of the function may differ to those passed, e.g.
@@ -996,7 +998,8 @@ module Make (StateImpl : State.S) = struct
             Fmt.(list ~sep:(any ", ") pp_rust_val)
             args];
         let fun_exec =
-          with_extra_call_trace ~loc:terminator.span.data ~msg:"Call trace"
+          with_extra_call_trace ?name ~loc:terminator.span.data
+            ~msg:"Call trace"
           @@ with_env ~env:()
           @@ exec_fun args
         in
@@ -1161,7 +1164,8 @@ module Make (StateImpl : State.S) = struct
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
     let@@ () =
-      with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
+      with_extra_call_trace ~name:fundef.item_meta.name
+        ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
     let* value = exec_real_fun fundef generics args in

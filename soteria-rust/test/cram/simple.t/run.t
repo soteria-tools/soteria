@@ -430,3 +430,50 @@ Test enum constructors as functions; this broke with a rust toolchain update
   note: enum_constructor::main: done in <time>, ran 1 branch
   PC 1: empty
   
+Print the callgraph
+  $ soteria-rust exec callgraph.rs --dump-callgraph callgraph.dot && cat callgraph.dot
+  Compiling... done in <time>
+  => Running callgraph::main...
+  note: callgraph::main: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  digraph callgraph {
+    node [shape=box fontname="monospace"];
+    n0 [label="Range<A>>::next" tooltip="std::iter::range::<impl std::iter::Iterator for std::ops::Range<A>>::next::<i32>"];
+    n13 [label="io::_print" tooltip="std::io::_print"];
+    n7 [label="callgraph::limit" tooltip="callgraph::limit"];
+    n2 [label="callgraph::choose" tooltip="callgraph::choose"];
+    n12 [label="callgraph::main" tooltip="callgraph::main"];
+    n6 [label="callgraph::run" tooltip="callgraph::run"];
+    n16 [label="Step>::forward_unchecked" tooltip="<i32 as std::iter::Step>::forward_unchecked"];
+    n3 [label="callgraph::twice" tooltip="callgraph::twice"];
+    n14 [label="Argument::<'_>::new_display" tooltip="core::fmt::rt::Argument::<'_>::new_display::<'_, i32>"];
+    n4 [label="callgraph::dec" tooltip="callgraph::dec"];
+    n8 [label="callgraph::score" tooltip="callgraph::score"];
+    n17 [label="PartialOrd for i32>::lt" tooltip="std::cmp::impls::<impl std::cmp::PartialOrd for i32>::lt"];
+    n10 [label="callgraph::ping" tooltip="callgraph::ping"];
+    n15 [label="Arguments::<'a>::new" tooltip="std::fmt::Arguments::<'a>::new::<'_, 12usize, 1usize>"];
+    n11 [label="callgraph::pong" tooltip="callgraph::pong"];
+    n9 [label="IntoIterator>::into_iter" tooltip="<I as std::iter::IntoIterator>::into_iter::<std::ops::Range::<i32>>"];
+    n5 [label="callgraph::inc" tooltip="callgraph::inc"];
+    n1 [label="RangeIteratorImpl>::spec_next" tooltip="<std::ops::Range<T> as std::iter::range::RangeIteratorImpl>::spec_next::<i32>"];
+    n0 -> n1;
+    n2 -> n3;
+    n2 -> n4;
+    n2 -> n5;
+    n6 -> n0;
+    n6 -> n7;
+    n6 -> n8;
+    n6 -> n9;
+    n10 -> n11;
+    n12 -> n13;
+    n12 -> n6;
+    n12 -> n14;
+    n12 -> n15;
+    n8 -> n2;
+    n8 -> n10;
+    n11 -> n10;
+    n1 -> n16;
+    n1 -> n17;
+  }
