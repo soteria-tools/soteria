@@ -258,13 +258,13 @@ let exec_function ~includes ~fuel file_names function_name =
         [%l.debug "@[<2>Initial state:@ %a@]" (Fmt.Dump.option SState.pp) state];
         Wpst_interp.exec_fun entry_point ~args:[]
       in
-      let flamegraph_pl =
+      let flamegraph =
         Option.map
-          (fun d -> Filename.concat d (function_name ^ ".pl"))
-          (Soteria.Profiling.Config.get ()).flamegraphs_dir
+          (fun d -> Filename.concat d function_name)
+          (Soteria.Profiling.Config.get ()).flamegraphs
       in
       let@ () = with_function_context linked in
-      Ok (Csymex.Result.run_needs_stats ?flamegraph_pl ~mode:OX ~fuel symex)
+      Ok (Csymex.Result.run_needs_stats ?flamegraph ~mode:OX ~fuel symex)
   in
   match result with
   | Ok v -> v

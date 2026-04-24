@@ -11,6 +11,10 @@ let pop_stack (stack : stack) =
   { stack with rev_frames }
 
 let write_folded_stacks path stacks =
+  let path =
+    if String.ends_with ~suffix:".pl" path then path else path ^ ".pl"
+  in
+  Unix.ensure_dir_exists (Filename.dirname path);
   match
     Out_channel.with_open_text path (fun oc ->
         List.iter
@@ -23,7 +27,7 @@ let write_folded_stacks path stacks =
   with
   | () -> ()
   | exception Sys_error e ->
-      Logs.L.error (fun m -> m "Could not write flamegraph: %s" e)
+      Terminal.Warn.warn (Fmt.str "Failed to write flamegraph to %s: %s" path e)
 
 module Make () = struct
   type _ Effect.t +=
@@ -48,11 +52,12 @@ module Make () = struct
           r)
   end
 
-  let run ~flamegraph_pl f =
+  let run ~flamegraph f =
     let stacks = ref [] in
     let current_stack : stack Dynarray.t = Dynarray.create () in
     let () =
-      Dynarray.add_last current_stack { rev_frames = []; weight = 0.0 }
+      Dynarray.add_last current_stack
+        { rev_frames = [ "SYMBOLIC EXECUTION ROOT" ]; weight = 0.0 }
     in
     let last_checkpoint = ref (Unix.gettimeofday ()) in
     let map_stack (g : stack -> stack) =
@@ -70,7 +75,7 @@ module Make () = struct
     Fun.protect
       ~finally:(fun () ->
         checkpoint ();
-        write_folded_stacks flamegraph_pl (List.rev !stacks))
+        write_folded_stacks flamegraph (List.rev !stacks))
       (fun () ->
         try f () with
         | effect Map_stack g, k ->
@@ -97,9 +102,9 @@ module Make () = struct
     | effect Save, k -> continue k ()
     | effect Checkpoint, k -> continue k ()
 
-  (** is [run] if [flamegraph_pl] is [Some _] and [run_ignored] otherwise *)
-  let run_if_file ~flamegraph_pl =
-    match flamegraph_pl with
-    | Some flamegraph_pl -> fun f -> run ~flamegraph_pl f
+  (** is [run] if [flamegraph] is [Some _] and [run_ignored] otherwise *)
+  let run_if_file ~flamegraph =
+    match flamegraph with
+    | Some flamegraph -> fun f -> run ~flamegraph f
     | None -> fun f -> run_ignored f
 end
