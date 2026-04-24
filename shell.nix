@@ -151,34 +151,6 @@ let
     doCheck = false;
     doInstallCheck = false;
   });
-  soteria = ocamlPackages.buildDunePackage (finalAttrs: {
-    pname = "soteria";
-    version = "unstable-2025-12-26";
-    src = ./.;
-    doCheck = false;
-    nativeBuildInputs = with ocamlPackages; [
-      pkgs.git
-    ];
-    propagatedBuildInputs = with ocamlPackages; [
-      grace
-      hc
-      htmlit
-      iter
-      patricia-tree
-      ppxlib
-      ppx_blob
-      ppx_deriving
-      ppx_deriving_yojson
-      ppx_mixins
-      ppx_subliner
-      printbox-text
-      simple_smt
-      tsort
-      unionFind
-      yojson
-      zarith
-    ];
-  });
   soteria-c = ocamlPackages.buildDunePackage (finalAttrs: {
     pname = "soteria-c";
     version = "unstable-2025-12-26";
@@ -188,16 +160,34 @@ let
       pkgs.git
     ];
     doCheck = false;
+    # All deps from both soteria and soteria-c in one derivation,
+    # so dune builds them together in one sandbox (no CMI inconsistency).
     propagatedBuildInputs = with ocamlPackages; [
       cerberus
       dune-site
       eio_main
+      grace
+      hc
+      htmlit
+      iter
       lem
       linol-eio
       menhirLib
+      patricia-tree
+      ppxlib
+      ppx_blob
+      ppx_deriving
+      ppx_deriving_yojson
+      ppx_mixins
+      ppx_subliner
       pprint
+      printbox-text
       sha
-      soteria
+      simple_smt
+      tsort
+      unionFind
+      yojson
+      zarith
     ];
   });
 in
