@@ -42,14 +42,13 @@
   (ppx_expect
    (>= 0.17.0))
   (ppx_blob
-    (>= 0.9.0))
+   (>= 0.9.0))
   (ppx_subliner
-    (>= 0.2.1))
+   (>= 0.2.1))
   ppx_deriving
   fmt
   printbox-text
   htmlit
-  flamegraphs
   (progress
    (>= 0.5.0))
   (grace
