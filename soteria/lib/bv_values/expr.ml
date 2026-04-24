@@ -85,7 +85,7 @@ module Subst = struct
                   Raw_map.add old_var old_binding without_new)
                 s replaced_bindings
             in
-            (Svalue.Bool.exists vs sv, subst_after_pass))
+            (Svalue.Bool.mk_exists vs sv, subst_after_pass))
 
   and apply_list ~missing_var s vs =
     match vs with

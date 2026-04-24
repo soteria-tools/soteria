@@ -344,7 +344,11 @@ module type Bool = sig
   val split_ands : t -> t Iter.t
   val distinct : t list -> t
   val ite : t -> t -> t -> t
-  val exists : (Var.t * ty) list -> t -> t
+
+  (** Do not use this directly when instantiating your own binders, use
+      [exists_n] or its variants *)
+  val mk_exists : (Var.t * ty) list -> t -> t
+
   val exists_n : not_in:t -> ty list -> (t list -> t) -> t
   val exists_1 : not_in:t -> ty -> (t -> t) -> t
   val exists_2 : not_in:t -> ty -> ty -> (t -> t -> t) -> t
@@ -698,7 +702,7 @@ module rec Bool : Bool = struct
     | _ -> mk_commut_binop Eq v1 v2 <| TBool
 
   (* TODO: merge binders if the body is an exists *)
-  let exists binders body =
+  let mk_exists binders body =
     let body_vars = Var.Hashset.of_iter (iter_vars body |> Iter.map fst) in
     let binders =
       List.filter (fun (v, _) -> Var.Hashset.mem body_vars v) binders
@@ -718,7 +722,7 @@ module rec Bool : Bool = struct
     let binders = List.mapi (fun i ty -> (Var.of_int (base + i), ty)) tys in
     let binders_vs = List.map (fun (v, ty) -> mk_var v ty) binders in
     let body = mk binders_vs in
-    exists binders body
+    mk_exists binders body
 
   let exists_1 ~not_in ty mk =
     exists_n ~not_in [ ty ] (function
