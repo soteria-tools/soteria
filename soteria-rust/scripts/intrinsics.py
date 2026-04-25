@@ -447,17 +447,36 @@ def make_not_impl_stub(
     return f'let {name} {stub_args} = not_impl "{error_msg}"'
 
 
+def make_match_branch(
+    info: ItemInfo, *, fist_pat: str, extra_arg: Optional[str] = None
+) -> str:
+    types_pat = "; ".join(info["types"])
+    consts_pat = "; ".join(info["consts"])
+    args_match = "; ".join(
+        a if a != info["ocaml_name"] else f"{a}_" for (a, _) in info["args"]
+    )
+    call_args = [
+        f"~{arg}" if arg != info["ocaml_name"] else f"~{arg}:{arg}_"
+        for arg in info["types"] + info["consts"] + [a for (a, _) in info["args"]]
+    ]
+
+    if extra_arg:
+        call_args.insert(0, extra_arg)
+
+    if not call_args:
+        call_args.append("()")
+
+    call_expr = f"{info['ocaml_name']} {' '.join(call_args)}"
+    return f"| {fist_pat}, [{types_pat}], [{consts_pat}], [{args_match}] -> {make_match_body(info, call_expr)}"
+
+
 def make_match_body(info: ItemInfo, call_expr: str) -> str:
     """Generate input casts followed by a function call wrapped with an output cast."""
-    result = ""
+    arg_casts = ""
     for arg, ty in info["args"]:
-        result += input_type_cast(arg, ty)
+        arg_casts += input_type_cast(arg, ty)
     prefix, postfix = output_type_cast(info["ret"])
-    if prefix:
-        result += f"{prefix}{call_expr}{postfix}"
-    else:
-        result += call_expr
-    return result
+    return f"{arg_casts} {prefix} {call_expr} {postfix}"
 
 
 def make_doc_comment(doc: Optional[str]) -> str:
@@ -662,34 +681,17 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         interface_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
 
         # Stub entry
-        stubs_entries += f"""
-            {make_not_impl_stub(
-                info["ocaml_name"],
-                args_and_tys,
-                f"Unsupported intrinsic: {info['ocaml_name']}",
-            )}
-        """
-
-        # Main match arm — args that share the function name get a trailing '_'
-        types_pat = "; ".join(info["types"])
-        consts_pat = "; ".join(info["consts"])
-        args_match = "; ".join(
-            a if a != info["ocaml_name"] else f"{a}_" for (a, _) in info["args"]
+        stubs_entries += make_not_impl_stub(
+            info["ocaml_name"],
+            args_and_tys,
+            f"Unsupported intrinsic: {info['ocaml_name']}",
         )
-        call_args = [
-            f"~{arg}" if arg != info["ocaml_name"] else f"~{arg}:{arg}_"
-            for arg in info["types"] + info["consts"] + [a for (a, _) in info["args"]]
-        ]
-        if info["ocaml_name"] == "catch_unwind":
-            call_args.insert(0, "fun_exec")
-        if not call_args:
-            call_args.append("()")
 
-        call_expr = f"{info['ocaml_name']} {' '.join(call_args)}"
-        match_arm_entries += f"""
-            | "{info['ocaml_name']}", [{types_pat}], [{consts_pat}], [{args_match}] ->
-                {make_match_body(info, call_expr)}
-        """
+        # Match arms
+        extra_arg = "fun_exec" if info["ocaml_name"] == "catch_unwind" else None
+        match_arm_entries += make_match_branch(
+            info, fist_pat=f'"{info['ocaml_name']}"', extra_arg=extra_arg
+        )
 
     interface_str = f"""
         {GENERATED_WARNING}
@@ -956,24 +958,7 @@ def generate_custom_stubs() -> None:
                     f"Unsupported custom stub: {info['rust_path']}",
                 )
 
-                types_pat = "; ".join(info["types"])
-                consts_pat = "; ".join(info["consts"])
-                args_match = "; ".join(a for (a, _) in info["args"])
-                call_args = [
-                    f"~{arg}"
-                    for arg in info["types"]
-                    + info["consts"]
-                    + [a for (a, _) in info["args"]]
-                ]
-
-                if call_args:
-                    call_expr = f"{info['ocaml_name']} {' '.join(call_args)}"
-                else:
-                    call_expr = f"{info['ocaml_name']} ()"
-                eval_entries += f"""
-                   | {info['variant_name']}, [{types_pat}], [{consts_pat}], [{args_match}] ->
-                     {make_match_body(info, call_expr)}
-                """
+                eval_entries += make_match_branch(info, fist_pat=info["variant_name"])
 
         # intf.ml — generated module type that impl.ml must satisfy
         intf_generated = f"""
