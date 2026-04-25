@@ -51,7 +51,41 @@ module Subst = struct
             (Svalue.Bool.ite cond v1 v2, s)
         | Nop (nop, vs) ->
             let vs, s = apply_list ~missing_var s vs in
-            (Eval.eval_nop nop vs, s))
+            (Eval.eval_nop nop vs, s)
+        | Exists (vs, sv) ->
+            (* [replaced_bindings] is a list of triples [(old_var, old_binding,
+               new_var)] where [(old_var, old_binding)] was a binding of
+               substitution and needs to be replaced by a [new_var -> new_var]
+               binding to iter over [sv] *)
+            let replaced_bindings =
+              Raw_map.to_seq s
+              |> Seq.filter_map (function
+                | (Hc.{ node = { kind = Var v; _ }; _ } as old_var), old_binding
+                  ->
+                    List.assoc_opt v vs
+                    |> Option.map (fun ty ->
+                        (old_var, old_binding, mk_var v ty))
+                | _ -> None)
+              |> List.of_seq
+            in
+            let s =
+              List.fold_left
+                (fun s (old_var, _, new_var) ->
+                  let without = Raw_map.remove old_var s in
+                  Raw_map.add new_var new_var without)
+                s replaced_bindings
+            in
+            (* Actually perform substitution *)
+            let sv, s = apply ~missing_var s sv in
+            (* Revert the dummy bindings *)
+            let subst_after_pass =
+              List.fold_left
+                (fun s (old_var, old_binding, new_var) ->
+                  let without_new = Raw_map.remove new_var s in
+                  Raw_map.add old_var old_binding without_new)
+                s replaced_bindings
+            in
+            (Svalue.Bool.mk_exists vs sv, subst_after_pass))
 
   and apply_list ~missing_var s vs =
     match vs with
