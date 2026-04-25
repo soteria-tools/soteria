@@ -10,6 +10,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     Encoder.nondet_valid
       (Charon_util.mk_tuple_ty [ TLiteral (TUInt U64); TLiteral (TUInt U64) ])
 
+  (** Used on macOS to register thread local destructors; receives a function
+      pointer and an argument. Should call the destructor with the argument at
+      the end of the thread.
+
+      [_tlv_atexit(dtor: unsafe extern "C" fn( *mut u8), arg: *mut u8)] *)
   let _tlv_atexit ~fun_exec ~args =
     let* dtor, arg =
       match args with
