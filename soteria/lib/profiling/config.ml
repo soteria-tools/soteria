@@ -1,6 +1,8 @@
 type t = {
   flamegraphs : string option;
-      [@names [ "flamegraphs" ]] [@env "SOTERIA_FLAMEGRAPHS"]
+      [@names [ "flamegraphs" ]]
+      [@env "SOTERIA_FLAMEGRAPHS"]
+      [@docs "PROFILING OPTIONS"]
       (** Specify the folder in which the flamegraphs will be saved. *)
 }
 [@@deriving make, subliner]

@@ -34,7 +34,7 @@ This process has type [int Symex.t], that is, a symbolic process that returns a 
 Executing a symbolic process is done using the {{!Soteria.Symex.S.run}run} function:
 {@ocaml[
 # Symex.run
-- : ?flamegraph_svg:string ->
+- : ?flamegraph:string ->
     ?fuel:Symex.Fuel_gauge.t ->
     mode:Symex.Approx.t ->
     'a Symex.t -> ('a * Symex.Value.sbool Typed.t list) list
