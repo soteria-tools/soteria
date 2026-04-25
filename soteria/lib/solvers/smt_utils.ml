@@ -8,6 +8,10 @@
 
 open Simple_smt
 
+(** {2 Boolean Stuff} *)
+
+let exists qs body = app_ "exists" [ list qs; body ]
+
 (** {2 Rounding Modes} *)
 
 module RoundingMode = struct

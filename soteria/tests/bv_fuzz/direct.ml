@@ -184,6 +184,10 @@ let collect_checked_assumptions (v : t) : t list =
         go e
     | Seq vs | Nop (_, vs) -> List.iter go vs
     | Var _ | Bool _ | BitVec _ | Float _ -> ()
+    | Exists _ ->
+        failwith
+          "collect_checked_assumptions: not implemented for quantifiers (we \
+           don't generate quantifiers for fuzzing yet)"
   in
   go v;
   Dynarray.to_list assumptions |> List.sort_uniq compare

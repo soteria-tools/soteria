@@ -24,5 +24,6 @@ module Seq = Seq
 module String = String
 module Syntaxes = Syntaxes
 module Sys = Sys
+module Unix = Unix_soteria
 module Write_once = Write_once
 module Z = Z_soteria

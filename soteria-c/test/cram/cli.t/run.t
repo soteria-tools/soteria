@@ -60,6 +60,10 @@
          --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
              Path to the Z3 executable
   
+  PROFILING OPTIONS
+         --flamegraphs=VAL (absent SOTERIA_FLAMEGRAPHS env)
+             Specify the folder in which the flamegraphs will be saved.
+  
   OUTPUT OPTIONS
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
@@ -206,6 +210,9 @@
          SOTERIA_DUMP_SUMMARIES_FILE
              See option --dump-summaries.
   
+         SOTERIA_FLAMEGRAPHS
+             See option --flamegraphs.
+  
          SOTERIA_IGNORE_UB
              See option --ignore-ub.
   
@@ -265,6 +272,10 @@
   
          --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
              Path to the Z3 executable
+  
+  PROFILING OPTIONS
+         --flamegraphs=VAL (absent SOTERIA_FLAMEGRAPHS env)
+             Specify the folder in which the flamegraphs will be saved.
   
   OUTPUT OPTIONS
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
@@ -430,6 +441,9 @@
          SOTERIA_DUMP_SUMMARIES_FILE
              See option --dump-summaries.
   
+         SOTERIA_FLAMEGRAPHS
+             See option --flamegraphs.
+  
          SOTERIA_IGNORE_UB
              See option --ignore-ub.
   
@@ -497,6 +511,10 @@
   
          --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
              Path to the Z3 executable
+  
+  PROFILING OPTIONS
+         --flamegraphs=VAL (absent SOTERIA_FLAMEGRAPHS env)
+             Specify the folder in which the flamegraphs will be saved.
   
   OUTPUT OPTIONS
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
@@ -646,6 +664,9 @@
   
          SOTERIA_DUMP_SUMMARIES_FILE
              See option --dump-summaries.
+  
+         SOTERIA_FLAMEGRAPHS
+             See option --flamegraphs.
   
          SOTERIA_IGNORE_UB
              See option --ignore-ub.
@@ -852,6 +873,10 @@
          --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
              Path to the Z3 executable
   
+  PROFILING OPTIONS
+         --flamegraphs=VAL (absent SOTERIA_FLAMEGRAPHS env)
+             Specify the folder in which the flamegraphs will be saved.
+  
   OUTPUT OPTIONS
          --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
              Make diagnostic outputs compact.
@@ -997,6 +1022,9 @@
   
          SOTERIA_DUMP_SUMMARIES_FILE
              See option --dump-summaries.
+  
+         SOTERIA_FLAMEGRAPHS
+             See option --flamegraphs.
   
          SOTERIA_IGNORE_UB
              See option --ignore-ub.

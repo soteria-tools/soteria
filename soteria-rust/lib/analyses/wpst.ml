@@ -62,6 +62,14 @@ let print_outcomes entry_name f =
         "%s (%a): %s, %s@.@." entry_name pp_time time error msg;
       (entry_name, Outcome.Fatal)
 
+let flamegraph_name entry_name =
+  (Soteria.Profiling.Config.get ()).flamegraphs
+  |> Option.map (fun dirname ->
+      let entry_name =
+        Str.global_replace (Str.regexp_string "::") "-" entry_name
+      in
+      Filename.concat dirname entry_name)
+
 let exec_crate (crate : Charon.UllbcAst.crate)
     (entry_points : Frontend.entry_point list) =
   let@ () = Crate.with_crate crate in
@@ -89,8 +97,9 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
     let@@ () =
-      Rustsymex.Result.run_with_stats ~mode:OX ~fuel
-        ~fail_fast:(Config.get ()).fail_fast
+      Rustsymex.Result.run_with_stats
+        ?flamegraph:(flamegraph_name entry_name)
+        ~mode:OX ~fuel ~fail_fast:(Config.get ()).fail_fast
     in
     exec_fun fun_decl ~args
   in

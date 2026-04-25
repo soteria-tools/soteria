@@ -74,15 +74,15 @@ module Result = struct
     | Error (e, _) -> Error e
     | Missing f -> Missing f
 
-  let run_with_stats ?fuel ?fail_fast ~mode symex =
+  let run_with_stats ?flamegraph ?fuel ?fail_fast ~mode symex =
     run_with_state ~state:MonadState.empty symex
     |> (Fun.flip MonoSymex.map) ignore_state
-    |> MonoSymex.Result.run_with_stats ?fuel ?fail_fast ~mode
+    |> MonoSymex.Result.run_with_stats ?flamegraph ?fuel ?fail_fast ~mode
 
-  let run_needs_stats ?fuel ?fail_fast ~mode symex =
+  let run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode symex =
     run_with_state ~state:MonadState.empty symex
     |> (Fun.flip MonoSymex.map) ignore_state
-    |> MonoSymex.Result.run_needs_stats ?fuel ?fail_fast ~mode
+    |> MonoSymex.Result.run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode
 end
 
 module Poly = struct

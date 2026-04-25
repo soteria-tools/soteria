@@ -35,6 +35,7 @@ let pp_constant_expr = mk_pp PrintTypes.constant_expr_to_string
 let pp_fn_operand = mk_pp PrintUllbcAst.Ast.fn_operand_to_string
 let pp_fun_decl_ref = mk_pp PrintTypes.fun_decl_ref_to_string
 let pp_generic_args = mk_pp PrintTypes.generic_args_to_string
+let pp_operand = mk_pp PrintExpressions.operand_to_string
 
 let pp_generic_params =
   mk_pp (fun env params ->

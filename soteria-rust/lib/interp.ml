@@ -1130,6 +1130,8 @@ module Make (StateImpl : State.S) = struct
   and exec_real_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args)
       args =
     let name = fundef.item_meta.name in
+    let name_str = Fmt.to_to_string Crate.pp_name name in
+    let@ () = StateM.with_frame name_str in
     let@ generics = Poly.push_generics ~params:fundef.generics ~args:generics in
     let () = Soteria.Stats.As_ctx.incr StatKeys.function_calls in
     match fundef.body with
@@ -1188,6 +1190,7 @@ module Make (StateImpl : State.S) = struct
       with_extra_call_trace ~name:fundef.item_meta.name
         ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
+    let@ () = StateM.with_frame "Entry point" in
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
     let* value = exec_real_fun fundef generics args in
     let* () = State.run_thread_exits () in

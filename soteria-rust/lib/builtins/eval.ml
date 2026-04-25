@@ -50,6 +50,7 @@ module M (StateM : State.StateM.S) = struct
   module Soteria_lib = Soteria_lib.M (StateM)
   module Optim = Optim.M (StateM)
   module System = System.M (StateM)
+  module Tokio = Tokio.M (StateM)
   module Fixme = Fixme.M (StateM)
 
   let fn_to_stub fun_exec generics = function

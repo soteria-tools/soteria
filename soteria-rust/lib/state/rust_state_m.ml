@@ -89,6 +89,8 @@ module type S = sig
     ('a, 'env) t ->
     ('a, 'env) t
 
+  val with_frame : string -> (unit -> ('a, 'env) t) -> ('a, 'env) t
+
   val unwind_with :
     f:('a -> ('b, 'env) t) ->
     fe:(Error.with_trace -> ('b, 'env) t) ->
@@ -398,6 +400,9 @@ module Make (State : State_intf.S) :
   let with_extra_call_trace ?name ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
    fun env state ->
     Rustsymex.with_extra_call_trace ?name ~loc ~msg (x env state)
+
+  let with_frame name (f : unit -> ('a, 'env) t) : ('a, 'env) t =
+   fun env state -> Rustsymex.with_frame name (fun () -> f () env state)
 
   let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
     ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->
