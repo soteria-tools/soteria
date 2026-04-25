@@ -4,6 +4,21 @@
 
 open Rust_val
 
+type fn = Assert | Assume | NondetBytes | Panic
+
+let fn_pats =
+  [
+    (* Soteria builtins *)
+    ("soteria::assert", Assert);
+    ("soteria::assume", Assume);
+    ("soteria::nondet_bytes", NondetBytes);
+    ("soteria::panic", Panic);
+    (* Kani builtins -- we re-define these for nicer call traces *)
+    ("kani::assert", Assert);
+    ("kani::assume", Assume);
+    ("kani::panic", Panic);
+  ]
+
 module M (StateM : State.StateM.S) = struct
   open StateM
   open Syntax
@@ -56,9 +71,15 @@ module M (StateM : State.StateM.S) = struct
     let* output = Poly.subst_ty fun_sig.output in
     Encoder.nondet_valid output
 
-  let panic ?msg args =
+  let panic args =
     let* msg =
-      match args with [ Ptr msg ] -> parse_string msg | _ -> ok msg
+      match args with [ Ptr msg ] -> parse_string msg | _ -> ok None
     in
     error (`Panic msg)
+
+  let[@inline] fn_to_stub fn_sig = function
+    | Assert -> assert_
+    | Assume -> assume
+    | NondetBytes -> nondet_bytes fn_sig
+    | Panic -> panic
 end

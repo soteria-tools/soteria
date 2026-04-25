@@ -5,21 +5,14 @@ module SMap = Map.Make (String)
 let match_config =
   NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
-(* Functions we could not stub, but we do for performance *)
-type fixme_fn_temp = PromiseAlignment
-
-(* Soteria builtin functions *)
-type soteria_fn = Assert | Assume | NondetBytes | Panic
-
+(** Functions we stub *)
 type fn =
-  | FixmeTemp of fixme_fn_temp
-  | Soteria of soteria_fn
+  | Soteria of Soteria_lib.fn
   | Optim of Optim.fn
   | System of System.fn
   | Fixme of Fixme.fn
 
-(** extern functions we must implement manually *)
-
+(** Extern functions we must implement manually *)
 type extern_fn =
   | Alloc of Extern.Alloc.fn
   | Miri of Extern.Miri.fn
@@ -32,21 +25,7 @@ let extern_functions =
   |> SMap.of_list
 
 let std_fun_pair_list =
-  [
-    (* Soteria builtins *)
-    ("soteria::assert", Soteria Assert);
-    ("soteria::assume", Soteria Assume);
-    ("soteria::nondet_bytes", Soteria NondetBytes);
-    ("soteria::panic", Soteria Panic);
-    (* Kani builtins -- we re-define these for nicer call traces *)
-    ("kani::assert", Soteria Assert);
-    ("kani::assume", Soteria Assume);
-    ("kani::panic", Soteria Panic);
-    (* Miri builtins *)
-    (* HACK: this should be handled with intrinsics. *)
-    ( "std::intrinsics::miri_promise_symbolic_alignment",
-      FixmeTemp PromiseAlignment );
-  ]
+  (Soteria_lib.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Soteria f)
   @ (Optim.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Optim f)
   @ (System.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> System f)
   @ (Fixme.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Fixme f)
@@ -74,11 +53,7 @@ module M (StateM : State.StateM.S) = struct
   module Fixme = Fixme.M (StateM)
 
   let fn_to_stub fn_sig _fn_name fun_exec generics = function
-    | Soteria Assert -> Soteria_lib.assert_
-    | Soteria Assume -> Soteria_lib.assume
-    | Soteria NondetBytes -> Soteria_lib.nondet_bytes fn_sig
-    | Soteria Panic -> Soteria_lib.panic ?msg:None
-    | FixmeTemp PromiseAlignment -> Miri.promise_alignement
+    | Soteria f -> Soteria_lib.fn_to_stub fn_sig f
     | Fixme f -> Fixme.fn_to_stub f fun_exec generics
     | Optim f -> Optim.fn_to_stub f fun_exec generics
     | System f -> System.fn_to_stub f fun_exec generics

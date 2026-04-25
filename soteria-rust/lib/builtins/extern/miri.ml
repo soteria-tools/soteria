@@ -5,7 +5,7 @@
 
 open Rust_val
 
-type fn = Alloc | AllocId | Dealloc | Nop
+type fn = Alloc | AllocId | Dealloc | Nop | PromiseAlignment
 
 let fn_pats =
   [
@@ -16,6 +16,7 @@ let fn_pats =
     ("miri_write_to_stdout", Nop);
     ("miri_alloc", Alloc);
     ("miri_dealloc", Dealloc);
+    ("miri_promise_symbolic_alignment", PromiseAlignment);
   ]
 
 module M (StateM : State.StateM.S) = struct
@@ -46,4 +47,5 @@ module M (StateM : State.StateM.S) = struct
     | Alloc -> alloc
     | Dealloc -> dealloc
     | AllocId -> alloc_id
+    | PromiseAlignment -> promise_alignement
 end

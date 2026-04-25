@@ -560,14 +560,23 @@ def get_intrinsics() -> dict[str, FunDecl]:
         file_rs = (PWD / "intrinsics.rs").resolve()
         file_rs.touch(exist_ok=True)
 
+        toolchain = get_toolchain()
+        sysroot = get_sysroot(toolchain)
+
         charon_cmd = f"charon rustc --ullbc \
             --dest-file {file_json} \
             --start-from core::intrinsics \
             --include core::intrinsics \
             --exclude core::intrinsics::const_allocate \
             --exclude core \
-            -- {file_rs} --crate-type=lib > /dev/null 2>&1"
-        subprocess.run(charon_cmd, shell=True, check=True)
+            -- {file_rs} --cfg miri --crate-type=lib --sysroot={sysroot}"
+
+        proc = subprocess.run(charon_cmd, shell=True, stderr=subprocess.STDOUT)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"{YELLOW}{BOLD}Warning{RESET}: Charon returned exit code {proc.returncode}"
+            )
+
         file_rs.unlink(missing_ok=True)
 
     ullbc = json.loads(file_json.read_text())
