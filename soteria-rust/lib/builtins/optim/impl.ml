@@ -5,13 +5,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open Syntax
   open Typed.Infix
   open Typed.Syntax
-  module Soteria_lib = Soteria_lib.M (StateM)
+  module Core = Core.M (StateM)
   module Alloc = Extern.Alloc.M (StateM)
 
   let do_panic ?msg () =
     match msg with
     | Some msg ->
-        let* msg = Soteria_lib.parse_string msg in
+        let* msg = Core.parse_string msg in
         error (`Panic msg)
     | _ -> error (`Panic None)
 

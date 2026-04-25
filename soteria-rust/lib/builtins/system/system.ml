@@ -43,7 +43,9 @@ module M (StateM : State.StateM.S) = struct
 
   let[@inline] fn_to_stub stub _fun_exec (generics : Charon.Types.generic_args)
       args =
-    match (stub, generics.types, generics.const_generics, args) with
+    match[@warning "-redundant-case"]
+      (stub, generics.types, generics.const_generics, args)
+    with
     | StdSysRandomHashmapRandomKeys, [], [], [] -> hashmap_random_keys ()
     | StdSysThreadLocalGuardAppleEnableTlvAtexit, _, _, _ ->
         _tlv_atexit ~fun_exec:_fun_exec ~types:generics.types

@@ -52,8 +52,8 @@ module M (StateM : State.StateM.S) = struct
   module System = System.M (StateM)
   module Fixme = Fixme.M (StateM)
 
-  let fn_to_stub fn_sig _fn_name fun_exec generics = function
-    | Soteria f -> Soteria_lib.fn_to_stub fn_sig f
+  let fn_to_stub fun_exec generics = function
+    | Soteria f -> Soteria_lib.fn_to_stub f fun_exec generics
     | Fixme f -> Fixme.fn_to_stub f fun_exec generics
     | Optim f -> Optim.fn_to_stub f fun_exec generics
     | System f -> System.fn_to_stub f fun_exec generics
@@ -63,20 +63,22 @@ module M (StateM : State.StateM.S) = struct
     | Miri f -> Miri.fn_to_stub f
     | Std f -> Std.fn_to_stub f
 
+  let get_generics (f : UllbcAst.fun_decl) generics =
+    match List.last_opt f.item_meta.name with
+    | Some (PeInstantiated mono) -> mono.binder_value
+    | _ -> generics
+
   let eval_stub (f : UllbcAst.fun_decl) fun_exec generics =
     let name = f.item_meta.name in
     let ctx = Crate.as_namematcher_ctx () in
+    let generics = get_generics f generics in
     NameMatcherMap.find_opt ctx match_config name std_fun_map
-    |> Option.map (fn_to_stub f.signature name fun_exec generics)
+    |> Option.map (fn_to_stub fun_exec generics)
 
   let eval_intrinsic (f : UllbcAst.fun_decl) name generics fun_exec =
     (* In the case of monomorphised code, the generics will be empty but present
        in the name; we need to get them there. *)
-    let generics =
-      match List.last_opt f.item_meta.name with
-      | Some (PeInstantiated mono) -> mono.binder_value
-      | _ -> generics
-    in
+    let generics = get_generics f generics in
     Intrinsics.eval_fun name fun_exec generics
 
   let eval_extern name =

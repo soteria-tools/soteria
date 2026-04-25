@@ -48,5 +48,17 @@
     "core::result::unwrap_failed",
     "std::panicking::begin_panic"
   ],
-  "Fixme": ["std::panicking::catch_unwind::cleanup", "core::ptr::drop_in_place"]
+  "Fixme": [
+    "std::panicking::catch_unwind::cleanup",
+    "core::ptr::drop_in_place"
+  ],
+  "Soteria_lib": [
+    "soteria::assert",
+    "soteria::assume",
+    "soteria::nondet_bytes",
+    "soteria::panic",
+    "kani::assert",
+    "kani::assume",
+    "kani::panic"
+  ]
 }

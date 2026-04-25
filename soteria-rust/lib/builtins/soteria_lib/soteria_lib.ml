@@ -6,12 +6,24 @@
 open Common
 open Rust_val
 
-type fn = CorePtrDropInPlace | StdPanickingCatchUnwindCleanup
+type fn =
+  | KaniAssert
+  | KaniAssume
+  | KaniPanic
+  | SoteriaAssert
+  | SoteriaAssume
+  | SoteriaNondetBytes
+  | SoteriaPanic
 
 let fn_pats : (string * fn) list =
   [
-    ("core::ptr::drop_in_place", CorePtrDropInPlace);
-    ("std::panicking::catch_unwind::cleanup", StdPanickingCatchUnwindCleanup);
+    ("kani::assert", KaniAssert);
+    ("kani::assume", KaniAssume);
+    ("kani::panic", KaniPanic);
+    ("soteria::assert", SoteriaAssert);
+    ("soteria::assume", SoteriaAssume);
+    ("soteria::nondet_bytes", SoteriaNondetBytes);
+    ("soteria::panic", SoteriaPanic);
   ]
 
 module M (StateM : State.StateM.S) = struct
@@ -43,12 +55,26 @@ module M (StateM : State.StateM.S) = struct
     match[@warning "-redundant-case"]
       (stub, generics.types, generics.const_generics, args)
     with
-    | CorePtrDropInPlace, [ t ], [], [ to_drop ] ->
-        let to_drop = as_ptr to_drop in
-        let+ () = drop_in_place ~t ~to_drop in
-        Tuple []
-    | StdPanickingCatchUnwindCleanup, _, _, _ ->
-        cleanup ~fun_exec:_fun_exec ~types:generics.types
+    | KaniAssert, _, _, _ ->
+        kani_assert ~fun_exec:_fun_exec ~types:generics.types
+          ~consts:generics.const_generics ~args
+    | KaniAssume, _, _, _ ->
+        kani_assume ~fun_exec:_fun_exec ~types:generics.types
+          ~consts:generics.const_generics ~args
+    | KaniPanic, _, _, _ ->
+        kani_panic ~fun_exec:_fun_exec ~types:generics.types
+          ~consts:generics.const_generics ~args
+    | SoteriaAssert, _, _, _ ->
+        soteria_assert ~fun_exec:_fun_exec ~types:generics.types
+          ~consts:generics.const_generics ~args
+    | SoteriaAssume, _, _, _ ->
+        soteria_assume ~fun_exec:_fun_exec ~types:generics.types
+          ~consts:generics.const_generics ~args
+    | SoteriaNondetBytes, _, _, _ ->
+        nondet_bytes ~fun_exec:_fun_exec ~types:generics.types
+          ~consts:generics.const_generics ~args
+    | SoteriaPanic, _, _, _ ->
+        soteria_panic ~fun_exec:_fun_exec ~types:generics.types
           ~consts:generics.const_generics ~args
     | _, tys, cs, args ->
         Fmt.kstr not_impl

@@ -192,6 +192,7 @@ let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v"""
 
 def type_of(unique_ty: UniqueType) -> InterpType:
     ty: Type
+    type_id: int = -1
     if "Deduplicated" in unique_ty:
         type_id = unique_ty["Deduplicated"]
         if type_id not in type_cache:
@@ -230,7 +231,7 @@ def type_of(unique_ty: UniqueType) -> InterpType:
     if any(kind in ty for kind in ignored):
         return "unknown", None
 
-    raise RuntimeError(f"Unhandled type: {ty}")
+    raise RuntimeError(f"Unhandled type {type_id}: {ty}")
     return "unknown", None
 
 
@@ -249,6 +250,7 @@ def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
         "trait_ref",
         "trait_refs",
         "parent_trait_refs",
+        "implied_trait_refs",
         "Trait",
         "ParentClause",
         "TraitType",
@@ -1029,7 +1031,7 @@ def generate_custom_stubs() -> None:
                 include Impl.M(StateM)
 
                 let[@inline] fn_to_stub stub _fun_exec (generics : Charon.Types.generic_args) args =
-                    match (stub, generics.types, generics.const_generics, args) with
+                    match[@warning "-redundant-case"] (stub, generics.types, generics.const_generics, args) with
                     {eval_entries}
                     | _, tys, cs, args ->
                         Fmt.kstr not_impl
