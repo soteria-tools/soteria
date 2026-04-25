@@ -1,5 +1,5 @@
-(** This file was generated with [scripts/intrinsics.py] -- do not edit it
-    manually, instead modify the script and re-run it. *)
+(** This file was generated with [scripts/stubs.py] -- do not edit it manually,
+    instead modify the script and re-run it. *)
 
 [@@@warning "-unused-value-declaration"]
 

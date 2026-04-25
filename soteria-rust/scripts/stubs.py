@@ -173,7 +173,7 @@ type_cache: dict[int, Type] = {}
 USER_IMPL_START = "(* BEGIN USER IMPLEMENTATION *)"
 USER_IMPL_END = "(* END USER IMPLEMENTATION *)"
 
-GENERATED_WARNING = "(** This file was generated with [scripts/intrinsics.py] -- do not edit it manually, instead modify the script and re-run it. *)"
+GENERATED_WARNING = "(** This file was generated with [scripts/stubs.py] -- do not edit it manually, instead modify the script and re-run it. *)"
 
 OCAML_HELPERS = """\
 let[@inline] as_ptr (v : rust_val) =
