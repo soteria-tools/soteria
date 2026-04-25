@@ -1,7 +1,10 @@
 {
   "System": [
     "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
-    "std::sys::random::hashmap_random_keys"
+    "std::sys::random::hashmap_random_keys",
+    "std::thread::functions::available_parallelism with sig",
+    "std::sys::time::unix::Instant::now",
+    "std::env::_var with sig"
   ],
   "Optim": [
     "alloc::alloc::_::alloc_impl",
@@ -60,5 +63,6 @@
     "kani::assert",
     "kani::assume",
     "kani::panic"
-  ]
+  ],
+  "Tokio": ["tokio::util::rand::RngSeed::new with sig"]
 }
