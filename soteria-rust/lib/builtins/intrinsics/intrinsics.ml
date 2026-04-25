@@ -65,9 +65,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "atomic_cxchg", [ t ], [ ord_succ; ord_fail ], [ dst; old; src ] ->
         let dst = as_ptr dst in
         atomic_cxchg ~t ~ord_succ ~ord_fail ~dst ~old ~src
-    | "atomic_cxchgweak", [ t ], [ ord_succ; ord_fail ], [ _dst; _old; _src ] ->
-        let _dst = as_ptr _dst in
-        atomic_cxchgweak ~t ~ord_succ ~ord_fail ~_dst ~_old ~_src
+    | "atomic_cxchgweak", [ t ], [ ord_succ; ord_fail ], [ dst; old; src ] ->
+        let dst = as_ptr dst in
+        atomic_cxchgweak ~t ~ord_succ ~ord_fail ~dst ~old ~src
     | "atomic_fence", [], [ ord ], [] ->
         let+ () = atomic_fence ~ord in
         Tuple []
@@ -127,11 +127,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         [],
         [ multiplier; multiplicand; addend; carry ] ) ->
         carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry
-    | "catch_unwind", [], [], [ _try_fn; _data; _catch_fn ] ->
-        let _try_fn = as_ptr _try_fn in
-        let _data = as_ptr _data in
-        let _catch_fn = as_ptr _catch_fn in
-        let+ ret = catch_unwind fun_exec ~_try_fn ~_data ~_catch_fn in
+    | "catch_unwind", [], [], [ try_fn; data; catch_fn ] ->
+        let try_fn = as_ptr try_fn in
+        let data = as_ptr data in
+        let catch_fn = as_ptr catch_fn in
+        let+ ret = catch_unwind fun_exec ~try_fn ~data ~catch_fn in
         Int ret
     | "ceilf128", [], [], [ x ] ->
         let x = as_base_f F128 x in
@@ -158,17 +158,17 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let bytes = as_base_i Usize bytes in
         let+ ret = compare_bytes ~left ~right ~bytes in
         Int ret
-    | "const_deallocate", [], [], [ _ptr; _size; _align ] ->
-        let _ptr = as_ptr _ptr in
-        let _size = as_base_i Usize _size in
-        let _align = as_base_i Usize _align in
-        let+ () = const_deallocate ~_ptr ~_size ~_align in
+    | "const_deallocate", [], [], [ ptr; size; align ] ->
+        let ptr = as_ptr ptr in
+        let size = as_base_i Usize size in
+        let align = as_base_i Usize align in
+        let+ () = const_deallocate ~ptr ~size ~align in
         Tuple []
     | ( "const_eval_select",
-        [ arg; f; g; ret ],
+        [ t_arg; f; g; ret ],
         [],
-        [ _arg; _called_in_const; _called_at_rt ] ) ->
-        const_eval_select ~arg ~f ~g ~ret ~_arg ~_called_in_const ~_called_at_rt
+        [ arg; called_in_const; called_at_rt ] ) ->
+        const_eval_select ~t_arg ~f ~g ~ret ~arg ~called_in_const ~called_at_rt
     | "const_make_global", [], [], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = const_make_global ~ptr in
@@ -373,8 +373,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "frem_fast", [ t ], [], [ a; b ] -> frem_fast ~t ~a ~b
     | "fsub_algebraic", [ t ], [], [ a; b ] -> fsub_algebraic ~t ~a ~b
     | "fsub_fast", [ t ], [], [ a; b ] -> fsub_fast ~t ~a ~b
-    | "is_val_statically_known", [ t ], [], [ _arg ] ->
-        let+ ret = is_val_statically_known ~t ~_arg in
+    | "is_val_statically_known", [ t ], [], [ arg ] ->
+        let+ ret = is_val_statically_known ~t ~arg in
         Int (Typed.BitVec.of_bool ret)
     | "log10f128", [], [], [ x ] ->
         let x = as_base_f F128 x in
@@ -727,7 +727,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "type_name", [ t ], [], [] ->
         let+ ret = type_name ~t in
         Ptr ret
-    | "type_of", [], [], [ _id ] -> type_of ~_id
+    | "type_of", [], [], [ id ] -> type_of ~id
     | "typed_swap_nonoverlapping", [ t ], [], [ x; y ] ->
         let x = as_ptr x in
         let y = as_ptr y in

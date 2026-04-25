@@ -36,7 +36,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let atomic_cxchg ~t:_ ~ord_succ:_ ~ord_fail:_ ~dst:_ ~old:_ ~src:_ =
     not_impl "Unsupported intrinsic: atomic_cxchg"
 
-  let atomic_cxchgweak ~t:_ ~ord_succ:_ ~ord_fail:_ ~_dst:_ ~_old:_ ~_src:_ =
+  let atomic_cxchgweak ~t:_ ~ord_succ:_ ~ord_fail:_ ~dst:_ ~old:_ ~src:_ =
     not_impl "Unsupported intrinsic: atomic_cxchgweak"
 
   let atomic_fence ~ord:_ = not_impl "Unsupported intrinsic: atomic_fence"
@@ -93,7 +93,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       ~carry:_ =
     not_impl "Unsupported intrinsic: carrying_mul_add"
 
-  let catch_unwind _ ~_try_fn:_ ~_data:_ ~_catch_fn:_ =
+  let catch_unwind _ ~try_fn:_ ~data:_ ~catch_fn:_ =
     not_impl "Unsupported intrinsic: catch_unwind"
 
   let ceilf128 ~x:_ = not_impl "Unsupported intrinsic: ceilf128"
@@ -105,11 +105,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let compare_bytes ~left:_ ~right:_ ~bytes:_ =
     not_impl "Unsupported intrinsic: compare_bytes"
 
-  let const_deallocate ~_ptr:_ ~_size:_ ~_align:_ =
+  let const_deallocate ~ptr:_ ~size:_ ~align:_ =
     not_impl "Unsupported intrinsic: const_deallocate"
 
-  let const_eval_select ~arg:_ ~f:_ ~g:_ ~ret:_ ~_arg:_ ~_called_in_const:_
-      ~_called_at_rt:_ =
+  let const_eval_select ~t_arg:_ ~f:_ ~g:_ ~ret:_ ~arg:_ ~called_in_const:_
+      ~called_at_rt:_ =
     not_impl "Unsupported intrinsic: const_eval_select"
 
   let const_make_global ~ptr:_ =
@@ -202,7 +202,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let fsub_fast ~t:_ ~a:_ ~b:_ = not_impl "Unsupported intrinsic: fsub_fast"
 
-  let is_val_statically_known ~t:_ ~_arg:_ =
+  let is_val_statically_known ~t:_ ~arg:_ =
     not_impl "Unsupported intrinsic: is_val_statically_known"
 
   let log10f128 ~x:_ = not_impl "Unsupported intrinsic: log10f128"
@@ -359,7 +359,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let type_id ~t:_ = not_impl "Unsupported intrinsic: type_id"
   let type_id_eq ~a:_ ~b:_ = not_impl "Unsupported intrinsic: type_id_eq"
   let type_name ~t:_ = not_impl "Unsupported intrinsic: type_name"
-  let type_of ~_id:_ = not_impl "Unsupported intrinsic: type_of"
+  let type_of ~id:_ = not_impl "Unsupported intrinsic: type_of"
 
   let typed_swap_nonoverlapping ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: typed_swap_nonoverlapping"

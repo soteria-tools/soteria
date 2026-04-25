@@ -125,23 +125,23 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           "atomic_xadd: invalid types, expects to follow the rules of \
            atomic_xadd"
 
-  let atomic_cxchgweak ~t ~ord_succ:_ ~ord_fail:_ ~_dst ~_old ~_src =
+  let atomic_cxchgweak ~t ~ord_succ:_ ~ord_fail:_ ~dst ~old ~src =
     atomic_warn ();
-    let* curr = State.load _dst t in
+    let* curr = State.load dst t in
     let are_equal =
       match t with
       | TRawPtr _ | TRef _ ->
-          let old, _ = as_ptr _old in
+          let old, _ = as_ptr old in
           let curr, _ = as_ptr curr in
           Sptr.sem_eq old curr
       | TLiteral lit ->
-          let old = as_base lit _old in
+          let old = as_base lit old in
           let curr = as_base lit curr in
           old ==@ curr
       | _ -> failwith "atomic_cxchgweak: invalid type, expects ptr or integer"
     in
     if%sat are_equal then
-      let* () = State.store _dst t _src in
+      let* () = State.store dst t src in
       ok (Tuple [ curr; Int (BV.of_bool Typed.v_true) ])
     else ok (Tuple [ curr; Int (BV.of_bool Typed.v_false) ])
 
@@ -204,8 +204,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     Tuple [ Int res_l; Int res_h ]
 
-  let catch_unwind exec_fun ~_try_fn:try_fn_ptr ~_data:data
-      ~_catch_fn:catch_fn_ptr =
+  let catch_unwind exec_fun ~try_fn:try_fn_ptr ~data ~catch_fn:catch_fn_ptr =
     let* trace = get_trace () in
     let[@inline] exec_fun msg fn args =
       with_extra_call_trace ~loc:(Trace.loc_or_default trace) ~msg
@@ -695,7 +694,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let fmuladdf128 = fmul_add
   let forget ~t:_ ~arg:_ = ok ()
 
-  let is_val_statically_known ~t:_ ~_arg:_ =
+  let is_val_statically_known ~t:_ ~arg:_ =
     (* see:
        https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
     lift_symex @@ Rustsymex.nondet Typed.t_bool

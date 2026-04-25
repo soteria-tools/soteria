@@ -515,7 +515,10 @@ def fun_decl_to_item_info(fun: FunDecl, ocaml_name: str) -> ItemInfo:
     used_names: dict[str, int] = {}
     args: list[tuple[str, InterpType]] = []
     for i, ty in enumerate(fun["signature"]["inputs"]):
-        base_name = sanitize_ocaml_ident(param_names[i] or "arg")
+        base_name = param_names[i] or "arg"
+        if base_name.startswith("_"):
+            base_name = base_name[1:]
+        base_name = sanitize_ocaml_ident(base_name)
         nb = used_names.get(base_name, 0)
         used_names[base_name] = nb + 1
         arg_name = base_name if nb == 0 else f"{base_name}_{nb + 1}"
@@ -629,8 +632,6 @@ def get_stubs(patterns: list[str]) -> list[FunDecl]:
 
         proc = subprocess.run(charon_cmd, check=False, stderr=subprocess.STDOUT)
         file_rs.unlink(missing_ok=True)
-        if proc.returncode != 0 and not file_json.exists():
-            raise subprocess.CalledProcessError(proc.returncode, charon_cmd)
         if proc.returncode != 0:
             raise RuntimeError(
                 f"{YELLOW}{BOLD}Warning{RESET}: Charon returned exit code {proc.returncode}"

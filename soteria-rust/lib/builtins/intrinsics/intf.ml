@@ -196,9 +196,9 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       ord_succ:Types.constant_expr ->
       ord_fail:Types.constant_expr ->
-      _dst:full_ptr ->
-      _old:rust_val ->
-      _src:rust_val ->
+      dst:full_ptr ->
+      old:rust_val ->
+      src:rust_val ->
       rust_val ret
 
     (** {@markdown[
@@ -537,9 +537,9 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val catch_unwind :
       fun_exec ->
-      _try_fn:full_ptr ->
-      _data:full_ptr ->
-      _catch_fn:full_ptr ->
+      try_fn:full_ptr ->
+      data:full_ptr ->
+      catch_fn:full_ptr ->
       Typed.T.sint Typed.t ret
 
     (** {@markdown[
@@ -621,9 +621,9 @@ module M (StateM : State.StateM.S) = struct
            - If the `ptr` is pointing to a local variable, this intrinsic doesn't deallocate it.
         ]} *)
     val const_deallocate :
-      _ptr:full_ptr ->
-      _size:[< Typed.T.sint ] Typed.t ->
-      _align:[< Typed.T.sint ] Typed.t ->
+      ptr:full_ptr ->
+      size:[< Typed.T.sint ] Typed.t ->
+      align:[< Typed.T.sint ] Typed.t ->
       unit ret
 
     (** {@markdown[
@@ -681,13 +681,13 @@ module M (StateM : State.StateM.S) = struct
            otherwise, that principle should not be violated.
         ]} *)
     val const_eval_select :
-      arg:Types.ty ->
+      t_arg:Types.ty ->
       f:Types.ty ->
       g:Types.ty ->
       ret:Types.ty ->
-      _arg:rust_val ->
-      _called_in_const:rust_val ->
-      _called_at_rt:rust_val ->
+      arg:rust_val ->
+      called_in_const:rust_val ->
+      called_at_rt:rust_val ->
       rust_val ret
 
     (** {@markdown[
@@ -1413,7 +1413,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val is_val_statically_known :
-      t:Types.ty -> _arg:rust_val -> Typed.T.sbool Typed.t ret
+      t:Types.ty -> arg:rust_val -> Typed.T.sbool Typed.t ret
 
     (** {@markdown[
           Returns the base 10 logarithm of an `f128`.
@@ -2867,7 +2867,7 @@ module M (StateM : State.StateM.S) = struct
            It can only be called at compile time, the backends do
            not implement it.
         ]} *)
-    val type_of : _id:rust_val -> rust_val ret
+    val type_of : id:rust_val -> rust_val ret
 
     (** {@markdown[
           Non-overlapping *typed* swap of a single value.
