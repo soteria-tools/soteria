@@ -68,6 +68,8 @@ module M (StateM : State.StateM.S) = struct
     | Std f -> Std.fn_to_stub f
 
   let get_generics (f : UllbcAst.fun_decl) generics =
+    (* In the case of monomorphised code, the generics will be empty but present
+       in the name; we need to get them there. *)
     match List.last_opt f.item_meta.name with
     | Some (PeInstantiated mono) -> mono.binder_value
     | _ -> generics
@@ -80,8 +82,6 @@ module M (StateM : State.StateM.S) = struct
     |> Option.map (fn_to_stub f.signature fun_exec generics)
 
   let eval_intrinsic (f : UllbcAst.fun_decl) name generics fun_exec =
-    (* In the case of monomorphised code, the generics will be empty but present
-       in the name; we need to get them there. *)
     let generics = get_generics f generics in
     Intrinsics.eval_fun name fun_exec generics
 
