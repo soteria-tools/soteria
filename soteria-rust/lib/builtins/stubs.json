@@ -38,6 +38,7 @@
     "core::f128::_::is_subnormal",
     "std::io::stdio::_eprint",
     "std::io::stdio::_print",
+    "std::io::_print",
     "std::io::stdio::print_to",
     "std::io::stdio::print_to_buffer_if_capture_used",
     "alloc::raw_vec::handle_error",

@@ -121,7 +121,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   (* ---- I/O (no-ops) ---- *)
 
   let _eprint ~args:_ = ok ()
-  let _print ~args:_ = ok ()
+  let io__print ~fun_exec:_ ~types:_ ~consts:_ ~args:_ = ok (Tuple [])
+  let stdio__print ~args:_ = ok ()
   let print_to ~t:_ ~args:_ ~global_s:_ ~label:_ = ok ()
   let print_to_buffer_if_capture_used ~args:_ = ok Typed.v_true
 end

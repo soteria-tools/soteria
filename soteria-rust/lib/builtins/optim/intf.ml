@@ -711,8 +711,16 @@ module M (StateM : State.StateM.S) = struct
       fmt:rust_val -> force_no_backtrace:[< Typed.T.sbool ] Typed.t -> unit ret
 
     val result_unwrap_failed : msg:full_ptr -> error:full_ptr -> unit ret
+
+    val io__print :
+      fun_exec:fun_exec ->
+      types:Types.ty list ->
+      consts:Types.constant_expr list ->
+      args:rust_val list ->
+      rust_val ret
+
     val _eprint : args:rust_val -> unit ret
-    val _print : args:rust_val -> unit ret
+    val stdio__print : args:rust_val -> unit ret
 
     val print_to :
       t:Types.ty ->

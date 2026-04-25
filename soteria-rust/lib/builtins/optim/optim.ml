@@ -44,6 +44,7 @@ type fn =
   | CorePanickingPanicFmt
   | CorePanickingPanicNounwindFmt
   | CoreResultUnwrapFailed
+  | StdIoPrint
   | StdIoStdioEprint
   | StdIoStdioPrint
   | StdIoStdioPrintTo
@@ -90,6 +91,7 @@ let fn_pats : (string * fn) list =
     ("core::panicking::panic_fmt", CorePanickingPanicFmt);
     ("core::panicking::panic_nounwind_fmt", CorePanickingPanicNounwindFmt);
     ("core::result::unwrap_failed", CoreResultUnwrapFailed);
+    ("std::io::_print", StdIoPrint);
     ("std::io::stdio::_eprint", StdIoStdioEprint);
     ("std::io::stdio::_print", StdIoStdioPrint);
     ("std::io::stdio::print_to", StdIoStdioPrintTo);
@@ -276,11 +278,14 @@ module M (StateM : State.StateM.S) = struct
         let error = as_ptr error in
         let+ () = result_unwrap_failed ~msg ~error in
         Tuple []
+    | StdIoPrint, _, _, _ ->
+        io__print ~fun_exec:_fun_exec ~types:generics.types
+          ~consts:generics.const_generics ~args
     | StdIoStdioEprint, [], [], [ args ] ->
         let+ () = _eprint ~args in
         Tuple []
     | StdIoStdioPrint, [], [], [ args ] ->
-        let+ () = _print ~args in
+        let+ () = stdio__print ~args in
         Tuple []
     | StdIoStdioPrintTo, [ t ], [], [ args; global_s; label ] ->
         let global_s = as_ptr global_s in
