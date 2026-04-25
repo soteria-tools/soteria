@@ -1,14 +1,12 @@
 open Charon
-open Common
 open Rust_val
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
   open Syntax
 
-  let hashmap_random_keys () =
-    Encoder.nondet_valid
-      (Charon_util.mk_tuple_ty [ TLiteral (TUInt U64); TLiteral (TUInt U64) ])
+  let hashmap_random_keys ~(fun_sig : Types.fun_sig) =
+    Encoder.nondet_valid fun_sig.output
 
   (** Used on macOS to register thread local destructors; receives a function
       pointer and an argument. Should call the destructor with the argument at

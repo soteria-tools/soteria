@@ -16,7 +16,7 @@ module M (StateM : State.StateM.S) = struct
 
   module type S = sig
     val _var : fun_sig:Types.fun_sig -> key:full_ptr -> rust_val ret
-    val hashmap_random_keys : unit -> rust_val ret
+    val hashmap_random_keys : fun_sig:Types.fun_sig -> rust_val ret
     val _tlv_atexit : fun_exec:fun_exec -> args:rust_val list -> rust_val ret
     val now : args:rust_val list -> rust_val ret
 

@@ -10,7 +10,7 @@
   ],
   "System": [
     "std::sys::thread_local::guard::apple::enable::_tlv_atexit with fun_exec",
-    "std::sys::random::hashmap_random_keys",
+    "std::sys::random::hashmap_random_keys with sig",
     "std::thread::functions::available_parallelism with sig",
     "std::sys::time::unix::Instant::now",
     "std::env::_var with sig"
