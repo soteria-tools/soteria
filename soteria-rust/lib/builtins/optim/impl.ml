@@ -28,7 +28,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     in
     let mk_res ptr len = Enum (zero, [ Tuple [ Ptr (ptr, Len len) ] ]) in
     if%sat size ==@ zero then
-      let dangling = Sptr.null_ptr_of align in
+      let dangling = Sptr.of_address align in
       ok (mk_res dangling zero)
     else
       let* zeroed = if%sat zeroed then ok true else ok false in

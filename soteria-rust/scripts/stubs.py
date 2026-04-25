@@ -164,6 +164,7 @@ InterpTypeBase = Literal[
     "fun_exec",
     "meta_ty",
     "meta_const",
+    "meta_sig",
 ]
 InterpTypeMeta = Optional[str]
 InterpType = tuple[InterpTypeBase, InterpTypeMeta]
@@ -181,7 +182,7 @@ let[@inline] as_ptr (v : rust_val) =
   | Ptr ptr -> ptr
   | Int v ->
       let v = Typed.cast_i Usize v in
-      let ptr = Sptr.null_ptr_of v in
+      let ptr = Sptr.of_address v in
       (ptr, Thin)
   | _ -> failwith "expected pointer"
 
@@ -275,19 +276,15 @@ input_type: dict[InterpTypeBase, str] = {
     "fun_exec": "fun_exec",
     "meta_ty": "Types.ty",
     "meta_const": "Types.constant_expr",
+    "meta_sig": "Types.fun_sig"
 }
 
 
 output_type: dict[InterpTypeBase, str] = {
-    "unit": "unit",
+    **input_type,
     "int": "Typed.T.sint Typed.t",
     "float": "Typed.T.sfloat Typed.t",
     "bool": "Typed.T.sbool Typed.t",
-    "ptr": "full_ptr",
-    "unknown": "rust_val",
-    "fun_exec": "fun_exec",
-    "meta_ty": "Types.ty",
-    "meta_const": "Types.constant_expr",
 }
 
 
@@ -319,7 +316,7 @@ def output_type_cast(ty: InterpType) -> tuple[str, str]:
 
 
 def sanitize_var_name(name: str) -> str:
-    ocaml_names = ["val"]
+    ocaml_names = ["val", "new"]
     if name in ocaml_names:
         return f"{name}_"
     return name
@@ -401,6 +398,7 @@ class ItemInfo(TypedDict):
 class StubInfo(ItemInfo):
     variant_name: str
     is_dummy: bool
+    with_sig: bool
 
 
 def make_args_and_tys(
@@ -452,13 +450,21 @@ def make_not_impl_stub(
 def make_match_branch(
     info: ItemInfo, *, fist_pat: str, extra_arg: Optional[str] = None
 ) -> str:
+    def arg_as_pat(arg: str) -> str:
+        if arg == info["ocaml_name"]:
+            return f"{arg}_"
+        if arg == "fun_sig":
+            return "_fun_sig"
+        return arg
+
     types_pat = "; ".join(info["types"])
     consts_pat = "; ".join(info["consts"])
     args_match = "; ".join(
-        a if a != info["ocaml_name"] else f"{a}_" for (a, _) in info["args"]
+        arg_as_pat(a) for (a, _) in info["args"]
+        if a != "fun_sig"
     )
     call_args = [
-        f"~{arg}" if arg != info["ocaml_name"] else f"~{arg}:{arg}_"
+        f"~{arg}:{arg_as_pat(arg)}"
         for arg in info["types"] + info["consts"] + [a for (a, _) in info["args"]]
     ]
 
@@ -780,6 +786,16 @@ def path_of(fun: FunDecl) -> str:
     return "::".join(names)
 
 
+class Pattern:
+    pattern: str
+    with_sig: bool
+    def __init__(self, pattern: str) -> None:
+        self.pattern = pattern
+        self.with_sig = pattern.endswith(" with sig")
+        if self.with_sig:
+            self.pattern = pattern[:-9]
+
+
 def generate_custom_stubs() -> None:
     config_path = (PWD / ".." / "lib" / "builtins" / "stubs.json").resolve()
     if not config_path.exists():
@@ -791,7 +807,8 @@ def generate_custom_stubs() -> None:
     if not isinstance(raw_config, dict):
         raise ValueError("stubs.json must contain a JSON object")
 
-    config: dict[str, list[str]] = {}
+    config: dict[str, list[Pattern]] = {}
+    valid_pattern = r"^([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+( with sig)?$"
     for category, patterns in raw_config.items():
         if not isinstance(category, str):
             raise ValueError("stubs.json keys must be strings")
@@ -799,16 +816,21 @@ def generate_custom_stubs() -> None:
             isinstance(p, str) for p in patterns
         ):
             raise ValueError(f"Category '{category}' must map to a list of strings")
-        config[category] = patterns
+        for pattern in patterns:
+            if not re.match(valid_pattern, pattern):
+                raise ValueError(
+                    f"Invalid pattern '{pattern}' in category '{category}'"
+                )
+        config[category] = [Pattern(p) for p in patterns]
 
-    patterns: list[str] = list(set(p for ps in config.values() for p in ps))
+    pattern_strs: list[str] = list(set(p.pattern for ps in config.values() for p in ps))
 
-    if len(patterns) == 0:
+    if len(pattern_strs) == 0:
         pprint("No custom stub patterns found, skipping")
         return
 
     pprint("Loading custom stubs declarations...")
-    fun_decls = get_stubs(patterns)
+    fun_decls = get_stubs(pattern_strs)
     categories: dict[str, list[FunDecl]] = {k: [] for k in config.keys()}
 
     def matches_pattern(path: list[PathElem], pattern: str) -> bool:
@@ -828,7 +850,7 @@ def generate_custom_stubs() -> None:
         name = fun["item_meta"]["name"]
         for category, patterns in config.items():
             for pattern in patterns:
-                if matches_pattern(name, pattern):
+                if matches_pattern(name, pattern.pattern):
                     missing_patterns.remove(pattern)
                     categories[category].append(fun)
                     break
@@ -841,16 +863,16 @@ def generate_custom_stubs() -> None:
             f"{YELLOW}{BOLD}Warning{RESET}: {len(missing_patterns)} stubs unresolved; they won't have their signature parsed"
         )
         for p in set(missing_patterns):
-            last_part = p.split("::")[-1]
+            last_part = p.pattern.split("::")[-1]
             potential_matches = [
-                path for fdef in fun_decls if last_part in (path := path_of(fdef))
+                path for fdef in fun_decls if f"::{last_part}" in (path := path_of(fdef))
             ]
             if potential_matches:
-                pprint(f"- {p} (maybe you meant: {', '.join(potential_matches)})")
+                pprint(f"- {BOLD}{p.pattern}{RESET} {GRAY}(maybe you meant: {', '.join(potential_matches)}){RESET}")
             else:
-                pprint(f"- {p}")
+                pprint(f"- {BOLD}{p.pattern}{RESET}")
 
-    missing_by_category: dict[str, list[str]] = {
+    missing_by_category: dict[str, list[Pattern]] = {
         category: [p for p in patterns if p in missing_patterns]
         for category, patterns in config.items()
     }
@@ -869,7 +891,7 @@ def generate_custom_stubs() -> None:
         short_names: list[str] = [
             fun["item_meta"]["name"][-1]["Ident"][0] for fun in functions
         ] + [
-            pattern.split("::")[-1] if "::" in pattern else pattern
+            p.split("::")[-1] if "::" in (p := pattern.pattern) else p
             for pattern in unresolved
         ]
 
@@ -892,16 +914,23 @@ def generate_custom_stubs() -> None:
             variant_name = (
                 base_variant if vcount == 0 else f"{base_variant}{vcount + 1}"
             )
-
-            infos.append({**info, "variant_name": variant_name, "is_dummy": False})
+            with_sig = any(p.with_sig for p in config[category] if p.pattern == info["rust_path"])
+            if with_sig:
+                info["args"].insert(0, ("fun_sig", ("meta_sig", None)))
+            infos.append({
+                **info,
+                "variant_name": variant_name,
+                "with_sig": with_sig,
+                "is_dummy": False
+            })
 
         for pattern in unresolved:
             # Strip anonymous impl-block '_' components so unique_name can use a
             # meaningful prefix (e.g. "f16" from "core::f16::_::is_normal").
-            path_parts = [p for p in pattern.split("::") if p != "_"]
+            path_parts = [p for p in pattern.pattern.split("::") if p != "_"]
             rust_name: list[PathElem] = [{"Ident": (p,)} for p in path_parts]
             ocaml_name = unique_name(rust_name)
-            base_variant = sanitize_variant_name(pattern)
+            base_variant = sanitize_variant_name(pattern.pattern)
             vcount = variant_occ.get(base_variant, 0)
             variant_occ[base_variant] = vcount + 1
             variant_name = (
@@ -912,9 +941,10 @@ def generate_custom_stubs() -> None:
                 {
                     "ocaml_name": ocaml_name,
                     "variant_name": variant_name,
-                    "rust_path": pattern,
+                    "rust_path": pattern.pattern,
                     "doc": None,
                     "is_dummy": True,
+                    "with_sig": pattern.with_sig,
                     "args": [],
                     "types": [],
                     "consts": [],
@@ -929,11 +959,9 @@ def generate_custom_stubs() -> None:
         category_dir.mkdir(exist_ok=True)
 
         intf_file = category_dir / "intf.ml"
-        impl_file = category_dir / "impl.ml"
         entry_file = category_dir / f"{category_name}.ml"
 
         intf_entries = ""
-        default_impl_entries = ""
         fn_variants = ""
         fn_map_entries = ""
         eval_entries = ""
@@ -943,33 +971,20 @@ def generate_custom_stubs() -> None:
             fn_map_entries += f"(\"{info['rust_path']}\", {info['variant_name']});"
 
             if info["is_dummy"]:
-                dummy_args: list[tuple[str | None, InterpType]] = [
-                    ("fun_exec", ("fun_exec", None)),
-                    ("types", ("meta_ty", None)),
-                    ("consts", ("meta_const", None)),
-                    ("args", ("unknown", None)),
-                ]
                 dummy_sig = "fun_exec:fun_exec -> types:Types.ty list -> consts:Types.constant_expr list -> args:rust_val list -> rust_val ret"
+                opt_args = ""
+                if info["with_sig"]:
+                    opt_args = "~fun_sig:_fun_sig"
+                    dummy_sig = "fun_sig:Types.fun_sig -> " + dummy_sig
+
                 intf_entries += f"\n{make_doc_comment(info['doc'])}val {info['ocaml_name']} : {dummy_sig}\n"
-                default_impl_entries += make_not_impl_stub(
-                    info["ocaml_name"],
-                    dummy_args,
-                    f"Unsupported custom stub (dummy): {info['rust_path']}",
-                )
                 eval_entries += f"""
                     | {info['variant_name']}, _, _, _ ->
-                      {info['ocaml_name']} ~fun_exec:_fun_exec ~types:generics.types ~consts:generics.const_generics ~args
+                      {info['ocaml_name']} {opt_args} ~fun_exec:_fun_exec ~types:generics.types ~consts:generics.const_generics ~args
                 """
             else:
                 args_and_tys = make_args_and_tys(info)
                 intf_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
-
-                default_impl_entries += make_not_impl_stub(
-                    info["ocaml_name"],
-                    args_and_tys,
-                    f"Unsupported custom stub: {info['rust_path']}",
-                )
-
                 eval_entries += make_match_branch(info, fist_pat=info["variant_name"])
 
         # intf.ml — generated module type that impl.ml must satisfy
@@ -991,19 +1006,6 @@ def generate_custom_stubs() -> None:
             end
         """
         write_ocaml_file(intf_file, intf_generated)
-
-        # impl.ml — hand-written; only regenerate when it has no user code yet
-        if not impl_file.exists():
-            pprint(f"Created dummy impl file {BOLD}{impl_file}{RESET}")
-            impl_generated = f"""
-                module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
-                    open StateM
-                    open Syntax
-
-                    {default_impl_entries}
-                end
-            """
-            write_ocaml_file(impl_file, impl_generated)
 
         # {category_name}.ml — generated entry point: fn_map + dispatch + eval_fun
         entry_generated = f"""
@@ -1030,7 +1032,7 @@ def generate_custom_stubs() -> None:
 
                 include Impl.M(StateM)
 
-                let[@inline] fn_to_stub stub _fun_exec (generics : Charon.Types.generic_args) args =
+                let[@inline] fn_to_stub stub _fun_sig _fun_exec (generics : Charon.Types.generic_args) args =
                     match[@warning "-redundant-case"] (stub, generics.types, generics.const_generics, args) with
                     {eval_entries}
                     | _, tys, cs, args ->

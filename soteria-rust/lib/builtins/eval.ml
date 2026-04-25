@@ -53,11 +53,11 @@ module M (StateM : State.StateM.S) = struct
   module Tokio = Tokio.M (StateM)
   module Fixme = Fixme.M (StateM)
 
-  let fn_to_stub fun_exec generics = function
-    | Soteria f -> Soteria_lib.fn_to_stub f fun_exec generics
-    | Fixme f -> Fixme.fn_to_stub f fun_exec generics
-    | Optim f -> Optim.fn_to_stub f fun_exec generics
-    | System f -> System.fn_to_stub f fun_exec generics
+  let fn_to_stub fun_sig fun_exec generics = function
+    | Soteria f -> Soteria_lib.fn_to_stub f fun_sig fun_exec generics
+    | Fixme f -> Fixme.fn_to_stub f fun_sig fun_exec generics
+    | Optim f -> Optim.fn_to_stub f fun_sig fun_exec generics
+    | System f -> System.fn_to_stub f fun_sig fun_exec generics
 
   let[@inline] extern_fn_to_stub = function
     | Alloc f -> Alloc.fn_to_stub f
@@ -74,7 +74,7 @@ module M (StateM : State.StateM.S) = struct
     let ctx = Crate.as_namematcher_ctx () in
     let generics = get_generics f generics in
     NameMatcherMap.find_opt ctx match_config name std_fun_map
-    |> Option.map (fn_to_stub fun_exec generics)
+    |> Option.map (fn_to_stub f.signature fun_exec generics)
 
   let eval_intrinsic (f : UllbcAst.fun_decl) name generics fun_exec =
     (* In the case of monomorphised code, the generics will be empty but present

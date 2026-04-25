@@ -31,7 +31,7 @@ module M (StateM : State.StateM.S) = struct
     | Ptr ptr -> ptr
     | Int v ->
         let v = Typed.cast_i Usize v in
-        let ptr = Sptr.null_ptr_of v in
+        let ptr = Sptr.of_address v in
         (ptr, Thin)
     | _ -> failwith "expected pointer"
 
@@ -41,8 +41,8 @@ module M (StateM : State.StateM.S) = struct
 
   include Impl.M (StateM)
 
-  let[@inline] fn_to_stub stub _fun_exec (generics : Charon.Types.generic_args)
-      args =
+  let[@inline] fn_to_stub stub _fun_sig _fun_exec
+      (generics : Charon.Types.generic_args) args =
     match[@warning "-redundant-case"]
       (stub, generics.types, generics.const_generics, args)
     with
