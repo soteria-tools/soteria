@@ -6,7 +6,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open Typed.Infix
   open Typed.Syntax
   module Soteria_lib = Soteria_lib.M (StateM)
-  module Alloc = Alloc.M (StateM)
+  module Alloc = Extern.Alloc.M (StateM)
 
   let do_panic ?msg () =
     match msg with

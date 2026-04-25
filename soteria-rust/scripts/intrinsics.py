@@ -720,9 +720,9 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
         [@@@warning "-unused-value-declaration"]
 
-        module M (StateM : State.StateM.S): Intrinsics_intf.M(StateM).Impl = struct
+        module M (StateM : State.StateM.S): Intf.M(StateM).Impl = struct
           open StateM
-        {stubs_entries}
+          {stubs_entries}
         end
     """
 
@@ -732,7 +732,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         open Rust_val
         open Common
 
-        module M (StateM : State.StateM.S): Intrinsics_intf.M(StateM).S = struct
+        module M (StateM : State.StateM.S): Intf.M(StateM).S = struct
             open StateM
             open Syntax
 
@@ -740,9 +740,9 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
             {OCAML_HELPERS}
 
-            include Intrinsics_impl.M (StateM)
+            include Impl.M (StateM)
 
-            let eval_fun name fun_exec (generics: Charon.Types.generic_args) args =
+            let[@inline] eval_fun name fun_exec (generics: Charon.Types.generic_args) args =
                 match name, generics.types, generics.const_generics, args with
                 {match_arm_entries}
                 | name, tys, cs, args ->
@@ -1018,7 +1018,7 @@ def generate_custom_stubs() -> None:
 
                 include Impl.M(StateM)
 
-                let fn_to_stub stub _fun_exec (generics : Charon.Types.generic_args) args =
+                let[@inline] fn_to_stub stub _fun_exec (generics : Charon.Types.generic_args) args =
                     match (stub, generics.types, generics.const_generics, args) with
                     {eval_entries}
                     | _, tys, cs, args ->

@@ -25,7 +25,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   include Impl.M (StateM)
 
-  let eval_fun name fun_exec (generics : Charon.Types.generic_args) args =
+  let[@inline] eval_fun name fun_exec (generics : Charon.Types.generic_args)
+      args =
     match (name, generics.types, generics.const_generics, args) with
     | "abort", [], [], [] ->
         let+ () = abort () in

@@ -38,7 +38,8 @@ module M (StateM : State.StateM.S) = struct
 
   include Impl.M (StateM)
 
-  let fn_to_stub stub _fun_exec (generics : Charon.Types.generic_args) args =
+  let[@inline] fn_to_stub stub _fun_exec (generics : Charon.Types.generic_args)
+      args =
     match (stub, generics.types, generics.const_generics, args) with
     | CorePtrDropInPlace, [ t ], [], [ to_drop ] ->
         let to_drop = as_ptr to_drop in

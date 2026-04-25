@@ -1,9 +1,22 @@
-(** Miri-related intrinsics.
+(** Miri-related builtins.
 
     See https://github.com/rust-lang/miri/blob/master/tests/utils/miri_extern.rs
 *)
 
 open Rust_val
+
+type fn = Alloc | AllocId | Dealloc | Nop
+
+let fn_pats =
+  [
+    ("miri_get_alloc_id", AllocId);
+    ("miri_pointer_name", Nop);
+    ("miri_print_borrow_state", Nop);
+    ("miri_run_provenance_gc", Nop);
+    ("miri_write_to_stdout", Nop);
+    ("miri_alloc", Alloc);
+    ("miri_dealloc", Dealloc);
+  ]
 
 module M (StateM : State.StateM.S) = struct
   open StateM
@@ -27,4 +40,10 @@ module M (StateM : State.StateM.S) = struct
   let alloc args = Alloc.alloc ~zeroed:false args
   let dealloc args = Alloc.dealloc args
   let nop _ = ok (Tuple [])
+
+  let[@inline] fn_to_stub = function
+    | Nop -> nop
+    | Alloc -> alloc
+    | Dealloc -> dealloc
+    | AllocId -> alloc_id
 end

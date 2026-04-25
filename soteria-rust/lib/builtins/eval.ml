@@ -20,35 +20,15 @@ type fn =
 
 (** extern functions we must implement manually *)
 
-type alloc_fn =
-  | Alloc of { zeroed : bool }
-  | Dealloc
-  | Realloc
-  | NoAllocShimIsUnstable
-
-type miri_fn = Alloc | AllocId | Dealloc | Nop
-type panic_fn = PanicCleanup
-type extern_fn = Alloc of alloc_fn | Miri of miri_fn | Panic of panic_fn
+type extern_fn =
+  | Alloc of Extern.Alloc.fn
+  | Miri of Extern.Miri.fn
+  | Std of Extern.Std.fn
 
 let extern_functions =
-  [
-    (* Allocator *)
-    ("__rust_alloc", Alloc (Alloc { zeroed = false }));
-    ("__rust_alloc_zeroed", Alloc (Alloc { zeroed = true }));
-    ("__rust_dealloc", Alloc Dealloc);
-    ("__rust_no_alloc_shim_is_unstable_v2", Alloc NoAllocShimIsUnstable);
-    ("__rust_realloc", Alloc Realloc);
-    (* Miri builtins *)
-    ("miri_get_alloc_id", Miri AllocId);
-    ("miri_pointer_name", Miri Nop);
-    ("miri_print_borrow_state", Miri Nop);
-    ("miri_run_provenance_gc", Miri Nop);
-    ("miri_write_to_stdout", Miri Nop);
-    ("miri_alloc", Miri Alloc);
-    ("miri_dealloc", Miri Dealloc);
-    (* Panics *)
-    ("__rust_panic_cleanup", Panic PanicCleanup);
-  ]
+  (Extern.Alloc.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Alloc f)
+  @ (Extern.Miri.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Miri f)
+  @ (Extern.Std.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Std f)
   |> SMap.of_list
 
 let std_fun_pair_list =
@@ -79,11 +59,16 @@ let std_fun_map =
   |> NameMatcherMap.of_list
 
 module M (StateM : State.StateM.S) = struct
-  module Alloc = Alloc.M (StateM)
+  (* intrinsics *)
   module Intrinsics = Intrinsics.M (StateM)
-  module Miri = Miri.M (StateM)
+
+  (* externs *)
+  module Alloc = Extern.Alloc.M (StateM)
+  module Miri = Extern.Miri.M (StateM)
+  module Std = Extern.Std.M (StateM)
+
+  (* stubs *)
   module Soteria_lib = Soteria_lib.M (StateM)
-  module Std = Std.M (StateM)
   module Optim = Optim.M (StateM)
   module System = System.M (StateM)
   module Fixme = Fixme.M (StateM)
@@ -98,16 +83,10 @@ module M (StateM : State.StateM.S) = struct
     | Optim f -> Optim.fn_to_stub f fun_exec generics
     | System f -> System.fn_to_stub f fun_exec generics
 
-  let extern_fn_to_stub = function
-    | Alloc (Alloc { zeroed }) -> Alloc.alloc ~zeroed
-    | Alloc Dealloc -> Alloc.dealloc
-    | Alloc NoAllocShimIsUnstable -> Alloc.no_alloc_shim_is_unstable
-    | Alloc Realloc -> Alloc.realloc
-    | Miri Alloc -> Miri.alloc
-    | Miri AllocId -> Miri.alloc_id
-    | Miri Dealloc -> Miri.dealloc
-    | Miri Nop -> Miri.nop
-    | Panic PanicCleanup -> Std.panic_cleanup
+  let[@inline] extern_fn_to_stub = function
+    | Alloc f -> Alloc.fn_to_stub f
+    | Miri f -> Miri.fn_to_stub f
+    | Std f -> Std.fn_to_stub f
 
   let eval_stub (f : UllbcAst.fun_decl) fun_exec generics =
     let name = f.item_meta.name in
