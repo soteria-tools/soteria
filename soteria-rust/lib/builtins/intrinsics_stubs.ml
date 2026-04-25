@@ -6,7 +6,7 @@
 module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   open StateM
 
-  let abort = not_impl "Unsupported intrinsic: abort"
+  let abort () = not_impl "Unsupported intrinsic: abort"
 
   let add_with_overflow ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: add_with_overflow"
@@ -85,9 +85,9 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let bitreverse ~t:_ ~x:_ = not_impl "Unsupported intrinsic: bitreverse"
   let black_box ~t:_ ~dummy:_ = not_impl "Unsupported intrinsic: black_box"
-  let breakpoint = not_impl "Unsupported intrinsic: breakpoint"
+  let breakpoint () = not_impl "Unsupported intrinsic: breakpoint"
   let bswap ~t:_ ~x:_ = not_impl "Unsupported intrinsic: bswap"
-  let caller_location = not_impl "Unsupported intrinsic: caller_location"
+  let caller_location () = not_impl "Unsupported intrinsic: caller_location"
 
   let carrying_mul_add ~t:_ ~u:_ ~multiplier:_ ~multiplicand:_ ~addend:_
       ~carry:_ =
@@ -100,7 +100,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let ceilf16 ~x:_ = not_impl "Unsupported intrinsic: ceilf16"
   let ceilf32 ~x:_ = not_impl "Unsupported intrinsic: ceilf32"
   let ceilf64 ~x:_ = not_impl "Unsupported intrinsic: ceilf64"
-  let cold_path = not_impl "Unsupported intrinsic: cold_path"
+  let cold_path () = not_impl "Unsupported intrinsic: cold_path"
 
   let compare_bytes ~left:_ ~right:_ ~bytes:_ =
     not_impl "Unsupported intrinsic: compare_bytes"
@@ -251,7 +251,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let offset_of ~t:_ ~variant:_ ~field:_ =
     not_impl "Unsupported intrinsic: offset_of"
 
-  let overflow_checks = not_impl "Unsupported intrinsic: overflow_checks"
+  let overflow_checks () = not_impl "Unsupported intrinsic: overflow_checks"
   let powf128 ~a:_ ~x:_ = not_impl "Unsupported intrinsic: powf128"
   let powf16 ~a:_ ~x:_ = not_impl "Unsupported intrinsic: powf16"
   let powf32 ~a:_ ~x:_ = not_impl "Unsupported intrinsic: powf32"
@@ -364,7 +364,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let typed_swap_nonoverlapping ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: typed_swap_nonoverlapping"
 
-  let ub_checks = not_impl "Unsupported intrinsic: ub_checks"
+  let ub_checks () = not_impl "Unsupported intrinsic: ub_checks"
 
   let unaligned_volatile_load ~t:_ ~src:_ =
     not_impl "Unsupported intrinsic: unaligned_volatile_load"
@@ -399,7 +399,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let unchecked_sub ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: unchecked_sub"
 
-  let unreachable = not_impl "Unsupported intrinsic: unreachable"
+  let unreachable () = not_impl "Unsupported intrinsic: unreachable"
   let va_arg ~t:_ ~ap:_ = not_impl "Unsupported intrinsic: va_arg"
   let va_copy ~src:_ = not_impl "Unsupported intrinsic: va_copy"
   let va_end ~ap:_ = not_impl "Unsupported intrinsic: va_end"

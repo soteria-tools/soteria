@@ -26,4 +26,5 @@ module M (StateM : State.StateM.S) = struct
 
   let alloc args = Alloc.alloc ~zeroed:false args
   let dealloc args = Alloc.dealloc args
+  let nop _ = ok (Tuple [])
 end

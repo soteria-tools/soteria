@@ -28,7 +28,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
   let eval_fun name fun_exec (generics : Charon.Types.generic_args) args =
     match (name, generics.types, generics.const_generics, args) with
     | "abort", [], [], [] ->
-        let+ () = abort in
+        let+ () = abort () in
         Tuple []
     | "add_with_overflow", [ t ], [], [ x; y ] -> add_with_overflow ~t ~x ~y
     | "aggregate_raw_ptr", [ p; d; m ], [], [ data; meta ] ->
@@ -115,11 +115,11 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "bitreverse", [ t ], [], [ x ] -> bitreverse ~t ~x
     | "black_box", [ t ], [], [ dummy ] -> black_box ~t ~dummy
     | "breakpoint", [], [], [] ->
-        let+ () = breakpoint in
+        let+ () = breakpoint () in
         Tuple []
     | "bswap", [ t ], [], [ x ] -> bswap ~t ~x
     | "caller_location", [], [], [] ->
-        let+ ret = caller_location in
+        let+ ret = caller_location () in
         Ptr ret
     | ( "carrying_mul_add",
         [ t; u ],
@@ -149,7 +149,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
         let+ ret = ceilf64 ~x in
         Float ret
     | "cold_path", [], [], [] ->
-        let+ () = cold_path in
+        let+ () = cold_path () in
         Tuple []
     | "compare_bytes", [], [], [ left; right; bytes ] ->
         let left = as_ptr left in
@@ -521,7 +521,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
         let+ ret = offset_of ~t ~variant ~field in
         Int ret
     | "overflow_checks", [], [], [] ->
-        let+ ret = overflow_checks in
+        let+ ret = overflow_checks () in
         Int (Typed.BitVec.of_bool ret)
     | "powf128", [], [], [ a; x ] ->
         let a = as_base_f F128 a in
@@ -733,7 +733,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
         let+ () = typed_swap_nonoverlapping ~t ~x ~y in
         Tuple []
     | "ub_checks", [], [], [] ->
-        let+ ret = ub_checks in
+        let+ ret = ub_checks () in
         Int (Typed.BitVec.of_bool ret)
     | "unaligned_volatile_load", [ t ], [], [ src ] ->
         let src = as_ptr src in
@@ -756,7 +756,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "unchecked_shr", [ t; u ], [], [ x; y ] -> unchecked_shr ~t ~u ~x ~y
     | "unchecked_sub", [ t ], [], [ x; y ] -> unchecked_sub ~t ~x ~y
     | "unreachable", [], [], [] ->
-        let+ () = unreachable in
+        let+ () = unreachable () in
         Tuple []
     | "va_arg", [ t ], [], [ ap ] ->
         let ap = as_ptr ap in

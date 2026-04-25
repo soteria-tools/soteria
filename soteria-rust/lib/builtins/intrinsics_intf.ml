@@ -28,7 +28,7 @@ module M (StateM : State.StateM.S) = struct
            process will probably terminate with a signal like `SIGABRT`, `SIGILL`, `SIGTRAP`, `SIGSEGV` or
            `SIGBUS`.  The precise behavior is not guaranteed and not stable.
         ]} *)
-    val abort : unit ret
+    val abort : unit -> unit ret
 
     (** {@markdown[
           Performs checked integer addition.
@@ -463,7 +463,7 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val breakpoint : unit ret
+    val breakpoint : unit -> unit ret
 
     (** {@markdown[
           Reverses the bytes in an integer type `T`.
@@ -489,7 +489,7 @@ module M (StateM : State.StateM.S) = struct
 
            Consider using [`core::panic::Location::caller`] instead.
         ]} *)
-    val caller_location : full_ptr ret
+    val caller_location : unit -> full_ptr ret
 
     (** {@markdown[
           Performs full-width multiplication and addition with a carry:
@@ -584,7 +584,7 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val cold_path : unit ret
+    val cold_path : unit -> unit ret
 
     (** {@markdown[
           Lexicographically compare `[left, left + bytes)` and `[right, right + bytes)`
@@ -1947,7 +1947,7 @@ module M (StateM : State.StateM.S) = struct
            assertions are enabled whenever the *user crate* has overflow checks enabled. However if the
            user has overflow checks disabled, the checks will still get optimized out.
         ]} *)
-    val overflow_checks : Typed.T.sbool Typed.t ret
+    val overflow_checks : unit -> Typed.T.sbool Typed.t ret
 
     (** {@markdown[
           Raises an `f128` to an `f128` power.
@@ -2909,7 +2909,7 @@ module M (StateM : State.StateM.S) = struct
            user has UB checks disabled, the checks will still get optimized out. This intrinsic is
            primarily used by [`crate::ub_checks::assert_unsafe_precondition`].
         ]} *)
-    val ub_checks : Typed.T.sbool Typed.t ret
+    val ub_checks : unit -> Typed.T.sbool Typed.t ret
 
     (** {@markdown[
           Performs a volatile load from the `src` pointer
@@ -3050,7 +3050,7 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`core::hint::unreachable_unchecked`].
         ]} *)
-    val unreachable : unit ret
+    val unreachable : unit -> unit ret
 
     (** {@markdown[
           Loads an argument of type `T` from the `va_list` `ap` and increment the

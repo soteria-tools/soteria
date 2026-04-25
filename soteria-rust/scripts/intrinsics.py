@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
+
 import json
+import re
 import subprocess
-from typing import Any, Literal, Sequence, TypedDict
+from typing import Any, Literal, TypedDict
 
 from common import *
 
@@ -168,6 +170,25 @@ InterpType = tuple[InterpTypeBase, InterpTypeMeta]
 
 type_cache: dict[int, Type] = {}
 
+USER_IMPL_START = "(* BEGIN USER IMPLEMENTATION *)"
+USER_IMPL_END = "(* END USER IMPLEMENTATION *)"
+
+GENERATED_WARNING = "(** This file was generated with [scripts/intrinsics.py] -- do not edit it manually, instead modify the script and re-run it. *)"
+
+OCAML_HELPERS = """\
+let[@inline] as_ptr (v : rust_val) =
+  match v with
+  | Ptr ptr -> ptr
+  | Int v ->
+      let v = Typed.cast_i Usize v in
+      let ptr = Sptr.null_ptr_of v in
+      (ptr, Thin)
+  | _ -> failwith "expected pointer"
+
+let as_base ty (v : rust_val) = Rust_val.as_base ty v
+let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
+let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v"""
+
 
 def type_of(unique_ty: UniqueType) -> InterpType:
     ty: Type
@@ -295,6 +316,218 @@ def output_type_cast(ty: InterpType) -> tuple[str, str]:
     return "", ""
 
 
+def sanitize_var_name(name: str) -> str:
+    ocaml_names = ["val"]
+    if name in ocaml_names:
+        return f"{name}_"
+    return name
+
+
+def sanitize_ocaml_ident(name: str) -> str:
+    sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    if not sanitized:
+        return "f"
+    if sanitized[0].isdigit():
+        sanitized = "f_" + sanitized
+    return sanitize_var_name(sanitized)
+
+
+def sanitize_variant_name(name: str) -> str:
+    words = [w for w in re.split(r"[^a-zA-Z0-9]+", name) if w]
+    if not words:
+        return "Stub"
+    variant = "".join(w[:1].upper() + w[1:] for w in words)
+    if variant[0].isdigit():
+        variant = "Stub" + variant
+    return variant
+
+
+def read_user_impl_block(filename: Path) -> Optional[str]:
+    if not filename.exists():
+        return None
+    content = filename.read_text()
+    start = content.find(USER_IMPL_START)
+    end = content.find(USER_IMPL_END)
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return content[start : end + len(USER_IMPL_END)]
+
+
+def has_user_lets(impl_block: str) -> bool:
+    return re.search(r"\blet\s+[a-zA-Z_][a-zA-Z0-9_']*", impl_block) is not None
+
+
+def arg_value(prefix: str) -> Optional[str]:
+    for arg in sys.argv:
+        if arg.startswith(prefix):
+            return arg[len(prefix) :]
+    return None
+
+
+def sanitize_comment(comment: str) -> str:
+    return "{@markdown[\n" + comment.replace("(*", "( *").strip() + "\n]}"
+
+
+def extract_doc(fun: FunDecl) -> Optional[str]:
+    raw = "\n".join(
+        attrib["DocComment"]
+        for attrib in fun["item_meta"]["attr_info"]["attributes"]
+        if "DocComment" in attrib
+    )
+    if not raw:
+        return None
+    return sanitize_comment(raw)
+
+
+# ---------------------------------------------------------------------------
+# Shared item info types and code-generation helpers
+# ---------------------------------------------------------------------------
+
+
+class ItemInfo(TypedDict):
+    """Base information shared between intrinsics and custom stubs."""
+
+    ocaml_name: str
+    rust_path: str
+    doc: Optional[str]
+    args: list[tuple[str, InterpType]]
+    types: list[str]
+    consts: list[str]
+    ret: InterpType
+
+
+class StubInfo(ItemInfo):
+    variant_name: str
+    is_dummy: bool
+
+
+def make_args_and_tys(
+    info: ItemInfo,
+    extra_prefix: Optional[list[tuple[Optional[str], InterpType]]] = None,
+) -> list[tuple[Optional[str], InterpType]]:
+    """Build the full argument list: [extra_prefix] + [type generics] + [const generics] + [args]."""
+    result: list[tuple[Optional[str], InterpType]] = list(extra_prefix or [])
+    result.extend((t, ("meta_ty", None)) for t in info["types"])
+    result.extend((c, ("meta_const", None)) for c in info["consts"])
+    result.extend(info["args"])
+    return result
+
+
+def make_ocaml_signature(
+    args_and_tys: list[tuple[Optional[str], InterpType]],
+    ret: InterpType,
+) -> str:
+    """Generate an OCaml type signature string: `arg:type -> ... -> ret_type ret`.
+    When there are no arguments, emits `unit -> ret_type ret` so it compiles as
+    a function rather than a value."""
+    ret_part = output_type[ret[0]] + " ret"
+    if not args_and_tys:
+        return f"unit -> {ret_part}"
+    parts = [
+        f"{arg}:{input_type[ty[0]]}" if arg is not None else input_type[ty[0]]
+        for arg, ty in args_and_tys
+    ]
+    parts.append(ret_part)
+    return " -> ".join(parts)
+
+
+def make_not_impl_stub(
+    name: str,
+    args_and_tys: list[tuple[Optional[str], InterpType]],
+    error_msg: str,
+) -> str:
+    """Generate a `let name ~arg:_ ... = not_impl "error_msg"` OCaml expression.
+    When there are no arguments, emits `let name () = ...` to enforce function
+    syntax."""
+    if not args_and_tys:
+        return f'let {name} () = not_impl "{error_msg}"'
+    stub_args = " ".join(
+        f"~{arg}:_" if arg is not None else "_" for arg, _ in args_and_tys
+    )
+    return f'let {name} {stub_args} = not_impl "{error_msg}"'
+
+
+def make_match_body(info: ItemInfo, call_expr: str) -> str:
+    """Generate input casts followed by a function call wrapped with an output cast."""
+    result = ""
+    for arg, ty in info["args"]:
+        result += input_type_cast(arg, ty)
+    prefix, postfix = output_type_cast(info["ret"])
+    if prefix:
+        result += f"{prefix}{call_expr}{postfix}"
+    else:
+        result += call_expr
+    return result
+
+
+def make_doc_comment(doc: Optional[str]) -> str:
+    """Generate an OCaml odoc comment line, or empty string if no doc."""
+    return f"(** {doc} *) " if doc else ""
+
+
+def make_val_entry(
+    info: ItemInfo, args_and_tys: list[tuple[Optional[str], InterpType]]
+) -> str:
+    """Generate a `val name : sig` declaration with an optional leading doc comment."""
+    sig = make_ocaml_signature(args_and_tys, info["ret"])
+    return f"{make_doc_comment(info['doc'])}val {info['ocaml_name']} : {sig}"
+
+
+def fun_decl_to_item_info(fun: FunDecl, ocaml_name: str) -> ItemInfo:
+    """Extract an ItemInfo from a FunDecl, handling both Intrinsic and Unstructured
+    bodies for parameter-name extraction. Deduplicates clashing argument names."""
+    rust_path = "::".join(
+        elem["Ident"][0] if "Ident" in elem else "_"
+        for elem in fun["item_meta"]["name"]
+    )
+    doc = extract_doc(fun)
+
+    arg_count = len(fun["signature"]["inputs"])
+    body = fun.get("body")
+    if isinstance(body, dict) and "Intrinsic" in body:
+        raw_names = body["Intrinsic"]["arg_names"]
+        param_names: list[Optional[str]] = [n or None for n in raw_names]
+    elif isinstance(body, dict) and "Unstructured" in body:
+        raw_params = body["Unstructured"]["locals"]["locals"][1 : arg_count + 1]
+        param_names = [cast(Optional[str], param["name"]) for param in raw_params]
+    else:
+        param_names = [None] * arg_count
+
+    used_names: dict[str, int] = {}
+    args: list[tuple[str, InterpType]] = []
+    for i, ty in enumerate(fun["signature"]["inputs"]):
+        base_name = sanitize_ocaml_ident(param_names[i] or "arg")
+        nb = used_names.get(base_name, 0)
+        used_names[base_name] = nb + 1
+        arg_name = base_name if nb == 0 else f"{base_name}_{nb + 1}"
+        args.append((arg_name, type_of(ty)))
+
+    def mk_arg(name: str, prefix: str) -> str:
+        sanitized = sanitize_ocaml_ident(name.lower())
+        if any(sanitized == arg for (arg, _) in args):
+            return f"{prefix}_{sanitized}"
+        return sanitized
+
+    types = [mk_arg(param["name"], "t") for param in fun["generics"]["types"]]
+    consts = [mk_arg(param["name"], "c") for param in fun["generics"]["const_generics"]]
+    ret = type_of(fun["signature"]["output"])
+
+    return {
+        "ocaml_name": ocaml_name,
+        "rust_path": rust_path,
+        "doc": doc,
+        "args": args,
+        "types": types,
+        "consts": consts,
+        "ret": ret,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Charon invocations
+# ---------------------------------------------------------------------------
+
+
 # Parse the intrinsics via Charon, and return them
 def get_intrinsics() -> dict[str, FunDecl]:
     file_json = (PWD / "intrinsics.ullbc.temp").resolve()
@@ -330,84 +563,23 @@ def get_intrinsics() -> dict[str, FunDecl]:
     return intrinsics
 
 
-# Generate the OCaml interface for the intrinsics stubs, along with the stub file itself;
-# returns [interfaces string, stubs string, main string]
-def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
-    class IntrinsicInfo(TypedDict):
-        name: str
-        path: str
-        doc: str
-        args: list[tuple[str, InterpType]]
-        types: list[str]
-        consts: list[str]
-        ret: InterpType
+# ---------------------------------------------------------------------------
+# Code generators
+# ---------------------------------------------------------------------------
 
+
+# Generate the OCaml interface for the intrinsics stubs, along with the stub
+# file itself; returns [interfaces string, stubs string, main string]
+def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     pprint("Generating OCaml interface and stubs...")
 
-    def sanitize_comment(comment: str) -> str:
-        return "{@markdown[\n" + comment.replace("(*", "( *").strip() + "\n]}"
-
-    def sanitize_var_name(name: str) -> str:
-        ocaml_names = ["val"]
-        if name in ocaml_names:
-            return f"{name}_"
-        return name
-
-    intrinsics_info: list[IntrinsicInfo] = []
+    intrinsics_info: list[ItemInfo] = []
     for fun in intrinsics.values():
         if "Intrinsic" not in fun["body"]:
             continue
-        name = fun["item_meta"]["name"][-1]["Ident"][0]
-        path = "::".join(i["Ident"][0] for i in fun["item_meta"]["name"])
-        doc = "\n".join(
-            attrib["DocComment"]
-            for attrib in fun["item_meta"]["attr_info"]["attributes"]
-            if "DocComment" in attrib
-        )
-        doc = sanitize_comment(doc)
-        arg_and_tys = zip(
-            fun["body"]["Intrinsic"]["arg_names"], fun["signature"]["inputs"]
-        )
-        args: list[tuple[str, InterpType]] = [
-            (sanitize_var_name(param or "arg"), type_of(ty))
-            for (param, ty) in arg_and_tys
-        ]
-        arg_names = [arg for (arg, _) in args]
-        types = [
-            (
-                param_l
-                if (param_l := param["name"].lower()) not in arg_names
-                else "t_" + param_l
-            )
-            for param in fun["generics"]["types"]
-        ]
-        consts = [
-            (
-                param_l
-                if (param_l := param["name"].lower()) not in arg_names
-                else "c_" + param_l
-            )
-            for param in fun["generics"]["const_generics"]
-        ]
-        ret = type_of(fun["signature"]["output"])
-
-        intrinsics_info.append(
-            {
-                "name": name,
-                "path": path,
-                "doc": doc,
-                "args": args,
-                "types": types,
-                "consts": consts,
-                "ret": ret,
-            }
-        )
-    intrinsics_info.sort(key=lambda x: x["name"])
-
-    prelude = """
-    (** This file was generated with [scripts/intrinsics.py] -- do not edit it manually,
-        instead modify the script and re-run it. *)
-    """
+        ocaml_name = fun["item_meta"]["name"][-1]["Ident"][0]
+        intrinsics_info.append(fun_decl_to_item_info(fun, ocaml_name))
+    intrinsics_info.sort(key=lambda x: x["ocaml_name"])
 
     type_utils = """
         type rust_val := StateM.Sptr.t Rust_val.t
@@ -416,8 +588,52 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
     """
 
+    interface_entries = ""
+    stubs_entries = ""
+    match_arm_entries = ""
+
+    for info in intrinsics_info:
+        # catch_unwind additionally receives the function-execution callback
+        extra_prefix: Optional[list[tuple[Optional[str], InterpType]]] = None
+        if info["ocaml_name"] == "catch_unwind":
+            extra_prefix = [(None, ("fun_exec", None))]
+        args_and_tys = make_args_and_tys(info, extra_prefix)
+
+        # Interface val entry
+        interface_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
+
+        # Stub entry
+        stubs_entries += f"""
+            {make_not_impl_stub(
+                info["ocaml_name"],
+                args_and_tys,
+                f"Unsupported intrinsic: {info['ocaml_name']}",
+            )}
+        """
+
+        # Main match arm — args that share the function name get a trailing '_'
+        types_pat = "; ".join(info["types"])
+        consts_pat = "; ".join(info["consts"])
+        args_match = "; ".join(
+            a if a != info["ocaml_name"] else f"{a}_" for (a, _) in info["args"]
+        )
+        call_args = [
+            f"~{arg}" if arg != info["ocaml_name"] else f"~{arg}:{arg}_"
+            for arg in info["types"] + info["consts"] + [a for (a, _) in info["args"]]
+        ]
+        if info["ocaml_name"] == "catch_unwind":
+            call_args.insert(0, "fun_exec")
+        if not call_args:
+            call_args.append("()")
+
+        call_expr = f"{info['ocaml_name']} {' '.join(call_args)}"
+        match_arm_entries += f"""
+            | "{info['ocaml_name']}", [{types_pat}], [{consts_pat}], [{args_match}] ->
+                {make_match_body(info, call_expr)}
+        """
+
     interface_str = f"""
-        {prelude}
+        {GENERATED_WARNING}
 
         open Charon
         open Common
@@ -427,70 +643,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
             {type_utils}
             type full_ptr := StateM.Sptr.t Rust_val.full_ptr
 
-    """
-
-    stubs_str = f"""
-        {prelude}
-
-        [@@@warning "-unused-value-declaration"]
-
-        module M (StateM : State.StateM.S): Intrinsics_intf.M(StateM).Impl = struct
-          open StateM
-    """
-
-    main_str = f"""
-        {prelude}
-
-        open Rust_val
-        open Common
-
-        module M (StateM : State.StateM.S): Intrinsics_intf.M(StateM).S = struct
-            open StateM
-            open Syntax
-
-            type rust_val = Sptr.t Rust_val.t
-
-            let[@inline] as_ptr (v : rust_val) =
-            match v with
-            | Ptr ptr -> ptr
-            | Int v ->
-                let v = Typed.cast_i Usize v in
-                let ptr = Sptr.null_ptr_of v in
-                (ptr, Thin)
-            | _ -> failwith "expected pointer"
-
-            let as_base ty (v : rust_val) = Rust_val.as_base ty v
-            let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
-            let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
-
-    """
-
-    for info in intrinsics_info:
-        args_and_tys: Sequence[tuple[Optional[str], InterpType]] = []
-
-        # special-case catch_unwind; it needs to also received the function-execution function
-        if info["name"] == "catch_unwind":
-            args_and_tys.append((None, ("fun_exec", None)))
-
-        args_and_tys.extend((type, ("meta_ty", None)) for type in info["types"])
-        args_and_tys.extend((const, ("meta_const", None)) for const in info["consts"])
-        args_and_tys.extend(info["args"])
-        interface_str += f"""
-            (** {info["doc"]} *)
-            val {info["name"]} : {' -> '.join([
-                f"{arg}:{input_type[ty[0]]}" if arg is not None else input_type[ty[0]]
-                for (arg, ty) in args_and_tys
-            ] + [output_type[info["ret"][0]] + " ret"])}
-        """
-
-        stubs_str += f"""
-            let {info['name']} {' '.join(
-                f"~{arg}:_" if arg else "_"
-                for (arg, _) in args_and_tys)} =
-                not_impl "Unsupported intrinsic: {info['name']}"
-        """
-
-    interface_str += f"""
+        {interface_entries}
         end
 
         module type S = sig
@@ -501,44 +654,36 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     end
     """
 
-    stubs_str += """
+    stubs_str = f"""
+        {GENERATED_WARNING}
+
+        [@@@warning "-unused-value-declaration"]
+
+        module M (StateM : State.StateM.S): Intrinsics_intf.M(StateM).Impl = struct
+          open StateM
+        {stubs_entries}
         end
     """
 
-    main_str += """
+    main_str = f"""
+        {GENERATED_WARNING}
+
+        open Rust_val
+        open Common
+
+        module M (StateM : State.StateM.S): Intrinsics_intf.M(StateM).S = struct
+            open StateM
+            open Syntax
+
+            type rust_val = Sptr.t Rust_val.t
+
+            {OCAML_HELPERS}
+
             include Intrinsics_impl.M (StateM)
 
             let eval_fun name fun_exec (generics: Charon.Types.generic_args) args =
                 match name, generics.types, generics.const_generics, args with
-    """
-
-    for info in intrinsics_info:
-        types = "; ".join(info["types"])
-        consts = "; ".join(info["consts"])
-        args_match = "; ".join(
-            a if a != info["name"] else f"{a}_" for (a, _) in info["args"]
-        )
-
-        call_args = [
-            f"~{arg}" if arg != info["name"] else f"~{arg}:{arg}_"
-            for arg in info["types"] + info["consts"] + [a for (a, _) in info["args"]]
-        ]
-        if info["name"] == "catch_unwind":
-            call_args.insert(0, "fun_exec")
-
-        main_str += f"""
-            | "{info['name']}", [{types}], [{consts}], [{args_match}] ->
-        """
-
-        for arg, ty in info["args"]:
-            main_str += input_type_cast(arg, ty)
-
-        prefix, postfix = output_type_cast(info["ret"])
-        main_str += f"""
-            {prefix} {info['name']} {' '.join(call_args)} {postfix}
-        """
-
-    main_str += """
+                {match_arm_entries}
                 | name, tys, cs, args ->
                     Fmt.kstr not_impl
                         "Intrinsic %s not found, or not called with the right arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
@@ -550,6 +695,360 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     """
 
     return interface_str, stubs_str, main_str
+
+
+def generate_custom_stubs() -> None:
+    config_path = (PWD / ".." / "lib" / "builtins" / "stubs.json").resolve()
+    if not config_path.exists():
+        raise FileNotFoundError(
+            "Could not find stubs.json, expected at: " + str(config_path)
+        )
+
+    raw_config = json.loads(config_path.read_text())
+    if not isinstance(raw_config, dict):
+        raise ValueError("stubs.json must contain a JSON object")
+
+    config: dict[str, list[str]] = {}
+    for category, patterns in raw_config.items():
+        if not isinstance(category, str):
+            raise ValueError("stubs.json keys must be strings")
+        if not isinstance(patterns, list) or not all(
+            isinstance(p, str) for p in patterns
+        ):
+            raise ValueError(f"Category '{category}' must map to a list of strings")
+        config[category] = patterns
+
+    include_patterns: list[str] = []
+    for patterns in config.values():
+        for pattern in patterns:
+            if pattern not in include_patterns:
+                include_patterns.append(pattern)
+
+    if len(include_patterns) == 0:
+        pprint("No custom stub patterns found, skipping")
+        return
+
+    file_rs = (PWD / "custom_stubs.rs").resolve()
+    file_json = (PWD / "custom_stubs.ullbc.temp").resolve()
+
+    features = ["f16", "f128", "const_index"]
+    file_rs.write_text(f"#![feature({', '.join(features)})]\n")
+
+    toolchain = get_toolchain()
+    sysroot = get_sysroot(toolchain)
+
+    def extract_name_strings(path_elems: list[PathElem]) -> list[str]:
+        names: list[str] = []
+        for elem in path_elems:
+            if "Ident" in elem:
+                names.append(elem["Ident"][0])
+            else:
+                names.append("_")
+        return names
+
+    def run_charon() -> list[FunDecl]:
+        charon_cmd = [
+            "charon",
+            "rustc",
+            "--ullbc",
+            "--dest-file",
+            str(file_json),
+            "--extract-opaque-bodies",
+        ]
+        for pattern in include_patterns:
+            # substs we must apply because of inherent impls
+            substs = [
+                (r".+::f16::_::(.+)", r"f16::\1"),
+                (r".+::f32::_::(.+)", r"f32::\1"),
+                (r".+::f64::_::(.+)", r"f64::\1"),
+                (r".+::f128::_::(.+)", r"f128::\1"),
+            ]
+            for pat, replacement in substs:
+                if re.match(pat, pattern):
+                    pattern = re.sub(pat, replacement, pattern)
+            charon_cmd.extend(["--start-from-if-exists", pattern, "--include", pattern])
+
+        charon_cmd.extend(
+            [
+                "--opaque",
+                "std",
+                "--opaque",
+                "core",
+                "--",
+                str(file_rs),
+                "--crate-type=lib",
+                "--sysroot",
+                sysroot,
+            ]
+        )
+
+        proc = subprocess.run(charon_cmd, check=False, stderr=subprocess.STDOUT)
+        if proc.returncode != 0 and not file_json.exists():
+            raise subprocess.CalledProcessError(proc.returncode, charon_cmd)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"{YELLOW}{BOLD}Warning{RESET}: Charon returned exit code {proc.returncode}"
+            )
+
+        ullbc = json.loads(file_json.read_text())
+        traverse_types(ullbc)
+        return [fun for fun in ullbc["translated"]["fun_decls"] if fun is not None]
+
+    pprint("Loading custom stubs declarations...")
+    fun_decls = run_charon()
+    file_rs.unlink(missing_ok=True)
+    categories: dict[str, list[FunDecl]] = {k: [] for k in config.keys()}
+
+    def path_of(fun: FunDecl) -> str:
+        return "::".join(extract_name_strings(fun["item_meta"]["name"]))
+
+    def matches_pattern(path: list[PathElem], pattern: str) -> bool:
+        pattern_parts = pattern.split("::")
+        if not (len(path) == len(pattern_parts)):
+            return False
+
+        for elem, pat in zip(path, pattern_parts):
+            if pat == "_":
+                continue
+            if "Ident" not in elem or elem["Ident"][0] != pat:
+                return False
+        return True
+
+    missing_patterns = [pat for patterns in config.values() for pat in patterns]
+    for fun in fun_decls:
+        name = fun["item_meta"]["name"]
+        for category, patterns in config.items():
+            for pattern in patterns:
+                if matches_pattern(name, pattern):
+                    missing_patterns.remove(pattern)
+                    categories[category].append(fun)
+                    break
+            else:
+                continue
+            break
+
+    if missing_patterns:
+        pprint(
+            f"{YELLOW}{BOLD}Warning{RESET}: {len(missing_patterns)} stubs unresolved; they won't have their signature parsed"
+        )
+        for p in set(missing_patterns):
+            last_part = p.split("::")[-1]
+            potential_matches = [
+                path_of(fdef)
+                for fdef in fun_decls
+                if last_part in path_of(fdef)
+                or last_part in fdef["item_meta"]["name"][-1]["Ident"][0]
+            ]
+            if potential_matches:
+                pprint(f"- {p} (maybe you meant: {', '.join(potential_matches)})")
+            else:
+                pprint(f"- {p}")
+
+    missing_by_category: dict[str, list[str]] = {
+        category: [p for p in patterns if p in missing_patterns]
+        for category, patterns in config.items()
+    }
+
+    ml_folder = (PWD / ".." / "lib" / "builtins").resolve()
+
+    for category, functions in categories.items():
+        unresolved = missing_by_category.get(category, [])
+        if len(functions) == 0 and len(unresolved) == 0:
+            pprint(f"Category {BOLD}{category}{RESET}: no matching declarations")
+            continue
+
+        variant_occ: dict[str, int] = {}
+        infos: list[StubInfo] = []
+
+        short_names: list[str] = [
+            fun["item_meta"]["name"][-1]["Ident"][0] for fun in functions
+        ] + [
+            pattern.split("::")[-1] if "::" in pattern else pattern
+            for pattern in unresolved
+        ]
+
+        def unique_name(name: list[PathElem]) -> str:
+            rust_name = name[-1]["Ident"][0]
+            ocaml_name = sanitize_ocaml_ident(rust_name)
+            if short_names.count(ocaml_name) > 1:
+                name_parts = [item["Ident"][0] for item in name if "Ident" in item]
+                # last two parts
+                return sanitize_ocaml_ident("_".join(name_parts[-2:]))
+            return ocaml_name
+
+        for fun in functions:
+            ocaml_name = unique_name(fun["item_meta"]["name"])
+            info = fun_decl_to_item_info(fun, ocaml_name)
+
+            base_variant = sanitize_variant_name(info["rust_path"])
+            vcount = variant_occ.get(base_variant, 0)
+            variant_occ[base_variant] = vcount + 1
+            variant_name = (
+                base_variant if vcount == 0 else f"{base_variant}{vcount + 1}"
+            )
+
+            infos.append({**info, "variant_name": variant_name, "is_dummy": False})
+
+        for pattern in unresolved:
+            # Strip anonymous impl-block '_' components so unique_name can use a
+            # meaningful prefix (e.g. "f16" from "core::f16::_::is_normal").
+            path_parts = [p for p in pattern.split("::") if p != "_"]
+            rust_name: list[PathElem] = [{"Ident": (p,)} for p in path_parts]
+            ocaml_name = unique_name(rust_name)
+            base_variant = sanitize_variant_name(pattern)
+            vcount = variant_occ.get(base_variant, 0)
+            variant_occ[base_variant] = vcount + 1
+            variant_name = (
+                base_variant if vcount == 0 else f"{base_variant}{vcount + 1}"
+            )
+
+            infos.append(
+                {
+                    "ocaml_name": ocaml_name,
+                    "variant_name": variant_name,
+                    "rust_path": pattern,
+                    "doc": None,
+                    "is_dummy": True,
+                    "args": [],
+                    "types": [],
+                    "consts": [],
+                    "ret": ("unknown", None),
+                }
+            )
+
+        infos.sort(key=lambda x: x["rust_path"])
+        category_file = ml_folder / f"{sanitize_ocaml_ident(category.lower())}.ml"
+        preserved_impl = read_user_impl_block(category_file)
+
+        intf_entries = ""
+        default_impl_entries = ""
+        fn_variants = ""
+        fn_map_entries = ""
+        eval_entries = ""
+
+        for info in infos:
+            fn_variants += f" | {info['variant_name']}"
+            fn_map_entries += f"(\"{info['rust_path']}\", {info['variant_name']});"
+
+            if info["is_dummy"]:
+                dummy_args: list[tuple[str | None, InterpType]] = [
+                    ("fun_exec", ("fun_exec", None)),
+                    ("types", ("meta_ty", None)),
+                    ("consts", ("meta_const", None)),
+                    ("args", ("unknown", None)),
+                ]
+                dummy_sig = "fun_exec:fun_exec -> types:Types.ty list -> consts:Types.constant_expr list -> args:rust_val list -> rust_val ret"
+                intf_entries += f"\n{make_doc_comment(info['doc'])}val {info['ocaml_name']} : {dummy_sig}\n"
+                default_impl_entries += make_not_impl_stub(
+                    info["ocaml_name"],
+                    dummy_args,
+                    f"Unsupported custom stub (dummy): {info['rust_path']}",
+                )
+                eval_entries += f"""
+                    | {info['variant_name']}, _, _, _ ->
+                      Impl.{info['ocaml_name']} ~fun_exec:_fun_exec ~types:generics.types ~consts:generics.const_generics ~args
+                """
+            else:
+                args_and_tys = make_args_and_tys(info)
+                intf_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
+
+                default_impl_entries += make_not_impl_stub(
+                    info["ocaml_name"],
+                    args_and_tys,
+                    f"Unsupported custom stub: {info['rust_path']}",
+                )
+
+                types_pat = "; ".join(info["types"])
+                consts_pat = "; ".join(info["consts"])
+                args_match = "; ".join(a for (a, _) in info["args"])
+                call_args = [
+                    f"~{arg}"
+                    for arg in info["types"]
+                    + info["consts"]
+                    + [a for (a, _) in info["args"]]
+                ]
+
+                if call_args:
+                    call_expr = f"Impl.{info['ocaml_name']} {' '.join(call_args)}"
+                else:
+                    call_expr = f"Impl.{info['ocaml_name']} ()"
+                eval_entries += f"""
+                   | {info['variant_name']}, [{types_pat}], [{consts_pat}], [{args_match}] ->
+                     {make_match_body(info, call_expr)}
+                """
+
+        default_impl_block = f"""
+            {USER_IMPL_START}
+            module Impl : Intf = struct
+            {default_impl_entries}
+            end
+            {USER_IMPL_END}
+            """
+        impl_block = (
+            preserved_impl
+            if preserved_impl is not None and has_user_lets(preserved_impl)
+            else default_impl_block
+        )
+
+        generated = f"""
+            {GENERATED_WARNING}
+
+            [@@@warning "-unused-open"]
+
+            open Charon
+            open Common
+            open Rust_val
+
+            module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
+
+            let match_config =
+            NameMatcher.{{ map_vars_to_vars = false; match_with_trait_decl_refs = false }}
+
+            module M (StateM : State.StateM.S) = struct
+            open StateM
+            open Syntax
+
+            type rust_val = Sptr.t Rust_val.t
+            type 'a ret = ('a, unit) StateM.t
+            type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+            type full_ptr = StateM.Sptr.t Rust_val.full_ptr
+
+            {OCAML_HELPERS}
+
+            module type Intf = sig
+            {intf_entries}
+            end
+
+            type fn ={fn_variants}
+
+            let fn_map : fn NameMatcherMap.t =
+                [{fn_map_entries}]
+                |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
+                |> NameMatcherMap.of_list
+
+            {impl_block}
+
+            let fn_of_stub stub _fun_exec (generics : Charon.Types.generic_args) args =
+                match (stub, generics.types, generics.const_generics, args) with
+                {eval_entries}
+                | _, tys, cs, args ->
+                    Fmt.kstr not_impl
+                        "Custom stub found but called with the wrong arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
+                        Fmt.(list ~sep:comma Charon_util.pp_ty) tys
+                        Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
+                        Fmt.(list ~sep:comma pp_rust_val)args
+
+            let eval_fun (f : UllbcAst.fun_decl) (fun_exec : fun_exec) (generics : Charon.Types.generic_args) =
+                let ctx = Crate.as_namematcher_ctx () in
+                let stub = NameMatcherMap.find_opt ctx match_config f.item_meta.name fn_map in
+                Option.map (fun stub -> fn_of_stub stub fun_exec generics) stub
+            end
+        """
+
+        write_ocaml_file(category_file, generated)
+        pprint(
+            f"Category {BOLD}{category}{RESET}: generated {BOLD}{len(infos)}{RESET} stubs"
+        )
 
 
 def write_ocaml_file(filename: Path, content: str) -> None:
@@ -569,7 +1068,7 @@ def write_ocaml_file(filename: Path, content: str) -> None:
     pprint(f"Wrote OCaml file {BOLD}{filename}{RESET}")
 
 
-if __name__ == "__main__":
+def generate_intrinsics():
     intrinsics = get_intrinsics()
     interface, stubs, main = generate_interface(intrinsics)
 
@@ -578,11 +1077,12 @@ if __name__ == "__main__":
     write_ocaml_file(ml_folder / "intrinsics_stubs.ml", stubs)
     write_ocaml_file(ml_folder / "intrinsics.ml", main)
 
-    # generate the "intrinsincs_impl.ml" file if it doesn't exist
-    impl_file = ml_folder / "intrinsics_impl.ml"
-    if not impl_file.exists():
-        impl_content = """
-        module M (StateM: State.StateM.S) = struct
-        end
-        """
-        write_ocaml_file(impl_file, impl_content)
+
+if __name__ == "__main__":
+    run_intrinsics = "--custom-stubs" not in sys.argv or "--intrinsics" in sys.argv
+    run_custom_stubs = "--custom-stubs" in sys.argv
+
+    if run_intrinsics:
+        generate_intrinsics()
+    if run_custom_stubs:
+        generate_custom_stubs()

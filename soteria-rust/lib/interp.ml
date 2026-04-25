@@ -894,7 +894,11 @@ module Make (StateImpl : State.S) = struct
     (* Shallow init box -- get the pointer and transmute it to a box *)
     | ShallowInitBox (ptr, _) ->
         let+ ptr = eval_operand ptr in
-        Std_funs.Std._mk_box ptr
+        let non_null = Tuple [ ptr ] in
+        let phantom_data = Tuple [] in
+        let unique = Tuple [ non_null; phantom_data ] in
+        let allocator = Tuple [] in
+        Tuple [ unique; allocator ]
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) -> (
         let* _, meta = resolve_place place in
@@ -1126,7 +1130,7 @@ module Make (StateImpl : State.S) = struct
         Std_funs.eval_intrinsic fundef name generics exec_fun args
     | Extern name -> Std_funs.eval_extern name args
     | Body body -> (
-        match Std_funs.eval_stub fundef exec_fun with
+        match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args
         | None ->
             let@ () = with_loc ~loc:fundef.item_meta.span.data in
@@ -1151,7 +1155,7 @@ module Make (StateImpl : State.S) = struct
                 let* () = dealloc_stack protected in
                 error_raw err))
     | Opaque | TraitMethodWithoutDefault | Missing | Error _ -> (
-        match Std_funs.eval_stub fundef exec_fun with
+        match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args
         | None ->
             Fmt.kstr not_impl "Can't execute function %a: %a" Crate.pp_name name

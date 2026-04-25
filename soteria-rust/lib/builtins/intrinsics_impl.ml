@@ -20,7 +20,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   (* the intrinsics *)
 
-  let abort : unit ret = error (`Panic (Some "aborted"))
+  let abort () : unit ret = error (`Panic (Some "aborted"))
 
   let checked_op op ~t ~x ~y =
     let t = TypesUtils.ty_as_literal t in
@@ -146,7 +146,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     else ok (Tuple [ curr; Int (BV.of_bool Typed.v_false) ])
 
   let black_box ~t:_ ~dummy = ok dummy
-  let breakpoint : unit ret = error `Breakpoint
+  let breakpoint () : unit ret = error `Breakpoint
 
   let bitreverse ~t ~x =
     let lit = TypesUtils.ty_as_literal t in
@@ -174,10 +174,9 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
     in
     ok (Int (aux bytes))
 
-  let caller_location : full_ptr ret =
+  let caller_location () : full_ptr ret =
     (* TODO: we should really do something better here *)
-    let+ () = ok () in
-    (Sptr.null_ptr (), Thin)
+    ok (Sptr.null_ptr (), Thin)
 
   let carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry =
     let t = TypesUtils.ty_as_literal t in
@@ -400,7 +399,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let truncf32 ~x = float_rounding Truncate x
   let truncf64 ~x = float_rounding Truncate x
   let truncf128 ~x = float_rounding Truncate x
-  let cold_path : unit ret = ok ()
+  let cold_path () : unit ret = ok ()
 
   let compare_bytes ~left:(l, _) ~right:(r, _) ~bytes =
     let zero = Usize.(0s) in
