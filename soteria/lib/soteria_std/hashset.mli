@@ -91,12 +91,7 @@ module type S = sig
   val pp : Format.formatter -> t -> unit
 end
 
-module type PrintableHashedType = sig
-  include Hashtbl.HashedType
-
-  (** Pretty-printer for elements. *)
-  val pp : Format.formatter -> t -> unit
-end
+module type PrintableHashedType = [%mixins Hashtbl.HashedType + Sigs.Printable]
 
 (** Functor to create a hash set module for a given element type. *)
 module Make (Elt : PrintableHashedType) : S with type elt = Elt.t

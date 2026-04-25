@@ -6,15 +6,44 @@ open Rust_val
 open Sptr
 
 module type S = sig
-  module Sptr : Sptr.S
-
-  type full_ptr := Sptr.t full_ptr
-  type rust_val := Sptr.t rust_val
-
   (* state *)
   include Soteria.Sym_states.Base.M(Rustsymex).S
 
   type 'a ret := ('a, Error.with_trace, syn list) SM.Result.t
+
+  module Sptr : sig
+    include Sptr.S
+
+    (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
+        [off], interpreting [off] as a [signed] integer. [ty] defaults to u8.
+        May result in a dangling pointer error if the pointer goes over the
+        allocation limit. This check can be disabled with [~check:false]. *)
+    val offset :
+      ?check:bool ->
+      ?ty:Charon.Types.ty ->
+      signed:bool ->
+      [< sint ] Typed.t ->
+      t ->
+      t ret
+
+    (** Checks this pointer isn't dangling for the given type, i.e. it points to
+        an allocation and doesn't range outside of it. This also checks the
+        allocation is live. *)
+    val check_non_dangling : t full_ptr -> Types.ty -> unit ret
+
+    (** Same as {!check_non_dangling}, but for untyped ranges, where only a size
+        is known. The size is signed: if less than 0, the range preceding the
+        pointer is checked. *)
+    val check_non_dangling_untyped : t full_ptr -> Typed.(T.sint t) -> unit ret
+
+    (** Checks this pointer is sufficiently aligned for the given type. This
+        takes into account the metadata: for a [&dyn Trait], it will access the
+        VTable to check alignment. *)
+    val check_aligned : t full_ptr -> Types.ty -> unit ret
+  end
+
+  type full_ptr := Sptr.t full_ptr
+  type rust_val := Sptr.t rust_val
 
   (** Prettier but expensive printing. *)
   val pp_pretty : ignore_freed:bool -> t Fmt.t
@@ -48,8 +77,6 @@ module type S = sig
     Types.ty -> Sptr.t Rust_val.meta -> (T.sint Typed.t * T.nonzero Typed.t) ret
 
   val fake_read : full_ptr -> Types.ty -> unit ret
-  val check_non_dangling : full_ptr -> Types.ty -> unit ret
-  val check_ptr_align : full_ptr -> Types.ty -> unit ret
 
   val copy_nonoverlapping :
     src:full_ptr -> dst:full_ptr -> size:sint Typed.t -> unit ret

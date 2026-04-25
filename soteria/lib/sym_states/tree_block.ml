@@ -101,7 +101,8 @@ module MemVal (Symex : Symex.Base) = struct
         state can be composed with it; in other words, calling [produce] on a
         tree with this node must always vanish. Otherwise this should raise a
         [miss] with the fixes needed for this to become exclusively owned. *)
-    val assert_exclusively_owned : t -> (unit, 'err, syn list) Symex.Result.t
+    val assert_exclusively_owned :
+      (t, sint) tree -> (unit, 'err, syn list) Symex.Result.t
   end
 end
 
@@ -146,11 +147,9 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let is_empty = function NotOwned Totally -> true | _ -> false
     let is_fully_owned = function NotOwned _ -> false | Owned _ -> true
 
-    let assert_exclusively_owned = function
-      | NotOwned _ ->
-          Result.miss_no_fix
-            ~reason:"assert_exclusively_owned - tree not fully owned" ()
-      | Owned n -> MemVal.assert_exclusively_owned n
+    (* NOTE: is this the right level of abstraction? Should we not pass the tree
+       and instead just recurse through the leaves? *)
+    let assert_exclusively_owned = MemVal.assert_exclusively_owned
 
     let merge ~left ~right =
       match (left, right) with
@@ -210,6 +209,10 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
 
     let of_children _ ~left ~right = of_children_s ~left ~right
 
+    (** Like {!of_children}, but doesn't attempt merging the children, i.e.
+        assumes that the intermediary node that is in [t] is still correct for
+        the new children. This is faster than {!of_children} but is only sound
+        if the children's content did not change. *)
     let with_children t ~left ~right =
       return { t with children = Some (left, right) }
 
@@ -591,11 +594,14 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let+? fixes = consumer in
     lift_fixes ~offset ~len fixes
 
-  let of_opt ?(mk_fixes = fun () -> Symex.return []) = function
-    | None ->
+  let of_opt ?mk_fixes x =
+    match (x, mk_fixes) with
+    | Some t, _ -> Result.ok t
+    | None, Some mk_fixes ->
         let+ fixes = mk_fixes () in
         Missing fixes
-    | Some t -> Result.ok t
+    | None, None ->
+        Result.miss_no_fix ~reason:"Tree_block.of_opt missed with no fix" ()
 
   let to_opt t = if is_empty t then None else Some t
 
@@ -628,11 +634,11 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     match t with
     | None | Some { bound = None; _ } ->
         Result.miss_no_fix ~reason:"assert_exclusively_owned - no bound" ()
-    | Some { bound = Some bound; root = { range = low, high; node; _ } } ->
+    | Some { bound = Some bound; root = { range = low, high; _ } as root } ->
         if%sat low ==@ 0s &&@ (high ==@ bound) then
           lift
           @@ lift_miss ~offset:0s ~len:bound
-          @@ Node.assert_exclusively_owned node
+          @@ Node.assert_exclusively_owned root
         else
           Result.miss_no_fix
             ~reason:"assert_exclusively_owned - tree does not span [0; bound["

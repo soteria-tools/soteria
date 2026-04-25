@@ -147,7 +147,8 @@ module Make (StateImpl : State.S) = struct
         | (Dead | Uninit | Value _), _ -> ok ()
         | Stackptr ptr, None -> State.free ptr
         | Stackptr ((ptr, _) as fptr), Some protect ->
-            if%sat Sptr.sem_eq ptr protect then ok () else State.free fptr)
+            if%sat Sptr.have_same_provenance ptr protect then ok ()
+            else State.free fptr)
 
   let resolve_fn_ptr (fn : Types.fn_ptr) : Fun_kind.t t =
     let open Fun_kind in
@@ -331,12 +332,12 @@ module Make (StateImpl : State.S) = struct
             let pointee = get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
-                let+ () = State.check_ptr_align fptr pointee in
+                let+ () = Sptr.check_aligned fptr pointee in
                 fptr
             | _ -> ok fptr)
         | Int off ->
             let off = Typed.cast_i Usize off in
-            let ptr = Sptr.null_ptr_of off in
+            let ptr = Sptr.of_address off in
             ok (ptr, Thin)
         | _ -> not_impl "Unexpected value when dereferencing place")
     (* The metadata of a pointer type is just the second part of the pointer *)
@@ -347,21 +348,29 @@ module Make (StateImpl : State.S) = struct
           "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty base.ty];
         let+ ptr' =
           Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
-            ptr
             Usize.(1s)
+            ptr
         in
         (ptr', Thin)
     | PlaceProjection (base, Field (kind, field)) ->
         let* ((ptr, meta) as fptr) = resolve_place base in
-        let* () = State.check_ptr_align fptr base.ty in
+        let* () = Sptr.check_aligned fptr base.ty in
         [%l.debug
           "Projecting field %a (kind %a) for %a" Types.pp_field_id field
             Expressions.pp_field_proj_kind kind Sptr.pp ptr];
-        let* ptr' = Sptr.project base.ty kind field ptr in
+        let field = Types.FieldId.to_int field in
+        let* layout = Layout.layout_of base.ty in
+        let fields =
+          match kind with
+          | ProjAdt (_, Some variant) ->
+              Layout.Fields_shape.shape_for_variant variant layout.fields
+          | ProjAdt (_, None) | ProjTuple _ -> layout.fields
+        in
+        let off = Layout.Fields_shape.offset_of field fields in
+        let* ptr' = Sptr.offset ~signed:false off ptr in
         [%l.debug
-          "Projecting ADT %a, field %a, with pointer %a to pointer %a"
-            Expressions.pp_field_proj_kind kind Types.pp_field_id field Sptr.pp
-            ptr Sptr.pp ptr'];
+          "Projecting ADT %a, field %d, with pointer %a to pointer %a"
+            Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr'];
         if Layout.is_dst place.ty then ok (ptr', meta) else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
@@ -380,7 +389,7 @@ module Make (StateImpl : State.S) = struct
         let* () =
           assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty ptr idx in
+        let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty idx ptr in
         [%l.debug
           "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
             Sptr.pp ptr'];
@@ -406,7 +415,7 @@ module Make (StateImpl : State.S) = struct
             (Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len))
             `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty ptr from in
+        let+ ptr' = Sptr.offset ~signed:false ~ty from ptr in
         let slice_len = to_ -!@ from in
         [%l.debug
           "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp ptr
@@ -436,7 +445,7 @@ module Make (StateImpl : State.S) = struct
       The arguments must be passed, as for calls on [&dyn Trait] types the first
       argument holds the VTable pointer. *)
   and resolve_function ~in_tys ~out_ty :
-      GAst.fn_operand -> ('err fun_exec * Types.ty list) t =
+      GAst.fn_operand -> ('err fun_exec * Types.name option * Types.ty list) t =
     let validate_call ?(is_dyn = false) (fn : Types.fun_decl_ref) =
       let fn = Crate.get_fun fn.id in
       let rec check_tys l r =
@@ -459,8 +468,10 @@ module Make (StateImpl : State.S) = struct
       in
       check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
     in
-    let perform_call : Fun_kind.t -> ('a fun_exec * Types.ty list) t = function
-      | Synthetic _ as fn -> ok (exec_fun fn, in_tys)
+    let perform_call :
+        Fun_kind.t -> ('a fun_exec * Types.name option * Types.ty list) t =
+      function
+      | Synthetic _ as fn -> ok (exec_fun fn, None, in_tys)
       | Real fn ->
           let fundef = Crate.get_fun fn.id in
           let+ inputs =
@@ -470,7 +481,7 @@ module Make (StateImpl : State.S) = struct
           [%l.info
             "Resolved function call to %a" Crate.pp_name fundef.item_meta.name];
           let exec = exec_real_fun fundef fn.generics in
-          (exec, inputs)
+          (exec, Some fundef.item_meta.name, inputs)
     in
     function
     (* Handle builtins separately *)
@@ -540,8 +551,8 @@ module Make (StateImpl : State.S) = struct
     (* Reference *)
     | RvRef (place, _borrow, _metadata) ->
         let* ptr = resolve_place place in
-        let* () = State.check_ptr_align ptr place.ty in
-        let* () = State.check_non_dangling ptr place.ty in
+        let* () = Sptr.check_aligned ptr place.ty in
+        let* () = Sptr.check_non_dangling ptr place.ty in
         let* () =
           if (Config.get ()).recursive_validity <> Allow then
             State.fake_read ptr place.ty
@@ -627,8 +638,8 @@ module Make (StateImpl : State.S) = struct
                         fold_list fields ~init:vt ~f:(fun vt field ->
                             let idx = Types.FieldId.to_int field in
                             let* vt_addr =
-                              Sptr.offset ~ty:unit_ptr ~signed:false vt
-                                (BV.usizei idx)
+                              Sptr.offset ~ty:unit_ptr ~signed:false
+                                (BV.usizei idx) vt
                             in
                             let+ vt = State.load (vt_addr, Thin) unit_ptr in
                             fst (as_ptr vt))
@@ -734,16 +745,12 @@ module Make (StateImpl : State.S) = struct
         | ((Ptr _ | Int _) as p1), ((Ptr _ | Int _) as p2) -> (
             match op with
             | Offset ->
-                let*^ p, meta, v =
-                  match (p1, p2) with
-                  | Ptr (p, meta), Int v -> return (p, meta, v)
-                  | _ -> Rustsymex.not_impl "Invalid operands in offset"
-                in
+                let p, meta = as_ptr p1 in
+                let off = as_base_i Usize p2 in
                 let ty = get_pointee (type_of_operand e1) in
-                let v = Typed.cast_i Usize v in
                 let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
                 let signed = Layout.is_signed off_ty in
-                let+ p' = Sptr.offset ~signed ~ty p v in
+                let+ p' = Sptr.offset ~signed ~ty off p in
                 Ptr (p', meta)
             | _ ->
                 let+ res = Core.eval_ptr_binop op p1 p2 in
@@ -866,7 +873,7 @@ module Make (StateImpl : State.S) = struct
           | Ptr (ptr, _) -> ok ptr
           | Int v ->
               let v = Typed.cast_i Usize v in
-              ok (Sptr.null_ptr_of v)
+              ok (Sptr.of_address v)
           | _ ->
               Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
                 pp_rust_val ptr
@@ -953,8 +960,8 @@ module Make (StateImpl : State.S) = struct
         let* src = eval_operand src in
         let* dst = eval_operand dst in
         let* count = eval_operand count in
-        let src = as_ptr_or ~make:Sptr.null_ptr_of src in
-        let dst = as_ptr_or ~make:Sptr.null_ptr_of dst in
+        let src = as_ptr_or ~make:Sptr.of_address src in
+        let dst = as_ptr_or ~make:Sptr.of_address dst in
         let count = as_base_i Usize count in
         let* () =
           with_env ~env:()
@@ -976,7 +983,7 @@ module Make (StateImpl : State.S) = struct
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
-        let* exec_fun, exp_tys =
+        let* exec_fun, name, exp_tys =
           resolve_function ~in_tys ~out_ty:dest.ty func
         in
         (* the expected types of the function may differ to those passed, e.g.
@@ -993,7 +1000,8 @@ module Make (StateImpl : State.S) = struct
             Fmt.(list ~sep:(any ", ") pp_rust_val)
             args];
         let fun_exec =
-          with_extra_call_trace ~loc:terminator.span.data ~msg:"Call trace"
+          with_extra_call_trace ?name ~loc:terminator.span.data
+            ~msg:"Call trace"
           @@ with_env ~env:()
           @@ exec_fun args
         in
@@ -1032,7 +1040,7 @@ module Make (StateImpl : State.S) = struct
             let bool_discr =
               match discr with
               | Int discr -> BV.to_bool (Typed.cast_lit TBool discr)
-              | Ptr (ptr, _) -> Typed.not (Sptr.sem_eq ptr (Sptr.null_ptr ()))
+              | Ptr (ptr, _) -> Typed.not (Sptr.is_null ptr)
               | _ -> failwith "Expected base value for if discriminant"
             in
             if%sat[@lname "if case"] [@rname "else case"] bool_discr then
@@ -1056,8 +1064,7 @@ module Make (StateImpl : State.S) = struct
               | Int discr -> fun (v, _) -> discr ==@ BV.of_literal v
               | Ptr (ptr, _) ->
                   fun (v, _) ->
-                    if Z.equal Z.zero (z_of_literal v) then
-                      Sptr.sem_eq ptr (Sptr.null_ptr ())
+                    if Z.equal Z.zero (z_of_literal v) then Sptr.is_null ptr
                     else failwith "Can't compare pointer with non-0 scalar"
               | _ ->
                   fun (v, _) ->
@@ -1178,7 +1185,8 @@ module Make (StateImpl : State.S) = struct
        https://github.com/soteria-tools/soteria/commit/23bdf7aecf6e80752f98129865ce6d5892d41a2f *)
     let* () = ok () in
     let@@ () =
-      with_extra_call_trace ~loc:fundef.item_meta.span.data ~msg:"Entry point"
+      with_extra_call_trace ~name:fundef.item_meta.name
+        ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
     let* value = exec_real_fun fundef generics args in

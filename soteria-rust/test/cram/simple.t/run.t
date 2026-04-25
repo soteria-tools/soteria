@@ -49,10 +49,29 @@ Test casting between integer types
 Splitting and merging, via a union
   $ soteria-rust exec split_merges.rs
   Compiling... done in <time>
-  => Running split_merges::main...
-  note: split_merges::main: done in <time>, ran 1 branch
+  => Running split_merges::endianness...
+  note: split_merges::endianness: done in <time>, ran 1 branch
   PC 1: empty
   
+  => Running split_merges::uninit_gap...
+  warning: Invalid reference: Uninitialized memory access
+      ┌─ $TESTCASE_ROOT/split_merges.rs:64:9
+   52 │  fn uninit_gap() {
+      │  --------------- 1: Entry point
+      ·  
+   64 │          assert_eq!(x.as_u32, 0x1234_5678);
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering operation
+  error: split_merges::uninit_gap: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Uninitialized memory access in split_merges::uninit_gap
+      ┌─ $TESTCASE_ROOT/split_merges.rs:64:9
+   52 │  fn uninit_gap() {
+      │  --------------- 1: Entry point
+      ·  
+   64 │          assert_eq!(x.as_u32, 0x1234_5678);
+      │          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Memory load
+  PC 1: empty
+  
+  [1]
 Test unwinding, and catching that unwind; we need to ignore leaks as this uses a Box.
   $ soteria-rust exec unwind.rs --ignore-leaks
   Compiling... done in <time>
@@ -411,3 +430,50 @@ Test enum constructors as functions; this broke with a rust toolchain update
   note: enum_constructor::main: done in <time>, ran 1 branch
   PC 1: empty
   
+Print the callgraph
+  $ soteria-rust exec callgraph.rs --dump-callgraph callgraph.dot && cat callgraph.dot
+  Compiling... done in <time>
+  => Running callgraph::main...
+  note: callgraph::main: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  digraph callgraph {
+    node [shape=box fontname="monospace"];
+    n0 [label="Range<A>>::next" tooltip="std::iter::range::<impl std::iter::Iterator for std::ops::Range<A>>::next::<i32>"];
+    n13 [label="io::_print" tooltip="std::io::_print"];
+    n7 [label="callgraph::limit" tooltip="callgraph::limit"];
+    n2 [label="callgraph::choose" tooltip="callgraph::choose"];
+    n12 [label="callgraph::main" tooltip="callgraph::main"];
+    n6 [label="callgraph::run" tooltip="callgraph::run"];
+    n16 [label="Step>::forward_unchecked" tooltip="<i32 as std::iter::Step>::forward_unchecked"];
+    n3 [label="callgraph::twice" tooltip="callgraph::twice"];
+    n14 [label="Argument::<'_>::new_display" tooltip="core::fmt::rt::Argument::<'_>::new_display::<'_, i32>"];
+    n4 [label="callgraph::dec" tooltip="callgraph::dec"];
+    n8 [label="callgraph::score" tooltip="callgraph::score"];
+    n17 [label="PartialOrd for i32>::lt" tooltip="std::cmp::impls::<impl std::cmp::PartialOrd for i32>::lt"];
+    n10 [label="callgraph::ping" tooltip="callgraph::ping"];
+    n15 [label="Arguments::<'a>::new" tooltip="std::fmt::Arguments::<'a>::new::<'_, 12usize, 1usize>"];
+    n11 [label="callgraph::pong" tooltip="callgraph::pong"];
+    n9 [label="IntoIterator>::into_iter" tooltip="<I as std::iter::IntoIterator>::into_iter::<std::ops::Range::<i32>>"];
+    n5 [label="callgraph::inc" tooltip="callgraph::inc"];
+    n1 [label="RangeIteratorImpl>::spec_next" tooltip="<std::ops::Range<T> as std::iter::range::RangeIteratorImpl>::spec_next::<i32>"];
+    n0 -> n1;
+    n2 -> n3;
+    n2 -> n4;
+    n2 -> n5;
+    n6 -> n0;
+    n6 -> n7;
+    n6 -> n8;
+    n6 -> n9;
+    n10 -> n11;
+    n12 -> n13;
+    n12 -> n6;
+    n12 -> n14;
+    n12 -> n15;
+    n8 -> n2;
+    n8 -> n10;
+    n11 -> n10;
+    n1 -> n16;
+    n1 -> n17;
+  }

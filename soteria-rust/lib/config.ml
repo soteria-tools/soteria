@@ -170,6 +170,10 @@ type t = {
       [@names [ "fail-fast" ]]
       [@env "FAIL_FAST"]
       (** Stop symbolic execution upon the first error encountered. *)
+  dump_callgraph : string option;
+      [@docs Sections.output] [@names [ "dump-callgraph" ]]
+      (** If provided, dump the call graph as a DOT file to the given path after
+          analysis. *)
 }
 [@@deriving make, subliner]
 

@@ -141,48 +141,41 @@ module M (StateM : State.StateM.S) = struct
         BV.not_bool (cast res)
     | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
         let* meta_eq = eval_meta_eq meta_l meta_r in
-        let+ ptr_eq =
-          if%sure Sptr.is_same_loc l r then ok (Sptr.sem_eq l r)
-          else
-            (* Pointer comparison just uses the address! See
-               https://doc.rust-lang.org/std/ptr/index.html#provenance *)
-            let* l = Sptr.decay l in
-            let+ r = Sptr.decay r in
-            l ==@ r
-        in
+        (* Pointer comparison just uses the address! See
+           https://doc.rust-lang.org/std/ptr/index.html#provenance *)
+        let+ distance = Sptr.distance l r in
+        let ptr_eq = distance ==@ Usize.(0s) in
         BV.of_bool (meta_eq &&@ ptr_eq)
     | Eq, Ptr (p, _), Int v | Eq, Int v, Ptr (p, _) ->
         let v = cast_i Usize v in
-        if%sat v ==@ Usize.(0s) then ok (BV.of_bool (Sptr.is_at_null_loc p))
+        if%sat v ==@ Usize.(0s) then ok (BV.of_bool (Sptr.is_null p))
         else
           Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p
             Typed.ppa v
     | Eq, Int v1, Int v2 -> ok (BV.of_bool (v1 ==@ v2))
-    | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) ->
-        if%sat Sptr.is_same_loc l r then
-          let* dist = Sptr.distance l r in
-          let bop =
-            match bop with
-            | Lt -> ( <$@ )
-            | Le -> ( <=$@ )
-            | Gt -> ( >$@ )
-            | Ge -> ( >=$@ )
-            | _ -> assert false
-          in
-          let v = bop dist Usize.(0s) in
-          match (ml, mr) with
-          | Thin, Thin -> ok (BV.of_bool v)
-          (* is the below line correct? *)
-          | Thin, _ | _, Thin -> ok (BV.of_bool v)
-          | _, _ ->
-              if%sat dist ==@ Usize.(0s) then
-                let* ml = meta_as_int ml in
-                let* mr = meta_as_int mr in
-                let ml = Option.get ml in
-                let mr = Option.get mr in
-                ok (BV.of_bool (bop ml mr))
-              else ok (BV.of_bool v)
-        else error `UBPointerComparison
+    | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) -> (
+        let* dist = Sptr.distance l r in
+        let bop =
+          match bop with
+          | Lt -> ( <$@ )
+          | Le -> ( <=$@ )
+          | Gt -> ( >$@ )
+          | Ge -> ( >=$@ )
+          | _ -> assert false
+        in
+        let v = bop dist Usize.(0s) in
+        match (ml, mr) with
+        | Thin, Thin -> ok (BV.of_bool v)
+        (* is the below line correct? *)
+        | Thin, _ | _, Thin -> ok (BV.of_bool v)
+        | _, _ ->
+            if%sat dist ==@ Usize.(0s) then
+              let* ml = meta_as_int ml in
+              let* mr = meta_as_int mr in
+              let ml = Option.get ml in
+              let mr = Option.get mr in
+              ok (BV.of_bool (bop ml mr))
+            else ok (BV.of_bool v))
     | op, l, r ->
         Fmt.kstr not_impl
           "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"

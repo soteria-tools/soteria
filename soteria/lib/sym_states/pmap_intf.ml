@@ -55,14 +55,8 @@ struct
       t ->
       unit
 
-    val pp : Format.formatter -> t -> unit
-    val show : t -> string
-    val pp_syn : Format.formatter -> syn -> unit
-    val show_syn : syn -> string
-    val to_syn : t -> syn list
     val of_opt : t option -> t
     val to_opt : t -> t option
-    val ins_outs : syn -> Symex.Value.Expr.t list * Symex.Value.Expr.t list
     val alloc : new_codom:codom -> (Key.t, 'err) res
 
     val allocs :
@@ -77,18 +71,5 @@ struct
       'acc ->
       t option ->
       'acc Symex.t
-
-    val produce : syn -> t option -> t option Symex.Producer.t
-
-    (* val consume :
-     *  ('inner_serialized ->
-     *  'inner_st option ->
-     *  ( 'inner_st option,
-     *    ([> Symex.lfail ] as 'a),
-     *    'inner_serialized )
-     *  Symex.Result.t) ->
-     *  'inner_serialized serialized ->
-     *  'inner_st t option ->
-     *  ('inner_st t option, 'a, 'inner_serialized serialized) Symex.Result.t *)
   end
 end
