@@ -6,22 +6,29 @@ let match_config =
   NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
 
 (* Functions we could not stub, but we do for performance *)
-type fixme_fn = PromiseAlignment
+type fixme_fn_temp = PromiseAlignment
 
 (* Soteria builtin functions *)
 type soteria_fn = Assert | Assume | NondetBytes | Panic
-type fn = Fixme of fixme_fn | Soteria of soteria_fn
 
-type extern_fn = Alloc of alloc_fn | Miri of miri_fn | Panic of panic_fn
+type fn =
+  | FixmeTemp of fixme_fn_temp
+  | Soteria of soteria_fn
+  | Optim of Optim.fn
+  | System of System.fn
+  | Fixme of Fixme.fn
 
-and alloc_fn =
+(** extern functions we must implement manually *)
+
+type alloc_fn =
   | Alloc of { zeroed : bool }
   | Dealloc
   | Realloc
   | NoAllocShimIsUnstable
 
-and miri_fn = Alloc | AllocId | Dealloc | Nop
-and panic_fn = PanicCleanup
+type miri_fn = Alloc | AllocId | Dealloc | Nop
+type panic_fn = PanicCleanup
+type extern_fn = Alloc of alloc_fn | Miri of miri_fn | Panic of panic_fn
 
 let extern_functions =
   [
@@ -57,8 +64,12 @@ let std_fun_pair_list =
     ("kani::panic", Soteria Panic);
     (* Miri builtins *)
     (* HACK: this should be handled with intrinsics. *)
-    ("std::intrinsics::miri_promise_symbolic_alignment", Fixme PromiseAlignment);
+    ( "std::intrinsics::miri_promise_symbolic_alignment",
+      FixmeTemp PromiseAlignment );
   ]
+  @ (Optim.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Optim f)
+  @ (System.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> System f)
+  @ (Fixme.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Fixme f)
 
 let opaque_names = List.map fst std_fun_pair_list
 
@@ -73,16 +84,19 @@ module M (StateM : State.StateM.S) = struct
   module Miri = Miri.M (StateM)
   module Soteria_lib = Soteria_lib.M (StateM)
   module Std = Std.M (StateM)
-  module Optim_name = Optim.M (StateM)
-  module System_name = System.M (StateM)
-  module Fixme_name = Fixme.M (StateM)
+  module Optim = Optim.M (StateM)
+  module System = System.M (StateM)
+  module Fixme = Fixme.M (StateM)
 
-  let fn_to_stub fn_sig _fn_name _fun_exec = function
+  let fn_to_stub fn_sig _fn_name fun_exec generics = function
     | Soteria Assert -> Soteria_lib.assert_
     | Soteria Assume -> Soteria_lib.assume
     | Soteria NondetBytes -> Soteria_lib.nondet_bytes fn_sig
     | Soteria Panic -> Soteria_lib.panic ?msg:None
-    | Fixme PromiseAlignment -> Miri.promise_alignement
+    | FixmeTemp PromiseAlignment -> Miri.promise_alignement
+    | Fixme f -> Fixme.fn_to_stub f fun_exec generics
+    | Optim f -> Optim.fn_to_stub f fun_exec generics
+    | System f -> System.fn_to_stub f fun_exec generics
 
   let extern_fn_to_stub = function
     | Alloc (Alloc { zeroed }) -> Alloc.alloc ~zeroed
@@ -96,25 +110,10 @@ module M (StateM : State.StateM.S) = struct
     | Panic PanicCleanup -> Std.panic_cleanup
 
   let eval_stub (f : UllbcAst.fun_decl) fun_exec generics =
-    (* Try the generated stub modules first, in priority order. *)
-    let generated =
-      List.find_map Fun.id
-        [
-          Optim_name.eval_fun f fun_exec generics;
-          System_name.eval_fun f fun_exec generics;
-          Fixme_name.eval_fun f fun_exec generics;
-        ]
-    in
-    match generated with
-    | Some _ -> generated
-    | None ->
-        (* Fall back to the small set of soteria/kani/miri manual builtins. *)
-        let name = f.item_meta.name in
-        let ctx = Crate.as_namematcher_ctx () in
-        let stub = NameMatcherMap.find_opt ctx match_config name std_fun_map in
-        Option.map
-          (fun stub args -> fn_to_stub f.signature name fun_exec stub args)
-          stub
+    let name = f.item_meta.name in
+    let ctx = Crate.as_namematcher_ctx () in
+    NameMatcherMap.find_opt ctx match_config name std_fun_map
+    |> Option.map (fn_to_stub f.signature name fun_exec generics)
 
   let eval_intrinsic (f : UllbcAst.fun_decl) name generics fun_exec =
     (* In the case of monomorphised code, the generics will be empty but present

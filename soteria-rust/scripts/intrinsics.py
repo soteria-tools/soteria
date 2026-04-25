@@ -563,6 +563,65 @@ def get_intrinsics() -> dict[str, FunDecl]:
     return intrinsics
 
 
+def get_stubs(patterns: list[str]) -> list[FunDecl]:
+    file_json = (PWD / "custom_stubs.ullbc.temp").resolve()
+    if "--cached" in sys.argv:
+        pprint("Using cached stubs")
+    else:
+        file_rs = (PWD / "custom_stubs.rs").resolve()
+        features = ["f16", "f128", "const_index"]
+        file_rs.write_text(f"#![feature({', '.join(features)})]\n")
+        toolchain = get_toolchain()
+        sysroot = get_sysroot(toolchain)
+        charon_cmd = [
+            "charon",
+            "rustc",
+            "--ullbc",
+            "--dest-file",
+            str(file_json),
+            "--extract-opaque-bodies",
+        ]
+        for pattern in patterns:
+            # substs we must apply because of inherent impls
+            substs = [
+                (r".+::f16::_::(.+)", r"f16::\1"),
+                (r".+::f32::_::(.+)", r"f32::\1"),
+                (r".+::f64::_::(.+)", r"f64::\1"),
+                (r".+::f128::_::(.+)", r"f128::\1"),
+            ]
+            for pat, replacement in substs:
+                if re.match(pat, pattern):
+                    pattern = re.sub(pat, replacement, pattern)
+            charon_cmd.extend(["--start-from-if-exists", pattern, "--include", pattern])
+
+        charon_cmd.extend(
+            [
+                "--opaque",
+                "std",
+                "--opaque",
+                "core",
+                "--",
+                str(file_rs),
+                "--crate-type=lib",
+                "--sysroot",
+                sysroot,
+            ]
+        )
+
+        proc = subprocess.run(charon_cmd, check=False, stderr=subprocess.STDOUT)
+        file_rs.unlink(missing_ok=True)
+        if proc.returncode != 0 and not file_json.exists():
+            raise subprocess.CalledProcessError(proc.returncode, charon_cmd)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"{YELLOW}{BOLD}Warning{RESET}: Charon returned exit code {proc.returncode}"
+            )
+
+    ullbc = json.loads(file_json.read_text())
+    traverse_types(ullbc)
+    return [fun for fun in ullbc["translated"]["fun_decls"] if fun is not None]
+
+
 # ---------------------------------------------------------------------------
 # Code generators
 # ---------------------------------------------------------------------------
@@ -697,6 +756,16 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     return interface_str, stubs_str, main_str
 
 
+def path_of(fun: FunDecl) -> str:
+    names: list[str] = []
+    for elem in fun["item_meta"]["name"]:
+        if "Ident" in elem:
+            names.append(elem["Ident"][0])
+        else:
+            names.append("_")
+    return "::".join(names)
+
+
 def generate_custom_stubs() -> None:
     config_path = (PWD / ".." / "lib" / "builtins" / "stubs.json").resolve()
     if not config_path.exists():
@@ -718,89 +787,15 @@ def generate_custom_stubs() -> None:
             raise ValueError(f"Category '{category}' must map to a list of strings")
         config[category] = patterns
 
-    include_patterns: list[str] = []
-    for patterns in config.values():
-        for pattern in patterns:
-            if pattern not in include_patterns:
-                include_patterns.append(pattern)
+    patterns: list[str] = list(set(p for ps in config.values() for p in ps))
 
-    if len(include_patterns) == 0:
+    if len(patterns) == 0:
         pprint("No custom stub patterns found, skipping")
         return
 
-    file_rs = (PWD / "custom_stubs.rs").resolve()
-    file_json = (PWD / "custom_stubs.ullbc.temp").resolve()
-
-    features = ["f16", "f128", "const_index"]
-    file_rs.write_text(f"#![feature({', '.join(features)})]\n")
-
-    toolchain = get_toolchain()
-    sysroot = get_sysroot(toolchain)
-
-    def extract_name_strings(path_elems: list[PathElem]) -> list[str]:
-        names: list[str] = []
-        for elem in path_elems:
-            if "Ident" in elem:
-                names.append(elem["Ident"][0])
-            else:
-                names.append("_")
-        return names
-
-    def run_charon() -> list[FunDecl]:
-        charon_cmd = [
-            "charon",
-            "rustc",
-            "--ullbc",
-            "--dest-file",
-            str(file_json),
-            "--extract-opaque-bodies",
-        ]
-        for pattern in include_patterns:
-            # substs we must apply because of inherent impls
-            substs = [
-                (r".+::f16::_::(.+)", r"f16::\1"),
-                (r".+::f32::_::(.+)", r"f32::\1"),
-                (r".+::f64::_::(.+)", r"f64::\1"),
-                (r".+::f128::_::(.+)", r"f128::\1"),
-            ]
-            for pat, replacement in substs:
-                if re.match(pat, pattern):
-                    pattern = re.sub(pat, replacement, pattern)
-            charon_cmd.extend(["--start-from-if-exists", pattern, "--include", pattern])
-
-        charon_cmd.extend(
-            [
-                "--opaque",
-                "std",
-                "--opaque",
-                "core",
-                "--",
-                str(file_rs),
-                "--crate-type=lib",
-                "--sysroot",
-                sysroot,
-            ]
-        )
-
-        proc = subprocess.run(charon_cmd, check=False, stderr=subprocess.STDOUT)
-        if proc.returncode != 0 and not file_json.exists():
-            raise subprocess.CalledProcessError(proc.returncode, charon_cmd)
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"{YELLOW}{BOLD}Warning{RESET}: Charon returned exit code {proc.returncode}"
-            )
-
-        ullbc = json.loads(file_json.read_text())
-        traverse_types(ullbc)
-        return [fun for fun in ullbc["translated"]["fun_decls"] if fun is not None]
-
     pprint("Loading custom stubs declarations...")
-    fun_decls = run_charon()
-    file_rs.unlink(missing_ok=True)
+    fun_decls = get_stubs(patterns)
     categories: dict[str, list[FunDecl]] = {k: [] for k in config.keys()}
-
-    def path_of(fun: FunDecl) -> str:
-        return "::".join(extract_name_strings(fun["item_meta"]["name"]))
 
     def matches_pattern(path: list[PathElem], pattern: str) -> bool:
         pattern_parts = pattern.split("::")
@@ -834,10 +829,7 @@ def generate_custom_stubs() -> None:
         for p in set(missing_patterns):
             last_part = p.split("::")[-1]
             potential_matches = [
-                path_of(fdef)
-                for fdef in fun_decls
-                if last_part in path_of(fdef)
-                or last_part in fdef["item_meta"]["name"][-1]["Ident"][0]
+                path for fdef in fun_decls if last_part in (path := path_of(fdef))
             ]
             if potential_matches:
                 pprint(f"- {p} (maybe you meant: {', '.join(potential_matches)})")
@@ -917,8 +909,14 @@ def generate_custom_stubs() -> None:
             )
 
         infos.sort(key=lambda x: x["rust_path"])
-        category_file = ml_folder / f"{sanitize_ocaml_ident(category.lower())}.ml"
-        preserved_impl = read_user_impl_block(category_file)
+
+        category_name = sanitize_ocaml_ident(category.lower())
+        category_dir = ml_folder / category_name
+        category_dir.mkdir(exist_ok=True)
+
+        intf_file = category_dir / "intf.ml"
+        impl_file = category_dir / "impl.ml"
+        entry_file = category_dir / f"{category_name}.ml"
 
         intf_entries = ""
         default_impl_entries = ""
@@ -946,7 +944,7 @@ def generate_custom_stubs() -> None:
                 )
                 eval_entries += f"""
                     | {info['variant_name']}, _, _, _ ->
-                      Impl.{info['ocaml_name']} ~fun_exec:_fun_exec ~types:generics.types ~consts:generics.const_generics ~args
+                      {info['ocaml_name']} ~fun_exec:_fun_exec ~types:generics.types ~consts:generics.const_generics ~args
                 """
             else:
                 args_and_tys = make_args_and_tys(info)
@@ -969,83 +967,84 @@ def generate_custom_stubs() -> None:
                 ]
 
                 if call_args:
-                    call_expr = f"Impl.{info['ocaml_name']} {' '.join(call_args)}"
+                    call_expr = f"{info['ocaml_name']} {' '.join(call_args)}"
                 else:
-                    call_expr = f"Impl.{info['ocaml_name']} ()"
+                    call_expr = f"{info['ocaml_name']} ()"
                 eval_entries += f"""
                    | {info['variant_name']}, [{types_pat}], [{consts_pat}], [{args_match}] ->
                      {make_match_body(info, call_expr)}
                 """
 
-        default_impl_block = f"""
-            {USER_IMPL_START}
-            module Impl : Intf = struct
-            {default_impl_entries}
-            end
-            {USER_IMPL_END}
-            """
-        impl_block = (
-            preserved_impl
-            if preserved_impl is not None and has_user_lets(preserved_impl)
-            else default_impl_block
-        )
+        # intf.ml — generated module type that impl.ml must satisfy
+        intf_generated = f"""
+            {GENERATED_WARNING}
 
-        generated = f"""
+            open Charon
+            open Common
+
+            module M (StateM : State.StateM.S) = struct
+              open StateM
+
+              type rust_val = Sptr.t Rust_val.t
+              type 'a ret = ('a, unit) StateM.t
+              type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+              type full_ptr = StateM.Sptr.t Rust_val.full_ptr
+
+              module type S = sig {intf_entries} end
+            end
+        """
+        write_ocaml_file(intf_file, intf_generated)
+
+        # impl.ml — hand-written; only regenerate when it has no user code yet
+        if not impl_file.exists():
+            pprint(f"Created dummy impl file {BOLD}{impl_file}{RESET}")
+            impl_generated = f"""
+                module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
+                    open StateM
+                    open Syntax
+
+                    {default_impl_entries}
+                end
+            """
+            write_ocaml_file(impl_file, impl_generated)
+
+        # {category_name}.ml — generated entry point: fn_map + dispatch + eval_fun
+        entry_generated = f"""
             {GENERATED_WARNING}
 
             [@@@warning "-unused-open"]
 
-            open Charon
             open Common
             open Rust_val
 
-            module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
-
-            let match_config =
-            NameMatcher.{{ map_vars_to_vars = false; match_with_trait_decl_refs = false }}
+            type fn = {fn_variants}
+            let fn_pats : (string * fn) list = [ {fn_map_entries} ]
 
             module M (StateM : State.StateM.S) = struct
-            open StateM
-            open Syntax
+                open StateM
+                open Syntax
 
-            type rust_val = Sptr.t Rust_val.t
-            type 'a ret = ('a, unit) StateM.t
-            type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-            type full_ptr = StateM.Sptr.t Rust_val.full_ptr
+                type rust_val = Sptr.t Rust_val.t
+                type 'a ret = ('a, unit) StateM.t
+                type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+                type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
-            {OCAML_HELPERS}
+                {OCAML_HELPERS}
 
-            module type Intf = sig
-            {intf_entries}
-            end
+                include Impl.M(StateM)
 
-            type fn ={fn_variants}
-
-            let fn_map : fn NameMatcherMap.t =
-                [{fn_map_entries}]
-                |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
-                |> NameMatcherMap.of_list
-
-            {impl_block}
-
-            let fn_of_stub stub _fun_exec (generics : Charon.Types.generic_args) args =
-                match (stub, generics.types, generics.const_generics, args) with
-                {eval_entries}
-                | _, tys, cs, args ->
-                    Fmt.kstr not_impl
-                        "Custom stub found but called with the wrong arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
-                        Fmt.(list ~sep:comma Charon_util.pp_ty) tys
-                        Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
-                        Fmt.(list ~sep:comma pp_rust_val)args
-
-            let eval_fun (f : UllbcAst.fun_decl) (fun_exec : fun_exec) (generics : Charon.Types.generic_args) =
-                let ctx = Crate.as_namematcher_ctx () in
-                let stub = NameMatcherMap.find_opt ctx match_config f.item_meta.name fn_map in
-                Option.map (fun stub -> fn_of_stub stub fun_exec generics) stub
+                let fn_to_stub stub _fun_exec (generics : Charon.Types.generic_args) args =
+                    match (stub, generics.types, generics.const_generics, args) with
+                    {eval_entries}
+                    | _, tys, cs, args ->
+                        Fmt.kstr not_impl
+                            "Custom stub found but called with the wrong arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
+                            Fmt.(list ~sep:comma Charon_util.pp_ty) tys
+                            Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
+                            Fmt.(list ~sep:comma pp_rust_val)args
             end
         """
-
-        write_ocaml_file(category_file, generated)
+        write_ocaml_file(entry_file, entry_generated)
         pprint(
             f"Category {BOLD}{category}{RESET}: generated {BOLD}{len(infos)}{RESET} stubs"
         )
@@ -1079,8 +1078,8 @@ def generate_intrinsics():
 
 
 if __name__ == "__main__":
-    run_intrinsics = "--custom-stubs" not in sys.argv or "--intrinsics" in sys.argv
-    run_custom_stubs = "--custom-stubs" in sys.argv
+    run_intrinsics = "--stubs" not in sys.argv or "--intrinsics" in sys.argv
+    run_custom_stubs = "--stubs" in sys.argv
 
     if run_intrinsics:
         generate_intrinsics()
