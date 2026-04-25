@@ -1,6 +1,8 @@
 (** This file was generated with [scripts/stubs.py] -- do not edit it manually,
     instead modify the script and re-run it. *)
 
+[@@@warning "-unused-open"]
+
 open Charon
 open Common
 
@@ -711,14 +713,7 @@ module M (StateM : State.StateM.S) = struct
       fmt:rust_val -> force_no_backtrace:[< Typed.T.sbool ] Typed.t -> unit ret
 
     val result_unwrap_failed : msg:full_ptr -> error:full_ptr -> unit ret
-
-    val io__print :
-      fun_exec:fun_exec ->
-      types:Types.ty list ->
-      consts:Types.constant_expr list ->
-      args:rust_val list ->
-      rust_val ret
-
+    val io__print : args:rust_val list -> rust_val ret
     val _eprint : args:rust_val -> unit ret
     val stdio__print : args:rust_val -> unit ret
 
@@ -739,11 +734,6 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val panicking_begin_panic : m:Types.ty -> msg:rust_val -> unit ret
 
-    val rt_begin_panic :
-      fun_exec:fun_exec ->
-      types:Types.ty list ->
-      consts:Types.constant_expr list ->
-      args:rust_val list ->
-      rust_val ret
+    val rt_begin_panic : args:rust_val list -> rust_val ret
   end
 end

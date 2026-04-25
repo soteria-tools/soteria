@@ -1,6 +1,8 @@
 (** This file was generated with [scripts/stubs.py] -- do not edit it manually,
     instead modify the script and re-run it. *)
 
+[@@@warning "-unused-open"]
+
 open Charon
 open Common
 
@@ -15,20 +17,8 @@ module M (StateM : State.StateM.S) = struct
   module type S = sig
     val _var : fun_sig:Types.fun_sig -> key:full_ptr -> rust_val ret
     val hashmap_random_keys : unit -> rust_val ret
-
-    val _tlv_atexit :
-      fun_exec:fun_exec ->
-      types:Types.ty list ->
-      consts:Types.constant_expr list ->
-      args:rust_val list ->
-      rust_val ret
-
-    val now :
-      fun_exec:fun_exec ->
-      types:Types.ty list ->
-      consts:Types.constant_expr list ->
-      args:rust_val list ->
-      rust_val ret
+    val _tlv_atexit : fun_exec:fun_exec -> args:rust_val list -> rust_val ret
+    val now : args:rust_val list -> rust_val ret
 
     (** {@markdown[
           Returns an estimate of the default amount of parallelism a program should use.

@@ -163,8 +163,10 @@ InterpTypeBase = Literal[
     "unknown",
     "fun_exec",
     "meta_ty",
+    "meta_tys",
     "meta_const",
     "meta_sig",
+    "meta_args",
 ]
 InterpTypeMeta = Optional[str]
 InterpType = tuple[InterpTypeBase, InterpTypeMeta]
@@ -275,8 +277,10 @@ input_type: dict[InterpTypeBase, str] = {
     "unknown": "rust_val",
     "fun_exec": "fun_exec",
     "meta_ty": "Types.ty",
+    "meta_tys": "Types.ty list",
     "meta_const": "Types.constant_expr",
-    "meta_sig": "Types.fun_sig"
+    "meta_sig": "Types.fun_sig",
+    "meta_args": "rust_val list",
 }
 
 
@@ -390,6 +394,7 @@ class ItemInfo(TypedDict):
     rust_path: str
     doc: Optional[str]
     args: list[tuple[str, InterpType]]
+    meta_args : list[tuple[str, str, InterpType]]
     types: list[str]
     consts: list[str]
     ret: InterpType
@@ -398,38 +403,19 @@ class ItemInfo(TypedDict):
 class StubInfo(ItemInfo):
     variant_name: str
     is_dummy: bool
-    with_sig: bool
 
 
 def make_args_and_tys(
     info: ItemInfo,
-    extra_prefix: Optional[list[tuple[Optional[str], InterpType]]] = None,
 ) -> list[tuple[Optional[str], InterpType]]:
     """Build the full argument list: [extra_prefix] + [type generics] + [const generics] + [args]."""
-    result: list[tuple[Optional[str], InterpType]] = list(extra_prefix or [])
+    result: list[tuple[Optional[str], InterpType]] = [
+        (name, ty) for (name, _, ty) in info["meta_args"]
+    ]
     result.extend((t, ("meta_ty", None)) for t in info["types"])
     result.extend((c, ("meta_const", None)) for c in info["consts"])
     result.extend(info["args"])
     return result
-
-
-def make_ocaml_signature(
-    args_and_tys: list[tuple[Optional[str], InterpType]],
-    ret: InterpType,
-) -> str:
-    """Generate an OCaml type signature string: `arg:type -> ... -> ret_type ret`.
-    When there are no arguments, emits `unit -> ret_type ret` so it compiles as
-    a function rather than a value."""
-    ret_part = output_type[ret[0]] + " ret"
-    if not args_and_tys:
-        return f"unit -> {ret_part}"
-    parts = [
-        f"{arg}:{input_type[ty[0]]}" if arg is not None else input_type[ty[0]]
-        for arg, ty in args_and_tys
-    ]
-    parts.append(ret_part)
-    return " -> ".join(parts)
-
 
 def make_not_impl_stub(
     name: str,
@@ -447,9 +433,7 @@ def make_not_impl_stub(
     return f'let {name} {stub_args} = not_impl "{error_msg}"'
 
 
-def make_match_branch(
-    info: ItemInfo, *, fist_pat: str, extra_arg: Optional[str] = None
-) -> str:
+def make_match_branch(info: ItemInfo, *, fist_pat: str) -> str:
     def arg_as_pat(arg: str) -> str:
         if arg == info["ocaml_name"]:
             return f"{arg}_"
@@ -463,13 +447,11 @@ def make_match_branch(
         arg_as_pat(a) for (a, _) in info["args"]
         if a != "fun_sig"
     )
-    call_args = [
+    call_args = [f"~{name}:{src}" for name, src, _ in info["meta_args"]]
+    call_args += [
         f"~{arg}:{arg_as_pat(arg)}"
         for arg in info["types"] + info["consts"] + [a for (a, _) in info["args"]]
     ]
-
-    if extra_arg:
-        call_args.insert(0, extra_arg)
 
     if not call_args:
         call_args.append("()")
@@ -496,7 +478,16 @@ def make_val_entry(
     info: ItemInfo, args_and_tys: list[tuple[Optional[str], InterpType]]
 ) -> str:
     """Generate a `val name : sig` declaration with an optional leading doc comment."""
-    sig = make_ocaml_signature(args_and_tys, info["ret"])
+    ret_part = output_type[info["ret"][0]] + " ret"
+    if not args_and_tys:
+        sig = f"unit -> {ret_part}"
+    else:
+        parts = [
+            f"{arg}:{input_type[ty[0]]}" if arg is not None else input_type[ty[0]]
+            for arg, ty in args_and_tys
+        ]
+        parts.append(ret_part)
+        sig = " -> ".join(parts)
     return f"{make_doc_comment(info['doc'])}val {info['ocaml_name']} : {sig}"
 
 
@@ -547,6 +538,7 @@ def fun_decl_to_item_info(fun: FunDecl, ocaml_name: str) -> ItemInfo:
         "rust_path": rust_path,
         "doc": doc,
         "args": args,
+        "meta_args": [],
         "types": types,
         "consts": consts,
         "ret": ret,
@@ -674,7 +666,10 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         if "Intrinsic" not in fun["body"]:
             continue
         ocaml_name = fun["item_meta"]["name"][-1]["Ident"][0]
-        intrinsics_info.append(fun_decl_to_item_info(fun, ocaml_name))
+        info = fun_decl_to_item_info(fun, ocaml_name)
+        if info["ocaml_name"] == "catch_unwind":
+            info["meta_args"].append(("fun_exec", "fun_exec", ("fun_exec", None)))
+        intrinsics_info.append(info)
     intrinsics_info.sort(key=lambda x: x["ocaml_name"])
 
     type_utils = """
@@ -690,10 +685,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
     for info in intrinsics_info:
         # catch_unwind additionally receives the function-execution callback
-        extra_prefix: Optional[list[tuple[Optional[str], InterpType]]] = None
-        if info["ocaml_name"] == "catch_unwind":
-            extra_prefix = [(None, ("fun_exec", None))]
-        args_and_tys = make_args_and_tys(info, extra_prefix)
+        args_and_tys = make_args_and_tys(info, )
 
         # Interface val entry
         interface_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
@@ -706,10 +698,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         )
 
         # Match arms
-        extra_arg = "fun_exec" if info["ocaml_name"] == "catch_unwind" else None
-        match_arm_entries += make_match_branch(
-            info, fist_pat=f'"{info['ocaml_name']}"', extra_arg=extra_arg
-        )
+        match_arm_entries += make_match_branch(info, fist_pat=f'"{info['ocaml_name']}"')
 
     interface_str = f"""
         {GENERATED_WARNING}
@@ -721,8 +710,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
           module type Impl = sig
             {type_utils}
             type full_ptr := StateM.Sptr.t Rust_val.full_ptr
-
-        {interface_entries}
+            {interface_entries}
         end
 
         module type S = sig
@@ -788,13 +776,28 @@ def path_of(fun: FunDecl) -> str:
 
 class Pattern:
     pattern: str
-    with_sig: bool
+    extras: list[str]
+
     def __init__(self, pattern: str) -> None:
         self.pattern = pattern
-        self.with_sig = pattern.endswith(" with sig")
-        if self.with_sig:
-            self.pattern = pattern[:-9]
+        self.extras = []
+        if " with " in pattern:
+            self.pattern, suffix = pattern.split(" with ", 1)
+            self.extras = [part.strip() for part in suffix.split()]
+            valid_extras = {"fun_exec", "sig", "types"}
+            for extra in self.extras:
+                if extra not in valid_extras:
+                    raise ValueError(f"Invalid extra '{extra}' in pattern '{pattern}'")
 
+    def as_meta_args(self) -> list[tuple[str, str, InterpType]]:
+        meta_args: list[tuple[str, str, InterpType]] = []
+        if "sig" in self.extras:
+            meta_args.append(("fun_sig", "_fun_sig", ("meta_sig", None)))
+        if "fun_exec" in self.extras:
+            meta_args.append(("fun_exec", "_fun_exec", ("fun_exec", None)))
+        if "types" in self.extras:
+            meta_args.append(("types", "generics.types", ("meta_tys", None)))
+        return meta_args
 
 def generate_custom_stubs() -> None:
     config_path = (PWD / ".." / "lib" / "builtins" / "stubs.json").resolve()
@@ -808,10 +811,12 @@ def generate_custom_stubs() -> None:
         raise ValueError("stubs.json must contain a JSON object")
 
     config: dict[str, list[Pattern]] = {}
-    valid_pattern = r"^([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+( with sig)?$"
+    valid_pattern = r"^([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+( with [ \w]+)?$"
     for category, patterns in raw_config.items():
         if not isinstance(category, str):
             raise ValueError("stubs.json keys must be strings")
+        if category == "_comment":
+            continue
         if not isinstance(patterns, list) or not all(
             isinstance(p, str) for p in patterns
         ):
@@ -914,13 +919,13 @@ def generate_custom_stubs() -> None:
             variant_name = (
                 base_variant if vcount == 0 else f"{base_variant}{vcount + 1}"
             )
-            with_sig = any(p.with_sig for p in config[category] if p.pattern == info["rust_path"])
-            if with_sig:
-                info["args"].insert(0, ("fun_sig", ("meta_sig", None)))
+            matching_pat = next(
+                (p for p in config[category] if p.pattern == info["rust_path"])
+            )
+            info["meta_args"].extend(matching_pat.as_meta_args())
             infos.append({
                 **info,
                 "variant_name": variant_name,
-                "with_sig": with_sig,
                 "is_dummy": False
             })
 
@@ -936,6 +941,8 @@ def generate_custom_stubs() -> None:
             variant_name = (
                 base_variant if vcount == 0 else f"{base_variant}{vcount + 1}"
             )
+            meta_args: list[tuple[str, str, InterpType]] = pattern.as_meta_args()
+            meta_args.append(("args", "args", ("meta_args", None)))
 
             infos.append(
                 {
@@ -944,8 +951,8 @@ def generate_custom_stubs() -> None:
                     "rust_path": pattern.pattern,
                     "doc": None,
                     "is_dummy": True,
-                    "with_sig": pattern.with_sig,
                     "args": [],
+                    "meta_args": meta_args,
                     "types": [],
                     "consts": [],
                     "ret": ("unknown", None),
@@ -969,27 +976,25 @@ def generate_custom_stubs() -> None:
         for info in infos:
             fn_variants += f" | {info['variant_name']}"
             fn_map_entries += f"(\"{info['rust_path']}\", {info['variant_name']});"
+            args_and_tys = make_args_and_tys(info)
+            intf_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
 
             if info["is_dummy"]:
-                dummy_sig = "fun_exec:fun_exec -> types:Types.ty list -> consts:Types.constant_expr list -> args:rust_val list -> rust_val ret"
-                opt_args = ""
-                if info["with_sig"]:
-                    opt_args = "~fun_sig:_fun_sig"
-                    dummy_sig = "fun_sig:Types.fun_sig -> " + dummy_sig
-
-                intf_entries += f"\n{make_doc_comment(info['doc'])}val {info['ocaml_name']} : {dummy_sig}\n"
+                opt_args = " ".join(f"~{arg_name}:{src}" for arg_name, src, _ in info["meta_args"])
+                if not opt_args:
+                    opt_args = "()"
                 eval_entries += f"""
                     | {info['variant_name']}, _, _, _ ->
-                      {info['ocaml_name']} {opt_args} ~fun_exec:_fun_exec ~types:generics.types ~consts:generics.const_generics ~args
+                      {info['ocaml_name']} {opt_args}
                 """
             else:
-                args_and_tys = make_args_and_tys(info)
-                intf_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
                 eval_entries += make_match_branch(info, fist_pat=info["variant_name"])
 
         # intf.ml — generated module type that impl.ml must satisfy
         intf_generated = f"""
             {GENERATED_WARNING}
+
+            [@@@warning "-unused-open"]
 
             open Charon
             open Common

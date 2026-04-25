@@ -93,7 +93,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       ~carry:_ =
     not_impl "Unsupported intrinsic: carrying_mul_add"
 
-  let catch_unwind _ ~try_fn:_ ~data:_ ~catch_fn:_ =
+  let catch_unwind ~fun_exec:_ ~try_fn:_ ~data:_ ~catch_fn:_ =
     not_impl "Unsupported intrinsic: catch_unwind"
 
   let ceilf128 ~x:_ = not_impl "Unsupported intrinsic: ceilf128"

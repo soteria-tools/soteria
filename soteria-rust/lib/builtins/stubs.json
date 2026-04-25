@@ -1,6 +1,15 @@
 {
+  "_comment": [
+    "This file contains patterns for functions that should be stubbed out.",
+    "For each key, a pattern is specified.",
+    "Optionally, you may suffix the pattern with 'with' to mention additional",
+    "arguments that should be given to the stub. The valid values are:",
+    "- sig: the function signature",
+    "- types: the generic types the function is instantiated with",
+    "- fun_exec: the function to call Rust functions"
+  ],
   "System": [
-    "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
+    "std::sys::thread_local::guard::apple::enable::_tlv_atexit with fun_exec",
     "std::sys::random::hashmap_random_keys",
     "std::thread::functions::available_parallelism with sig",
     "std::sys::time::unix::Instant::now",
@@ -59,7 +68,7 @@
   "Soteria_lib": [
     "soteria::assert",
     "soteria::assume",
-    "soteria::nondet_bytes",
+    "soteria::nondet_bytes with types",
     "soteria::panic",
     "kani::assert",
     "kani::assume",

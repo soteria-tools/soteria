@@ -1,6 +1,8 @@
 (** This file was generated with [scripts/stubs.py] -- do not edit it manually,
     instead modify the script and re-run it. *)
 
+[@@@warning "-unused-open"]
+
 open Charon
 open Common
 
@@ -13,12 +15,6 @@ module M (StateM : State.StateM.S) = struct
   type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
   module type S = sig
-    val new_ :
-      fun_sig:Types.fun_sig ->
-      fun_exec:fun_exec ->
-      types:Types.ty list ->
-      consts:Types.constant_expr list ->
-      args:rust_val list ->
-      rust_val ret
+    val new_ : fun_sig:Types.fun_sig -> args:rust_val list -> rust_val ret
   end
 end

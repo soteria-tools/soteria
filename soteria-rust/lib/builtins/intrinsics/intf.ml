@@ -536,7 +536,7 @@ module M (StateM : State.StateM.S) = struct
            version of this intrinsic, `std::panic::catch_unwind`.
         ]} *)
     val catch_unwind :
-      fun_exec ->
+      fun_exec:fun_exec ->
       try_fn:full_ptr ->
       data:full_ptr ->
       catch_fn:full_ptr ->

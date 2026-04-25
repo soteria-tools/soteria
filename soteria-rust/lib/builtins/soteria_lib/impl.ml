@@ -5,7 +5,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open Syntax
   module Core = Core.M (StateM)
 
-  let soteria_assert ~fun_exec:_ ~types:_ ~consts:_ ~args =
+  let soteria_assert ~args =
     let to_assert, msg =
       match args with
       | [ Int t; Ptr msg ] -> (Typed.cast_lit TBool t, msg)
@@ -16,7 +16,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
       error (`FailedAssert str)
     else ok unit_
 
-  let soteria_assume ~fun_exec:_ ~types:_ ~consts:_ ~args =
+  let soteria_assume ~args =
     let to_assume =
       match args with
       | [ Int t ] -> Typed.cast_lit TBool t
@@ -26,7 +26,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let+ () = assume [ Typed.BitVec.to_bool to_assume ] in
     unit_
 
-  let nondet_bytes ~fun_exec:_ ~types ~consts:_ ~args:_ =
+  let nondet_bytes ~types ~args:_ =
     let output =
       match types with
       | [ ty ] -> ty
@@ -34,7 +34,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     in
     Encoder.nondet_valid output
 
-  let soteria_panic ~fun_exec:_ ~types:_ ~consts:_ ~args =
+  let soteria_panic ~args =
     let* msg =
       match args with [ Ptr msg ] -> Core.parse_string msg | _ -> ok None
     in

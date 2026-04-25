@@ -115,13 +115,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let panic_nounwind_fmt ~fmt:_ ~force_no_backtrace:_ = do_panic ()
   let panicking_begin_panic ~m:_ ~msg:_ = do_panic ()
 
-  let rt_begin_panic ~fun_exec:_ ~types:_ ~consts:_ ~args =
+  let rt_begin_panic ~args =
     match args with Ptr msg :: _ -> do_panic ~msg () | _ -> do_panic ()
 
   (* ---- I/O (no-ops) ---- *)
 
   let _eprint ~args:_ = ok ()
-  let io__print ~fun_exec:_ ~types:_ ~consts:_ ~args:_ = ok (Tuple [])
+  let io__print ~args:_ = ok (Tuple [])
   let stdio__print ~args:_ = ok ()
   let print_to ~t:_ ~args:_ ~global_s:_ ~label:_ = ok ()
   let print_to_buffer_if_capture_used ~args:_ = ok Typed.v_true

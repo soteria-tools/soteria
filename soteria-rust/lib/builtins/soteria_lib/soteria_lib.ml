@@ -55,27 +55,13 @@ module M (StateM : State.StateM.S) = struct
     match[@warning "-redundant-case"]
       (stub, generics.types, generics.const_generics, args)
     with
-    | KaniAssert, _, _, _ ->
-        kani_assert ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
-    | KaniAssume, _, _, _ ->
-        kani_assume ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
-    | KaniPanic, _, _, _ ->
-        kani_panic ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
-    | SoteriaAssert, _, _, _ ->
-        soteria_assert ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
-    | SoteriaAssume, _, _, _ ->
-        soteria_assume ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
-    | SoteriaNondetBytes, _, _, _ ->
-        nondet_bytes ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
-    | SoteriaPanic, _, _, _ ->
-        soteria_panic ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
+    | KaniAssert, _, _, _ -> kani_assert ~args
+    | KaniAssume, _, _, _ -> kani_assume ~args
+    | KaniPanic, _, _, _ -> kani_panic ~args
+    | SoteriaAssert, _, _, _ -> soteria_assert ~args
+    | SoteriaAssume, _, _, _ -> soteria_assume ~args
+    | SoteriaNondetBytes, _, _, _ -> nondet_bytes ~types:generics.types ~args
+    | SoteriaPanic, _, _, _ -> soteria_panic ~args
     | _, tys, cs, args ->
         Fmt.kstr not_impl
           "Custom stub found but called with the wrong arguments; got:@.Types: \

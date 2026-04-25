@@ -10,7 +10,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     Encoder.nondet_valid
       (Charon_util.mk_tuple_ty [ TLiteral (TUInt U64); TLiteral (TUInt U64) ])
 
-  let _tlv_atexit ~fun_exec ~types:_ ~consts:_ ~args =
+  let _tlv_atexit ~fun_exec ~args =
     let* dtor, arg =
       match args with
       | [ Ptr dtor_ptr; arg_ptr ] -> ok (dtor_ptr, arg_ptr)
@@ -73,7 +73,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let res = Rust_val.mk_enum ~ty:fun_sig.output "Ok" [ nonzero_one ] in
     StateM.ok res
 
-  let now ~fun_exec:_ ~types:_ ~consts:_ ~args =
+  let now ~args =
     let () =
       match args with
       | [] -> ()

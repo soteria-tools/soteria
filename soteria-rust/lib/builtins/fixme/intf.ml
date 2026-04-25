@@ -1,6 +1,8 @@
 (** This file was generated with [scripts/stubs.py] -- do not edit it manually,
     instead modify the script and re-run it. *)
 
+[@@@warning "-unused-open"]
+
 open Charon
 open Common
 
@@ -99,11 +101,6 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val drop_in_place : t:Types.ty -> to_drop:full_ptr -> unit ret
 
-    val cleanup :
-      fun_exec:fun_exec ->
-      types:Types.ty list ->
-      consts:Types.constant_expr list ->
-      args:rust_val list ->
-      rust_val ret
+    val cleanup : args:rust_val list -> rust_val ret
   end
 end

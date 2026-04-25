@@ -58,11 +58,8 @@ module M (StateM : State.StateM.S) = struct
         _var ~fun_sig:_fun_sig ~key
     | StdSysRandomHashmapRandomKeys, [], [], [] -> hashmap_random_keys ()
     | StdSysThreadLocalGuardAppleEnableTlvAtexit, _, _, _ ->
-        _tlv_atexit ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
-    | StdSysTimeUnixInstantNow, _, _, _ ->
-        now ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
+        _tlv_atexit ~fun_exec:_fun_exec ~args
+    | StdSysTimeUnixInstantNow, _, _, _ -> now ~args
     | StdThreadFunctionsAvailableParallelism, [], [], [] ->
         available_parallelism ~fun_sig:_fun_sig
     | _, tys, cs, args ->

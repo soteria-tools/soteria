@@ -131,7 +131,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let try_fn = as_ptr try_fn in
         let data = as_ptr data in
         let catch_fn = as_ptr catch_fn in
-        let+ ret = catch_unwind fun_exec ~try_fn ~data ~catch_fn in
+        let+ ret = catch_unwind ~fun_exec ~try_fn ~data ~catch_fn in
         Int ret
     | "ceilf128", [], [], [ x ] ->
         let x = as_base_f F128 x in

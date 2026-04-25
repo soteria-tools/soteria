@@ -278,9 +278,7 @@ module M (StateM : State.StateM.S) = struct
         let error = as_ptr error in
         let+ () = result_unwrap_failed ~msg ~error in
         Tuple []
-    | StdIoPrint, _, _, _ ->
-        io__print ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
+    | StdIoPrint, _, _, _ -> io__print ~args
     | StdIoStdioEprint, [], [], [ args ] ->
         let+ () = _eprint ~args in
         Tuple []
@@ -298,9 +296,7 @@ module M (StateM : State.StateM.S) = struct
     | StdPanickingBeginPanic, [ m ], [], [ msg ] ->
         let+ () = panicking_begin_panic ~m ~msg in
         Tuple []
-    | StdRtBeginPanic, _, _, _ ->
-        rt_begin_panic ~fun_exec:_fun_exec ~types:generics.types
-          ~consts:generics.const_generics ~args
+    | StdRtBeginPanic, _, _, _ -> rt_begin_panic ~args
     | _, tys, cs, args ->
         Fmt.kstr not_impl
           "Custom stub found but called with the wrong arguments; got:@.Types: \
