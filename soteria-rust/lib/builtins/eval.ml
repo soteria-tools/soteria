@@ -11,6 +11,7 @@ type fn =
   | Optim of Optim.fn
   | System of System.fn
   | Fixme of Fixme.fn
+  | Tokio of Tokio.fn
 
 (** Extern functions we must implement manually *)
 type extern_fn =
@@ -29,6 +30,7 @@ let std_fun_pair_list =
   @ (Optim.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Optim f)
   @ (System.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> System f)
   @ (Fixme.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Fixme f)
+  @ (Tokio.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Tokio f)
 
 let opaque_names = List.map fst std_fun_pair_list
 
@@ -58,6 +60,7 @@ module M (StateM : State.StateM.S) = struct
     | Fixme f -> Fixme.fn_to_stub f fun_sig fun_exec generics
     | Optim f -> Optim.fn_to_stub f fun_sig fun_exec generics
     | System f -> System.fn_to_stub f fun_sig fun_exec generics
+    | Tokio f -> Tokio.fn_to_stub f fun_sig fun_exec generics
 
   let[@inline] extern_fn_to_stub = function
     | Alloc f -> Alloc.fn_to_stub f
