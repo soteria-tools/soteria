@@ -29,6 +29,9 @@ val to_seq : 'a t -> 'a Seq.t
 (** Create a set from a sequence of elements. *)
 val of_seq : 'a Seq.t -> 'a t
 
+(** Create a set from an iterator of elements. *)
+val of_iter : 'a Iter.t -> 'a t
+
 (** Return the number of elements in the set. *)
 val cardinal : 'a t -> int
 
@@ -74,6 +77,9 @@ module type S = sig
 
   (** Create a set from a sequence of elements. *)
   val of_seq : elt Seq.t -> t
+
+  (** Create a set from an iterator of elements. *)
+  val of_iter : elt Iter.t -> t
 
   (** Return the number of elements in the set. *)
   val cardinal : t -> int
