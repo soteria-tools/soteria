@@ -1056,9 +1056,11 @@ def generate_intrinsics():
     intrinsics = get_intrinsics()
     interface, stubs, main = generate_interface(intrinsics)
 
-    ml_folder = PWD / ".." / "lib" / "builtins"
-    write_ocaml_file(ml_folder / "intrinsics_intf.ml", interface)
-    write_ocaml_file(ml_folder / "intrinsics_stubs.ml", stubs)
+    ml_folder = PWD / ".." / "lib" / "builtins" / "intrinsics"
+    if not ml_folder.exists():
+        ml_folder.mkdir()
+    write_ocaml_file(ml_folder / "intf.ml", interface)
+    write_ocaml_file(ml_folder / "stubs.ml", stubs)
     write_ocaml_file(ml_folder / "intrinsics.ml", main)
 
 

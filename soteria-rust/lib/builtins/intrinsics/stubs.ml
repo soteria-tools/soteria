@@ -3,7 +3,7 @@
 
 [@@@warning "-unused-value-declaration"]
 
-module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
+module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   open StateM
 
   let abort () = not_impl "Unsupported intrinsic: abort"

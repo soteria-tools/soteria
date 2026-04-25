@@ -4,7 +4,7 @@
 open Rust_val
 open Common
 
-module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
+module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
   open Syntax
 
@@ -23,7 +23,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
   let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
 
-  include Intrinsics_impl.M (StateM)
+  include Impl.M (StateM)
 
   let eval_fun name fun_exec (generics : Charon.Types.generic_args) args =
     match (name, generics.types, generics.const_generics, args) with

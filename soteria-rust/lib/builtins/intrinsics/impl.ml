@@ -5,8 +5,8 @@ open Typed.Infix
 open Common.Charon_util
 open Rust_val
 
-module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
-  include Intrinsics_stubs.M (StateM)
+module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
+  include Stubs.M (StateM)
   module Core = Core.M (StateM)
   open StateM
   open Syntax
