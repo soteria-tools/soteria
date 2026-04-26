@@ -1,19 +1,28 @@
 {
+  "$schema": "./stubs.schema.json",
   "_comment": [
     "This file contains patterns for functions that should be stubbed out.",
-    "For each key, a pattern is specified.",
-    "Optionally, you may suffix the pattern with 'with' to mention additional",
-    "arguments that should be given to the stub. The valid values are:",
+    "Each entry is either a plain pattern string, or an object { \"pattern\": \"...\", \"extra_args\": [...] }.",
+    "The valid extra_args values are:",
     "- sig: the function signature",
     "- types: the generic types the function is instantiated with",
     "- fun_exec: the function to call Rust functions"
   ],
   "System": [
-    "std::sys::thread_local::guard::apple::enable::_tlv_atexit with fun_exec",
-    "std::sys::random::hashmap_random_keys with sig",
-    "std::thread::functions::available_parallelism with sig",
+    {
+      "pattern": "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
+      "extra_args": ["fun_exec"]
+    },
+    {
+      "pattern": "std::sys::random::hashmap_random_keys",
+      "extra_args": ["sig"]
+    },
+    {
+      "pattern": "std::thread::functions::available_parallelism",
+      "extra_args": ["sig"]
+    },
     "std::sys::time::unix::Instant::now",
-    "std::env::_var with sig"
+    { "pattern": "std::env::_var", "extra_args": ["sig"] }
   ],
   "Optim": [
     "alloc::alloc::_::alloc_impl",
@@ -68,11 +77,13 @@
   "Soteria_lib": [
     "soteria::assert",
     "soteria::assume",
-    "soteria::nondet_bytes with types",
+    { "pattern": "soteria::nondet_bytes", "extra_args": ["types"] },
     "soteria::panic",
     "kani::assert",
     "kani::assume",
     "kani::panic"
   ],
-  "Tokio": ["tokio::util::rand::RngSeed::new with sig"]
+  "Tokio": [
+    { "pattern": "tokio::util::rand::RngSeed::new", "extra_args": ["sig"] }
+  ]
 }

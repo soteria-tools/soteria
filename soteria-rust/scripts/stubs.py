@@ -778,16 +778,17 @@ class Pattern:
     pattern: str
     extras: list[str]
 
-    def __init__(self, pattern: str) -> None:
-        self.pattern = pattern
-        self.extras = []
-        if " with " in pattern:
-            self.pattern, suffix = pattern.split(" with ", 1)
-            self.extras = [part.strip() for part in suffix.split()]
-            valid_extras = {"fun_exec", "sig", "types"}
+    def __init__(self, entry: "str | dict[str, Any]") -> None:
+        valid_extras = {"fun_exec", "sig", "types"}
+        if isinstance(entry, dict):
+            self.pattern = entry["pattern"]
+            self.extras = entry.get("extra_args", [])
             for extra in self.extras:
                 if extra not in valid_extras:
-                    raise ValueError(f"Invalid extra '{extra}' in pattern '{pattern}'")
+                    raise ValueError(f"Invalid extra '{extra}' in pattern '{self.pattern}'")
+        else:
+            self.pattern = entry
+            self.extras = []
 
     def as_meta_args(self) -> list[tuple[str, str, InterpType]]:
         meta_args: list[tuple[str, str, InterpType]] = []
@@ -811,22 +812,28 @@ def generate_custom_stubs() -> None:
         raise ValueError("stubs.json must contain a JSON object")
 
     config: dict[str, list[Pattern]] = {}
-    valid_pattern = r"^([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+( with [ \w]+)?$"
+    valid_pattern = r"^([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+$"
     for category, patterns in raw_config.items():
         if not isinstance(category, str):
             raise ValueError("stubs.json keys must be strings")
-        if category == "_comment":
+        if category in ["_comment", "$schema"]:
             continue
-        if not isinstance(patterns, list) or not all(
-            isinstance(p, str) for p in patterns
-        ):
-            raise ValueError(f"Category '{category}' must map to a list of strings")
-        for pattern in patterns:
-            if not re.match(valid_pattern, pattern):
+        if not isinstance(patterns, list):
+            raise ValueError(f"Category '{category}' must map to a list")
+        for entry in patterns:
+            if isinstance(entry, str):
+                pat_str = entry
+            elif isinstance(entry, dict) and "pattern" in entry:
+                pat_str = entry["pattern"]
+            else:
                 raise ValueError(
-                    f"Invalid pattern '{pattern}' in category '{category}'"
+                    f"Invalid entry in category '{category}': must be a string or object with 'pattern'"
                 )
-        config[category] = [Pattern(p) for p in patterns]
+            if not re.match(valid_pattern, pat_str):
+                raise ValueError(
+                    f"Invalid pattern '{pat_str}' in category '{category}'"
+                )
+        config[category] = [Pattern(entry) for entry in patterns]
 
     pattern_strs: list[str] = list(set(p.pattern for ps in config.values() for p in ps))
 

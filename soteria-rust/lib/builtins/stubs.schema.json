@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stubs.schema.json",
+  "title": "Stubs configuration",
+  "description": "Configures functions to be stubbed out during analysis, grouped by category.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "_comment": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": {
+    "type": "array",
+    "items": { "$ref": "#/$defs/entry" }
+  },
+  "$defs": {
+    "pattern": {
+      "type": "string",
+      "description": "A fully-qualified Rust path using '::' separators. Use '_' for anonymous impl blocks.",
+      "pattern": "^([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+$"
+    },
+    "extra_arg": {
+      "type": "string",
+      "description": "Additional metadata to pass to the stub.",
+      "enum": ["fun_exec", "sig", "types"]
+    },
+    "entry": {
+      "oneOf": [
+        { "$ref": "#/$defs/pattern" },
+        {
+          "type": "object",
+          "required": ["pattern"],
+          "additionalProperties": false,
+          "properties": {
+            "pattern": { "$ref": "#/$defs/pattern" },
+            "extra_args": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/extra_arg" },
+              "uniqueItems": true
+            }
+          }
+        }
+      ]
+    }
+  }
+}
