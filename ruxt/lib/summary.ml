@@ -1,7 +1,7 @@
 module Config_ = Config
 open Soteria_rust_lib
 module Config = Config_
-module State = State.Tree_state
+module State = State.Tree_state.Make (Tree_borrows.Concrete.Make)
 module Logic = Soteria.Logic.Make (Rustsymex)
 module Execute = Logic.Asrt.Execute (State)
 
@@ -138,7 +138,14 @@ let consume (summ : t) (ret : Ret.t) (st : State.SM.st) :
   end in
   let module Learn_eq = Rust_val.Learn_eq (Rustsymex) in
   let open Rustsymex.Consumer.Syntax in
-  let* () = Learn_eq.learn_eq State.Sptr.learn_eq summ.ret ret in
+  let learn_eq_ptr syn sptr =
+    let+ (), _ =
+      Sptr.DecayMap.SM.Consumer.run_with_state ~state:None
+      @@ State.Sptr.learn_eq syn sptr
+    in
+    ()
+  in
+  let* () = Learn_eq.learn_eq learn_eq_ptr summ.ret ret in
   Execute.consume summ.asrt st
 
 let run_producer (subst : Typed.Expr.Subst.t) (summ : t) :

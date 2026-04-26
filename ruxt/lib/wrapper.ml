@@ -1,5 +1,5 @@
 open Soteria_rust_lib
-module State = State.Tree_state
+module State = State.Tree_state.Make (Tree_borrows.Concrete.Make)
 open State.SM.Syntax
 open Soteria.Symex
 open Charon
