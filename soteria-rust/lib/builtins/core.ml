@@ -207,5 +207,5 @@ module M (StateM : State.StateM.S) = struct
       let* ptr = State.alloc_untyped ~zeroed:true ~size ~align () in
       State.load ptr ty
     in
-    Soteria.Symex.Compo_res.is_ok res
+    Compo_res.is_ok res
 end

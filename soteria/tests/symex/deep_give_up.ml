@@ -1,3 +1,4 @@
+open Soteria.Soteria_std
 open Soteria.Symex.Make (Tiny_solver.Z3_solver)
 open Syntax
 open Soteria.Tiny_values
@@ -22,20 +23,16 @@ let complex_process () =
    ============================================================================ *)
 
 let count_oks results =
-  List.filter (fun (res, _) -> Soteria.Symex.Compo_res.is_ok res) results
-  |> List.length
+  List.filter (fun (res, _) -> Compo_res.is_ok res) results |> List.length
 
 let count_errors results =
-  List.filter (fun (res, _) -> Soteria.Symex.Compo_res.is_error res) results
-  |> List.length
+  List.filter (fun (res, _) -> Compo_res.is_error res) results |> List.length
 
 let get_gave_up_reasons results =
   List.filter_map
     (fun (res, _) ->
       match res with
-      | Soteria.Symex.Compo_res.Error (Soteria.Symex.Or_gave_up.Gave_up reason)
-        ->
-          Some reason
+      | Compo_res.Error (Soteria.Symex.Or_gave_up.Gave_up reason) -> Some reason
       | _ -> None)
     results
 

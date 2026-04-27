@@ -1,6 +1,6 @@
 (* TODO: Build this with the Sum transformer and `Excl(Freed)` *)
 
-open Symex
+open Soteria_std
 
 type 'a freeable = Freed | Alive of 'a
 

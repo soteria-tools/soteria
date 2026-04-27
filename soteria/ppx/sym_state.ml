@@ -386,7 +386,7 @@ let with_field_sym_item fields (target : field) =
    * ...
    * let**^ res, field1 = f field1 in
    * let+ () = SM.set_state (to_opt st) in
-   * Soteria.Symex.Compo_res.Ok res
+   * Soteria.Soteria_std.Compo_res.Ok res
    *)
   let@ loc = with_loc target.loc in
   let context =
@@ -433,8 +433,8 @@ let with_field_sym_item fields (target : field) =
     | Ignored _ ->
         [%expr
           let**^ [%p bind_pat] = [%e bind_expr] in
-          let+ () = SM.set_state (to_opt [%e updated]) in
-          Soteria.Symex.Compo_res.Ok res]
+          let* () = SM.set_state (to_opt [%e updated]) in
+          SM.Result.ok res]
   in
   [%stri
     let [%p pvar (Names.with_sym target.name)] =

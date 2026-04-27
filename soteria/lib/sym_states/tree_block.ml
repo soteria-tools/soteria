@@ -1,4 +1,4 @@
-open Symex
+open Soteria_std
 
 (** A [Split_tree] is a simplified representation of a tree, that has no offset.
     It however indicates, on [Node]s, at what offset the split occurs, relative

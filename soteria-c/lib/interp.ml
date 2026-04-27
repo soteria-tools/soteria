@@ -1,4 +1,4 @@
-open Soteria.Symex.Compo_res
+open Compo_res
 open Csymex
 open Typed.Infix
 open Typed.Syntax
@@ -24,7 +24,7 @@ module InterpM (State : State_intf.S) = struct
     let ( let+ ) x f = map f x
 
     let ( let*^ ) (x : 'a Csymex.t) (f : 'a -> 'b t) : 'b t =
-      let x_res = Csymex.map Soteria.Symex.Compo_res.ok x in
+      let x_res = Csymex.map ok x in
       bind f (SSM.lift @@ StateM.lift @@ x_res)
 
     module Symex_syntax = SSM.Syntax.Symex_syntax
@@ -58,7 +58,7 @@ module InterpM (State : State_intf.S) = struct
   let lift_state_op f = SSM.lift f
 
   let lift_symex (s : 'a Csymex.t) : 'a t =
-    SSM.lift @@ StateM.lift @@ Csymex.map Soteria.Symex.Compo_res.ok s
+    SSM.lift @@ StateM.lift @@ Csymex.map Compo_res.ok s
 
   let lift_symex_res (type a)
       (s : (a, Error.with_trace, State.syn list) Csymex.Result.t) : a t =
@@ -1374,7 +1374,7 @@ module Make (State : State_intf.S) = struct
         @@ State.produce_aggregate (syn ptr) ty (Agv.to_syn v) st
       in
       let+ () = StateM.set_state st' in
-      Soteria.Symex.Compo_res.Ok ()
+      Ok ()
     in
     StateM.Result.iter_list prog.sigma.object_definitions ~f:(fun def ->
         let id, e = def in

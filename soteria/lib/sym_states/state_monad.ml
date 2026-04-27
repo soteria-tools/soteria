@@ -1,5 +1,4 @@
 open Soteria_std
-module Compo_res = Symex.Compo_res
 module Soteria_symex = Symex
 
 module type Base_sig = Symex.Base

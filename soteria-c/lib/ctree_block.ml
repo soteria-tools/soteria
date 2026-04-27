@@ -1,4 +1,3 @@
-open Soteria.Symex.Compo_res
 open Csymex.Syntax
 open Typed
 open Csymex
@@ -94,7 +93,7 @@ module MemVal = struct
         match ty with
         | Ctype.Ctype (_, Basic (Integer ity)) ->
             let+ size = Layout.size_of_int_ty_unsupported ity in
-            Soteria.Symex.Compo_res.ok (BitVec.zero (8 * size))
+            Compo_res.ok (BitVec.zero (8 * size))
         | Ctype (_, Basic (Floating fty)) ->
             let precision = Layout.precision fty in
             Result.ok (Typed.Float.mk precision "+0.0")
@@ -243,7 +242,7 @@ let decode ~ty ~ofs node =
   | TB.Owned node -> MemVal.decode ~ty node
   | TB.NotOwned _ ->
       let+ fixes = mk_fix_typed ofs ty () in
-      Soteria.Symex.Compo_res.miss (log_fixes fixes)
+      Compo_res.miss (log_fixes fixes)
 
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
     (T.cval Typed.t, 'err, syn list) SM.Result.t =

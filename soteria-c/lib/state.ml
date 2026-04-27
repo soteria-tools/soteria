@@ -1,5 +1,4 @@
 module Call_trace = Soteria.Terminal.Call_trace
-module Compo_res = Soteria.Symex.Compo_res
 open Typed.Infix
 open Typed.Syntax
 module BV = Typed.BitVec
@@ -189,7 +188,7 @@ let alloc ?(zeroed = false) size =
      let ptr = Typed.Ptr.mk loc Usize.(0s) in
      (* The pointer is necessarily not null *)
      let+ () = Heap.SM.assume Typed.[ not (Ptr.is_null_loc loc) ] in
-     Soteria.Symex.Compo_res.ok ptr)
+     Compo_res.ok ptr)
 
 let alloc_ty ty =
   let*^ size = Layout.size_of_s ty in

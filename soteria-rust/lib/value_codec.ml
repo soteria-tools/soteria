@@ -1,4 +1,3 @@
-module Compo_res = Soteria.Symex.Compo_res
 open Charon
 open Typed.Syntax
 open Typed.Infix
@@ -569,7 +568,7 @@ module Encoder (Sptr : Sptr.S) = struct
   let rec nondet_raw : Types.ty -> (rust_val, 'e, 'f) Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
-    let open Soteria.Symex.Compo_res in
+    let open Compo_res in
     let nondets_raw tys = Rustsymex.Result.map_list tys ~f:nondet_raw in
     function
     | TLiteral (TFloat fp) ->

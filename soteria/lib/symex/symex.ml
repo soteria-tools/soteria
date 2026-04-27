@@ -6,7 +6,6 @@ open Syntaxes.FunctionWrap
 
 (* Re-export a few definitions, leaving this module as root. *)
 module Approx = Approx
-module Compo_res = Compo_res
 module Fuel_gauge = Fuel_gauge
 module Solver = Solver
 module Solver_result = Solver_result
