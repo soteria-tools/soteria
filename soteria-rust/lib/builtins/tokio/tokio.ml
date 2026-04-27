@@ -40,7 +40,7 @@ module M (StateM : State.StateM.S) = struct
     match[@warning "-redundant-case"]
       (stub, generics.types, generics.const_generics, args)
     with
-    | TokioUtilRandRngSeedNew, _, _, _ -> new_ ~fun_sig:_fun_sig ~args
+    | TokioUtilRandRngSeedNew, [], [], [] -> new_ ~fun_sig:_fun_sig
     | _, tys, cs, args ->
         Fmt.kstr not_impl
           "Custom stub found but called with the wrong arguments; got:@.Types: \

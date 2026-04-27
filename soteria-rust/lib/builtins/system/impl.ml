@@ -76,13 +76,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let res = Rust_val.mk_enum ~ty:fun_sig.output "Ok" [ nonzero_one ] in
     StateM.ok res
 
-  let now ~args =
-    let () =
-      match args with
-      | [] -> ()
-      | _ ->
-          failwith "std::sys::time::unix::Instant::now: expected no arguments"
-    in
+  let now () =
     (* We need to return a Instant where
      * ```
      *  struct Instant(Timespec);

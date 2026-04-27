@@ -18,7 +18,7 @@ module M (StateM : State.StateM.S) = struct
     val _var : fun_sig:Types.fun_sig -> key:full_ptr -> rust_val ret
     val hashmap_random_keys : fun_sig:Types.fun_sig -> rust_val ret
     val _tlv_atexit : fun_exec:fun_exec -> args:rust_val list -> rust_val ret
-    val now : args:rust_val list -> rust_val ret
+    val now : unit -> rust_val ret
 
     (** {@markdown[
           Returns an estimate of the default amount of parallelism a program should use.

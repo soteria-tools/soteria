@@ -7,7 +7,7 @@ open Common
 open Rust_val
 
 type fn =
-  | AllocAllocAllocImpl
+  | AllocAllocGlobalAllocImpl
   | AllocAllocHandleAllocError
   | AllocRawVecHandleError
   | CoreF128IsFinite
@@ -54,7 +54,7 @@ type fn =
 
 let fn_pats : (string * fn) list =
   [
-    ("alloc::alloc::_::alloc_impl", AllocAllocAllocImpl);
+    ("alloc::alloc::Global::alloc_impl", AllocAllocGlobalAllocImpl);
     ("alloc::alloc::handle_alloc_error", AllocAllocHandleAllocError);
     ("alloc::raw_vec::handle_error", AllocRawVecHandleError);
     ("core::f128::_::is_finite", CoreF128IsFinite);
@@ -130,7 +130,7 @@ module M (StateM : State.StateM.S) = struct
     match[@warning "-redundant-case"]
       (stub, generics.types, generics.const_generics, args)
     with
-    | AllocAllocAllocImpl, [], [], [ self; layout; zeroed ] ->
+    | AllocAllocGlobalAllocImpl, [], [], [ self; layout; zeroed ] ->
         let self = as_ptr self in
         let zeroed = Typed.BitVec.to_bool (as_base TBool zeroed) in
         alloc_impl ~self ~layout ~zeroed

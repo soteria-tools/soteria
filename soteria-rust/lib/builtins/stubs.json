@@ -27,7 +27,7 @@
   "Optim": {
     "features": ["f16", "f128", "const_index"],
     "patterns": [
-      "alloc::alloc::_::alloc_impl",
+      "alloc::alloc::Global::alloc_impl",
       "core::f16::_::is_finite",
       "core::f16::_::is_infinite",
       "core::f16::_::is_nan",
@@ -86,7 +86,13 @@
     "kani::assume",
     "kani::panic"
   ],
-  "Tokio": [
-    { "pattern": "tokio::util::rand::RngSeed::new", "extra_args": ["sig"] }
-  ]
+  "Tokio": {
+    "dependencies": [
+      "tokio = { version = \"1.50.0\", features = [\"rt\", \"rt-multi-thread\", \"time\"] }"
+    ],
+    "code": "let _ = tokio::runtime::Runtime::new();",
+    "patterns": [
+      { "pattern": "tokio::util::rand::RngSeed::new", "extra_args": ["sig"] }
+    ]
+  }
 }

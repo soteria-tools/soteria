@@ -15,6 +15,6 @@ module M (StateM : State.StateM.S) = struct
   type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
   module type S = sig
-    val new_ : fun_sig:Types.fun_sig -> args:rust_val list -> rust_val ret
+    val new_ : fun_sig:Types.fun_sig -> rust_val ret
   end
 end

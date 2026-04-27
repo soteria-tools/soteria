@@ -10,8 +10,27 @@ from typing import Any, Literal, TypedDict
 from common import *
 
 
-class PathElem(TypedDict):
+class IdentPathElem(TypedDict):
     Ident: tuple[str]
+
+
+class TyBinder(TypedDict):
+    skip_binder: "UniqueType"
+
+
+class TyImplElem(TypedDict):
+    Ty: TyBinder
+
+
+class TraitImplElem(TypedDict):
+    Trait: int
+
+
+class ImplPathElem(TypedDict):
+    Impl: TyImplElem | TraitImplElem
+
+
+PathElem = IdentPathElem | ImplPathElem
 
 
 class AttributeDocComment(TypedDict):
@@ -155,6 +174,10 @@ class FunDecl(TypedDict):
     body: Body
 
 
+class TypeDecl(TypedDict):
+    item_meta: ItemMeta
+
+
 InterpTypeBase = Literal[
     "unit",
     "int",
@@ -173,6 +196,7 @@ InterpTypeMeta = Optional[str]
 InterpType = tuple[InterpTypeBase, InterpTypeMeta]
 
 type_cache: dict[int, Type] = {}
+type_decls: dict[Any, TypeDecl] = {}
 
 USER_IMPL_START = "(* BEGIN USER IMPLEMENTATION *)"
 USER_IMPL_END = "(* END USER IMPLEMENTATION *)"
@@ -194,20 +218,22 @@ let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
 let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v"""
 
 
-def type_of(unique_ty: UniqueType) -> InterpType:
-    ty: Type
-    type_id: int = -1
+def charon_type_of(unique_ty: UniqueType) -> Type:
     if "Deduplicated" in unique_ty:
         type_id = unique_ty["Deduplicated"]
         if type_id not in type_cache:
             raise ValueError(f"Unknown deduplicated type id: {type_id}")
-        ty = type_cache[type_id]
-        # print(f"Read {type_id} -> {ty}")
+        return type_cache[type_id]
     elif "HashConsedValue" in unique_ty:
         type_id, inner_ty = unique_ty["HashConsedValue"]
         type_cache[type_id] = inner_ty
-        # print("Cache <-", type_id, inner_ty)
-        ty = inner_ty
+        return inner_ty
+    raise ValueError("Invalid UniqueType: " + str(unique_ty))
+
+
+def type_of(unique_ty: UniqueType) -> InterpType:
+    ty = charon_type_of(unique_ty)
+    type_id: int = -1
 
     if ty == "Never":
         return "unit", None
@@ -629,8 +655,6 @@ def get_stubs(patterns: list[str], crate_path: Path) -> list[FunDecl]:
                 "core",
             ]
         )
-        print(charon_cmd)
-        print(crate_path)
         proc = subprocess.run(
             charon_cmd,
             cwd=crate_path,
@@ -644,6 +668,9 @@ def get_stubs(patterns: list[str], crate_path: Path) -> list[FunDecl]:
             )
 
     ullbc = json.loads(file_json.read_text())
+    for id, ty_decl in enumerate(ullbc["translated"]["type_decls"]):
+        if ty_decl is not None:
+            type_decls[id] = ty_decl
     traverse_types(ullbc)
     return [fun for fun in ullbc["translated"]["fun_decls"] if fun is not None]
 
@@ -651,6 +678,10 @@ def get_stubs(patterns: list[str], crate_path: Path) -> list[FunDecl]:
 # ---------------------------------------------------------------------------
 # Code generators
 # ---------------------------------------------------------------------------
+
+
+def name_short(name: list[PathElem]) -> str:
+    return cast(IdentPathElem, name[-1])["Ident"][0]
 
 
 # Generate the OCaml interface for the intrinsics stubs, along with the stub
@@ -662,7 +693,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     for fun in intrinsics.values():
         if "Intrinsic" not in fun["body"]:
             continue
-        ocaml_name = fun["item_meta"]["name"][-1]["Ident"][0]
+        ocaml_name = name_short(fun["item_meta"]["name"])
         info = fun_decl_to_item_info(fun, ocaml_name)
         if info["ocaml_name"] == "catch_unwind":
             info["meta_args"].append(("fun_exec", "fun_exec", ("fun_exec", None)))
@@ -889,9 +920,13 @@ def generate_custom_stubs() -> None:
 
     pprint("Loading custom stubs declarations...")
     crate_path = create_cargo_project(config)
-    fun_decls = get_stubs(pattern_strs, crate_path)
-    shutil.rmtree(crate_path)
-    categories: dict[str, list[FunDecl]] = {k: [] for k in config.keys()}
+    try:
+        fun_decls = get_stubs(pattern_strs, crate_path)
+    finally:
+        shutil.rmtree(crate_path)
+    categories: dict[str, list[tuple[Pattern, FunDecl]]] = {
+        k: [] for k in config.keys()
+    }
 
     def matches_pattern(path: list[PathElem], pattern: str) -> bool:
         pattern_parts = pattern.split("::")
@@ -901,8 +936,22 @@ def generate_custom_stubs() -> None:
         for elem, pat in zip(path, pattern_parts):
             if pat == "_":
                 continue
-            if "Ident" not in elem or elem["Ident"][0] != pat:
+            if "Ident" in elem:
+                if elem["Ident"][0] != pat:
+                    return False
+            elif "Impl" in elem:
+                impl = elem["Impl"]
+                if "Ty" in impl:
+                    ty = charon_type_of(impl["Ty"]["skip_binder"])
+                    if "Adt" in ty and "Adt" in cast(TypeAdt, ty)["Adt"]["id"]:
+                        type_decl = type_decls[cast(Any, ty)["Adt"]["id"]["Adt"]]
+                        name = name_short(type_decl["item_meta"]["name"])
+                        if name == pat:
+                            continue
                 return False
+            else:
+                return False
+
         return True
 
     missing_patterns = [pat for spec in config.values() for pat in spec.patterns]
@@ -912,7 +961,7 @@ def generate_custom_stubs() -> None:
             for pattern in spec.patterns:
                 if matches_pattern(name, pattern.pattern):
                     missing_patterns.remove(pattern)
-                    categories[category].append(fun)
+                    categories[category].append((pattern, fun))
                     break
             else:
                 continue
@@ -953,14 +1002,14 @@ def generate_custom_stubs() -> None:
         infos: list[StubInfo] = []
 
         short_names: list[str] = [
-            fun["item_meta"]["name"][-1]["Ident"][0] for fun in functions
+            name_short(fun["item_meta"]["name"]) for (_, fun) in functions
         ] + [
             p.split("::")[-1] if "::" in (p := pattern.pattern) else p
             for pattern in unresolved
         ]
 
         def unique_name(name: list[PathElem]) -> str:
-            rust_name = name[-1]["Ident"][0]
+            rust_name = name_short(name)
             ocaml_name = sanitize_ocaml_ident(rust_name)
             if short_names.count(ocaml_name) > 1:
                 name_parts = [item["Ident"][0] for item in name if "Ident" in item]
@@ -968,21 +1017,25 @@ def generate_custom_stubs() -> None:
                 return sanitize_ocaml_ident("_".join(name_parts[-2:]))
             return ocaml_name
 
-        for fun in functions:
+        for pattern, fun in functions:
             ocaml_name = unique_name(fun["item_meta"]["name"])
             info = fun_decl_to_item_info(fun, ocaml_name)
 
-            base_variant = sanitize_variant_name(info["rust_path"])
+            base_variant = sanitize_variant_name(pattern.pattern)
             vcount = variant_occ.get(base_variant, 0)
             variant_occ[base_variant] = vcount + 1
             variant_name = (
                 base_variant if vcount == 0 else f"{base_variant}{vcount + 1}"
             )
-            matching_pat = next(
-                (p for p in config[category].patterns if p.pattern == info["rust_path"])
+            info["meta_args"].extend(pattern.as_meta_args())
+            infos.append(
+                {
+                    **info,
+                    "rust_path": pattern.pattern,
+                    "variant_name": variant_name,
+                    "is_dummy": False,
+                }
             )
-            info["meta_args"].extend(matching_pat.as_meta_args())
-            infos.append({**info, "variant_name": variant_name, "is_dummy": False})
 
         for pattern in unresolved:
             # Strip anonymous impl-block '_' components so unique_name can use a

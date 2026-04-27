@@ -60,7 +60,7 @@ module M (StateM : State.StateM.S) = struct
         hashmap_random_keys ~fun_sig:_fun_sig
     | StdSysThreadLocalGuardAppleEnableTlvAtexit, _, _, _ ->
         _tlv_atexit ~fun_exec:_fun_exec ~args
-    | StdSysTimeUnixInstantNow, _, _, _ -> now ~args
+    | StdSysTimeUnixInstantNow, [], [], [] -> now ()
     | StdThreadFunctionsAvailableParallelism, [], [], [] ->
         available_parallelism ~fun_sig:_fun_sig
     | _, tys, cs, args ->
