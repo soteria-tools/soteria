@@ -49,7 +49,6 @@ type fn =
   | StdIoStdioPrintTo
   | StdIoStdioPrintToBufferIfCaptureUsed
   | StdPanickingBeginPanic
-  | StdRtBeginPanic
 
 let fn_pats : (string * fn) list =
   [
@@ -97,7 +96,7 @@ let fn_pats : (string * fn) list =
     ( "std::io::stdio::print_to_buffer_if_capture_used",
       StdIoStdioPrintToBufferIfCaptureUsed );
     ("std::panicking::begin_panic", StdPanickingBeginPanic);
-    ("std::rt::begin_panic", StdRtBeginPanic);
+    ("std::rt::begin_panic", StdPanickingBeginPanic);
   ]
 
 module M (StateM : State.StateM.S) = struct
@@ -297,7 +296,9 @@ module M (StateM : State.StateM.S) = struct
     | StdPanickingBeginPanic, [ m ], [], [ msg ] ->
         let+ () = panicking_begin_panic ~m ~msg in
         Tuple []
-    | StdRtBeginPanic, _, _, _ -> rt_begin_panic ~args
+    | StdPanickingBeginPanic, [ m ], [], [ msg ] ->
+        let+ () = panicking_begin_panic ~m ~msg in
+        Tuple []
     | _, tys, cs, args ->
         Fmt.kstr not_impl
           "Custom stub found but called with the wrong arguments; got:@.Types: \

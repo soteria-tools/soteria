@@ -113,10 +113,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let panic ~expr = do_panic ~msg:expr ()
   let panic_fmt ~fmt:_ = do_panic ()
   let panic_nounwind_fmt ~fmt:_ ~force_no_backtrace:_ = do_panic ()
-  let panicking_begin_panic ~m:_ ~msg:_ = do_panic ()
 
-  let rt_begin_panic ~args =
-    match args with Ptr msg :: _ -> do_panic ~msg () | _ -> do_panic ()
+  let panicking_begin_panic ~m:_ ~msg =
+    match msg with Ptr msg -> do_panic ~msg () | _ -> do_panic ()
 
   (* ---- I/O (no-ops) ---- *)
 

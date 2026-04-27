@@ -731,7 +731,6 @@ module M (StateM : State.StateM.S) = struct
       args:rust_val -> Typed.T.sbool Typed.t ret
 
     val result_unwrap_failed : msg:full_ptr -> error:full_ptr -> unit ret
-    val rt_begin_panic : args:rust_val list -> rust_val ret
     val stdio__print : args:rust_val -> unit ret
   end
 end

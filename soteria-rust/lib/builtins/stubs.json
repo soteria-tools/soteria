@@ -65,7 +65,10 @@
       "std::io::stdio::print_to",
       "std::io::stdio::print_to_buffer_if_capture_used",
       "alloc::raw_vec::handle_error",
-      "std::rt::begin_panic",
+      {
+        "pattern": "std::rt::begin_panic",
+        "alias": "std::panicking::begin_panic"
+      },
       "core::panicking::panic",
       "core::panicking::panic_fmt",
       "core::panicking::panic_nounwind_fmt",

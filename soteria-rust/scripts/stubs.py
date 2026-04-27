@@ -914,7 +914,7 @@ def create_cargo_project(config: dict[str, CategorySpec]) -> Path:
     all_code = "\n".join(spec.code for spec in config.values() if spec.code)
     (src_dir / "main.rs").write_text(
         f"""
-        #![allow(internal_features)]
+        #![allow(internal_features, unused_variables, dead_code, unused_imports, unreachable_code)]
         {features}
 
         fn main() {{
