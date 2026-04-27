@@ -1,12 +1,12 @@
-(** This file was generated with [scripts/intrinsics.py] -- do not edit it
-    manually, instead modify the script and re-run it. *)
+(** This file was generated with [scripts/stubs.py] -- do not edit it manually,
+    instead modify the script and re-run it. *)
 
 [@@@warning "-unused-value-declaration"]
 
-module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
+module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   open StateM
 
-  let abort = not_impl "Unsupported intrinsic: abort"
+  let abort () = not_impl "Unsupported intrinsic: abort"
 
   let add_with_overflow ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: add_with_overflow"
@@ -36,7 +36,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let atomic_cxchg ~t:_ ~ord_succ:_ ~ord_fail:_ ~dst:_ ~old:_ ~src:_ =
     not_impl "Unsupported intrinsic: atomic_cxchg"
 
-  let atomic_cxchgweak ~t:_ ~ord_succ:_ ~ord_fail:_ ~_dst:_ ~_old:_ ~_src:_ =
+  let atomic_cxchgweak ~t:_ ~ord_succ:_ ~ord_fail:_ ~dst:_ ~old:_ ~src:_ =
     not_impl "Unsupported intrinsic: atomic_cxchgweak"
 
   let atomic_fence ~ord:_ = not_impl "Unsupported intrinsic: atomic_fence"
@@ -85,31 +85,31 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let bitreverse ~t:_ ~x:_ = not_impl "Unsupported intrinsic: bitreverse"
   let black_box ~t:_ ~dummy:_ = not_impl "Unsupported intrinsic: black_box"
-  let breakpoint = not_impl "Unsupported intrinsic: breakpoint"
+  let breakpoint () = not_impl "Unsupported intrinsic: breakpoint"
   let bswap ~t:_ ~x:_ = not_impl "Unsupported intrinsic: bswap"
-  let caller_location = not_impl "Unsupported intrinsic: caller_location"
+  let caller_location () = not_impl "Unsupported intrinsic: caller_location"
 
   let carrying_mul_add ~t:_ ~u:_ ~multiplier:_ ~multiplicand:_ ~addend:_
       ~carry:_ =
     not_impl "Unsupported intrinsic: carrying_mul_add"
 
-  let catch_unwind _ ~_try_fn:_ ~_data:_ ~_catch_fn:_ =
+  let catch_unwind ~fun_exec:_ ~try_fn:_ ~data:_ ~catch_fn:_ =
     not_impl "Unsupported intrinsic: catch_unwind"
 
   let ceilf128 ~x:_ = not_impl "Unsupported intrinsic: ceilf128"
   let ceilf16 ~x:_ = not_impl "Unsupported intrinsic: ceilf16"
   let ceilf32 ~x:_ = not_impl "Unsupported intrinsic: ceilf32"
   let ceilf64 ~x:_ = not_impl "Unsupported intrinsic: ceilf64"
-  let cold_path = not_impl "Unsupported intrinsic: cold_path"
+  let cold_path () = not_impl "Unsupported intrinsic: cold_path"
 
   let compare_bytes ~left:_ ~right:_ ~bytes:_ =
     not_impl "Unsupported intrinsic: compare_bytes"
 
-  let const_deallocate ~_ptr:_ ~_size:_ ~_align:_ =
+  let const_deallocate ~ptr:_ ~size:_ ~align:_ =
     not_impl "Unsupported intrinsic: const_deallocate"
 
-  let const_eval_select ~arg:_ ~f:_ ~g:_ ~ret:_ ~_arg:_ ~_called_in_const:_
-      ~_called_at_rt:_ =
+  let const_eval_select ~t_arg:_ ~f:_ ~g:_ ~ret:_ ~arg:_ ~called_in_const:_
+      ~called_at_rt:_ =
     not_impl "Unsupported intrinsic: const_eval_select"
 
   let const_make_global ~ptr:_ =
@@ -202,10 +202,9 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
 
   let fsub_fast ~t:_ ~a:_ ~b:_ = not_impl "Unsupported intrinsic: fsub_fast"
 
-  let is_val_statically_known ~t:_ ~_arg:_ =
+  let is_val_statically_known ~t:_ ~arg:_ =
     not_impl "Unsupported intrinsic: is_val_statically_known"
 
-  let likely ~b:_ = not_impl "Unsupported intrinsic: likely"
   let log10f128 ~x:_ = not_impl "Unsupported intrinsic: log10f128"
   let log10f16 ~x:_ = not_impl "Unsupported intrinsic: log10f16"
   let log10f32 ~x:_ = not_impl "Unsupported intrinsic: log10f32"
@@ -252,7 +251,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let offset_of ~t:_ ~variant:_ ~field:_ =
     not_impl "Unsupported intrinsic: offset_of"
 
-  let overflow_checks = not_impl "Unsupported intrinsic: overflow_checks"
+  let overflow_checks () = not_impl "Unsupported intrinsic: overflow_checks"
   let powf128 ~a:_ ~x:_ = not_impl "Unsupported intrinsic: powf128"
   let powf16 ~a:_ ~x:_ = not_impl "Unsupported intrinsic: powf16"
   let powf32 ~a:_ ~x:_ = not_impl "Unsupported intrinsic: powf32"
@@ -360,12 +359,12 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let type_id ~t:_ = not_impl "Unsupported intrinsic: type_id"
   let type_id_eq ~a:_ ~b:_ = not_impl "Unsupported intrinsic: type_id_eq"
   let type_name ~t:_ = not_impl "Unsupported intrinsic: type_name"
-  let type_of ~_id:_ = not_impl "Unsupported intrinsic: type_of"
+  let type_of ~id:_ = not_impl "Unsupported intrinsic: type_of"
 
   let typed_swap_nonoverlapping ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: typed_swap_nonoverlapping"
 
-  let ub_checks = not_impl "Unsupported intrinsic: ub_checks"
+  let ub_checks () = not_impl "Unsupported intrinsic: ub_checks"
 
   let unaligned_volatile_load ~t:_ ~src:_ =
     not_impl "Unsupported intrinsic: unaligned_volatile_load"
@@ -400,8 +399,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).Impl = struct
   let unchecked_sub ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: unchecked_sub"
 
-  let unlikely ~b:_ = not_impl "Unsupported intrinsic: unlikely"
-  let unreachable = not_impl "Unsupported intrinsic: unreachable"
+  let unreachable () = not_impl "Unsupported intrinsic: unreachable"
   let va_arg ~t:_ ~ap:_ = not_impl "Unsupported intrinsic: va_arg"
   let va_copy ~src:_ = not_impl "Unsupported intrinsic: va_copy"
   let va_end ~ap:_ = not_impl "Unsupported intrinsic: va_end"

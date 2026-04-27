@@ -1,19 +1,19 @@
-(** Builtins relating to particular operating systems. There is no central
-    documentation for these; we must instead implement them as needed. *)
-
-open Rust_val
 open Charon
+open Rust_val
 
-module M (StateM : State.StateM.S) = struct
+module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
   open Syntax
+
+  let hashmap_random_keys ~(fun_sig : Types.fun_sig) =
+    Encoder.nondet_valid fun_sig.output
 
   (** Used on macOS to register thread local destructors; receives a function
       pointer and an argument. Should call the destructor with the argument at
       the end of the thread.
 
       [_tlv_atexit(dtor: unsafe extern "C" fn( *mut u8), arg: *mut u8)] *)
-  let tlv_atexit exec_fun args =
+  let _tlv_atexit ~fun_exec ~args =
     let* dtor, arg =
       match args with
       | [ Ptr dtor_ptr; arg_ptr ] -> ok (dtor_ptr, arg_ptr)
@@ -25,7 +25,7 @@ module M (StateM : State.StateM.S) = struct
     let+ () =
       State.register_thread_exit (fun () ->
           let* fn = State.lookup_fn dtor in
-          let* _ = exec_fun fn [ arg ] in
+          let* _ = fun_exec fn [ arg ] in
           ok ())
     in
     Tuple []
@@ -35,14 +35,9 @@ module M (StateM : State.StateM.S) = struct
       ]}
       HACK: we assume that hitting the environment never finds the variable
       we're looking for. Under-approximating behaviour. *)
-  let env_var ~(ret_ty : Types.ty) args =
-    let () =
-      match args with
-      | [ _ ] -> ()
-      | _ -> failwith "std::env::_var: expected exactly one argument"
-    in
+  let _var ~(fun_sig : Types.fun_sig) ~key:_ =
     let var_error_ty =
-      match ret_ty with
+      match fun_sig.output with
       | TAdt { id = TAdtId id; _ } -> (
           let tydecl = Crate.get_adt_raw id in
           let name = tydecl.item_meta.name in
@@ -56,10 +51,10 @@ module M (StateM : State.StateM.S) = struct
           | _ ->
               Fmt.failwith
                 "std::env::_var: unexpected type Result<_, VarError> (%a)"
-                Types.pp_ty ret_ty)
+                Types.pp_ty fun_sig.output)
       | _ ->
           Fmt.failwith "std::env::_var: unexpected return type %a"
-            Charon.Types.pp_ty ret_ty
+            Charon.Types.pp_ty fun_sig.output
     in
     (* We need to return the rust value `Err(VarError::NotPresent)`. `Err` is
        variant 1 in the Result enum, and `VarError` is defined as:
@@ -68,37 +63,21 @@ module M (StateM : State.StateM.S) = struct
 
        So the variant of NotPresent is 0 *)
     let var_error = Rust_val.mk_enum ~ty:var_error_ty "NotPresent" [] in
-    let res = Rust_val.mk_enum ~ty:ret_ty "Err" [ var_error ] in
+    let res = Rust_val.mk_enum ~ty:fun_sig.output "Err" [ var_error ] in
     StateM.ok res
 
-  (** {@rust[
-        pub fn available_parallelism() -> Result<NonZero<usize>>
-      ]}
-      HACK: We under-approximate and always return 1. The return type is Result<
-  *)
-  let available_parallelism ~ret_ty args =
-    let () =
-      match args with
-      | [] -> ()
-      | _ ->
-          failwith "std::thread::available_parallelism: expected no arguments"
-    in
+  (** HACK: We under-approximate and always return 1. *)
+  let available_parallelism ~(fun_sig : Types.fun_sig) =
     (* We return 1, to under-approximate the behaviour. *)
     let one = Int (Typed.BV.usize Z.one) in
     (* `NonZero(1)` *)
     let nonzero_one = Tuple [ Tuple [ one ] ] in
     (* `Ok(Nonzero(1))` *)
-    let res = Rust_val.mk_enum ~ty:ret_ty "Ok" [ nonzero_one ] in
+    let res = Rust_val.mk_enum ~ty:fun_sig.output "Ok" [ nonzero_one ] in
     StateM.ok res
 
-  let unix_time_now args =
-    let () =
-      match args with
-      | [] -> ()
-      | _ ->
-          failwith "std::sys::time::unix::Instant::now: expected no arguments"
-    in
-    (* We need to return a Instant where 
+  let now () =
+    (* We need to return a Instant where
      * ```
      *  struct Instant(Timespec);
      *  struct Timespec {
@@ -115,18 +94,4 @@ module M (StateM : State.StateM.S) = struct
     let sec = Int (Typed.BitVec.u64i sec) in
     let nsec = Int (Typed.BitVec.u32i nsec) in
     ok (Tuple [ Tuple [ sec; Tuple [ nsec ] ] ])
-
-  let hashmap_random_keys _ =
-    Encoder.nondet_valid
-      (TAdt
-         {
-           id = TTuple;
-           generics =
-             {
-               types = [ TLiteral (TUInt U64); TLiteral (TUInt U64) ];
-               regions = [];
-               const_generics = [];
-               trait_refs = [];
-             };
-         })
 end
