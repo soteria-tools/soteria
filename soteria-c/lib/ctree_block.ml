@@ -9,11 +9,11 @@ module MemVal = struct
   module TB = Soteria.Sym_states.Tree_block
   module S_bool = Typed.Bool
 
-  module S_bounded_int = struct
+  module S_int = struct
     include Typed
     include Typed.BitVec
 
-    type t = T.sint
+    type t = T.sint Typed.t [@@deriving show { with_path = false }]
 
     let of_z = Typed.BitVec.usize
     let zero () = of_z Z.zero
@@ -27,9 +27,17 @@ module MemVal = struct
     let add = Typed.Infix.( +!!@ )
     let sub = Typed.Infix.( -!!@ )
 
-    let is_in_bound (v : t Typed.t) : sbool Typed.t =
+    let is_in_bound (v : t) : sbool Typed.t =
       let open Typed.Infix in
       v <=@ Typed.BitVec.isize_max
+
+    type syn = Typed.Expr.t [@@deriving show { with_path = false }]
+
+    let to_syn = Typed.Expr.of_value
+    let subst = Typed.Expr.subst
+    let learn_eq = Consumer.learn_eq
+    let exprs_syn x = [ x ]
+    let fresh () = nondet Typed.t_usize
   end
 
   let pp_init ft (v, ty) =

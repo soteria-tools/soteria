@@ -21,6 +21,7 @@ module Resource_pool = Resource_pool
 module Result = Result
 module Reversible = Reversible
 module Seq = Seq
+module Sigs = Sigs
 module String = String
 module Syntaxes = Syntaxes
 module Sys = Sys

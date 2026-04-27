@@ -1,31 +1,31 @@
 (** Symbolic abstraction over integers. *)
 
-module S (Symex : Symex.Base) (S_bool : S_bool.S(Symex).S) = struct
+open Soteria_std
+
+module S (Symex : Symex.Base) = struct
+  module Abstr = Abstr.M (Symex)
+
   (** Symbolic integers, with basic operations: addition, subtraction, and
       comparison. *)
   module type S = sig
-    type +'a v := 'a Symex.Value.t
-    type t
-
-    (** Symbolic semantic equality *)
-    val sem_eq : t v -> t v -> S_bool.t Symex.Value.t
+    type t [@@mixins Abstr.Sem_eq + Sigs.Printable]
 
     (** Takes an integer and creates an abstraction over it *)
-    val of_z : Z.t -> t v
+    val of_z : Z.t -> t
 
     (** Takes a symbolic integer and returns [Some z] if this abstraction
         describes exactly a single integer, and [None] otherwise *)
-    val to_z : t v -> Z.t option
+    val to_z : t -> Z.t option
 
-    val zero : unit -> t v
-    val one : unit -> t v
+    val zero : unit -> t
+    val one : unit -> t
 
     (** {3 Arithmetic operations} *)
 
-    val add : t v -> t v -> t v
-    val sub : t v -> t v -> t v
-    val lt : t v -> t v -> S_bool.t v
-    val leq : t v -> t v -> S_bool.t v
+    val add : t -> t -> t
+    val sub : t -> t -> t
+    val lt : t -> t -> Symex.Value.(sbool t)
+    val leq : t -> t -> Symex.Value.(sbool t)
   end
 
   (** Symbolic integers that are {i bounded}: there is some invariant about them
@@ -37,15 +37,11 @@ module S (Symex : Symex.Base) (S_bool : S_bool.S(Symex).S) = struct
 
     (** Checks whether the given symbolic integer is in the range described by
         the invariant. *)
-    val is_in_bound : t Symex.Value.t -> S_bool.t Symex.Value.t
+    val is_in_bound : t -> Symex.Value.(sbool t)
   end
 end
 
-module Make_syntax
-    (Symex : Symex.Base)
-    (S_bool : S_bool.S(Symex).S)
-    (S_int : S(Symex)(S_bool).S) =
-struct
+module Make_syntax (Symex : Symex.Base) (S_int : S(Symex).S) = struct
   let ( +@ ) = S_int.add
   let ( -@ ) = S_int.sub
   let ( <@ ) = S_int.lt
