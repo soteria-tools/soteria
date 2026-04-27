@@ -148,6 +148,10 @@
              Path to the obol binary. Defaults to "obol", i.e. looked up in
              PATH.
   
+         --offline
+             Whether to compile without accessing the network, which can be
+             useful for reproducibility. This will pass --offline to Cargo..
+  
          --plugins=VAL (absent SOTERIA_RUST_PLUGINS env)
              The directory in which plugins are and should be compiled;
              defaults to the current dune-managed site.
@@ -413,6 +417,10 @@
          --obol-path=VAL (absent=obol or SOTERIA_OBOL_PATH env)
              Path to the obol binary. Defaults to "obol", i.e. looked up in
              PATH.
+  
+         --offline
+             Whether to compile without accessing the network, which can be
+             useful for reproducibility. This will pass --offline to Cargo..
   
          --plugins=VAL (absent SOTERIA_RUST_PLUGINS env)
              The directory in which plugins are and should be compiled;
