@@ -3,12 +3,12 @@
 module Make
     (Symex : Symex.Base)
     (S_bool : S_bool.S(Symex).S)
-    (S_int : S_int.S(Symex)(S_bool).S) =
+    (S_int : S_int.S(Symex).S) =
 struct
   (** A value [(a, b)] of type [t] represents the interval starting at [a]
       {e included} and ending at [b] {e excluded}. Often denoted {m [a, b)} or
       {m [a, b[}*)
-  type t = S_int.t Symex.Value.t * S_int.t Symex.Value.t
+  type t = S_int.t * S_int.t
 
   open S_int
 
@@ -37,5 +37,5 @@ struct
   (** [of_low_and_size a b] is [(a, a + b)]*)
   let of_low_and_size low size = (low, add low size)
 
-  let pp fmt (a, b) = Fmt.pf fmt "[%a, %a[" Symex.Value.ppa a Symex.Value.ppa b
+  let pp fmt (a, b) = Fmt.pf fmt "[%a, %a[" S_int.pp a S_int.pp b
 end

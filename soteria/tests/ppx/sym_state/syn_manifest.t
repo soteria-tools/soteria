@@ -92,7 +92,7 @@ Manifest syn type
       Soteria.Symex.Compo_res.Ok res
   
     let _ = with_steps_sym
-    let with_heap f = SM.Result.map_missing (with_heap_sym f) lift_heap_fixes
+    let with_heap f = SM.Result.map_missing lift_heap_fixes (with_heap_sym f)
     let _ = with_heap
   
     let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =

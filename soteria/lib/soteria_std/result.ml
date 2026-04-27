@@ -2,6 +2,13 @@
 
 include Stdlib.Result
 
+(** The bind operator; we swap it to match the usual order of arguments for
+    monads. *)
+let bind f x = bind x f
+
+(** The error bind operator. *)
+let bind_error f x = match x with Ok _ as x -> x | Error e -> f e
+
 (** Convert an option to a result. *)
 let of_opt ~err = function Some v -> Ok v | None -> Error err
 

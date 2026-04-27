@@ -9,8 +9,7 @@ let bi_abd_fuel =
   Soteria.Symex.Fuel_gauge.{ steps = Finite 100; branching = Finite 3 }
 
 type res =
-  (Aux.S_val.t, Aux.Error.t, State.syn list) Soteria.Symex.Compo_res.t
-  * Bi_state.t option
+  (Aux.S_val.t, Aux.Error.t, State.syn list) Compo_res.t * Bi_state.t option
 
 type branch = (args:Aux.S_val.t list * res:res) * LSymex.Value.(sbool t) list
 

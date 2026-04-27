@@ -1,5 +1,4 @@
 open Soteria_std
-module Compo_res = Symex.Compo_res
 module Soteria_symex = Symex
 
 module type Base_sig = Symex.Base
@@ -125,10 +124,12 @@ module Make
     let[@inline] set_state st = fun _ -> Symex.return (Compo_res.Ok (), st)
 
     let[@inline] run_with_state ~state x =
-      Symex.map (x state) @@ function
-      | Compo_res.Ok res, state -> Compo_res.Ok (res, state)
-      | Error e, state -> Error (e, state)
-      | Missing f, _ -> Missing f
+      Symex.map
+        (function
+          | Compo_res.Ok res, state -> Compo_res.Ok (res, state)
+          | Error e, state -> Error (e, state)
+          | Missing f, _ -> Missing f)
+        (x state)
   end
 
   module Producer = struct
@@ -167,9 +168,9 @@ module Make
   module Syntax = struct
     include Syntax
 
-    let[@inline] ( let*^ ) x f = bind (lift x) f
-    let[@inline] ( let+^ ) x f = map (lift x) f
-    let[@inline] ( let**^ ) x f = Result.bind (lift x) f
-    let[@inline] ( let++^ ) x f = Result.map (lift x) f
+    let[@inline] ( let*^ ) x f = bind f (lift x)
+    let[@inline] ( let+^ ) x f = map f (lift x)
+    let[@inline] ( let**^ ) x f = Result.bind f (lift x)
+    let[@inline] ( let++^ ) x f = Result.map f (lift x)
   end
 end

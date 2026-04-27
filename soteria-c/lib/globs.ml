@@ -40,7 +40,7 @@ let get sym =
   let* st = SM.get_state () in
   let existed = Option.fold ~none:false ~some:(syntactic_mem sym) st in
   let* res = wrap sym (Glob_fn.load ()) in
-  let loc = Soteria.Symex.Compo_res.get_ok res in
+  let loc = Compo_res.get_ok res in
   let+ () =
     if existed then (* We haven't created a new location *) SM.return ()
     else

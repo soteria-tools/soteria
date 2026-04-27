@@ -1,4 +1,4 @@
-open Soteria.Symex.Compo_res
+open Compo_res
 open Csymex
 open Typed.Infix
 open Typed.Syntax
@@ -16,16 +16,16 @@ module InterpM (State : State_intf.S) = struct
 
   type 'a t = ('a, Error.with_trace, State.syn list) SSM.Result.t
 
-  let map x f = Result.map x f
-  let bind x f = Result.bind x f
+  let map = Result.map
+  let bind = Result.bind
 
   module Syntax = struct
-    let ( let* ) = bind
-    let ( let+ ) = map
+    let ( let* ) x f = bind f x
+    let ( let+ ) x f = map f x
 
     let ( let*^ ) (x : 'a Csymex.t) (f : 'a -> 'b t) : 'b t =
-      let x_res = Csymex.map x Soteria.Symex.Compo_res.ok in
-      bind (SSM.lift @@ StateM.lift @@ x_res) f
+      let x_res = Csymex.map ok x in
+      bind f (SSM.lift @@ StateM.lift @@ x_res)
 
     module Symex_syntax = SSM.Syntax.Symex_syntax
   end
@@ -46,8 +46,8 @@ module InterpM (State : State_intf.S) = struct
   let iter_list x ~f = fold_list x ~init:() ~f:(fun () -> f)
 
   let map_list x ~f =
-    fold_list x ~init:[] ~f:(fun acc x -> map (f x) (fun y -> y :: acc))
-    |> Fun.flip map List.rev
+    fold_list x ~init:[] ~f:(fun acc x -> map (fun y -> y :: acc) (f x))
+    |> map List.rev
 
   let map_store f =
     let open SSM.Syntax in
@@ -58,7 +58,7 @@ module InterpM (State : State_intf.S) = struct
   let lift_state_op f = SSM.lift f
 
   let lift_symex (s : 'a Csymex.t) : 'a t =
-    SSM.lift @@ StateM.lift (Csymex.map s Soteria.Symex.Compo_res.ok)
+    SSM.lift @@ StateM.lift @@ Csymex.map Compo_res.ok s
 
   let lift_symex_res (type a)
       (s : (a, Error.with_trace, State.syn list) Csymex.Result.t) : a t =
@@ -80,8 +80,8 @@ module InterpM (State : State_intf.S) = struct
   let with_loc ~(loc : Cerb_location.t) (f : 'a t) : 'a t =
    fun store state -> Csymex.with_loc ~loc (f store state)
 
-  let with_extra_call_trace ~loc ~msg (x : 'a t) : 'a t =
-    SSM.Result.map_error x @@ fun e ->
+  let with_extra_call_trace ~loc ~msg : 'a t -> 'a t =
+    SSM.Result.map_error @@ fun e ->
     let elem = Soteria.Terminal.Call_trace.mk_element ~loc ~msg () in
     Error.add_to_call_trace e elem
 
@@ -411,14 +411,14 @@ module Make (State : State_intf.S) = struct
             Fmt_ail.pp_ty new_ty
 
   let cast_basic ~old_ty ~new_ty v =
-    Csymex.map (cast_basic ~old_ty ~new_ty v) Typed.cast
+    Csymex.map Typed.cast @@ cast_basic ~old_ty ~new_ty v
 
   let cast ~old_ty ~new_ty (v : Agv.t) : Agv.t Csymex.t =
     if Ctype.ctypeEqual old_ty new_ty then return v
     else
       match v with
       | Basic v ->
-          Csymex.map (cast_basic ~old_ty ~new_ty v) (fun x -> Agv.Basic x)
+          Csymex.map (fun x -> Agv.Basic x) @@ cast_basic ~old_ty ~new_ty v
       | Struct _ | Array _ -> Fmt.kstr not_impl "Cannot cast %a" Agv.pp v
 
   open InterpM
@@ -532,7 +532,7 @@ module Make (State : State_intf.S) = struct
         let signed = Layout.is_int_ty_signed inty in
         let*^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
         let*^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
-        let*^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
+        let*^ v2 = Csymex.bind Csymex.check_nonzero @@ cast_to_int v2 in
         match v2 with
         | Ok v2 -> ok (Typed.cast @@ BV.div ~signed v1 v2)
         | Error `NonZeroIsZero -> error `DivisionByZero
@@ -541,7 +541,7 @@ module Make (State : State_intf.S) = struct
         let signed = Layout.is_int_ty_signed inty in
         let*^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
         let*^ v2 = cast_basic ~old_ty:t2 ~new_ty v2 in
-        let*^ v2 = Csymex.bind (cast_to_int v2) Csymex.check_nonzero in
+        let*^ v2 = Csymex.bind Csymex.check_nonzero @@ cast_to_int v2 in
         match v2 with
         | Ok v2 -> ok (Typed.cast @@ BV.rem ~signed v1 v2)
         | Error `NonZeroIsZero -> error `DivisionByZero
@@ -1374,7 +1374,7 @@ module Make (State : State_intf.S) = struct
         @@ State.produce_aggregate (syn ptr) ty (Agv.to_syn v) st
       in
       let+ () = StateM.set_state st' in
-      Soteria.Symex.Compo_res.Ok ()
+      Ok ()
     in
     StateM.Result.iter_list prog.sigma.object_definitions ~f:(fun def ->
         let id, e = def in

@@ -1,5 +1,8 @@
 include Iter
 
+(** The bind operator for iterators, also known as [flat_map]. *)
+let bind = flat_map
+
 let rec of_list_combine l1 l2 k =
   match (l1, l2) with
   | [], [] -> ()

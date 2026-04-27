@@ -123,7 +123,7 @@ module DecayMap = struct
              in
              let* () = set_state (Some { address; exposed = expose }) in
              Result.ok address)
-      |> Fun.flip map Soteria.Symex.Compo_res.get_ok
+      |> map Compo_res.get_ok
 
   let from_exposed (loc_int : [< sint ] Typed.t) :
       (sloc Typed.t * sint Typed.t) option SM.t =

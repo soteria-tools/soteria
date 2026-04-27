@@ -51,37 +51,36 @@ include Syntaxes.FunctionWrap
 
 let run ?fuel ~mode symex =
   run_with_state ~state:MonadState.empty symex
-  |> (Fun.flip MonoSymex.map) fst
+  |> MonoSymex.map fst
   |> MonoSymex.run ?fuel ~mode
 
 let run_with_stats ?fuel ~mode symex =
   run_with_state ~state:MonadState.empty symex
-  |> (Fun.flip MonoSymex.map) fst
+  |> MonoSymex.map fst
   |> MonoSymex.run_with_stats ?fuel ~mode
 
 let run_needs_stats ?fuel ~mode symex =
   run_with_state ~state:MonadState.empty symex
-  |> (Fun.flip MonoSymex.map) fst
+  |> MonoSymex.map fst
   |> MonoSymex.run_needs_stats ?fuel ~mode
 
 module Result = struct
   include Result
 
   let ignore_state :
-      ('a * st, 'e * st, 'f) Soteria.Symex.Compo_res.t ->
-      ('a, 'e, 'f) Soteria.Symex.Compo_res.t = function
+      ('a * st, 'e * st, 'f) Compo_res.t -> ('a, 'e, 'f) Compo_res.t = function
     | Ok (a, _) -> Ok a
     | Error (e, _) -> Error e
     | Missing f -> Missing f
 
   let run_with_stats ?flamegraph ?fuel ?fail_fast ~mode symex =
     run_with_state ~state:MonadState.empty symex
-    |> (Fun.flip MonoSymex.map) ignore_state
+    |> MonoSymex.map ignore_state
     |> MonoSymex.Result.run_with_stats ?flamegraph ?fuel ?fail_fast ~mode
 
   let run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode symex =
     run_with_state ~state:MonadState.empty symex
-    |> (Fun.flip MonoSymex.map) ignore_state
+    |> MonoSymex.map ignore_state
     |> MonoSymex.Result.run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode
 end
 
@@ -151,7 +150,7 @@ let error ?trace e : ('a, Error.with_trace, 'f) Result.t =
   let where = Option.fold trace ~some:Trace.set_op ~none:Fun.id where in
   Error.log_at where e;
   let e = Error.decorate where e in
-  Soteria.Symex.Compo_res.Error e
+  Compo_res.Error e
 
 let with_extra_call_trace ?name ~loc ~msg (f : 'a t) : 'a t =
  fun st ->

@@ -5,7 +5,6 @@ open Symex
 open Symex.Syntax
 open S_val.Infix
 open Soteria.Logs
-module Compo_res = Soteria.Symex.Compo_res
 
 let cast_both (ty : [< S_val.T.any ] S_val.ty) v1 v2 =
   let v1 = S_val.cast_checked v1 ty in

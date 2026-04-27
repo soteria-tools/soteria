@@ -1,4 +1,4 @@
-open Soteria.Symex.Compo_res
+open Compo_res
 open Rust_val
 open Typed.Infix
 open Typed.Syntax
@@ -222,8 +222,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       | MemVal { v = STree_borrow s; _ } -> Ser_borrow s
       | s -> Ser_block s
 
-    let lift_fix_block_r r =
-      Soteria.Symex.Compo_res.map_missing r (List.map lift_fix_block)
+    let lift_fix_block_r r = map_missing (List.map lift_fix_block) r
 
     let with_block (f : ('a, 'err, 'fix) Tree_block.SM.Result.t) :
         ('a, 'err, syn list) Result.t =
@@ -387,8 +386,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     thread_destructor :
       (unit ->
       t option ->
-      ((unit, Error.with_trace, unit) Soteria.Symex.Compo_res.t * t option)
-      Rustsymex.t)
+      ((unit, Error.with_trace, unit) Compo_res.t * t option) Rustsymex.t)
       option;
         [@sym_state.ignore { empty = None }]
     const_generics : Sptr_base.t rust_val Types.ConstGenericVarId.Map.t;
@@ -1012,13 +1010,14 @@ module Make (Borrows : Tree_borrows.T) = struct
        a solution. *)
     let@ thread_destructor = with_thread_destructor_sym in
     let callback () =
-      SM.Result.map_missing (callback ()) (fun _ ->
-          failwith "TODO: Miss in thread exit")
+      SM.Result.map_missing
+        (fun _ -> failwith "TODO: Miss in thread exit")
+        (callback ())
     in
     let destructor =
       match thread_destructor with
       | None -> callback
-      | Some destructor -> fun () -> Result.bind (destructor ()) callback
+      | Some destructor -> fun () -> Result.bind callback (destructor ())
     in
     Rustsymex.Result.ok ((), Some destructor)
 
@@ -1027,5 +1026,5 @@ module Make (Borrows : Tree_borrows.T) = struct
     let st = of_opt st_opt in
     match st.thread_destructor with
     | None -> Result.ok ()
-    | Some destructor -> SM.Result.map_missing (destructor ()) (fun () -> [])
+    | Some destructor -> SM.Result.map_missing (fun () -> []) (destructor ())
 end

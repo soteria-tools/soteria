@@ -1,4 +1,4 @@
-open Soteria.Symex.Compo_res
+open Compo_res
 open Typed.Infix
 module BV = Typed.BV
 open Charon
@@ -19,11 +19,11 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     module TB = Soteria.Sym_states.Tree_block
     module S_bool = Typed.Bool
 
-    module S_bounded_int = struct
+    module S_int = struct
       include Typed
       include Typed.BV
 
-      type t = Typed.T.sint
+      type t = Typed.T.sint Typed.t [@@deriving show { with_path = false }]
 
       let of_z = Typed.BitVec.usize
       let zero () = of_z Z.zero
@@ -37,10 +37,18 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       let add = Typed.Infix.( +!!@ )
       let sub = Typed.Infix.( -!!@ )
 
-      let is_in_bound (v : t Typed.t) : sbool Typed.t =
+      let is_in_bound (v : t) : sbool Typed.t =
         let max = Layout.max_value_z (TInt Isize) in
         let max = Typed.BitVec.usize max in
         v <=@ max
+
+      type syn = Typed.Expr.t [@@deriving show { with_path = false }]
+
+      let to_syn = Typed.Expr.of_value
+      let subst = Typed.Expr.subst
+      let learn_eq = Consumer.learn_eq
+      let exprs_syn x = [ x ]
+      let fresh () = nondet (Typed.t_usize ())
     end
 
     type qty = Totally | Partially [@@deriving show { with_path = false }]

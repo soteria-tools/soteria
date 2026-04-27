@@ -2,6 +2,7 @@
 
 module Bimap = Bimap
 module Cmdliner_helpers = Cmdliner_helpers
+module Compo_res = Compo_res
 module Dynarray = Dynarray
 module Exn = Exn
 module Filename = Filename
@@ -21,6 +22,7 @@ module Resource_pool = Resource_pool
 module Result = Result
 module Reversible = Reversible
 module Seq = Seq
+module Sigs = Sigs
 module String = String
 module Syntaxes = Syntaxes
 module Sys = Sys

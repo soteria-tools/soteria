@@ -593,9 +593,10 @@ module Equality : S = struct
          v1 v2
 
   let find_cheaper_opt v (uf, refs) =
-    Option.bind (VMap.find_opt v refs) @@ fun r ->
-    let v_repr = UnionFind.get uf r in
-    if Svalue.equal v v_repr then None else Some v_repr
+    VMap.find_opt v refs
+    |> Option.bind @@ fun r ->
+       let v_repr = UnionFind.get uf r in
+       if Svalue.equal v v_repr then None else Some v_repr
 
   let known_eq v1 v2 (uf, refs) : bool =
     match (VMap.find_opt v1 refs, VMap.find_opt v2 refs) with
