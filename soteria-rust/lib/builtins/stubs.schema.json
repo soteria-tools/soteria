@@ -64,11 +64,22 @@
           "required": ["pattern"],
           "additionalProperties": false,
           "properties": {
+            "_comment": { "$ref": "#/$defs/comment" },
             "pattern": { "$ref": "#/$defs/pattern" },
             "extra_args": {
               "type": "array",
               "items": { "$ref": "#/$defs/extra_arg" },
               "uniqueItems": true
+            },
+            "alias": {
+              "oneOf": [
+                { "$ref": "#/$defs/pattern" },
+                {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/pattern" },
+                  "description": "Alternative patterns to match the same stub implementation. Useful for functions that have multiple names because of re-exports. Avoid using this if possible."
+                }
+              ]
             }
           }
         }

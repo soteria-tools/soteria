@@ -15,42 +15,20 @@ module M (StateM : State.StateM.S) = struct
   type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
   module type S = sig
+    val _eprint : args:rust_val -> unit ret
+
     val alloc_impl :
       self:full_ptr ->
       layout:rust_val ->
       zeroed:[< Typed.T.sbool ] Typed.t ->
       rust_val ret
 
-    (** {@markdown[
-          Signals a memory allocation error.
-
-           Callers of memory allocation APIs wishing to cease execution
-           in response to an allocation error are encouraged to call this function,
-           rather than directly invoking [`panic!`] or similar.
-
-           This function is guaranteed to diverge (not return normally with a value), but depending on
-           global configuration, it may either panic (resulting in unwinding or aborting as per
-           configuration for all panics), or abort the process (with no unwinding).
-
-           The default behavior is:
-
-            * If the binary links against `std` (typically the case), then
-             print a message to standard error and abort the process.
-             This behavior can be replaced with [`set_alloc_error_hook`] and [`take_alloc_error_hook`].
-             Future versions of Rust may panic by default instead.
-
-           * If the binary does not link against `std` (all of its crates are marked
-             [`#![no_std]`][no_std]), then call [`panic!`] with a message.
-             [The panic handler] applies as to any panic.
-
-           [`set_alloc_error_hook`]: ../../std/alloc/fn.set_alloc_error_hook.html
-           [`take_alloc_error_hook`]: ../../std/alloc/fn.take_alloc_error_hook.html
-           [The panic handler]: https://doc.rust-lang.org/reference/runtime.html#the-panic_handler-attribute
-           [no_std]: https://doc.rust-lang.org/reference/names/preludes.html#the-no_std-attribute
-        ]} *)
-    val handle_alloc_error : layout:rust_val -> unit ret
-
-    val handle_error : e:rust_val -> unit ret
+    val assert_failed_inner :
+      kind:rust_val ->
+      left:full_ptr ->
+      right:full_ptr ->
+      args:rust_val ->
+      unit ret
 
     (** {@markdown[
           Returns `true` if this number is neither infinite nor NaN.
@@ -680,14 +658,37 @@ module M (StateM : State.StateM.S) = struct
     val f64_is_subnormal :
       arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
 
-    val option_unwrap_failed : unit -> unit ret
+    (** {@markdown[
+          Signals a memory allocation error.
 
-    val assert_failed_inner :
-      kind:rust_val ->
-      left:full_ptr ->
-      right:full_ptr ->
-      args:rust_val ->
-      unit ret
+           Callers of memory allocation APIs wishing to cease execution
+           in response to an allocation error are encouraged to call this function,
+           rather than directly invoking [`panic!`] or similar.
+
+           This function is guaranteed to diverge (not return normally with a value), but depending on
+           global configuration, it may either panic (resulting in unwinding or aborting as per
+           configuration for all panics), or abort the process (with no unwinding).
+
+           The default behavior is:
+
+            * If the binary links against `std` (typically the case), then
+             print a message to standard error and abort the process.
+             This behavior can be replaced with [`set_alloc_error_hook`] and [`take_alloc_error_hook`].
+             Future versions of Rust may panic by default instead.
+
+           * If the binary does not link against `std` (all of its crates are marked
+             [`#![no_std]`][no_std]), then call [`panic!`] with a message.
+             [The panic handler] applies as to any panic.
+
+           [`set_alloc_error_hook`]: ../../std/alloc/fn.set_alloc_error_hook.html
+           [`take_alloc_error_hook`]: ../../std/alloc/fn.take_alloc_error_hook.html
+           [The panic handler]: https://doc.rust-lang.org/reference/runtime.html#the-panic_handler-attribute
+           [no_std]: https://doc.rust-lang.org/reference/names/preludes.html#the-no_std-attribute
+        ]} *)
+    val handle_alloc_error : layout:rust_val -> unit ret
+
+    val handle_error : e:rust_val -> unit ret
+    val option_unwrap_failed : unit -> unit ret
 
     (** {@markdown[
           The underlying implementation of core's `panic!` macro when no formatting is used.
@@ -712,10 +713,12 @@ module M (StateM : State.StateM.S) = struct
     val panic_nounwind_fmt :
       fmt:rust_val -> force_no_backtrace:[< Typed.T.sbool ] Typed.t -> unit ret
 
-    val result_unwrap_failed : msg:full_ptr -> error:full_ptr -> unit ret
-    val io__print : args:rust_val list -> rust_val ret
-    val _eprint : args:rust_val -> unit ret
-    val stdio__print : args:rust_val -> unit ret
+    (** {@markdown[
+          This is the entry point of panicking for the non-format-string variants of
+           panic!() and assert!(). In particular, this is the only entry point that supports
+           arbitrary payloads, not just format strings.
+        ]} *)
+    val panicking_begin_panic : m:Types.ty -> msg:rust_val -> unit ret
 
     val print_to :
       t:Types.ty ->
@@ -727,13 +730,8 @@ module M (StateM : State.StateM.S) = struct
     val print_to_buffer_if_capture_used :
       args:rust_val -> Typed.T.sbool Typed.t ret
 
-    (** {@markdown[
-          This is the entry point of panicking for the non-format-string variants of
-           panic!() and assert!(). In particular, this is the only entry point that supports
-           arbitrary payloads, not just format strings.
-        ]} *)
-    val panicking_begin_panic : m:Types.ty -> msg:rust_val -> unit ret
-
+    val result_unwrap_failed : msg:full_ptr -> error:full_ptr -> unit ret
     val rt_begin_panic : args:rust_val list -> rust_val ret
+    val stdio__print : args:rust_val -> unit ret
   end
 end

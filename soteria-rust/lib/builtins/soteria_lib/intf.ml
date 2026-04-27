@@ -18,9 +18,9 @@ module M (StateM : State.StateM.S) = struct
     val kani_assert : args:rust_val list -> rust_val ret
     val kani_assume : args:rust_val list -> rust_val ret
     val kani_panic : args:rust_val list -> rust_val ret
+    val nondet_bytes : types:Types.ty list -> args:rust_val list -> rust_val ret
     val soteria_assert : args:rust_val list -> rust_val ret
     val soteria_assume : args:rust_val list -> rust_val ret
-    val nondet_bytes : types:Types.ty list -> args:rust_val list -> rust_val ret
     val soteria_panic : args:rust_val list -> rust_val ret
   end
 end

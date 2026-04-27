@@ -362,8 +362,22 @@ def sanitize_ocaml_ident(name: str) -> str:
     return sanitize_var_name(sanitized)
 
 
-def sanitize_variant_name(name: str) -> str:
-    words = [w for w in re.split(r"[^a-zA-Z0-9]+", name) if w]
+def sanitize_variant_name(name: list[PathElem]) -> str:
+    path: list[str] = []
+    for elem in name:
+        if "Ident" in elem:
+            path.append(elem["Ident"][0])
+        elif "Impl" in elem:
+            impl = elem["Impl"]
+            if "Ty" in impl:
+                ty = charon_type_of(impl["Ty"]["skip_binder"])
+                if "Adt" in ty and "Adt" in cast(TypeAdt, ty)["Adt"]["id"]:
+                    type_decl = type_decls[cast(Any, ty)["Adt"]["id"]["Adt"]]
+                    path.append(name_short(type_decl["item_meta"]["name"]))
+        else:
+            path.append("_")
+    name_str = "::".join(path)
+    words = [w for w in re.split(r"[^a-zA-Z0-9]+", name_str) if w]
     if not words:
         return "Stub"
     variant = "".join(w[:1].upper() + w[1:] for w in words)
@@ -809,6 +823,7 @@ def path_of(fun: FunDecl) -> str:
 class Pattern:
     pattern: str
     extras: list[str]
+    aliases: list[str] = []
 
     def __init__(self, entry: str | dict[str, Any]) -> None:
         valid_extras = {"fun_exec", "sig", "types"}
@@ -820,6 +835,18 @@ class Pattern:
                     raise ValueError(
                         f"Invalid extra '{extra}' in pattern '{self.pattern}'"
                     )
+            if "alias" in entry:
+                if isinstance(entry["alias"], str):
+                    self.aliases = [entry["alias"]]
+                elif isinstance(entry["alias"], list) and all(
+                    isinstance(a, str) for a in entry["alias"]
+                ):
+                    self.aliases = entry["alias"]
+                else:
+                    raise ValueError(
+                        f"Invalid alias entry in pattern '{self.pattern}': must be a string or list of strings"
+                    )
+
         else:
             self.pattern = entry
             self.extras = []
@@ -882,6 +909,7 @@ def create_cargo_project(config: dict[str, CategorySpec]) -> Path:
     all_code = "\n".join(spec.code for spec in config.values() if spec.code)
     (src_dir / "main.rs").write_text(
         f"""
+        #![allow(internal_features)]
         {features}
 
         fn main() {{
@@ -955,17 +983,19 @@ def generate_custom_stubs() -> None:
         return True
 
     missing_patterns = [pat for spec in config.values() for pat in spec.patterns]
-    for fun in fun_decls:
-        name = fun["item_meta"]["name"]
-        for category, spec in config.items():
-            for pattern in spec.patterns:
+    for category, spec in config.items():
+        for pattern in spec.patterns:
+            for fun in fun_decls:
+                name = fun["item_meta"]["name"]
                 if matches_pattern(name, pattern.pattern):
                     missing_patterns.remove(pattern)
                     categories[category].append((pattern, fun))
                     break
-            else:
-                continue
-            break
+                for alias in pattern.aliases:
+                    if matches_pattern(name, alias):
+                        missing_patterns.remove(pattern)
+                        categories[category].append((pattern, fun))
+                        break
 
     if missing_patterns:
         pprint(
@@ -1021,12 +1051,7 @@ def generate_custom_stubs() -> None:
             ocaml_name = unique_name(fun["item_meta"]["name"])
             info = fun_decl_to_item_info(fun, ocaml_name)
 
-            base_variant = sanitize_variant_name(pattern.pattern)
-            vcount = variant_occ.get(base_variant, 0)
-            variant_occ[base_variant] = vcount + 1
-            variant_name = (
-                base_variant if vcount == 0 else f"{base_variant}{vcount + 1}"
-            )
+            variant_name = sanitize_variant_name(fun["item_meta"]["name"])
             info["meta_args"].extend(pattern.as_meta_args())
             infos.append(
                 {
@@ -1043,7 +1068,7 @@ def generate_custom_stubs() -> None:
             path_parts = [p for p in pattern.pattern.split("::") if p != "_"]
             rust_name: list[PathElem] = [{"Ident": (p,)} for p in path_parts]
             ocaml_name = unique_name(rust_name)
-            base_variant = sanitize_variant_name(pattern.pattern)
+            base_variant = sanitize_variant_name(rust_name)
             vcount = variant_occ.get(base_variant, 0)
             variant_occ[base_variant] = vcount + 1
             variant_name = (
@@ -1076,16 +1101,16 @@ def generate_custom_stubs() -> None:
         intf_file = category_dir / "intf.ml"
         entry_file = category_dir / f"{category_name}.ml"
 
-        intf_entries = ""
-        fn_variants = ""
+        intf_entries: set[str] = set()
+        fn_variants: set[str] = set()
         fn_map_entries = ""
         eval_entries = ""
 
         for info in infos:
-            fn_variants += f" | {info['variant_name']}"
+            fn_variants.add(info["variant_name"])
             fn_map_entries += f"(\"{info['rust_path']}\", {info['variant_name']});"
             args_and_tys = make_args_and_tys(info)
-            intf_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
+            intf_entries.add(make_val_entry(info, args_and_tys))
 
             if info["is_dummy"]:
                 opt_args = " ".join(
@@ -1099,6 +1124,16 @@ def generate_custom_stubs() -> None:
                 """
             else:
                 eval_entries += make_match_branch(info, first_pat=info["variant_name"])
+
+        def intf_entry_key(s: str):
+            # look for "val name :"; s could contain multiple lines due to doc comments, so we search for the last occurrence
+            match = re.search(r"val\s+(\w+)\s*:", s)
+            if match:
+                return match.group(1)
+            return s
+
+        intf_entries_str = "\n\n".join(sorted(intf_entries, key=intf_entry_key))
+        fn_variants_str = " | ".join(sorted(fn_variants))
 
         # intf.ml — generated module type that impl.ml must satisfy
         intf_generated = f"""
@@ -1117,7 +1152,7 @@ def generate_custom_stubs() -> None:
               type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
               type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
-              module type S = sig {intf_entries} end
+              module type S = sig {intf_entries_str} end
             end
         """
         write_ocaml_file(intf_file, intf_generated)
@@ -1131,7 +1166,7 @@ def generate_custom_stubs() -> None:
             open Common
             open Rust_val
 
-            type fn = {fn_variants}
+            type fn = {fn_variants_str}
             let fn_pats : (string * fn) list = [ {fn_map_entries} ]
 
             module M (StateM : State.StateM.S) = struct
