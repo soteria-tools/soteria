@@ -92,6 +92,10 @@ type t = {
       [@docs Sections.frontend] [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
       (** The sysroot to use for compilation. If not provided, the default
           sysroot is used. *)
+  offline : bool;
+      [@docs Sections.frontend] [@make.default false] [@names [ "offline" ]]
+      (** Whether to compile without accessing the network, which can be useful
+          for reproducibility. This will pass --offline to Cargo.. *)
   test : string option; [@docs Sections.frontend] [@names [ "test" ]]
       (** The test profile to use to compile the crate; this only has an effect
           if analysing a crate. Use [lib] for unit tests in [src/]. By default,

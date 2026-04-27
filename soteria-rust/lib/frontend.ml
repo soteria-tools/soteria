@@ -68,7 +68,8 @@ module Lib = struct
   let clean lib = exec_cargo lib [ "clean" ]
 
   let compile lib =
-    if not (Config.get ()).no_compile_plugins then
+    let config = Config.get () in
+    if not config.no_compile_plugins then
       let env =
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
       in
@@ -76,6 +77,7 @@ module Lib = struct
         [ "build"; "--lib"; "--target"; Lazy.force target ]
         @ if (Config.get ()).log_compilation then [ "--verbose" ] else []
       in
+      let args = if config.offline then args @ [ "--offline" ] else args in
       exec_cargo ~env lib args
 
   let with_compiled lib f =
