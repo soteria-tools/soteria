@@ -71,7 +71,7 @@ Ignored field usage
       res
   
     let _ = with_heap_sym
-    let with_heap f = SM.Result.map_missing (with_heap_sym f) lift_heap_fixes
+    let with_heap f = SM.Result.map_missing lift_heap_fixes (with_heap_sym f)
     let _ = with_heap
   
     let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =

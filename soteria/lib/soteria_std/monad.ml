@@ -5,8 +5,8 @@ module type Base = sig
   type 'a t
 
   val return : 'a -> 'a t
-  val bind : 'a t -> ('a -> 'b t) -> 'b t
-  val map : 'a t -> ('a -> 'b) -> 'b t
+  val bind : ('a -> 'b t) -> 'a t -> 'b t
+  val map : ('a -> 'b) -> 'a t -> 'b t
 end
 
 (** Functor to create a monadic fold function over a foldable container. *)
@@ -16,14 +16,14 @@ end
 
 (** Generic monadic fold function. *)
 let foldM ~return ~bind ~fold xs ~init ~f =
-  fold xs ~init:(return init) ~f:(fun acc x -> bind acc @@ fun acc -> f acc x)
+  fold xs ~init:(return init) ~f:(fun acc x -> bind (fun acc -> f acc x) acc)
 
 (** Generic monadic map function that collects results. *)
 let all ~return ~bind fn xs =
   let rec aux acc rs =
     match rs with
     | [] -> return (List.rev acc)
-    | r :: rs -> bind (fn r) @@ fun x -> aux (x :: acc) rs
+    | r :: rs -> bind (fun x -> aux (x :: acc) rs) (fn r)
   in
   aux [] xs
 
@@ -54,7 +54,7 @@ module Extend (Base : Base) = struct
     let rec aux vs l =
       match l with
       | [] -> return (List.rev vs)
-      | x :: xs -> bind (fn x) (fun x -> aux (x :: vs) xs)
+      | x :: xs -> bind (fun x -> aux (x :: vs) xs) (fn x)
     in
     aux [] xs
 
@@ -63,8 +63,8 @@ module Extend (Base : Base) = struct
     foldM ~return ~bind ~fold:Foldable.List.fold xs ~init ~f
 
   module Syntax = struct
-    let ( let* ) = Base.bind
-    let ( let+ ) = Base.map
+    let ( let* ) x f = Base.bind f x
+    let ( let+ ) x f = Base.map f x
   end
 end
 
@@ -73,11 +73,11 @@ module type Base2 = sig
   type ('a, 'b) t
 
   val ok : 'a -> ('a, 'b) t
-  val bind : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
-  val map : ('a, 'b) t -> ('a -> 'c) -> ('c, 'b) t
+  val bind : ('a -> ('c, 'b) t) -> ('a, 'b) t -> ('c, 'b) t
+  val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
   val error : 'b -> ('a, 'b) t
-  val bind_error : ('a, 'b) t -> ('b -> ('a, 'c) t) -> ('a, 'c) t
-  val map_error : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t
+  val bind_error : ('b -> ('a, 'c) t) -> ('a, 'b) t -> ('a, 'c) t
+  val map_error : ('b -> 'c) -> ('a, 'b) t -> ('a, 'c) t
 end
 
 (** Functor to create a monadic fold for two-parameter monads. *)
@@ -132,7 +132,7 @@ struct
     let rec aux vs l =
       match l with
       | [] -> ok (List.rev vs)
-      | x :: xs -> bind (fn x) (fun x -> aux (x :: vs) xs)
+      | x :: xs -> bind (fun x -> aux (x :: vs) xs) (fn x)
     in
     aux [] xs
 
@@ -141,10 +141,10 @@ struct
     foldM ~return:ok ~bind ~fold:Foldable.List.fold xs ~init ~f
 
   module Syntax = struct
-    let ( let* ) = Base.bind
-    let ( let+ ) = Base.map
-    let ( let/ ) = Base.bind_error
-    let ( let- ) = Base.map_error
+    let ( let* ) x f = Base.bind f x
+    let ( let+ ) x f = Base.map f x
+    let ( let/ ) x f = Base.bind_error f x
+    let ( let- ) x f = Base.map_error f x
   end
 end
 
@@ -152,9 +152,9 @@ end
 module Id = Extend (struct
   type 'a t = 'a
 
-  let[@inline] return x = x
-  let[@inline] bind x f = f x
-  let[@inline] map x f = f x
+  let return = Fun.id
+  let bind = ( @@ )
+  let map = ( @@ )
 end)
 
 (** Result transformer. *)
@@ -164,64 +164,29 @@ struct
 
   let ok x = M.return (Ok x)
   let error x = M.return (Error x)
+  let bind f = M.bind (function Ok x -> f x | Error z -> M.return (Error z))
 
-  let bind x f =
-    M.bind x (function Ok x -> f x | Error z -> M.return (Error z))
+  let bind_error f =
+    M.bind (function Ok x -> M.return (Ok x) | Error z -> f z)
 
-  let bind_error x f =
-    M.bind x (function Ok x -> M.return (Ok x) | Error z -> f z)
-
-  let map x f = M.map x (Result.map f)
-  let map_error x f = M.map x (Result.map_error f)
+  let map f = M.map (Result.map f)
+  let map_error f = M.map (Result.map_error f)
 end
 
 (** List monad. *)
-module ListM = Extend (struct
-  type 'a t = 'a list
-
-  let return x = [ x ]
-  let bind x f = List.concat_map f x
-  let map x f = List.map f x
-end)
+module ListM = Extend (List)
 
 (** Result monad. *)
-module ResultM = Extend2 (struct
-  type ('a, 'b) t = ('a, 'b) result
-
-  let ok x = Ok x
-  let bind = Result.bind
-  let map x f = Result.map f x
-  let error x = Error x
-  let bind_error x f = match x with Ok _ as x -> x | Error e -> f e
-  let map_error x f = Result.map_error f x
-end)
+module ResultM = Extend2 (Result)
 
 (** Option monad. *)
-module OptionM = Extend (struct
-  type 'a t = 'a option
-
-  let bind = Option.bind
-  let map x f = Option.map f x
-  let return x = Some x
-end)
+module OptionM = Extend (Option)
 
 (** Sequence monad. *)
-module SeqM = Extend (struct
-  type 'a t = 'a Seq.t
-
-  let[@inline] bind x f = Seq.concat_map f x
-  let[@inline] map x f = Seq.map f x
-  let[@inline] return x = Seq.return x
-end)
+module SeqM = Extend (Seq)
 
 (** Iterator monad. *)
-module IterM = Extend (struct
-  type 'a t = 'a Iter.t
-
-  let[@inline] bind x f = Iter.flat_map f x
-  let[@inline] map x f = Iter.map f x
-  let[@inline] return x = Iter.return x
-end)
+module IterM = Extend (Iter_soteria)
 
 (** State monad. *)
 module StateM (State : sig
@@ -232,11 +197,11 @@ Extend (struct
 
   let[@inline] return x s = (x, s)
 
-  let[@inline] bind x f s =
+  let[@inline] bind f x s =
     let x', s' = x s in
     f x' s'
 
-  let[@inline] map x f s =
+  let[@inline] map f x s =
     let x', s' = x s in
     (f x', s')
 end)
@@ -250,8 +215,8 @@ struct
   type 'a t = State.t -> ('a * State.t) M.t
 
   let[@inline] return x s = M.return (x, s)
-  let[@inline] bind x f s = M.bind (x s) (fun (x', s') -> f x' s')
-  let[@inline] map x f s = M.map (x s) (fun (x', s') -> (f x', s'))
+  let[@inline] bind f x s = M.bind (fun (x', s') -> f x' s') (x s)
+  let[@inline] map f x s = M.map (fun (x', s') -> (f x', s')) (x s)
   let[@inline] get_state () : State.t t = fun s -> M.return (s, s)
   let[@inline] set_state (s : State.t) : unit t = fun _ -> M.return ((), s)
 
@@ -263,9 +228,9 @@ struct
     x state
 
   let[@inline] with_state ~(state : State.t) (x : 'a t) : 'a t =
-   fun st -> M.map (x state) (fun (res, _) -> (res, st))
+   fun st -> M.map (fun (res, _) -> (res, st)) (x state)
 
-  let[@inline] lift (m : 'a M.t) : 'a t = fun s -> M.map m (fun x -> (x, s))
+  let[@inline] lift (m : 'a M.t) : 'a t = fun s -> M.map (fun x -> (x, s)) m
 end
 
 module StateT
@@ -279,8 +244,8 @@ module StateT_p (M : Base) = struct
   type ('a, 'state) t = 'state -> ('a * 'state) M.t
 
   let[@inline] return x s = M.return (x, s)
-  let[@inline] bind x f s = M.bind (x s) (fun (x', s') -> f x' s')
-  let[@inline] map x f s = M.map (x s) (fun (x', s') -> (f x', s'))
+  let[@inline] bind f x s = M.bind (fun (x', s') -> f x' s') (x s)
+  let[@inline] map f x s = M.map (fun (x', s') -> (f x', s')) (x s)
   let[@inline] get_state () : ('state, 'state) t = fun s -> M.return (s, s)
 
   let[@inline] set_state (s : 'state) : (unit, 'state) t =
@@ -290,12 +255,12 @@ module StateT_p (M : Base) = struct
    fun s -> M.return ((), f s)
 
   let[@inline] lift (m : 'a M.t) : ('a, 'state) t =
-   fun s -> M.map m (fun x -> (x, s))
+   fun s -> M.map (fun x -> (x, s)) m
 
   module Syntax = struct
-    let ( let* ) x f = bind x f
-    let ( let+ ) x f = map x f
-    let ( let*^ ) x f = bind (lift x) f
-    let ( let+^ ) x f = map (lift x) f
+    let ( let* ) x f = bind f x
+    let ( let+ ) x f = map f x
+    let ( let*^ ) x f = bind f (lift x)
+    let ( let+^ ) x f = map f (lift x)
   end
 end

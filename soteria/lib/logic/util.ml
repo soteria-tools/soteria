@@ -13,7 +13,7 @@ module M (Symex : Symex.Base) = struct
     let fresh fresh () =
       let open Symex in
       branches
-        [ (fun () -> return None); (fun () -> map (fresh ()) Option.some) ]
+        [ (fun () -> return None); (fun () -> map Option.some (fresh ())) ]
 
     let to_syn to_syn = Option.map to_syn
     let subst subst s = Option.map (subst s)

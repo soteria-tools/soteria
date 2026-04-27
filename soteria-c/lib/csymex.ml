@@ -61,12 +61,12 @@ let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 
 let run ?fuel ~mode process =
   run_with_state ~state:Cerb_location.unknown process
-  |> (Fun.flip SYMEX.map) fst
+  |> SYMEX.map fst
   |> SYMEX.run ?fuel ~mode
 
 let run_needs_stats ?fuel ~mode process =
   run_with_state ~state:Cerb_location.unknown process
-  |> (Fun.flip SYMEX.map) fst
+  |> SYMEX.map fst
   |> SYMEX.run_needs_stats ?fuel ~mode
 
 module Result = struct
@@ -75,7 +75,7 @@ module Result = struct
   let run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode
       (process : ('a, 'b, 'c) CSYMEX.Result.t) =
     CSYMEX.run_with_state ~state:Cerb_location.unknown process
-    |> (Fun.flip SYMEX.map) fst
+    |> SYMEX.map fst
     |> SYMEX.Result.run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode
 
   let error_with_loc ?msg err =

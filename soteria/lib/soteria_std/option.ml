@@ -2,6 +2,13 @@
 
 include Stdlib.Option
 
+(** The monad equivalent of [some] *)
+let return = some
+
+(** The bind operator; we swap it to match the usual order of arguments for
+    monads. *)
+let bind x f = bind f x
+
 (** Bind a function over two options. *)
 let bind2 f x y = match (x, y) with Some x, Some y -> f x y | _ -> None
 

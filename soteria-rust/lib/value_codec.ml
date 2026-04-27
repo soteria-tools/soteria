@@ -130,7 +130,7 @@ struct
     let ok (x : 'a) : 'a t = fun _handler _get_all -> SM.Result.ok x
     let error (e : Error.t) : 'a t = fun _handler _get_all -> SM.Result.error e
 
-    let bind2 (m : 'a t) (f : 'a -> 'b t) (fe : 'err -> 'b t) : 'b t =
+    let bind2 (f : 'a -> 'b t) (fe : 'err -> 'b t) (m : 'a t) : 'b t =
      fun handler get_all ->
       let open SM.Syntax in
       let* res = m handler get_all in
@@ -139,13 +139,13 @@ struct
       | Compo_res.Error e -> fe e handler get_all
       | Compo_res.Missing f -> SM.Result.miss f
 
-    let bind (m : 'a t) (f : 'a -> 'b t) : 'b t =
+    let bind (f : 'a -> 'b t) (m : 'a t) : 'b t =
      fun handler get_all ->
       let open SM.Syntax in
       let** x = m handler get_all in
       f x handler get_all
 
-    let map (m : 'a t) (f : 'a -> 'b) : 'b t =
+    let map (f : 'a -> 'b) (m : 'a t) : 'b t =
      fun handler get_all ->
       let open SM.Syntax in
       let++ x = m handler get_all in
@@ -172,15 +172,15 @@ struct
 
     let assert_or_error cond err =
      fun _handler _get_all state ->
-      DecayMap.SM.Result.map (assert_or_error cond err) (fun () -> ((), state))
+      DecayMap.SM.Result.map (fun () -> ((), state)) (assert_or_error cond err)
 
     let fold_iter x ~init ~f =
       Monad.foldM ~bind ~return:ok ~fold:Foldable.Iter.fold x ~init ~f
 
     module Syntax = struct
-      let ( let* ) x f = bind x f
-      let ( let+ ) x f = map x f
-      let ( let*^ ) x f = bind (lift x) f
+      let ( let* ) x f = bind f x
+      let ( let+ ) x f = map f x
+      let ( let*^ ) x f = bind f (lift x)
 
       module Symex_syntax = struct
         let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
@@ -235,7 +235,7 @@ struct
       fold_iter fields ~init:[] ~f:(fun vs (ty, o) ->
           let+ v = decode ~meta ~offset:(offset +!!@ o) ty in
           v :: vs)
-      |> (Fun.flip map) (fun vs -> Tuple (List.rev vs))
+      |> map (fun vs -> Tuple (List.rev vs))
     in
     let* ty = normalise ty in
     let* layout = layout_of ty in
@@ -316,7 +316,7 @@ module Encoder (Sptr : Sptr.S) = struct
              let offset = offset +!!@ ofs in
              let++ ys = encode ~offset v ty in
              (i + 1, Iter.append acc ys))
-      |> (Fun.flip Result.map) snd
+      |> Result.map snd
     in
     let** ty = Layout.normalise ty in
     let** layout = Layout.layout_of ty in

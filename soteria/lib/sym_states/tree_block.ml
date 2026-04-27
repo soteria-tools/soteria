@@ -366,8 +366,8 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
 
       val return : 'a -> ('a, 'b, 'c) t
       val lift : 'a Symex.t -> ('a, 'b, 'c) t
-      val bind : ('a, 'b, 'c) t -> ('a -> ('d, 'b, 'c) t) -> ('d, 'b, 'c) t
-      val map : ('a, 'b, 'c) t -> ('a -> 'd) -> ('d, 'b, 'c) t
+      val bind : ('a -> ('d, 'b, 'c) t) -> ('a, 'b, 'c) t -> ('d, 'b, 'c) t
+      val map : ('a -> 'd) -> ('a, 'b, 'c) t -> ('d, 'b, 'c) t
 
       module Syntax : sig
         module Symex_syntax : sig
@@ -384,10 +384,10 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     struct
       open M.Syntax
 
-      let ( let* ) = M.bind
-      let ( let+ ) = M.map
-      let ( let*^ ) x f = M.bind (M.lift x) f
-      let ( let+^ ) x f = M.map (M.lift x) f
+      let ( let* ) x f = M.bind f x
+      let ( let+ ) x f = M.map f x
+      let ( let*^ ) x f = M.bind f (M.lift x)
+      let ( let+^ ) x f = M.map f (M.lift x)
 
       (** [frame_range t ~replace_node ~rebuild_parent range] Extracts from [t]
           the subtree that exactly spans [range]. The [range] must be non-empty.
@@ -480,7 +480,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
       end
 
       let return = Symex.Result.ok
-      let lift x = Symex.map x Compo_res.ok
+      let lift x = Symex.map Compo_res.ok x
     end)
     (* Exposed helpers *)
 

@@ -11,8 +11,8 @@ end) (M : sig
   type ('a, 'b) t
 
   val return : 'a -> ('a, 'b) t
-  val bind : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
-  val map : ('a, 'b) t -> ('a -> 'c) -> ('c, 'b) t
+  val bind : ('a -> ('c, 'b) t) -> ('a, 'b) t -> ('c, 'b) t
+  val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
 end) =
 struct
   open I
@@ -23,22 +23,20 @@ struct
   let error e = M.return (Error e)
   let miss f = M.return (Missing f)
 
-  let bind x f =
-    M.bind x @@ function
+  let bind f =
+    M.bind @@ function
     | Ok v -> f v
     | Error e -> M.return (Error e)
     | Missing f' -> M.return (Missing f')
 
-  let bind2 x f fe =
-    M.bind x @@ function
+  let bind2 f fe =
+    M.bind @@ function
     | Ok v -> f v
     | Error e -> fe e
     | Missing f' -> M.return (Missing f')
 
-  let map (x : ('a, 'b) t) (f : 'a -> 'c) : ('c, 'b) t =
-    M.map x @@ Fun.flip Compo_res.map f
-
-  let lift (x : ('a, 'b) M.t) : ('a, 'b) t = M.map x @@ fun v -> Ok v
+  let map (f : 'a -> 'c) : ('a, 'b) t -> ('c, 'b) t = M.map @@ Compo_res.map f
+  let lift (x : ('a, 'b) M.t) : ('a, 'b) t = M.map Compo_res.ok x
 end
 
 module type S = sig
@@ -55,8 +53,8 @@ module type S = sig
   val miss : syn list list -> ('a, 'env) t
   val vanish : unit -> ('a, 'env) t
   val not_impl : string -> ('a, 'env) t
-  val bind : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
-  val map : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
+  val bind : ('a -> ('b, 'env) t) -> ('a, 'env) t -> ('b, 'env) t
+  val map : ('a -> 'b) -> ('a, 'env) t -> ('b, 'env) t
 
   val fold_list :
     'a list -> init:'b -> f:('b -> 'a -> ('b, 'env) t) -> ('b, 'env) t
@@ -351,11 +349,11 @@ module Make (State : State_intf.S) :
 
   let get_env () : ('env, 'env) t = ESM.Result.lift @@ ESM.get_state ()
 
-  let bind (x : ('a, 'env) t) (f : 'a -> ('b, 'env) t) : ('b, 'env) t =
-    ESM.Result.bind x f
+  let bind (f : 'a -> ('b, 'env) t) (x : ('a, 'env) t) : ('b, 'env) t =
+    ESM.Result.bind f x
 
-  let map (x : ('a, 'env) t) (f : 'a -> 'b) : ('b, 'env) t =
-    ESM.map x (Fun.flip Compo_res.map f)
+  let map (f : 'a -> 'b) (x : ('a, 'env) t) : ('b, 'env) t =
+    ESM.map (Compo_res.map f) x
 
   let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
   let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
@@ -365,8 +363,8 @@ module Make (State : State_intf.S) :
   let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
 
   let mapM ~fold ~rev ~cons ~init x ~f =
-    foldM ~fold x ~init ~f:(fun acc a -> map (f a) (fun b -> cons b acc))
-    |> Fun.flip map rev
+    foldM ~fold x ~init ~f:(fun acc a -> map (fun b -> cons b acc) (f a))
+    |> map rev
 
   let map_list x ~f =
     mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
@@ -383,7 +381,7 @@ module Make (State : State_intf.S) :
     (res, old_env)
 
   let[@inline] with_pointers_sym (f : 'a Sptr.DecayMap.SM.t) : ('a, 'env) t =
-    ESM.lift (State.SM.map (State.with_pointers_sym f) Compo_res.ok)
+    ESM.lift @@ State.SM.map Compo_res.ok @@ State.with_pointers_sym f
 
   let[@inline] lift_symex (s : 'a Rustsymex.t) : ('a, 'env) t =
     ESM.Result.lift_state @@ State.SM.lift s
@@ -403,8 +401,8 @@ module Make (State : State_intf.S) :
   let with_frame name (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> Rustsymex.with_frame name (fun () -> f () env state)
 
-  let[@inline] unwind_with ~f ~fe (x : ('a, 'env) monad) : ('b, 'env) monad =
-    ESM.Result.bind2 x f (fun ((err_ty, _) as err) ->
+  let[@inline] unwind_with ~f ~fe : ('a, 'env) monad -> ('b, 'env) monad =
+    ESM.Result.bind2 f (fun ((err_ty, _) as err) ->
         if Error.is_unwindable err_ty then fe err else error_raw err)
 
   (** Run the state monad, with the given initial state and environment; the
@@ -477,14 +475,13 @@ module Make (State : State_intf.S) :
          state) as accumulator *)
       let f_inner (acc, env, state) ptr ty =
         let+ (res, new_env), new_state = f acc ptr ty env state in
-        Compo_res.map res (fun (ptr, acc) -> (ptr, (acc, new_env, new_state)))
+        Compo_res.map (fun (ptr, acc) -> (ptr, (acc, new_env, new_state))) res
       in
       let+ res = update_ref_tys_in f_inner (init, env, state) v ty in
       match res with
-      | Compo_res.Ok (v, (acc, env, state)) ->
-          ((Compo_res.Ok (v, acc), env), state)
-      | Compo_res.Error e -> ((Compo_res.Error e, env), state)
-      | Compo_res.Missing fixes -> ((Compo_res.Missing fixes, env), state)
+      | Ok (v, (acc, env, state)) -> ((Ok (v, acc), env), state)
+      | Error e -> ((Error e, env), state)
+      | Missing fixes -> ((Missing fixes, env), state)
   end
 
   module State = struct
@@ -531,7 +528,7 @@ module Make (State : State_intf.S) :
 
     let[@inline] register_thread_exit (f : unit -> (unit, unit) monad) =
       let unlifted () : (unit, Error.with_trace, syn list) SM.Result.t =
-        SM.map (f () ()) fst
+        SM.map fst (f () ())
       in
       ESM.lift (register_thread_exit unlifted)
 
@@ -543,10 +540,10 @@ module Make (State : State_intf.S) :
   end
 
   module Syntax = struct
-    let ( let* ) = bind
-    let ( let+ ) = map
-    let ( let*^ ) x f = bind (lift_symex x) f
-    let ( let+^ ) x f = map (lift_symex x) f
+    let ( let* ) x f = bind f x
+    let ( let+ ) x f = map f x
+    let ( let*^ ) x f = bind f (lift_symex x)
+    let ( let+^ ) x f = map f (lift_symex x)
 
     module Symex_syntax = struct
       let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =

@@ -301,14 +301,10 @@ let link : Ail_tys.program list -> (Ail_tys.linked_program, string) result =
       let init_linked = { entry_point; sigma; symmap } in
       List.fold_left
         (fun acc f' ->
-          Result.bind acc
-          @@
-          fun {
-                entry_point = entry_point_acc;
-                sigma = sigma_acc;
-                symmap = symmap_acc;
-              }
-          -> link_aux (entry_point_acc, sigma_acc) f' symmap_acc)
+          Result.bind
+            (fun (acc : linked_program) ->
+              link_aux (acc.entry_point, acc.sigma) f' acc.symmap)
+            acc)
         (Ok init_linked) fs
 
 let compress_union_find (map : Ail_tys.extern_symmap) : Ail_tys.extern_symmap =

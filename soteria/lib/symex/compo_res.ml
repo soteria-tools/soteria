@@ -45,26 +45,27 @@ let only_errors l = List.filter_map (function Error x -> Some x | _ -> None) l
 let only_missings l =
   List.filter_map (function Missing x -> Some x | _ -> None) l
 
-let bind x f =
-  match x with Ok x -> f x | Error e -> Error e | Missing fix -> Missing fix
+let bind f = function
+  | Ok x -> f x
+  | Error e -> Error e
+  | Missing fix -> Missing fix
 
-let map x f =
-  match x with
+let map f = function
   | Ok x -> Ok (f x)
   | Error e -> Error e
   | Missing fix -> Missing fix
 
-let bind_error x f =
-  match x with Ok x -> Ok x | Error e -> f e | Missing fix -> Missing fix
+let bind_error f = function
+  | Ok x -> Ok x
+  | Error e -> f e
+  | Missing fix -> Missing fix
 
-let map_error x f =
-  match x with
+let map_error f = function
   | Ok x -> Ok x
   | Error e -> Error (f e)
   | Missing fix -> Missing fix
 
-let map_missing x f =
-  match x with
+let map_missing f = function
   | Ok x -> Ok x
   | Error e -> Error e
   | Missing fixes -> Missing (List.map f fixes)
@@ -77,11 +78,11 @@ let to_result_opt = function
 let of_result = function Result.Ok x -> Ok x | Result.Error e -> Error e
 
 module Syntax = struct
-  let ( let* ) = bind
-  let ( let+ ) = map
-  let ( let/ ) = bind_error
-  let ( let- ) = map_error
-  let ( let+? ) = map_missing
+  let ( let* ) x f = bind f x
+  let ( let+ ) x f = map f x
+  let ( let/ ) x f = bind_error f x
+  let ( let- ) x f = map_error f x
+  let ( let+? ) x f = map_missing f x
 end
 
 module T (M : Monad.Base) = struct
@@ -91,25 +92,25 @@ module T (M : Monad.Base) = struct
   let error x = M.return (Error x)
   let miss x = M.return (Missing x)
 
-  let bind x f =
-    M.bind x (function
+  let bind f =
+    M.bind (function
       | Ok x -> f x
       | Error z -> M.return (Error z)
       | Missing fix -> M.return (Missing fix))
 
-  let bind_2 x ~f ~fe =
-    M.bind x (function
+  let bind_2 ~f ~fe =
+    M.bind (function
       | Ok x -> f x
       | Error z -> fe z
       | Missing fix -> M.return (Missing fix))
 
-  let bind_error x f =
-    M.bind x (function
+  let bind_error f =
+    M.bind (function
       | Ok x -> M.return (Ok x)
       | Error e -> f e
       | Missing fix -> M.return (Missing fix))
 
-  let map x f = M.map x (fun x -> map x f)
-  let map_error x f = M.map x (fun x -> map_error x f)
-  let map_missing x f = M.map x (fun x -> map_missing x f)
+  let map f = M.map (map f)
+  let map_error f = M.map (map_error f)
+  let map_missing f = M.map (map_missing f)
 end

@@ -51,17 +51,17 @@ include Syntaxes.FunctionWrap
 
 let run ?fuel ~mode symex =
   run_with_state ~state:MonadState.empty symex
-  |> (Fun.flip MonoSymex.map) fst
+  |> MonoSymex.map fst
   |> MonoSymex.run ?fuel ~mode
 
 let run_with_stats ?fuel ~mode symex =
   run_with_state ~state:MonadState.empty symex
-  |> (Fun.flip MonoSymex.map) fst
+  |> MonoSymex.map fst
   |> MonoSymex.run_with_stats ?fuel ~mode
 
 let run_needs_stats ?fuel ~mode symex =
   run_with_state ~state:MonadState.empty symex
-  |> (Fun.flip MonoSymex.map) fst
+  |> MonoSymex.map fst
   |> MonoSymex.run_needs_stats ?fuel ~mode
 
 module Result = struct
@@ -76,12 +76,12 @@ module Result = struct
 
   let run_with_stats ?flamegraph ?fuel ?fail_fast ~mode symex =
     run_with_state ~state:MonadState.empty symex
-    |> (Fun.flip MonoSymex.map) ignore_state
+    |> MonoSymex.map ignore_state
     |> MonoSymex.Result.run_with_stats ?flamegraph ?fuel ?fail_fast ~mode
 
   let run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode symex =
     run_with_state ~state:MonadState.empty symex
-    |> (Fun.flip MonoSymex.map) ignore_state
+    |> MonoSymex.map ignore_state
     |> MonoSymex.Result.run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode
 end
 

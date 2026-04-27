@@ -449,14 +449,14 @@ let with_field_item (target, _) =
   (*
    * ONLY MANAGED FIELDS:
    * let with_field1 f =
-   *   SM.Result.map_missing (with_field1_sym f) lift_field1_fixes
+   *   SM.Result.map_missing lift_field1_fixes (with_field1_sym f)
    *)
   let@ loc = with_loc target.loc in
   let with_sym = evar (Names.with_sym target.name) in
   let lift_fixes = evar (Names.lift_fixes target.name) in
   [%stri
     let [%p pvar (Names.with_ target.name)] =
-     fun f -> SM.Result.map_missing ([%e with_sym] f) [%e lift_fixes]]
+     fun f -> SM.Result.map_missing [%e lift_fixes] ([%e with_sym] f)]
 
 let mk_cons_prod_item ~loc ~kind fields target managed_field =
   (*

@@ -35,8 +35,8 @@ struct
       end)
 
   let lift_fix fix = Alive fix
-  let lift_fix_r r = Compo_res.map_missing r (List.map lift_fix)
-  let lift_fix_c f = Symex.Consumer.map_missing f (List.map lift_fix)
+  let lift_fix_r x = Compo_res.map_missing (List.map lift_fix) x
+  let lift_fix_c x = Symex.Consumer.map_missing (List.map lift_fix) x
 
   let to_syn = function
     | Freed -> [ Freed ]
