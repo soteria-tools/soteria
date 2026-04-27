@@ -1,7 +1,7 @@
 open Charon
 open Typed.Infix
 open Typed.Syntax
-open Soteria.Symex.Compo_res
+open Compo_res
 module BV = Typed.BV
 open Rustsymex
 open Rustsymex.Result
@@ -383,7 +383,7 @@ let normalise (ty : Types.ty) =
     | _ -> ok ty
   in
   let+ ty = Poly.subst_ty ty in
-  Soteria.Symex.Compo_res.Ok ty
+  Ok ty
 
 let size_of ty =
   let++ { size; _ } = layout_of ty in

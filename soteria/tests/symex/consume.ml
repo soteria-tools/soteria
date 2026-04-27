@@ -1,3 +1,4 @@
+open Soteria.Soteria_std
 module Typed = Soteria.Tiny_values.Typed
 module Symex = Soteria.Symex.Make (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 
@@ -59,7 +60,7 @@ let first_and_heap () =
   let** b = Heap.alloc ~new_codom:c in
   let** a = Heap.alloc ~new_codom:b in
   let+ () = Heap.SM.assume Typed.Infix.[ b ==@ Typed.zero; c ==@ Typed.one ] in
-  Soteria.Symex.Compo_res.Ok a
+  Compo_res.Ok a
 
 let consumer asrt a heap =
   let open Symex.Consumer in
@@ -83,7 +84,7 @@ let run_asrt asrt =
    ============================================================================ *)
 
 let test_consume_succeeds () =
-  let open Soteria.Symex.Compo_res in
+  let open Compo_res in
   let res = Symex.run ~mode:OX (run_asrt asrt_success) in
   let res, _ =
     match res with
@@ -99,7 +100,7 @@ let test_consume_succeeds () =
   | Missing _ -> Alcotest.fail "This test shouldn't have a missing error"
 
 let test_consume_lfail () =
-  let open Soteria.Symex.Compo_res in
+  let open Compo_res in
   let res = Symex.run ~mode:OX (run_asrt asrt_lfail) in
   let res, _ =
     match res with
@@ -116,7 +117,7 @@ let test_consume_lfail () =
   | Missing _ -> Alcotest.fail "This test shouldn't have a missing error"
 
 let test_consume_missing () =
-  let open Soteria.Symex.Compo_res in
+  let open Compo_res in
   let res = Symex.run ~mode:OX (run_asrt asrt_missing) in
   let res, _ =
     match res with

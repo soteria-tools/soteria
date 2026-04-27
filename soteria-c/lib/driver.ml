@@ -270,7 +270,7 @@ let exec_function ~includes ~fuel file_names function_name =
   | Ok v -> v
   | Error e ->
       let e = (e, SState.empty) in
-      [ (Soteria.Symex.Compo_res.Error (Soteria.Symex.Or_gave_up.E e), []) ]
+      [ (Compo_res.Error (Soteria.Symex.Or_gave_up.E e), []) ]
 
 let temp_file = lazy (Filename.temp_file "soteria_c" ".c")
 
@@ -309,7 +309,7 @@ let print_states result =
   Fmt.pr "@[<v 2>Symex terminated with the following outcomes:@ %a@]@.@?@."
     Fmt.Dump.(
       list @@ fun ft (r, _) ->
-      (Soteria.Symex.Compo_res.pp
+      (Compo_res.pp
          ~ok:(pair Aggregate_val.pp (Fmt.Dump.option pp_state))
          ~err:
            (Soteria.Symex.Or_gave_up.pp
@@ -332,9 +332,7 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
     let errors_to_signal =
       List.filter_map
         (function
-          | ( Soteria.Symex.Compo_res.Error
-                (Soteria.Symex.Or_gave_up.Gave_up _ as err),
-              _ ) ->
+          | Compo_res.Error (Soteria.Symex.Or_gave_up.Gave_up _ as err), _ ->
               Some err
           | Error (E (((e, _) as err_with_trace), _)), _
           (* Test-Comp requires filtering out UBs... *)

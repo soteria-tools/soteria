@@ -1,4 +1,4 @@
-open Soteria.Symex.Compo_res
+open Compo_res
 open Typed.Infix
 module BV = Typed.BV
 open Charon

@@ -1,6 +1,6 @@
+open Soteria.Soteria_std
 open Soteria.Symex.Make (Tiny_solver.Z3_solver)
 open Syntax
-module Compo_res = Soteria.Symex.Compo_res
 module Or_gave_up = Soteria.Symex.Or_gave_up
 
 module Testables = struct

@@ -1,5 +1,4 @@
-open Symex
-open Compo_res
+open Soteria_std.Compo_res
 
 module S_int_sig (Symex : Symex.Base) = struct
   module Abstr = Data.Abstr.M (Symex)
