@@ -820,10 +820,19 @@ def path_of(fun: FunDecl) -> str:
     return "::".join(names)
 
 
+def json_as_str_list(x: Any) -> list[str]:
+    if isinstance(x, str):
+        return [x]
+    if isinstance(x, list) and all(isinstance(e, str) for e in x):
+        return x
+    raise ValueError(f"Expected a string or list of strings, got: {x}")
+
+
 class Pattern:
     pattern: str
     extras: list[str]
     aliases: list[str] = []
+    include: list[str] = []
 
     def __init__(self, entry: str | dict[str, Any]) -> None:
         valid_extras = {"fun_exec", "sig", "types"}
@@ -836,16 +845,9 @@ class Pattern:
                         f"Invalid extra '{extra}' in pattern '{self.pattern}'"
                     )
             if "alias" in entry:
-                if isinstance(entry["alias"], str):
-                    self.aliases = [entry["alias"]]
-                elif isinstance(entry["alias"], list) and all(
-                    isinstance(a, str) for a in entry["alias"]
-                ):
-                    self.aliases = entry["alias"]
-                else:
-                    raise ValueError(
-                        f"Invalid alias entry in pattern '{self.pattern}': must be a string or list of strings"
-                    )
+                self.aliases = json_as_str_list(entry["alias"])
+            if "include" in entry:
+                self.include = json_as_str_list(entry["include"])
 
         else:
             self.pattern = entry
@@ -860,6 +862,9 @@ class Pattern:
         if "types" in self.extras:
             meta_args.append(("types", "generics.types", ("meta_tys", None)))
         return meta_args
+
+    def include_pats(self) -> list[str]:
+        return [self.pattern, *self.aliases, *self.include]
 
 
 class CategorySpec:
@@ -939,7 +944,12 @@ def generate_custom_stubs() -> None:
         if category not in ["_comment", "$schema"]
     }
     pattern_strs: list[str] = list(
-        set(p.pattern for spec in config.values() for p in spec.patterns)
+        set(
+            p
+            for spec in config.values()
+            for pat in spec.patterns
+            for p in pat.include_pats()
+        )
     )
 
     if len(pattern_strs) == 0:

@@ -19,12 +19,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   (* Emulate catch_unwind cleanup: build a &dyn Any trait object so the caller
      can inspect the panic payload. See
      https://doc.rust-lang.org/src/std/panicking.rs.html#557-565 *)
-  let cleanup ~args =
-    let ptr =
-      match args with
-      | [ Ptr (p, _) ] -> p
-      | _ -> failwith "fixme_catch_unwind_cleanup: invalid arguments"
-    in
+  let cleanup ~payload =
+    let ptr, _ = payload in
     let* usize_size = Layout.size_of (TLiteral (TUInt Usize)) in
     let* vtable, _ =
       State.alloc_untyped ~kind:(VTable Charon.TypesUtils.mk_unit_ty)

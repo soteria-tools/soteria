@@ -15,7 +15,7 @@ module M (StateM : State.StateM.S) = struct
   type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
   module type S = sig
-    val cleanup : args:rust_val list -> rust_val ret
+    val cleanup : payload:full_ptr -> rust_val ret
 
     (** {@markdown[
           Executes the destructor (if any) of the pointed-to value.

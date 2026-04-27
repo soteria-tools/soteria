@@ -76,10 +76,15 @@
       "std::panicking::begin_panic"
     ]
   },
-  "Fixme": [
-    "std::panicking::catch_unwind::cleanup",
-    "core::ptr::drop_in_place"
-  ],
+  "Fixme": {
+    "patterns": [
+      {
+        "pattern": "std::panicking::catch_unwind::cleanup",
+        "include": "std::panicking::catch_unwind"
+      },
+      "core::ptr::drop_in_place"
+    ]
+  },
   "Soteria_lib": {
     "_comment": [
       "It would be nice if we didn't need these, and instead could implement Soteria",

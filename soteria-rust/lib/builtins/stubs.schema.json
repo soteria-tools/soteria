@@ -80,6 +80,16 @@
                   "description": "Alternative patterns to match the same stub implementation. Useful for functions that have multiple names because of re-exports. Avoid using this if possible."
                 }
               ]
+            },
+            "include": {
+              "oneOf": [
+                { "$ref": "#/$defs/pattern" },
+                {
+                  "type": "array",
+                  "items": { "$ref": "#/$defs/pattern" },
+                  "description": "Additional patterns that must be included in the compilation for this entry to match. Required for nested functions."
+                }
+              ]
             }
           }
         }
