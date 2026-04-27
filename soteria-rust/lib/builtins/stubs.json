@@ -77,15 +77,24 @@
     "std::panicking::catch_unwind::cleanup",
     "core::ptr::drop_in_place"
   ],
-  "Soteria_lib": [
-    "soteria::assert",
-    "soteria::assume",
-    { "pattern": "soteria::nondet_bytes", "extra_args": ["types"] },
-    "soteria::panic",
-    "kani::assert",
-    "kani::assume",
-    "kani::panic"
-  ],
+  "Soteria_lib": {
+    "_comment": [
+      "It would be nice if we didn't need these, and instead could implement Soteria",
+      "builtins as extern functions. Unfortunately:",
+      " - soteria::assert must be const, because Kani uses it; extern functions can't be const",
+      " - soteria::nondet_bytes must be polymorphic, because it needs to get the validity invariant",
+      "   for the type it's instantiated with; extern functions can't be polymorphic"
+    ],
+    "patterns": [
+      "soteria::assert",
+      "soteria::assume",
+      { "pattern": "soteria::nondet_bytes", "extra_args": ["types"] },
+      "soteria::panic",
+      "kani::assert",
+      "kani::assume",
+      "kani::panic"
+    ]
+  },
   "Tokio": {
     "dependencies": [
       "tokio = { version = \"1.50.0\", features = [\"rt\", \"rt-multi-thread\", \"time\"] }"
