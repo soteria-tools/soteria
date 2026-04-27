@@ -5,17 +5,17 @@
   "description": "Configures functions to be stubbed out during analysis, grouped by category.",
   "type": "object",
   "properties": {
-    "$schema": {
-      "type": "string"
-    },
-    "_comment": {
-      "type": "array",
-      "items": { "type": "string" }
-    }
+    "$schema": { "type": "string" },
+    "_comment": { "$ref": "#/$defs/comment" }
   },
   "additionalProperties": {
-    "type": "array",
-    "items": { "$ref": "#/$defs/entry" }
+    "oneOf": [
+      {
+        "type": "array",
+        "items": { "$ref": "#/$defs/entry" }
+      },
+      { "$ref": "#/$defs/category_object" }
+    ]
   },
   "$defs": {
     "pattern": {
@@ -27,6 +27,34 @@
       "type": "string",
       "description": "Additional metadata to pass to the stub.",
       "enum": ["fun_exec", "sig", "types"]
+    },
+    "category_object": {
+      "type": "object",
+      "required": ["patterns"],
+      "additionalProperties": false,
+      "properties": {
+        "_comment": { "$ref": "#/$defs/comment" },
+        "patterns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/entry" },
+          "required": true,
+          "description": "Patterns for functions to stub out in this category."
+        },
+        "dependencies": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Cargo dependency lines appended verbatim to the [dependencies] section of the generated crate."
+        },
+        "code": {
+          "type": "string",
+          "description": "Code to include in the dummy crate's main function (e.g. use declarations to make items visible)."
+        },
+        "features": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Cargo features to enable for the generated crate."
+        }
+      }
     },
     "entry": {
       "oneOf": [
@@ -43,6 +71,17 @@
               "uniqueItems": true
             }
           }
+        }
+      ]
+    },
+    "comment": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": { "type": "string" }
         }
       ]
     }

@@ -3,6 +3,7 @@
 
 import json
 import re
+import shutil
 import subprocess
 from typing import Any, Literal, TypedDict
 
@@ -394,7 +395,7 @@ class ItemInfo(TypedDict):
     rust_path: str
     doc: Optional[str]
     args: list[tuple[str, InterpType]]
-    meta_args : list[tuple[str, str, InterpType]]
+    meta_args: list[tuple[str, str, InterpType]]
     types: list[str]
     consts: list[str]
     ret: InterpType
@@ -417,6 +418,7 @@ def make_args_and_tys(
     result.extend(info["args"])
     return result
 
+
 def make_not_impl_stub(
     name: str,
     args_and_tys: list[tuple[Optional[str], InterpType]],
@@ -433,7 +435,7 @@ def make_not_impl_stub(
     return f'let {name} {stub_args} = not_impl "{error_msg}"'
 
 
-def make_match_branch(info: ItemInfo, *, fist_pat: str) -> str:
+def make_match_branch(info: ItemInfo, *, first_pat: str) -> str:
     def arg_as_pat(arg: str) -> str:
         if arg == info["ocaml_name"]:
             return f"{arg}_"
@@ -443,10 +445,7 @@ def make_match_branch(info: ItemInfo, *, fist_pat: str) -> str:
 
     types_pat = "; ".join(info["types"])
     consts_pat = "; ".join(info["consts"])
-    args_match = "; ".join(
-        arg_as_pat(a) for (a, _) in info["args"]
-        if a != "fun_sig"
-    )
+    args_match = "; ".join(arg_as_pat(a) for (a, _) in info["args"] if a != "fun_sig")
     call_args = [f"~{name}:{src}" for name, src, _ in info["meta_args"]]
     call_args += [
         f"~{arg}:{arg_as_pat(arg)}"
@@ -457,7 +456,7 @@ def make_match_branch(info: ItemInfo, *, fist_pat: str) -> str:
         call_args.append("()")
 
     call_expr = f"{info['ocaml_name']} {' '.join(call_args)}"
-    return f"| {fist_pat}, [{types_pat}], [{consts_pat}], [{args_match}] -> {make_match_body(info, call_expr)}"
+    return f"| {first_pat}, [{types_pat}], [{consts_pat}], [{args_match}] -> {make_match_body(info, call_expr)}"
 
 
 def make_match_body(info: ItemInfo, call_expr: str) -> str:
@@ -594,19 +593,16 @@ def get_intrinsics() -> dict[str, FunDecl]:
     return intrinsics
 
 
-def get_stubs(patterns: list[str]) -> list[FunDecl]:
+def get_stubs(patterns: list[str], crate_path: Path) -> list[FunDecl]:
     file_json = (PWD / "custom_stubs.ullbc.temp").resolve()
     if "--cached" in sys.argv:
         pprint("Using cached stubs")
     else:
-        file_rs = (PWD / "custom_stubs.rs").resolve()
-        features = ["f16", "f128", "const_index"]
-        file_rs.write_text(f"#![feature({', '.join(features)})]\n")
         toolchain = get_toolchain()
         sysroot = get_sysroot(toolchain)
         charon_cmd = [
             "charon",
-            "rustc",
+            "cargo",
             "--ullbc",
             "--dest-file",
             str(file_json),
@@ -631,16 +627,17 @@ def get_stubs(patterns: list[str]) -> list[FunDecl]:
                 "std",
                 "--opaque",
                 "core",
-                "--",
-                str(file_rs),
-                "--crate-type=lib",
-                "--sysroot",
-                sysroot,
             ]
         )
-
-        proc = subprocess.run(charon_cmd, check=False, stderr=subprocess.STDOUT)
-        file_rs.unlink(missing_ok=True)
+        print(charon_cmd)
+        print(crate_path)
+        proc = subprocess.run(
+            charon_cmd,
+            cwd=crate_path,
+            env={**os.environ, "RUSTFLAGS": f"--sysroot {sysroot}"},
+            check=False,
+            stderr=subprocess.STDOUT,
+        )
         if proc.returncode != 0:
             raise RuntimeError(
                 f"{YELLOW}{BOLD}Warning{RESET}: Charon returned exit code {proc.returncode}"
@@ -685,7 +682,9 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
     for info in intrinsics_info:
         # catch_unwind additionally receives the function-execution callback
-        args_and_tys = make_args_and_tys(info, )
+        args_and_tys = make_args_and_tys(
+            info,
+        )
 
         # Interface val entry
         interface_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
@@ -698,7 +697,9 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         )
 
         # Match arms
-        match_arm_entries += make_match_branch(info, fist_pat=f'"{info['ocaml_name']}"')
+        match_arm_entries += make_match_branch(
+            info, first_pat=('"' + info["ocaml_name"] + '"')
+        )
 
     interface_str = f"""
         {GENERATED_WARNING}
@@ -778,14 +779,16 @@ class Pattern:
     pattern: str
     extras: list[str]
 
-    def __init__(self, entry: "str | dict[str, Any]") -> None:
+    def __init__(self, entry: str | dict[str, Any]) -> None:
         valid_extras = {"fun_exec", "sig", "types"}
         if isinstance(entry, dict):
             self.pattern = entry["pattern"]
             self.extras = entry.get("extra_args", [])
             for extra in self.extras:
                 if extra not in valid_extras:
-                    raise ValueError(f"Invalid extra '{extra}' in pattern '{self.pattern}'")
+                    raise ValueError(
+                        f"Invalid extra '{extra}' in pattern '{self.pattern}'"
+                    )
         else:
             self.pattern = entry
             self.extras = []
@@ -800,6 +803,66 @@ class Pattern:
             meta_args.append(("types", "generics.types", ("meta_tys", None)))
         return meta_args
 
+
+class CategorySpec:
+    patterns: list[Pattern]
+    dependencies: list[str] = []
+    features: list[str] = []
+    code: Optional[str] = None
+
+    def __init__(self, category: str, raw_value: Any) -> None:
+        self.patterns = []
+        if isinstance(raw_value, list):
+            raw_patterns = raw_value
+        elif isinstance(raw_value, dict):
+            raw_patterns = raw_value.get("patterns", [])
+            self.dependencies = raw_value.get("dependencies", [])
+            self.features = raw_value.get("features", [])
+            self.code = raw_value.get("code")
+        else:
+            raise ValueError(f"Category '{category}' must map to a list or object")
+
+        for entry in raw_patterns:
+            self.patterns.append(Pattern(entry))
+
+
+def create_cargo_project(config: dict[str, CategorySpec]) -> Path:
+    project_dir = (PWD / "cargo_stubs").resolve()
+    src_dir = project_dir / "src"
+    src_dir.mkdir(parents=True, exist_ok=True)
+
+    deps_section = "\n".join(
+        set(dep for spec in config.values() for dep in spec.dependencies)
+    )
+    (project_dir / "Cargo.toml").write_text(
+        f"""
+        [package]
+        name = "cargo_stubs"
+        version = "0.0.1"
+        edition = "2024"
+
+        [dependencies]
+        {deps_section}
+        """
+    )
+
+    all_features = set(f for spec in config.values() for f in spec.features)
+    features = f"#![feature({', '.join(all_features)})]\n" if all_features else ""
+    all_code = "\n".join(spec.code for spec in config.values() if spec.code)
+    (src_dir / "main.rs").write_text(
+        f"""
+        {features}
+
+        fn main() {{
+            {all_code}
+        }}
+        """
+    )
+
+    pprint(f"Created cargo project at {BOLD}{project_dir}{RESET}")
+    return project_dir
+
+
 def generate_custom_stubs() -> None:
     config_path = (PWD / ".." / "lib" / "builtins" / "stubs.json").resolve()
     if not config_path.exists():
@@ -811,38 +874,23 @@ def generate_custom_stubs() -> None:
     if not isinstance(raw_config, dict):
         raise ValueError("stubs.json must contain a JSON object")
 
-    config: dict[str, list[Pattern]] = {}
-    valid_pattern = r"^([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+$"
-    for category, patterns in raw_config.items():
-        if not isinstance(category, str):
-            raise ValueError("stubs.json keys must be strings")
-        if category in ["_comment", "$schema"]:
-            continue
-        if not isinstance(patterns, list):
-            raise ValueError(f"Category '{category}' must map to a list")
-        for entry in patterns:
-            if isinstance(entry, str):
-                pat_str = entry
-            elif isinstance(entry, dict) and "pattern" in entry:
-                pat_str = entry["pattern"]
-            else:
-                raise ValueError(
-                    f"Invalid entry in category '{category}': must be a string or object with 'pattern'"
-                )
-            if not re.match(valid_pattern, pat_str):
-                raise ValueError(
-                    f"Invalid pattern '{pat_str}' in category '{category}'"
-                )
-        config[category] = [Pattern(entry) for entry in patterns]
-
-    pattern_strs: list[str] = list(set(p.pattern for ps in config.values() for p in ps))
+    config: dict[str, CategorySpec] = {
+        category: CategorySpec(category, raw_value)
+        for category, raw_value in raw_config.items()
+        if category not in ["_comment", "$schema"]
+    }
+    pattern_strs: list[str] = list(
+        set(p.pattern for spec in config.values() for p in spec.patterns)
+    )
 
     if len(pattern_strs) == 0:
         pprint("No custom stub patterns found, skipping")
         return
 
     pprint("Loading custom stubs declarations...")
-    fun_decls = get_stubs(pattern_strs)
+    crate_path = create_cargo_project(config)
+    fun_decls = get_stubs(pattern_strs, crate_path)
+    shutil.rmtree(crate_path)
     categories: dict[str, list[FunDecl]] = {k: [] for k in config.keys()}
 
     def matches_pattern(path: list[PathElem], pattern: str) -> bool:
@@ -857,11 +905,11 @@ def generate_custom_stubs() -> None:
                 return False
         return True
 
-    missing_patterns = [pat for patterns in config.values() for pat in patterns]
+    missing_patterns = [pat for spec in config.values() for pat in spec.patterns]
     for fun in fun_decls:
         name = fun["item_meta"]["name"]
-        for category, patterns in config.items():
-            for pattern in patterns:
+        for category, spec in config.items():
+            for pattern in spec.patterns:
                 if matches_pattern(name, pattern.pattern):
                     missing_patterns.remove(pattern)
                     categories[category].append(fun)
@@ -877,16 +925,20 @@ def generate_custom_stubs() -> None:
         for p in set(missing_patterns):
             last_part = p.pattern.split("::")[-1]
             potential_matches = [
-                path for fdef in fun_decls if f"::{last_part}" in (path := path_of(fdef))
+                path
+                for fdef in fun_decls
+                if f"::{last_part}" in (path := path_of(fdef))
             ]
             if potential_matches:
-                pprint(f"- {BOLD}{p.pattern}{RESET} {GRAY}(maybe you meant: {', '.join(potential_matches)}){RESET}")
+                pprint(
+                    f"- {BOLD}{p.pattern}{RESET} {GRAY}(maybe you meant: {', '.join(potential_matches)}){RESET}"
+                )
             else:
                 pprint(f"- {BOLD}{p.pattern}{RESET}")
 
     missing_by_category: dict[str, list[Pattern]] = {
-        category: [p for p in patterns if p in missing_patterns]
-        for category, patterns in config.items()
+        category: [p for p in spec.patterns if p in missing_patterns]
+        for category, spec in config.items()
     }
 
     ml_folder = (PWD / ".." / "lib" / "builtins").resolve()
@@ -927,14 +979,10 @@ def generate_custom_stubs() -> None:
                 base_variant if vcount == 0 else f"{base_variant}{vcount + 1}"
             )
             matching_pat = next(
-                (p for p in config[category] if p.pattern == info["rust_path"])
+                (p for p in config[category].patterns if p.pattern == info["rust_path"])
             )
             info["meta_args"].extend(matching_pat.as_meta_args())
-            infos.append({
-                **info,
-                "variant_name": variant_name,
-                "is_dummy": False
-            })
+            infos.append({**info, "variant_name": variant_name, "is_dummy": False})
 
         for pattern in unresolved:
             # Strip anonymous impl-block '_' components so unique_name can use a
@@ -987,7 +1035,9 @@ def generate_custom_stubs() -> None:
             intf_entries += f"\n{make_val_entry(info, args_and_tys)}\n"
 
             if info["is_dummy"]:
-                opt_args = " ".join(f"~{arg_name}:{src}" for arg_name, src, _ in info["meta_args"])
+                opt_args = " ".join(
+                    f"~{arg_name}:{src}" for arg_name, src, _ in info["meta_args"]
+                )
                 if not opt_args:
                     opt_args = "()"
                 eval_entries += f"""
@@ -995,7 +1045,7 @@ def generate_custom_stubs() -> None:
                       {info['ocaml_name']} {opt_args}
                 """
             else:
-                eval_entries += make_match_branch(info, fist_pat=info["variant_name"])
+                eval_entries += make_match_branch(info, first_pat=info["variant_name"])
 
         # intf.ml — generated module type that impl.ml must satisfy
         intf_generated = f"""
