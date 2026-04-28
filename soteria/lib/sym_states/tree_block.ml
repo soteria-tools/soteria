@@ -14,16 +14,14 @@ module Split_tree = struct
     | Node (l, at, r) -> Node (map f l, at, map f r)
 end
 
-type ('a, 'sint) tree = {
-  node : 'a node;
-  range : 'sint * 'sint;
-  children : (('a, 'sint) tree * ('a, 'sint) tree) option;
-}
+type node_qty = Partially | Totally [@@deriving show { with_path = false }]
+type 'a node = NotOwned of node_qty | Owned of 'a
 
-and 'a node = NotOwned of node_qty | Owned of 'a
+open Data.Range_tree
 
-and node_qty = Partially | Totally
-[@@deriving show { with_path = false }, make]
+type ('a, 'sint) tree = ('a node, 'sint) Data.Range_tree.t
+
+let make_tree = Data.Range_tree.build
 
 (** The input module of [Tree_block]. A memory value [t] represents an owned
     part of the tree block, with the property that it can be split or merged as
@@ -119,11 +117,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
   type nonrec sint = MemVal.S_int.t
 
   (* re-export the types to be able to use them easily *)
-  type nonrec ('a, 'sint) tree = ('a, 'sint) tree = {
-    node : 'a node;
-    range : 'sint * 'sint;
-    children : (('a, 'sint) tree * ('a, 'sint) tree) option;
-  }
+  type nonrec ('a, 'sint) tree = ('a, 'sint) tree
 
   module Range = Data.S_range.Make (Symex) (MemVal.S_bool) (MemVal.S_int)
   module Split_tree = Split_tree
@@ -175,37 +169,26 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
   module Tree = struct
     type t = (MemVal.t, sint) tree
 
-    let rec pp ft { node; range; children } =
+    let rec pp ft { node; range; children; height = _ } =
       let open Fmt in
       pf ft "@[<v 2>{%a %a%a}@]" Node.pp node Range.pp range
         (option ~none:nop (fun fmt (l, r) ->
              pf fmt " -->@,@[%a@,%a@]" pp l pp r))
         children
 
-    let make = make_tree
+    let make = Data.Range_tree.build
     let is_empty t = Node.is_empty t.node
     let not_owned range = make ~node:(NotOwned Totally) ~range ?children:None ()
 
-    let rec map_leaves t f =
-      match t.children with
-      | None -> f t
-      | Some (l, r) ->
-          let** l = map_leaves l f in
-          let++ r = map_leaves r f in
-          { t with children = Some (l, r) }
+    include Data.Range_tree.With_monad3 (Symex.Result)
 
-    let rec iter_leaves_rev t f =
-      match t.children with
-      | None -> f t
-      | Some (l, r) ->
-          iter_leaves_rev r f;
-          iter_leaves_rev l f
+    let iter_leaves_rev = Data.Range_tree.iter_leaves_rev
 
     let of_children_s ~left ~right =
       let range = (fst left.range, snd right.range) in
       let node, keep_children = Node.merge ~left:left.node ~right:right.node in
       let children = if keep_children then Some (left, right) else None in
-      return { range; children; node }
+      return @@ make ~node ~range ?children ()
 
     let of_children _ ~left ~right = of_children_s ~left ~right
 
@@ -214,15 +197,9 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
         the new children. This is faster than {!of_children} but is only sound
         if the children's content did not change. *)
     let with_children t ~left ~right =
-      return { t with children = Some (left, right) }
+      return (make ~node:t.node ~range:t.range ~children:(left, right) ())
 
-    let rec offset ~by tree =
-      let low, high = tree.range in
-      let range = (low +@ by, high +@ by) in
-      let children =
-        Option.map (fun (l, r) -> (offset ~by l, offset ~by r)) tree.children
-      in
-      make ~node:tree.node ~range ?children ()
+    let offset = Data.Range_tree.offset ~add:( +@ )
 
     (** Converts a [Split_tree] of [Node]s (ie. a tree with no base) into a
         [Tree], reconstructing each node's range and constructing intermediary
@@ -383,6 +360,12 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     end) =
     struct
       open M.Syntax
+      open Logs.Import
+
+      let rec depth t =
+        match t.children with
+        | None -> 1
+        | Some (l, r) -> 1 + max (depth l) (depth r)
 
       let ( let* ) x f = M.bind f x
       let ( let+ ) x f = M.map f x
@@ -468,6 +451,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
                 let*^ new_self = with_children t ~left ~right in
                 frame_inside ~replace_node ~rebuild_parent new_self range
         in
+        [%l.info "LENGTH OF THE TREE: %d" (depth t)];
         let*^ root = extend_if_needed t range in
         frame_inside ~replace_node ~rebuild_parent root range
     end
@@ -668,10 +652,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
         Tree.put_raw tree t)
 
   let alloc v size =
-    {
-      root = { node = Owned v; range = (0s, size); children = None };
-      bound = Some size;
-    }
+    { root = Tree.make ~node:(Owned v) ~range:(0s, size) (); bound = Some size }
 
   (** Logic *)
 

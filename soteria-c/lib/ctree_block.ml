@@ -143,10 +143,10 @@ module MemVal = struct
   type tree = (t, T.sint Typed.t) TB.tree
 
   let not_owned (t : tree) : tree =
-    { t with node = NotOwned Totally; children = None }
+    TB.make_tree ~node:(TB.NotOwned Totally) ~range:t.range ()
 
   let owned (t : tree) (v : t) : tree =
-    { t with node = Owned v; children = None }
+    TB.make_tree ~node:(TB.Owned v) ~range:t.range ()
 
   let consume (s : syn) (t : tree) : (tree, syn list) Consumer.t =
     let open Consumer in
@@ -220,11 +220,11 @@ let range_of_low_and_type low ty =
 
 let sval_leaf ~range ~value ~ty =
   if Typed.BitVec.sure_is_zero value then
-    Tree.make ~node:(Owned Zeros) ~range ?children:None ()
-  else Tree.make ~node:(Owned (Init (value, ty))) ~range ?children:None ()
+    Tree.make ~node:(TB.Owned Zeros) ~range ?children:None ()
+  else Tree.make ~node:(TB.Owned (Init (value, ty))) ~range ?children:None ()
 
-let zeros ~range = Tree.make ~node:(Owned Zeros) ~range ()
-let uninit ~range = Tree.make ~node:(Owned (Uninit Totally)) ~range ()
+let zeros ~range = Tree.make ~node:(TB.Owned Zeros) ~range ()
+let uninit ~range = Tree.make ~node:(TB.Owned (Uninit Totally)) ~range ()
 
 let mk_fix_typed offset ty () =
   let* len = Layout.size_of_s ty in
@@ -286,7 +286,7 @@ let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
   let ((_, bound) as range) = Range.of_low_and_size ofs size in
   let len = Range.size range in
   with_bound_check ~mk_fixes:(mk_fix_any_s ofs len) bound (fun t ->
-      let replace_node t =
+      let replace_node (t : _ tree) =
         match t.node with
         | NotOwned Totally ->
             let fix = mk_fix_any ofs size () in
