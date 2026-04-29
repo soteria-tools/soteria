@@ -1013,47 +1013,43 @@ module Make (Sol : Solver.Mutable_incremental) :
     | Dump name -> Stats.As_ctx.with_dumped name
     | Handled -> fun f -> f ()
 
-  let run_iter ?(flamegraph = Ignore) ?(stats = Ignore)
-      ?(fuel = Fuel_gauge.infinite) ~mode iter : ('a * Value.(sbool t) list) t =
-   fun continue ->
+  let setup ?(flamegraph = Ignore) ?(stats = Ignore)
+      ?(fuel = Fuel_gauge.infinite) ~mode f =
     let@ () = manage_flamegraph flamegraph in
     let@ () = manage_stats stats in
     let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
     let@ () = Symex_state.run ~init_fuel:fuel in
     let@ () = Approx.As_ctx.with_mode mode in
     let@ () = Give_up.with_give_up_raising in
+    f ()
+
+  let run_iter ~mode (iter : 'a t) : ('a * Value.(sbool t) list) Iter.t =
+   fun continue ->
     (* Make sure to drop branches that have leftover assumes with unsatisfiable
        PCs. *)
     let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
     iter @@ fun x -> if admissible () then continue (x, Solver.as_values ())
 
   let run ?flamegraph ?stats ?fuel ~mode iter =
-    Iter.to_list @@ run_iter ?flamegraph ?stats ?fuel ~mode iter
+    let@ () = setup ?flamegraph ?stats ?fuel ~mode in
+    Iter.to_list @@ run_iter ~mode iter
 
   module Result = struct
     include Result
 
-    let run ?(flamegraph = Ignore) ?(stats = Ignore)
-        ?(fuel = Fuel_gauge.infinite) ?(fail_fast = false) ~mode iter =
-      let@ () = manage_flamegraph flamegraph in
-      let@ () = manage_stats stats in
-      let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
-      let@ () = Symex_state.run ~init_fuel:fuel in
-      let@ () = Approx.As_ctx.with_mode mode in
+    let run ?flamegraph ?stats ?fuel ?(fail_fast = false) ~mode iter =
+      let@ () = setup ?flamegraph ?stats ?fuel ~mode in
       let l = ref [] in
       let () =
         let exception Fail_fast in
         try
-          iter @@ fun x ->
-          if Solver_result.admissible ~mode (Solver.sat ()) then (
-            (* Make sure to drop branche that have leftover assumes with
-               unsatisfiable PCs. *)
-            let x = Compo_res.map_error (fun e -> Or_gave_up.E e) x in
-            l := (x, Solver.as_values ()) :: !l;
-            if fail_fast && Compo_res.is_error x then raise Fail_fast)
+          run_iter ~mode iter @@ fun (res, pc) ->
+          let res = Compo_res.map_error (fun e -> Or_gave_up.E e) res in
+          l := (res, pc) :: !l;
+          if fail_fast && Compo_res.is_error res then raise Fail_fast
         with
         | effect Give_up.Gave_up_eff reason, k ->
-            l := (Compo_res.Error (Gave_up reason), Solver.as_values ()) :: !l;
+            l := (Error (Gave_up reason), Solver.as_values ()) :: !l;
             if fail_fast then Effect.Deep.discontinue k Fail_fast
             else Effect.Deep.continue k ()
         | Fail_fast -> ()
