@@ -349,7 +349,7 @@ module type S = sig
     ?fuel:Fuel_gauge.t ->
     mode:Approx.t ->
     'a t ->
-    ('a * sbool v list) list Stats.with_stats
+    ('a * sbool v list) list * Stats.t
 
   (** Same as {!run} but has to be run within {!Stats.As_ctx.with_stats} or will
       throw an exception. This function is exposed should users wish to run
@@ -383,7 +383,7 @@ module type S = sig
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
       (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
-      Stats.with_stats
+      * Stats.t
 
     val run_needs_stats :
       ?flamegraph:string ->
@@ -1029,7 +1029,7 @@ module Make (Sol : Solver.Mutable_incremental) :
     run_needs_stats ?flamegraph ?fuel ~mode iter
 
   let run_with_stats ?flamegraph ?fuel ~mode iter =
-    let@ () = Stats.As_ctx.with_stats () in
+    let@ () = Stats.As_ctx.with_ () in
     run_needs_stats ?flamegraph ?fuel ~mode iter
 
   module Result = struct
@@ -1065,7 +1065,7 @@ module Make (Sol : Solver.Mutable_incremental) :
       run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode iter
 
     let run_with_stats ?flamegraph ?fuel ?fail_fast ~mode iter =
-      let@ () = Stats.As_ctx.with_stats () in
+      let@ () = Stats.As_ctx.with_ () in
       run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode iter
   end
 end

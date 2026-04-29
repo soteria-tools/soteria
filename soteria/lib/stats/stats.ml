@@ -90,10 +90,6 @@ and merge m1 m2 =
   Hstring.iter add_pair m2;
   m
 
-type 'a with_stats = { res : 'a; stats : t }
-
-let map_with_stats f { res; stats } = { res = f res; stats }
-let with_empty_stats res = { res; stats = create () }
 let as_int = function Int n -> n | _ -> raise Incompatible_entries
 let as_float = function Float f -> f | _ -> raise Incompatible_entries
 let as_strseq = function StrSeq arr -> arr | _ -> raise Incompatible_entries
@@ -193,21 +189,18 @@ let output t =
 module As_ctx = struct
   type _ Effect.t += Apply : (t -> unit) -> unit Effect.t
 
-  let with_stats () f =
+  let with_ () f =
     let stats = create () in
-    let res =
-      try f ()
-      with effect Apply f, k ->
-        f stats;
-        Effect.Deep.continue k ()
-    in
-    { res; stats }
+    try (f (), stats)
+    with effect Apply f, k ->
+      f stats;
+      Effect.Deep.continue k ()
 
   let with_ignored () f =
     try f () with effect Apply _, k -> Effect.Deep.continue k ()
 
   let with_dumped () f =
-    let { res; stats } = with_stats () f in
+    let res, stats = with_ () f in
     if Option.is_some (Config.get ()).output_stats then output stats;
     res
 

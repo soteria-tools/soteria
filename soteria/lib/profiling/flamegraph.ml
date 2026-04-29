@@ -1,5 +1,4 @@
 open Soteria_std
-open Syntaxes.FunctionWrap
 
 type frame = string
 type stack = { rev_frames : frame list; weight : float }
@@ -11,7 +10,7 @@ let pop_stack (stack : stack) =
   let rev_frames = List.tl stack.rev_frames in
   { stack with rev_frames }
 
-let write_folded_stacks path stacks =
+let dump path stacks =
   let path =
     if String.ends_with ~suffix:".collapsed" path then path
     else path ^ ".collapsed"
@@ -38,6 +37,8 @@ module Make (M : Monad.Base) = struct
     | Save : unit Effect.t
     | Checkpoint : unit Effect.t
 
+  type t = stack list
+
   let push_frame (s : string) : unit =
     Effect.perform (Map_stack (push_string_to_stack s))
 
@@ -54,7 +55,7 @@ module Make (M : Monad.Base) = struct
         r)
       (f ())
 
-  let with_dumped flamegraph f =
+  let with_ _name f =
     let stacks = ref [] in
     let current_stack : stack Dynarray.t = Dynarray.create () in
     Dynarray.add_last current_stack
@@ -72,12 +73,11 @@ module Make (M : Monad.Base) = struct
       stacks := { stack with weight = elapsed } :: !stacks
     in
     let open Effect.Deep in
-    let@ () =
-      Fun.protect ~finally:(fun () ->
-          checkpoint ();
-          write_folded_stacks flamegraph (List.rev !stacks))
-    in
-    try f () with
+    try
+      let res = f () in
+      checkpoint ();
+      (res, List.rev !stacks)
+    with
     | effect Map_stack g, k ->
         checkpoint ();
         map_stack g;
@@ -101,4 +101,13 @@ module Make (M : Monad.Base) = struct
     | effect Backtrack_n _, k -> continue k ()
     | effect Save, k -> continue k ()
     | effect Checkpoint, k -> continue k ()
+
+  let with_dumped name f =
+    match (Config.get ()).flamegraphs with
+    | None -> with_ignored () f
+    | Some dir ->
+        let res, stack = with_ name f in
+        let dest_file = Filename.concat dir name in
+        dump dest_file stack;
+        res
 end
