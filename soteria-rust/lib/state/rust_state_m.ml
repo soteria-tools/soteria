@@ -55,21 +55,8 @@ module type S = sig
   val bind : ('a -> ('b, 'env) t) -> ('a, 'env) t -> ('b, 'env) t
   val map : ('a -> 'b) -> ('a, 'env) t -> ('b, 'env) t
 
-  val fold_list :
-    'a list -> init:'b -> f:('b -> 'a -> ('b, 'env) t) -> ('b, 'env) t
+  include Monad.Extension2 with type ('a, 'env) t := ('a, 'env) t
 
-  val fold_iter :
-    'a Foldable.Iter.t ->
-    init:'b ->
-    f:('b -> 'a -> ('b, 'env) t) ->
-    ('b, 'env) t
-
-  val iter_list : 'a list -> f:('a -> (unit, 'env) t) -> (unit, 'env) t
-
-  val iter_iter :
-    'a Foldable.Iter.t -> f:('a -> (unit, 'env) t) -> (unit, 'env) t
-
-  val map_list : 'a list -> f:('a -> ('b, 'env) t) -> ('b list, 'env) t
   val get_state : unit -> (st, 'env) t
   val get_env : unit -> ('env, 'env) t
   val map_env : ('env -> 'env) -> (unit, 'env) t
@@ -354,19 +341,13 @@ module Make (State : State_intf.S) :
   let map (f : 'a -> 'b) (x : ('a, 'env) t) : ('b, 'env) t =
     ESM.map (Compo_res.map f) x
 
-  let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
-  let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
-  let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
-  let iterM ~fold x ~f = foldM ~fold x ~init:() ~f:(fun () -> f)
-  let iter_list x ~f = iterM ~fold:Foldable.List.fold x ~f
-  let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
+  include Monad.Make_extension2 (struct
+    type nonrec ('a, 'env) t = ('a, 'env) t
 
-  let mapM ~fold ~rev ~cons ~init x ~f =
-    foldM ~fold x ~init ~f:(fun acc a -> map (fun b -> cons b acc) (f a))
-    |> map rev
-
-  let map_list x ~f =
-    mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
+    let ok = ok
+    let bind = bind
+    let map = map
+  end)
 
   let map_env f =
     let open ESM.Syntax in

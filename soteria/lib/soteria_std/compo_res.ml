@@ -83,7 +83,102 @@ module Syntax = struct
   let ( let+? ) x f = map_missing f x
 end
 
-module T (M : Monad.Base) = struct
+(** {2 Module types} *)
+
+(** {3 Monads with three type parameters} *)
+
+module type Base = sig
+  (** Basic interface for the compositional result monad. *)
+
+  type ('a, 'b, 'c) t
+
+  val ok : 'a -> ('a, 'b, 'c) t
+  val error : 'b -> ('a, 'b, 'c) t
+  val miss : 'c list -> ('a, 'b, 'c) t
+  val bind : ('a -> ('d, 'b, 'c) t) -> ('a, 'b, 'c) t -> ('d, 'b, 'c) t
+  val map : ('a -> 'd) -> ('a, 'b, 'c) t -> ('d, 'b, 'c) t
+  val bind_error : ('b -> ('a, 'd, 'c) t) -> ('a, 'b, 'c) t -> ('a, 'd, 'c) t
+  val map_error : ('b -> 'd) -> ('a, 'b, 'c) t -> ('a, 'd, 'c) t
+  val map_missing : ('c -> 'd) -> ('a, 'b, 'c) t -> ('a, 'b, 'd) t
+
+  val bind2 :
+    f:('a -> ('e, 'f, 'c) t) ->
+    fe:('b -> ('e, 'f, 'c) t) ->
+    ('a, 'b, 'c) t ->
+    ('e, 'f, 'c) t
+end
+
+module type Syntax = sig
+  type ('a, 'b, 'c) t
+
+  val ( let** ) : ('a, 'b, 'c) t -> ('a -> ('d, 'b, 'c) t) -> ('d, 'b, 'c) t
+  val ( let++ ) : ('a, 'b, 'c) t -> ('a -> 'd) -> ('d, 'b, 'c) t
+  val ( let*- ) : ('a, 'b, 'c) t -> ('b -> ('a, 'd, 'c) t) -> ('a, 'd, 'c) t
+  val ( let+- ) : ('a, 'b, 'c) t -> ('b -> 'd) -> ('a, 'd, 'c) t
+  val ( let+? ) : ('a, 'b, 'c) t -> ('c -> 'd) -> ('a, 'b, 'd) t
+end
+
+module type S = sig
+  (** Complete interface for the compositional result monad, including generic
+      operations and syntax. *)
+
+  include Base
+
+  val fold_list :
+    'elem list -> init:'a -> f:('a -> 'elem -> ('a, 'b, 'c) t) -> ('a, 'b, 'c) t
+
+  val fold_iter :
+    'elem Iter.t ->
+    init:'a ->
+    f:('a -> 'elem -> ('a, 'b, 'c) t) ->
+    ('a, 'b, 'c) t
+
+  val iter_list :
+    'elem list -> f:('elem -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
+
+  val iter_iter :
+    'elem Iter.t -> f:('elem -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
+
+  val map_list :
+    'elem list -> f:('elem -> ('a, 'b, 'c) t) -> ('a list, 'b, 'c) t
+
+  val all : ('a -> ('b, 'c, 'd) t) -> 'a list -> ('b list, 'c, 'd) t
+end
+
+(** {2 Functors} *)
+
+module Extend (M : Base) :
+  S with type ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) M.t = struct
+  include M
+
+  let foldM ~fold xs ~init ~f = Monad.foldM ~return:ok ~bind ~fold ~init ~f xs
+  let fold_list xs ~init ~f = foldM ~fold:Foldable.List.fold ~init ~f xs
+  let fold_iter xs ~init ~f = foldM ~fold:Foldable.Iter.fold ~init ~f xs
+  let iterM xs ~fold ~f = foldM ~fold xs ~init:() ~f:(fun () -> f)
+  let iter_list xs ~f = iterM ~fold:Foldable.List.fold xs ~f
+  let iter_iter xs ~f = iterM ~fold:Foldable.Iter.fold xs ~f
+
+  let map_list xs ~f =
+    foldM ~init:[] ~fold:Foldable.List.fold xs ~f:(fun acc a ->
+        map (fun b -> b :: acc) (f a))
+    |> map List.rev
+
+  let all f xs = Monad.all ~return:ok ~bind f xs
+end
+
+module Make_syntax (M : Base) :
+  Syntax with type ('ok, 'err, 'fix) t := ('ok, 'err, 'fix) M.t = struct
+  open M
+
+  let ( let** ) x f = bind f x
+  let ( let++ ) x f = map f x
+  let ( let*- ) x f = bind_error f x
+  let ( let+- ) x f = map_error f x
+  let ( let+? ) x f = map_missing f x
+end
+
+module T (M : Monad.Base) :
+  S with type ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) t M.t = Extend (struct
   type nonrec ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) t M.t
 
   let ok x = M.return (Ok x)
@@ -96,7 +191,7 @@ module T (M : Monad.Base) = struct
       | Error z -> M.return (Error z)
       | Missing fix -> M.return (Missing fix))
 
-  let bind_2 ~f ~fe =
+  let bind2 ~f ~fe =
     M.bind (function
       | Ok x -> f x
       | Error z -> fe z
@@ -111,4 +206,4 @@ module T (M : Monad.Base) = struct
   let map f = M.map (map f)
   let map_error f = M.map (map_error f)
   let map_missing f = M.map (map_missing f)
-end
+end)

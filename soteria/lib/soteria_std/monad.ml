@@ -1,7 +1,12 @@
 (** Monad interfaces and implementations. *)
 
-(** Basic interface for a monad with one type parameter. *)
+(** {2 Module Types} *)
+
+(** {3 Monads with one type parameter} *)
+
 module type Base = sig
+  (** Basic interface for a monad with one type parameter. *)
+
   type 'a t
 
   val return : 'a -> 'a t
@@ -9,13 +14,87 @@ module type Base = sig
   val map : ('a -> 'b) -> 'a t -> 'b t
 end
 
-(** Functor to create a monadic fold function over a foldable container. *)
-module FoldM (M : Base) (F : Foldable.S) = struct
-  type ('a, 'b) folder = 'a F.t -> init:'b -> f:('b -> 'a -> 'b M.t) -> 'b M.t
+module type Syntax = sig
+  (** Syntax extension for monads (let* and let+). *)
+
+  type 'a t
+
+  val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
+  val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
 end
 
+module type Extension = sig
+  type 'a t
+
+  val fold_list : 'elem list -> init:'a -> f:('a -> 'elem -> 'a t) -> 'a t
+  val fold_iter : 'elem Iter.t -> init:'a -> f:('a -> 'elem -> 'a t) -> 'a t
+  val iter_list : 'elem list -> f:('elem -> unit t) -> unit t
+  val iter_iter : 'elem Iter.t -> f:('elem -> unit t) -> unit t
+  val map_list : 'elem list -> f:('elem -> 'a t) -> 'a list t
+  val all : ('a -> 'b t) -> 'a list -> 'b list t
+end
+
+module type S = sig
+  (** Complete monad interface including generic operations and syntax. *)
+
+  include Base
+  include Extension with type 'a t := 'a t
+  module Syntax : Syntax with type 'a t = 'a t
+end
+
+(** {3 Monads with two type parameters} *)
+
+module type Base2 = sig
+  (** Basic interface for a monad with two type parameters (e.g. Result). *)
+
+  type ('a, 'b) t
+
+  val ok : 'a -> ('a, 'b) t
+  val bind : ('a -> ('c, 'b) t) -> ('a, 'b) t -> ('c, 'b) t
+  val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
+  val error : 'b -> ('a, 'b) t
+  val bind_error : ('b -> ('a, 'c) t) -> ('a, 'b) t -> ('a, 'c) t
+  val map_error : ('b -> 'c) -> ('a, 'b) t -> ('a, 'c) t
+end
+
+module type Syntax2 = sig
+  (** Syntax extension for two-parameter monads. *)
+
+  type ('a, 'b) t
+
+  val ( let* ) : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
+  val ( let+ ) : ('a, 'b) t -> ('a -> 'c) -> ('c, 'b) t
+  val ( let/ ) : ('a, 'b) t -> ('b -> ('a, 'c) t) -> ('a, 'c) t
+  val ( let- ) : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t
+end
+
+module type Extension2 = sig
+  type ('a, 'b) t
+
+  val fold_list :
+    'elem list -> init:'a -> f:('a -> 'elem -> ('a, 'b) t) -> ('a, 'b) t
+
+  val fold_iter :
+    'elem Iter.t -> init:'a -> f:('a -> 'elem -> ('a, 'b) t) -> ('a, 'b) t
+
+  val iter_list : 'elem list -> f:('elem -> (unit, 'b) t) -> (unit, 'b) t
+  val iter_iter : 'elem Iter.t -> f:('elem -> (unit, 'b) t) -> (unit, 'b) t
+  val map_list : 'elem list -> f:('elem -> ('a, 'b) t) -> ('a list, 'b) t
+  val all : ('a -> ('b, 'c) t) -> 'a list -> ('b list, 'c) t
+end
+
+module type S2 = sig
+  (** Complete interface for two-parameter monads. *)
+
+  include Base2
+  include Extension2 with type ('a, 'b) t := ('a, 'b) t
+  module Syntax : Syntax2 with type ('a, 'b) t = ('a, 'b) t
+end
+
+(** {2 Lifters and implementations} *)
+
 (** Generic monadic fold function. *)
-let foldM ~return ~bind ~fold xs ~init ~f =
+let[@inline] foldM ~return ~bind ~fold xs ~init ~f =
   fold xs ~init:(return init) ~f:(fun acc x -> bind (fun acc -> f acc x) acc)
 
 (** Generic monadic map function that collects results. *)
@@ -27,125 +106,97 @@ let all ~return ~bind fn xs =
   in
   aux [] xs
 
-(** Syntax extension for monads (let* and let+). *)
-module type Syntax = sig
-  type 'a t
+module Make_extension (Base : Base) : Extension with type 'a t := 'a Base.t =
+struct
+  (** Functor to create generic monadic operations for a basic monad. *)
 
-  val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
-  val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
+  let fold_list xs ~init ~f =
+    foldM ~return:Base.return ~bind:Base.bind ~fold:Foldable.List.fold xs ~init
+      ~f
+
+  let fold_iter xs ~init ~f =
+    foldM ~return:Base.return ~bind:Base.bind ~fold:Foldable.Iter.fold xs ~init
+      ~f
+
+  let iterM xs ~fold ~f =
+    foldM ~return:Base.return ~bind:Base.bind ~fold xs ~init:() ~f:(fun () -> f)
+
+  let iter_list xs ~f = iterM ~fold:Foldable.List.fold xs ~f
+  let iter_iter xs ~f = iterM ~fold:Foldable.Iter.fold xs ~f
+
+  let map_list xs ~f =
+    foldM ~init:[] ~return:Base.return ~bind:Base.bind ~fold:Foldable.List.fold
+      xs ~f:(fun acc a -> Base.map (fun b -> b :: acc) (f a))
+    |> Base.map List.rev
+
+  let all fn xs = all ~return:Base.return ~bind:Base.bind fn xs
 end
 
-(** Complete monad interface including generic operations and syntax. *)
-module type S = sig
+module Make_syntax (Base : Base) : Syntax with type 'a t = 'a Base.t = struct
+  (** Functor to create syntax for a basic monad. *)
+
+  type 'a t = 'a Base.t
+
+  let[@inline] ( let* ) x f = Base.bind f x
+  let[@inline] ( let+ ) x f = Base.map f x
+end
+
+module Extend (Base : Base) : S with type 'a t = 'a Base.t = struct
+  (** Functor to extend a basic monad with derived operations and syntax. *)
+
   include Base
 
-  val all : ('a -> 'b t) -> 'a list -> 'b list t
-  val fold_list : init:'a -> f:('a -> 'elem -> 'a t) -> 'elem list -> 'a t
-
-  module Syntax : Syntax with type 'a t := 'a t
+  (* TODO: include functor *)
+  include Make_extension (Base)
+  module Syntax = Make_syntax (Base)
 end
 
-(** Functor to extend a basic monad with derived operations and syntax. *)
-module Extend (Base : Base) = struct
-  include Base
-
-  (** Generic monadic map function that collects results. *)
-  let all fn xs =
-    let rec aux vs l =
-      match l with
-      | [] -> return (List.rev vs)
-      | x :: xs -> bind (fun x -> aux (x :: vs) xs) (fn x)
-    in
-    aux [] xs
-
-  (** Generic monadic fold function over a list. *)
-  let fold_list ~init ~f xs =
-    foldM ~return ~bind ~fold:Foldable.List.fold xs ~init ~f
-
-  module Syntax = struct
-    let ( let* ) x f = Base.bind f x
-    let ( let+ ) x f = Base.map f x
-  end
-end
-
-(** Basic interface for a monad with two type parameters (e.g. Result). *)
-module type Base2 = sig
+module Make_extension2 (Base : sig
   type ('a, 'b) t
 
   val ok : 'a -> ('a, 'b) t
   val bind : ('a -> ('c, 'b) t) -> ('a, 'b) t -> ('c, 'b) t
   val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
-  val error : 'b -> ('a, 'b) t
-  val bind_error : ('b -> ('a, 'c) t) -> ('a, 'b) t -> ('a, 'c) t
-  val map_error : ('b -> 'c) -> ('a, 'b) t -> ('a, 'c) t
+end) : Extension2 with type ('a, 'b) t := ('a, 'b) Base.t = struct
+  (** Functor to create generic operations for a basic two-parameter monad. *)
+
+  let fold_list xs ~init ~f =
+    foldM ~return:Base.ok ~bind:Base.bind ~fold:Foldable.List.fold xs ~init ~f
+
+  let fold_iter xs ~init ~f =
+    foldM ~return:Base.ok ~bind:Base.bind ~fold:Foldable.Iter.fold xs ~init ~f
+
+  let iterM xs ~fold ~f =
+    foldM ~return:Base.ok ~bind:Base.bind ~fold xs ~init:() ~f:(fun () -> f)
+
+  let iter_list xs ~f = iterM ~fold:Foldable.List.fold xs ~f
+  let iter_iter xs ~f = iterM ~fold:Foldable.Iter.fold xs ~f
+
+  let map_list xs ~f =
+    foldM ~init:[] ~return:Base.ok ~bind:Base.bind ~fold:Foldable.List.fold xs
+      ~f:(fun acc a -> Base.map (fun b -> b :: acc) (f a))
+    |> Base.map List.rev
+
+  let all fn xs = all ~return:Base.ok ~bind:Base.bind fn xs
 end
 
-(** Functor to create a monadic fold for two-parameter monads. *)
-module FoldM2 (M : Base2) (F : Foldable.S) = struct
-  type ('elem, 'a, 'b) folder =
-    'elem F.t -> init:'a -> f:('a -> 'elem -> ('a, 'b) M.t) -> ('a, 'b) M.t
+module Make_syntax2 (Base : Base2) :
+  Syntax2 with type ('a, 'b) t = ('a, 'b) Base.t = struct
+  type nonrec ('a, 'b) t = ('a, 'b) Base.t
+
+  let[@inline] ( let* ) x f = Base.bind f x
+  let[@inline] ( let+ ) x f = Base.map f x
+  let[@inline] ( let/ ) x f = Base.bind_error f x
+  let[@inline] ( let- ) x f = Base.map_error f x
 end
 
-(** Interface for a type with three type parameters. *)
-module type Ty3 = sig
-  type ('a, 'b, 'c) t
-end
-
-(** Functor to create a monadic fold for three-parameter monads. *)
-module FoldM3 (M : Ty3) (F : Foldable.S) = struct
-  type ('elem, 'a, 'b, 'c) folder =
-    'elem F.t ->
-    init:'a ->
-    f:('a -> 'elem -> ('a, 'b, 'c) M.t) ->
-    ('a, 'b, 'c) M.t
-end
-
-(** Syntax extension for two-parameter monads. *)
-module type Syntax2 = sig
-  type ('a, 'b) t
-
-  val ( let* ) : ('a, 'b) t -> ('a -> ('c, 'b) t) -> ('c, 'b) t
-  val ( let+ ) : ('a, 'b) t -> ('a -> 'c) -> ('c, 'b) t
-  val ( let/ ) : ('a, 'b) t -> ('b -> ('a, 'c) t) -> ('a, 'c) t
-  val ( let- ) : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t
-end
-
-(** Complete interface for two-parameter monads. *)
-module type S2 = sig
-  include Base2
-
-  val fold_list :
-    init:'a -> f:('a -> 'elem -> ('a, 'b) t) -> 'elem list -> ('a, 'b) t
-
-  val all : ('a -> ('b, 'c) t) -> 'a list -> ('b list, 'c) t
-
-  module Syntax : Syntax2 with type ('a, 'b) t := ('a, 'b) t
-end
-
-(** Functor to extend a basic two-parameter monad. *)
 module Extend2 (Base : Base2) : S2 with type ('a, 'b) t = ('a, 'b) Base.t =
 struct
+  (** Functor to extend a basic two-parameter monad. *)
+
   include Base
-
-  (** Generic monadic map function that collects results. *)
-  let all fn xs =
-    let rec aux vs l =
-      match l with
-      | [] -> ok (List.rev vs)
-      | x :: xs -> bind (fun x -> aux (x :: vs) xs) (fn x)
-    in
-    aux [] xs
-
-  (** Generic monadic fold function over a list. *)
-  let fold_list ~init ~f xs =
-    foldM ~return:ok ~bind ~fold:Foldable.List.fold xs ~init ~f
-
-  module Syntax = struct
-    let ( let* ) x f = Base.bind f x
-    let ( let+ ) x f = Base.map f x
-    let ( let/ ) x f = Base.bind_error f x
-    let ( let- ) x f = Base.map_error f x
-  end
+  include Make_extension2 (Base)
+  module Syntax = Make_syntax2 (Base)
 end
 
 (** Identity monad. *)
@@ -162,15 +213,17 @@ module ResultT (M : Base) : Base2 with type ('a, 'b) t = ('a, 'b) Result.t M.t =
 struct
   type ('a, 'b) t = ('a, 'b) Result.t M.t
 
-  let ok x = M.return (Ok x)
-  let error x = M.return (Error x)
-  let bind f = M.bind (function Ok x -> f x | Error z -> M.return (Error z))
+  let[@inline] ok x = M.return (Ok x)
+  let[@inline] error x = M.return (Error x)
 
-  let bind_error f =
+  let[@inline] bind f =
+    M.bind (function Ok x -> f x | Error z -> M.return (Error z))
+
+  let[@inline] bind_error f =
     M.bind (function Ok x -> M.return (Ok x) | Error z -> f z)
 
-  let map f = M.map (Result.map f)
-  let map_error f = M.map (Result.map_error f)
+  let[@inline] map f = M.map (Result.map f)
+  let[@inline] map_error f = M.map (Result.map_error f)
 end
 
 (** List monad. *)
@@ -206,6 +259,7 @@ Extend (struct
     (f x', s')
 end)
 
+(** State monad transformer. *)
 module StateT_base
     (State : sig
       type t
@@ -233,14 +287,9 @@ struct
   let[@inline] lift (m : 'a M.t) : 'a t = fun s -> M.map (fun x -> (x, s)) m
 end
 
-module StateT
-    (State : sig
-      type t
-    end)
-    (M : Base) =
-  Extend (StateT_base (State) (M))
-
 module StateT_p (M : Base) = struct
+  (** State monad transformer with polymorphic state. *)
+
   type ('a, 'state) t = 'state -> ('a * 'state) M.t
 
   let[@inline] return x s = M.return (x, s)

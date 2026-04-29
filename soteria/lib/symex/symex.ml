@@ -175,6 +175,7 @@ end
 
 module type Base = sig
   include Core
+  include Monad.S with type 'a t := 'a t
 
   (** [assert_or_error guard err] asserts [guard] is true, and otherwise returns
       [Compo_res.Error err]. Biased towards the assertion being [false] to
@@ -193,74 +194,22 @@ module type Base = sig
       unwrapping the option. *)
   val some_or_give_up : string -> 'a option -> 'a t
 
-  val all : ('a -> 'b t) -> 'a list -> 'b list t
-  val fold_list : 'a list -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
-  val fold_iter : 'a Iter.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
-  val fold_seq : 'a Seq.t -> init:'b -> f:('b -> 'a -> 'b t) -> 'b t
-  val iter_list : 'a list -> f:('a -> unit t) -> unit t
-  val iter_iter : 'a Iter.t -> f:('a -> unit t) -> unit t
-  val map_list : 'a list -> f:('a -> 'b t) -> 'b list t
-
   module Result : sig
-    type nonrec ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t t
-
-    val ok : 'ok -> ('ok, 'err, 'fix) t
-    val error : 'err -> ('ok, 'err, 'fix) t
-    val miss : 'fix list -> ('ok, 'err, 'fix) t
+    include
+      Compo_res.S
+        with type ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) Compo_res.t t
 
     (** Missing without any fix. Will add to the statistics and log that
         information. *)
     val miss_no_fix : reason:string -> unit -> ('ok, 'err, 'fix) t
-
-    val bind :
-      ('ok -> ('a, 'err, 'fix) t) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
-
-    val map : ('ok -> 'a) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
-
-    val bind_2 :
-      f:('ok -> ('a, 'b, 'fix) t) ->
-      fe:('err -> ('a, 'b, 'fix) t) ->
-      ('ok, 'err, 'fix) t ->
-      ('a, 'b, 'fix) t
-
-    val bind_error :
-      ('err -> ('ok, 'a, 'fix) t) -> ('ok, 'err, 'fix) t -> ('ok, 'a, 'fix) t
-
-    val map_error : ('err -> 'a) -> ('ok, 'err, 'fix) t -> ('ok, 'a, 'fix) t
-    val map_missing : ('fix -> 'a) -> ('ok, 'err, 'fix) t -> ('ok, 'err, 'a) t
-
-    val fold_list :
-      'a list -> init:'b -> f:('b -> 'a -> ('b, 'c, 'd) t) -> ('b, 'c, 'd) t
-
-    val fold_iter :
-      'a Iter.t -> init:'b -> f:('b -> 'a -> ('b, 'c, 'd) t) -> ('b, 'c, 'd) t
-
-    val fold_seq :
-      'a Seq.t -> init:'b -> f:('b -> 'a -> ('b, 'c, 'd) t) -> ('b, 'c, 'd) t
-
-    val iter_list : 'a list -> f:('a -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
-    val iter_iter : 'a Iter.t -> f:('a -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
-    val map_list : 'a list -> f:('a -> ('b, 'c, 'd) t) -> ('b list, 'c, 'd) t
   end
 
   module Syntax : sig
-    val ( let* ) : 'a t -> ('a -> 'b t) -> 'b t
-    val ( let+ ) : 'a t -> ('a -> 'b) -> 'b t
+    include Monad.Syntax with type 'a t := 'a t
 
-    val ( let** ) :
-      ('a, 'c, 'd) Result.t ->
-      ('a -> ('b, 'c, 'd) Result.t) ->
-      ('b, 'c, 'd) Result.t
-
-    val ( let++ ) : ('a, 'c, 'd) Result.t -> ('a -> 'b) -> ('b, 'c, 'd) Result.t
-    val ( let+- ) : ('a, 'b, 'd) Result.t -> ('b -> 'c) -> ('a, 'c, 'd) Result.t
-
-    val ( let*- ) :
-      ('a, 'b, 'c) Result.t ->
-      ('b -> ('a, 'd, 'c) Result.t) ->
-      ('a, 'd, 'c) Result.t
-
-    val ( let+? ) : ('a, 'b, 'c) Result.t -> ('c -> 'd) -> ('a, 'b, 'd) Result.t
+    include
+      Compo_res.Syntax
+        with type ('ok, 'err, 'fix) t := ('ok, 'err, 'fix) Result.t
 
     module Symex_syntax :
       Symex_syntax_S
@@ -306,6 +255,8 @@ module type Base = sig
     type 'a symex := 'a t
     type ('a, 'fix) t
 
+    include Monad.Extension2 with type ('a, 'fix) t := ('a, 'fix) t
+
     val apply_subst :
       ((Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
 
@@ -323,11 +274,6 @@ module type Base = sig
     val map : ('a -> 'b) -> ('a, 'fix) t -> ('b, 'fix) t
     val map_missing : ('fix -> 'g) -> ('a, 'fix) t -> ('a, 'g) t
     val bind : ('a -> ('b, 'fix) t) -> ('a, 'fix) t -> ('b, 'fix) t
-
-    val fold_list :
-      'a list -> init:'b -> f:('b -> 'a -> ('b, 'fix) t) -> ('b, 'fix) t
-
-    val iter_list : 'a list -> f:('a -> (unit, 'fix) t) -> (unit, 'fix) t
 
     val bind_res :
       (('a, cons_fail, 'fix) Compo_res.t -> ('b, 'fix2) t) ->
@@ -794,6 +740,7 @@ end
 
 module Base_extension (Core : Core) = struct
   open Core
+  include Monad.Extend (Core)
 
   let assert_or_error guard err =
     branch_on
@@ -801,26 +748,9 @@ module Base_extension (Core : Core) = struct
       ~then_:(fun () -> return (Compo_res.Error err))
       ~else_:(fun () -> return (Compo_res.Ok ()))
 
-  let all fn xs = Monad.all ~bind ~return fn xs
-
   let some_or_give_up reason = function
     | Some x -> return x
     | None -> give_up reason
-
-  let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return ~fold x ~init ~f
-  let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
-  let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
-  let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
-  let iterM ~fold x ~f = foldM ~fold x ~init:() ~f:(fun () -> f)
-  let iter_list x ~f = iterM ~fold:Foldable.List.fold x ~f
-  let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
-
-  let mapM ~fold ~rev ~cons ~init x ~f =
-    foldM ~fold x ~init ~f:(fun acc a -> map (fun b -> cons b acc) (f a))
-    |> map rev
-
-  let map_list x ~f =
-    mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
 
   module Result = struct
     include Compo_res.T (Core)
@@ -829,31 +759,11 @@ module Base_extension (Core : Core) = struct
       Stats.As_ctx.push_str StatKeys.miss_without_fix reason;
       [%l.debug "Missing without fix: %s" reason];
       miss []
-
-    let foldM ~fold x ~init ~f = Monad.foldM ~bind ~return:ok ~fold x ~init ~f
-    let fold_list x ~init ~f = foldM ~fold:Foldable.List.fold x ~init ~f
-    let fold_iter x ~init ~f = foldM ~fold:Foldable.Iter.fold x ~init ~f
-    let fold_seq x ~init ~f = foldM ~fold:Foldable.Seq.fold x ~init ~f
-    let iterM ~fold x ~f = foldM ~fold x ~init:() ~f:(fun () -> f)
-    let iter_list x ~f = iterM ~fold:Foldable.List.fold x ~f
-    let iter_iter x ~f = iterM ~fold:Foldable.Iter.fold x ~f
-
-    let mapM ~fold ~rev ~cons ~init x ~f =
-      foldM ~fold x ~init ~f:(fun acc a -> map (fun b -> cons b acc) (f a))
-      |> map rev
-
-    let map_list x ~f =
-      mapM ~init:[] ~fold:Foldable.List.fold ~rev:List.rev ~cons:List.cons x ~f
   end
 
   module Syntax = struct
-    let ( let* ) x f = bind f x
-    let ( let+ ) x f = map f x
-    let ( let** ) x f = Result.bind f x
-    let ( let++ ) x f = Result.map f x
-    let ( let+- ) x f = Result.map_error f x
-    let ( let*- ) x f = Result.bind_error f x
-    let ( let+? ) x f = Result.map_missing f x
+    include Monad.Make_syntax (Core)
+    include Compo_res.Make_syntax (Result)
 
     module Symex_syntax = struct
       let branch_on = branch_on
@@ -999,10 +909,14 @@ module Base_extension (Core : Core) = struct
           | Missing fixes -> f (Compo_res.Missing fixes) s)
         (m s)
 
-    let fold_list x ~init ~f =
-      Monad.foldM ~return:ok ~bind ~fold:Foldable.List.fold x ~init ~f
+    include Monad.Make_extension2 (struct
+      type nonrec ('a, 'fix) t = ('a, 'fix) t
 
-    let iter_list x ~f = fold_list x ~init:() ~f:(fun () a -> f a)
+      let ok = ok
+      let map = map
+      let bind = bind
+    end)
+
     let run ~subst p = p subst
 
     module Syntax = struct

@@ -40,14 +40,14 @@ module InterpM (State : State_intf.S) = struct
     let* store = SSM.get_state () in
     Result.ok store
 
-  let fold_list (l : 'a list) ~(init : 'b) ~(f : 'b -> 'a -> 'b t) : 'b t =
-    Monad.foldM ~bind ~return:ok ~fold:Foldable.List.fold l ~init ~f
+  (* TODO: include functor *)
+  include Monad.Make_extension (struct
+    type nonrec 'a t = 'a t
 
-  let iter_list x ~f = fold_list x ~init:() ~f:(fun () -> f)
-
-  let map_list x ~f =
-    fold_list x ~init:[] ~f:(fun acc x -> map (fun y -> y :: acc) (f x))
-    |> map List.rev
+    let return = ok
+    let map = map
+    let bind = bind
+  end)
 
   let map_store f =
     let open SSM.Syntax in
