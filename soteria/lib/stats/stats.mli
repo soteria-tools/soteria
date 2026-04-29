@@ -1,6 +1,7 @@
 (** Tracking of statistics across symbolic execution. *)
 
-open Soteria_std.Hashtbl
+open Soteria_std
+open Hashtbl
 
 (** {2 General definitions} *)
 
@@ -164,23 +165,13 @@ module As_ctx : sig
       only inside a function wrapped with {!val-with_stats}, ensuring that the
       statistics are properly passed around. *)
 
+  include Effects.Managed_effect with type arg := unit
+
   (** [with_stats () f] runs function [f] and handles effects raised by the
       functions of this module such as {!push_entry}, and returns a record
       containing the result of executing [f] together with the obtained
       statistics. *)
   val with_stats : unit -> (unit -> 'a) -> 'a with_stats
-
-  (** [with_stats_ignored () f] runs function [f] and handles effects raised by
-      the functions of this module, but ignores their effect. This is to be used
-      when the user does not wish to pay the (minor) performance cost of stats
-      bookkeeping. *)
-  val with_stats_ignored : unit -> (unit -> 'a) -> 'a
-
-  (** [with_stats_dumped () f] runs function [f] and handles effects raised by
-      the functions of this module such as {!push_entry}, and dumps the stats to
-      the file specified by the current [Config.output_stats] if it is set, or
-      ignores them otherwise. *)
-  val with_stats_dumped : unit -> (unit -> 'a) -> 'a
 
   (** [push_entry name entry] adds the given statistic [entry] under the given
       name [name] to the current statistics context. *)

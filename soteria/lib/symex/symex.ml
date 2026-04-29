@@ -1024,7 +1024,7 @@ module Make (Sol : Solver.Mutable_incremental) :
     Iter.to_list (run_needs_stats_iter ?flamegraph ~fuel ~mode iter)
 
   let run ?flamegraph ?fuel ~mode iter =
-    let@ () = Stats.As_ctx.with_stats_ignored () in
+    let@ () = Stats.As_ctx.with_ignored () in
     run_needs_stats ?flamegraph ?fuel ~mode iter
 
   let run_with_stats ?flamegraph ?fuel ~mode iter =
@@ -1060,7 +1060,7 @@ module Make (Sol : Solver.Mutable_incremental) :
       List.rev !l
 
     let run ?flamegraph ?fuel ?fail_fast ~mode iter =
-      let@ () = Stats.As_ctx.with_stats_ignored () in
+      let@ () = Stats.As_ctx.with_ignored () in
       run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode iter
 
     let run_with_stats ?flamegraph ?fuel ?fail_fast ~mode iter =

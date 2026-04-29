@@ -300,7 +300,7 @@ let generate_errors content =
 let initialise ?soteria_config mode config f =
   Option.iter Soteria.Config.set_and_lock soteria_config;
   let@ () = Config.with_config ~config ~mode in
-  Soteria.Stats.As_ctx.with_stats_dumped () f
+  Soteria.Stats.As_ctx.with_dumped () f
 
 let print_states result =
   let pp_state ft state =

@@ -209,7 +209,7 @@ The statistics system is designed to work seamlessly with Soteria's symbolic exe
 
 See {{!Soteria.Symex.StatKeys}[Symex.StatKeys]} for all available entries.
 
-If you don't need statistics (e.g. for performance), use {{!Soteria.Stats.As_ctx.with_stats_ignored}[with_stats_ignored]}, which skips the small overhead of tracking statistics.
+If you don't need statistics (e.g. for performance), use {{!Soteria.Stats.As_ctx.with_ignored}[with_ignored]}, which skips the small overhead of tracking statistics.
 
 {3 Configuration}
 

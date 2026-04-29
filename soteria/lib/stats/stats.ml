@@ -203,10 +203,10 @@ module As_ctx = struct
     in
     { res; stats }
 
-  let with_stats_ignored () f =
+  let with_ignored () f =
     try f () with effect Apply _, k -> Effect.Deep.continue k ()
 
-  let with_stats_dumped () f =
+  let with_dumped () f =
     let { res; stats } = with_stats () f in
     if Option.is_some (Config.get ()).output_stats then output stats;
     res
