@@ -87,12 +87,13 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     else []
   in
   let branches, stats =
+    let@ () = Stats.As_ctx.with_ () in
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
     let@@ () =
       Rustsymex.Result.run_with_stats
-        ~flamegraph:(flamegraph_name entry_name)
-        ~mode:OX ~fuel ~fail_fast:(Config.get ()).fail_fast
+        ~flamegraph:(Dump (flamegraph_name entry_name))
+        ~stats:(Dump ()) ~mode:OX ~fuel ~fail_fast:(Config.get ()).fail_fast
     in
     exec_fun fun_decl ~args
   in

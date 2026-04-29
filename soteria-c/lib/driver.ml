@@ -258,9 +258,10 @@ let exec_function ~includes ~fuel file_names function_name =
         [%l.debug "@[<2>Initial state:@ %a@]" (Fmt.Dump.option SState.pp) state];
         Wpst_interp.exec_fun entry_point ~args:[]
       in
-      let flamegraph = function_name in
       let@ () = with_function_context linked in
-      Ok (Csymex.Result.run_needs_stats ~flamegraph ~mode:OX ~fuel symex)
+      Ok
+        (Csymex.Result.run ~stats:Handled ~flamegraph:(Dump function_name)
+           ~mode:OX ~fuel symex)
   in
   match result with
   | Ok v -> v

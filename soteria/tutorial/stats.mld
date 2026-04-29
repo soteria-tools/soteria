@@ -20,22 +20,17 @@ A key feature of the statistics system is that it automatically {e merges} stati
 
 {2:basic Getting Started with Statistics}
 
-To collect statistics, you need to wrap your computation with {{!Soteria.Stats.As_ctx.with_stats}[with_stats]}. Note that [with_stats] must be called outside of any symbolic process (i.e. outside functions returning ['a Symex.t]):
+To collect statistics, you need to wrap your computation with {{!Soteria.Stats.As_ctx.with_}[with_]}. Note that [with_] must be called outside of any symbolic process (i.e. outside functions returning ['a Symex.t]):
 
 {@ocaml[
-module Stats = Soteria.Stats
-let computation () =
-  Stats.As_ctx.incr "operations";
-  Stats.As_ctx.incr "operations";
-  Stats.As_ctx.incr "operations";
-  42
-]}
-
-The {{!Soteria.Stats.with_stats}[with_stats]} wrapper returns a record containing both the result and the collected statistics:
-
-{@ocaml[
-# Stats.As_ctx.with_stats () computation;;
-- : int Stats.with_stats = {res = 42; stats = <stats>}
+# let computation () =
+    Stats.As_ctx.incr "operations";
+    Stats.As_ctx.incr "operations";
+    Stats.As_ctx.incr "operations";
+    42
+val computation : unit -> int = <fun>
+# Stats.As_ctx.with_ () computation;;
+- : int * Stats.t = (42, <stats>)
 ]}
 
 
@@ -43,9 +38,9 @@ Because wrapper functions are a regular pattern in Soteria, we recommend definin
 {@ocaml[
 # let ( let@ ) = ( @@ );;
 val ( let@ ) : ('a -> 'b) -> 'a -> 'b = <fun>
-# let@ () = Stats.As_ctx.with_stats () in
+# let@ () = Stats.As_ctx.with_ () in
   computation ();;
-- : int Stats.with_stats = {res = 42; stats = <stats>}
+- : int * Stats.t = (42, <stats>)
 ]}
 
 {3 Basic Counter Operations}
@@ -66,17 +61,17 @@ The simplest statistics are integer counters. Use {{!Soteria.Stats.As_ctx.incr}[
     "done";;
 val count_things : unit -> string = <fun>
 
-# let result =
-    Stats.As_ctx.with_stats () count_things;;
-val result : string Stats.with_stats = {res = "done"; stats = <stats>}
+# let result, stats = Stats.As_ctx.with_ () count_things;;
+val result : string = "done"
+val stats : Stats.t = <stats>
 ]}
 
 Now we can read the statistics back; {!Soteria.Stats} exposes several helper getter functions to retrieve values of the correct type:
 
 {@ocaml[
-# Stats.get_int result.stats "items_processed";;
+# Stats.get_int stats "items_processed";;
 - : int = 3
-# Stats.get_int result.stats "bytes_read";;
+# Stats.get_int stats "bytes_read";;
 - : int = 3072
 ]}
 
@@ -84,18 +79,17 @@ Now we can read the statistics back; {!Soteria.Stats} exposes several helper get
 
 Use {{!Soteria.Stats.As_ctx.add_time_of_to}[add_time_of_to]} to measure how long an operation takes:
 
-{@ocaml[
+{@ocaml skip[
 # let slow_computation () =
     let rec fib n = if n <= 1 then n else fib (n-1) + fib (n-2) in
     fib 30
   in
-  let@ () = Stats.As_ctx.with_stats () in
-  Stats.As_ctx.add_time_of_to "compute_time" slow_computation;;
-- : int Stats.with_stats = {res = 832040; stats = <stats>}
-]}
-{@ocaml skip[
-# let time_taken = Stats.get_float result.stats "compute_time";;
-val time_taken : float = 0.024188995361328125
+  let res, stats =
+    let@ () = Stats.As_ctx.with_ () in
+    Stats.As_ctx.add_time_of_to "compute_time" slow_computation
+  in
+  res, Stats.get_float stats "compute_time";;
+- : int * float = (832040, 0.0228359699249267578)
 ]}
 
 {2:types Statistic Types}
@@ -119,8 +113,8 @@ String sequences are useful for recording events or messages:
     Stats.As_ctx.push_str "warnings" "Deprecated function called";
     ()
   in
-  let result = Stats.As_ctx.with_stats () log_events in
-  Stats.get_strseq result.stats "warnings";;
+  let _, stats = Stats.As_ctx.with_ () log_events in
+  Stats.get_strseq stats "warnings";;
 - : string Dynarray.t =
 ["Missing type annotation", "Unused variable x",
  "Deprecated function called"]
@@ -137,8 +131,8 @@ Maps allow you to organize statistics hierarchically. Use {{!Soteria.Stats.As_ct
     Stats.As_ctx.push_binding "function_calls" "main" (Int 3);
     ()
   in
-  let result = Stats.As_ctx.with_stats () track_by_function in
-  Stats.get_map result.stats "function_calls";;
+  let _, stats = Stats.As_ctx.with_ () track_by_function in
+  Stats.get_map stats "function_calls";;
 - : Stats.stat_entry Soteria_std.Hashtbl.Hstring.t =
   main -> Stats.Int 8
   helper -> Stats.Int 12
@@ -157,10 +151,10 @@ For instance, use {{!Soteria.Stats.register_int_printer}[register_int_printer]} 
     ~name:"Total Operations"
     (fun _stats ft count -> Fmt.pf ft "%d ops" count);
 
-  let result = Stats.As_ctx.with_stats () (fun () ->
+  let _, stats = Stats.As_ctx.with_ () (fun () ->
       Stats.As_ctx.add_int "operations" 42)
   in
-  Fmt.pr "%a" Stats.pp result.stats;;
+  Fmt.pr "%a" Stats.pp stats;;
 Statistics:
 • Total Operations: 42 ops
 
@@ -190,8 +184,8 @@ Printers receive the full statistics object, allowing context-aware formatting. 
     Stats.As_ctx.add_int "successful_checks" 85
   in
 
-  let result = Stats.As_ctx.with_stats () demo_checks in
-  Fmt.pr "%a" Stats.pp result.stats;;
+  let _, stats = Stats.As_ctx.with_ () demo_checks in
+  Fmt.pr "%a" Stats.pp stats;;
 Statistics:
 • Checks: 85 successes of 100 (85%)
 
@@ -209,7 +203,10 @@ The statistics system is designed to work seamlessly with Soteria's symbolic exe
 
 See {{!Soteria.Symex.StatKeys}[Symex.StatKeys]} for all available entries.
 
-If you don't need statistics (e.g. for performance), use {{!Soteria.Stats.As_ctx.with_ignored}[with_ignored]}, which skips the small overhead of tracking statistics.
+The {{!Soteria.Symex.S.run}[Symex.S.run]} function receives an optional [stats] parameter that allows deciding how statistics should be tracked during symbolic execution:
+- {{!Soteria.Symex.effect_handling.Ignore}[~stats:Ignore]}: Don't track any statistics (default)
+- {{!Soteria.Symex.effect_handling.Dump}[~stats:(Dump ())]}: Track statistics and print them after execution according to the current {{!Soteria.Stats.Config}configuration} (see below)
+- {{!Soteria.Symex.effect_handling.Handled}[~stats:Handled]}: Statistics are already tracked, and the effects they raise don't need to be handled here (using {{!Soteria.Stats.As_ctx.with_}[with_]}, {{!Soteria.Stats.As_ctx.with_ignored}[with_ignored]}, or {{!Soteria.Stats.As_ctx.with_dumped}[with_dumped]})
 
 {3 Configuration}
 
@@ -247,7 +244,7 @@ let my_process () =
 
 You now know how to effectively use Soteria's statistics system! Key takeaways:
 
-- Wrap computations with [Stats.As_ctx.with_stats] to enable tracking
+- Wrap computations with [Stats.As_ctx.with_] to enable tracking
 - Use [incr], [add_int], [add_float] for basic metrics
 - Use [add_time_of_to] for timing operations
 - Use [push_str] and [push_binding] for complex data

@@ -15,7 +15,10 @@ let process : (int, int, unit) Result.t =
 
 let () =
   Soteria.Logs.Config.(set_and_lock (make ~hide_unstable:true ()));
-  let _, stats = run_with_stats ~mode:UX process in
+  let _, stats =
+    Soteria.Stats.As_ctx.with_ () @@ fun () ->
+    run ~stats:Handled ~mode:UX process
+  in
   Soteria.Stats.pp Fmt.stdout stats;
   Fmt.pr "@.";
   let as_yojson = Soteria.Stats.to_yojson stats in

@@ -40,7 +40,7 @@ let generate_summaries_for (fundef : fundef) =
   in
   let res =
     let@ () = L.with_section "Running symbolic execution" in
-    Csymex.run_needs_stats ~mode:UX ~fuel:default_abductor_fuel process
+    Csymex.run ~stats:Handled ~mode:UX ~fuel:default_abductor_fuel process
   in
   let+ (args, ret, bi_state), pc = res in
   let args = List.map Aggregate_val.to_syn args in
