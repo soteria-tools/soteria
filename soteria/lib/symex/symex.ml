@@ -499,8 +499,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   module Value = Solver.Value
   module MONAD = Monad.IterM
   include MONAD
-  module Flamegraph = Profiling.Flamegraph.Make ()
-  module Flamegraph_with_frame = Flamegraph.With_frame (MONAD)
+  module Flamegraph = Profiling.Flamegraph.Make (MONAD)
 
   module Give_up = struct
     type _ Effect.t += Gave_up_eff : string -> unit Effect.t
@@ -534,7 +533,10 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       Flamegraph.save ()
 
     let run ?flamegraph ~init_fuel f =
-      Flamegraph.run_if_file ~flamegraph @@ fun () ->
+      (match flamegraph with
+        | None -> Flamegraph.with_ignored ()
+        | Some f -> Flamegraph.with_dumped f)
+      @@ fun () ->
       Solver.run @@ fun () ->
       Fuel.run ~init:init_fuel @@ fun () -> f ()
   end
@@ -734,8 +736,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     Flamegraph.checkpoint ();
     if should_give_up then Give_up.perform reason
 
-  let with_frame (name : string) (f : unit -> 'a t) : 'a t =
-   fun k -> Flamegraph_with_frame.with_frame name f k
+  let with_frame = Flamegraph.with_frame
 end
 
 module Base_extension (Core : Core) = struct

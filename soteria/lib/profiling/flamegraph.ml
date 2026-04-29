@@ -1,4 +1,5 @@
 open Soteria_std
+open Syntaxes.FunctionWrap
 
 type frame = string
 type stack = { rev_frames : frame list; weight : float }
@@ -30,7 +31,7 @@ let write_folded_stacks path stacks =
   | exception Sys_error e ->
       Terminal.Warn.warn (Fmt.str "Failed to write flamegraph to %s: %s" path e)
 
-module Make () = struct
+module Make (M : Monad.Base) = struct
   type _ Effect.t +=
     | Map_stack : (stack -> stack) -> unit Effect.t
     | Backtrack_n : int -> unit Effect.t
@@ -45,23 +46,19 @@ module Make () = struct
   let backtrack_n n = Effect.perform (Backtrack_n n)
   let checkpoint () = Effect.perform Checkpoint
 
-  module With_frame (M : Monad.Base) = struct
-    let with_frame (name : string) (f : unit -> 'a M.t) : 'a M.t =
-      push_frame name;
-      M.map
-        (fun r ->
-          pop_frame ();
-          r)
-        (f ())
-  end
+  let with_frame (name : string) (f : unit -> 'a M.t) : 'a M.t =
+    push_frame name;
+    M.map
+      (fun r ->
+        pop_frame ();
+        r)
+      (f ())
 
-  let run ~flamegraph f =
+  let with_dumped flamegraph f =
     let stacks = ref [] in
     let current_stack : stack Dynarray.t = Dynarray.create () in
-    let () =
-      Dynarray.add_last current_stack
-        { rev_frames = [ "SYMBOLIC EXECUTION ROOT" ]; weight = 0.0 }
-    in
+    Dynarray.add_last current_stack
+      { rev_frames = [ "SYMBOLIC EXECUTION ROOT" ]; weight = 0.0 };
     let last_checkpoint = ref (Unix.gettimeofday ()) in
     let map_stack (g : stack -> stack) =
       let last = Dynarray.pop_last current_stack in
@@ -75,39 +72,33 @@ module Make () = struct
       stacks := { stack with weight = elapsed } :: !stacks
     in
     let open Effect.Deep in
-    Fun.protect
-      ~finally:(fun () ->
+    let@ () =
+      Fun.protect ~finally:(fun () ->
+          checkpoint ();
+          write_folded_stacks flamegraph (List.rev !stacks))
+    in
+    try f () with
+    | effect Map_stack g, k ->
         checkpoint ();
-        write_folded_stacks flamegraph (List.rev !stacks))
-      (fun () ->
-        try f () with
-        | effect Map_stack g, k ->
-            checkpoint ();
-            map_stack g;
-            continue k ()
-        | effect Backtrack_n n, k ->
-            checkpoint ();
-            let len = Dynarray.length current_stack in
-            Dynarray.truncate current_stack (len - n);
-            continue k ()
-        | effect Save, k ->
-            Dynarray.add_last current_stack (Dynarray.get_last current_stack);
-            continue k ()
-        | effect Checkpoint, k ->
-            checkpoint ();
-            continue k ())
+        map_stack g;
+        continue k ()
+    | effect Backtrack_n n, k ->
+        checkpoint ();
+        let len = Dynarray.length current_stack in
+        Dynarray.truncate current_stack (len - n);
+        continue k ()
+    | effect Save, k ->
+        Dynarray.add_last current_stack (Dynarray.get_last current_stack);
+        continue k ()
+    | effect Checkpoint, k ->
+        checkpoint ();
+        continue k ()
 
-  let run_ignored f =
+  let with_ignored () f =
     let open Effect.Deep in
     try f () with
     | effect Map_stack _, k -> continue k ()
     | effect Backtrack_n _, k -> continue k ()
     | effect Save, k -> continue k ()
     | effect Checkpoint, k -> continue k ()
-
-  (** is [run] if [flamegraph] is [Some _] and [run_ignored] otherwise *)
-  let run_if_file ~flamegraph =
-    match flamegraph with
-    | Some flamegraph -> fun f -> run ~flamegraph f
-    | None -> fun f -> run_ignored f
 end
