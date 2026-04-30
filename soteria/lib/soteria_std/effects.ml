@@ -1,6 +1,7 @@
-(** Module type for an effect that can be managed, by dumping its data
-    "somewhere" (typically a file, configured externally), or by ignoring it. *)
-module type Managed_effect = sig
+(** Module type for an effect used for bookkeeping, which keeps tracks of some
+    information that can then be dumped "somewhere" (typically a file,
+    configured externally), or ignored. *)
+module type Bookkeeping = sig
   (** The type of the information tracked by the effect. *)
   type t
 

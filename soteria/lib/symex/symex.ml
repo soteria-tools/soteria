@@ -997,7 +997,7 @@ module Make (Sol : Solver.Mutable_incremental) :
   include Base_extension (CORE)
 
   (* TODO: with modular explicits this can be implemented for any module:
-   * let manage (module M : Managed_effect) = function
+   * let manage (module M : Bookkeeping) = function
    *   | Ignore -> M.with_ignored ()
    *   | Dump arg -> M.with_dumped arg
    *   | Handled -> fun f -> f ()
