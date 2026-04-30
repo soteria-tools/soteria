@@ -48,12 +48,15 @@ module Make (M : Monad.Base) = struct
   let checkpoint () = Effect.perform Checkpoint
 
   let with_frame (name : string) (f : unit -> 'a M.t) : 'a M.t =
-    push_frame name;
-    M.map
-      (fun r ->
-        pop_frame ();
-        r)
-      (f ())
+    (* the bind + return to make sure the effect isn't raised until the
+       computation is ran. *)
+    M.return ()
+    |> M.bind @@ fun () ->
+       push_frame name;
+       f ()
+       |> M.map @@ fun r ->
+          pop_frame ();
+          r
 
   let with_ _name f =
     let stacks = ref [] in
