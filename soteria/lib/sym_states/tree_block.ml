@@ -176,7 +176,11 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
              pf fmt " -->@,@[%a@,%a@]" pp l pp r))
         children
 
-    let make = Data.Range_tree.build
+    let node_merge l r = fst (Node.merge ~left:l ~right:r)
+
+    let make ~node ~range ?children () =
+      Data.Range_tree.build ~node ~range ~merge:node_merge ?children ()
+
     let is_empty t = Node.is_empty t.node
     let not_owned range = make ~node:(NotOwned Totally) ~range ?children:None ()
 

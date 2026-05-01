@@ -29,6 +29,7 @@ type ('a, 'sint) t = private {
 val build :
   node:'a ->
   range:'sint * 'sint ->
+  merge:('a -> 'a -> 'a) ->
   ?children:('a, 'sint) t * ('a, 'sint) t ->
   unit ->
   ('a, 'sint) t

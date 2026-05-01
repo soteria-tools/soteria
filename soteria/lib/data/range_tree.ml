@@ -19,7 +19,7 @@ let make_node ~node ~range ?children () =
 
 (** Builds a tree given a node, a range, and children, and automatically
     balances it. *)
-let rec build ~node ~range ?children () =
+let rec build ~node ~range ~merge ?children () =
   [%l.debug "CALLED BUILD!"];
   (* Classic AVL tree algorithm to re-balance trees on construction. We assume
      the invariant that the input children are already balanced, so we only need
@@ -30,32 +30,59 @@ let rec build ~node ~range ?children () =
   | Some (left, right) ->
       let hl = height left and hr = height right in
       if hl > hr + 1 then
-        (* Left-heavy: pull left's children up. left covers [a..b], right covers
-           [b..c], together [a..c]. We need to split left into its own children
-           and rebalance. *)
         let ll, lr = Option.get left.children in
-        (* ll covers [a..m], lr covers [m..b], right covers [b..c]. Strategy:
-           keep ll on the left, rebuild the right subtree from (lr, right) with
-           the current node's data, then rebuild root. *)
-        let new_right =
-          build ~node
-            ~range:(fst lr.range, snd right.range)
-            ~children:(lr, right) ()
-        in
-        build ~node:left.node ~range ~children:(ll, new_right) ()
+        if ll.height >= lr.height then
+          (* Left-LEFT heavy: single right rotation.
+             ll covers [a..m], lr covers [m..b], right covers [b..c]. *)
+          let new_right =
+            build ~node:(merge lr.node right.node)
+              ~range:(fst lr.range, snd right.range)
+              ~merge ~children:(lr, right) ()
+          in
+          build ~node ~range ~merge ~children:(ll, new_right) ()
+        else
+          (* Left-RIGHT heavy: double rotation.
+             lr.children = (lrl, lrr). New root = lr's range, left = (ll, lrl),
+             right = (lrr, right). *)
+          let lrl, lrr = Option.get lr.children in
+          let new_left =
+            build ~node:(merge ll.node lrl.node)
+              ~range:(fst ll.range, snd lrl.range)
+              ~merge ~children:(ll, lrl) ()
+          in
+          let new_right =
+            build ~node:(merge lrr.node right.node)
+              ~range:(fst lrr.range, snd right.range)
+              ~merge ~children:(lrr, right) ()
+          in
+          build ~node ~range ~merge ~children:(new_left, new_right) ()
       else if hr > hl + 1 then
-        (* Right-heavy: mirror of the above. left covers [a..b], right covers
-           [b..c], together [a..c]. right's children: rl covers [b..m], rr
-           covers [m..c]. *)
         let rl, rr = Option.get right.children in
-        (* left covers [a..b], rl covers [b..m], rr covers [m..c]. Keep rr on
-           the right, rebuild left subtree from (left, rl). *)
-        let new_left =
-          build ~node
-            ~range:(fst left.range, snd rl.range)
-            ~children:(left, rl) ()
-        in
-        build ~node:right.node ~range ~children:(new_left, rr) ()
+        if rr.height >= rl.height then
+          (* Right-RIGHT heavy: single left rotation.
+             left covers [a..b], rl covers [b..m], rr covers [m..c]. *)
+          let new_left =
+            build ~node:(merge left.node rl.node)
+              ~range:(fst left.range, snd rl.range)
+              ~merge ~children:(left, rl) ()
+          in
+          build ~node ~range ~merge ~children:(new_left, rr) ()
+        else
+          (* Right-LEFT heavy: double rotation.
+             rl.children = (rll, rlr). New root = rl's range, left = (left, rll),
+             right = (rlr, rr). *)
+          let rll, rlr = Option.get rl.children in
+          let new_left =
+            build ~node:(merge left.node rll.node)
+              ~range:(fst left.range, snd rll.range)
+              ~merge ~children:(left, rll) ()
+          in
+          let new_right =
+            build ~node:(merge rlr.node rr.node)
+              ~range:(fst rlr.range, snd rr.range)
+              ~merge ~children:(rlr, rr) ()
+          in
+          build ~node ~range ~merge ~children:(new_left, new_right) ()
       else
         (* Balanced within ±1, just build the node *)
         make_node ~node ~range ~children:(left, right) ()

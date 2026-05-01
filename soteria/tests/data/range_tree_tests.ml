@@ -66,12 +66,12 @@ let check_all t =
 (* Leaf whose node is the list of integers in [lo, hi). *)
 let leaf lo hi =
   let node = List.init (hi - lo) (fun i -> lo + i) in
-  RT.build ~node ~range:(lo, hi) ()
+  RT.build ~node ~range:(lo, hi) ~merge:( @ ) ()
 
 (* Inner node covering [lo, hi) with children l and r. *)
 let inner lo hi l r =
   let node = List.init (hi - lo) (fun i -> lo + i) in
-  RT.build ~node ~range:(lo, hi) ~children:(l, r) ()
+  RT.build ~node ~range:(lo, hi) ~merge:( @ ) ~children:(l, r) ()
 
 (* Test 1 ─ single leaf: trivially balanced, height 0. *)
 let test_leaf () =
@@ -148,7 +148,59 @@ let test_right_right_heavy () =
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
-(* Test 5 ─ perfectly balanced four-leaf tree: no rotation triggered.
+(* Test 5 ─ left-RIGHT heavy: left child h=2, but lr is taller than ll, so a
+ *  single right rotation would loop — a double rotation is required.
+ *
+ *  Before build:
+ *                   [0──8) h=?
+ *                     / \
+ *            [0──6) h=2 [6──8) h=0
+ *              / \
+ *       [0──2) h=0 [2──6) h=1
+ *                    / \
+ *               [2──4) [4──6) both h=0
+ *)
+let test_left_right_heavy () =
+  let a = leaf 0 2 in
+  let b = leaf 2 4 and c = leaf 4 6 in
+  let lr = inner 2 6 b c in
+  (* h=1, lr is taller than ll *)
+  let left = inner 0 6 a lr in
+  (* h=2, left-RIGHT heavy: lr.h > ll.h *)
+  let right = leaf 6 8 in
+  (* h=0 *)
+  let t = inner 0 8 left right in
+  Alcotest.(check int) "height after double rotation" 2 t.height;
+  Alcotest.(check (pair int int)) "range" (0, 8) t.range;
+  check_all t
+
+(* Test 6 ─ right-LEFT heavy: right child h=2, but rl is taller than rr, so a
+ *  single left rotation would loop — a double rotation is required.
+ *
+ *  Before build:
+ *             [0──10) h=?
+ *               / \
+ *       [0──4) h=0 [4──10) h=2
+ *                    / \
+ *            [4──8) h=1 [8──10) h=0
+ *              / \
+ *         [4──6) [6──8) both h=0
+ *)
+let test_right_left_heavy () =
+  let a = leaf 4 6 and b = leaf 6 8 in
+  let rl = inner 4 8 a b in
+  (* h=1, rl is taller than rr *)
+  let c = leaf 8 10 in
+  let right = inner 4 10 rl c in
+  (* h=2, right-LEFT heavy: rl.h > rr.h *)
+  let left = leaf 0 4 in
+  (* h=0 *)
+  let t = inner 0 10 left right in
+  Alcotest.(check int) "height after double rotation" 2 t.height;
+  Alcotest.(check (pair int int)) "range" (0, 10) t.range;
+  check_all t
+
+(* Test 7 ─ perfectly balanced four-leaf tree: no rotation triggered.
  *
  *  Shape:
  *                        [0──8) h=2
@@ -170,7 +222,7 @@ let test_full_balanced () =
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
-(* Test 6 ─ large imbalance: height-1 tree on the left, height-5 on the right.
+(* Test 8 ─ large imbalance: height-1 tree on the left, height-5 on the right.
    The height difference of 4 requires the rotation to recur through 4 levels
    before sub-trees become balanced. Each recursive call is right-RIGHT heavy
    (the balanced tree's right grandchild equals its left grandchild in height,
@@ -212,6 +264,8 @@ let () =
           Alcotest.test_case "balanced pair" `Quick test_balanced_pair;
           Alcotest.test_case "left-left heavy" `Quick test_left_left_heavy;
           Alcotest.test_case "right-right heavy" `Quick test_right_right_heavy;
+          Alcotest.test_case "left-right heavy" `Quick test_left_right_heavy;
+          Alcotest.test_case "right-left heavy" `Quick test_right_left_heavy;
           Alcotest.test_case "perfectly balanced 4-leaf" `Quick
             test_full_balanced;
           Alcotest.test_case "large imbalance h1 vs h5" `Quick
