@@ -39,6 +39,8 @@
   simple_smt
   iter
   patricia-tree
+  (cmdliner
+   (>= 2.0.0))
   (ppx_expect
    (>= 0.17.0))
   (ppx_blob
@@ -94,15 +96,12 @@
   soteria
   cerberus-lib
   zarith
-  cmdliner
   ppx_deriving
   fmt
   (linol
    (= 0.10))
   (linol-eio
    (= 0.10))
-  (ppx_subliner
-   (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
   (yojson
@@ -161,13 +160,10 @@
   zarith
   patricia-tree
   ppx_deriving
-  cmdliner
   fmt
   unionFind
   name_matcher_parser
   charon
-  (ppx_subliner
-   (>= 0.2.1))
   ppx_deriving_hash
   (odoc :with-doc)
   (alcotest :with-test)

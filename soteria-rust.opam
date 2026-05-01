@@ -21,12 +21,10 @@ depends: [
   "zarith"
   "patricia-tree"
   "ppx_deriving"
-  "cmdliner"
   "fmt"
   "unionFind"
   "name_matcher_parser"
   "charon"
-  "ppx_subliner" {>= "0.2.1"}
   "ppx_deriving_hash"
   "odoc" {with-doc}
   "alcotest" {with-test}
