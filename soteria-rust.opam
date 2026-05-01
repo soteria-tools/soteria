@@ -20,10 +20,13 @@ depends: [
   "dune-site"
   "zarith"
   "patricia-tree"
+  "cmdliner"
+  "iter"
   "ppx_deriving"
+  "ppx_subliner" {>= "0.2.1"}
+  "ppx_mixins" {>= "0.2.0"}
   "fmt"
   "unionFind"
-  "name_matcher_parser"
   "charon"
   "ppx_deriving_hash"
   "odoc" {with-doc}
