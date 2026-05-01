@@ -83,8 +83,8 @@ module M (Symex : Symex.Base) = struct
           let+ () = Symex.Consumer.consume_pure f in
           st
 
-    let consume (asrt : B.syn t) (st : B.t option) :
-        (B.t option, B.syn list) Consumer.t =
+    let consume_partial (asrt : B.syn t) (st : B.t option) :
+        (B.syn t * B.t option, B.syn list) Consumer.t =
       let open Consumer.Syntax in
       let* subst = Consumer.expose_subst () in
       [%l.debug
@@ -92,22 +92,93 @@ module M (Symex : Symex.Base) = struct
          state:@ %a@]@]"
         (pp B.pp_syn) asrt Value.Expr.Subst.pp subst (Fmt.Dump.option B.pp) st];
       let rec aux (remaining : B.syn t) (st : B.t option) :
-          (B.t option, B.syn list) Consumer.t =
-        if List.is_empty remaining then Consumer.ok st
-        else
-          let* subst = Consumer.expose_subst () in
-          match List.find_with_rest (is_consumable subst) remaining with
-          | None ->
-              [%l.info
-                "@[<v>Failed to consume assertion because I can't find any \
-                 consumable atom left given my current substitution.@.@[<v \
-                 2>Substitution:@ %a@]@.@[<v 2>Atoms left:@ %a@]@]"
-                Value.Expr.Subst.pp subst (pp B.pp_syn) remaining];
-              Consumer.lfail @@ Value.of_bool false
-          | Some (atom, rest) ->
-              let* st' = consume_atom atom st in
-              aux rest st'
+          (B.syn t * B.t option, B.syn list) Consumer.t =
+        let* subst = Consumer.expose_subst () in
+        match List.find_with_rest (is_consumable subst) remaining with
+        | None -> Consumer.ok (remaining, st)
+        | Some (atom, rest) ->
+            let* st' = consume_atom atom st in
+            aux rest st'
       in
       aux asrt st
+
+    let consume (asrt : B.syn t) (st : B.t option) :
+        (B.t option, B.syn list) Consumer.t =
+      let open Consumer.Syntax in
+      let* remaining, st = consume_partial asrt st in
+      if List.is_empty remaining then Consumer.ok st
+      else
+        let* subst = Consumer.expose_subst () in
+        [%l.info
+          "@[<v>Failed to consume assertion because I can't find any \
+           consumable atom left given my current substitution.@.@[<v \
+           2>Substitution:@ %a@]@.@[<v 2>Atoms left:@ %a@]@]"
+          Value.Expr.Subst.pp subst (pp B.pp_syn) remaining];
+        Consumer.lfail @@ Value.of_bool false
+  end
+
+  (** [Execute_partial] contains the utilities to perform {e production} and
+      {e consumption} of a given assertion, using the consumer and producer of
+      the parameter [B]. In the presence of strictly-pure non-consumable atoms,
+      consumption will proceed by creating a new consumable atom via the
+      utilities of the parameter [Syn]. *)
+  module Execute_partial
+      (B : Base)
+      (Syn : sig
+        val mk_exists :
+          (Var.t * 'a Symex.Value.ty) list ->
+          Symex.Value.Expr.t ->
+          Symex.Value.Expr.t
+
+        val conj : Symex.Value.Expr.t list -> Symex.Value.Expr.t
+      end) =
+  struct
+    include Execute (B)
+
+    (** Given a list of expressions for which [is_consumable] returns false,
+        returns a single expression for which [is_consumable] returns true. *)
+    let make_consumable (subst : Value.Expr.Subst.t) (exprs : Value.Expr.t list)
+        : Value.Expr.t =
+      let free_vars =
+        let r = ref [] in
+        ListLabels.iter exprs ~f:(fun expr ->
+            Value.Expr.Subst.apply subst expr ~missing_var:(fun var ty ->
+                let vars = !r in
+                if not @@ List.mem (var, ty) vars then r := (var, ty) :: vars;
+                Value.mk_var var ty)
+            |> ignore);
+        !r
+      in
+      (* We take the conjunction of all the expressions and existentially
+         quantify all variables that are not covered by the substitution. *)
+      Syn.mk_exists free_vars @@ Syn.conj exprs
+
+    let consume (asrt : B.syn t) (st : B.t option) :
+        (B.t option, B.syn list) Consumer.t =
+      let open Consumer.Syntax in
+      let* remaining, st = consume_partial asrt st in
+      if List.is_empty remaining then Consumer.ok st
+      else
+        let* subst = Consumer.expose_subst () in
+        let* exprs =
+          Consumer.fold_list remaining ~init:[] ~f:(fun exprs -> function
+            | Pure expr -> Consumer.ok (expr :: exprs)
+            | Spatial _ ->
+                [%l.info
+                  "@[<v>Failed to consume assertion because I can't find any \
+                   consumable atom left given my current substitution with \
+                   spatial atoms remaining.@.@[<v 2>Substitution:@ %a@]@.@[<v \
+                   2>Atoms left:@ %a@]@]"
+                  Value.Expr.Subst.pp subst (pp B.pp_syn) remaining];
+                Consumer.lfail @@ Value.of_bool false)
+        in
+        let consumable = make_consumable subst exprs in
+        [%l.debug
+          "@[<v>@[No consumable atom left given my current substitution with \
+           only pure atoms remaining. About to consume asrt:@ %a@]@ @[in \
+           subst:@ %a@]@]"
+          Value.Expr.pp consumable Value.Expr.Subst.pp subst];
+        let+ () = Consumer.consume_pure consumable in
+        st
   end
 end
