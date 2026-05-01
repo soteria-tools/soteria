@@ -5,31 +5,31 @@ Test kani::any
   note: any::any_bool: done in <time>, ran 2 branches
   PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
   PC 2: (V|1| == 0x00) /\ (V|1| == 0x00)
-  
+
   => Running any::any_i8...
   note: any::any_i8: done in <time>, ran 3 branches
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
   PC 2: (0x80 <=u V|1|)
   PC 3: (0x01 <=u V|1|) /\ (V|1| <=u 0x7f)
-  
+
 Test kani::assume
   $ soteria-rust exec assume.rs --kani
   Compiling... done in <time>
   => Running assume::assume_bool...
   note: assume::assume_bool: done in <time>, ran 1 branch
   PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
-  
+
   => Running assume::assume_i32...
   note: assume::assume_i32: done in <time>, ran 1 branch
   PC 1: (0x00000001 <=u V|1|)
-  
+
 Test #[kani::should_panic]
   $ soteria-rust exec should_panic.rs --kani
   Compiling... done in <time>
   => Running should_panic::when_at_the_disco...
   note: should_panic::when_at_the_disco: done in <time>, ran 1 branch
   PC 1: empty
-  
+
 Test kani::assert
   $ soteria-rust exec assert.rs --kani
   Compiling... done in <time>
@@ -46,7 +46,7 @@ Test kani::assert
       │      Triggering operation
       │      2: Call trace
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
-  
+
   => Running assert::fancy_assert_false...
   error: assert::fancy_assert_false: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: 👻 unicode is 𝒮𝒞𝒜ℛ𝒴 in assert::fancy_assert_false
@@ -60,7 +60,7 @@ Test kani::assert
       │      Triggering operation
       │      2: Call trace
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
-  
+
   => Running assert::override_assert_macro...
   error: assert::override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Panic: I used "assert!" in assert::override_assert_macro
@@ -74,7 +74,7 @@ Test kani::assert
       │      Triggering operation
       │      2: Call trace
   PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
-  
+
   => Running assert::override_asserteq_macro...
   error: assert::override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion in assert::override_asserteq_macro
@@ -87,16 +87,15 @@ Test kani::assert
       ┌─ $TESTCASE_ROOT/assert.rs:23:5
    20 │  fn override_asserteq_macro() {
       │  ---------------------------- 1: Entry point
-      ·  
+      ·
    23 │      assert_eq!(a, b, "I used \"assert_eq!\"");
       │      ----------------------------------------- 2: Call trace
   PC 1: (V|1| != V|2|)
-  
+
   [1]
 
 Test kani::slice::any_slice_of_array
-  $ echo "Skipped; can't read symbolic slice" # soteria-rust exec any_slice.rs --kani
-  Skipped; can't read symbolic slice
+  $ soteria-rust exec any_slice.rs --kani
 
 Test kani::vec::any_vec
   $ soteria-rust exec any_vec.rs --kani
@@ -200,7 +199,7 @@ Test kani::vec::any_vec
          (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
          (V|19| <=u 0x7ffffffffffffffa) /\ (0x0000000000000001 == V|1|) /\
          (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  
+
 Test our simple Kani demo works
   $ soteria-rust exec demo.rs --kani
   Compiling... done in <time>
@@ -210,16 +209,16 @@ Test our simple Kani demo works
       ┌─ $TESTCASE_ROOT/demo.rs:11:8
     8 │  fn saturating_add_overflow() -> u32 {
       │  ----------------------------------- 1: Entry point
-      ·  
+      ·
    11 │      if a + b < u32::MAX {
       │         ^^^^^ Triggering operation
   PC 1: (V|1| +u_ovf V|2|)
-  
+
   => Running demo::saturating_add...
   note: demo::saturating_add: done in <time>, ran 2 branches
   PC 1: (V|1| <u (0xffffffff -ck V|2|)) /\ !((V|1| +u_ovf V|2|))
   PC 2: ((0xffffffff -ck V|2|) <=u V|1|)
-  
+
   => Running demo::memory_leak...
   error: demo::memory_leak: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak in demo::memory_leak
@@ -229,7 +228,7 @@ Test our simple Kani demo works
       │            │
       │            Triggering operation
       │            5: Allocation
-      ·    
+      ·
   311 │        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
   312 │ ╭          core::intrinsics::const_eval_select(
   313 │ │              (layout, zeroed),
@@ -248,16 +247,16 @@ Test our simple Kani demo works
       │                        ------------ 2: Call trace
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
         (extract[0-1](V|1|) == 0b00)
-  
+
   => Running demo::uninit_access...
   error: demo::uninit_access: found issues in <time>, errors in 1 branch (out of 2)
   bug: Uninitialized memory access in demo::uninit_access
       ┌─ $TESTCASE_ROOT/demo.rs:63:26
    58 │  fn uninit_access() {
       │  ------------------ 1: Entry point
-      ·  
+      ·
    63 │          let value: u32 = *addr_value;
       │                           ^^^^^^^^^^^ Memory load
   PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
-  
+
   [1]

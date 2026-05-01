@@ -24,6 +24,19 @@ type ('a, 'sint) t = private {
   height : int;
 }
 
+(** Creates a tree node without rebalancing. The caller is responsible for
+    ensuring the resulting tree is balanced. *)
+val make_node :
+  node:'a ->
+  range:'sint * 'sint ->
+  ?children:('a, 'sint) t * ('a, 'sint) t ->
+  unit ->
+  ('a, 'sint) t
+
+(** Rebalances an existing tree bottom-up, using [merge] to recompute
+    intermediate node values created during rotations. *)
+val rebalance : merge:('a -> 'a -> 'a) -> ('a, 'sint) t -> ('a, 'sint) t
+
 (** Builds a tree given a node, a range, and children, and automatically
     balances it. *)
 val build :

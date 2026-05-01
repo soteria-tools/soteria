@@ -179,8 +179,9 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let node_merge l r = fst (Node.merge ~left:l ~right:r)
 
     let make ~node ~range ?children () =
-      Data.Range_tree.build ~node ~range ~merge:node_merge ?children ()
+      Data.Range_tree.make_node ~node ~range ?children ()
 
+    let rebalance t = Data.Range_tree.rebalance ~merge:node_merge t
     let is_empty t = Node.is_empty t.node
     let not_owned range = make ~node:(NotOwned Totally) ~range ?children:None ()
 
@@ -455,7 +456,10 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
                 frame_inside ~replace_node ~rebuild_parent new_self range
         in
         let*^ root = extend_if_needed t range in
-        frame_inside ~replace_node ~rebuild_parent root range
+        let+ framed, new_root =
+          frame_inside ~replace_node ~rebuild_parent root range
+        in
+        (framed, rebalance new_root)
     end
 
     include Frame_range (struct
