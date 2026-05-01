@@ -1271,8 +1271,7 @@ module Make (State : State_intf.S) = struct
     | AilSif (cond, then_stmt, else_stmt) ->
         let* v = eval_expr cond in
         let*^ v = cast_aggregate_to_bool v in
-        if%sat v then exec_stmt then_stmt [@name "if branch"]
-        else exec_stmt else_stmt [@name "else branch"]
+        if%sat v then exec_stmt then_stmt else exec_stmt else_stmt
     | AilSwhile (cond, stmt, _loopid) ->
         let rec loop () =
           let* cond_v = eval_expr cond in

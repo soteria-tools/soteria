@@ -360,7 +360,6 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     end) =
     struct
       open M.Syntax
-      open Logs.Import
 
       let rec depth t =
         match t.children with
@@ -451,7 +450,6 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
                 let*^ new_self = with_children t ~left ~right in
                 frame_inside ~replace_node ~rebuild_parent new_self range
         in
-        [%l.info "LENGTH OF THE TREE: %d" (depth t)];
         let*^ root = extend_if_needed t range in
         frame_inside ~replace_node ~rebuild_parent root range
     end
