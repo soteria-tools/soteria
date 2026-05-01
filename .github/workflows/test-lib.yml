@@ -27,6 +27,7 @@ jobs:
       - name: Write minimal test project
         run: |
           SIMPLE_SMT_URL=$(grep -oP '(?<="simple_smt\.~dev" ")[^"]+' soteria/soteria.opam)
+          SOTERIA_PATH="$GITHUB_WORKSPACE/soteria"
 
           mkdir -p tmp
           cat > tmp/dune-project << EOF
@@ -35,7 +36,7 @@ jobs:
 
           (pin
            (package (name soteria))
-           (url "file://../soteria"))
+           (url "file://$SOTERIA_PATH"))
 
           (pin
            (package (name simple_smt))
