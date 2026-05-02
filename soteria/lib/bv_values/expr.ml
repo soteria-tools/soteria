@@ -65,27 +65,27 @@ module Subst = struct
         (v :: vs, s)
 
   and apply_bound ~missing_var s vs sv =
-    (* [max_var_ind] is the index of the freshest semantic variable used in
+    (* [max_var_ind] returns the index of the freshest semantic variable used in
        [sv], which we use to create new fresh variables for the existential. *)
+    let max_var_ind sv init =
+      Svalue.iter_vars sv
+      |> IterLabels.fold ~init ~f:(fun curr (var, _) ->
+          let var = Var.to_int var in
+          if var > curr then var else curr)
+    in
     let max_var_ind, s =
-      let incr_var_ind sv init =
-        Svalue.iter_vars sv
-        |> IterLabels.fold ~init ~f:(fun curr (var, _) ->
-            let var = Var.to_int var in
-            if var > curr then var else curr)
-      in
       Svalue.iter_vars sv
       |> Iter.filter (fun var -> not @@ List.mem var vs)
       |> IterLabels.fold ~init:(0, s) ~f:(fun (curr, s) (var, ty) ->
           let syn_var = mk_var var ty in
           match Raw_map.find_opt syn_var s with
-          | Some sv -> (incr_var_ind sv curr, s)
+          | Some sv -> (max_var_ind sv curr, s)
           | None ->
               (* We call [missing_var] here to ensure that our fresh variables
                  do not clash with other unknown variables and then update [s]
                  so that [missing_var] is only called once. *)
               let sv = missing_var var ty in
-              (incr_var_ind sv curr, Raw_map.add syn_var sv s))
+              (max_var_ind sv curr, Raw_map.add syn_var sv s))
     in
     (* [subst_with_fresh] is the new substitution which extends [s] by binding
        each variable in [vs] to a fresh semantic variable. [fresh_vs] is a list
