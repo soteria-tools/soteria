@@ -20,6 +20,7 @@ depends: [
   "ocamlformat" {with-dev-setup & = "0.28.1"}
   "js_of_ocaml"
   "js_of_ocaml-ppx"
+  "gen_js_api"
   "ppx_deriving"
   "promise_jsoo"
   "vscode"

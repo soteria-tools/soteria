@@ -39,6 +39,8 @@
   simple_smt
   iter
   patricia-tree
+  (cmdliner
+   (>= 2.0.0))
   (ppx_expect
    (>= 0.17.0))
   (ppx_blob
@@ -53,6 +55,7 @@
    (>= 0.5.0))
   (grace
    (>= 0.3.0))
+  zarith
   (odoc :with-doc)
   (mdx :with-test)
   (alcotest :with-test)
@@ -95,14 +98,19 @@
   cerberus-lib
   zarith
   cmdliner
+  iter
+  tsort
+  (progress
+   (>= 0.5.0))
   ppx_deriving
+  (ppx_subliner
+   (>= 0.2.1))
   fmt
+  dune-site
   (linol
    (= 0.10))
   (linol-eio
    (= 0.10))
-  (ppx_subliner
-   (>= 0.2.1))
   (odoc :with-doc)
   (alcotest :with-test)
   (yojson
@@ -139,6 +147,7 @@
     (= 0.28.1)))
   js_of_ocaml
   js_of_ocaml-ppx
+  gen_js_api
   ppx_deriving
   promise_jsoo
   vscode
@@ -160,14 +169,16 @@
   dune-site
   zarith
   patricia-tree
-  ppx_deriving
   cmdliner
-  fmt
-  unionFind
-  name_matcher_parser
-  charon
+  iter
+  ppx_deriving
   (ppx_subliner
    (>= 0.2.1))
+  (ppx_mixins
+   (>= 0.2.0))
+  fmt
+  unionFind
+  charon
   ppx_deriving_hash
   (odoc :with-doc)
   (alcotest :with-test)

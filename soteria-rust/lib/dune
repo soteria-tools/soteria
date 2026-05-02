@@ -9,10 +9,7 @@
   dune-site
   fmt
   fmt.tty
-  grace
-  grace.ansi_renderer
   iter
-  simple_smt
   soteria
   str
   patricia-tree

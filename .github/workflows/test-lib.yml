@@ -1,0 +1,63 @@
+name: Test soteria as library
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  merge_group:
+    types: [checks_requested]
+  workflow_dispatch:
+
+jobs:
+  test-soteria-as-lib:
+    name: Test soteria as library
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout soteria
+        uses: actions/checkout@v4
+        with:
+          path: soteria
+
+      - name: Setup dune
+        uses: ocaml-dune/setup-dune@v1
+        with:
+          steps: "install-dune enable-pkg"
+
+      - name: Write minimal test project
+        run: |
+          SIMPLE_SMT_URL=$(grep -oP '(?<="simple_smt\.~dev" ")[^"]+' soteria/soteria.opam)
+          SOTERIA_PATH="$GITHUB_WORKSPACE/soteria"
+
+          mkdir -p tmp
+          cat > tmp/dune-project << EOF
+          (lang dune 3.14)
+          (name soteria_test)
+
+          (pin
+           (package (name soteria))
+           (url "file://$SOTERIA_PATH"))
+
+          (pin
+           (package (name simple_smt))
+           (url "$SIMPLE_SMT_URL"))
+
+          (package
+           (name soteria_test)
+           (allow_empty)
+           (depends soteria))
+          EOF
+
+          cat > tmp/dune << 'EOF'
+          (executable
+           (name main)
+           (libraries soteria))
+          EOF
+
+          cat > tmp/main.ml << 'EOF'
+          let () = ()
+          EOF
+
+      - name: Lock dependencies and build
+        working-directory: tmp
+        run: dune pkg lock && dune build --display short
