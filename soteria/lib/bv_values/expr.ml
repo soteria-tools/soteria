@@ -53,45 +53,8 @@ module Subst = struct
             let vs, s = apply_list ~missing_var s vs in
             (Eval.eval_nop nop vs, s)
         | Exists (vs, sv) ->
-            (* [max_var_ind] is the index of the last semantic variable, which
-               we use to create new fresh variables for the existential. *)
-            let max_var_ind =
-              Raw_map.fold
-                (fun _ binding curr ->
-                  iter_vars binding
-                  |> IterLabels.fold ~init:curr ~f:(fun curr (var, _) ->
-                      let var = Var.to_int var in
-                      if var > curr then var else curr))
-                s 0
-            in
-            (* [subst_with_fresh] is the new substitution which extends [s] by
-               binding each variable in [vs] to a fresh semantic variable.
-               [fresh_vs] is a list with all the freshly created variables.
-               [old_bindings] is a list of pairs [(syn_var, sem_var_opt)] where
-               [sem_var_opt] is an optional variable: if [sem_var_opt] holds a
-               value [sem_var], then the binding [(syn_var, sem_var)] existed in
-               the original substitution and must be reverted at the end. *)
-            let _, subst_with_fresh, fresh_vs, old_bindings =
-              ListLabels.fold_left vs
-                ~init:(max_var_ind + 1, s, [], [])
-                ~f:(fun (curr_var_ind, s, vs, bs) (var, ty) ->
-                  let new_var = Var.of_int curr_var_ind in
-                  let syn_var, sem_var = (mk_var var ty, mk_var new_var ty) in
-                  let bs = (syn_var, Raw_map.find_opt syn_var s) :: bs in
-                  let s = Raw_map.add syn_var sem_var s in
-                  (curr_var_ind + 1, s, (new_var, ty) :: vs, bs))
-            in
-            (* Actually perform substitution *)
-            let sv, subst_with_fresh = apply ~missing_var subst_with_fresh sv in
-            (* Revert the dummy bindings *)
-            let subst_after_pass =
-              ListLabels.fold_left old_bindings ~init:subst_with_fresh
-                ~f:(fun s -> function
-                | syn_var, None -> Raw_map.remove syn_var s
-                | syn_var, Some sem_var -> Raw_map.add syn_var sem_var s)
-            in
-            (* We bind the existential to the semantic variables [fresh_vs] *)
-            (Svalue.Bool.mk_exists fresh_vs sv, subst_after_pass))
+            let (vs, sv), s = apply_bound ~missing_var s vs sv in
+            (Svalue.Bool.mk_exists vs sv, s))
 
   and apply_list ~missing_var s vs =
     match vs with
@@ -100,6 +63,46 @@ module Subst = struct
         let v, s = apply ~missing_var s v in
         let vs, s = apply_list ~missing_var s vs in
         (v :: vs, s)
+
+  and apply_bound ~missing_var s vs sv =
+    (* [max_var_ind] is the index of the last semantic variable, which we use to
+       create new fresh variables for the existential. *)
+    let max_var_ind =
+      Raw_map.fold
+        (fun _ binding curr ->
+          iter_vars binding
+          |> IterLabels.fold ~init:curr ~f:(fun curr (var, _) ->
+              let var = Var.to_int var in
+              if var > curr then var else curr))
+        s 0
+    in
+    (* [subst_with_fresh] is the new substitution which extends [s] by binding
+       each variable in [vs] to a fresh semantic variable. [fresh_vs] is a list
+       with all the freshly created variables. [old_bindings] is a list of pairs
+       [(syn_var, sem_var_opt)] where [sem_var_opt] is an optional variable: if
+       [sem_var_opt] holds a value [sem_var], then the binding [(syn_var,
+       sem_var)] existed in the original substitution and must be reverted at
+       the end. *)
+    let _, subst_with_fresh, fresh_vs, old_bindings =
+      ListLabels.fold_left vs
+        ~init:(max_var_ind + 1, s, [], [])
+        ~f:(fun (curr_var_ind, s, vs, bs) (var, ty) ->
+          let new_var = Var.of_int curr_var_ind in
+          let syn_var, sem_var = (mk_var var ty, mk_var new_var ty) in
+          let bs = (syn_var, Raw_map.find_opt syn_var s) :: bs in
+          let s = Raw_map.add syn_var sem_var s in
+          (curr_var_ind + 1, s, (new_var, ty) :: vs, bs))
+    in
+    (* Actually perform substitution *)
+    let sv, subst_with_fresh = apply ~missing_var subst_with_fresh sv in
+    (* Revert the dummy bindings *)
+    let subst_after_pass =
+      ListLabels.fold_left old_bindings ~init:subst_with_fresh
+        ~f:(fun s -> function
+        | syn_var, None -> Raw_map.remove syn_var s
+        | syn_var, Some sem_var -> Raw_map.add syn_var sem_var s)
+    in
+    ((fresh_vs, sv), subst_after_pass)
 
   let is_known (s : t) (e : Svalue.t) : bool =
     let exception Not_covered in
