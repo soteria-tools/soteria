@@ -1,3 +1,43 @@
+(** This file handles stubbing functions in Rust. There are actually three types
+    of functions we need to handle: intrinsics, externs, and stubbed
+    user-functions.
+
+    {2 Intrinsics}
+
+    Intrinsics are compiler magic and have no Rust implementation but do have a
+    definition; they are matched by name alone. These are handled in the
+    [Intrinsics] module. They may change with Rust versions, so we have a tool
+    to generate the interface and wrappers for these functions. To run it:
+    [soteria-rust/scripts/stubs.py --intrinsics]. Their implementation then goes
+    in [intrinsics/impl.ml].
+
+    {2 Externs}
+
+    Extern functions don't exist in Rust and don't even have a stable
+    definition; they are instead defined by user code in [extern] blocks. For
+    instance, the way code interacts with the Rust allocator is via extern
+    functions. These are also matched by name, but don't have generated
+    wrappers, as there is no way of getting their definition (since it
+    technically depends on how the project is linked). These are grouped per
+    category in the [extern] folder.
+
+    {2 Stubs}
+
+    Finally, we also allow stubbing user-defined functions that do exist in Rust
+    code already. This is done either when the function doesn't compile
+    succesfully to ULLBC (due to our frontend), or for performance reasons when
+    we can write the function in OCaml and get better performance. For instance,
+    we stub [f64::is_infinite] to instead use the SMT-lib [fp.isInfinite],
+    rather than doing bit-operations.
+
+    We have a tool to generate the interface and wrappers for stubs, when we can
+    find the definition. This tool should be used to stub new functions; to use
+    it, first modify the [stubs.json] file to specify the function you want to
+    stub (there is a [stubs.schema.json] for information on how the JSON file is
+    structured). Then, run [soteria-rust/scripts/stubs.py --stubs], which will
+    generate the OCaml interface and wrapper; the implementation can then be
+    written in [<category>/impl.ml]. *)
+
 open Charon
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 module SMap = Map.Make (String)
