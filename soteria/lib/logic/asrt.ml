@@ -119,9 +119,13 @@ module M (Symex : Symex.Base) = struct
 
   (** [Execute_partial] contains the utilities to perform {e production} and
       {e consumption} of a given assertion, using the consumer and producer of
-      the parameter [B]. In the presence of strictly-pure non-consumable atoms,
-      consumption will proceed by creating a new consumable atom via the
-      utilities of the parameter [Syn]. *)
+      the parameter [B]. Unlike {!Execute}, the [consume] function may complete
+      by learning {e partial substitutions}, i.e. substitutions that do not
+      cover all free variables of the assertion being consumed.
+
+      To achieve so, if there are leftover pure assertions to consume for which
+      the free variables cannot be easily learned, we replace them by
+      existential (bound) variables and send that query to the solver. *)
   module Execute_partial
       (B : Base)
       (Syn : sig
@@ -136,9 +140,10 @@ module M (Symex : Symex.Base) = struct
     include Execute (B)
 
     (** Given a list of expressions for which [is_consumable] returns false,
-        returns a single expression for which [is_consumable] returns true. *)
-    let make_consumable (subst : Value.Expr.Subst.t) (exprs : Value.Expr.t list)
-        : Value.Expr.t =
+        returns the conjunction of all expressions where all free variables not
+        covered by [subst] are bound by an existential quantifier. *)
+    let bind_free_vars_to_exists (subst : Value.Expr.Subst.t)
+        (exprs : Value.Expr.t list) : Value.Expr.t =
       let free_vars =
         let r = ref [] in
         ListLabels.iter exprs ~f:(fun expr ->
@@ -149,8 +154,6 @@ module M (Symex : Symex.Base) = struct
             |> ignore);
         !r
       in
-      (* We take the conjunction of all the expressions and existentially
-         quantify all variables that are not covered by the substitution. *)
       Syn.mk_exists free_vars @@ Syn.conj exprs
 
     let consume (asrt : B.syn t) (st : B.t option) :
@@ -172,13 +175,13 @@ module M (Symex : Symex.Base) = struct
                   Value.Expr.Subst.pp subst (pp B.pp_syn) remaining];
                 Consumer.lfail @@ Value.of_bool false)
         in
-        let consumable = make_consumable subst exprs in
+        let exists = bind_free_vars_to_exists subst exprs in
         [%l.debug
           "@[<v>@[No consumable atom left given my current substitution with \
            only pure atoms remaining. About to consume asrt:@ %a@]@ @[in \
            subst:@ %a@]@]"
-          Value.Expr.pp consumable Value.Expr.Subst.pp subst];
-        let+ () = Consumer.consume_pure consumable in
+          Value.Expr.pp exists Value.Expr.Subst.pp subst];
+        let+ () = Consumer.consume_pure exists in
         st
   end
 end
