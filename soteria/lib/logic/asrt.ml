@@ -137,9 +137,9 @@ module M (Symex : Symex.Base) = struct
   struct
     include Execute (B)
 
-    (** Given a list of expressions for which [is_consumable] returns false,
-        returns the conjunction of all expressions where all free variables not
-        covered by [subst] are bound by an existential quantifier. *)
+    (** Given a list of expressions, returns the conjunction of all expressions
+        where all free variables not covered by [subst] are bound by an
+        existential quantifier. *)
     let bind_free_vars_to_exists (subst : Value.Expr.Subst.t)
         (exprs : Value.Expr.t list) : Value.Expr.t =
       let free_vars =
