@@ -130,11 +130,9 @@ module M (Symex : Symex.Base) = struct
       (B : Base)
       (Syn : sig
         val mk_exists :
-          (Var.t * 'a Symex.Value.ty) list ->
-          Symex.Value.Expr.t ->
-          Symex.Value.Expr.t
+          (Var.t * 'a Value.ty) list -> Value.Expr.t -> Value.Expr.t
 
-        val conj : Symex.Value.Expr.t list -> Symex.Value.Expr.t
+        val conj : Value.Expr.t list -> Value.Expr.t
       end) =
   struct
     include Execute (B)

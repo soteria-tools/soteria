@@ -65,12 +65,12 @@ module Subst = struct
         (v :: vs, s)
 
   and apply_bound ~missing_var s vs sv =
-    (* [max_var_ind] is the index of the last semantic variable used in [sv],
-       which we use to create new fresh variables for the existential. *)
+    (* [max_var_ind] is the index of the freshest semantic variable used in
+       [sv], which we use to create new fresh variables for the existential. *)
     let max_var_ind, s =
-      let incr_var_ind sv curr =
+      let incr_var_ind sv init =
         Svalue.iter_vars sv
-        |> IterLabels.fold ~init:curr ~f:(fun curr (var, _) ->
+        |> IterLabels.fold ~init ~f:(fun curr (var, _) ->
             let var = Var.to_int var in
             if var > curr then var else curr)
       in
