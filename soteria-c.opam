@@ -21,11 +21,15 @@ depends: [
   "cerberus-lib"
   "zarith"
   "cmdliner"
+  "iter"
+  "tsort"
+  "progress" {>= "0.5.0"}
   "ppx_deriving"
+  "ppx_subliner" {>= "0.2.1"}
   "fmt"
+  "dune-site"
   "linol" {= "0.10"}
   "linol-eio" {= "0.10"}
-  "ppx_subliner" {>= "0.2.1"}
   "odoc" {with-doc}
   "alcotest" {with-test}
   "yojson" {< "3.0"}

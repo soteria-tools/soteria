@@ -1,0 +1,118 @@
+{
+  "$schema": "./stubs.schema.json",
+  "_comment": [
+    "This file contains patterns for functions that should be stubbed out.",
+    "Each entry is either a plain pattern string, or an object { \"pattern\": \"...\", \"extra_args\": [...] }.",
+    "The valid extra_args values are:",
+    "- sig: the function signature",
+    "- types: the generic types the function is instantiated with",
+    "- fun_exec: the function to call Rust functions"
+  ],
+  "System": [
+    {
+      "pattern": "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
+      "extra_args": ["fun_exec"]
+    },
+    {
+      "pattern": "std::sys::random::hashmap_random_keys",
+      "extra_args": ["sig"]
+    },
+    {
+      "pattern": "std::thread::functions::available_parallelism",
+      "extra_args": ["sig"]
+    },
+    "std::sys::time::unix::Instant::now",
+    { "pattern": "std::env::_var", "extra_args": ["sig"] }
+  ],
+  "Optim": {
+    "features": ["f16", "f128", "const_index"],
+    "patterns": [
+      "alloc::alloc::Global::alloc_impl",
+      "core::f16::_::is_finite",
+      "core::f16::_::is_infinite",
+      "core::f16::_::is_nan",
+      "core::f16::_::is_normal",
+      "core::f16::_::is_sign_negative",
+      "core::f16::_::is_sign_positive",
+      "core::f16::_::is_subnormal",
+      "core::f32::_::is_finite",
+      "core::f32::_::is_infinite",
+      "core::f32::_::is_nan",
+      "core::f32::_::is_normal",
+      "core::f32::_::is_sign_negative",
+      "core::f32::_::is_sign_positive",
+      "core::f32::_::is_subnormal",
+      "core::f64::_::is_finite",
+      "core::f64::_::is_infinite",
+      "core::f64::_::is_nan",
+      "core::f64::_::is_normal",
+      "core::f64::_::is_sign_negative",
+      "core::f64::_::is_sign_positive",
+      "core::f64::_::is_subnormal",
+      "core::f128::_::is_finite",
+      "core::f128::_::is_infinite",
+      "core::f128::_::is_nan",
+      "core::f128::_::is_normal",
+      "core::f128::_::is_sign_negative",
+      "core::f128::_::is_sign_positive",
+      "core::f128::_::is_subnormal",
+      "std::io::stdio::_eprint",
+      "std::io::stdio::_print",
+      {
+        "pattern": "std::io::_print",
+        "alias": "std::io::stdio::_print"
+      },
+      "std::io::stdio::print_to",
+      "std::io::stdio::print_to_buffer_if_capture_used",
+      "alloc::raw_vec::handle_error",
+      {
+        "pattern": "std::rt::begin_panic",
+        "alias": "std::panicking::begin_panic"
+      },
+      "core::panicking::panic",
+      "core::panicking::panic_fmt",
+      "core::panicking::panic_nounwind_fmt",
+      "core::panicking::assert_failed_inner",
+      "alloc::alloc::handle_alloc_error",
+      "core::option::unwrap_failed",
+      "core::result::unwrap_failed",
+      "std::panicking::begin_panic"
+    ]
+  },
+  "Fixme": {
+    "patterns": [
+      {
+        "pattern": "std::panicking::catch_unwind::cleanup",
+        "include": "std::panicking::catch_unwind"
+      },
+      "core::ptr::drop_in_place"
+    ]
+  },
+  "Soteria_lib": {
+    "_comment": [
+      "It would be nice if we didn't need these, and instead could implement Soteria",
+      "builtins as extern functions. Unfortunately:",
+      " - soteria::assert must be const, because Kani uses it; extern functions can't be const",
+      " - soteria::nondet_bytes must be polymorphic, because it needs to get the validity invariant",
+      "   for the type it's instantiated with; extern functions can't be polymorphic"
+    ],
+    "patterns": [
+      "soteria::assert",
+      "soteria::assume",
+      { "pattern": "soteria::nondet_bytes", "extra_args": ["types"] },
+      "soteria::panic",
+      "kani::assert",
+      "kani::assume",
+      "kani::panic"
+    ]
+  },
+  "Tokio": {
+    "dependencies": [
+      "tokio = { version = \"1.50.0\", features = [\"rt\", \"rt-multi-thread\", \"time\"] }"
+    ],
+    "code": "let _ = tokio::runtime::Runtime::new();",
+    "patterns": [
+      { "pattern": "tokio::util::rand::RngSeed::new", "extra_args": ["sig"] }
+    ]
+  }
+}

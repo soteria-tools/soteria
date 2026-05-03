@@ -77,7 +77,7 @@ Test kani::assert
   
   => Running assert::override_asserteq_macro...
   error: assert::override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
-  error: Panic: core::panicking::assert_failed_inner in assert::override_asserteq_macro
+  error: Failed assertion in assert::override_asserteq_macro
       ┌─ $RUSTLIB/library/core/src/panicking.rs:394:5
   394 │      assert_failed_inner(kind, &left, &right, args)
       │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

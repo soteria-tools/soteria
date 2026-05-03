@@ -7,6 +7,21 @@ open Typed
 open Typed.Infix
 open Typed.Syntax
 
+type fn =
+  | Alloc of { zeroed : bool }
+  | Dealloc
+  | Realloc
+  | NoAllocShimIsUnstable
+
+let fn_pats =
+  [
+    ("__rust_alloc", Alloc { zeroed = false });
+    ("__rust_alloc_zeroed", Alloc { zeroed = true });
+    ("__rust_dealloc", Dealloc);
+    ("__rust_no_alloc_shim_is_unstable_v2", NoAllocShimIsUnstable);
+    ("__rust_realloc", Realloc);
+  ]
+
 module M (StateM : State.StateM.S) = struct
   open StateM
   open Syntax
@@ -68,4 +83,10 @@ module M (StateM : State.StateM.S) = struct
     Ptr new_ptr
 
   let no_alloc_shim_is_unstable _ = ok (Tuple [])
+
+  let[@inline] fn_to_stub = function
+    | Alloc { zeroed } -> alloc ~zeroed
+    | Dealloc -> dealloc
+    | NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
+    | Realloc -> realloc
 end

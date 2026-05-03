@@ -1,10 +1,10 @@
-(** This file was generated with [scripts/intrinsics.py] -- do not edit it
-    manually, instead modify the script and re-run it. *)
+(** This file was generated with [scripts/stubs.py] -- do not edit it manually,
+    instead modify the script and re-run it. *)
 
 open Rust_val
 open Common
 
-module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
+module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
   open Syntax
 
@@ -23,12 +23,13 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
   let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
 
-  include Intrinsics_impl.M (StateM)
+  include Impl.M (StateM)
 
-  let eval_fun name fun_exec (generics : Charon.Types.generic_args) args =
+  let[@inline] eval_fun name fun_exec (generics : Charon.Types.generic_args)
+      args =
     match (name, generics.types, generics.const_generics, args) with
     | "abort", [], [], [] ->
-        let+ () = abort in
+        let+ () = abort () in
         Tuple []
     | "add_with_overflow", [ t ], [], [ x; y ] -> add_with_overflow ~t ~x ~y
     | "aggregate_raw_ptr", [ p; d; m ], [], [ data; meta ] ->
@@ -64,9 +65,9 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "atomic_cxchg", [ t ], [ ord_succ; ord_fail ], [ dst; old; src ] ->
         let dst = as_ptr dst in
         atomic_cxchg ~t ~ord_succ ~ord_fail ~dst ~old ~src
-    | "atomic_cxchgweak", [ t ], [ ord_succ; ord_fail ], [ _dst; _old; _src ] ->
-        let _dst = as_ptr _dst in
-        atomic_cxchgweak ~t ~ord_succ ~ord_fail ~_dst ~_old ~_src
+    | "atomic_cxchgweak", [ t ], [ ord_succ; ord_fail ], [ dst; old; src ] ->
+        let dst = as_ptr dst in
+        atomic_cxchgweak ~t ~ord_succ ~ord_fail ~dst ~old ~src
     | "atomic_fence", [], [ ord ], [] ->
         let+ () = atomic_fence ~ord in
         Tuple []
@@ -115,22 +116,22 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "bitreverse", [ t ], [], [ x ] -> bitreverse ~t ~x
     | "black_box", [ t ], [], [ dummy ] -> black_box ~t ~dummy
     | "breakpoint", [], [], [] ->
-        let+ () = breakpoint in
+        let+ () = breakpoint () in
         Tuple []
     | "bswap", [ t ], [], [ x ] -> bswap ~t ~x
     | "caller_location", [], [], [] ->
-        let+ ret = caller_location in
+        let+ ret = caller_location () in
         Ptr ret
     | ( "carrying_mul_add",
         [ t; u ],
         [],
         [ multiplier; multiplicand; addend; carry ] ) ->
         carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry
-    | "catch_unwind", [], [], [ _try_fn; _data; _catch_fn ] ->
-        let _try_fn = as_ptr _try_fn in
-        let _data = as_ptr _data in
-        let _catch_fn = as_ptr _catch_fn in
-        let+ ret = catch_unwind fun_exec ~_try_fn ~_data ~_catch_fn in
+    | "catch_unwind", [], [], [ try_fn; data; catch_fn ] ->
+        let try_fn = as_ptr try_fn in
+        let data = as_ptr data in
+        let catch_fn = as_ptr catch_fn in
+        let+ ret = catch_unwind ~fun_exec ~try_fn ~data ~catch_fn in
         Int ret
     | "ceilf128", [], [], [ x ] ->
         let x = as_base_f F128 x in
@@ -149,7 +150,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
         let+ ret = ceilf64 ~x in
         Float ret
     | "cold_path", [], [], [] ->
-        let+ () = cold_path in
+        let+ () = cold_path () in
         Tuple []
     | "compare_bytes", [], [], [ left; right; bytes ] ->
         let left = as_ptr left in
@@ -157,17 +158,17 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
         let bytes = as_base_i Usize bytes in
         let+ ret = compare_bytes ~left ~right ~bytes in
         Int ret
-    | "const_deallocate", [], [], [ _ptr; _size; _align ] ->
-        let _ptr = as_ptr _ptr in
-        let _size = as_base_i Usize _size in
-        let _align = as_base_i Usize _align in
-        let+ () = const_deallocate ~_ptr ~_size ~_align in
+    | "const_deallocate", [], [], [ ptr; size; align ] ->
+        let ptr = as_ptr ptr in
+        let size = as_base_i Usize size in
+        let align = as_base_i Usize align in
+        let+ () = const_deallocate ~ptr ~size ~align in
         Tuple []
     | ( "const_eval_select",
-        [ arg; f; g; ret ],
+        [ t_arg; f; g; ret ],
         [],
-        [ _arg; _called_in_const; _called_at_rt ] ) ->
-        const_eval_select ~arg ~f ~g ~ret ~_arg ~_called_in_const ~_called_at_rt
+        [ arg; called_in_const; called_at_rt ] ) ->
+        const_eval_select ~t_arg ~f ~g ~ret ~arg ~called_in_const ~called_at_rt
     | "const_make_global", [], [], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = const_make_global ~ptr in
@@ -372,12 +373,8 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "frem_fast", [ t ], [], [ a; b ] -> frem_fast ~t ~a ~b
     | "fsub_algebraic", [ t ], [], [ a; b ] -> fsub_algebraic ~t ~a ~b
     | "fsub_fast", [ t ], [], [ a; b ] -> fsub_fast ~t ~a ~b
-    | "is_val_statically_known", [ t ], [], [ _arg ] ->
-        let+ ret = is_val_statically_known ~t ~_arg in
-        Int (Typed.BitVec.of_bool ret)
-    | "likely", [], [], [ b ] ->
-        let b = Typed.BitVec.to_bool (as_base TBool b) in
-        let+ ret = likely ~b in
+    | "is_val_statically_known", [ t ], [], [ arg ] ->
+        let+ ret = is_val_statically_known ~t ~arg in
         Int (Typed.BitVec.of_bool ret)
     | "log10f128", [], [], [ x ] ->
         let x = as_base_f F128 x in
@@ -525,7 +522,7 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
         let+ ret = offset_of ~t ~variant ~field in
         Int ret
     | "overflow_checks", [], [], [] ->
-        let+ ret = overflow_checks in
+        let+ ret = overflow_checks () in
         Int (Typed.BitVec.of_bool ret)
     | "powf128", [], [], [ a; x ] ->
         let a = as_base_f F128 a in
@@ -730,14 +727,14 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "type_name", [ t ], [], [] ->
         let+ ret = type_name ~t in
         Ptr ret
-    | "type_of", [], [], [ _id ] -> type_of ~_id
+    | "type_of", [], [], [ id ] -> type_of ~id
     | "typed_swap_nonoverlapping", [ t ], [], [ x; y ] ->
         let x = as_ptr x in
         let y = as_ptr y in
         let+ () = typed_swap_nonoverlapping ~t ~x ~y in
         Tuple []
     | "ub_checks", [], [], [] ->
-        let+ ret = ub_checks in
+        let+ ret = ub_checks () in
         Int (Typed.BitVec.of_bool ret)
     | "unaligned_volatile_load", [ t ], [], [ src ] ->
         let src = as_ptr src in
@@ -759,12 +756,8 @@ module M (StateM : State.StateM.S) : Intrinsics_intf.M(StateM).S = struct
     | "unchecked_shl", [ t; u ], [], [ x; y ] -> unchecked_shl ~t ~u ~x ~y
     | "unchecked_shr", [ t; u ], [], [ x; y ] -> unchecked_shr ~t ~u ~x ~y
     | "unchecked_sub", [ t ], [], [ x; y ] -> unchecked_sub ~t ~x ~y
-    | "unlikely", [], [], [ b ] ->
-        let b = Typed.BitVec.to_bool (as_base TBool b) in
-        let+ ret = unlikely ~b in
-        Int (Typed.BitVec.of_bool ret)
     | "unreachable", [], [], [] ->
-        let+ () = unreachable in
+        let+ () = unreachable () in
         Tuple []
     | "va_arg", [ t ], [], [ ap ] ->
         let ap = as_ptr ap in

@@ -12,15 +12,12 @@
   cerberus-lib.mem.concrete
   cerberus-lib.backend_common
   zarith
-  simple_smt
   linol
   linol-eio
   eio_main
   yojson
   tsort
   progress
-  grace
-  grace.ansi_renderer
   dune-site)
  (flags
   :standard
