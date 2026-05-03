@@ -109,13 +109,14 @@ module type S = sig
     val push_generics :
       params:Types.generic_params ->
       args:Types.generic_args ->
-      ('a, 'env) t ->
+      (Types.generic_args -> ('a, 'env) t) ->
       ('a, 'env) t
 
     val fill_params : Types.generic_params -> (Types.generic_args, 'a) monad
     val subst_ty : Types.ty -> (Types.ty, 'env) t
     val subst_tys : Types.ty list -> (Types.ty list, 'env) t
     val subst_tref : Types.trait_ref -> (Types.trait_ref, 'env) t
+    val subst_generic_args : Types.generic_args -> (Types.generic_args, 'env) t
 
     val subst_constant_expr :
       Types.constant_expr -> (Types.constant_expr, 'env) t
@@ -418,13 +419,19 @@ module Make (State : State_intf.S) :
     | Missing f -> Missing f
 
   module Poly = struct
-    let[@inline] push_generics ~params ~args (x : ('a, 'env) t) : ('a, 'env) t =
-     fun env state -> Poly.push_generics ~params ~args (x env state)
+    let[@inline] push_generics ~params ~args
+        (x : Types.generic_args -> ('a, 'env) t) : ('a, 'env) t =
+     fun env state ->
+      Poly.push_generics ~params ~args (fun args -> x args env state)
 
     let[@inline] fill_params params = lift_symex (Poly.fill_params params)
     let[@inline] subst_ty ty = lift_symex (Poly.subst_ty ty)
     let[@inline] subst_tys tys = lift_symex (Poly.subst_tys tys)
     let[@inline] subst_tref tref = lift_symex (Poly.subst_tref tref)
+
+    let[@inline] subst_generic_args generic_args =
+      lift_symex (Poly.subst_generic_args generic_args)
+
     let[@inline] subst_constant_expr c = lift_symex (Poly.subst_constant_expr c)
   end
 

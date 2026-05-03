@@ -155,6 +155,13 @@ let mk_array_ty ty len : Types.ty =
         kind = CLiteral (VScalar (UnsignedScalar (Usize, len)));
       } )
 
+let mk_tuple_ty types : Types.ty =
+  TAdt
+    {
+      id = TTuple;
+      generics = { types; regions = []; const_generics = []; trait_refs = [] };
+    }
+
 (** The type [*const ()] *)
 let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)
 

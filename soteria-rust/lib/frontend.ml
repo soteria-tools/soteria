@@ -35,14 +35,9 @@ module Lib = struct
       | None, root :: _ -> root
       | None, [] -> plugin_err "Couldn't find plugin directory")
 
-  type t = Std | Soteria | Kani | Miri
+  type t = Std | Soteria | Kani
 
-  let name = function
-    | Std -> "std"
-    | Soteria -> "soteria"
-    | Kani -> "kani"
-    | Miri -> "miri"
-
+  let name = function Std -> "std" | Soteria -> "soteria" | Kani -> "kani"
   let path lib = Lazy.force root / name lib
 
   (** [exec_cargo ?env lib args] executes the command [cargo <args>] for the
@@ -159,9 +154,7 @@ let kani () =
     ()
 
 let miri () =
-  let@ _ = Lib.with_compiled Miri in
-  Cmd.make ~features:[ "miri" ]
-    ~rustc:[ "--extern"; "miristd"; "--edition"; "2021" ]
+  Cmd.make ~features:[ "miri" ] ~rustc:[ "--edition"; "2021" ]
     ~entry_points:[ Name "miri_start" ] ()
 
 (** Filters a name, according to the current {!Config.t.filter} and
@@ -335,4 +328,4 @@ let compile_all_plugins () =
     (fun l ->
       Lib.clean l;
       Lib.compile l)
-    [ Std; Kani; Miri ]
+    [ Soteria; Std; Kani ]

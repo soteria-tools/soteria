@@ -476,14 +476,12 @@ module Make (StateImpl : State.S) = struct
           let fundef = Crate.get_fun fn.id in
           let+ inputs =
             Poly.push_generics ~params:fundef.generics ~args:fn.generics
-            @@ Poly.subst_tys fundef.signature.inputs
+            @@ fun _ -> Poly.subst_tys fundef.signature.inputs
           in
           [%l.info
             "Resolved function call to %a" Crate.pp_name fundef.item_meta.name];
-          let fun_maybe_stubbed =
-            Std_funs.std_fun_eval fundef fn.generics exec_fun
-          in
-          (fun_maybe_stubbed, Some fundef.item_meta.name, inputs)
+          let exec = exec_real_fun fundef fn.generics in
+          (exec, Some fundef.item_meta.name, inputs)
     in
     function
     (* Handle builtins separately *)
@@ -517,7 +515,7 @@ module Make (StateImpl : State.S) = struct
         let fundef = Crate.get_fun decl.init in
         [%l.info
           "Resolved global init call to %a" Crate.pp_name fundef.item_meta.name];
-        let global_fn = Std_funs.std_fun_eval fundef glob.generics exec_fun in
+        let global_fn = exec_real_fun fundef glob.generics in
         (* First we allocate the global and store it in the State *)
         let* ptr =
           State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
@@ -903,7 +901,11 @@ module Make (StateImpl : State.S) = struct
     (* Shallow init box -- get the pointer and transmute it to a box *)
     | ShallowInitBox (ptr, _) ->
         let+ ptr = eval_operand ptr in
-        Std_funs.Std._mk_box ptr
+        let non_null = Tuple [ ptr ] in
+        let phantom_data = Tuple [] in
+        let unique = Tuple [ non_null; phantom_data ] in
+        let allocator = Tuple [] in
+        Tuple [ unique; allocator ]
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) -> (
         let* _, meta = resolve_place place in
@@ -1083,15 +1085,15 @@ module Make (StateImpl : State.S) = struct
            contains polymorphic types. *)
         let drop_fn : Fun_kind.t option =
           match trait_ref.kind with
-          | TraitImpl impl_ref ->
+          | TraitImpl impl_ref -> (
               let impl = Crate.get_trait_impl impl_ref in
               (* The Drop trait will only have the drop function *)
               let _, drop_ref = List.hd impl.methods in
               let drop = Crate.get_fun drop_ref.binder_value.id in
-              if Option.is_some drop.body then
-                (* TODO: i don't think we should read [binder_value] here *)
-                Some (Real drop_ref.binder_value)
-              else None
+              match drop.body with
+              (* TODO: i don't think we should read [binder_value] here *)
+              | Body _ -> Some (Real drop_ref.binder_value)
+              | _ -> None)
           | _ -> None
         in
         match drop_fn with
@@ -1128,32 +1130,46 @@ module Make (StateImpl : State.S) = struct
   and exec_real_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args)
       args =
     let name = fundef.item_meta.name in
-    let* body =
-      match fundef.body with
-      | None -> Fmt.kstr not_impl "Function %a is opaque" Crate.pp_name name
-      | Some body -> ok body
-    in
     let name_str = Fmt.to_to_string Crate.pp_name name in
     let@ () = StateM.with_frame name_str in
-    Soteria.Stats.As_ctx.incr StatKeys.function_calls;
-    let@@ () = Poly.push_generics ~params:fundef.generics ~args:generics in
-    let@@ () = with_env ~env:Store.empty in
-    let@ () = with_loc ~loc:fundef.item_meta.span.data in
-    let* protected = alloc_stack body.locals args in
-    let starting_block = List.hd body.body in
-    let exec_block = exec_block ~body starting_block in
-    unwind_with exec_block
-      ~f:(fun value ->
-        let protected_address =
-          match (fundef.signature.output, value) with
-          | (TRef (RStatic, _, _) | TRawPtr _), Ptr (addr, _) -> Some addr
-          | _ -> None
-        in
-        let+ () = dealloc_stack ?protected_address protected in
-        value)
-      ~fe:(fun err ->
-        let* () = dealloc_stack protected in
-        error_raw err)
+    let@ generics = Poly.push_generics ~params:fundef.generics ~args:generics in
+    let () = Soteria.Stats.As_ctx.incr StatKeys.function_calls in
+    match fundef.body with
+    | Intrinsic { name; arg_names = _ } ->
+        Std_funs.eval_intrinsic fundef name generics exec_fun args
+    | Extern name -> Std_funs.eval_extern name args
+    | Body body -> (
+        match Std_funs.eval_stub fundef exec_fun generics with
+        | Some stub -> stub args
+        | None ->
+            let@ () = with_loc ~loc:fundef.item_meta.span.data in
+            let@@ () = with_env ~env:Store.empty in
+            let* protected = alloc_stack body.locals args in
+            let starting_block = List.hd body.body in
+            let exec_block = exec_block ~body starting_block in
+            unwind_with exec_block
+              ~f:(fun value ->
+                (* HACK: this is.. really bad. We need proper deallocation of
+                   locals, and figure out why we need this in the first
+                   place. *)
+                let protected_address =
+                  match (fundef.signature.output, value) with
+                  | (TRef (RStatic, _, _) | TRawPtr _), Ptr (addr, _) ->
+                      Some addr
+                  | _ -> None
+                in
+                let+ () = dealloc_stack ?protected_address protected in
+                value)
+              ~fe:(fun err ->
+                let* () = dealloc_stack protected in
+                error_raw err))
+    | Opaque | TraitMethodWithoutDefault | Missing | Error _ -> (
+        match Std_funs.eval_stub fundef exec_fun generics with
+        | Some stub -> stub args
+        | None ->
+            Fmt.kstr not_impl "Can't execute function %a: %a" Crate.pp_name name
+              (GAst.pp_body Fmt.nop) fundef.body)
+    | TargetDispatch _ -> failwith "Target dispatch not supported"
 
   and exec_fun (fn : Fun_kind.t) =
     match fn with
@@ -1165,6 +1181,11 @@ module Make (StateImpl : State.S) = struct
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
+    (* HACK: we protect this function with a bind to make sure no effects are
+       raised before the handlers are correctly setup. For a way of fixing this,
+       see
+       https://github.com/soteria-tools/soteria/commit/23bdf7aecf6e80752f98129865ce6d5892d41a2f *)
+    let* () = ok () in
     let@@ () =
       with_extra_call_trace ~name:fundef.item_meta.name
         ~loc:fundef.item_meta.span.data ~msg:"Entry point"
