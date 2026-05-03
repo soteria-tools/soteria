@@ -1,19 +1,39 @@
 module Config_ = Config
 open Soteria_rust_lib
 module Config = Config_
-module State = State.Tree_state.Make (Tree_borrows.Concrete.Make)
-module Logic = Soteria.Logic.Make (Rustsymex)
-module Execute = Logic.Asrt.Execute (State)
 
-let state_to_syn state = State.to_syn @@ State.of_opt state
+module State = struct
+  include State.Tree_state.Make (Tree_borrows.Concrete.Make)
 
-let state_iter_vars syn =
-  let ins, outs = State.ins_outs syn in
-  let iter_vars_l l = Iter.of_list l |> Iter.flat_map Svalue.iter_vars in
-  let ins, outs = (iter_vars_l ins, iter_vars_l outs) in
-  (* In our state representation, locations are single variables *)
-  assert (Iter.length ins == 1);
-  (Iter.head_exn ins, outs)
+  let iter_vars syn =
+    let ins, outs = ins_outs syn in
+    let iter_vars_l l = Iter.of_list l |> Iter.flat_map Svalue.iter_vars in
+    let ins, outs = (iter_vars_l ins, iter_vars_l outs) in
+    (* In our state representation, locations are single variables *)
+    assert (Iter.length ins = 1);
+    (Iter.head_exn ins, outs)
+end
+
+module Logic = struct
+  include Soteria.Logic.Make (Rustsymex)
+
+  module Asrt = struct
+    include Asrt
+
+    module Execute =
+      Execute_partial
+        (State)
+        (struct
+          let mk_exists binders body =
+            let binders =
+              List.map (fun (var, ty) -> (var, Typed.untype_type ty)) binders
+            in
+            Svalue.Bool.mk_exists binders body
+
+          let conj = Svalue.Bool.conj
+        end)
+  end
+end
 
 module Ret = struct
   type t = State.Sptr.t Rust_val.t
@@ -29,6 +49,48 @@ module Ret = struct
   let iter_vars (ret : syn) f =
     Rust_val.exprs_syn State.Sptr.exprs_syn ret
     |> List.iter (fun sv -> Svalue.iter_vars sv f)
+
+  let learn_eq (syn : syn) (ret : t) :
+      (unit, State.syn list) Rustsymex.Consumer.t =
+    let module Rustsymex = struct
+      (* FIXME: This should probably be fixed in the signature of Rustsymex *)
+      include Rustsymex
+      module Value = Typed
+    end in
+    let module Learn_eq = Rust_val.Learn_eq (Rustsymex) in
+    let open Rustsymex.Consumer.Syntax in
+    let learn_eq_ptr syn sptr =
+      let+ (), _ =
+        Sptr.DecayMap.SM.Consumer.run_with_state ~state:State.empty
+        @@ State.Sptr.learn_eq syn sptr
+      in
+      ()
+    in
+    Learn_eq.learn_eq learn_eq_ptr syn ret
+
+  (* TODO: This should be part of rust_val.ml *)
+  let rec sem_eq (ret1 : t) (ret2 : t) =
+    let fold_sem_eq sem_eq rets1 rets2 =
+      if List.length rets1 <> List.length rets2 then Typed.v_false
+      else
+        ListLabels.fold_left2 rets1 rets2 ~init:Typed.v_true
+          ~f:(fun sv ret1 ret2 -> Typed.and_ sv @@ sem_eq ret1 ret2)
+    in
+    match (ret1, ret2) with
+    | Int v1, Int v2 -> Typed.sem_eq v1 v2
+    | Float v1, Float v2 -> Typed.sem_eq v1 v2
+    (* TODO: Sptr needs sem_eq *)
+    | Enum (disc1, rets1), Enum (disc2, rets2) ->
+        let same_disc = Typed.sem_eq disc1 disc2 in
+        Typed.and_ same_disc @@ fold_sem_eq sem_eq rets1 rets2
+    | Tuple rets1, Tuple rets2 -> fold_sem_eq sem_eq rets1 rets2
+    | Union rets1, Union rets2 ->
+        let sem_eq (ret1, sv1) (ret2, sv2) =
+          Typed.and_ (sem_eq ret1 ret2) (Typed.sem_eq sv1 sv2)
+        in
+        fold_sem_eq sem_eq rets1 rets2
+    (* TODO: What to do with PolyVal? *)
+    | _, _ -> Typed.v_false
 end
 
 type t = { ret : Ret.syn; asrt : State.syn Logic.Asrt.t }
@@ -39,28 +101,23 @@ let pp fmt = function
         (Logic.Asrt.pp State.pp_syn)
         asrt
 
-let nondet ty =
-  let process =
-    let module Encoder = Value_codec.Encoder (State.Sptr) in
-    State.SM.Result.run_with_state ~state:State.empty
-      (State.SM.lift @@ Encoder.nondet_valid ty)
-  in
-  Rustsymex.run_needs_stats ~mode:UX process
+let nondet (ty : Charon.Types.ty) : t list =
+  let module Encoder = Value_codec.Encoder (State.Sptr) in
+  Rustsymex.run_needs_stats ~mode:UX @@ Encoder.nondet_valid ty
   |> ListLabels.map ~f:(function
-    | Soteria.Symex.Compo_res.Ok (ret, st), pcs ->
+    | Soteria.Symex.Compo_res.Ok ret, pcs ->
         let ret = Ret.to_syn ret in
-        let spatial = state_to_syn st in
-        let pure = List.map Typed.untyped pcs in
-        let asrt = Logic.Asrt.make ~spatial ~pure in
+        let pure = List.map Typed.Expr.of_value pcs in
+        let asrt = Logic.Asrt.make ~spatial:[] ~pure in
         { ret; asrt }
     | _ -> failwith "Expected Ok in nondet")
 
-let make (ret : Ret.t) (st : State.SM.st)
-    (pcs : Rustsymex.Value.sbool Typed.t list) : (t, [> `MemoryLeak ]) result =
+let make (ret : Ret.t) (st : State.SM.st) (pcs : Typed.sbool Typed.t list) :
+    (t, [> `MemoryLeak ]) result =
   let open Result.Syntax in
   let ret = Ret.to_syn ret in
   let+ asrt =
-    let spatial = state_to_syn st in
+    let spatial = State.to_syn @@ State.of_opt st in
     let module Var_graph = Soteria.Soteria_std.Graph.Make_in_place (Svalue.Var) in
     let module Var_hashset = Var_graph.Node_set in
     let reachable =
@@ -70,18 +127,17 @@ let make (ret : Ret.t) (st : State.SM.st)
       ListLabels.iter pcs ~f:(fun v ->
           match Typed.kind v with
           | Binop (Eq, el, er) ->
-              let module Value = Soteria.Bv_values.Svalue in
               (* We make the second iterator peristent to avoid going over the
                  structure too many times if there are many *)
-              let r_iter = Iter.persistent_lazy @@ Value.iter_vars er in
-              let product = Iter.product (Value.iter_vars el) r_iter in
+              let r_iter = Iter.persistent_lazy @@ Svalue.iter_vars er in
+              let product = Iter.product (Svalue.iter_vars el) r_iter in
               product (fun ((x, _), (y, _)) ->
                   Var_graph.add_double_edge graph x y)
           | _ -> ());
       (* For each block $l -> B in the post state, we add a single-sided arrow
          from the variable in $l to all variables contained in B. *)
       ListLabels.iter spatial ~f:(fun syn ->
-          let (var, _), outs = state_iter_vars syn in
+          let (var, _), outs = State.iter_vars syn in
           Iter.iter (fun (y, _) -> Var_graph.add_edge graph var y) outs);
       (* We mark all variables from the return value as reachable *)
       let init_reachable = Var_hashset.with_capacity 0 in
@@ -94,7 +150,7 @@ let make (ret : Ret.t) (st : State.SM.st)
     let+ spatial =
       let reachable, unreachable =
         ListLabels.partition spatial ~f:(fun syn ->
-            let (var, _), _ = state_iter_vars syn in
+            let (var, _), _ = State.iter_vars syn in
             Var_hashset.mem reachable var)
       in
       if (Config.get ()).ignore_leaks then Result.ok reachable
@@ -115,8 +171,33 @@ let make (ret : Ret.t) (st : State.SM.st)
           | _ -> Result.ok reachable)
     in
     let pure =
-      (* TODO: Filter pcs by removing useless inequalities *)
-      List.map Typed.untyped pcs
+      let locs =
+        ListLabels.fold_left spatial ~init:[] ~f:(fun acc syn ->
+            let ins, _ = State.ins_outs syn in
+            assert (List.length ins = 1);
+            List.hd ins :: acc)
+      in
+      let filtered =
+        ListLabels.filter_map pcs ~f:(fun v ->
+            let sv = Typed.Expr.of_value v in
+            (* Ignore assertions with unreachable variables *)
+            if
+              not
+              @@ Iter.exists (fun (var, _) -> Var_hashset.mem reachable var)
+              @@ Svalue.iter_vars sv
+            then None
+            else
+              match Typed.kind v with
+              | Nop (Distinct, l) ->
+                  (* Replace all distincts with a single distinct assertion *)
+                  if List.for_all (fun sv -> List.mem sv locs) l then None
+                  else Some sv
+              | _ -> Some sv)
+      in
+      let distinct = Svalue.Bool.distinct locs in
+      match Svalue.Bool.to_bool distinct with
+      | Some true -> filtered
+      | _ -> distinct :: filtered
     in
     Logic.Asrt.make ~spatial ~pure
   in
@@ -126,27 +207,14 @@ let produce (summ : t) (st : State.SM.st) :
     (Ret.t * State.SM.st) Rustsymex.Producer.t =
   let open Rustsymex.Producer.Syntax in
   let* ret = Rustsymex.Producer.apply_subst Ret.subst summ.ret in
-  let* st = Execute.produce summ.asrt st in
+  let* st = Logic.Asrt.Execute.produce summ.asrt st in
   Rustsymex.Producer.return (ret, st)
 
 let consume (summ : t) (ret : Ret.t) (st : State.SM.st) :
     (State.SM.st, State.syn list) Rustsymex.Consumer.t =
-  (* FIXME: This should probably be fixed in the signature of Rustsymex *)
-  let module Rustsymex = struct
-    include Rustsymex
-    module Value = Typed
-  end in
-  let module Learn_eq = Rust_val.Learn_eq (Rustsymex) in
   let open Rustsymex.Consumer.Syntax in
-  let learn_eq_ptr syn sptr =
-    let+ (), _ =
-      Sptr.DecayMap.SM.Consumer.run_with_state ~state:None
-      @@ State.Sptr.learn_eq syn sptr
-    in
-    ()
-  in
-  let* () = Learn_eq.learn_eq learn_eq_ptr summ.ret ret in
-  Execute.consume summ.asrt st
+  let* () = Ret.learn_eq summ.ret ret in
+  Logic.Asrt.Execute.consume summ.asrt st
 
 let run_producer (subst : Typed.Expr.Subst.t) (summ : t) :
     (Ret.t * Typed.Expr.Subst.t) State.SM.t =
@@ -157,11 +225,10 @@ let run_producer (subst : Typed.Expr.Subst.t) (summ : t) :
 let implies s_pre s_post =
   let process =
     let open Rustsymex.Syntax in
-    let* () = Rustsymex.return () in
     (* Make sure we run the producer inside the symex *)
-    let* (ret, subst), st =
-      run_producer Typed.Expr.Subst.empty s_pre State.empty
-    in
+    let* () = Rustsymex.return () in
+    let subst = Typed.Expr.Subst.empty in
+    let* (ret, _), st = run_producer subst s_pre State.empty in
     Rustsymex.Consumer.run ~subst @@ consume s_post ret st
   in
   match Rustsymex.run_needs_stats ~mode:OX process with
@@ -236,12 +303,9 @@ module Context = struct
     in
     let opt_cons = function
       | None -> Some ([], [], [ summ ])
-      | Some (visited, unvisited, staged) -> (
-          try
-            filter unvisited |> fun unvisited ->
-            filter visited |> fun visited ->
-            Some (visited, unvisited, summ :: staged)
-          with SummaryAlreadyExists -> Some (visited, unvisited, staged))
+      | Some (visited, unvisited, staged) as summs -> (
+          try Some (filter visited, filter unvisited, summ :: filter staged)
+          with SummaryAlreadyExists -> summs)
     in
     M.update id opt_cons ctx
 

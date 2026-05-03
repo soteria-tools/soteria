@@ -1,5 +1,5 @@
 open Soteria_rust_lib
-module State = State.Tree_state.Make (Tree_borrows.Concrete.Make)
+module State = Summary.State
 open State.SM.Syntax
 open Soteria.Symex
 open Charon
@@ -103,6 +103,15 @@ let branch drops wrapper =
   let drop_ptr ty ptr () =
     Symok.exec_drop drops ty ~none:(Symok.free ptr) ~some:(State.SM.return ptr)
   in
+  let lift_nondet (ty : Charon.Types.ty) (ret : Summary.Ret.t) :
+      Summary.Ret.t State.SM.t =
+    let* nondet =
+      let module Encoder = Value_codec.Encoder (State.Sptr) in
+      Encoder.nondet_valid ty |> State.SM.lift |> Symok.unwrap
+    in
+    let+ () = State.SM.assume @@ [ Summary.Ret.sem_eq nondet ret ] in
+    nondet
+  in
   (* For each reference, we create an execution branch that returns the stored
      value and drops everything else, including the return value *)
   let rec get_branches ?(acc = []) ?(drops = State.SM.return ()) = function
@@ -110,7 +119,8 @@ let branch drops wrapper =
         (* Case 0: we learn from the return value, the rest has been dropped *)
         let branch () =
           let* () = drops in
-          State.SM.Result.ok (ty, ret)
+          let* nondet = lift_nondet ty ret in
+          State.SM.Result.ok (ty, nondet)
         in
         branch :: acc
     | (ty, ptr) :: arg_ptrs ->
@@ -124,7 +134,8 @@ let branch drops wrapper =
               ~f:(fun (st : unit State.SM.t) (ty, ptr) ->
                 State.SM.bind st (drop_ptr ty ptr))
           in
-          State.SM.Result.ok (ty, ret)
+          let* nondet = lift_nondet ty ret in
+          State.SM.Result.ok (ty, nondet)
         in
         (* Case 2: we learn nothing from this reference, so we drop it *)
         let drops =
