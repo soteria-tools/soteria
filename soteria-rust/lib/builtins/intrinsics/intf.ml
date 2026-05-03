@@ -1,5 +1,5 @@
-(** This file was generated with [scripts/intrinsics.py] -- do not edit it
-    manually, instead modify the script and re-run it. *)
+(** This file was generated with [scripts/stubs.py] -- do not edit it manually,
+    instead modify the script and re-run it. *)
 
 open Charon
 open Common
@@ -28,7 +28,7 @@ module M (StateM : State.StateM.S) = struct
            process will probably terminate with a signal like `SIGABRT`, `SIGILL`, `SIGTRAP`, `SIGSEGV` or
            `SIGBUS`.  The precise behavior is not guaranteed and not stable.
         ]} *)
-    val abort : unit ret
+    val abort : unit -> unit ret
 
     (** {@markdown[
           Performs checked integer addition.
@@ -196,9 +196,9 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       ord_succ:Types.constant_expr ->
       ord_fail:Types.constant_expr ->
-      _dst:full_ptr ->
-      _old:rust_val ->
-      _src:rust_val ->
+      dst:full_ptr ->
+      old:rust_val ->
+      src:rust_val ->
       rust_val ret
 
     (** {@markdown[
@@ -463,7 +463,7 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val breakpoint : unit ret
+    val breakpoint : unit -> unit ret
 
     (** {@markdown[
           Reverses the bytes in an integer type `T`.
@@ -489,7 +489,7 @@ module M (StateM : State.StateM.S) = struct
 
            Consider using [`core::panic::Location::caller`] instead.
         ]} *)
-    val caller_location : full_ptr ret
+    val caller_location : unit -> full_ptr ret
 
     (** {@markdown[
           Performs full-width multiplication and addition with a carry:
@@ -536,10 +536,10 @@ module M (StateM : State.StateM.S) = struct
            version of this intrinsic, `std::panic::catch_unwind`.
         ]} *)
     val catch_unwind :
-      fun_exec ->
-      _try_fn:full_ptr ->
-      _data:full_ptr ->
-      _catch_fn:full_ptr ->
+      fun_exec:fun_exec ->
+      try_fn:full_ptr ->
+      data:full_ptr ->
+      catch_fn:full_ptr ->
       Typed.T.sint Typed.t ret
 
     (** {@markdown[
@@ -584,7 +584,7 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val cold_path : unit ret
+    val cold_path : unit -> unit ret
 
     (** {@markdown[
           Lexicographically compare `[left, left + bytes)` and `[right, right + bytes)`
@@ -621,9 +621,9 @@ module M (StateM : State.StateM.S) = struct
            - If the `ptr` is pointing to a local variable, this intrinsic doesn't deallocate it.
         ]} *)
     val const_deallocate :
-      _ptr:full_ptr ->
-      _size:[< Typed.T.sint ] Typed.t ->
-      _align:[< Typed.T.sint ] Typed.t ->
+      ptr:full_ptr ->
+      size:[< Typed.T.sint ] Typed.t ->
+      align:[< Typed.T.sint ] Typed.t ->
       unit ret
 
     (** {@markdown[
@@ -681,13 +681,13 @@ module M (StateM : State.StateM.S) = struct
            otherwise, that principle should not be violated.
         ]} *)
     val const_eval_select :
-      arg:Types.ty ->
+      t_arg:Types.ty ->
       f:Types.ty ->
       g:Types.ty ->
       ret:Types.ty ->
-      _arg:rust_val ->
-      _called_in_const:rust_val ->
-      _called_at_rt:rust_val ->
+      arg:rust_val ->
+      called_in_const:rust_val ->
+      called_at_rt:rust_val ->
       rust_val ret
 
     (** {@markdown[
@@ -1413,22 +1413,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val is_val_statically_known :
-      t:Types.ty -> _arg:rust_val -> Typed.T.sbool Typed.t ret
-
-    (** {@markdown[
-          Hints to the compiler that branch condition is likely to be true.
-           Returns the value passed to it.
-
-           Any use other than with `if` statements will probably not have an effect.
-
-           Note that, unlike most intrinsics, this is safe to call;
-           it does not require an `unsafe` block.
-           Therefore, implementations must not require the user to uphold
-           any safety invariants.
-
-           This intrinsic does not have a stable counterpart.
-        ]} *)
-    val likely : b:[< Typed.T.sbool ] Typed.t -> Typed.T.sbool Typed.t ret
+      t:Types.ty -> arg:rust_val -> Typed.T.sbool Typed.t ret
 
     (** {@markdown[
           Returns the base 10 logarithm of an `f128`.
@@ -1962,7 +1947,7 @@ module M (StateM : State.StateM.S) = struct
            assertions are enabled whenever the *user crate* has overflow checks enabled. However if the
            user has overflow checks disabled, the checks will still get optimized out.
         ]} *)
-    val overflow_checks : Typed.T.sbool Typed.t ret
+    val overflow_checks : unit -> Typed.T.sbool Typed.t ret
 
     (** {@markdown[
           Raises an `f128` to an `f128` power.
@@ -2882,7 +2867,7 @@ module M (StateM : State.StateM.S) = struct
            It can only be called at compile time, the backends do
            not implement it.
         ]} *)
-    val type_of : _id:rust_val -> rust_val ret
+    val type_of : id:rust_val -> rust_val ret
 
     (** {@markdown[
           Non-overlapping *typed* swap of a single value.
@@ -2924,7 +2909,7 @@ module M (StateM : State.StateM.S) = struct
            user has UB checks disabled, the checks will still get optimized out. This intrinsic is
            primarily used by [`crate::ub_checks::assert_unsafe_precondition`].
         ]} *)
-    val ub_checks : Typed.T.sbool Typed.t ret
+    val ub_checks : unit -> Typed.T.sbool Typed.t ret
 
     (** {@markdown[
           Performs a volatile load from the `src` pointer
@@ -3056,21 +3041,6 @@ module M (StateM : State.StateM.S) = struct
     val unchecked_sub : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
 
     (** {@markdown[
-          Hints to the compiler that branch condition is likely to be false.
-           Returns the value passed to it.
-
-           Any use other than with `if` statements will probably not have an effect.
-
-           Note that, unlike most intrinsics, this is safe to call;
-           it does not require an `unsafe` block.
-           Therefore, implementations must not require the user to uphold
-           any safety invariants.
-
-           This intrinsic does not have a stable counterpart.
-        ]} *)
-    val unlikely : b:[< Typed.T.sbool ] Typed.t -> Typed.T.sbool Typed.t ret
-
-    (** {@markdown[
           Informs the optimizer that this point in the code is not reachable,
            enabling further optimizations.
 
@@ -3080,7 +3050,7 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`core::hint::unreachable_unchecked`].
         ]} *)
-    val unreachable : unit ret
+    val unreachable : unit -> unit ret
 
     (** {@markdown[
           Loads an argument of type `T` from the `va_list` `ap` and increment the

@@ -90,27 +90,38 @@ module Poly = struct
   open Substitute
   open Syntax
 
-  let push_generics ~params ~args (x : 'a t) : 'a t =
+  (** Executes the given computation with an updated polymorphic environment,
+      with some generic arguments for some parameters; the arguments must match
+      the parameters. The callback receives the substituted generic arguments
+      given the current substitution. *)
+  let push_generics ~params ~args (x : Types.generic_args -> 'a t) : 'a t =
+   fun st ->
     (* We only push generics in polymorphic mode, as otherwise we may get some
        wrong generics in monomorphic code we want to ignore. *)
-    if (Config.get ()).polymorphic then (
-      let* ({ subst; _ } as st) = get_state () in
-      let args' = generic_args_substitute subst args in
-      [%l.debug "Pushing generics %a" Crate.pp_generic_args args'];
+    let open MonoSymex.Syntax in
+    if not (Config.get ()).polymorphic then x args st
+    else
+      let prev_subst = st.subst in
+      let args' = generic_args_substitute prev_subst args in
+      [%l.debug
+        "Pushing generics@.\t- Para: %a@.\t- Args: %a" Crate.pp_generic_params
+          params Crate.pp_generic_args args'];
       let subst =
         subst_at_binder_zero (make_sb_subst_from_generics params args' Self)
       in
-      with_state ~state:{ st with subst } x)
-    else x
+      let+ res, st = x args' { st with subst } in
+      (res, { st with subst = prev_subst })
 
   let subst f x =
-    let+ { subst; _ } = get_state () in
-    f subst x
+    let* { subst; _ } = get_state () in
+    try return (f subst x)
+    with Not_found -> give_up "Substitution failed -- wrong poly environment"
 
   let subst_ty = subst ty_substitute
   let subst_tys = subst (fun subst -> List.map (ty_substitute subst))
   let subst_tref = subst trait_ref_substitute
   let subst_constant_expr = subst st_substitute_visitor#visit_constant_expr
+  let subst_generic_args = subst generic_args_substitute
 
   let fill_params params =
     subst generic_args_substitute @@ bound_identity_args params

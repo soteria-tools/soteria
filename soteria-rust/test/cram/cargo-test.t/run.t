@@ -7,7 +7,7 @@ Test running Soteria Rust on a crate with tests
   
   => Running tests::test_nok...
   error: tests::test_nok: found issues in <time>, errors in 1 branch (out of 1)
-  error: Panic: core::panicking::assert_failed_inner in tests::test_nok
+  error: Failed assertion in tests::test_nok
       ┌─ $RUSTLIB/library/core/src/panicking.rs:394:5
   394 │      assert_failed_inner(kind, &left, &right, args)
       │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -23,7 +23,7 @@ Test running Soteria Rust on a crate with tests
   
   => Running tests::test_nok_expected...
   error: tests::test_nok_expected: found issues in <time>, errors in 1 branch (out of 1)
-  error: Panic: core::panicking::assert_failed_inner in tests::test_nok_expected
+  error: Failed assertion in tests::test_nok_expected
       ┌─ $RUSTLIB/library/core/src/panicking.rs:394:5
   394 │      assert_failed_inner(kind, &left, &right, args)
       │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -46,7 +46,7 @@ Test running Soteria Rust on a crate with tests
   
   => Running soteria::tests::test_nok...
   error: soteria::tests::test_nok: found issues in <time>, errors in 1 branch (out of 2)
-  error: Panic: core::panicking::assert_failed_inner in soteria::tests::test_nok
+  error: Failed assertion in soteria::tests::test_nok
       ┌─ $RUSTLIB/library/core/src/panicking.rs:394:5
   394 │      assert_failed_inner(kind, &left, &right, args)
       │      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
