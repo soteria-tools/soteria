@@ -116,12 +116,12 @@ Context field usage
     let _ = with_my_super_int_sym
   
     let with_my_int f =
-      SM.Result.map_missing (with_my_int_sym f) lift_my_int_fixes
+      SM.Result.map_missing lift_my_int_fixes (with_my_int_sym f)
   
     let _ = with_my_int
   
     let with_my_super_int f =
-      SM.Result.map_missing (with_my_super_int_sym f) lift_my_super_int_fixes
+      SM.Result.map_missing lift_my_super_int_fixes (with_my_super_int_sym f)
   
     let _ = with_my_super_int
   

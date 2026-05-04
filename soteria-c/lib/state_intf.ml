@@ -1,7 +1,6 @@
 open Typed
 open T
 module Agv = Aggregate_val
-module Compo_res = Soteria.Symex.Compo_res
 
 type syn =
   | Ser_heap of (Expr.t * Block.syn)

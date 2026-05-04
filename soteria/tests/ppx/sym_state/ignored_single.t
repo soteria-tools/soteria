@@ -49,8 +49,8 @@ Ignored field usage
       let st = of_opt st_opt in
       let { steps } = st in
       let**^ res, steps = f steps in
-      let+ () = SM.set_state (to_opt { steps }) in
-      Soteria.Symex.Compo_res.Ok res
+      let* () = SM.set_state (to_opt { steps }) in
+      SM.Result.ok res
   
     let _ = with_steps_sym
     let produce (syn : syn) () = match syn with _ -> .

@@ -1,5 +1,6 @@
 open Soteria
-open Soteria_std.Syntaxes.FunctionWrap
+open Soteria_std
+open Syntaxes.FunctionWrap
 open Soteria_linear_semantic
 module Lang = Soteria_linear_ast.Lang
 module Parser = Soteria_linear_parser.Parse
@@ -11,7 +12,7 @@ let pp_results ft v =
     let open Fmt.Dump in
     list
     @@ pair
-         (Symex.Compo_res.pp
+         (Compo_res.pp
             ~ok:(pair Interp.S_val.ppa (Fmt.Dump.option State.pp))
             ~err:
               (Soteria.Symex.Or_gave_up.pp

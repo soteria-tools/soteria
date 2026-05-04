@@ -207,7 +207,7 @@ module M (StateM : State.StateM.S) = struct
       let* ptr = State.alloc_untyped ~zeroed:true ~size ~align () in
       State.load ptr ty
     in
-    Soteria.Symex.Compo_res.is_ok res
+    Compo_res.is_ok res
 
   let parse_string ptr =
     let str_ty : Charon.Types.ty =
@@ -215,20 +215,17 @@ module M (StateM : State.StateM.S) = struct
         { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
     in
     let+ str_data = State.load ptr str_ty in
-    let map_opt f l = Option.bind l (Monad.OptionM.all f) in
-    match str_data with
-    | Tuple bytes ->
-        Some bytes
-        |> map_opt (function Int b -> Typed.BitVec.to_z b | _ -> None)
-        |> Option.map (fun cs ->
-            let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
-            let str = String.of_seq @@ List.to_seq cs in
-            if
-              String.starts_with ~prefix:"\"" str
-              && String.ends_with ~suffix:"\"" str
-            then
-              let unquoted = String.sub str 1 (String.length str - 2) in
-              try Scanf.unescaped unquoted with _ -> unquoted
-            else str)
-    | _ -> None
+    (match str_data with Tuple bytes -> Some bytes | _ -> None)
+    |> (Option.bind @@ Monad.OptionM.all
+       @@ function Int b -> Typed.BitVec.to_z b | _ -> None)
+    |> Option.map (fun cs ->
+        let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
+        let str = String.of_seq @@ List.to_seq cs in
+        if
+          String.starts_with ~prefix:"\"" str
+          && String.ends_with ~suffix:"\"" str
+        then
+          let unquoted = String.sub str 1 (String.length str - 2) in
+          try Scanf.unescaped unquoted with _ -> unquoted
+        else str)
 end

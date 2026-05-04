@@ -48,9 +48,11 @@ module Make () = struct
   module With_frame (M : Monad.Base) = struct
     let with_frame (name : string) (f : unit -> 'a M.t) : 'a M.t =
       push_frame name;
-      M.map (f ()) (fun r ->
+      M.map
+        (fun r ->
           pop_frame ();
           r)
+        (f ())
   end
 
   let run ~flamegraph f =

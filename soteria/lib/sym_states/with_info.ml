@@ -1,5 +1,4 @@
 open Soteria_std
-open Symex
 
 module Make
     (Symex : Symex.Base)
@@ -49,7 +48,7 @@ struct
     let node, info = lower t in
     let*^ res, node' = f node in
     let+ () = SM.set_state (lift ~info node') in
-    Compo_res.map_missing res (List.map (fun fix -> { node = fix; info }))
+    Compo_res.map_missing (List.map (fun fix -> { node = fix; info })) res
 
   let consume (syn : syn) (st : t option) :
       (t option, syn list) Symex.Consumer.t =

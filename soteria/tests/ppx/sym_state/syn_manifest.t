@@ -88,11 +88,11 @@ Manifest syn type
       let st = of_opt st_opt in
       let { steps; _ } = st in
       let**^ res, steps = f steps in
-      let+ () = SM.set_state (to_opt { st with steps }) in
-      Soteria.Symex.Compo_res.Ok res
+      let* () = SM.set_state (to_opt { st with steps }) in
+      SM.Result.ok res
   
     let _ = with_steps_sym
-    let with_heap f = SM.Result.map_missing (with_heap_sym f) lift_heap_fixes
+    let with_heap f = SM.Result.map_missing lift_heap_fixes (with_heap_sym f)
     let _ = with_heap
   
     let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =

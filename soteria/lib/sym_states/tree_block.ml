@@ -1,4 +1,4 @@
-open Symex
+open Soteria_std
 
 (** A [Split_tree] is a simplified representation of a tree, that has no offset.
     It however indicates, on [Node]s, at what offset the split occurs, relative
@@ -41,15 +41,17 @@ and node_qty = Partially | Totally
     [syn] mustn't store information about the offset or length it applies to, as
     [Tree_block] wraps it into a structure containing this information. *)
 module MemVal (Symex : Symex.Base) = struct
+  module Abstr = Data.Abstr.M (Symex)
+  module S_int = Data.S_int.S (Symex)
+
   module type S = sig
     (** @canonical Data.S_bool.S(Symex).S *)
     module S_bool : Data.S_bool.S(Symex).S
 
-    (** @canonical Data.S_int.S(Symex)(S_bool).Bounded_S *)
-    module S_bounded_int : Data.S_int.S(Symex)(S_bool).Bounded_S
+    module S_int : [%mixins S_int.Bounded_S + Abstr.S_with_syn]
 
     type t
-    type sint := S_bounded_int.t Symex.Value.t
+    type sint := S_int.t
 
     val pp : Format.formatter -> t -> unit
 
@@ -112,9 +114,9 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
   open Symex.Syntax
   open Symex
   open Data.S_bool.Make_syntax (Symex) (MemVal.S_bool)
-  open Data.S_int.Make_syntax (Symex) (MemVal.S_bool) (MemVal.S_bounded_int)
+  open Data.S_int.Make_syntax (Symex) (MemVal.S_int)
 
-  type nonrec sint = MemVal.S_bounded_int.t Symex.Value.t
+  type nonrec sint = MemVal.S_int.t
 
   (* re-export the types to be able to use them easily *)
   type nonrec ('a, 'sint) tree = ('a, 'sint) tree = {
@@ -123,9 +125,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     children : (('a, 'sint) tree * ('a, 'sint) tree) option;
   }
 
-  module Range =
-    Data.S_range.Make (Symex) (MemVal.S_bool) (MemVal.S_bounded_int)
-
+  module Range = Data.S_range.Make (Symex) (MemVal.S_bool) (MemVal.S_int)
   module Split_tree = Split_tree
 
   module Node = struct
@@ -366,8 +366,8 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
 
       val return : 'a -> ('a, 'b, 'c) t
       val lift : 'a Symex.t -> ('a, 'b, 'c) t
-      val bind : ('a, 'b, 'c) t -> ('a -> ('d, 'b, 'c) t) -> ('d, 'b, 'c) t
-      val map : ('a, 'b, 'c) t -> ('a -> 'd) -> ('d, 'b, 'c) t
+      val bind : ('a -> ('d, 'b, 'c) t) -> ('a, 'b, 'c) t -> ('d, 'b, 'c) t
+      val map : ('a -> 'd) -> ('a, 'b, 'c) t -> ('d, 'b, 'c) t
 
       module Syntax : sig
         module Symex_syntax : sig
@@ -384,10 +384,10 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     struct
       open M.Syntax
 
-      let ( let* ) = M.bind
-      let ( let+ ) = M.map
-      let ( let*^ ) x f = M.bind (M.lift x) f
-      let ( let+^ ) x f = M.map (M.lift x) f
+      let ( let* ) x f = M.bind f x
+      let ( let+ ) x f = M.map f x
+      let ( let*^ ) x f = M.bind f (M.lift x)
+      let ( let+^ ) x f = M.map f (M.lift x)
 
       (** [frame_range t ~replace_node ~rebuild_parent range] Extracts from [t]
           the subtree that exactly spans [range]. The [range] must be non-empty.
@@ -480,7 +480,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
       end
 
       let return = Symex.Result.ok
-      let lift x = Symex.map x Compo_res.ok
+      let lift x = Symex.map Compo_res.ok x
     end)
     (* Exposed helpers *)
 
@@ -536,7 +536,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
 
   type t = {
     root : Tree.t;
-    bound : sint option; [@printer Fmt.(option ~none:(any "⊥") Symex.Value.ppa)]
+    bound : sint option; [@printer Fmt.(option ~none:(any "⊥") MemVal.S_int.pp)]
   }
   [@@deriving show { with_path = false }]
 
@@ -555,7 +555,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let () =
       Option.iter
         (fun b ->
-          let range_str = Fmt.str "[%a; ∞[" Symex.Value.ppa b in
+          let range_str = Fmt.str "[%a; ∞[" MemVal.S_int.pp b in
           r := [ (range_str, text "OOB") ])
         t.bound
     in
@@ -570,19 +570,26 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
   (** Logic *)
 
   type syn =
-    | MemVal of { offset : Expr.t; len : Expr.t; v : MemVal.syn }
-    | Bound of Expr.t [@printer fun f v -> Fmt.pf f "Bound(%a)" Expr.pp v]
+    | MemVal of {
+        offset : MemVal.S_int.syn;
+        len : MemVal.S_int.syn;
+        v : MemVal.syn;
+      }
+    | Bound of MemVal.S_int.syn
+        [@printer fun f v -> Fmt.pf f "Bound(%a)" MemVal.S_int.pp_syn v]
   [@@deriving show { with_path = false }]
 
   let ins_outs = function
     | MemVal { offset; len; v } ->
+        let offset = MemVal.S_int.exprs_syn offset in
+        let len = MemVal.S_int.exprs_syn len in
         let mis, mos = MemVal.ins_outs v in
-        (offset :: len :: mis, mos)
-    | Bound b -> ([], [ b ])
+        (offset @ len @ mis, mos)
+    | Bound b -> ([], MemVal.S_int.exprs_syn b)
 
   let lift_fixes ~offset ~len fixes =
-    let offset = Expr.of_value offset in
-    let len = Expr.of_value len in
+    let offset = MemVal.S_int.to_syn offset in
+    let len = MemVal.S_int.to_syn len in
     List.map (fun fix -> MemVal { v = fix; offset; len }) fixes
 
   let lift_miss ~offset ~len symex =
@@ -672,7 +679,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let bound =
       match t.bound with
       | None -> Seq.empty
-      | Some bound -> Seq.return (Bound (Expr.of_value bound))
+      | Some bound -> Seq.return (Bound (MemVal.S_int.to_syn bound))
     in
     let rec serialize_tree (tree : Tree.t) =
       match tree.node with
@@ -685,8 +692,8 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
               let left, right = Option.get tree.children in
               Seq.append (serialize_tree left) (serialize_tree right)
           | Some seq ->
-              let offset = Expr.of_value offset in
-              let len = Expr.of_value len in
+              let offset = MemVal.S_int.to_syn offset in
+              let len = MemVal.S_int.to_syn len in
               Seq.map (fun v -> MemVal { offset; len; v }) seq)
       | NotOwned Partially ->
           let left, right = Option.get tree.children in
@@ -700,16 +707,16 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     match t with
     | None | Some { bound = None; _ } -> miss_no_fix ~reason:"consume_bound" ()
     | Some { bound = Some v; root } ->
-        let+ () = learn_eq bound v in
+        let+ () = MemVal.S_int.learn_eq bound v in
         to_opt { bound = None; root }
 
-  let produce_bound (bound : Expr.t) (st : t option) : t option Symex.Producer.t
-      =
+  let produce_bound (bound : MemVal.S_int.syn) (st : t option) :
+      t option Symex.Producer.t =
     let open Producer in
     let open Producer.Syntax in
     let pb () =
-      let* bound = apply_subst Expr.subst bound in
-      let+^ () = assume [ MemVal.S_bounded_int.is_in_bound bound ] in
+      let* bound = apply_subst MemVal.S_int.subst bound in
+      let+^ () = assume [ MemVal.S_int.is_in_bound bound ] in
       bound
     in
     match st with
@@ -721,16 +728,14 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
         Some { bound = Some bound; root }
     | Some { bound = Some _; _ } -> vanish ()
 
-  let produce_mem_val (offset : Expr.t) (len : Expr.t) (v : MemVal.syn)
-      (t : t option) : t option Producer.t =
+  let produce_mem_val (offset : MemVal.S_int.syn) (len : MemVal.S_int.syn)
+      (v : MemVal.syn) (t : t option) : t option Producer.t =
     let open Producer in
     let open Producer.Syntax in
-    let* offset = apply_subst Expr.subst offset in
-    let* len = apply_subst Expr.subst len in
+    let* offset = apply_subst MemVal.S_int.subst offset in
+    let* len = apply_subst MemVal.S_int.subst len in
     let ((low, high) as range) = Range.of_low_and_size offset len in
-    let*^ () =
-      assume MemVal.S_bounded_int.[ is_in_bound low; is_in_bound high ]
-    in
+    let*^ () = assume MemVal.S_int.[ is_in_bound low; is_in_bound high ] in
     let t =
       match t with
       | Some t -> t
@@ -744,11 +749,11 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let+ root = Tree.produce v range t.root in
     to_opt { t with root }
 
-  let consume_mem_val (offset : Expr.t) (len : Expr.t) v t =
+  let consume_mem_val (offset : MemVal.S_int.syn) (len : MemVal.S_int.syn) v t =
     let open Consumer in
     let open Consumer.Syntax in
-    let* offset = apply_subst Expr.subst offset in
-    let* len = apply_subst Expr.subst len in
+    let* offset = apply_subst MemVal.S_int.subst offset in
+    let* len = apply_subst MemVal.S_int.subst len in
     let ((_, high) as range) = Range.of_low_and_size offset len in
     let* t = lift_res @@ of_opt t in
     let* () =
