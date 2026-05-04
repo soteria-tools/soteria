@@ -260,7 +260,7 @@ let exec_function ~includes ~fuel file_names function_name =
       in
       let@ () = with_function_context linked in
       Ok
-        (Csymex.Result.run ~stats:Handled ~flamegraph:(Dump function_name)
+        (Csymex.Result.run ~stats:Caller ~flamegraph:(Dump function_name)
            ~mode:OX ~fuel symex)
   in
   match result with

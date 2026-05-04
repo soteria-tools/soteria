@@ -17,7 +17,7 @@ let () =
   Soteria.Logs.Config.(set_and_lock (make ~hide_unstable:true ()));
   let _, stats =
     Soteria.Stats.As_ctx.with_ () @@ fun () ->
-    run ~stats:Handled ~mode:UX process
+    run ~stats:Caller ~mode:UX process
   in
   Soteria.Stats.pp Fmt.stdout stats;
   Fmt.pr "@.";

@@ -37,7 +37,7 @@ type 'a effect_handling =
       (** Handle the effect, and dump the information according to the relevant
           configuration. The value is the parameter passed to the feature's dump
           handler. *)
-  | Handled
+  | Caller
       (** The effect is already handled by the caller, nothing needs to be done.
       *)
 
@@ -352,8 +352,9 @@ module type S = sig
         handled outside the function (see {!Stats.As_ctx.with_}) or should be
         handled and ignored by this function (default).
       - [flamegraph] specifies whether a flamegraph should be created from this
-        symbolic process or if it should be ignored (default). The value is the
-        name of the top-level frame in the flamegraph.
+        symbolic process or if it should be ignored (default). The value passed
+        in the {{!effect_handling.Dump}Dump} variant is the name of the
+        top-level frame in the flamegraph.
 
       @raise Symex.Gave_up
         if the symbolic process calls [give_up] and the mode is
@@ -1000,18 +1001,18 @@ module Make (Sol : Solver.Mutable_incremental) :
    * let manage (module M : Bookkeeping) = function
    *   | Ignore -> M.with_ignored ()
    *   | Dump arg -> M.with_dumped arg
-   *   | Handled -> fun f -> f ()
+   *   | Caller -> fun f -> f ()
    *)
 
   let manage_flamegraph = function
     | Ignore -> Flamegraph.with_ignored ()
     | Dump name -> Flamegraph.with_dumped name
-    | Handled -> fun f -> f ()
+    | Caller -> fun f -> f ()
 
   let manage_stats = function
     | Ignore -> Stats.As_ctx.with_ignored ()
     | Dump name -> Stats.As_ctx.with_dumped name
-    | Handled -> fun f -> f ()
+    | Caller -> fun f -> f ()
 
   let setup ?(flamegraph = Ignore) ?(stats = Ignore)
       ?(fuel = Fuel_gauge.infinite) ~mode f =

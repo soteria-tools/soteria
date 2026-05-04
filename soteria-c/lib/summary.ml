@@ -264,7 +264,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
           in
           let is_manifest =
             try
-              let result = Csymex.run ~stats:Handled ~mode:OX process in
+              let result = Csymex.run ~stats:Caller ~mode:OX process in
               [%l.debug
                 "%a"
                   Fmt.(
