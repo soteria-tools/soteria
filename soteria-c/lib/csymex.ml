@@ -59,24 +59,18 @@ let not_impl msg =
 let of_opt = function Some x -> return x | None -> vanish ()
 let of_opt_not_impl ~msg = function Some x -> return x | None -> not_impl msg
 
-let run ?fuel ~mode process =
+let run ?stats ?flamegraph ?fuel ~mode process =
   run_with_state ~state:Cerb_location.unknown process
   |> SYMEX.map fst
-  |> SYMEX.run ?fuel ~mode
-
-let run_needs_stats ?fuel ~mode process =
-  run_with_state ~state:Cerb_location.unknown process
-  |> SYMEX.map fst
-  |> SYMEX.run_needs_stats ?fuel ~mode
+  |> SYMEX.run ?stats ?flamegraph ?fuel ~mode
 
 module Result = struct
   include CSYMEX.Result
 
-  let run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode
-      (process : ('a, 'b, 'c) CSYMEX.Result.t) =
+  let run ?stats ?flamegraph ?fuel ?fail_fast ~mode process =
     CSYMEX.run_with_state ~state:Cerb_location.unknown process
     |> SYMEX.map fst
-    |> SYMEX.Result.run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode
+    |> SYMEX.Result.run ?stats ?flamegraph ?fuel ?fail_fast ~mode
 
   let error_with_loc ?msg err =
     let open Syntax in

@@ -258,13 +258,10 @@ let exec_function ~includes ~fuel file_names function_name =
         [%l.debug "@[<2>Initial state:@ %a@]" (Fmt.Dump.option SState.pp) state];
         Wpst_interp.exec_fun entry_point ~args:[]
       in
-      let flamegraph =
-        Option.map
-          (fun d -> Filename.concat d function_name)
-          (Soteria.Profiling.Config.get ()).flamegraphs
-      in
       let@ () = with_function_context linked in
-      Ok (Csymex.Result.run_needs_stats ?flamegraph ~mode:OX ~fuel symex)
+      Ok
+        (Csymex.Result.run ~stats:Caller ~flamegraph:(Dump function_name)
+           ~mode:OX ~fuel symex)
   in
   match result with
   | Ok v -> v
@@ -300,7 +297,7 @@ let generate_errors content =
 let initialise ?soteria_config mode config f =
   Option.iter Soteria.Config.set_and_lock soteria_config;
   let@ () = Config.with_config ~config ~mode in
-  Soteria.Stats.As_ctx.with_stats_dumped () f
+  Soteria.Stats.As_ctx.with_dumped () f
 
 let print_states result =
   let pp_state ft state =

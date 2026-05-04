@@ -29,6 +29,18 @@ let () =
              reason)
     | _ -> None)
 
+(** The different ways a managed effect can be handled. *)
+type 'a effect_handling =
+  | Ignore
+      (** Handle the effect by ignoring it, so don't collect any information. *)
+  | Dump of 'a
+      (** Handle the effect, and dump the information according to the relevant
+          configuration. The value is the parameter passed to the feature's dump
+          handler. *)
+  | Caller
+      (** The effect is already handled by the caller, nothing needs to be done.
+      *)
+
 module Or_gave_up = struct
   type 'err t = E of 'err | Gave_up of string
 
@@ -322,40 +334,35 @@ module type S = sig
   type 'a v := 'a Value.t
   type sbool := Value.sbool
 
-  (** [run ~fuel  p] actually performs symbolic execution of the symbolic
-      process [p] and returns a list of obtained branches which capture the
-      outcome together with a path condition that is a list of boolean symbolic
-      values.
+  (** [run ~mode p] actually performs symbolic execution of the symbolic process
+      [p] and returns a list of obtained branches which capture the outcome
+      together with a path condition that is a list of boolean symbolic values.
 
       The [mode] parameter is used to specify whether execution should be done
       in an under-approximate ({!Symex.Approx.UX}) or an over-approximate
       ({!Symex.Approx.OX}) manner. Users may optionally pass a
       {{!Fuel_gauge.t}fuel gauge} to limit execution depth and breadth.
 
+      This function also takes a number of optional parameters to configure how
+      the execution is performed and what information is collected during
+      execution:
+      - [fuel] receives a {{!Fuel_gauge.t}fuel gauge} to limit execution depth
+        and breadth. By default, the fuel is infinite.
+      - [stats] specifies whether statistics about the execution are already
+        handled outside the function (see {!Stats.As_ctx.with_}) or should be
+        handled and ignored by this function (default).
+      - [flamegraph] specifies whether a flamegraph should be created from this
+        symbolic process or if it should be ignored (default). The value passed
+        in the {{!effect_handling.Dump}Dump} variant is the name of the created
+        file (while the {{!Profiling.Config}configuration} for flamegraphs
+        specifies the directory in which flamegraphs are saved).
+
       @raise Symex.Gave_up
         if the symbolic process calls [give_up] and the mode is
         {!Symex.Approx.OX}. Prefer using {!Result.run} when possible. *)
   val run :
-    ?flamegraph:string ->
-    ?fuel:Fuel_gauge.t ->
-    mode:Approx.t ->
-    'a t ->
-    ('a * sbool v list) list
-
-  (** Same as {!run}, but returns additional information about execution, see
-      {!Soteria.Stats}. *)
-  val run_with_stats :
-    ?flamegraph:string ->
-    ?fuel:Fuel_gauge.t ->
-    mode:Approx.t ->
-    'a t ->
-    ('a * sbool v list) list Stats.with_stats
-
-  (** Same as {!run} but has to be run within {!Stats.As_ctx.with_stats} or will
-      throw an exception. This function is exposed should users wish to run
-      several symbolic execution processes using a single [stats] record. *)
-  val run_needs_stats :
-    ?flamegraph:string ->
+    ?flamegraph:string effect_handling ->
+    ?stats:unit effect_handling ->
     ?fuel:Fuel_gauge.t ->
     mode:Approx.t ->
     'a t ->
@@ -369,24 +376,8 @@ module type S = sig
         {!Symex.Or_gave_up.t}, potentially adding any path that gave up to the
         list. *)
     val run :
-      ?flamegraph:string ->
-      ?fuel:Fuel_gauge.t ->
-      ?fail_fast:bool ->
-      mode:Approx.t ->
-      ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
-
-    val run_with_stats :
-      ?flamegraph:string ->
-      ?fuel:Fuel_gauge.t ->
-      ?fail_fast:bool ->
-      mode:Approx.t ->
-      ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
-      Stats.with_stats
-
-    val run_needs_stats :
-      ?flamegraph:string ->
+      ?flamegraph:string effect_handling ->
+      ?stats:unit effect_handling ->
       ?fuel:Fuel_gauge.t ->
       ?fail_fast:bool ->
       mode:Approx.t ->
@@ -499,8 +490,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   module Value = Solver.Value
   module MONAD = Monad.IterM
   include MONAD
-  module Flamegraph = Profiling.Flamegraph.Make ()
-  module Flamegraph_with_frame = Flamegraph.With_frame (MONAD)
+  module Flamegraph = Profiling.Flamegraph.Make (MONAD)
 
   module Give_up = struct
     type _ Effect.t += Gave_up_eff : string -> unit Effect.t
@@ -533,8 +523,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       Fuel.save ();
       Flamegraph.save ()
 
-    let run ?flamegraph ~init_fuel f =
-      Flamegraph.run_if_file ~flamegraph @@ fun () ->
+    let run ~init_fuel f =
       Solver.run @@ fun () ->
       Fuel.run ~init:init_fuel @@ fun () -> f ()
   end
@@ -734,8 +723,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     Flamegraph.checkpoint ();
     if should_give_up then Give_up.perform reason
 
-  let with_frame (name : string) (f : unit -> 'a t) : 'a t =
-   fun k -> Flamegraph_with_frame.with_frame name f k
+  let with_frame = Flamegraph.with_frame
 end
 
 module Base_extension (Core : Core) = struct
@@ -1010,61 +998,64 @@ module Make (Sol : Solver.Mutable_incremental) :
   include CORE
   include Base_extension (CORE)
 
-  let run_needs_stats_iter ?flamegraph ?(fuel = Fuel_gauge.infinite) ~mode iter
-      : ('a * Value.(sbool t) list) t =
-   fun continue ->
+  (* TODO: with modular explicits this can be implemented for any module:
+   * let manage (module M : Bookkeeping) = function
+   *   | Ignore -> M.with_ignored ()
+   *   | Dump arg -> M.with_dumped arg
+   *   | Caller -> fun f -> f ()
+   *)
+
+  let manage_flamegraph = function
+    | Ignore -> Flamegraph.with_ignored ()
+    | Dump name -> Flamegraph.with_dumped name
+    | Caller -> fun f -> f ()
+
+  let manage_stats = function
+    | Ignore -> Stats.As_ctx.with_ignored ()
+    | Dump name -> Stats.As_ctx.with_dumped name
+    | Caller -> fun f -> f ()
+
+  let setup ?(flamegraph = Ignore) ?(stats = Ignore)
+      ?(fuel = Fuel_gauge.infinite) ~mode f =
+    let@ () = manage_flamegraph flamegraph in
+    let@ () = manage_stats stats in
     let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
-    let@ () = Symex_state.run ?flamegraph ~init_fuel:fuel in
+    let@ () = Symex_state.run ~init_fuel:fuel in
     let@ () = Approx.As_ctx.with_mode mode in
     let@ () = Give_up.with_give_up_raising in
+    f ()
+
+  let run_iter ~mode (iter : 'a t) : ('a * Value.(sbool t) list) Iter.t =
+   fun continue ->
+    (* Make sure to drop branches that have leftover assumes with unsatisfiable
+       PCs. *)
     let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
     iter @@ fun x -> if admissible () then continue (x, Solver.as_values ())
 
-  let run_needs_stats ?flamegraph ?(fuel = Fuel_gauge.infinite) ~mode iter =
-    Iter.to_list (run_needs_stats_iter ?flamegraph ~fuel ~mode iter)
-
-  let run ?flamegraph ?fuel ~mode iter =
-    let@ () = Stats.As_ctx.with_stats_ignored () in
-    run_needs_stats ?flamegraph ?fuel ~mode iter
-
-  let run_with_stats ?flamegraph ?fuel ~mode iter =
-    let@ () = Stats.As_ctx.with_stats () in
-    run_needs_stats ?flamegraph ?fuel ~mode iter
+  let run ?flamegraph ?stats ?fuel ~mode iter =
+    let@ () = setup ?flamegraph ?stats ?fuel ~mode in
+    Iter.to_list @@ run_iter ~mode iter
 
   module Result = struct
     include Result
 
-    let run_needs_stats ?flamegraph ?(fuel = Fuel_gauge.infinite)
-        ?(fail_fast = false) ~mode iter =
-      let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
-      let@ () = Symex_state.run ?flamegraph ~init_fuel:fuel in
-      let@ () = Approx.As_ctx.with_mode mode in
+    let run ?flamegraph ?stats ?fuel ?(fail_fast = false) ~mode iter =
+      let@ () = setup ?flamegraph ?stats ?fuel ~mode in
       let l = ref [] in
       let () =
         let exception Fail_fast in
         try
-          iter @@ fun x ->
-          if Solver_result.admissible ~mode (Solver.sat ()) then (
-            (* Make sure to drop branche that have leftover assumes with
-               unsatisfiable PCs. *)
-            let x = Compo_res.map_error (fun e -> Or_gave_up.E e) x in
-            l := (x, Solver.as_values ()) :: !l;
-            if fail_fast && Compo_res.is_error x then raise Fail_fast)
+          run_iter ~mode iter @@ fun (res, pc) ->
+          let res = Compo_res.map_error (fun e -> Or_gave_up.E e) res in
+          l := (res, pc) :: !l;
+          if fail_fast && Compo_res.is_error res then raise Fail_fast
         with
         | effect Give_up.Gave_up_eff reason, k ->
-            l := (Compo_res.Error (Gave_up reason), Solver.as_values ()) :: !l;
+            l := (Error (Gave_up reason), Solver.as_values ()) :: !l;
             if fail_fast then Effect.Deep.discontinue k Fail_fast
             else Effect.Deep.continue k ()
         | Fail_fast -> ()
       in
       List.rev !l
-
-    let run ?flamegraph ?fuel ?fail_fast ~mode iter =
-      let@ () = Stats.As_ctx.with_stats_ignored () in
-      run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode iter
-
-    let run_with_stats ?flamegraph ?fuel ?fail_fast ~mode iter =
-      let@ () = Stats.As_ctx.with_stats () in
-      run_needs_stats ?flamegraph ?fuel ?fail_fast ~mode iter
   end
 end
