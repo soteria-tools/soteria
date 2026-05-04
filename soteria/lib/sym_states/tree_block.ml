@@ -204,7 +204,10 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let with_children t ~left ~right =
       return (make ~node:t.node ~range:t.range ~children:(left, right) ())
 
-    let offset = Data.Range_tree.offset ~add:( +@ )
+    let offset ~by t =
+      match MemVal.S_bounded_int.to_z by with
+      | Some z when Z.equal z Z.zero -> t
+      | _ -> Data.Range_tree.offset ~add:( +@ ) ~by t
 
     (** Converts a [Split_tree] of [Node]s (ie. a tree with no base) into a
         [Tree], reconstructing each node's range and constructing intermediary
