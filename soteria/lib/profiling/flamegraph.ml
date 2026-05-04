@@ -10,7 +10,7 @@ let pop_stack (stack : stack) =
   let rev_frames = List.tl stack.rev_frames in
   { stack with rev_frames }
 
-let write_folded_stacks path stacks =
+let dump path stacks =
   let path =
     if String.ends_with ~suffix:".collapsed" path then path
     else path ^ ".collapsed"
@@ -30,12 +30,14 @@ let write_folded_stacks path stacks =
   | exception Sys_error e ->
       Terminal.Warn.warn (Fmt.str "Failed to write flamegraph to %s: %s" path e)
 
-module Make () = struct
+module Make (M : Monad.Base) = struct
   type _ Effect.t +=
     | Map_stack : (stack -> stack) -> unit Effect.t
     | Backtrack_n : int -> unit Effect.t
     | Save : unit Effect.t
     | Checkpoint : unit Effect.t
+
+  type t = stack list
 
   let push_frame (s : string) : unit =
     Effect.perform (Map_stack (push_string_to_stack s))
@@ -45,23 +47,22 @@ module Make () = struct
   let backtrack_n n = Effect.perform (Backtrack_n n)
   let checkpoint () = Effect.perform Checkpoint
 
-  module With_frame (M : Monad.Base) = struct
-    let with_frame (name : string) (f : unit -> 'a M.t) : 'a M.t =
-      push_frame name;
-      M.map
-        (fun r ->
+  let with_frame (name : string) (f : unit -> 'a M.t) : 'a M.t =
+    (* the bind + return to make sure the effect isn't raised until the
+       computation is ran. *)
+    M.return ()
+    |> M.bind @@ fun () ->
+       push_frame name;
+       f ()
+       |> M.map @@ fun r ->
           pop_frame ();
-          r)
-        (f ())
-  end
+          r
 
-  let run ~flamegraph f =
+  let with_ _name f =
     let stacks = ref [] in
     let current_stack : stack Dynarray.t = Dynarray.create () in
-    let () =
-      Dynarray.add_last current_stack
-        { rev_frames = [ "SYMBOLIC EXECUTION ROOT" ]; weight = 0.0 }
-    in
+    Dynarray.add_last current_stack
+      { rev_frames = [ "SYMBOLIC EXECUTION ROOT" ]; weight = 0.0 };
     let last_checkpoint = ref (Unix.gettimeofday ()) in
     let map_stack (g : stack -> stack) =
       let last = Dynarray.pop_last current_stack in
@@ -75,29 +76,28 @@ module Make () = struct
       stacks := { stack with weight = elapsed } :: !stacks
     in
     let open Effect.Deep in
-    Fun.protect
-      ~finally:(fun () ->
+    try
+      let res = f () in
+      checkpoint ();
+      (res, List.rev !stacks)
+    with
+    | effect Map_stack g, k ->
         checkpoint ();
-        write_folded_stacks flamegraph (List.rev !stacks))
-      (fun () ->
-        try f () with
-        | effect Map_stack g, k ->
-            checkpoint ();
-            map_stack g;
-            continue k ()
-        | effect Backtrack_n n, k ->
-            checkpoint ();
-            let len = Dynarray.length current_stack in
-            Dynarray.truncate current_stack (len - n);
-            continue k ()
-        | effect Save, k ->
-            Dynarray.add_last current_stack (Dynarray.get_last current_stack);
-            continue k ()
-        | effect Checkpoint, k ->
-            checkpoint ();
-            continue k ())
+        map_stack g;
+        continue k ()
+    | effect Backtrack_n n, k ->
+        checkpoint ();
+        let len = Dynarray.length current_stack in
+        Dynarray.truncate current_stack (len - n);
+        continue k ()
+    | effect Save, k ->
+        Dynarray.add_last current_stack (Dynarray.get_last current_stack);
+        continue k ()
+    | effect Checkpoint, k ->
+        checkpoint ();
+        continue k ()
 
-  let run_ignored f =
+  let with_ignored () f =
     let open Effect.Deep in
     try f () with
     | effect Map_stack _, k -> continue k ()
@@ -105,9 +105,12 @@ module Make () = struct
     | effect Save, k -> continue k ()
     | effect Checkpoint, k -> continue k ()
 
-  (** is [run] if [flamegraph] is [Some _] and [run_ignored] otherwise *)
-  let run_if_file ~flamegraph =
-    match flamegraph with
-    | Some flamegraph -> fun f -> run ~flamegraph f
-    | None -> fun f -> run_ignored f
+  let with_dumped name f =
+    match (Config.get ()).flamegraphs with
+    | None -> with_ignored () f
+    | Some dir ->
+        let res, stack = with_ name f in
+        let dest_file = Filename.concat dir name in
+        dump dest_file stack;
+        res
 end

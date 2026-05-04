@@ -38,7 +38,7 @@ let pp_pair fmt (smart, direct) =
     pass. *)
 let z3_check_equivalent_raw ~vars_d ~assumptions (smart : Svalue.t)
     (direct : Svalue.t) : Soteria.Symex.Solver_result.t =
-  Soteria.Stats.As_ctx.with_stats_ignored () @@ fun () ->
+  Soteria.Stats.As_ctx.with_ignored () @@ fun () ->
   Z3_raw.reset solver;
   (* The vars of the simplified version should be a subset of the vars of the
      raw version. *)

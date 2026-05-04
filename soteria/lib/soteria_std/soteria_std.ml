@@ -4,6 +4,7 @@ module Bimap = Bimap
 module Cmdliner_helpers = Cmdliner_helpers
 module Compo_res = Compo_res
 module Dynarray = Dynarray
+module Effects = Effects
 module Exn = Exn
 module Filename = Filename
 module Foldable = Foldable

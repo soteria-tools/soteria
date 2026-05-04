@@ -1,6 +1,7 @@
 (** Tracking of statistics across symbolic execution. *)
 
-open Soteria_std.Hashtbl
+open Soteria_std
+open Hashtbl
 
 (** {2 General definitions} *)
 
@@ -18,12 +19,8 @@ type stat_entry =
           this as a last resort when no other type fits. *)
 
 type t [@@deriving yojson]
-type 'a with_stats = { res : 'a; stats : t }
 
 exception Incompatible_entries
-
-val with_empty_stats : 'a -> 'a with_stats
-val map_with_stats : ('a -> 'b) -> 'a with_stats -> 'b with_stats
 
 (** [merge s1 s2] merges two statistics [s1] and [s2] into a single statistic by
     combining their entries. Does not modify [s1] or [s2]. *)
@@ -164,23 +161,7 @@ module As_ctx : sig
       only inside a function wrapped with {!val-with_stats}, ensuring that the
       statistics are properly passed around. *)
 
-  (** [with_stats () f] runs function [f] and handles effects raised by the
-      functions of this module such as {!push_entry}, and returns a record
-      containing the result of executing [f] together with the obtained
-      statistics. *)
-  val with_stats : unit -> (unit -> 'a) -> 'a with_stats
-
-  (** [with_stats_ignored () f] runs function [f] and handles effects raised by
-      the functions of this module, but ignores their effect. This is to be used
-      when the user does not wish to pay the (minor) performance cost of stats
-      bookkeeping. *)
-  val with_stats_ignored : unit -> (unit -> 'a) -> 'a
-
-  (** [with_stats_dumped () f] runs function [f] and handles effects raised by
-      the functions of this module such as {!push_entry}, and dumps the stats to
-      the file specified by the current [Config.output_stats] if it is set, or
-      ignores them otherwise. *)
-  val with_stats_dumped : unit -> (unit -> 'a) -> 'a
+  include Effects.Bookkeeping with type arg := unit and type t := t
 
   (** [push_entry name entry] adds the given statistic [entry] under the given
       name [name] to the current statistics context. *)
