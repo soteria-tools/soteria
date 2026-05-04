@@ -254,9 +254,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
               let* _ = Execute.produce post_asrt State.empty in
               (* At the end, we need to apply the current substitution to subst
                  the PC as well! *)
-              fold_list summary.pc ~init:[] ~f:(fun acc sv ->
-                  let+ v = apply_subst Expr.subst sv in
-                  v :: acc)
+              map_list summary.pc ~f:(apply_subst Expr.subst)
             in
             let* pc, _ = Csymex.Producer.run ~subst:Expr.Subst.empty producer in
             [%l.trace

@@ -1,5 +1,4 @@
 module Stats = Soteria.Stats
-module Compo_res = Soteria.Symex.Compo_res
 open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap
 module State = State.Tree_state.Make (Tree_borrows.Concrete.Make)
@@ -112,8 +111,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
        by [print_outcomes] *)
     let map_first f (x, y) = (f x, y) in
     List.map
-      (map_first
-      @@ Fun.flip Compo_res.map_error Soteria.Symex.Or_gave_up.unwrap_exn)
+      (map_first @@ Compo_res.map_error Soteria.Symex.Or_gave_up.unwrap_exn)
       branches
   in
   (* inverse ok and errors if we expect a failure *)

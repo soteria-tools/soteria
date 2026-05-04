@@ -105,8 +105,8 @@ Ignored field usage
       let st = of_opt st_opt in
       let { my_int_1; _ } = st in
       let**^ res, my_int_1 = f my_int_1 in
-      let+ () = SM.set_state (to_opt { st with my_int_1 }) in
-      Soteria.Symex.Compo_res.Ok res
+      let* () = SM.set_state (to_opt { st with my_int_1 }) in
+      SM.Result.ok res
   
     let _ = with_my_int_1_sym
   
@@ -116,8 +116,8 @@ Ignored field usage
       let st = of_opt st_opt in
       let { my_int_2; _ } = st in
       let**^ res, my_int_2 = f my_int_2 in
-      let+ () = SM.set_state (to_opt { st with my_int_2 }) in
-      Soteria.Symex.Compo_res.Ok res
+      let* () = SM.set_state (to_opt { st with my_int_2 }) in
+      SM.Result.ok res
   
     let _ = with_my_int_2_sym
   
@@ -127,8 +127,8 @@ Ignored field usage
       let st = of_opt st_opt in
       let { my_int_3; _ } = st in
       let**^ res, my_int_3 = f my_int_3 in
-      let+ () = SM.set_state (to_opt { st with my_int_3 }) in
-      Soteria.Symex.Compo_res.Ok res
+      let* () = SM.set_state (to_opt { st with my_int_3 }) in
+      SM.Result.ok res
   
     let _ = with_my_int_3_sym
   
@@ -138,8 +138,8 @@ Ignored field usage
       let st = of_opt st_opt in
       let { my_int_4; _ } = st in
       let**^ res, my_int_4 = f my_int_4 in
-      let+ () = SM.set_state (to_opt { st with my_int_4 }) in
-      Soteria.Symex.Compo_res.Ok res
+      let* () = SM.set_state (to_opt { st with my_int_4 }) in
+      SM.Result.ok res
   
     let _ = with_my_int_4_sym
     let produce (syn : syn) () = match syn with _ -> .

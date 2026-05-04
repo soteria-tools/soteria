@@ -1,6 +1,6 @@
 (* TODO: Build this with the Sum transformer and `Excl(Freed)` *)
 
-open Symex
+open Soteria_std
 
 type 'a freeable = Freed | Alive of 'a
 
@@ -35,8 +35,8 @@ struct
       end)
 
   let lift_fix fix = Alive fix
-  let lift_fix_r r = Compo_res.map_missing r (List.map lift_fix)
-  let lift_fix_c f = Symex.Consumer.map_missing f (List.map lift_fix)
+  let lift_fix_r x = Compo_res.map_missing (List.map lift_fix) x
+  let lift_fix_c x = Symex.Consumer.map_missing (List.map lift_fix) x
 
   let to_syn = function
     | Freed -> [ Freed ]

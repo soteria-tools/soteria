@@ -1,5 +1,4 @@
-open Symex
-open Compo_res
+open Soteria_std.Compo_res
 open Data
 module S = Pmap_intf.M
 module Key = Pmap_intf.Key

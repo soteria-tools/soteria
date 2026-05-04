@@ -1,7 +1,7 @@
 open Charon
 open Typed.Infix
 open Typed.Syntax
-open Soteria.Symex.Compo_res
+open Compo_res
 module BV = Typed.BV
 open Rustsymex
 open Rustsymex.Result
@@ -207,8 +207,9 @@ and translate_layout ty (layout : Types.layout) =
     Option.map
       (fun (discr_layout : Types.discriminant_layout) : Tag_layout.t ->
         let tags =
-          Monad.ListM.map layout.variant_layouts (fun v ->
-              Option.map BV.of_scalar v.tag)
+          List.map
+            (fun (v : Types.variant_layout) -> Option.map BV.of_scalar v.tag)
+            layout.variant_layouts
         in
         let tags = Array.of_list tags in
         let ty = lit_of_int_ty discr_layout.tag_ty in
@@ -306,7 +307,9 @@ and compute_enum_layout ty (variants : Types.variant list) =
   (* N variants: we assume a tagged variant *)
   | _ :: _ ->
       let tags =
-        Monad.ListM.map variants (fun v -> Some (BV.of_literal v.discriminant))
+        List.map
+          (fun (v : Types.variant) -> Some (BV.of_literal v.discriminant))
+          variants
       in
       let tags = Array.of_list tags in
       let tag_layout : Tag_layout.t =
@@ -380,7 +383,7 @@ let normalise (ty : Types.ty) =
     | _ -> ok ty
   in
   let+ ty = Poly.subst_ty ty in
-  Soteria.Symex.Compo_res.Ok ty
+  Ok ty
 
 let size_of ty =
   let++ { size; _ } = layout_of ty in

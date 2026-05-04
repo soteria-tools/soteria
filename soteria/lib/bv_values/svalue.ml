@@ -268,9 +268,9 @@ let rec pp ft t =
             aux (Some (Var.to_int v :: l), rest)
         | _, _ -> None
       in
-      let range = aux (Some [], l) in
       let range =
-        Option.bind range (fun l ->
+        aux (Some [], l)
+        |> Option.bind (fun l ->
             let l = List.sort Int.compare l in
             let min = List.hd l in
             let max = List.hd @@ List.rev l in

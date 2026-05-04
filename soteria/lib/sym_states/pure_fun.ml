@@ -4,8 +4,7 @@
     exists a value, and if we don't know it, we instantiate it on
     read/consumption. *)
 
-open Symex
-open Compo_res
+open Soteria_std.Compo_res
 
 (** FIXME: This is almost verbatim the same thing as the input of excl *)
 module Codom (Symex : Symex.Base) = struct

@@ -2,6 +2,9 @@
 
 include Stdlib.Seq
 
+(** The bind operator for sequences, also known as [concat_map]. *)
+let bind = concat_map
+
 (** An iteration over the cross-product of [seq] with itself, excluding pairs
     (x, x) of the same element. For instance, [self_cross_product [1; 2; 3]]
     will iterate over [(1, 2), (1, 3), (2, 3)] Note that the sequence needs to

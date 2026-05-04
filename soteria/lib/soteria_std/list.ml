@@ -2,6 +2,12 @@
 
 include Stdlib.List
 
+(** The singleton list containing the given element *)
+let return = singleton
+
+(** The bind operator for lists, also known as [concat_map]. *)
+let bind = concat_map
+
 (** Take a prefix of a list of at most [n] elements, or the entire list if the
     list is shorter than [n].
 

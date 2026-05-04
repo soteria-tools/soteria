@@ -1,4 +1,4 @@
-open Symex.Compo_res
+open Soteria_std.Compo_res
 
 let pp_bi_state pp_st pp_fixes fmt (st, fixes) =
   Format.fprintf fmt "@[<v 2>STATE: %a;@ FIXES: %a@]" (Fmt.Dump.option pp_st) st
