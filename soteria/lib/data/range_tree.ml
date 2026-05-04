@@ -1,5 +1,4 @@
 open Soteria_std
-open Logs.Import
 
 type ('a, 'sint) t = {
   node : 'a;
@@ -17,14 +16,136 @@ let make_node ~node ~range ?children () =
       let h = 1 + max (height left) (height right) in
       { node; range; children = Some (left, right); height = h }
 
-(** Builds a tree given a node, a range, and children, and automatically
-    balances it. *)
+(** Builds a balanced range tree node from a given [node] value, [range], and
+    optional [children], performing AVL-style rotations as needed.
+
+    [merge l r] is used to recompute the data value of an internal node whose
+    left child carries value [l] and right child carries value [r]. This is
+    necessary during rotations, when the tree structure changes and some
+    internal nodes get new children.
+
+    {2 Invariant maintained}
+
+    At every node, the heights of its left and right subtrees differ by at most
+    1. When a new node would violate this (|hl - hr| > 1), [build] performs the
+    appropriate single or double AVL rotation to restore balance.
+
+    {2 Rotations}
+
+    There are four cases, mirroring those of a standard AVL tree. In each
+    description the letters [a < b < c] (or [a < m < b < c]) denote range
+    endpoints, illustrating which subtree covers which contiguous slice.
+
+    {3 Left-LEFT (single right rotation)}
+
+    Triggered when [hl > hr + 1] and the left child's left grandchild is at
+    least as tall as its right grandchild ([ll.height >= lr.height]).
+
+    Before rotation:
+    {v
+               root [a..c]
+             /             \
+        left [a..b]       right [b..c]
+        /         \
+    ll [a..m]   lr [m..b]
+    v}
+
+    After single right rotation:
+    {v
+               root [a..c]
+             /             \
+        ll [a..m]       new_right [m..c]
+                        /              \
+                    lr [m..b]       right [b..c]
+    v}
+
+    The new intermediate node [new_right] covers [[m..c]] and its value is
+    [merge lr.node right.node]. The root keeps the same [node] value and range.
+
+    {3 Left-RIGHT (double rotation)}
+
+    Triggered when [hl > hr + 1] and [lr.height > ll.height]. [lr] must have
+    children [(lrl, lrr)].
+
+    Before rotation:
+    {v
+              root [a..c]
+             /             \
+        left [a..b]       right [b..c]
+       /         \
+     ll [a..m]  lr [m..b]
+                /       \
+           lrl [m..n]  lrr [n..b]
+    v}
+
+    After double rotation, [lr] is promoted: the root keeps the same [node]
+    value and range, but its new children are:
+    {v
+                  root [a..c]
+             /                  \
+        new_left [a..n]       new_right [n..c]
+        /         \            /             \
+    ll [a..m]  lrl [m..n]  lrr [n..b]    right [b..c]
+    v}
+
+    where [new_left] has value [merge ll.node lrl.node] and [new_right] has
+    value [merge lrr.node right.node].
+
+    {3 Right-RIGHT (single left rotation)}
+
+    Mirror of Left-LEFT. Triggered when [hr > hl + 1] and
+    [rr.height >= rl.height].
+
+    Before rotation:
+    {v
+        root [a..c]
+       /              \
+     left [a..b]    right [b..c]
+                   /            \
+               rl [b..m]      rr [m..c]
+    v}
+
+    After single left rotation:
+    {v
+                root [a..c]
+             /                \
+        new_left [a..m]      rr [m..c]
+        /              \
+     left [a..b]     rl [b..m]
+    v}
+
+    The new intermediate node [new_left] covers [[a..m]] and its value is
+    [merge left.node rl.node]. The root keeps the same [node] value and range.
+
+    {3 Right-LEFT (double rotation)}
+
+    Mirror of Left-RIGHT. Triggered when [hr > hl + 1] and
+    [rl.height > rr.height]. [rl] must have children [(rll, rlr)].
+
+    Before rotation:
+    {v
+               root [a..c]
+             /             \
+        left [a..b]       right [b..c]
+                          /         \
+                      rl [b..n]    rr [n..c]
+                      /       \
+                 rll [b..m]  rlr [m..n]
+    v}
+
+    After double rotation, the root keeps the same [node] value and range, but
+    its new children are:
+    {v
+                root [a..c]
+             /                  \
+        new_left [a..m]       new_right [m..c]
+        /         \            /             \
+    left [a..b]  rll [b..m]  rlr [m..n]    rr [n..c]
+    v}
+
+    where [new_left] has value [merge left.node rll.node] and [new_right] has
+    value [merge rlr.node rr.node]. *)
 let rec build ~node ~range ~merge ?children () =
-  [%l.debug "CALLED BUILD!"];
-  (* Classic AVL tree algorithm to re-balance trees on construction. We assume
-     the invariant that the input children are already balanced, so we only need
-     to check the height difference of the input children, and not the whole
-     subtree. *)
   match children with
   | None -> { node; range; children = None; height = 0 }
   | Some (left, right) ->
@@ -32,8 +153,8 @@ let rec build ~node ~range ~merge ?children () =
       if hl > hr + 1 then
         let ll, lr = Option.get left.children in
         if ll.height >= lr.height then
-          (* Left-LEFT heavy: single right rotation.
-             ll covers [a..m], lr covers [m..b], right covers [b..c]. *)
+          (* Left-LEFT heavy: single right rotation. ll covers [a..m], lr covers
+             [m..b], right covers [b..c]. *)
           let new_right =
             build ~node:(merge lr.node right.node)
               ~range:(fst lr.range, snd right.range)
@@ -41,9 +162,8 @@ let rec build ~node ~range ~merge ?children () =
           in
           build ~node ~range ~merge ~children:(ll, new_right) ()
         else
-          (* Left-RIGHT heavy: double rotation.
-             lr.children = (lrl, lrr). New root = lr's range, left = (ll, lrl),
-             right = (lrr, right). *)
+          (* Left-RIGHT heavy: double rotation. lr.children = (lrl, lrr). New
+             root = lr's range, left = (ll, lrl), right = (lrr, right). *)
           let lrl, lrr = Option.get lr.children in
           let new_left =
             build ~node:(merge ll.node lrl.node)
@@ -51,7 +171,8 @@ let rec build ~node ~range ~merge ?children () =
               ~merge ~children:(ll, lrl) ()
           in
           let new_right =
-            build ~node:(merge lrr.node right.node)
+            build
+              ~node:(merge lrr.node right.node)
               ~range:(fst lrr.range, snd right.range)
               ~merge ~children:(lrr, right) ()
           in
@@ -59,8 +180,8 @@ let rec build ~node ~range ~merge ?children () =
       else if hr > hl + 1 then
         let rl, rr = Option.get right.children in
         if rr.height >= rl.height then
-          (* Right-RIGHT heavy: single left rotation.
-             left covers [a..b], rl covers [b..m], rr covers [m..c]. *)
+          (* Right-RIGHT heavy: single left rotation. left covers [a..b], rl
+             covers [b..m], rr covers [m..c]. *)
           let new_left =
             build ~node:(merge left.node rl.node)
               ~range:(fst left.range, snd rl.range)
@@ -68,9 +189,8 @@ let rec build ~node ~range ~merge ?children () =
           in
           build ~node ~range ~merge ~children:(new_left, rr) ()
         else
-          (* Right-LEFT heavy: double rotation.
-             rl.children = (rll, rlr). New root = rl's range, left = (left, rll),
-             right = (rlr, rr). *)
+          (* Right-LEFT heavy: double rotation. rl.children = (rll, rlr). New
+             root = rl's range, left = (left, rll), right = (rlr, rr). *)
           let rll, rlr = Option.get rl.children in
           let new_left =
             build ~node:(merge left.node rll.node)
