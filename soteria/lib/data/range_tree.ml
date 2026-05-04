@@ -207,13 +207,18 @@ let rec build ~node ~range ~merge ?children () =
         (* Balanced within ±1, just build the node *)
         make_node ~node ~range ~children:(left, right) ()
 
-let rec rebalance ~merge t =
+let rec rebuild ~merge t =
   match t.children with
   | None -> t
   | Some (left, right) ->
-      let left = rebalance ~merge left in
-      let right = rebalance ~merge right in
-      build ~node:t.node ~range:t.range ~merge ~children:(left, right) ()
+      let new_left = rebuild ~merge left in
+      let new_right = rebuild ~merge right in
+      if
+        left == new_left
+        && new_right == right
+        && abs (left.height - right.height) <= 1
+      then t
+      else build ~node:t.node ~range:t.range ~merge ~children:(left, right) ()
 
 let offset ~add ~by tree =
   let apply_ofs = add by in

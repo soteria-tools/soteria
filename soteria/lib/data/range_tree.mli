@@ -33,10 +33,6 @@ val make_node :
   unit ->
   ('a, 'sint) t
 
-(** Rebalances an existing tree bottom-up, using [merge] to recompute
-    intermediate node values created during rotations. *)
-val rebalance : merge:('a -> 'a -> 'a) -> ('a, 'sint) t -> ('a, 'sint) t
-
 (** Builds a tree given a node, a range, and children, and automatically
     balances it. *)
 val build :
@@ -46,6 +42,10 @@ val build :
   ?children:('a, 'sint) t * ('a, 'sint) t ->
   unit ->
   ('a, 'sint) t
+
+(** Rebalances an existing tree bottom-up, using [merge] to recompute
+    intermediate node values created during rotations. *)
+val rebuild : merge:('a -> 'a -> 'a) -> ('a, 'sint) t -> ('a, 'sint) t
 
 (** [offset ~apply_ofs t] uses the function [apply_ofs] on all offset in the
     ranges of the tree [t].

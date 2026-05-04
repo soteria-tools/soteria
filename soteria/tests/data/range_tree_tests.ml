@@ -63,7 +63,8 @@ let check_all t =
   check_ranges t;
   check_content t
 
-(* ── Helpers using build (AVL on construction) ────────────────────────────── *)
+(* ── Helpers using build (AVL on construction)
+   ────────────────────────────── *)
 
 let leaf lo hi =
   let node = List.init (hi - lo) (fun i -> lo + i) in
@@ -73,7 +74,7 @@ let inner lo hi l r =
   let node = List.init (hi - lo) (fun i -> lo + i) in
   RT.build ~node ~range:(lo, hi) ~merge:( @ ) ~children:(l, r) ()
 
-(* ── Helpers using make_node (no balancing) + rebalance ──────────────────── *)
+(* ── Helpers using make_node (no balancing) + rebuild ──────────────────── *)
 
 let leaf_u lo hi =
   let node = List.init (hi - lo) (fun i -> lo + i) in
@@ -83,7 +84,7 @@ let inner_u lo hi l r =
   let node = List.init (hi - lo) (fun i -> lo + i) in
   RT.make_node ~node ~range:(lo, hi) ~children:(l, r) ()
 
-let rebalance t = RT.rebalance ~merge:( @ ) t
+let rebuild t = RT.rebuild ~merge:( @ ) t
 
 (* ── build tests ─────────────────────────────────────────────────────────── *)
 
@@ -225,77 +226,77 @@ let test_large_imbalance () =
   Alcotest.(check (pair int int)) "range" (0, 34) t.range;
   check_all t
 
-(* ── rebalance tests (same shapes, built with make_node then rebalanced) ─── *)
+(* ── rebuild tests (same shapes, built with make_node then rebuildd) ─── *)
 
-let test_leaf_rebalance () =
-  let t = rebalance (leaf_u 0 10) in
+let test_leaf_rebuild () =
+  let t = rebuild (leaf_u 0 10) in
   Alcotest.(check int) "height" 0 t.height;
   Alcotest.(check bool) "no children" true (Option.is_none t.children);
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
-let test_balanced_pair_rebalance () =
+let test_balanced_pair_rebuild () =
   let l = leaf_u 0 5 and r = leaf_u 5 10 in
-  let t = rebalance (inner_u 0 10 l r) in
+  let t = rebuild (inner_u 0 10 l r) in
   Alcotest.(check int) "height" 1 t.height;
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
-let test_left_left_heavy_rebalance () =
+let test_left_left_heavy_rebuild () =
   let a = leaf_u 0 2 and b = leaf_u 2 4 in
   let c = inner_u 0 4 a b in
   let d = leaf_u 4 6 in
   let left = inner_u 0 6 c d in
   let right = leaf_u 6 8 in
-  let t = rebalance (inner_u 0 8 left right) in
-  Alcotest.(check int) "height after rebalance" 2 t.height;
+  let t = rebuild (inner_u 0 8 left right) in
+  Alcotest.(check int) "height after rebuild" 2 t.height;
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
-let test_right_right_heavy_rebalance () =
+let test_right_right_heavy_rebuild () =
   let b = leaf_u 6 8 and c = leaf_u 8 10 in
   let d = inner_u 6 10 b c in
   let a = leaf_u 4 6 in
   let right = inner_u 4 10 a d in
   let left = leaf_u 0 4 in
-  let t = rebalance (inner_u 0 10 left right) in
-  Alcotest.(check int) "height after rebalance" 2 t.height;
+  let t = rebuild (inner_u 0 10 left right) in
+  Alcotest.(check int) "height after rebuild" 2 t.height;
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
-let test_left_right_heavy_rebalance () =
+let test_left_right_heavy_rebuild () =
   let a = leaf_u 0 2 in
   let b = leaf_u 2 4 and c = leaf_u 4 6 in
   let lr = inner_u 2 6 b c in
   let left = inner_u 0 6 a lr in
   let right = leaf_u 6 8 in
-  let t = rebalance (inner_u 0 8 left right) in
-  Alcotest.(check int) "height after rebalance" 2 t.height;
+  let t = rebuild (inner_u 0 8 left right) in
+  Alcotest.(check int) "height after rebuild" 2 t.height;
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
-let test_right_left_heavy_rebalance () =
+let test_right_left_heavy_rebuild () =
   let a = leaf_u 4 6 and b = leaf_u 6 8 in
   let rl = inner_u 4 8 a b in
   let c = leaf_u 8 10 in
   let right = inner_u 4 10 rl c in
   let left = leaf_u 0 4 in
-  let t = rebalance (inner_u 0 10 left right) in
-  Alcotest.(check int) "height after rebalance" 2 t.height;
+  let t = rebuild (inner_u 0 10 left right) in
+  Alcotest.(check int) "height after rebuild" 2 t.height;
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
-let test_full_balanced_rebalance () =
+let test_full_balanced_rebuild () =
   let a = leaf_u 0 2 and b = leaf_u 2 4 in
   let c = leaf_u 4 6 and d = leaf_u 6 8 in
   let ab = inner_u 0 4 a b in
   let cd = inner_u 4 8 c d in
-  let t = rebalance (inner_u 0 8 ab cd) in
+  let t = rebuild (inner_u 0 8 ab cd) in
   Alcotest.(check int) "height" 2 t.height;
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
-let test_large_imbalance_rebalance () =
+let test_large_imbalance_rebuild () =
   let rec balanced_u lo hi =
     if hi - lo = 1 then leaf_u lo hi
     else
@@ -304,8 +305,8 @@ let test_large_imbalance_rebalance () =
   in
   let left = inner_u 0 2 (leaf_u 0 1) (leaf_u 1 2) in
   let right = balanced_u 2 34 in
-  let t = rebalance (inner_u 0 34 left right) in
-  Alcotest.(check int) "height after rebalance" 6 t.height;
+  let t = rebuild (inner_u 0 34 left right) in
+  Alcotest.(check int) "height after rebuild" 6 t.height;
   Alcotest.(check (pair int int)) "range" (0, 34) t.range;
   check_all t
 
@@ -327,21 +328,21 @@ let () =
           Alcotest.test_case "large imbalance h1 vs h5" `Quick
             test_large_imbalance;
         ] );
-      ( "rebalance",
+      ( "rebuild",
         [
-          Alcotest.test_case "leaf" `Quick test_leaf_rebalance;
-          Alcotest.test_case "balanced pair" `Quick test_balanced_pair_rebalance;
+          Alcotest.test_case "leaf" `Quick test_leaf_rebuild;
+          Alcotest.test_case "balanced pair" `Quick test_balanced_pair_rebuild;
           Alcotest.test_case "left-left heavy" `Quick
-            test_left_left_heavy_rebalance;
+            test_left_left_heavy_rebuild;
           Alcotest.test_case "right-right heavy" `Quick
-            test_right_right_heavy_rebalance;
+            test_right_right_heavy_rebuild;
           Alcotest.test_case "left-right heavy" `Quick
-            test_left_right_heavy_rebalance;
+            test_left_right_heavy_rebuild;
           Alcotest.test_case "right-left heavy" `Quick
-            test_right_left_heavy_rebalance;
+            test_right_left_heavy_rebuild;
           Alcotest.test_case "perfectly balanced 4-leaf" `Quick
-            test_full_balanced_rebalance;
+            test_full_balanced_rebuild;
           Alcotest.test_case "large imbalance h1 vs h5" `Quick
-            test_large_imbalance_rebalance;
+            test_large_imbalance_rebuild;
         ] );
     ]
