@@ -24,14 +24,14 @@ jobs:
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3, node, ocaml and opam
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Check versions.json sync
         run: python3 scripts/versionsync.py check
       - name: Setup Z3
         uses: cda-tum/setup-z3@v1
         id: z3
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           cache: "yarn"
       - name: Setup OCaml
@@ -41,7 +41,7 @@ jobs:
           dune-cache: true
           opam-pin: false
       - name: Restore opam cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: _opam
           key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-${{ hashFiles('*.opam') }}
@@ -64,7 +64,7 @@ jobs:
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
       - name: Restore Obol cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: restore-obol-cache
         with:
           path: obol-bin
@@ -80,7 +80,7 @@ jobs:
 
       # Install Charon
       - name: Restore Charon cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         id: restore-charon-cache
         with:
           path: charon-bin
@@ -134,7 +134,7 @@ jobs:
       - name: Create soteria-c package
         run: make package-soteria-c
       - name: Upload soteria-c package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.operating-system }}-soteria-c-package
           path: packages/soteria-c
@@ -143,7 +143,7 @@ jobs:
       - name: Create soteria-rust package
         run: make package-soteria-rust
       - name: Upload soteria-rust package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.operating-system }}-soteria-rust-package
           path: packages/soteria-rust
@@ -153,7 +153,7 @@ jobs:
         run: make doc
 
       - name: Upload documentation artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: odoc
           path: _build/default/_doc/_html

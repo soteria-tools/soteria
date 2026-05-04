@@ -90,18 +90,18 @@ jobs:
     needs: [check-new-commits, test-packages]
     if: needs.check-new-commits.outputs.should_run == 'true'
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Download soteria-c package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: macos-latest-soteria-c-package
           path: release-artifacts/soteria-c
 
       - name: Download soteria-rust package
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: macos-latest-soteria-rust-package
           path: release-artifacts/soteria-rust
