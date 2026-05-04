@@ -169,17 +169,11 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
   module Tree = struct
     type t = (MemVal.t, sint) tree
 
-    let rec pp ft { node; range; children; height = _ } =
-      let open Fmt in
-      pf ft "@[<v 2>{%a %a%a}@]" Node.pp node Range.pp range
-        (option ~none:nop (fun fmt (l, r) ->
-             pf fmt " -->@,@[%a@,%a@]" pp l pp r))
-        children
-
+    let pp : t Fmt.t = Data.Range_tree.pp Node.pp Symex.Value.ppa
     let node_merge l r = fst (Node.merge ~left:l ~right:r)
 
     let make ~node ~range ?children () =
-      Data.Range_tree.make_node ~node ~range ?children ()
+      Data.Range_tree.make_raw ~node ~range ?children ()
 
     let rebuild t = Data.Range_tree.rebuild ~merge:node_merge t
     let is_empty t = Node.is_empty t.node

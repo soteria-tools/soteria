@@ -1,20 +1,68 @@
 open Soteria_std
 
+module Info : sig
+  type t
+
+  val make : height:int -> is_balanced:bool -> unit -> t
+
+  (** Height of the tree (maximum depth) *)
+  val height : t -> int
+
+  (** [is_balanced] says whether we know {e for sure} that the tree is balanced.
+  *)
+  val is_balanced : t -> bool
+
+  (** Information associated with a leaf node (height = 0; balanced = true) *)
+  val leaf : t
+end = struct
+  (** To avoid increasing the size of allocation, and because the number of
+      nodes in the tree is exponential in the height, we can safely assume that
+      the height of the tree will ever at most take e.g. ~30bits (already
+      insanely big). So we can just store additional flags in the remaining bits
+      of the height field. *)
+  type t = int
+  (* NOTE: On 32bit machines, OCaml integers are 31 bits, so we can trivially
+     store 1 flag. *)
+
+  let make ~height ~is_balanced () =
+    let balanced_bit = if is_balanced then 0x40000000 else 0 in
+    height lor balanced_bit
+
+  let height t = t land 0x3FFFFFFF
+  let is_balanced t = t land 0x40000000 <> 0
+  let leaf = make ~height:0 ~is_balanced:true ()
+end
+
 type ('a, 'sint) t = {
   node : 'a;
   range : 'sint * 'sint;
   children : (('a, 'sint) t * ('a, 'sint) t) option;
-  height : int;
+  info : Info.t;
 }
 
-let height t = t.height
+let pp pp_node pp_int ft t =
+  let pp_range fmt (a, b) = Fmt.pf fmt "[%a, %a[" pp_int a pp_int b in
+  let rec pp ft { node; range; children; info = _ } =
+    let open Fmt in
+    pf ft "@[<v 2>{%a %a%a}@]" pp_node node pp_range range
+      (option ~none:nop (fun fmt (l, r) -> pf fmt " -->@,@[%a@,%a@]" pp l pp r))
+      children
+  in
+  pp ft t
 
-let make_node ~node ~range ?children () =
-  match children with
-  | None -> { node; range; children; height = 0 }
-  | Some (left, right) ->
-      let h = 1 + max (height left) (height right) in
-      { node; range; children = Some (left, right); height = h }
+let height t = Info.height t.info
+let is_balanced t = Info.is_balanced t.info
+
+let make_raw ~node ~range ?children () =
+  let info =
+    match children with
+    | None -> Info.make ~height:0 ~is_balanced:true ()
+    | Some (left, right) ->
+        let h = 1 + max (height left) (height right) in
+        let balanced = abs (height left - height right) <= 1 in
+        Info.make ~height:h ~is_balanced:balanced ()
+  in
+  { node; range; children; info }
 
 (** Builds a balanced range tree node from a given [node] value, [range], and
     optional [children], performing AVL-style rotations as needed.
@@ -147,12 +195,12 @@ let make_node ~node ~range ?children () =
     value [merge rlr.node rr.node]. *)
 let rec build ~node ~range ~merge ?children () =
   match children with
-  | None -> { node; range; children = None; height = 0 }
+  | None -> { node; range; children = None; info = Info.leaf }
   | Some (left, right) ->
       let hl = height left and hr = height right in
       if hl > hr + 1 then
         let ll, lr = Option.get left.children in
-        if ll.height >= lr.height then
+        if height ll >= height lr then
           (* Left-LEFT heavy: single right rotation. ll covers [a..m], lr covers
              [m..b], right covers [b..c]. *)
           let new_right =
@@ -179,7 +227,7 @@ let rec build ~node ~range ~merge ?children () =
           build ~node ~range ~merge ~children:(new_left, new_right) ()
       else if hr > hl + 1 then
         let rl, rr = Option.get right.children in
-        if rr.height >= rl.height then
+        if height rr >= height rl then
           (* Right-RIGHT heavy: single left rotation. left covers [a..b], rl
              covers [b..m], rr covers [m..c]. *)
           let new_left =
@@ -205,20 +253,16 @@ let rec build ~node ~range ~merge ?children () =
           build ~node ~range ~merge ~children:(new_left, new_right) ()
       else
         (* Balanced within ±1, just build the node *)
-        make_node ~node ~range ~children:(left, right) ()
+        make_raw ~node ~range ~children:(left, right) ()
 
 let rec rebuild ~merge t =
-  match t.children with
-  | None -> t
-  | Some (left, right) ->
-      let new_left = rebuild ~merge left in
-      let new_right = rebuild ~merge right in
-      if
-        left == new_left
-        && new_right == right
-        && abs (left.height - right.height) <= 1
-      then t
-      else build ~node:t.node ~range:t.range ~merge ~children:(left, right) ()
+  if is_balanced t then t
+  else
+    (* Safety: a leaf node cannot be unbalanced *)
+    let left, right = Option.get t.children in
+    let left = rebuild ~merge left in
+    let right = rebuild ~merge right in
+    build ~node:t.node ~range:t.range ~merge ~children:(left, right) ()
 
 let offset ~add ~by tree =
   let apply_ofs = add by in
