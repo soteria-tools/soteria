@@ -21,7 +21,9 @@ open Data.Range_tree
 
 type ('a, 'sint) tree = ('a node, 'sint) Data.Range_tree.t
 
-let make_tree = Data.Range_tree.build
+let build_tree = Data.Range_tree.build
+let build_tree_leaf = Data.Range_tree.build_leaf
+let make_tree_raw = Data.Range_tree.make_raw
 
 (** The input module of [Tree_block]. A memory value [t] represents an owned
     part of the tree block, with the property that it can be split or merged as

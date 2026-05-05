@@ -44,6 +44,11 @@ val make_raw :
   unit ->
   ('a, 'sint) t
 
+(** Creates a tree with no children (and therefore does not) need to be
+    balanced. *)
+
+val build_leaf : node:'a -> range:'sint * 'sint -> unit -> ('a, 'sint) t
+
 (** Builds a tree given a node, a range, and children, and automatically
     balances it. *)
 val build :

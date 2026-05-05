@@ -196,19 +196,13 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
 
     type tree = (t, Typed.(T.sint t)) TB.tree
 
-    let node_merge l r =
-      match (l, r) with
-      | TB.NotOwned Totally, TB.NotOwned Totally -> TB.NotOwned Totally
-      | TB.NotOwned _, _ | _, TB.NotOwned _ -> TB.NotOwned Partially
-      | TB.Owned left, TB.Owned right -> TB.Owned (merge ~left ~right)
-
     let mk_leaf (t : tree) (v : leaf) tb : tree =
       let node =
         match (v, tb) with
         | Unowned, None -> TB.NotOwned Totally
         | _, _ -> TB.Owned (Leaf (v, tb))
       in
-      TB.make_tree ~range:t.range ~node ~merge:node_merge ()
+      TB.build_tree_leaf ~range:t.range ~node ()
 
     module Rust_val_consumer = Rust_val.Learn_eq (DecayMap.SM)
 
@@ -305,7 +299,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
             | NotOwned _, _ | _, NotOwned _ -> NotOwned Partially
             | Owned left, Owned right -> Owned (merge ~left ~right)
           in
-          TB.make_tree ~node ~range:t.range ~merge:node_merge ~children:(l, r) ()
+          TB.make_tree_raw ~node ~range:t.range ~children:(l, r) ()
       (* Tree borrows: we produce recursively, as we don't want to merge the
          leaves *)
       | STree_borrow_st s, NotOwned Totally ->
@@ -318,7 +312,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
           let l, r = Option.get t.children in
           let* l = produce s l in
           let+ r = produce s r in
-          TB.make_tree ~node:t.node ~range:t.range ~merge:node_merge ~children:(l, r) ()
+          TB.make_tree_raw ~node:t.node ~range:t.range ~children:(l, r) ()
       | STree_borrow _, _ ->
           failwith
             "TB structure syn in tree block, should have been caught before"

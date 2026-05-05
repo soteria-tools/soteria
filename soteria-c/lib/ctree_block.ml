@@ -142,17 +142,11 @@ module MemVal = struct
 
   type tree = (t, T.sint Typed.t) TB.tree
 
-  let node_merge l r =
-    match (l, r) with
-    | TB.NotOwned Totally, TB.NotOwned Totally -> TB.NotOwned Totally
-    | TB.NotOwned _, _ | _, TB.NotOwned _ -> TB.NotOwned Partially
-    | TB.Owned left, TB.Owned right -> TB.Owned (merge ~left ~right)
-
   let not_owned (t : tree) : tree =
-    TB.make_tree ~node:(TB.NotOwned Totally) ~range:t.range ~merge:node_merge ()
+    TB.make_tree_raw ~node:(TB.NotOwned Totally) ~range:t.range ()
 
   let owned (t : tree) (v : t) : tree =
-    TB.make_tree ~node:(TB.Owned v) ~range:t.range ~merge:node_merge ()
+    TB.make_tree_raw ~node:(TB.Owned v) ~range:t.range ()
 
   let consume (s : syn) (t : tree) : (tree, syn list) Consumer.t =
     let open Consumer in

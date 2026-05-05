@@ -58,7 +58,7 @@ let is_balanced t = Info.is_balanced t.info
 let make_raw ~node ~range ?children () =
   let info =
     match children with
-    | None -> Info.make ~height:0 ~is_balanced:true ()
+    | None -> Info.leaf
     | Some (left, right) ->
         let hleft = height left in
         let hright = height right in
@@ -69,6 +69,8 @@ let make_raw ~node ~range ?children () =
         Info.make ~height ~is_balanced ()
   in
   { node; range; children; info }
+
+let build_leaf ~node ~range () = make_raw ~node ~range ()
 
 (** Builds a balanced range tree node from a given [node] value, [range], and
     optional [children], performing AVL-style rotations as needed.
