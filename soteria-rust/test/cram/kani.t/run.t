@@ -166,16 +166,107 @@ Test kani::slice::any_slice_of_array
 
 Test kani::vec::any_vec
   $ soteria-rust exec any_vec.rs --kani
-  Compiling... errored
-  error: Fatal (Frontend): Failed compilation to ULLBC:
-  ERROR in serialize_to_file at /Users/sacha/.cargo/git/checkouts/charon-f3d627c546fc4861/fa7ff71/charon/src/export.rs:99:
-  Could not open: "$TESTCASE_ROOT/any_vec.rs.llbc.json"
+  Compiling... done in <time>
+  => Running any_vec::len_capacity_invariant...
+  note: any_vec::len_capacity_invariant: done in <time>, ran 17 branches
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000000 == V|1|) /\
+        (extract[0-1](V|18|) == 0b00)
+  PC 2: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+        (V|1| == 0x0000000000000010) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (V|1| == 0x0000000000000010) /\
+        (extract[0-1](V|18|) == 0b00)
+  PC 3: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+        (V|1| == 0x000000000000000f) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|19| <=u 0x7fffffffffffffc2) /\ (V|1| == 0x000000000000000f) /\
+        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 4: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+        (V|1| == 0x000000000000000e) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|19| <=u 0x7fffffffffffffc6) /\ (V|1| == 0x000000000000000e) /\
+        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 5: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+        (V|1| == 0x000000000000000d) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|19| <=u 0x7fffffffffffffca) /\ (V|1| == 0x000000000000000d) /\
+        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 6: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+        (V|1| == 0x000000000000000c) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|19| <=u 0x7fffffffffffffce) /\ (V|1| == 0x000000000000000c) /\
+        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 7: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+        (V|1| == 0x000000000000000b) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|19| <=u 0x7fffffffffffffd2) /\ (V|1| == 0x000000000000000b) /\
+        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 8: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+        (V|1| == 0x000000000000000a) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|19| <=u 0x7fffffffffffffd6) /\ (V|1| == 0x000000000000000a) /\
+        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 9: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+        (V|1| == 0x0000000000000009) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|19| <=u 0x7fffffffffffffda) /\ (V|1| == 0x0000000000000009) /\
+        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 10: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+         (V|1| == 0x0000000000000008) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|19| <=u 0x7fffffffffffffde) /\ (V|1| == 0x0000000000000008) /\
+         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 11: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+         (V|1| == 0x0000000000000007) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|19| <=u 0x7fffffffffffffe2) /\ (V|1| == 0x0000000000000007) /\
+         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 12: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+         (V|1| == 0x0000000000000006) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|19| <=u 0x7fffffffffffffe6) /\ (V|1| == 0x0000000000000006) /\
+         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 13: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+         (V|1| == 0x0000000000000005) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|19| <=u 0x7fffffffffffffea) /\ (V|1| == 0x0000000000000005) /\
+         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 14: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+         (V|1| == 0x0000000000000004) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|19| <=u 0x7fffffffffffffee) /\ (V|1| == 0x0000000000000004) /\
+         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 15: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+         (V|1| == 0x0000000000000003) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|19| <=u 0x7ffffffffffffff2) /\ (V|1| == 0x0000000000000003) /\
+         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 16: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+         (V|1| == 0x0000000000000002) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|19| <=u 0x7ffffffffffffff6) /\ (V|1| == 0x0000000000000002) /\
+         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 17: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
+         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
+         (0x0000000000000001 == V|1|) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|19| <=u 0x7ffffffffffffffa) /\ (0x0000000000000001 == V|1|) /\
+         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
   
-  thread 'main' (135353467) panicked at src/bin/obol-driver/main.rs:103:14:
-  Failed to write smir.json to output: ()
-  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
-  ERROR Compilation panicked
-  [3]
 
 Test our simple Kani demo works
   $ soteria-rust exec demo.rs --kani
