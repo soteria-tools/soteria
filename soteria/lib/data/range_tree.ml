@@ -33,6 +33,8 @@ end = struct
   let leaf = make ~height:0 ~is_balanced:true ()
 end
 
+type info = Info.t
+
 type ('a, 'sint) t = {
   node : 'a;
   range : 'sint * 'sint;
