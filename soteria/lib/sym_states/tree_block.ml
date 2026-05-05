@@ -365,11 +365,6 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     struct
       open M.Syntax
 
-      let rec depth t =
-        match t.children with
-        | None -> 1
-        | Some (l, r) -> 1 + max (depth l) (depth r)
-
       let ( let* ) x f = M.bind f x
       let ( let+ ) x f = M.map f x
       let ( let*^ ) x f = M.bind f (M.lift x)
