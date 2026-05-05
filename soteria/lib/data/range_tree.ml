@@ -1,20 +1,7 @@
 open Soteria_std
+open Range_tree_intf
 
-module Info : sig
-  type t
-
-  val make : height:int -> is_balanced:bool -> unit -> t
-
-  (** Height of the tree (maximum depth) *)
-  val height : t -> int
-
-  (** [is_balanced] says whether we know {e for sure} that the tree is balanced.
-  *)
-  val is_balanced : t -> bool
-
-  (** Information associated with a leaf node (height = 0; balanced = true) *)
-  val leaf : t
-end = struct
+module Info : Info_S = struct
   (** To avoid increasing the size of allocation, and because the number of
       nodes in the tree is exponential in the height, we can safely assume that
       the height of the tree will ever at most take e.g. ~30bits (already

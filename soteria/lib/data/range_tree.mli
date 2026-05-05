@@ -15,23 +15,11 @@
     any node, the height of its left and right children can differ by at most 1.
     This is for obvious performance reasons. *)
 
-(** Module describing the information associated to a range tree, such as its
-    height and whether it is balanced. *)
-module Info : sig
-  type t
+open Range_tree_intf
 
-  val make : height:int -> is_balanced:bool -> unit -> t
-
-  (** Height of the tree (maximum depth) *)
-  val height : t -> int
-
-  (** [is_balanced] says whether we know {e for sure} that the tree is balanced.
-  *)
-  val is_balanced : t -> bool
-
-  (** Information associated with a leaf node (height = 0; balanced = true) *)
-  val leaf : t
-end
+(** Module describing the information associated to a range tree node, such as
+    its height and whether it is balanced. *)
+module Info : Info_S
 
 (** A "Range Tree", representing a symbolic range of data sequences ['a], using
     ranges over symbolic integer representation ['sint]. *)
