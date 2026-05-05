@@ -1,20 +1,17 @@
 module RT = Soteria.Data.Range_tree
 
-let height t = RT.Info.height t.RT.info
-let is_balanced t = RT.Info.is_balanced t.RT.info
-
 let rec check_height (t : _ RT.t) =
   let lo, hi = t.range in
   match t.children with
   | None ->
       Alcotest.(check int)
         (Printf.sprintf "height at [%d..%d)" lo hi)
-        0 (height t)
+        0 (RT.height t)
   | Some (l, r) ->
       Alcotest.(check int)
         (Printf.sprintf "height at [%d..%d)" lo hi)
-        (1 + max (height l) (height r))
-        (height t);
+        (1 + max (RT.height l) (RT.height r))
+        (RT.height t);
       check_height l;
       check_height r
 
@@ -22,15 +19,22 @@ let rec check_balanced (t : _ RT.t) =
   let lo, hi = t.range in
   Alcotest.(check bool)
     (Printf.sprintf "is_balanced flag at [%d..%d)" lo hi)
-    true (is_balanced t);
+    true (RT.is_balanced t);
   match t.children with
   | None -> ()
   | Some (l, r) ->
       Alcotest.(check bool)
         (Printf.sprintf "balance at [%d..%d) (child heights %d vs %d)" lo hi
-           (height l) (height r))
+           (RT.height l) (RT.height r))
         true
-        (abs (height l - height r) <= 1);
+        (abs (RT.height l - RT.height r) <= 1);
+      (* Invariant: a balanced node implies both children are also balanced *)
+      Alcotest.(check bool)
+        (Printf.sprintf "left child is_balanced at [%d..%d)" lo hi)
+        true (RT.is_balanced l);
+      Alcotest.(check bool)
+        (Printf.sprintf "right child is_balanced at [%d..%d)" lo hi)
+        true (RT.is_balanced r);
       check_balanced l;
       check_balanced r
 
@@ -96,7 +100,7 @@ let rebuild t = RT.rebuild ~merge:( @ ) t
 
 let test_leaf () =
   let t = leaf 0 10 in
-  Alcotest.(check int) "height" 0 (height t);
+  Alcotest.(check int) "height" 0 (RT.height t);
   Alcotest.(check bool) "no children" true (Option.is_none t.children);
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
@@ -104,7 +108,7 @@ let test_leaf () =
 let test_balanced_pair () =
   let l = leaf 0 5 and r = leaf 5 10 in
   let t = inner 0 10 l r in
-  Alcotest.(check int) "height" 1 (height t);
+  Alcotest.(check int) "height" 1 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
@@ -126,7 +130,7 @@ let test_left_left_heavy () =
   let left = inner 0 6 c d in
   let right = leaf 6 8 in
   let t = inner 0 8 left right in
-  Alcotest.(check int) "height after rotation" 2 (height t);
+  Alcotest.(check int) "height after rotation" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
@@ -148,7 +152,7 @@ let test_right_right_heavy () =
   let right = inner 4 10 a d in
   let left = leaf 0 4 in
   let t = inner 0 10 left right in
-  Alcotest.(check int) "height after rotation" 2 (height t);
+  Alcotest.(check int) "height after rotation" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
@@ -170,7 +174,7 @@ let test_left_right_heavy () =
   let left = inner 0 6 a lr in
   let right = leaf 6 8 in
   let t = inner 0 8 left right in
-  Alcotest.(check int) "height after double rotation" 2 (height t);
+  Alcotest.(check int) "height after double rotation" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
@@ -192,7 +196,7 @@ let test_right_left_heavy () =
   let right = inner 4 10 rl c in
   let left = leaf 0 4 in
   let t = inner 0 10 left right in
-  Alcotest.(check int) "height after double rotation" 2 (height t);
+  Alcotest.(check int) "height after double rotation" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
@@ -211,7 +215,7 @@ let test_full_balanced () =
   let ab = inner 0 4 a b in
   let cd = inner 4 8 c d in
   let t = inner 0 8 ab cd in
-  Alcotest.(check int) "height" 2 (height t);
+  Alcotest.(check int) "height" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
@@ -225,10 +229,10 @@ let test_large_imbalance () =
   in
   let left = inner 0 2 (leaf 0 1) (leaf 1 2) in
   let right = balanced 2 34 in
-  Alcotest.(check int) "left height pre-check" 1 (height left);
-  Alcotest.(check int) "right height pre-check" 5 (height right);
+  Alcotest.(check int) "left height pre-check" 1 (RT.height left);
+  Alcotest.(check int) "right height pre-check" 5 (RT.height right);
   let t = inner 0 34 left right in
-  Alcotest.(check int) "height after rotation cascade" 6 (height t);
+  Alcotest.(check int) "height after rotation cascade" 6 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 34) t.range;
   check_all t
 
@@ -236,7 +240,7 @@ let test_large_imbalance () =
 
 let test_leaf_rebuild () =
   let t = rebuild (leaf_u 0 10) in
-  Alcotest.(check int) "height" 0 (height t);
+  Alcotest.(check int) "height" 0 (RT.height t);
   Alcotest.(check bool) "no children" true (Option.is_none t.children);
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
@@ -244,7 +248,7 @@ let test_leaf_rebuild () =
 let test_balanced_pair_rebuild () =
   let l = leaf_u 0 5 and r = leaf_u 5 10 in
   let t = rebuild (inner_u 0 10 l r) in
-  Alcotest.(check int) "height" 1 (height t);
+  Alcotest.(check int) "height" 1 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
@@ -255,7 +259,7 @@ let test_left_left_heavy_rebuild () =
   let left = inner_u 0 6 c d in
   let right = leaf_u 6 8 in
   let t = rebuild (inner_u 0 8 left right) in
-  Alcotest.(check int) "height after rebuild" 2 (height t);
+  Alcotest.(check int) "height after rebuild" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
@@ -266,7 +270,7 @@ let test_right_right_heavy_rebuild () =
   let right = inner_u 4 10 a d in
   let left = leaf_u 0 4 in
   let t = rebuild (inner_u 0 10 left right) in
-  Alcotest.(check int) "height after rebuild" 2 (height t);
+  Alcotest.(check int) "height after rebuild" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
@@ -277,7 +281,7 @@ let test_left_right_heavy_rebuild () =
   let left = inner_u 0 6 a lr in
   let right = leaf_u 6 8 in
   let t = rebuild (inner_u 0 8 left right) in
-  Alcotest.(check int) "height after rebuild" 2 (height t);
+  Alcotest.(check int) "height after rebuild" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
@@ -288,7 +292,7 @@ let test_right_left_heavy_rebuild () =
   let right = inner_u 4 10 rl c in
   let left = leaf_u 0 4 in
   let t = rebuild (inner_u 0 10 left right) in
-  Alcotest.(check int) "height after rebuild" 2 (height t);
+  Alcotest.(check int) "height after rebuild" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 10) t.range;
   check_all t
 
@@ -298,7 +302,7 @@ let test_full_balanced_rebuild () =
   let ab = inner_u 0 4 a b in
   let cd = inner_u 4 8 c d in
   let t = rebuild (inner_u 0 8 ab cd) in
-  Alcotest.(check int) "height" 2 (height t);
+  Alcotest.(check int) "height" 2 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 8) t.range;
   check_all t
 
@@ -312,7 +316,7 @@ let test_large_imbalance_rebuild () =
   let left = inner_u 0 2 (leaf_u 0 1) (leaf_u 1 2) in
   let right = balanced_u 2 34 in
   let t = rebuild (inner_u 0 34 left right) in
-  Alcotest.(check int) "height after rebuild" 6 (height t);
+  Alcotest.(check int) "height after rebuild" 6 (RT.height t);
   Alcotest.(check (pair int int)) "range" (0, 34) t.range;
   check_all t
 
@@ -327,7 +331,7 @@ let test_make_raw_unbalanced_flag () =
   let right = leaf_u 6 8 in
   let t = inner_u 0 8 left right in
   Alcotest.(check bool)
-    "root is_balanced false before rebuild" false (is_balanced t)
+    "root is_balanced false before rebuild" false (RT.is_balanced t)
 
 (* After rebuild the flag must be true everywhere *)
 let test_make_raw_balanced_after_rebuild () =
@@ -338,6 +342,31 @@ let test_make_raw_balanced_after_rebuild () =
   let right = leaf_u 6 8 in
   let t = rebuild (inner_u 0 8 left right) in
   check_balanced t
+
+(* A node whose child is internally unbalanced must itself be marked unbalanced,
+   even when the immediate child heights differ by at most 1.
+
+   Tree shape (built entirely with make_raw):
+
+   root [0..7) h=3 / \ left [0..4) h=3 right [4..7) h=2 / \ e [0..3) h=2 f
+   [3..4) h=0 / \ c [0..2) d [2..3) h=1 h=0 *)
+let test_is_balanced_requires_balanced_children () =
+  let a = leaf_u 0 1 and b = leaf_u 1 2 in
+  let c = inner_u 0 2 a b in
+  let d = leaf_u 2 3 in
+  let e = inner_u 0 3 c d in
+  let f = leaf_u 3 4 in
+  let left = inner_u 0 4 e f in
+  (* h=3, internally LL-heavy: is_balanced=false *)
+  let g = leaf_u 4 5 and h_ = leaf_u 5 6 in
+  let gh = inner_u 4 6 g h_ in
+  let i = leaf_u 6 7 in
+  let right = inner_u 4 7 gh i in
+  (* h=2, balanced *)
+  (* abs(3-2)=1 so the parent's own heights are fine, but left is not
+     balanced *)
+  let t = inner_u 0 7 left right in
+  Alcotest.(check bool) "is_balanced = false" false (RT.is_balanced t)
 
 (* ── Runner ─────────────────────────────────────────────────────────────── *)
 
@@ -380,5 +409,7 @@ let () =
             test_make_raw_unbalanced_flag;
           Alcotest.test_case "rebuild sets flag true everywhere" `Quick
             test_make_raw_balanced_after_rebuild;
+          Alcotest.test_case "is_balanced requires balanced children" `Quick
+            test_is_balanced_requires_balanced_children;
         ] );
     ]
