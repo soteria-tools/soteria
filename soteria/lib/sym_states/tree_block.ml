@@ -456,6 +456,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
         let+ framed, new_root =
           frame_inside ~replace_node ~rebuild_parent root range
         in
+        (* We rebalance at the end.*)
         (framed, rebuild new_root)
     end
 
