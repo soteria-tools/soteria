@@ -60,9 +60,13 @@ let make_raw ~node ~range ?children () =
     match children with
     | None -> Info.make ~height:0 ~is_balanced:true ()
     | Some (left, right) ->
-        let h = 1 + max (height left) (height right) in
-        let balanced = abs (height left - height right) <= 1 in
-        Info.make ~height:h ~is_balanced:balanced ()
+        let hleft = height left in
+        let hright = height right in
+        let height = 1 + max hleft hright in
+        let is_balanced =
+          is_balanced left && is_balanced right && abs (hleft - hright) <= 1
+        in
+        Info.make ~height ~is_balanced ()
   in
   { node; range; children; info }
 
