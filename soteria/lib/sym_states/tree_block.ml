@@ -169,7 +169,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
   module Tree = struct
     type t = (MemVal.t, sint) tree
 
-    let pp : t Fmt.t = Data.Range_tree.pp Node.pp Symex.Value.ppa
+    let pp : t Fmt.t = Data.Range_tree.pp Node.pp MemVal.S_int.pp
     let node_merge l r = fst (Node.merge ~left:l ~right:r)
 
     let make ~node ~range ?children () =
@@ -199,7 +199,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
       return (make ~node:t.node ~range:t.range ~children:(left, right) ())
 
     let offset ~by t =
-      match MemVal.S_bounded_int.to_z by with
+      match MemVal.S_int.to_z by with
       | Some z when Z.equal z Z.zero -> t
       | _ -> Data.Range_tree.offset ~add:( +@ ) ~by t
 

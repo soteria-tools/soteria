@@ -71,9 +71,9 @@ module With_monad3 (M : sig
   type ('ok, 'err, 'fix) t
 
   val bind :
-    ('ok, 'err, 'fix) t -> ('ok -> ('a, 'err, 'fix) t) -> ('a, 'err, 'fix) t
+    ('ok -> ('a, 'err, 'fix) t) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
 
-  val map : ('ok, 'err, 'fix) t -> ('ok -> 'a) -> ('a, 'err, 'fix) t
+  val map : ('ok -> 'a) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
 end) : sig
   (** [map_leaves f t] receives a mapping function [f] operating within the
       monad [M], as well as a tree, and applys [f] to all {b leaves} of the tree

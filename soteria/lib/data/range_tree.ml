@@ -273,13 +273,13 @@ module With_monad3 (M : sig
   type ('ok, 'err, 'fix) t
 
   val bind :
-    ('ok, 'err, 'fix) t -> ('ok -> ('a, 'err, 'fix) t) -> ('a, 'err, 'fix) t
+    ('ok -> ('a, 'err, 'fix) t) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
 
-  val map : ('ok, 'err, 'fix) t -> ('ok -> 'a) -> ('a, 'err, 'fix) t
+  val map : ('ok -> 'a) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
 end) =
 struct
-  let ( let+ ) = M.map
-  let ( let* ) = M.bind
+  let ( let+ ) x f = M.map f x
+  let ( let* ) x f = M.bind f x
 
   let rec map_leaves (f : 'a -> ('a, 'b, 'c) M.t) (t : ('a, 'sint) t) :
       (('a, 'sint) t, 'b, 'c) M.t =
