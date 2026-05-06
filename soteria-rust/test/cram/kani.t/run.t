@@ -30,7 +30,6 @@ Test #[kani::should_panic]
   note: should_panic::when_at_the_disco: done in <time>, ran 1 branch
   PC 1: empty
   
-
 Test kani::assert
   $ soteria-rust exec assert.rs --kani
   Compiling... done in <time>
@@ -320,7 +319,3 @@ Test our simple Kani demo works
   PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   [1]
-
-
-
-
