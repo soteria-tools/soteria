@@ -94,8 +94,8 @@ let build_leaf ~node ~range () = make_raw ~node ~range ()
 
     {3 Left-LEFT (single right rotation)}
 
-    Triggered when [hl > hr + 1] and the left child's left grandchild is at
-    least as tall as its right grandchild ([ll.height >= lr.height]).
+    Triggered when [hl > hr + 1] and the left child's left child is at
+    least as tall as its right child ([ll.height >= lr.height]).
 
     Before rotation:
     {v
