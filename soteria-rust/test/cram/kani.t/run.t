@@ -258,7 +258,6 @@ Test kani::vec::any_vec
          (V|19| <=u 0x7ffffffffffffffa) /\ (0x0000000000000001 == V|1|) /\
          (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
   
-
 Test our simple Kani demo works
   $ soteria-rust exec demo.rs --kani
   Compiling... done in <time>
