@@ -25,8 +25,6 @@ Test kani::assume
   note: assume::assume_i32: done in <time>, ran 1 branch
   PC 1: (0x00000001 <=u V|1|)
   
-
-
 Test #[kani::should_panic]
   $ soteria-rust exec should_panic.rs --kani
   Compiling... done in <time>
@@ -98,10 +96,6 @@ Test kani::assert
   PC 1: (V|1| != V|2|)
   
   [1]
-
-
-
-
 
 Test kani::slice::any_slice_of_array
   $ soteria-rust exec any_slice.rs --kani
