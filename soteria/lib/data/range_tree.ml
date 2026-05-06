@@ -28,8 +28,8 @@ end = struct
     let balanced_bit = if is_balanced then 0x40000000 else 0 in
     height lor balanced_bit
 
-  let height t = t land 0x3FFFFFFF
-  let is_balanced t = t land 0x40000000 <> 0
+  let[@inline] height t = t land 0x3FFFFFFF
+  let[@inline] is_balanced t = t land 0x40000000 <> 0
   let leaf = make ~height:0 ~is_balanced:true ()
 end
 
@@ -203,7 +203,7 @@ let build_leaf ~node ~range () = make_raw ~node ~range ()
     value [merge rlr.node rr.node]. *)
 let rec build ~node ~range ~merge ?children () =
   match children with
-  | None -> { node; range; children = None; info = Info.leaf }
+  | None -> build_leaf ~node ~range ()
   | Some (left, right) ->
       let hl = height left and hr = height right in
       if hl > hr + 1 then
