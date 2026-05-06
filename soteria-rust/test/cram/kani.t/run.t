@@ -12,8 +12,6 @@ Test kani::any
   PC 2: (0x80 <=u V|1|)
   PC 3: (0x01 <=u V|1|) /\ (V|1| <=u 0x7f)
   
-
-
 Test kani::assume
   $ soteria-rust exec assume.rs --kani
   Compiling... done in <time>
