@@ -334,16 +334,15 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
   module Tree = struct
     include Tree
 
-    let map_leaves_tb f (t : t) =
-      t
-      |> map_leaves @@ function
-         | TB.NotOwned Totally ->
-             failwith "impossible: iterating over non-owned node"
-         | NotOwned Partially | Owned Lazy ->
-             failwith "impossible: iterating over intermediate node"
-         | Owned (Leaf (v, tb)) ->
-             let++ tb' = lift_tb_miss @@ f tb in
-             TB.Owned (Leaf (v, tb'))
+    let map_leaves_tb f =
+      map_leaves @@ function
+      | TB.NotOwned Totally ->
+          failwith "impossible: iterating over non-owned node"
+      | NotOwned Partially | Owned Lazy ->
+          failwith "impossible: iterating over intermediate node"
+      | Owned (Leaf (v, tb)) ->
+          let++ tb' = lift_tb_miss @@ f tb in
+          TB.Owned (Leaf (v, tb'))
 
     let iter_leaves_rev (t : t) =
       iter_leaves_rev t
