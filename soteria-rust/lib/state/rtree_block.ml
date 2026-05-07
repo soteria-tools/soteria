@@ -202,7 +202,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         | Unowned, None -> TB.NotOwned Totally
         | _, _ -> TB.Owned (Leaf (v, tb))
       in
-      { range = t.range; node; children = None }
+      TB.build_tree_leaf ~range:t.range ~node ()
 
     module Rust_val_consumer = Rust_val.Learn_eq (DecayMap.SM)
 
@@ -299,7 +299,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
             | NotOwned _, _ | _, NotOwned _ -> NotOwned Partially
             | Owned left, Owned right -> Owned (merge ~left ~right)
           in
-          { t with node; children = Some (l, r) }
+          TB.make_tree_raw ~node ~range:t.range ~children:(l, r) ()
       (* Tree borrows: we produce recursively, as we don't want to merge the
          leaves *)
       | STree_borrow_st s, NotOwned Totally ->
@@ -312,7 +312,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
           let l, r = Option.get t.children in
           let* l = produce s l in
           let+ r = produce s r in
-          { t with children = Some (l, r) }
+          TB.make_tree_raw ~node:t.node ~range:t.range ~children:(l, r) ()
       | STree_borrow _, _ ->
           failwith
             "TB structure syn in tree block, should have been caught before"
@@ -334,19 +334,19 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
   module Tree = struct
     include Tree
 
-    let map_leaves_tb f (t : t) =
-      map_leaves t @@ fun leaf ->
-      match leaf.node with
-      | NotOwned Totally -> failwith "impossible: iterating over non-owned node"
+    let map_leaves_tb f =
+      map_leaves @@ function
+      | TB.NotOwned Totally ->
+          failwith "impossible: iterating over non-owned node"
       | NotOwned Partially | Owned Lazy ->
           failwith "impossible: iterating over intermediate node"
       | Owned (Leaf (v, tb)) ->
           let++ tb' = lift_tb_miss @@ f tb in
-          { leaf with node = Owned (Leaf (v, tb')) }
+          TB.Owned (Leaf (v, tb'))
 
     let iter_leaves_rev (t : t) =
       iter_leaves_rev t
-      |> Iter.filter_map @@ fun leaf ->
+      |> Iter.filter_map @@ fun (leaf : _ tree) ->
          match leaf.node with
          | NotOwned Totally ->
              failwith "impossible: iterating over non-owned node"
@@ -463,15 +463,15 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       (Tree.iter_leaves_rev t)
 
   let init range v tb : Tree.t =
-    Tree.make ~node:(Owned (Leaf (Init v, tb))) ~range ()
+    Tree.make ~node:(TB.Owned (Leaf (Init v, tb))) ~range ()
 
   let uninit range tb : Tree.t =
-    Tree.make ~node:(Owned (Leaf (Uninit, tb))) ~range ()
+    Tree.make ~node:(TB.Owned (Leaf (Uninit, tb))) ~range ()
 
   let zeros range tb : Tree.t =
-    Tree.make ~node:(Owned (Leaf (Zeros, tb))) ~range ()
+    Tree.make ~node:(TB.Owned (Leaf (Zeros, tb))) ~range ()
 
-  let as_owned ?mk_fixes t f =
+  let as_owned ?mk_fixes (t : _ tree) f =
     match (t.node, mk_fixes) with
     | Owned _, _ -> f t
     | NotOwned _, None -> miss_no_fix ~reason:"as_owned" ()
