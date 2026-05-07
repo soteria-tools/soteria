@@ -716,8 +716,15 @@ module Make (Borrows : Tree_borrows.T) = struct
            | NotOwned _ -> failwith "impossible: checked before"
            | Owned Lazy ->
                let l, r = Option.get t.children in
-               { t with children = Some (aux tb l, aux tb r) }
-           | Owned (Leaf (v, _)) -> { t with node = Owned (Leaf (v, tb)) }
+               Tree.make ~node:t.node ~range:t.range
+                 ~children:(aux tb l, aux tb r)
+                 ()
+           | Owned (Leaf (v, _)) ->
+               let open Tree_block.MemVal in
+               (* SACHA: Why isn't this updating the children as well? *)
+               Tree.make
+                 ~node:(TB.Owned (Leaf (v, tb)))
+                 ~range:t.range ?children:t.children ()
          in
          try DecayMap.SM.Result.ok (aux tb t)
          with Failure msg -> DecayMap.SM.not_impl msg
