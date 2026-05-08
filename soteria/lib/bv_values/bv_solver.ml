@@ -1,6 +1,6 @@
 open Soteria_std
 open Logs.Import
-module Var = Svalue.Var
+open Svalue
 
 let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
   let simplify = simplify ~trivial_truthiness ~fallback in

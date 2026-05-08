@@ -91,7 +91,7 @@ let print_test d =
     Fmt.iter_bindings ~sep:Fmt.semi Var.Hashtbl.iter
       (Fmt.Dump.pair Var.pp Svalue.pp_ty)
   in
-  let s = Eval.eval ~force:true d in
+  let s = Svalue.Eval.eval ~force:true d in
   let checks = Direct.collect_checked_assumptions d in
   let pp_checks = Fmt.iter ~sep:Fmt.semi List.iter Svalue.pp in
   let model = z3_check_with_model ~vars_d:vars ~assumptions:checks s d in
@@ -110,7 +110,7 @@ let print_test d =
     Svalue.pp d Svalue.pp s pp_vars vars pp_checks checks pp_model model
 
 let check_smart_eq_direct direct =
-  let smart = Eval.eval ~force:true direct in
+  let smart = Svalue.Eval.eval ~force:true direct in
   if Svalue.equal smart direct then true else z3_check_equivalent smart direct
 
 let mk_test ~name gen =
