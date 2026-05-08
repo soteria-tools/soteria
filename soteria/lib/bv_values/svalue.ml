@@ -477,7 +477,13 @@ module type Eval = sig
   val eval_unop : Unop.t -> t -> t
   val eval_binop : Binop.t -> t -> t -> t
   val eval_nop : Nop.t -> t list -> t
-  val eval : ?force:bool -> ?eval_var:(t -> Var.t -> ty -> t) -> t -> t
+
+  val eval :
+    ?force:bool ->
+    ?eval_var:(t -> Var.t -> ty -> t) ->
+    ?subst:(t -> t) ->
+    t ->
+    t
 end
 
 (** {2 Booleans} *)
@@ -2317,9 +2323,13 @@ and Eval : Eval = struct
 
   let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct
 
-  let rec eval ~force ~eval_var (x : t) : t =
-    let eval' = eval ~force in
-    let eval = eval ~force ~eval_var in
+  let rec eval ~force ~eval_var ~subst (x : t) : t =
+    let eval' = eval ~force ~subst in
+    let eval x =
+      let x = subst x in
+      let res = eval ~force ~eval_var ~subst x in
+      if equal res x then res else subst res
+    in
     match x.node.kind with
     | Var v -> eval_var x v x.node.ty
     | Bool _ | Float _ | BitVec _ -> x
@@ -2363,8 +2373,8 @@ and Eval : Eval = struct
       even if no sub-expressions changed (required if evaluating an expression
       that has not been constructed using smart constructors). *)
   let eval ?(force = false) ?(eval_var : t -> Var.t -> ty -> t = fun x _ _ -> x)
-      (x : t) : t =
-    try eval ~force ~eval_var x with Division_by_zero -> x
+      ?(subst : t -> t = Fun.id) (x : t) : t =
+    try eval ~force ~eval_var ~subst (subst x) with Division_by_zero -> x
 end
 
 (** {2 Pointers} *)
