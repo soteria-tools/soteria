@@ -13,7 +13,7 @@ let[@inline] simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
         | _ -> fallback v)
     | _ -> v
   in
-  Eval.eval ~subst v
+  subst (Eval.eval ~subst v)
 
 module Make_incremental
     (Analysis : Analyses.S)

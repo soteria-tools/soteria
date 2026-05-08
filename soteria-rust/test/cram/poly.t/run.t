@@ -12,13 +12,11 @@ Simple polymorphic function with no polymorphic values
         ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <=s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
         ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000000 == V|1|) : (0x0000000000000000 == (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
         ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
-        ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
         !(((0b000 == extract[0-2](V|1|)) ? (0x0000000000000000 <s V|1|) : (0x0000000000000000 <s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|))))) /\
         (V|1| <=u 0x00000000000003ff)
   PC 2: ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff8 != (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
         ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <=s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
         !(((0b000 == extract[0-2](V|1|)) ? (0x0000000000000000 == V|1|) : (0x0000000000000000 == (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|))))) /\
-        ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
         ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
         (V|1| <=u 0x00000000000003ff)
   
@@ -121,9 +119,6 @@ Test linked lists, to ensure dropping the list works despite the generic type
         (((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) || ((extract[0-2](V|1|) != 0b000) && ((0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)) <=s V|1|))) /\
         ((extract[0-2](V|1|) == 0b000) || (V|1| <s (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
         ((extract[0-2](V|1|) == 0b000) || (0xffffffffffffffe8 <s (0xfffffffffffffff8 & V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xffffffffffffffe8 <s (0xfffffffffffffff8 & V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xffffffffffffffe8 <s (0xfffffffffffffff8 & V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & V|1|))) /\
         (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
         (0x0000000000000008 <=u V|2|) /\
         (V|1| == ((extract[0-2](V|1|) == 0b000) ? V|1| : (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) /\
@@ -144,9 +139,6 @@ Test linked lists, to ensure dropping the list works despite the generic type
         ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & V|1|))) /\
         ((extract[0-2](V|1|) == 0b000) || (0xffffffffffffffe8 <s (0xfffffffffffffff8 & V|1|))) /\
         ((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xffffffffffffffe8 <s (0xfffffffffffffff8 & V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xffffffffffffffe8 <s (0xfffffffffffffff8 & V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & V|1|))) /\
         (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
         (0x0000000000000008 <=u V|2|) /\ (0b000 == extract[0-2](V|2|))
   
