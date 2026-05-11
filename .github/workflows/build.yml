@@ -20,7 +20,7 @@ jobs:
     name: Build and Test
     strategy:
       matrix:
-        operating-system: [macos-latest] # TODO: add other operating systems
+        operating-system: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3, node, ocaml and opam
@@ -69,12 +69,17 @@ jobs:
         with:
           path: obol-bin
           key: ${{ runner.os }}-${{ runner.arch }}-obol-${{ env.OBOL_COMMIT_HASH }}
-      - name: Install Obol if not cached
+      - name: Install Obol if not cached (macOS)
         run: |
           brew install make
           ../soteria/scripts/versionsync.py pull obol --init
           cp -r ../obol/bin obol-bin
-        if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
+        if: ${{ !steps.restore-obol-cache.outputs.cache-hit && runner.os == 'macOS' }}
+      - name: Install Obol if not cached (Linux)
+        run: |
+          ../soteria/scripts/versionsync.py pull obol --init
+          cp -r ../obol/bin obol-bin
+        if: ${{ !steps.restore-obol-cache.outputs.cache-hit && runner.os == 'Linux' }}
       - name: Add Obol to path
         run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
 
@@ -85,12 +90,17 @@ jobs:
         with:
           path: charon-bin
           key: ${{ runner.os }}-${{ runner.arch }}-charon-${{ env.CHARON_COMMIT_HASH }}
-      - name: Install Charon if not cached
+      - name: Install Charon if not cached (macOS)
         run: |
           brew install make
           ../soteria/scripts/versionsync.py pull charon --init
           cp -r ../charon/bin charon-bin
-        if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
+        if: ${{ !steps.restore-charon-cache.outputs.cache-hit && runner.os == 'macOS' }}
+      - name: Install Charon if not cached (Linux)
+        run: |
+          ../soteria/scripts/versionsync.py pull charon --init
+          cp -r ../charon/bin charon-bin
+        if: ${{ !steps.restore-charon-cache.outputs.cache-hit && runner.os == 'Linux' }}
       - name: Add Charon to path
         run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
 
@@ -130,13 +140,23 @@ jobs:
       - name: Build JS stuff
         run: yarn compile
 
+      # Compute platform name for artifact naming (e.g. macos-arm64, linux-x86_64)
+      - name: Set platform artifact name
+        id: platform
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            echo "name=macos-arm64" >> $GITHUB_OUTPUT
+          else
+            echo "name=linux-x86_64" >> $GITHUB_OUTPUT
+          fi
+
       # Packaging OCaml distribution and sending it as artifact
       - name: Create soteria-c package
         run: make package-soteria-c
       - name: Upload soteria-c package
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.operating-system }}-soteria-c-package
+          name: ${{ steps.platform.outputs.name }}-soteria-c-package
           path: packages/soteria-c
           if-no-files-found: error
 
@@ -145,7 +165,7 @@ jobs:
       - name: Upload soteria-rust package
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.operating-system }}-soteria-rust-package
+          name: ${{ steps.platform.outputs.name }}-soteria-rust-package
           path: packages/soteria-rust
           if-no-files-found: error
 
@@ -158,8 +178,7 @@ jobs:
           name: odoc
           path: _build/default/_doc/_html
           if-no-files-found: error
-        # No need to upload artifact twice
-        if: ${{ matrix.operating-system == 'macos-latest' }}
+        if: runner.os == 'macOS'
 
       - name: Opam Cleanup
         run: opam clean -a -r
