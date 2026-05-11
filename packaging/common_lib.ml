@@ -11,8 +11,7 @@ let dest_dir_arg position =
     & info [] ~docv:"DEST_DIR" ~doc:"Path to the destination directory")
 
 module Infer_Dylibs = struct
-  let get_os () =
-    run "uname" [ "-s" ] |. read_all |> eval |> String.trim
+  let get_os () = run "uname" [ "-s" ] |. read_all |> eval |> String.trim
 
   let infer_dylibs exe =
     match get_os () with
@@ -24,7 +23,7 @@ module Infer_Dylibs = struct
         |> eval
         |> print_string
     | _ ->
-        (* Linux: ldd output is "  libfoo.so => /path/to/libfoo.so (0xaddr)" *)
+        (* Linux: ldd output is " libfoo.so => /path/to/libfoo.so (0xaddr)" *)
         run "ldd" [ exe ]
         |. run "awk" [ "/=>/ {print $3}" ]
         |. read_all
@@ -43,7 +42,6 @@ end
 
 module Copy_files = struct
   let ignored_regexp = Str.quote "libSystem.B.dylib" |> Str.regexp
-
   let linux_system_prefixes = [ "/lib/"; "/lib64/"; "/usr/lib/"; "/usr/lib64/" ]
 
   let is_linux_system_lib path =

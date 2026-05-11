@@ -4,7 +4,8 @@
 
 (rule ; Verify macOS_dylibs.txt is up-to-date on macOS.
  (alias soteria-rust-dylist-file)
- (enabled_if (= %{system} "macosx"))
+ (enabled_if
+  (= %{system} "macosx"))
  (deps %{bin:soteria-rust} ./package.exe)
  (action
   (progn
@@ -15,7 +16,8 @@
 
 (rule ; Verify linux_dylibs.txt is up-to-date on Linux.
  (alias soteria-rust-dylist-file)
- (enabled_if (= %{system} "linux"))
+ (enabled_if
+  (= %{system} "linux"))
  (deps %{bin:soteria-rust} ./package.exe)
  (action
   (progn

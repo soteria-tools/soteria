@@ -9,7 +9,8 @@
 
 (rule ; Verify macOS_dylibs.txt is up-to-date on macOS.
  (alias soteria-c-dylist-file)
- (enabled_if (= %{system} "macosx"))
+ (enabled_if
+  (= %{system} "macosx"))
  (deps %{bin:soteria-c} ./package.exe)
  (action
   (progn
@@ -20,7 +21,8 @@
 
 (rule ; Verify linux_dylibs.txt is up-to-date on Linux.
  (alias soteria-c-dylist-file)
- (enabled_if (= %{system} "linux"))
+ (enabled_if
+  (= %{system} "linux"))
  (deps %{bin:soteria-c} ./package.exe)
  (action
   (progn
