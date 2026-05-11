@@ -2,6 +2,8 @@
 OCAML_VERSION=5.4.0
 # [versionsync: OCAMLFORMAT_VERSION=0.28.1]
 OCAMLFORMAT_VERSION=0.28.1
+# [versionsync: DUNE_VERSION=3.23.0]
+DUNE_VERSION=3.23.0
 
 OPAM=opam
 OPAMX=$(OPAM) exec --
@@ -138,7 +140,7 @@ soteria-core-deps:
 .PHONY: ocaml-deps
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc -y
-	$(OPAM) install ocamlformat.$(OCAMLFORMAT_VERSION) -y
+	$(OPAM) install dune.$(DUNE_VERSION) ocamlformat.$(OCAMLFORMAT_VERSION) -y
 	$(OPAM) install sherlodoc -y
 
 ##### JavaScript stuff #####
