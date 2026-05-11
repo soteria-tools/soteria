@@ -945,13 +945,24 @@ and BitVec : BitVec = struct
         BitVec _ ) ->
         add ~checked:(checked && c) (add c1 v2) r
     | ( Binop
-          (Sub { checked = c }, l, ({ node = { kind = BitVec _; _ }; _ } as c1)),
-        BitVec _ ) ->
-        add ~checked:(checked && c) l (sub v2 c1)
+          ( Sub { checked = c },
+            l,
+            ({ node = { kind = BitVec bv_c1; _ }; _ } as c1) ),
+        BitVec bv_v2 ) ->
+        (* (l - c1) + v2; if v2 < c1, sub v2 c1 wraps which breaks unsigned
+           checked-ness, so use l - (c1 - v2) instead. *)
+        if Z.lt bv_v2 bv_c1 then sub ~checked:(checked && c) l (sub c1 v2)
+        else add ~checked:(checked && c) l (sub v2 c1)
     | ( Binop
-          (Sub { checked = c }, ({ node = { kind = BitVec _; _ }; _ } as c1), r),
-        BitVec _ ) ->
-        sub ~checked:(checked && c) (add c1 v2) r
+          ( Sub { checked = c },
+            ({ node = { kind = BitVec bv_c1; _ }; _ } as c1),
+            r ),
+        BitVec bv_v2 ) ->
+        (* (c1 - r) + v2; if c1 + v2 overflows the type, add c1 v2 wraps which
+           breaks unsigned checked-ness, so drop checked in that case. *)
+        let sz = size_of v1.node.ty in
+        let no_wrap = Z.lt Z.(bv_c1 + bv_v2) Z.(one lsl sz) in
+        sub ~checked:(no_wrap && checked && c) (add c1 v2) r
     | _, Binop (Sub _, l, r) when equal r v1 -> l
     | Binop (Sub _, l, r), _ when equal r v2 -> l
     | Binop (Mul _, l1, r1), Binop (Mul _, l2, r2)
