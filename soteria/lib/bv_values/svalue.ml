@@ -571,7 +571,7 @@ module rec Bool : Bool = struct
         BitVec.of_bool (size_of if_.node.ty) guard
     | _ when equal if_ else_ -> if_
     | _ when equal guard if_ -> or_ guard else_
-    | _ when equal guard else_ -> or_ (not guard) if_
+    | _ when equal guard else_ -> and_ guard if_
     | _ ->
         let[@inline] is_concrete = function
           | { node = { kind = BitVec _ | Float _ | Bool _; _ }; _ } -> true
