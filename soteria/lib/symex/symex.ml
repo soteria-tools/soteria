@@ -637,15 +637,20 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     | Some false -> else_ () f
     | None ->
         Symex_state.save ();
-        Solver.add_constraints ~simplified:true [ Value.(not guard) ];
+        Solver.add_constraints ~simplified:true [ Value.not guard ];
         let neg_unsat = Solver_result.is_unsat (Solver.sat ()) in
-        if neg_unsat then then_ () f;
         Symex_state.backtrack_n 1;
-        if not neg_unsat then (
+        if neg_unsat then (
           (* Adding this constraint is technically redundant, but it's still
              worth having it in the PC for simplifications. *)
-          Solver.add_constraints [ guard ];
-          else_ () f)
+          Solver.add_constraints ~simplified:true [ guard ];
+          then_ () f)
+        else
+          (* Don't add anything to the PC: [else_] is the general fallback that
+             must cover both cases (per the contract that [then_] and [else_]
+             agree when [guard] holds). Constraining the PC either way would
+             drop paths. *)
+          else_ () f
 
   let branch_on_take_one_ux ?left_branch_name:_ ?right_branch_name:_ guard
       ~then_ ~else_ : 'a t =
