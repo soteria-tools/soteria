@@ -6,7 +6,7 @@
   ^ 
   
   No bugs found
-  Summaries for test_561:
+  Summaries for test_<id>:
     Analysed {
       raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000000) };
       manifest_bugs = []}

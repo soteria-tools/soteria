@@ -15,9 +15,7 @@ let default_abductor_fuel =
 let generate_summaries_for (fundef : fundef) =
   let open Syntaxes.List in
   let fid, (floc, _, _, _, _) = fundef in
-  let section_name =
-    "Generate summaries for " ^ Cerb_frontend.Symbol.show_symbol fid
-  in
+  let section_name = Fmt.str "Generate summaries for %a" Symbol_std.pp fid in
   let@ () = L.with_section section_name in
   [%l.info "%s" section_name];
   let* arg_tys =

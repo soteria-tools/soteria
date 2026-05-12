@@ -147,8 +147,8 @@
                    MemVal {offset = 0x0000000000000000;
                      len = 0x0000000000000004; v = 0x0000000c : signed int};
                    info = None }));
-             (Ser_globs (x_562, 0x0000000000000002));
-             (Ser_globs (x_646, 0x0000000000000001))])]
+             (Ser_globs (x_<id>, 0x0000000000000002));
+             (Ser_globs (x_<id>, 0x0000000000000001))])]
   
   Executed 7 statements
   Verification Success!

@@ -1,7 +1,7 @@
 Warning and unspported with __VERIFIER enabled 
   $ soteria-c exec test.c --no-ignore-parse-failures --no-ignore-duplicate-symbols
   warning: Test-Comp support is not enabled, but detected use of the __VERIFIER API. Soteria will consider the function as missing a body.
-  error: Analysis gave up: Unsupported: Cannot call external function: __VERIFIER_nondet_int_561 in main
+  error: Analysis gave up: Unsupported: Cannot call external function: __VERIFIER_nondet_int_<id> in main
   Executed 2 statements
   Verification Failure! (Unsupported features)
   [2]
