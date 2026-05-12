@@ -62,7 +62,7 @@ module type S = sig
   val map_env : ('env -> 'env) -> (unit, 'env) t
   val with_env : env:'env1 -> ('a, 'env1) t -> ('a, 'env) t
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
-  val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
+  val assume : ?hidden:bool -> Typed.T.sbool Typed.t list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
   val get_trace : unit -> (Trace.t, 'env) t
 
@@ -104,6 +104,8 @@ module type S = sig
 
     val subst_constant_expr :
       Types.constant_expr -> (Types.constant_expr, 'env) t
+
+    val set_initial_params : Types.generic_params -> (unit, 'env) t
   end
 
   module Sptr : sig
@@ -368,7 +370,7 @@ module Make (State : State_intf.S) :
     ESM.Result.lift_state @@ State.SM.lift s
 
   let of_opt_not_impl msg x = lift_symex (of_opt_not_impl msg x)
-  let assume x = lift_symex (assume x)
+  let assume ?hidden x = lift_symex (assume ?hidden x)
 
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> with_loc ~loc (f () env state)
@@ -411,6 +413,7 @@ module Make (State : State_intf.S) :
       lift_symex (Poly.subst_generic_args generic_args)
 
     let[@inline] subst_constant_expr c = lift_symex (Poly.subst_constant_expr c)
+    let[@inline] set_initial_params x = lift_symex (Poly.set_initial_params x)
   end
 
   module Sptr = struct

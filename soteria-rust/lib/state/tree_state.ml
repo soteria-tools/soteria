@@ -754,8 +754,7 @@ module Make (Borrows : Tree_borrows.T) = struct
        let** loc = Heap.alloc ~new_codom:block in
        let ptr = Typed.Ptr.mk loc Usize.(0s) in
        let ptr : Sptr_base.t = { ptr; tag; align; size } in
-       (* The pointer is necessarily not null *)
-       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
+       let+ () = assume ~hidden:true [ Typed.(not (Ptr.is_null_loc loc)) ] in
        ok (ptr, Thin))
 
   let alloc_untyped ?kind ?span ~zeroed ~size ~align =
@@ -779,8 +778,9 @@ module Make (Borrows : Tree_borrows.T) = struct
            let* block, tag =
              Freeable_block_with_meta.make ?kind ?span ~align ~size ()
            in
-           (* create pointer *)
-           let* () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
+           let* () =
+             assume ~hidden:true [ Typed.(not (Ptr.is_null_loc loc)) ]
+           in
            let ptr = Typed.Ptr.mk loc Usize.(0s) in
            let ptr : Sptr_base.t = { ptr; tag; align; size } in
            return ((ptr, Thin), block)))

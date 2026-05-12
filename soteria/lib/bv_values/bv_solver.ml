@@ -2,7 +2,7 @@ open Soteria_std
 open Logs.Import
 open Svalue
 
-let[@inline] simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
+let[@inline] simplify_value ~trivial_truthiness ~fallback (v : Svalue.t) =
   let[@inline] subst (v : Svalue.t) =
     match (v.node.ty, v.node.kind) with
     | _, (Bool _ | Float _ | BitVec _) -> v
@@ -29,32 +29,34 @@ struct
   end)
 
   module Solver_state = struct
+    type entry = { value : Typed.(sbool t); hidden : bool }
+
     include Reversible.Make_mutable_array (struct
-      type t = Typed.(sbool t)
+      type t = entry
     end)
 
-    let add_constraint t v =
+    let add_constraint ?(hidden = false) t v =
       if Typed.equal v Typed.v_true then ()
       else (
         if Typed.equal v Typed.v_false then truncate_to_checkpoint t;
-        add t v)
+        add t { value = v; hidden })
 
-    (** This function returns [Some b] if the solver state is trivially [b]
-        (true or false). We maintain solver state such that trivial truths are
-        never added to the state, and false is false erases everything else.
-        Therefore, it is enough to check either for emptyness of the topmost
-        layer or falseness of the latest element. *)
     let trivial_truthiness t =
       if is_at_checkpoint t then Some true
-      else if Typed.equal (peek_last t) Typed.v_false then Some false
+      else if Typed.equal (peek_last t).value Typed.v_false then Some false
       else None
 
     let trivial_truthiness_of t v =
       let neg_v = Typed.not v in
-      find_map t (fun value ->
+      find_map t (fun { value; _ } ->
           if Typed.equal value v then Some true
           else if Typed.equal value neg_v then Some false
           else None)
+
+    let iter_values ?(include_hidden = true) t =
+      iter t
+      |> Iter.filter_map (fun { value; hidden } ->
+          if hidden && not include_hidden then None else Some value)
   end
 
   type t = {
@@ -83,18 +85,18 @@ struct
   let simplify solver (v : 'a Typed.t) : 'a Typed.t =
     v
     |> Typed.untyped
-    |> simplify
+    |> simplify_value
          ~trivial_truthiness:(Solver_state.trivial_truthiness_of solver.state)
          ~fallback:(Analysis.simplify solver.analysis)
     |> Typed.type_
 
-  let add_constraints solver ?(simplified = false) vs =
+  let add_constraints solver ?(simplified = false) ?(hidden = false) vs =
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
     (* the incremental solver doesn't need to dirty variables *)
     let v, _ = Analysis.add_constraint solver.analysis (Typed.untyped v) in
-    Solver_state.add_constraint solver.state (Typed.type_ v);
+    Solver_state.add_constraint ~hidden solver.state (Typed.type_ v);
     Intf.add_constraint solver.z3_exe v
 
   (* Incremental doesn't allow for caching queries... *)
@@ -111,9 +113,9 @@ struct
             [%l.info "Solver returned unknown"];
             Unknown)
 
-  let as_values solver =
+  let as_values solver ?include_hidden ?simplified:_ () =
     Iter.append
-      (Solver_state.iter solver.state)
+      (Solver_state.iter_values ?include_hidden solver.state)
       (Analysis.encode solver.analysis)
     |> Iter.to_list
 end
@@ -144,8 +146,12 @@ struct
     (** Each slot holds a symbolic boolean, as well a boolean indicating if it
         was checked to be satisfiable. The boolean is mutable and can be mutated
         even by future branches! If a branch downstream is satisfiable, then so
-        is any element on the path condition. *)
-    type slot = { value : slot_content; mutable checked : bool }
+        is any element on the path condition.
+
+        [hidden] flags assertions added through [assume ~hidden:true]; they
+        still participate in solving but can be filtered out when extracting the
+        user-facing PC. *)
+    type slot = { value : slot_content; mutable checked : bool; hidden : bool }
     [@@deriving show]
 
     (* Invariants: the PC only has checked things, and then only unchecked
@@ -155,13 +161,14 @@ struct
       type t = slot
     end)
 
-    let add_constraint arr v =
+    let add_constraint ?(hidden = false) arr v =
       if Typed.equal v Typed.v_true then ()
       else (
         if Typed.equal v Typed.v_false then truncate_to_checkpoint arr;
-        add arr { value = Asrt v; checked = false })
+        add arr { value = Asrt v; checked = false; hidden })
 
-    let dirty_variable (t : t) v = add t { value = Dirty v; checked = false }
+    let dirty_variable (t : t) v =
+      add t { value = Dirty v; checked = false; hidden = false }
 
     (** This function returns [Some b] if the solver state is trivially [b]
         (true or false). We maintain solver state such that trivial truths are
@@ -188,10 +195,11 @@ struct
       | _ -> None
 
     (** Iterate over the assertions in the PC. *)
-    let iter (t : t) =
+    let iter ?(include_hidden = true) (t : t) =
       iter t
       |> Iter.filter_map @@ function
-         | { value = Asrt value; _ } -> Some value
+         | { value = Asrt value; hidden; _ } ->
+             if hidden && not include_hidden then None else Some value
          | { value = Dirty _; _ } -> None
 
     (** If we have checked sat and obtaied SAT, we can mark all elements of the
@@ -254,11 +262,11 @@ struct
       let rec aux seq =
         match seq () with
         | Seq.Nil -> ()
-        | Cons ({ value = Asrt value; checked = false }, rest) ->
+        | Cons ({ value = Asrt value; checked = false; _ }, rest) ->
             Dynarray.add_last to_encode value;
             add_vars_raw (vars value);
             aux rest
-        | Cons ({ value = Dirty vars; checked = false }, rest) ->
+        | Cons ({ value = Dirty vars; checked = false; _ }, rest) ->
             add_vars_raw (fun f -> Var.Set.iter f vars);
             aux rest
         | Cons ({ checked = true; _ }, _) -> aux_checked Seq.empty seq
@@ -281,17 +289,17 @@ struct
   let simplify solver v : 'a Typed.t =
     v
     |> Typed.untyped
-    |> simplify
+    |> simplify_value
          ~trivial_truthiness:(Solver_state.trivial_truthiness_of solver.state)
          ~fallback:(Analysis.simplify solver.analysis)
     |> Typed.type_
 
-  let add_constraints solver ?(simplified = false) vs =
+  let add_constraints solver ?(simplified = false) ?(hidden = false) vs =
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
     let v, vars = Analysis.add_constraint solver.analysis (Typed.untyped v) in
-    Solver_state.add_constraint solver.state (Typed.type_ v);
+    Solver_state.add_constraint ~hidden solver.state (Typed.type_ v);
     if not (Var.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
 
@@ -390,11 +398,77 @@ struct
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
-  let as_values solver =
-    Iter.append
-      (Solver_state.iter solver.state)
-      (Analysis.encode solver.analysis)
-    |> Iter.to_list
+  let rec as_values solver ?include_hidden ?(simplified = false) () =
+    if not simplified then
+      Iter.append
+        (Solver_state.iter ?include_hidden solver.state)
+        (Analysis.encode solver.analysis)
+      |> Iter.to_list
+    else as_values_simplified solver
+
+  and as_values_simplified base_solver =
+    let solver = init () in
+
+    (* first, add all hidden variables as hidden *)
+    (base_solver.state
+    |> Solver_state.to_seq_rev
+    |> Seq.iter @@ function
+       | Solver_state.{ value = Asrt v; hidden = true; _ } ->
+           add_constraints solver ~hidden:true [ v ]
+       | _ -> ());
+
+    (* get the other values *)
+    let values = as_values base_solver ~include_hidden:false () in
+
+    let is_implied v =
+      save solver;
+      add_constraints solver ~simplified:true [ Typed.not v ];
+      Intf.set_timeout solver.z3_exe (Some 3);
+      let sat = sat solver in
+      backtrack_n solver 1;
+      sat = Unsat
+    in
+    let is_infeasable v =
+      save solver;
+      add_constraints solver ~simplified:true [ v ];
+      Intf.set_timeout solver.z3_exe (Some 3);
+      let sat = sat solver in
+      backtrack_n solver 1;
+      sat = Unsat
+    in
+    let rec simplify_hard v =
+      let v = simplify solver v in
+      if is_implied v then Typed.v_true
+      else if is_infeasable v then Typed.v_false
+      else
+        match Typed.kind v with
+        | Binop (Or, v1, v2) ->
+            Typed.Bool.or_
+              (simplify_hard (Typed.type_ v1))
+              (simplify_hard (Typed.type_ v2))
+        | Binop (And, v1, v2) ->
+            Typed.Bool.and_
+              (simplify_hard (Typed.type_ v1))
+              (simplify_hard (Typed.type_ v2))
+        | Ite (c, t, e) ->
+            Typed.ite
+              (simplify_hard (Typed.type_ c))
+              (Typed.type_ t) (Typed.type_ e)
+        | Unop (Not, v) -> Typed.not (simplify_hard (Typed.type_ v))
+        | _ -> v
+    in
+
+    ( Iter.of_list (List.rev values) @@ fun v ->
+      let v = simplify_hard v in
+      (* only add the constraint if it is not implied by the current path
+         condition; if it is, we can skip it! *)
+      if not (is_implied v) then add_constraints ~simplified:true solver [ v ]
+    );
+    let acc = ref [] in
+    (as_values solver ()
+    |> List.iter @@ fun v ->
+       if not (List.exists (Typed.equal v) !acc) then acc := v :: !acc);
+    !acc
 end
 
 open Analyses

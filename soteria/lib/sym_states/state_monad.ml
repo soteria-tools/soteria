@@ -78,13 +78,18 @@ module Make
 
     include Monad.StateT_base (State) (Sym)
 
-    let[@inline] assume b = lift (Sym.assume b)
+    let[@inline] assume ?hidden b = lift (Sym.assume ?hidden b)
     let[@inline] vanish () = lift (Sym.vanish ())
     let[@inline] assert_ b = lift (Sym.assert_ b)
-    let[@inline] nondet_UNSAFE ty = Sym.nondet_UNSAFE ty
-    let[@inline] nondet ty = lift (Sym.nondet ty)
+
+    let[@inline] nondet_UNSAFE ?name ?metadata ty =
+      Sym.nondet_UNSAFE ?name ?metadata ty
+
+    let[@inline] nondet ?name ?metadata ty = lift (Sym.nondet ?name ?metadata ty)
     let[@inline] simplify v = lift (Sym.simplify v)
-    let[@inline] fresh_var ty = lift (Sym.fresh_var ty)
+
+    let[@inline] fresh_var ?name ?metadata ty =
+      lift (Sym.fresh_var ?name ?metadata ty)
     let[@inline] branches b st = Sym.branches (List.map (fun f () -> f () st) b)
     let[@inline] consume_fuel_steps n = lift (Sym.consume_fuel_steps n)
     let[@inline] give_up msg = lift (Sym.give_up msg)

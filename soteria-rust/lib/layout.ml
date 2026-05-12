@@ -178,11 +178,14 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Type variables : non-deterministically generate a layout *)
-  | TVar (Free _) ->
+  | TVar (Free tid) ->
       let open Usize in
-      (* FIXME: we need to scope these type variables, as the T in foo<T> and in
-         bar<T> are "different" Ts. *)
-      let* size = nondet (Typed.t_usize ()) in
+      let* type_name = Poly.name_of_type_var tid in
+      let name = Fmt.str "size<%s>" type_name in
+      let metadata =
+        Fmt.str "symbolic size of polymorphic type variable %s" type_name
+      in
+      let* size = nondet ~name ~metadata (Typed.t_usize ()) in
       (* We assume the size is at most 1024 bytes, which is a reasonable upper
          bound for now. *)
       let* () = assume [ 0s <=$@ size; size <$@ 1024s ] in

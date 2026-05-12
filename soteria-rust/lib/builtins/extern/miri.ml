@@ -36,7 +36,7 @@ module M (StateM : State.StateM.S) = struct
     | [ Ptr (ptr, _); Int align ] ->
         let align = Typed.cast @@ Typed.cast_i Usize align in
         let* addr = Sptr.decay ptr in
-        let+ () = assume [ (addr %@ align ==@ Usize.(0s)) ] in
+        let+ () = assume ~hidden:true [ (addr %@ align ==@ Usize.(0s)) ] in
         Tuple []
     | _ -> not_impl "miri_promise_symbolic_alignment: invalid arguments"
 

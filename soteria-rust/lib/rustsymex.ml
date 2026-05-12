@@ -28,6 +28,7 @@ module MonadState = struct
     trace : Trace.t;
     subst : Charon.Substitute.subst;
     generic_layouts : Layout_common.t TypeMap.t;
+    initial_params : Charon.Types.generic_params;
   }
 
   let empty =
@@ -35,6 +36,7 @@ module MonadState = struct
       trace = Trace.empty;
       subst = Charon.Substitute.empty_subst;
       generic_layouts = TypeMap.empty;
+      initial_params = Charon.TypesUtils.empty_generic_params;
     }
 end
 
@@ -49,10 +51,26 @@ include Syntaxes.FunctionWrap
    state, and remove it from [MonadState], or add a [serialized] type to
    [Rustsymex], along with the relevant [produce], [consume], etc. *)
 
+(* When [show_pcs] is on, the user wants a readable PC, so we ask the engine to
+   drop hidden constraints (engine-bookkeeping assumes — alignment of decayed
+   pointers, non-null locs, etc.) and to simplify the surviving constraints.
+   Otherwise we keep the full PC: callers (errors, summaries) typically only
+   care that something was logically constrained, not how it reads.
+
+   See https://github.com/soteria-tools/soteria/issues/289 and
+   https://github.com/soteria-tools/soteria/issues/338. *)
+let pc_display_opts () =
+  let show = (Config.get ()).show_pcs in
+  (* [include_hidden:false] is always safe — hidden constraints by definition
+     should never surface to the user — but we only pay the Z3 simplifier cost
+     when the user is actually going to look at the PC. *)
+  (not show, show)
+
 let run ?stats ?flamegraph ?fuel ~mode symex =
+  let include_hidden, simplify_pc = pc_display_opts () in
   run_with_state ~state:MonadState.empty symex
   |> MonoSymex.map fst
-  |> MonoSymex.run ?stats ?flamegraph ?fuel ~mode
+  |> MonoSymex.run ?stats ?flamegraph ?fuel ~include_hidden ~simplify_pc ~mode
 
 module Result = struct
   include Result
@@ -64,9 +82,11 @@ module Result = struct
     | Missing f -> Missing f
 
   let run_with_stats ?stats ?flamegraph ?fuel ?fail_fast ~mode symex =
+    let include_hidden, simplify_pc = pc_display_opts () in
     run_with_state ~state:MonadState.empty symex
     |> MonoSymex.map ignore_state
-    |> MonoSymex.Result.run ?stats ?flamegraph ?fuel ?fail_fast ~mode
+    |> MonoSymex.Result.run ?stats ?flamegraph ?fuel ?fail_fast ~include_hidden
+         ~simplify_pc ~mode
 end
 
 module Poly = struct
@@ -117,6 +137,13 @@ module Poly = struct
   let push_layout ty layout =
     map_state (fun ({ generic_layouts; _ } as st) ->
         { st with generic_layouts = TypeMap.add ty layout generic_layouts })
+
+  let set_initial_params params =
+    map_state (fun st -> { st with initial_params = params })
+
+  let name_of_type_var tid =
+    let+ { initial_params; _ } = get_state () in
+    (Types.TypeVarId.nth initial_params.types tid).name
 end
 
 let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
@@ -160,3 +187,20 @@ let with_extra_call_trace ?name ~loc ~msg (f : 'a t) : 'a t =
 
 let not_impl = give_up
 let of_opt_not_impl = some_or_give_up
+
+(* Wraps {!nondet}, attaching the current trace location to the variable as
+   metadata so users can later see "where did V|n| come from?" in the PC legend.
+   See https://github.com/soteria-tools/soteria/issues/290. *)
+let nondet_at ?name ?(extra_metadata = "") ty =
+  let open Syntax in
+  let* trace = get_trace () in
+  let loc_str =
+    match trace.loc with
+    | Some loc -> Fmt.str "%a" Common.Charon_util.pp_span_data loc
+    | None -> "<unknown location>"
+  in
+  let metadata =
+    if extra_metadata = "" then Fmt.str "created at %s" loc_str
+    else Fmt.str "%s, created at %s" extra_metadata loc_str
+  in
+  nondet ?name ~metadata ty

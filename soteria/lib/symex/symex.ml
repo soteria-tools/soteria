@@ -107,7 +107,21 @@ module type Core = sig
   type 'a vt := 'a Value.ty
   type sbool := Value.sbool
 
-  val assume : sbool v list -> unit t
+  (** [assume ?hidden vs] adds the assumptions [vs] to the path condition.
+
+      If [hidden] is set to [true] (defaults to [false]), the assumptions are
+      flagged as not meant to be presented to the end user. They still
+      participate in execution semantics, but consumers reading the PC for
+      display purposes may filter them out (e.g. {!S.run} with
+      [~include_hidden:false]).
+
+      This is intended for engine-internal assumptions that are uninformative to
+      the user — for instance the well-alignedness of an address after a pointer
+      decay. User-issued [soteria::assume] calls should keep the default
+      (visible) behaviour. See
+      {{:https://github.com/soteria-tools/soteria/issues/289}#289}. *)
+  val assume : ?hidden:bool -> sbool v list -> unit t
+
   val vanish : unit -> 'a t
 
   (** Assert is a symbolic process that does not branch but tests for the
@@ -119,21 +133,29 @@ module type Core = sig
         {b unsatisfiable}. *)
   val assert_ : sbool v -> bool t
 
-  (** Do not use [nondet_UNSAFE]. *)
-  val nondet_UNSAFE : 'a vt -> 'a v
+  (** Do not use [nondet_UNSAFE].
+
+      Optional [?name] attaches a user-facing name to the underlying variable
+      (used by {!Var.pp}); [?metadata] attaches arbitrary string metadata that
+      tools can later retrieve via {!Var.metadata}. Neither affects execution
+      semantics. See
+      {{:https://github.com/soteria-tools/soteria/issues/290}#290}. *)
+  val nondet_UNSAFE : ?name:string -> ?metadata:string -> 'a vt -> 'a v
   (* [nondet_UNSAFE] creates a nondet value but does not wrap it inside a symex
      monad. This could be used unsafely, because it's not lazy. It is exposed
      because we use it in Producer. TODO: this may be removable when we have
      modular explicit, and we can thread a monad through all our definitions *)
 
-  (** [nondet ty] creates a fresh variable of type [ty]. *)
-  val nondet : 'a vt -> 'a v t
+  (** [nondet ?name ?metadata ty] creates a fresh variable of type [ty]. The
+      optional [name] and [metadata] are attached to the underlying {!Var.t} and
+      surface in printed path conditions. *)
+  val nondet : ?name:string -> ?metadata:string -> 'a vt -> 'a v t
 
   (** [simplify v] simplifies the value [v] according to the current path
       condition. *)
   val simplify : 'a v -> 'a v t
 
-  val fresh_var : 'a vt -> Var.t t
+  val fresh_var : ?name:string -> ?metadata:string -> 'a vt -> Var.t t
 
   val branch_on :
     ?left_branch_name:string ->
@@ -357,6 +379,15 @@ module type S = sig
         file (while the {{!Profiling.Config}configuration} for flamegraphs
         specifies the directory in which flamegraphs are saved).
 
+      The [include_hidden] flag (default [true]) controls whether path
+      conditions added through [assume ~hidden:true] (or otherwise marked hidden
+      by the engine) are included in the returned PC list. Set this to [false]
+      to obtain a user-facing PC.
+
+      The [simplify_pc] flag (default [false]) runs the solver's output-time PC
+      simplification on each returned branch's path condition. See
+      {{:https://github.com/soteria-tools/soteria/issues/338}#338}.
+
       @raise Symex.Gave_up
         if the symbolic process calls [give_up] and the mode is
         {!Symex.Approx.OX}. Prefer using {!Result.run} when possible. *)
@@ -364,6 +395,8 @@ module type S = sig
     ?flamegraph:string effect_handling ->
     ?stats:unit effect_handling ->
     ?fuel:Fuel_gauge.t ->
+    ?include_hidden:bool ->
+    ?simplify_pc:bool ->
     mode:Approx.t ->
     'a t ->
     ('a * sbool v list) list
@@ -380,6 +413,8 @@ module type S = sig
       ?stats:unit effect_handling ->
       ?fuel:Fuel_gauge.t ->
       ?fail_fast:bool ->
+      ?include_hidden:bool ->
+      ?simplify_pc:bool ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
       (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
@@ -537,11 +572,11 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         Stats.As_ctx.add_int StatKeys.steps n;
         f ()
 
-  let assume learned f =
+  let assume ?(hidden = false) learned f =
     let rec aux acc learned =
       match learned with
       | [] ->
-          Solver.add_constraints acc;
+          Solver.add_constraints ~hidden acc;
           f ()
       | l :: ls -> (
           let l = Solver.simplify l in
@@ -580,13 +615,20 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       returns [true] if (not value) is {b unsatisfiable}. *)
   let assert_ value f = f (assert_raw value)
 
-  let nondet_UNSAFE ty =
+  let nondet_UNSAFE ?name ?metadata ty =
     let v = Solver.fresh_var ty in
+    Option.iter (Var.set_name v) name;
+    Option.iter (Var.set_metadata v) metadata;
     Value.mk_var v ty
 
-  let nondet ty f = f (nondet_UNSAFE ty)
+  let nondet ?name ?metadata ty f = f (nondet_UNSAFE ?name ?metadata ty)
   let simplify v f = f (Solver.simplify v)
-  let fresh_var ty f = f (Solver.fresh_var ty)
+
+  let fresh_var ?name ?metadata ty f =
+    let v = Solver.fresh_var ty in
+    Option.iter (Var.set_name v) name;
+    Option.iter (Var.set_metadata v) metadata;
+    f v
 
   let branch_on ?(left_branch_name = "Left branch")
       ?(right_branch_name = "Right branch") guard ~(then_ : unit -> 'a t)
@@ -1030,33 +1072,41 @@ module Make (Sol : Solver.Mutable_incremental) :
     let@ () = Give_up.with_give_up_raising in
     f ()
 
-  let run_iter ~mode (iter : 'a t) : ('a * Value.(sbool t) list) Iter.t =
+  let run_iter ?(include_hidden = true) ?(simplify_pc = false) ~mode
+      (iter : 'a t) : ('a * Value.(sbool t) list) Iter.t =
    fun continue ->
     (* Make sure to drop branches that have leftover assumes with unsatisfiable
        PCs. *)
     let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
-    iter @@ fun x -> if admissible () then continue (x, Solver.as_values ())
+    iter @@ fun x ->
+    if admissible () then
+      let pc = Solver.as_values ~include_hidden ~simplified:simplify_pc () in
+      continue (x, pc)
 
-  let run ?flamegraph ?stats ?fuel ~mode iter =
+  let run ?flamegraph ?stats ?fuel ?include_hidden ?simplify_pc ~mode iter =
     let@ () = setup ?flamegraph ?stats ?fuel ~mode in
-    Iter.to_list @@ run_iter ~mode iter
+    Iter.to_list @@ run_iter ?include_hidden ?simplify_pc ~mode iter
 
   module Result = struct
     include Result
 
-    let run ?flamegraph ?stats ?fuel ?(fail_fast = false) ~mode iter =
+    let run ?flamegraph ?stats ?fuel ?(fail_fast = false)
+        ?(include_hidden = true) ?(simplify_pc = false) ~mode iter =
       let@ () = setup ?flamegraph ?stats ?fuel ~mode in
       let l = ref [] in
       let () =
         let exception Fail_fast in
         try
-          run_iter ~mode iter @@ fun (res, pc) ->
+          run_iter ~include_hidden ~simplify_pc ~mode iter @@ fun (res, pc) ->
           let res = Compo_res.map_error (fun e -> Or_gave_up.E e) res in
           l := (res, pc) :: !l;
           if fail_fast && Compo_res.is_error res then raise Fail_fast
         with
         | effect Give_up.Gave_up_eff reason, k ->
-            l := (Error (Gave_up reason), Solver.as_values ()) :: !l;
+            let pc =
+              Solver.as_values ~include_hidden ~simplified:simplify_pc ()
+            in
+            l := (Error (Gave_up reason), pc) :: !l;
             if fail_fast then Effect.Deep.discontinue k Fail_fast
             else Effect.Deep.continue k ()
         | Fail_fast -> ()

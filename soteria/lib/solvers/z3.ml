@@ -145,4 +145,16 @@ module Make (Value : Value.S) :
     !initialize_solver solver
 
   let get_model solver = try Some (Simple_smt.get_model solver) with _ -> None
+
+  let set_timeout solver t =
+    let value =
+      match t with
+      | Some ms -> string_of_int ms
+      | None ->
+          (* Restore the globally-configured default, if any; otherwise clear
+             by passing 0 (Z3 interprets 0 as "no timeout"). *)
+          Option.value ~default:"0"
+            (Option.map string_of_int (Config.get ()).solver_timeout)
+    in
+    ack_command solver (set_option ":timeout" value)
 end

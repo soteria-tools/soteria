@@ -1192,6 +1192,7 @@ module Make (StateImpl : State.S) = struct
     in
     let@ () = StateM.with_frame "Entry point" in
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
+    let* () = Poly.set_initial_params fundef.generics in
     let* value = exec_real_fun fundef generics args in
     let* () = State.run_thread_exits () in
     if (Config.get ()).ignore_leaks then ok value

@@ -515,11 +515,15 @@ module Encoder (Sptr : Sptr.S) = struct
       Typed.([> T.sint ] t) DecayMap.SM.t =
     let fp = Typed.Float.fp_of f in
     let size = Svalue.FloatPrecision.size fp in
-    let* bv = nondet (Typed.t_int size) in
+    let* bv =
+      nondet ~name:"float_bits"
+        ~metadata:"bitvector representation of a float (engine-generated)"
+        (Typed.t_int size)
+    in
     let bv_f = BV.to_float_raw bv in
-    (* here we use structural equality rather than float equality; this is
-       intended. *)
-    let+ () = assume [ bv_f ==@ f ] in
+    (* Structural-equality link between the bv and float views — engine
+       plumbing, uninformative in the PC. *)
+    let+ () = assume ~hidden:true [ bv_f ==@ f ] in
     bv
 
   (** Transmutes a singular rust value, without splitting. This is under the
@@ -571,11 +575,13 @@ module Encoder (Sptr : Sptr.S) = struct
     let open Compo_res in
     let nondets_raw tys = Rustsymex.Result.map_list tys ~f:nondet_raw in
     function
-    | TLiteral (TFloat fp) ->
-        let+ f = nondet (Typed.t_float fp) in
+    | TLiteral (TFloat fp) as ty ->
+        let extra_metadata = Fmt.str "nondet %a" pp_ty ty in
+        let+ f = nondet_at ~extra_metadata (Typed.t_float fp) in
         Ok (Float f)
-    | TLiteral lit ->
-        let+ i = nondet (Typed.t_lit lit) in
+    | TLiteral lit as ty ->
+        let extra_metadata = Fmt.str "nondet %a" pp_ty ty in
+        let+ i = nondet_at ~extra_metadata (Typed.t_lit lit) in
         Ok (Int (Typed.cast i))
     | (TRef (_, pointee, _) | TRawPtr (pointee, _))
       when not (Layout.is_dst pointee) ->

@@ -111,10 +111,12 @@ module DecayMap = struct
              Result.ok address
          | Some { address; exposed = _ } -> Result.ok address
          | None ->
-             let* address = nondet (Typed.t_usize ()) in
+             let* address =
+               nondet ~metadata:"address of a pointer" (Typed.t_usize ())
+             in
              let isize_max = Layout.max_value_z (TInt Isize) in
              let* () =
-               assume
+               assume ~hidden:true
                  [
                    (address %@ align ==@ Usize.(0s));
                    align <=@ address;

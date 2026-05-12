@@ -243,7 +243,7 @@ let pp_full ft t = pp_t_node ft t.node
 let rec pp ft t =
   let open Fmt in
   match t.node.kind with
-  | Var v -> pf ft "V%a" Var.pp v
+  | Var v -> if Var.has_name v then Var.pp ft v else pf ft "V%a" Var.pp v
   | Bool b -> pf ft "%b" b
   | Float f -> pf ft "%sf" f
   | BitVec bv ->

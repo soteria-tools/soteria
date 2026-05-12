@@ -44,4 +44,14 @@ module type S = sig
 
   (** Gets the model from the last satisfiability check, if available. *)
   val get_model : t -> Sexplib.Sexp.t option
+
+  (** [set_timeout solver t] overrides the per-{!check_sat} timeout (in
+      milliseconds) for the underlying SMT solver. Passing [None] clears any
+      previously set timeout and restores the solver's default (e.g. the
+      timeout configured globally via {!Config}).
+
+      This is intended for situations where a caller wants to put a tight
+      budget on individual SAT queries — for instance the output-time path
+      condition simplifier in {!Symex.Solver.Mutable_incremental}. *)
+  val set_timeout : t -> int option -> unit
 end
