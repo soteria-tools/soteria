@@ -243,6 +243,11 @@ module Cmd = struct
           let entries = List.concat_map entry_as_flag (attribs @ non_attribs) in
           ((Config.get ()).charon_path, charon @ entries)
     in
+    let target_flag =
+      Option.fold ~none:[]
+        ~some:(fun t -> [ "--target"; t ])
+        (Config.get ()).target
+    in
     match mode with
     | Rustc ->
         (* If these arguments are passed to the command line, we need to quote
@@ -257,7 +262,7 @@ module Cmd = struct
               else arg)
             rustc
         in
-        (cmd, ("rustc" :: args) @ [ "--" ] @ rustc, [])
+        (cmd, ("rustc" :: args) @ [ "--" ] @ rustc @ target_flag, [])
     | Cargo ->
         let cargo =
           match (Config.get ()).test with
@@ -265,7 +270,7 @@ module Cmd = struct
           | Some test -> [ "--test"; test ]
           | None -> []
         in
-        let cargo = cargo @ cargo_flags () in
+        let cargo = cargo @ cargo_flags () @ target_flag in
         let rustc = flags_for_cargo rustc in
         let env = rustc_as_env () @ flags_as_rustc_env rustc in
         (cmd, ("cargo" :: args) @ [ "--" ] @ cargo, env)

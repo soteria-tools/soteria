@@ -64,6 +64,7 @@ int __builtin___snprintf_chk(char *s, __cerbty_size_t maxlen, int flag, __cerbty
 char *__builtin___strncpy_chk(char *dest, const char *src, __cerbty_size_t n, __cerbty_size_t os);
 __cerbty_size_t __builtin_object_size(const void *ptr, int type);
 
+__cerbty_uint16_t __builtin_bswap16(__cerbty_uint16_t x);
 __cerbty_uint32_t __builtin_bswap32(__cerbty_uint32_t x);
 __cerbty_uint64_t __builtin_bswap64(__cerbty_uint64_t x);
 

@@ -9,8 +9,15 @@ module SELF = struct
   let equal = equal_sym
   let compare = compare_sym
   let hash = Hashtbl.hash
-  let show = Cerb_frontend.Pp_symbol.to_string
-  let pp = Fmt.of_to_string show
+
+  let pp ft (Symbol (_, n, sd)) =
+    let pp_id = Soteria.Logs.Printers.pp_unstable ~name:"id" Fmt.int in
+    match sd with
+    | SD_Id str | SD_ObjectAddress str | SD_FunArgValue str ->
+        Fmt.pf ft "%s_%a" str pp_id n
+    | _ -> Fmt.pf ft "a_%a" pp_id n
+
+  let show = Fmt.to_to_string pp
 end
 
 include SELF

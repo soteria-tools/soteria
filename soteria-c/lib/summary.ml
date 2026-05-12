@@ -211,13 +211,10 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
   | Analysed _ -> summary
   | Pruned { raw = summary; memory_leaks } -> (
       let@ () =
-        L.with_section
-          ("Analysing a summary for " ^ Cerb_frontend.Symbol.show_symbol fid)
+        L.with_section (Fmt.str "Analysing a summary for %a" Symbol_std.pp fid)
       in
       [%l.debug
-        "Analysing a summary for %s@\n%a"
-          (Cerb_frontend.Symbol.show_symbol fid)
-          pp_raw summary];
+        "Analysing a summary for %a@\n%a" Symbol_std.pp fid pp_raw summary];
       let arg_tys = Option.get (Ail_helpers.get_param_tys fid) in
       match summary.ret with
       | Ok _ ->

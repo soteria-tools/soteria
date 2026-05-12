@@ -286,7 +286,7 @@ let generate_errors content =
       |> List.concat_map (fun (fid, summaries) ->
           let@ () =
             L.with_section
-              ("Analysing summaries for function" ^ Symbol.show_symbol fid)
+              (Fmt.str "Analysing summaries for function %a" Symbol_std.pp fid)
           in
           List.concat_map (Summary.manifest_bugs ~fid) summaries)
       |> List.sort_uniq Stdlib.compare

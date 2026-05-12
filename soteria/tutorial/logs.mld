@@ -310,6 +310,8 @@ L.info (fun m -> m "Completed at %a"
    hide_unstable = true  -> Completed at <timestamp> *)
 ]}
 
+The [--hide-unstable] flag also makes sure that the printing profile (e.g. support for colors or utf8) is the same independently of the environment, which is useful for making test output deterministic.
+
 {2:performance Performance Considerations}
 
 Logging is designed to be efficient when disabled; avoid doing expensive work for printing before calling the logging function. Instead, do that work inside the logging lambda, so it only runs if the log level is enabled:
