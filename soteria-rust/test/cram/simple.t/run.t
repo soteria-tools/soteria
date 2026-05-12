@@ -238,7 +238,7 @@ Test exposing function pointers
         (extract[0-3](V|1|) == 0x0)
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
-  $ soteria-rust exec thread_local.rs
+  $ soteria-rust exec thread_local.rs --target aarch64-apple-darwin
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
@@ -250,6 +250,22 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   
   => Running thread_local::pub_static_from_const_expr...
   warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::list::register: GAst.Missing
+  
+  [2]
+
+This test must be run separtely on linux and macos as it yields different error messages.
+  $ soteria-rust exec thread_local.rs --target x86_64-unknown-linux-gnu
+  Compiling... done in <time>
+  => Running thread_local::pub_static_cell...
+  note: thread_local::pub_static_cell: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (extract[0-1](V|1|) == 0b00)
+  
+  => Running thread_local::static_ref_cell...
+  warning: thread_local::static_ref_cell (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::linux_like::register: GAst.Missing
+  
+  => Running thread_local::pub_static_from_const_expr...
+  warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::linux_like::register: GAst.Missing
   
   [2]
 
