@@ -47,9 +47,9 @@ Symbolic execution of a simple program with symbolic values that fails because o
              [• Invalid memory write: err.c:6:3-10 (cursor: 6:6)], None)]
   
   error: Null pointer dereference in main
-      ┌─ err.c:6:3
-    6 │    *x = 12;
-      │    ^^^^^^^ Invalid memory write
+      --> err.c:6:3
+    6 |    *x = 12;
+      |    ^^^^^^^ Invalid memory write
   Executed 5 statements
   Verification Failure!
   [13]
@@ -142,12 +142,12 @@ Checking that fuel gets exhausted properly
              None)]
   
   error: Failed assertion in main
-      ┌─ while_true.c:6:5
-    6 │      __soteria___assert(0);
-      │      ^^^^^^^^^^^^^^^^^^^^^
-      │      │
-      │      Triggering operation
-      │      1: Called from here
+      --> while_true.c:6:5
+    6 |      __soteria___assert(0);
+      |      ^^^^^^^^^^^^^^^^^^^^^
+      |      |
+      |      Triggering operation
+      |      1: Called from here
   Executed 152 statements
   Verification Failure!
   [13]

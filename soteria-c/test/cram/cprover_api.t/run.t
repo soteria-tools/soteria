@@ -9,12 +9,12 @@ Warning and unspported with CBMC enabled
 Behaves as expected with the API declared.
   $ soteria-c exec test.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --cbmc-compat
   error: Failed assertion in main
-      ┌─ test.c:7:3
-    7 │    __CPROVER_assert(0, "");
-      │    ^^^^^^^^^^^^^^^^^^^^^^^
-      │    │
-      │    Triggering operation
-      │    1: Called from here
+      --> test.c:7:3
+    7 |    __CPROVER_assert(0, "");
+      |    ^^^^^^^^^^^^^^^^^^^^^^^
+      |    |
+      |    Triggering operation
+      |    1: Called from here
   Executed 3 statements
   Verification Failure!
   [13]

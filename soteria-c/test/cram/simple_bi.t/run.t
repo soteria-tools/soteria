@@ -38,42 +38,42 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
   $ NO_COLOR=true soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   error: Accessing uninitialized memory in test_np_uninit
-      ┌─ manifest.c:6:10
-    6 │    return *x;
-      │           ^^ Invalid memory load
-      ·  
-   12 │    load(x);
-      │    ------- 1: Called from here
+      --> manifest.c:6:10
+    6 |    return *x;
+      |           ^^ Invalid memory load
+      .  
+   12 |    load(x);
+      |    ------- 1: Called from here
   error: Null pointer dereference in test_np_uninit
-      ┌─ manifest.c:6:10
-    6 │    return *x;
-      │           ^^ Invalid memory load
-      ·  
-   12 │    load(x);
-      │    ------- 1: Called from here
+      --> manifest.c:6:10
+    6 |    return *x;
+      |           ^^ Invalid memory load
+      .  
+   12 |    load(x);
+      |    ------- 1: Called from here
   error: Accessing uninitialized memory in test_uninit
-      ┌─ manifest.c:6:10
-    6 │    return *x;
-      │           ^^ Invalid memory load
-      ·  
-   21 │    load(x);
-      │    ------- 1: Called from here
+      --> manifest.c:6:10
+    6 |    return *x;
+      |           ^^ Invalid memory load
+      .  
+   21 |    load(x);
+      |    ------- 1: Called from here
   warning: Memory leak in test_leak
-      ┌─ manifest.c:26:1
-   25 │    
-   26 │ ╭  int test_leak()
-   27 │ │  {
-   28 │ │    int *x = (int *)malloc(sizeof(int));
-      │ │                    ------------------- 1: This allocation leaked
-      · │  
-   33 │ │    return 0;
-   34 │ │  }
-      │ ╰──^ 
-   35 │    
+      --> manifest.c:26:1
+   25 |    
+   26 | /  int test_leak()
+   27 | |  {
+   28 | |    int *x = (int *)malloc(sizeof(int));
+      | |                    ------------------- 1: This allocation leaked
+      . |  
+   33 | |    return 0;
+   34 | |  }
+      | \--^ 
+   35 |    
   error: Null pointer dereference in test_np
-      ┌─ manifest.c:51:3
-   51 │    *x = 12;
-      │    ^^^^^^^ Invalid memory write
+      --> manifest.c:51:3
+   51 |    *x = 12;
+      |    ^^^^^^^ Invalid memory write
   Summaries for load_565:
     Analysed {
       raw =
@@ -360,9 +360,9 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries overflow.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   error: Integer overflow in add_ovf_manifest
-      ┌─ overflow.c:9:11
-    9 │    int c = b + 1;
-      │            ^^^^^ Triggering operation
+      --> overflow.c:9:11
+    9 |    int c = b + 1;
+      |            ^^^^^ Triggering operation
   Summaries for add_563:
     Analysed {
       raw =

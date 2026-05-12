@@ -76,7 +76,8 @@ let check_set_and_lock args =
     }
   in
   set_and_lock config;
-  Profile.check_set_and_lock ~no_color:config.no_color ()
+  Profile.check_set_and_lock ~hide_unstable:args.hide_unstable
+    ~no_color:config.no_color ()
 
 let logs_enabled () =
   let conf = get () in
