@@ -453,6 +453,39 @@ module type Float = sig
   val is_nan : t -> t
 end
 
+module type Ptr = sig
+  val mk : t -> t -> t
+  val loc : t -> t
+  val null_loc : int -> t
+  val is_null_loc : t -> t
+  val loc_of_z : int -> Z.t -> t
+  val loc_of_int : int -> int -> t
+  val ofs : t -> t
+  val decompose : t -> t * t
+  val add_ofs : t -> t -> t
+  val null : int -> t
+  val is_null : t -> t
+  val is_at_null_loc : t -> t
+end
+
+module type SSeq = sig
+  val mk : seq_ty:ty -> t list -> t
+  val inner_ty : ty -> ty
+end
+
+module type Eval = sig
+  val eval_unop : Unop.t -> t -> t
+  val eval_binop : Binop.t -> t -> t -> t
+  val eval_nop : Nop.t -> t list -> t
+
+  val eval :
+    ?force:bool ->
+    ?eval_var:(t -> Var.t -> ty -> t) ->
+    ?subst:(t -> t) ->
+    t ->
+    t
+end
+
 (** {2 Booleans} *)
 
 module rec Bool : Bool = struct
@@ -537,7 +570,29 @@ module rec Bool : Bool = struct
     | _, BitVec o, BitVec z when Z.(equal o one) && Z.equal z Z.zero ->
         BitVec.of_bool (size_of if_.node.ty) guard
     | _ when equal if_ else_ -> if_
-    | _ -> Ite (guard, if_, else_) <| if_.node.ty
+    | _ when equal guard if_ -> or_ guard else_
+    | _ when equal guard else_ -> and_ guard if_
+    | _ ->
+        let[@inline] is_concrete = function
+          | { node = { kind = BitVec _ | Float _ | Bool _; _ }; _ } -> true
+          | _ -> false
+        in
+        let subst_neg = fun v -> if equal v guard then v_false else v in
+        let subst_pos =
+          match guard.node.kind with
+          | Binop (Eq, vl, vr) ->
+              if is_concrete vl then fun v ->
+                if equal v guard then v_true else if equal v vr then vl else v
+              else if is_concrete vr then fun v ->
+                if equal v guard then v_true else if equal v vl then vr else v
+              else fun v -> if equal v guard then v_true else v
+          | _ -> fun v -> if equal v guard then v_true else v
+        in
+        let if_' = Eval.eval ~subst:subst_pos if_ in
+        let else_' = Eval.eval ~subst:subst_neg else_ in
+        if equal if_ if_' && equal else_ else_' then
+          Ite (guard, if_', else_') <| if_.node.ty
+        else ite guard if_' else_'
 
   and sem_eq v1 v2 =
     match[@warning "-ambiguous-var-in-pattern-guard"]
@@ -675,6 +730,8 @@ module rec Bool : Bool = struct
       when size_of l1.node.ty = size_of l2.node.ty ->
         and_ (sem_eq l1 l2) (sem_eq r1 r2)
     (* BvOfBool and If-then-elses *)
+    | Ite (b1, l1, t1), Ite (b2, l2, t2) when equal b1 b2 ->
+        ite b1 (sem_eq l1 l2) (sem_eq t1 t2)
     | Ite (b, l, t), (BitVec _ | Bool _) -> ite b (sem_eq l v2) (sem_eq t v2)
     | (BitVec _ | Bool _), Ite (b, l, t) -> ite b (sem_eq v1 l) (sem_eq v1 t)
     | Bool false, _ -> not v2
@@ -888,13 +945,24 @@ and BitVec : BitVec = struct
         BitVec _ ) ->
         add ~checked:(checked && c) (add c1 v2) r
     | ( Binop
-          (Sub { checked = c }, l, ({ node = { kind = BitVec _; _ }; _ } as c1)),
-        BitVec _ ) ->
-        add ~checked:(checked && c) l (sub v2 c1)
+          ( Sub { checked = c },
+            l,
+            ({ node = { kind = BitVec bv_c1; _ }; _ } as c1) ),
+        BitVec bv_v2 ) ->
+        (* (l - c1) + v2; if v2 < c1, sub v2 c1 wraps which breaks unsigned
+           checked-ness, so use l - (c1 - v2) instead. *)
+        if Z.lt bv_v2 bv_c1 then sub ~checked:(checked && c) l (sub c1 v2)
+        else add ~checked:(checked && c) l (sub v2 c1)
     | ( Binop
-          (Sub { checked = c }, ({ node = { kind = BitVec _; _ }; _ } as c1), r),
-        BitVec _ ) ->
-        sub ~checked:(checked && c) (add c1 v2) r
+          ( Sub { checked = c },
+            ({ node = { kind = BitVec bv_c1; _ }; _ } as c1),
+            r ),
+        BitVec bv_v2 ) ->
+        (* (c1 - r) + v2; if c1 + v2 overflows the type, add c1 v2 wraps which
+           breaks unsigned checked-ness, so drop checked in that case. *)
+        let sz = size_of v1.node.ty in
+        let no_wrap = Z.lt Z.(bv_c1 + bv_v2) Z.(one lsl sz) in
+        sub ~checked:(no_wrap && checked && c) (add c1 v2) r
     | _, Binop (Sub _, l, r) when equal r v1 -> l
     | Binop (Sub _, l, r), _ when equal r v2 -> l
     | Binop (Mul _, l1, r1), Binop (Mul _, l2, r2)
@@ -1002,6 +1070,15 @@ and BitVec : BitVec = struct
     | Unop (Neg, v) -> v
     | Ite (b, l, r) -> Bool.ite b (neg l) (neg r)
     | Unop (BvOfBool n, b) -> Bool.ite b (neg (one n)) (zero n)
+    | Binop (Mul _, ({ node = { kind = BitVec _; _ }; _ } as v1), v2)
+    | Binop (Mul _, v2, ({ node = { kind = BitVec _; _ }; _ } as v1)) ->
+        mul ~checked:false (neg v1) v2
+    | Binop (Div true, ({ node = { kind = BitVec x; _ }; _ } as v1), v2)
+      when Stdlib.not (Z.equal x (min_for true n)) ->
+        div ~signed:true (neg v1) v2
+    | Binop (Div true, v1, ({ node = { kind = BitVec x; _ }; _ } as v2))
+      when Stdlib.not (Z.equal x (min_for true n)) ->
+        div ~signed:true v1 (neg v2)
     | _ -> Unop (Neg, v) <| v.node.ty
 
   (** [mod_ v1 v2] is the signed remainder of [v1 / v2], which takes the sign of
@@ -1562,16 +1639,16 @@ and BitVec : BitVec = struct
     | BitVec z, _ when Z.equal z Z.one -> v2
     | _, BitVec z when Z.equal z Z.zero -> zero (size_of v1.node.ty)
     | BitVec z, _ when Z.equal z Z.zero -> zero (size_of v1.node.ty)
-    | ( ( Binop (Mul { checked = true }, x, { node = { kind = BitVec n; _ }; _ })
-        | Binop (Mul { checked = true }, { node = { kind = BitVec n; _ }; _ }, x)
+    | ( ( Binop (Mul { checked = c }, x, { node = { kind = BitVec n; _ }; _ })
+        | Binop (Mul { checked = c }, { node = { kind = BitVec n; _ }; _ }, x)
           ),
         BitVec m )
     | ( BitVec m,
-        ( Binop (Mul { checked = true }, { node = { kind = BitVec n; _ }; _ }, x)
-        | Binop (Mul { checked = true }, x, { node = { kind = BitVec n; _ }; _ })
+        ( Binop (Mul { checked = c }, { node = { kind = BitVec n; _ }; _ }, x)
+        | Binop (Mul { checked = c }, x, { node = { kind = BitVec n; _ }; _ })
           ) )
       when checked ->
-        mul ~checked:true x (mk_masked (size_of v1.node.ty) Z.(n * m))
+        mul ~checked:(checked && c) x (mk_masked (size_of v1.node.ty) Z.(n * m))
     (* only propagate down ites if we know it's concrete *)
     | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
         let n = size_of v1.node.ty in
@@ -1579,7 +1656,7 @@ and BitVec : BitVec = struct
         Bool.ite b (mul l x) (mul r x)
     | _ -> mk_commut_binop (Mul { checked }) v1 v2 <| v1.node.ty
 
-  let rec div ~signed v1 v2 =
+  and div ~signed v1 v2 =
     assert (equal_ty v1.node.ty v2.node.ty);
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r ->
@@ -2034,7 +2111,7 @@ and BitVec : BitVec = struct
   let gt ~signed v1 v2 = lt ~signed v2 v1
   let geq ~signed v1 v2 = leq ~signed v2 v1
 
-  let add_overflows ~signed v1 v2 =
+  let rec add_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( + )
     | BitVec z, _ when Z.equal z Z.zero -> Bool.v_false
@@ -2042,6 +2119,10 @@ and BitVec : BitVec = struct
     | _ when size_of v1.node.ty == 1 ->
         let one = one 1 in
         Bool.and_ (Bool.sem_eq v1 one) (Bool.sem_eq v2 one)
+    | Ite (g1, t1, e1), Ite (g2, t2, e2) when equal g1 g2 ->
+        let overflow_then = add_overflows ~signed t1 t2 in
+        let overflow_else = add_overflows ~signed e1 e2 in
+        Bool.ite g1 overflow_then overflow_else
     | BitVec z, _ when Stdlib.not signed ->
         let n = size_of v1.node.ty in
         let m = max_for signed n in
@@ -2076,7 +2157,7 @@ and BitVec : BitVec = struct
         Bool.and_ b (Bool.sem_eq other (mk n max))
     | _ -> mk_commut_binop (AddOvf signed) v1 v2 <| TBool
 
-  let mul_overflows ~signed v1 v2 =
+  let rec mul_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( * )
     | _ when signed && size_of v1.node.ty == 1 ->
@@ -2088,6 +2169,10 @@ and BitVec : BitVec = struct
       when if signed then msb_of v1 + msb_of v2 < size_of v1.node.ty - 2
            else msb_of v1 + msb_of v2 < size_of v1.node.ty - 1 ->
         Bool.v_false
+    | Ite (g1, t1, e1), Ite (g2, t2, e2) when equal g1 g2 ->
+        let overflow_then = mul_overflows ~signed t1 t2 in
+        let overflow_else = mul_overflows ~signed e1 e2 in
+        Bool.ite g1 overflow_then overflow_else
     | BitVec z, x | x, BitVec z ->
         (* z is a known constant *)
         if Z.equal z Z.zero || Z.equal z Z.one then Bool.v_false
@@ -2134,10 +2219,14 @@ and BitVec : BitVec = struct
     let n = size_of v.node.ty in
     Bool.sem_eq (mk_masked n (min_for true n)) v
 
-  let sub_overflows ~signed v1 v2 =
+  let rec sub_overflows ~signed v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> ovf_check ~signed (size_of v1.node.ty) l r Z.( - )
     | _ when equal v1 v2 -> Bool.v_false
+    | Ite (g1, t1, e1), Ite (g2, t2, e2) when equal g1 g2 ->
+        let overflow_then = sub_overflows ~signed t1 t2 in
+        let overflow_else = sub_overflows ~signed e1 e2 in
+        Bool.ite g1 overflow_then overflow_else
     | _ ->
         if Stdlib.not signed then lt ~signed v1 v2
         else Binop (SubOvf signed, v1, v2) <| TBool
@@ -2218,9 +2307,119 @@ and Float : Float = struct
   let round rm sv = Unop (FRound rm, sv) <| sv.node.ty
 end
 
+and Eval : Eval = struct
+  let eval_binop : Binop.t -> t -> t -> t = function
+    | And -> Bool.and_
+    | Or -> Bool.or_
+    | Eq -> Bool.sem_eq
+    | FEq -> Float.eq
+    | FLeq -> Float.leq
+    | FLt -> Float.lt
+    | FAdd -> Float.add
+    | FSub -> Float.sub
+    | FMul -> Float.mul
+    | FDiv -> Float.div
+    | FRem -> Float.rem
+    | Add { checked } -> BitVec.add ~checked
+    | Sub { checked } -> BitVec.sub ~checked
+    | Mul { checked } -> BitVec.mul ~checked
+    | Div signed -> BitVec.div ~signed
+    | Rem signed -> BitVec.rem ~signed
+    | Mod -> BitVec.mod_
+    | AddOvf signed -> BitVec.add_overflows ~signed
+    | SubOvf signed -> BitVec.sub_overflows ~signed
+    | MulOvf signed -> BitVec.mul_overflows ~signed
+    | Lt signed -> BitVec.lt ~signed
+    | Leq signed -> BitVec.leq ~signed
+    | BvConcat -> BitVec.concat
+    | BitAnd -> BitVec.and_
+    | BitOr -> BitVec.or_
+    | BitXor -> BitVec.xor
+    | Shl -> BitVec.shl
+    | LShr -> BitVec.lshr
+    | AShr -> BitVec.ashr
+
+  let eval_unop : Unop.t -> t -> t = function
+    | Not -> Bool.not
+    | FAbs -> Float.abs
+    | GetPtrLoc -> Ptr.loc
+    | GetPtrOfs -> Ptr.ofs
+    | BvOfBool n -> BitVec.of_bool n
+    | BvOfFloat (rounding, signed, size) ->
+        BitVec.of_float ~rounding ~signed ~size
+    | FloatOfBv (rounding, signed, fp) -> BitVec.to_float ~rounding ~signed ~fp
+    | FloatOfBvRaw _ -> BitVec.to_float_raw
+    | BvExtract (from, to_) -> BitVec.extract from to_
+    | BvExtend (signed, by) -> BitVec.extend ~signed by
+    | BvNot -> BitVec.not
+    | Neg -> BitVec.neg
+    | FIs fc -> Float.is_floatclass fc
+    | FRound rm -> Float.round rm
+
+  let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct
+
+  let rec eval ~force ~eval_var ~subst (x : t) : t =
+    let eval' = eval ~force ~subst in
+    let eval x =
+      let x = subst x in
+      let res = eval ~force ~eval_var ~subst x in
+      if equal res x then res else subst res
+    in
+    match x.node.kind with
+    | Var v -> eval_var x v x.node.ty
+    | Bool _ | Float _ | BitVec _ -> x
+    | Ptr (l, o) ->
+        let nl = eval l in
+        let no = eval o in
+        if (not force) && equal l nl && equal o no then x else Ptr.mk nl no
+    | Unop (unop, v) ->
+        let nv = eval v in
+        if (not force) && equal v nv then x else eval_unop unop nv
+    | Binop (binop, v1, v2) ->
+        (* TODO: for binops that may short-circuit such as || or &&, we could do
+           this without evaluating both sides, and deciding if any of either
+           side evaluates properly to e.g. true/false *)
+        let nv1 = eval v1 in
+        let nv2 = eval v2 in
+        if (not force) && equal v1 nv1 && equal v2 nv2 then x
+        else eval_binop binop nv1 nv2
+    | Nop (nop, l) ->
+        let l, changed = List.map_changed eval l in
+        if (not force) && not changed then x else eval_nop nop l
+    | Ite (guard, then_, else_) ->
+        let guard' = eval guard in
+        if equal guard' Bool.v_true then eval then_
+        else if equal guard' Bool.v_false then eval else_
+        else
+          let then_' = eval then_ in
+          let else_' = eval else_ in
+          if equal then_ then_' && equal else_ else_' && equal guard guard' then
+            x
+          else Bool.ite guard' then_' else_'
+    | Exists (vs, sv) ->
+        let eval_var' sv v ty =
+          if List.exists (fun (v', _) -> Var.equal v v') vs then sv
+          else eval_var sv v ty
+        in
+        let nsv = eval' ~eval_var:eval_var' sv in
+        if (not force) && sv == nsv then x else Bool.mk_exists vs sv
+    | Seq l ->
+        let l, changed = List.map_changed eval l in
+        if (not force) && not changed then x else SSeq.mk ~seq_ty:x.node.ty l
+
+  (** Evaluates an expression; will call [eval_var] on each [Var] encountered.
+      If evaluation errors (e.g. from a division by zero), gives up and returns
+      the original expression. The [force] flag forces evaluation to proceed
+      even if no sub-expressions changed (required if evaluating an expression
+      that has not been constructed using smart constructors). *)
+  let eval ?(force = false) ?(eval_var : t -> Var.t -> ty -> t = fun x _ _ -> x)
+      ?(subst : t -> t = Fun.id) (x : t) : t =
+    try eval ~force ~eval_var ~subst (subst x) with Division_by_zero -> x
+end
+
 (** {2 Pointers} *)
 
-module Ptr = struct
+and Ptr : Ptr = struct
   let mk l o =
     assert (size_of l.node.ty = size_of o.node.ty);
     Ptr (l, o) <| TPointer (size_of o.node.ty)
@@ -2256,7 +2455,7 @@ end
 
 (** {2 Sequences} *)
 
-module SSeq = struct
+and SSeq : SSeq = struct
   let mk ~seq_ty l = Seq l <| seq_ty
 
   let inner_ty ty =

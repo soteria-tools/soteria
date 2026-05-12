@@ -79,10 +79,11 @@ let rec dst_slice_ty : Types.ty -> Types.ty option = function
 let is_dst ty = dst_kind ty <> NoneKind
 
 let[@inline] size_to_fit ~size ~align =
+  let open Usize in
   Typed.ite
-    (size %@ align ==@ Usize.(0s))
+    (size %@ align ==@ 0s)
     size
-    (size +!!@ align -!!@ (size %@ align))
+    ((size &@ BV.not (align -!!@ 1s)) +!!@ align)
 
 let mk ~size ~align ?(uninhabited = false)
     ?(fields : Fields_shape.t = Primitive) () =
@@ -178,18 +179,28 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Type variables : non-deterministically generate a layout *)
   | TVar (Free _) ->
+      let open Usize in
       (* FIXME: we need to scope these type variables, as the T in foo<T> and in
          bar<T> are "different" Ts. *)
       let* size = nondet (Typed.t_usize ()) in
-      let* () = assume Usize.[ 0s <=$@ size; size <$@ 1024s ] in
+      (* We assume the size is at most 1024 bytes, which is a reasonable upper
+         bound for now. *)
+      let* () = assume [ 0s <=$@ size; size <$@ 1024s ] in
       (* this is real non-determinism of the alignment; we don't do it because
          it creates quite expensive formulae that we want to avoid. We make the
-         assumption the biggest possible alignment is 16, which is that of
+         assumption the biggest possible alignment is 16 (2^4), which is that of
          u128. *)
       (* let* align_shift = nondet (Typed.t_usize ()) in
-       * let* () = assume Usize.[ 0s <=$@ align_shift; align_shift <=$@ 4s ] in
-       * let align = Typed.cast (Usize.(1s) <<@ align_shift) in *)
-      let align = Usize.(1s) in
+       * let align = Typed.cast (1s <<@ align_shift) in
+       * let* () =
+       *   assume
+       *     [
+       *       0s <=$@ align_shift;
+       *       align_shift <=$@ 4s;
+       *       size &@ align -!!@ 1s ==@ 0s;
+       *     ]
+       * in *)
+      let align = 1s in
       ok (mk ~size ~align ())
   | TVar (Bound _) -> failwith "escaping bound type variable found in layout_of"
   (* Others (unhandled for now) *)

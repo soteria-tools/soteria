@@ -1,42 +1,19 @@
 open Soteria_std
 open Logs.Import
-module Var = Svalue.Var
+open Svalue
 
-let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
-  let simplify = simplify ~trivial_truthiness ~fallback in
-  match v.node.kind with
-  | Bool _ | BitVec _ | Float _ -> v
-  | _ -> (
-      match trivial_truthiness (Typed.type_ v) with
-      | Some true -> Svalue.Bool.v_true
-      | Some false -> Svalue.Bool.v_false
-      | None -> (
-          match v.node.kind with
-          | Unop (Not, e) ->
-              let e' = simplify e in
-              if Svalue.equal e e' then fallback v else Svalue.Bool.not e'
-          | Binop (Eq, e1, e2) ->
-              if Svalue.equal e1 e2 then Svalue.Bool.v_true
-              else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
-              else fallback v
-          | Binop (And, e1, e2) ->
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-              else Svalue.Bool.and_ se1 se2
-          | Binop (Or, e1, e2) ->
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then fallback v
-              else Svalue.Bool.or_ se1 se2
-          | Ite (g, e1, e2) ->
-              let sg = simplify g in
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal sg g && Svalue.equal se1 e1 && Svalue.equal se2 e2
-              then v
-              else Svalue.Bool.ite sg se1 se2
-          | _ -> fallback v))
+let[@inline] simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
+  let[@inline] subst (v : Svalue.t) =
+    match (v.node.ty, v.node.kind) with
+    | _, (Bool _ | Float _ | BitVec _) -> v
+    | TBool, _ -> (
+        match trivial_truthiness (Typed.type_ v) with
+        | Some true -> Svalue.Bool.v_true
+        | Some false -> Svalue.Bool.v_false
+        | _ -> fallback v)
+    | _ -> v
+  in
+  subst (Eval.eval ~subst v)
 
 module Make_incremental
     (Analysis : Analyses.S)
