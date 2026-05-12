@@ -114,19 +114,3 @@ let cerb_loc_to_yojson loc =
     Option.value ~default:((0, 0), (0, 0)) (Cerb_location.to_cartesian_user loc)
   in
   `List [ `List [ `Int p1; `Int p2 ]; `List [ `Int p3; `Int p4 ] ]
-
-let yojson_loc_to_range (loc : Yojson.Safe.t) =
-  let open Linol.Lsp.Types in
-  let (start_l, start_c), (end_l, end_c) =
-    match loc with
-    | `List [ `List [ `Int sl; `Int sc ]; `List [ `Int el; `Int ec ] ] ->
-        ((sl, sc), (el, ec))
-    | _ -> ((0, 0), (0, 0))
-  in
-  Range.
-    {
-      start = { character = start_c; line = start_l };
-      end_ = { character = end_c; line = end_l };
-    }
-
-let cerb_loc_to_range loc = yojson_loc_to_range @@ cerb_loc_to_yojson loc

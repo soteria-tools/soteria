@@ -10,11 +10,8 @@ OPAMX=$(OPAM) exec --
 DUNE=$(OPAMX) dune
 WHICHX=$(DUNE) exec -- which
 
-YARN=yarn
-
 PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-c/package.exe
 SOTERIA_C_BIN=_build/install/default/bin/soteria-c
-VSCODE_BC_JS=vscode/src/soteria_vscode.bc.js
 
 SOTERIA_RUST_PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-rust/package.exe
 SOTERIA_RUST_BIN=_build/install/default/bin/soteria-rust
@@ -30,7 +27,6 @@ endif
 
 SOTERIA_C_PACKAGE=packages/soteria-c
 SOTERIA_RUST_PACKAGE=packages/soteria-rust
-VSCODE_DIST=dist
 
 ##### Normal ocaml stuff #####
 .PHONY: ocaml
@@ -143,44 +139,12 @@ ocaml-deps:
 	$(OPAM) install dune.$(DUNE_VERSION) ocamlformat.$(OCAMLFORMAT_VERSION) -y
 	$(OPAM) install sherlodoc -y
 
-##### JavaScript stuff #####
-
-.PHONY: npm-deps
-npm-deps:
-	$(YARN) install --immutable
-
-.PHONY: vscode-reinstall-dev
-vscode-reinstall-dev: vscode-package
-	$(YARN) install-ext
-
-
-.PHONY: vscode-package
-vscode-package: vscode
-	$(YARN) package
-
-.PHONY: vscode
-vscode: js-bundle
-
-
-.PHONY: js-bundle
-js-bundle: vscode-ocaml
-	$(YARN) compile
-
-.PHONY: vscode-ocaml
-vscode-ocaml:
-	$(DUNE) build $(VSCODE_BC_JS)
-
-.PHONY: for-local
-for-local: ocaml vscode
-
 .PHONY: clean
 clean:
 	$(DUNE) clean
 	rm -rf packages
-	rm -rf $(VSCODE_DIST)
 	rm -rf packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt packaging/soteria-c/linux_dylibs.txt
 	rm -rf packaging/soteria-rust/bin-locations.txt packaging/soteria-rust/macOS_dylibs.txt packaging/soteria-rust/linux_dylibs.txt
-	rm -f soteria-vscode.vsix
 
 license-check:
 	reuse lint

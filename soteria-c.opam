@@ -16,7 +16,6 @@ bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
   "ocaml" {>= "5.4.0"}
   "shexp" {build}
-  "eio_main"
   "soteria"
   "cerberus-lib"
   "zarith"
@@ -28,8 +27,6 @@ depends: [
   "ppx_subliner" {>= "0.2.1"}
   "fmt"
   "dune-site"
-  "linol" {= "0.10"}
-  "linol-eio" {= "0.10"}
   "odoc" {with-doc}
   "alcotest" {with-test}
   "yojson" {< "3.0"}

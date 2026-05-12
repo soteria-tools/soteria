@@ -12,9 +12,6 @@
   cerberus-lib.mem.concrete
   cerberus-lib.backend_common
   zarith
-  linol
-  linol-eio
-  eio_main
   yojson
   tsort
   progress

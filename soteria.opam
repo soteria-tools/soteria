@@ -16,7 +16,6 @@ bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
   "ocaml" {>= "5.4.0"}
   "tsort" {>= "2.1.0"}
-  "eio_main"
   "simple_smt"
   "iter"
   "patricia-tree"
