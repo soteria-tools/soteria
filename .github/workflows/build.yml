@@ -20,7 +20,7 @@ jobs:
     name: Build and Test
     strategy:
       matrix:
-        operating-system: [macos-latest] # TODO: add other operating systems
+        operating-system: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3, node, ocaml and opam
@@ -58,26 +58,20 @@ jobs:
       - name: Check that opam files were up to date
         run: make check-opam-files
 
-      # Install Rust and Obol
+      # Install Rust
       - name: Get Rust toolchain
         run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: x86_64-unknown-linux-gnu,aarch64-apple-darwin
+      # Restore caches for Obol and Charon
       - name: Restore Obol cache
         uses: actions/cache@v5
         id: restore-obol-cache
         with:
           path: obol-bin
           key: ${{ runner.os }}-${{ runner.arch }}-obol-${{ env.OBOL_COMMIT_HASH }}
-      - name: Install Obol if not cached
-        run: |
-          brew install make
-          ../soteria/scripts/versionsync.py pull obol --init
-          cp -r ../obol/bin obol-bin
-        if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
-      - name: Add Obol to path
-        run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
-
       # Install Charon
       - name: Restore Charon cache
         uses: actions/cache@v5
@@ -85,9 +79,20 @@ jobs:
         with:
           path: charon-bin
           key: ${{ runner.os }}-${{ runner.arch }}-charon-${{ env.CHARON_COMMIT_HASH }}
+      # On macOS, we need make
+      - name: Install gmake (macOS)
+        run: brew install make
+        if: ${{ (!steps.restore-charon-cache.outputs.cache-hit || !steps.restore-obol-cache.outputs.cache-hit) && runner.os == 'macOS' }}
+      - name: Install Obol if not cached
+        run: |
+          ../soteria/scripts/versionsync.py pull obol --init
+          cp -r ../obol/bin obol-bin
+        if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
+      - name: Add Obol to path
+        run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
+
       - name: Install Charon if not cached
         run: |
-          brew install make
           ../soteria/scripts/versionsync.py pull charon --init
           cp -r ../charon/bin charon-bin
         if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
@@ -130,13 +135,23 @@ jobs:
       - name: Build JS stuff
         run: yarn compile
 
+      # Compute platform name for artifact naming (e.g. macos-arm64, linux-x86_64)
+      - name: Set platform artifact name
+        id: platform
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            echo "name=macos-arm64" >> $GITHUB_OUTPUT
+          else
+            echo "name=linux-x86_64" >> $GITHUB_OUTPUT
+          fi
+
       # Packaging OCaml distribution and sending it as artifact
       - name: Create soteria-c package
         run: make package-soteria-c
       - name: Upload soteria-c package
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.operating-system }}-soteria-c-package
+          name: ${{ steps.platform.outputs.name }}-soteria-c-package
           path: packages/soteria-c
           if-no-files-found: error
 
@@ -145,7 +160,7 @@ jobs:
       - name: Upload soteria-rust package
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.operating-system }}-soteria-rust-package
+          name: ${{ steps.platform.outputs.name }}-soteria-rust-package
           path: packages/soteria-rust
           if-no-files-found: error
 
@@ -158,8 +173,9 @@ jobs:
           name: odoc
           path: _build/default/_doc/_html
           if-no-files-found: error
-        # No need to upload artifact twice
-        if: ${{ matrix.operating-system == 'macos-latest' }}
+        # Upload only once (same for both platforms).
+        # We do this on linux because linux runners are cheaper.
+        if: runner.os == 'linux'
 
       - name: Opam Cleanup
         run: opam clean -a -r

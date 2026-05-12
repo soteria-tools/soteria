@@ -12,12 +12,12 @@ Simple tree borrow violation
   => Running simple_fail::main...
   error: simple_fail::main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Aliasing error in simple_fail::main
-      ┌─ $TESTCASE_ROOT/simple-fail.rs:8:5
-    3 │  fn main() {
-      │  --------- 1: Entry point
-      ·  
-    8 │      *y = 20; // UB: y is disabled
-      │      ^^^^^^^ Memory store
+      --> $TESTCASE_ROOT/simple-fail.rs:8:5
+    3 |  fn main() {
+      |  --------- 1: Entry point
+      .  
+    8 |      *y = 20; // UB: y is disabled
+      |      ^^^^^^^ Memory store
   PC 1: empty
   
   [1]

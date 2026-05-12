@@ -38,14 +38,14 @@ Try creating a generic vec
   => Running vec::with_capacity_wrong...
   error: vec::with_capacity_wrong: found issues in <time>, errors in 1 branch (out of 2)
   error: Panic: core::panicking::panic in vec::with_capacity_wrong
-      ┌─ $TESTCASE_ROOT/vec.rs:6:4
-    3 │    #[soteria::test]
-    4 │ ╭  fn with_capacity_wrong<T>() {
-    5 │ │      let my_vec: Vec<T> = Vec::with_capacity(10);
-    6 │ │      assert!(my_vec.capacity() == 10);
-      │ │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering operation
-      │ ╰───────────────────────────────────────' 1: Entry point
-    7 │    }
+      --> $TESTCASE_ROOT/vec.rs:6:4
+    3 |    #[soteria::test]
+    4 | /  fn with_capacity_wrong<T>() {
+    5 | |      let my_vec: Vec<T> = Vec::with_capacity(10);
+    6 | |      assert!(my_vec.capacity() == 10);
+      | |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering operation
+      | \---------------------------------------' 1: Entry point
+    7 |    }
   PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
   
   => Running vec::with_capacity...

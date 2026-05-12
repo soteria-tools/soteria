@@ -31,6 +31,7 @@
   pointer to {const} char, size_t, size_t) returning pointer to char' EMPTY
   | |-Decl_function __builtin_object_size 'function (pointer to {const} void,
   signed int) returning size_t' EMPTY
+  | |-Decl_function __builtin_bswap16 'function (uint16_t) returning uint16_t' EMPTY
   | |-Decl_function __builtin_bswap32 'function (uint32_t) returning uint32_t' EMPTY
   | |-Decl_function __builtin_bswap64 'function (uint64_t) returning uint64_t' EMPTY
   | |-Decl_function __atomic_load_n 'function (pointer to {volatile} signed int,
@@ -70,6 +71,7 @@
   pointer to {const} char, size_t, size_t) returning pointer to char' EMPTY
   | |-Decl_function __builtin_object_size 'function (pointer to {const} void,
   signed int) returning size_t' EMPTY
+  | |-Decl_function __builtin_bswap16 'function (uint16_t) returning uint16_t' EMPTY
   | |-Decl_function __builtin_bswap32 'function (uint32_t) returning uint32_t' EMPTY
   | |-Decl_function __builtin_bswap64 'function (uint64_t) returning uint64_t' EMPTY
   | |-Decl_function __atomic_load_n 'function (pointer to {volatile} signed int,

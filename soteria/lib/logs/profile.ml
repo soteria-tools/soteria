@@ -28,16 +28,21 @@ let supports_utf8_from_env () =
 
 type t = { color : bool; utf8 : bool }
 
-let mk_profile () =
-  let utf8 = supports_utf8_from_env () in
-  let color = color_from_env () in
-  { color; utf8 }
+(* Profile that should be supported on all platforms. *)
+let universal = { color = false; utf8 = false }
+
+let mk_profile ~hide_unstable () =
+  if hide_unstable then universal
+  else
+    let utf8 = supports_utf8_from_env () in
+    let color = color_from_env () in
+    { color; utf8 }
 
 let default = { color = false; utf8 = false }
 let get, set_and_lock = Soteria_std.Write_once.make ~name:"Profile" ~default ()
 
-let check_set_and_lock ?(no_color = false) () =
-  let p = mk_profile () in
+let check_set_and_lock ~hide_unstable ?(no_color = false) () =
+  let p = mk_profile ~hide_unstable () in
   let p = if no_color then { p with color = false } else p in
   set_and_lock p;
   Fmt.set_style_renderer Format.std_formatter

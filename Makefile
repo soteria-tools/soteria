@@ -2,6 +2,8 @@
 OCAML_VERSION=5.4.0
 # [versionsync: OCAMLFORMAT_VERSION=0.28.1]
 OCAMLFORMAT_VERSION=0.28.1
+# [versionsync: DUNE_VERSION=3.23.0]
+DUNE_VERSION=3.23.0
 
 OPAM=opam
 OPAMX=$(OPAM) exec --
@@ -10,14 +12,21 @@ WHICHX=$(DUNE) exec -- which
 
 YARN=yarn
 
-DYLIB_LIST_FILE=packaging/soteria-c/macOS_dylibs.txt
 PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-c/package.exe
 SOTERIA_C_BIN=_build/install/default/bin/soteria-c
 VSCODE_BC_JS=vscode/src/soteria_vscode.bc.js
 
-SOTERIA_RUST_DYLIB_LIST_FILE=packaging/soteria-rust/macOS_dylibs.txt
 SOTERIA_RUST_PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-rust/package.exe
 SOTERIA_RUST_BIN=_build/install/default/bin/soteria-rust
+
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+  DYLIB_LIST_FILE=packaging/soteria-c/macOS_dylibs.txt
+  SOTERIA_RUST_DYLIB_LIST_FILE=packaging/soteria-rust/macOS_dylibs.txt
+else
+  DYLIB_LIST_FILE=packaging/soteria-c/linux_dylibs.txt
+  SOTERIA_RUST_DYLIB_LIST_FILE=packaging/soteria-rust/linux_dylibs.txt
+endif
 
 SOTERIA_C_PACKAGE=packages/soteria-c
 SOTERIA_RUST_PACKAGE=packages/soteria-rust
@@ -63,7 +72,7 @@ doc:
 package: package-soteria-c package-soteria-rust
 
 .PHONY: package-soteria-c
-package-soteria-c: ocaml packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt
+package-soteria-c: ocaml packaging/soteria-c/bin-locations.txt $(DYLIB_LIST_FILE)
 	$(DUNE) build @soteria-c-dylist-file
 	$(PACKAGING_BIN) copy-files $(DYLIB_LIST_FILE) $(SOTERIA_C_PACKAGE)/lib
 	$(PACKAGING_BIN) copy-files packaging/soteria-c/bin-locations.txt $(SOTERIA_C_PACKAGE)/bin
@@ -79,13 +88,16 @@ packaging/soteria-c/bin-locations.txt:
 packaging/soteria-c/macOS_dylibs.txt:
 	$(PACKAGING_BIN) infer-dylibs $(SOTERIA_C_BIN) > $@
 
+packaging/soteria-c/linux_dylibs.txt:
+	$(PACKAGING_BIN) infer-dylibs $(SOTERIA_C_BIN) > $@
+
 ##### Packaging soteria-rust #####
 
 # From inside the package folder one can run:
 # SOTERIA_Z3_PATH=./bin/z3 SOTERIA_OBOL_PATH=./bin/obol SOTERIA_CHARON_PATH=./bin/charon \
 #   SOTERIA_RUST_PLUGINS=./plugins DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-rust exec .
 .PHONY: package-soteria-rust
-package-soteria-rust: ocaml packaging/soteria-rust/bin-locations.txt packaging/soteria-rust/macOS_dylibs.txt
+package-soteria-rust: ocaml packaging/soteria-rust/bin-locations.txt $(SOTERIA_RUST_DYLIB_LIST_FILE)
 	$(DUNE) build @soteria-rust-dylist-file
 	$(SOTERIA_RUST_PACKAGING_BIN) copy-files $(SOTERIA_RUST_DYLIB_LIST_FILE) $(SOTERIA_RUST_PACKAGE)/lib
 	$(SOTERIA_RUST_PACKAGING_BIN) copy-files packaging/soteria-rust/bin-locations.txt $(SOTERIA_RUST_PACKAGE)/bin
@@ -100,6 +112,9 @@ packaging/soteria-rust/bin-locations.txt:
 	which charon-driver >> $@ 2>/dev/null || true
 
 packaging/soteria-rust/macOS_dylibs.txt:
+	$(SOTERIA_RUST_PACKAGING_BIN) infer-dylibs $(SOTERIA_RUST_BIN) > $@
+
+packaging/soteria-rust/linux_dylibs.txt:
 	$(SOTERIA_RUST_PACKAGING_BIN) infer-dylibs $(SOTERIA_RUST_BIN) > $@
 
 ##### Switch creation / dependency setup #####
@@ -125,7 +140,7 @@ soteria-core-deps:
 .PHONY: ocaml-deps
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc -y
-	$(OPAM) install ocamlformat.$(OCAMLFORMAT_VERSION) -y
+	$(OPAM) install dune.$(DUNE_VERSION) ocamlformat.$(OCAMLFORMAT_VERSION) -y
 	$(OPAM) install sherlodoc -y
 
 ##### JavaScript stuff #####
@@ -163,8 +178,8 @@ clean:
 	$(DUNE) clean
 	rm -rf packages
 	rm -rf $(VSCODE_DIST)
-	rm -rf packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt
-	rm -rf packaging/soteria-rust/bin-locations.txt packaging/soteria-rust/macOS_dylibs.txt
+	rm -rf packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt packaging/soteria-c/linux_dylibs.txt
+	rm -rf packaging/soteria-rust/bin-locations.txt packaging/soteria-rust/macOS_dylibs.txt packaging/soteria-rust/linux_dylibs.txt
 	rm -f soteria-vscode.vsix
 
 license-check:
