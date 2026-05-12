@@ -95,7 +95,8 @@
   LOGS OPTIONS
          --hide-unstable, --diffable (absent HIDE_UNSTABLE env)
              Do not display unstable values like durations (e.g. for diffing
-             purposes).
+             purposes). Also overrides the profile to disable colors and utf8
+             and ensure that it is reproducible accross runs.
   
          --html
              HTML logging, clashes with --log-kind
@@ -308,7 +309,8 @@
   LOGS OPTIONS
          --hide-unstable, --diffable (absent HIDE_UNSTABLE env)
              Do not display unstable values like durations (e.g. for diffing
-             purposes).
+             purposes). Also overrides the profile to disable colors and utf8
+             and ensure that it is reproducible accross runs.
   
          --html
              HTML logging, clashes with --log-kind
@@ -547,7 +549,8 @@
   LOGS OPTIONS
          --hide-unstable, --diffable (absent HIDE_UNSTABLE env)
              Do not display unstable values like durations (e.g. for diffing
-             purposes).
+             purposes). Also overrides the profile to disable colors and utf8
+             and ensure that it is reproducible accross runs.
   
          --html
              HTML logging, clashes with --log-kind
@@ -908,7 +911,8 @@
   LOGS OPTIONS
          --hide-unstable, --diffable (absent HIDE_UNSTABLE env)
              Do not display unstable values like durations (e.g. for diffing
-             purposes).
+             purposes). Also overrides the profile to disable colors and utf8
+             and ensure that it is reproducible accross runs.
   
          --html
              HTML logging, clashes with --log-kind
