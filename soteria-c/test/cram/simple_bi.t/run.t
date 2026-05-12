@@ -1,7 +1,7 @@
   $ soteria-c gen-summaries load.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   No bugs found
-  Summaries for f_560:
+  Summaries for f_562:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|)]; pre = []; pc = [(0x0000000000000000 == V|1|)];
@@ -37,17 +37,6 @@
 NO_COLOR=true is necessary to avoid test output changing in CI. For some reason, Grace doesn't prints a final caret at the end with color, and not without color.
   $ NO_COLOR=true soteria-c gen-summaries manifest.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
-  error: Null pointer dereference in test_np
-      ┌─ manifest.c:51:3
-   51 │    *x = 12;
-      │    ^^^^^^^ Invalid memory write
-  error: Accessing uninitialized memory in test_uninit
-      ┌─ manifest.c:6:10
-    6 │    return *x;
-      │           ^^ Invalid memory load
-      ·  
-   21 │    load(x);
-      │    ------- 1: Called from here
   error: Accessing uninitialized memory in test_np_uninit
       ┌─ manifest.c:6:10
     6 │    return *x;
@@ -62,6 +51,13 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       ·  
    12 │    load(x);
       │    ------- 1: Called from here
+  error: Accessing uninitialized memory in test_uninit
+      ┌─ manifest.c:6:10
+    6 │    return *x;
+      │           ^^ Invalid memory load
+      ·  
+   21 │    load(x);
+      │    ------- 1: Called from here
   warning: Memory leak in test_leak
       ┌─ manifest.c:26:1
    25 │    
@@ -74,7 +70,11 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
    34 │ │  }
       │ ╰──^ 
    35 │    
-  Summaries for load_563:
+  error: Null pointer dereference in test_np
+      ┌─ manifest.c:51:3
+   51 │    *x = 12;
+      │    ^^^^^^^ Invalid memory write
+  Summaries for load_565:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|)]; pre = []; pc = [(0x0000000000000000 == V|1|)];
@@ -107,30 +107,33 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
         ret = (Ok V|3|) };
       manifest_bugs = []}
   
-  Summaries for test_ok_574:
+  Summaries for test_np_uninit_567:
     Analysed {
-      raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000000) };
-      manifest_bugs = []}
-    Analysed {
-      raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000001) };
-      manifest_bugs = []}
-  
-  Summaries for test_np_577:
-    Analysed {
-      raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000000) };
-      manifest_bugs = []}
+      raw =
+      { args = []; pre = []; pc = []; post = [];
+        ret =
+        (Error (Accessing uninitialized memory,
+                [• Called from here: manifest.c:12:3-10;
+                 • Invalid memory load: manifest.c:6:10-12 (cursor: 6:10)]))
+        };
+      manifest_bugs =
+      [(Accessing uninitialized memory,
+        [• Called from here: manifest.c:12:3-10;
+         • Invalid memory load: manifest.c:6:10-12 (cursor: 6:10)])]}
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = [];
         ret =
         (Error (Null pointer dereference,
-                [• Invalid memory write: manifest.c:51:3-10 (cursor: 51:6)]))
+                [• Called from here: manifest.c:12:3-10;
+                 • Invalid memory load: manifest.c:6:10-12 (cursor: 6:10)]))
         };
       manifest_bugs =
       [(Null pointer dereference,
-        [• Invalid memory write: manifest.c:51:3-10 (cursor: 51:6)])]}
+        [• Called from here: manifest.c:12:3-10;
+         • Invalid memory load: manifest.c:6:10-12 (cursor: 6:10)])]}
   
-  Summaries for test_uninit_568:
+  Summaries for test_uninit_570:
     Analysed {
       raw =
       { args = []; pre = []; pc = []; post = [];
@@ -147,33 +150,7 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000001) };
       manifest_bugs = []}
   
-  Summaries for test_np_uninit_565:
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = [];
-        ret =
-        (Error (Accessing uninitialized memory,
-                [• Called from here: manifest.c:12:3-10;
-                 • Invalid memory load: manifest.c:6:10-12 (cursor: 6:10)]))
-        };
-      manifest_bugs =
-      [(Accessing uninitialized memory,
-        [• Called from here: manifest.c:12:3-10;
-         • Invalid memory load: manifest.c:6:10-12 (cursor: 6:10)])]}
-    Analysed {
-      raw =
-      { args = []; pre = []; pc = []; post = [];
-        ret =
-        (Error (Null pointer dereference,
-                [• Called from here: manifest.c:12:3-10;
-                 • Invalid memory load: manifest.c:6:10-12 (cursor: 6:10)]))
-        };
-      manifest_bugs =
-      [(Null pointer dereference,
-        [• Called from here: manifest.c:12:3-10;
-         • Invalid memory load: manifest.c:6:10-12 (cursor: 6:10)])]}
-  
-  Summaries for test_leak_571:
+  Summaries for test_leak_573:
     Analysed {
       raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000000) };
       manifest_bugs =
@@ -184,12 +161,35 @@ NO_COLOR=true is necessary to avoid test output changing in CI. For some reason,
       raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000001) };
       manifest_bugs = []}
   
+  Summaries for test_ok_576:
+    Analysed {
+      raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000000) };
+      manifest_bugs = []}
+    Analysed {
+      raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000001) };
+      manifest_bugs = []}
+  
+  Summaries for test_np_579:
+    Analysed {
+      raw = { args = []; pre = []; pc = []; post = []; ret = (Ok 0x00000000) };
+      manifest_bugs = []}
+    Analysed {
+      raw =
+      { args = []; pre = []; pc = []; post = [];
+        ret =
+        (Error (Null pointer dereference,
+                [• Invalid memory write: manifest.c:51:3-10 (cursor: 51:6)]))
+        };
+      manifest_bugs =
+      [(Null pointer dereference,
+        [• Invalid memory write: manifest.c:51:3-10 (cursor: 51:6)])]}
+  
 The following test case is for regression testing.
 if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries if_sat_one_ok.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   No bugs found
-  Summaries for test_561:
+  Summaries for test_563:
     Analysed {
       raw =
       { args = [V|1|; &(V|2|, V|3|)]; pre = [];
@@ -236,7 +236,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
   $ soteria-c gen-summaries array_iter.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
   
   No bugs found
-  Summaries for test_561:
+  Summaries for test_563:
     Analysed {
       raw =
       { args = [&(V|1|, V|2|); V|3|]; pre = [];
@@ -363,7 +363,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
       ┌─ overflow.c:9:11
     9 │    int c = b + 1;
       │            ^^^^^ Triggering operation
-  Summaries for add_561:
+  Summaries for add_563:
     Analysed {
       raw =
       { args = [V|1|; V|2|]; pre = []; pc = [(V|1| +s_ovf V|2|)]; post = [];
@@ -378,7 +378,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         ret = (Ok (V|1| +ck V|2|)) };
       manifest_bugs = []}
   
-  Summaries for add_ovf_manifest_564:
+  Summaries for add_ovf_manifest_566:
     Analysed {
       raw =
       { args = [V|1|]; pre = []; pc = []; post = [];

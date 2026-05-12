@@ -1320,7 +1320,7 @@ Checking that code cannot branch infinitely
                    MemVal {offset = 0x0000000000000000;
                      len = 0x0000000000000004; v = 0x00000001 : signed int};
                    info = None }));
-             (Ser_globs (x_559, 0x0000000000000001))])]
+             (Ser_globs (x_561, 0x0000000000000001))])]
   
   Executed 5 statements
   Verification Success!
@@ -1340,8 +1340,8 @@ Checking that code cannot branch infinitely
                    MemVal {offset = 0x0000000000000000;
                      len = 0x0000000000000004; v = 0x00000000 : signed int};
                    info = None }));
-             (Ser_globs (x_559, 0x0000000000000001));
-             (Ser_globs (y_560, 0x0000000000000002))])]
+             (Ser_globs (x_561, 0x0000000000000001));
+             (Ser_globs (y_562, 0x0000000000000002))])]
   
   Executed 3 statements
   Verification Success!
@@ -1460,7 +1460,7 @@ Expected to correctly find the harness function
                 (0x0000000000000002,
                  { node = Bound(0x0000000000000008);
                    info = (Some float.c:10:23-47) }));
-             (Ser_globs (f_560, 0x0000000000000001))]);
+             (Ser_globs (f_562, 0x0000000000000001))]);
      Ok: (0x00000001,
           Some
             [(Ser_heap
@@ -1469,7 +1469,7 @@ Expected to correctly find the harness function
                    MemVal {offset = 0x0000000000000000;
                      len = 0x0000000000000008; v = 0.0f : float};
                    info = None }));
-             (Ser_globs (f_560, 0x0000000000000001))])]
+             (Ser_globs (f_562, 0x0000000000000001))])]
   
   Executed 11 statements
   Verification Success!
@@ -1516,9 +1516,9 @@ Check with the proper flag we obtain only one branch
 Check that, without proper flag, undefined function calls are not-implemented
   $ soteria-c exec havoc_undef.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
-    [Error: Gave up: Unsupported: Cannot call external function: nondet_int_559]
+    [Error: Gave up: Unsupported: Cannot call external function: nondet_int_561]
   
-  error: Analysis gave up: Unsupported: Cannot call external function: nondet_int_559 in main
+  error: Analysis gave up: Unsupported: Cannot call external function: nondet_int_561 in main
   Executed 2 statements
   Verification Failure! (Unsupported features)
   [2]
@@ -1557,7 +1557,7 @@ Check that, with proper flag, undefined function calls are havoced. Expecting 2 
              (Ser_heap
                 (0x0000000000000002,
                  { node = Freed; info = (Some glob_struct.c:16:22-23) }));
-             (Ser_globs (x_561, 0x0000000000000001))])]
+             (Ser_globs (x_563, 0x0000000000000001))])]
   
   Executed 6 statements
   Verification Success!

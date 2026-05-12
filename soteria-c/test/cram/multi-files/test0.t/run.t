@@ -30,6 +30,7 @@
   pointer to {const} char, size_t, size_t) returning pointer to char' EMPTY
   | |-Decl_function __builtin_object_size 'function (pointer to {const} void,
   signed int) returning size_t' EMPTY
+  | |-Decl_function __builtin_bswap16 'function (uint16_t) returning uint16_t' EMPTY
   | |-Decl_function __builtin_bswap32 'function (uint32_t) returning uint32_t' EMPTY
   | |-Decl_function __builtin_bswap64 'function (uint64_t) returning uint64_t' EMPTY
   | |-Decl_function __atomic_load_n 'function (pointer to {volatile} signed int,
@@ -70,6 +71,7 @@
   pointer to {const} char, size_t, size_t) returning pointer to char' EMPTY
   | |-Decl_function __builtin_object_size 'function (pointer to {const} void,
   signed int) returning size_t' EMPTY
+  | |-Decl_function __builtin_bswap16 'function (uint16_t) returning uint16_t' EMPTY
   | |-Decl_function __builtin_bswap32 'function (uint32_t) returning uint32_t' EMPTY
   | |-Decl_function __builtin_bswap64 'function (uint64_t) returning uint64_t' EMPTY
   | |-Decl_function __atomic_load_n 'function (pointer to {volatile} signed int,
@@ -145,8 +147,8 @@
                    MemVal {offset = 0x0000000000000000;
                      len = 0x0000000000000004; v = 0x0000000c : signed int};
                    info = None }));
-             (Ser_globs (x_560, 0x0000000000000002));
-             (Ser_globs (x_642, 0x0000000000000001))])]
+             (Ser_globs (x_562, 0x0000000000000002));
+             (Ser_globs (x_646, 0x0000000000000001))])]
   
   Executed 7 statements
   Verification Success!
