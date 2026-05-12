@@ -43,6 +43,7 @@ jobs:
       - name: Setup environment variables
         run: |
           PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-c-package"
+          echo "PACKAGE_DIR=${PACKAGE_DIR}" >> $GITHUB_ENV
           echo "CERB_INSTALL_PREFIX=${PACKAGE_DIR}" >> $GITHUB_ENV
           echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
           echo "SOTERIA_AUTO_INCLUDE_PATH=${PACKAGE_DIR}/lib/soteria-c" >> $GITHUB_ENV
@@ -120,6 +121,7 @@ jobs:
       - name: Setup environment variables
         run: |
           PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-rust-package"
+          echo "PACKAGE_DIR=${PACKAGE_DIR}" >> $GITHUB_ENV
           echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
           echo "SOTERIA_OBOL_PATH=${PACKAGE_DIR}/bin/obol" >> $GITHUB_ENV
           echo "SOTERIA_CHARON_PATH=${PACKAGE_DIR}/bin/charon" >> $GITHUB_ENV
