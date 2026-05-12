@@ -39,28 +39,23 @@ jobs:
         run: |
           chmod +x ./soteria-c-package/bin/soteria-c
           chmod +x ./soteria-c-package/bin/z3
-      - name: Setup environment variables (macOS)
-        if: runner.os == 'macOS'
+
+      - name: Setup environment variables
         run: |
           PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-c-package"
           echo "CERB_INSTALL_PREFIX=${PACKAGE_DIR}" >> $GITHUB_ENV
-          echo "DYLD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
           echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
           echo "SOTERIA_AUTO_INCLUDE_PATH=${PACKAGE_DIR}/lib/soteria-c" >> $GITHUB_ENV
           echo "SOTERIA_C=${PACKAGE_DIR}/bin/soteria-c" >> $GITHUB_ENV
           echo "SOTERIA_SOLVER_TIMEOUT=100" >> $GITHUB_ENV
           echo "SOTERIA_USE_CERB_HEADERS=true" >> $GITHUB_ENV
-      - name: Setup environment variables (Linux)
+      - name: Setup dynamic library path (Linux)
         if: runner.os == 'Linux'
-        run: |
-          PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-c-package"
-          echo "CERB_INSTALL_PREFIX=${PACKAGE_DIR}" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
-          echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
-          echo "SOTERIA_AUTO_INCLUDE_PATH=${PACKAGE_DIR}/lib/soteria-c" >> $GITHUB_ENV
-          echo "SOTERIA_C=${PACKAGE_DIR}/bin/soteria-c" >> $GITHUB_ENV
-          echo "SOTERIA_SOLVER_TIMEOUT=100" >> $GITHUB_ENV
-          echo "SOTERIA_USE_CERB_HEADERS=true" >> $GITHUB_ENV
+        run: echo "LD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+      - name: Setup dynamic library path (macOS)
+        if: runner.os == 'macOS'
+        run: echo "DYLD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
+
       - name: Create compilation database
         run: |
           mkdir -p build
@@ -121,26 +116,22 @@ jobs:
           chmod +x ./soteria-rust-package/bin/charon
           chmod +x ./soteria-rust-package/bin/obol-driver
           chmod +x ./soteria-rust-package/bin/charon-driver
-      - name: Setup environment variables (macOS)
-        if: runner.os == 'macOS'
+
+      - name: Setup environment variables
         run: |
           PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-rust-package"
-          echo "DYLD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
           echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
           echo "SOTERIA_OBOL_PATH=${PACKAGE_DIR}/bin/obol" >> $GITHUB_ENV
           echo "SOTERIA_CHARON_PATH=${PACKAGE_DIR}/bin/charon" >> $GITHUB_ENV
           echo "SOTERIA_RUST_PLUGINS=${PACKAGE_DIR}/plugins" >> $GITHUB_ENV
           echo "SOTERIA_RUST=${PACKAGE_DIR}/bin/soteria-rust" >> $GITHUB_ENV
-      - name: Setup environment variables (Linux)
+      - name: Setup dynamic library path (Linux)
         if: runner.os == 'Linux'
-        run: |
-          PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-rust-package"
-          echo "LD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
-          echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
-          echo "SOTERIA_OBOL_PATH=${PACKAGE_DIR}/bin/obol" >> $GITHUB_ENV
-          echo "SOTERIA_CHARON_PATH=${PACKAGE_DIR}/bin/charon" >> $GITHUB_ENV
-          echo "SOTERIA_RUST_PLUGINS=${PACKAGE_DIR}/plugins" >> $GITHUB_ENV
-          echo "SOTERIA_RUST=${PACKAGE_DIR}/bin/soteria-rust" >> $GITHUB_ENV
+        run: echo "LD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+      - name: Setup dynamic library path (macOS)
+        if: runner.os == 'macOS'
+        run: echo "DYLD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
+
       - name: Run soteria-rust --help (smoke test)
         run: |
           $SOTERIA_RUST --help
