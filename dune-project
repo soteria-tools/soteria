@@ -35,7 +35,6 @@
    (>= 5.4.0))
   (tsort
    (>= 2.1.0))
-  eio_main
   simple_smt
   iter
   patricia-tree
@@ -93,7 +92,6 @@
   (ocaml
    (>= 5.4.0))
   (shexp :build)
-  eio_main
   soteria
   cerberus-lib
   zarith
@@ -107,10 +105,6 @@
    (>= 0.2.1))
   fmt
   dune-site
-  (linol
-   (= 0.10))
-  (linol-eio
-   (= 0.10))
   (odoc :with-doc)
   (alcotest :with-test)
   (yojson
@@ -125,34 +119,6 @@
     :with-dev-setup
     (= 0.28.1)))
   (ocaml-lsp-server :with-dev-setup)))
-
-(package
- (name soteria-vscode)
- (allow_empty)
- (synopsis "VSCode extension for Soteria-C")
- (description "VSCode extension for Soteria-C")
- (depends
-  ; [versionsync: OCAML_VERSION=5.4.0]
-  (ocaml
-   (>= 5.4.0))
-  (dune
-   (and
-    :build
-    (>= 3.14.0)))
-  (ocaml-lsp-server :with-dev-setup)
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
-  (ocamlformat
-   (and
-    :with-dev-setup
-    (= 0.28.1)))
-  js_of_ocaml
-  js_of_ocaml-ppx
-  gen_js_api
-  ppx_deriving
-  promise_jsoo
-  vscode
-  vscode-interop
-  vscode-node))
 
 (package
  (name soteria-rust)

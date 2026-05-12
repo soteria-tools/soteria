@@ -19,10 +19,6 @@ let files_arg =
   let doc = "FILES" in
   Arg.(non_empty & pos_all file [] & info [] ~docv:"FILES" ~doc)
 
-let version_arg =
-  let doc = "Print version information" in
-  Arg.(value & flag & info [ "version" ] ~doc)
-
 let includes_arg =
   let doc = "Add a directory to the include path" in
   Arg.(
@@ -56,23 +52,6 @@ module Exec_main = struct
       (Cmd.info ~exits
          ~doc:"Symbolically execute a program starting from the main function."
          "exec")
-      (Term.map Exit_code.to_int term)
-end
-
-module Lsp = struct
-  let lsp config show_version =
-    if show_version then (
-      print_endline "dev";
-      Soteria_c_lib.Error.Exit_code.Success)
-    else Soteria_c_lib.Driver.lsp config ()
-
-  let term =
-    Term.(const lsp $ Soteria_c_lib.Config.cmdliner_term () $ version_arg)
-
-  let cmd =
-    Cmd.v
-      (Cmd.info ~exits
-         ~doc:"Run soteria-c in LSP mode for bug finding (experimental)" "lsp")
       (Term.map Exit_code.to_int term)
 end
 
@@ -141,12 +120,6 @@ end
 
 let cmd =
   Cmd.group (Cmd.info "soteria-c")
-    [
-      Exec_main.cmd;
-      Lsp.cmd;
-      Show_ail.cmd;
-      Generate_summaries.cmd;
-      Capture_db.cmd;
-    ]
+    [ Exec_main.cmd; Show_ail.cmd; Generate_summaries.cmd; Capture_db.cmd ]
 
 let () = exit @@ Cmd.eval' cmd

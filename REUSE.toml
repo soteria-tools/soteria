@@ -14,7 +14,6 @@ path = [
   "soteria-c/**",
   "soteria-linear/**",
   "ppx/**",
-  "vscode/**",
   "packaging/**",
   "demo/**",
   "doc/**",
@@ -32,7 +31,6 @@ path = [
   ".gitignore",
   ".ocamlformat",
   ".ocamlformat-ignore",
-  "yarn.lock",
   "NOTICE",              # Other files
   "THIRD_PARTY_NOTICES",
   "CONTRIBUTING.md",

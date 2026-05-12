@@ -456,11 +456,6 @@ let generate_summaries ~functions_to_analyse prog =
     Error.Exit_code.Success)
 
 (* Entry point function *)
-let lsp config () =
-  Config.with_config ~config ~mode:Compositional
-  @@ Soteria_c_lsp.run ~generate_errors
-
-(* Entry point function *)
 let show_ail soteria_config config (includes : string list)
     (files : string list) =
   let@ () = initialise ~soteria_config Compositional config in

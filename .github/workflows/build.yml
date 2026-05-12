@@ -23,17 +23,13 @@ jobs:
         operating-system: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.operating-system }}
     steps:
-      # Setup steps: checkout, z3, node, ocaml and opam
+      # Setup steps: checkout, z3,  ocaml and opam
       - uses: actions/checkout@v6
       - name: Check versions.json sync
         run: python3 scripts/versionsync.py check
       - name: Setup Z3
         uses: cda-tum/setup-z3@v1
         id: z3
-      - name: Setup node
-        uses: actions/setup-node@v6
-        with:
-          cache: "yarn"
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@v3
         with:
@@ -128,12 +124,6 @@ jobs:
       - name: Run slow tests (fuzz tests)
         if: github.event_name == 'merge_group' && steps.check-bv-files.outputs.modified == 'true'
         run: make ocaml-slow-tests
-
-      # Building js stuff
-      - name: Install JS dependencies
-        run: yarn install
-      - name: Build JS stuff
-        run: yarn compile
 
       # Compute platform name for artifact naming (e.g. macos-arm64, linux-x86_64)
       - name: Set platform artifact name
