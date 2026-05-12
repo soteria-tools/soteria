@@ -22,13 +22,14 @@ module Infer_Dylibs = struct
         |. read_all
         |> eval
         |> print_string
-    | _ ->
-        (* Linux: ldd output is " libfoo.so => /path/to/libfoo.so (0xaddr)" *)
+    | "Linux" ->
+        (* ldd output is " libfoo.so => /path/to/libfoo.so (0xaddr)" *)
         run "ldd" [ exe ]
         |. run "awk" [ "/=>/ {print $3}" ]
         |. read_all
         |> eval
         |> print_string
+    | os -> failwith ("Unsupported OS: " ^ os)
 
   let exe_arg =
     Arg.(
