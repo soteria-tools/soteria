@@ -473,10 +473,10 @@ def get_make_command() -> str:
     return "make"
 
 
-def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, build_cmd: str, allow_init: bool) -> None:
+def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, build_cmd: str, allow_init: bool, post_build_cmds: list[list[str]] | None = None) -> None:
     """
     Pull and build a single project.
-    
+
     Args:
         project: Project name (obol or charon)
         target_dir: Directory where the project is located
@@ -484,6 +484,9 @@ def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, bu
         repo: Expected repository (e.g., 'soteria-tools/obol')
         build_cmd: Build command to run
         allow_init: If True, will clone the repo if it doesn't exist
+        post_build_cmds: Optional list of commands to run after the build, each
+            as a list of strings. Run from target_dir so the project's
+            rust-toolchain.toml is in scope.
     """
     step(f"Processing {project}...")
     
@@ -531,7 +534,11 @@ def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, bu
     info(f"Running build command: {' '.join(build_cmd_parts)}")
     run_command(build_cmd_parts, target_dir)
     success(f"Build completed successfully")
-    
+
+    for cmd in (post_build_cmds or []):
+        info(f"Running post-build command: {' '.join(cmd)}")
+        run_command(cmd, target_dir)
+
     color_print(f"\n✓ {project} updated and built successfully!\n", Colors.GREEN + Colors.BOLD)
 
 
@@ -543,6 +550,12 @@ def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> 
             "version_key": "OBOL_COMMIT_HASH",
             "default_dir": root.parent / "obol",
             "build_cmd": "make build",
+            # Install cross-compilation targets so soteria-rust can analyse code
+            # for platforms other than the host. Run from the obol directory so
+            # that rustup picks up its rust-toolchain.toml.
+            "post_build_cmds": [
+                ["rustup", "target", "add", "x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],
+            ],
         },
         "charon": {
             "repo_key": "CHARON_REPO",
@@ -582,7 +595,8 @@ def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> 
         commit_hash = versions[config["version_key"]]
         
         try:
-            pull_project(project, target_dir, commit_hash, repo, config["build_cmd"], args.init)
+            pull_project(project, target_dir, commit_hash, repo, config["build_cmd"], args.init,
+                         post_build_cmds=config.get("post_build_cmds"))
         except SystemExit:
             # Error already printed
             return 1
