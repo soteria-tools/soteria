@@ -244,7 +244,9 @@ module Cmd = struct
           ((Config.get ()).charon_path, charon @ entries)
     in
     let target_flag =
-      Option.fold ~none:[] ~some:(fun t -> [ "--target"; t ]) (Config.get ()).target
+      Option.fold ~none:[]
+        ~some:(fun t -> [ "--target"; t ])
+        (Config.get ()).target
     in
     match mode with
     | Rustc ->
