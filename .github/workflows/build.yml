@@ -58,31 +58,18 @@ jobs:
       - name: Check that opam files were up to date
         run: make check-opam-files
 
-      # Install Rust and Obol
+      # Install Rust
       - name: Get Rust toolchain
         run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
+      # Restore caches for Obol and Charon
       - name: Restore Obol cache
         uses: actions/cache@v5
         id: restore-obol-cache
         with:
           path: obol-bin
           key: ${{ runner.os }}-${{ runner.arch }}-obol-${{ env.OBOL_COMMIT_HASH }}
-      - name: Install Obol if not cached (macOS)
-        run: |
-          brew install make
-          ../soteria/scripts/versionsync.py pull obol --init
-          cp -r ../obol/bin obol-bin
-        if: ${{ !steps.restore-obol-cache.outputs.cache-hit && runner.os == 'macOS' }}
-      - name: Install Obol if not cached (Linux)
-        run: |
-          ../soteria/scripts/versionsync.py pull obol --init
-          cp -r ../obol/bin obol-bin
-        if: ${{ !steps.restore-obol-cache.outputs.cache-hit && runner.os == 'Linux' }}
-      - name: Add Obol to path
-        run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
-
       # Install Charon
       - name: Restore Charon cache
         uses: actions/cache@v5
@@ -90,17 +77,23 @@ jobs:
         with:
           path: charon-bin
           key: ${{ runner.os }}-${{ runner.arch }}-charon-${{ env.CHARON_COMMIT_HASH }}
-      - name: Install Charon if not cached (macOS)
+      # On macOS, we need make
+      - name: Install gmake (macOS)
+        run: brew install make
+        if: ${{ (!steps.restore-charon-cache.outputs.cache-hit || !steps.restore-obol-cache.outputs.cache-hit) && runner.os == 'macOS' }}
+      - name: Install Obol if not cached
         run: |
-          brew install make
+          ../soteria/scripts/versionsync.py pull obol --init
+          cp -r ../obol/bin obol-bin
+        if: ${{ !steps.restore-obol-cache.outputs.cache-hit }}
+      - name: Add Obol to path
+        run: echo "$PWD/obol-bin/" >> $GITHUB_PATH
+
+      - name: Install Charon if not cached
+        run: |
           ../soteria/scripts/versionsync.py pull charon --init
           cp -r ../charon/bin charon-bin
-        if: ${{ !steps.restore-charon-cache.outputs.cache-hit && runner.os == 'macOS' }}
-      - name: Install Charon if not cached (Linux)
-        run: |
-          ../soteria/scripts/versionsync.py pull charon --init
-          cp -r ../charon/bin charon-bin
-        if: ${{ !steps.restore-charon-cache.outputs.cache-hit && runner.os == 'Linux' }}
+        if: ${{ !steps.restore-charon-cache.outputs.cache-hit }}
       - name: Add Charon to path
         run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
 
@@ -178,7 +171,9 @@ jobs:
           name: odoc
           path: _build/default/_doc/_html
           if-no-files-found: error
-        if: runner.os == 'macOS'
+        # Upload only once (same for both platforms).
+        # We do this on linux because linux runners are cheaper.
+        if: runner.os == 'linux'
 
       - name: Opam Cleanup
         run: opam clean -a -r
