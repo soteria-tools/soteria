@@ -8,17 +8,12 @@ Simple polymorphic function with no polymorphic values
   Compiling... done in <time>
   => Running trivial::trivial...
   note: trivial::trivial: done in <time>, ran 2 branches
-  PC 1: ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff8 != (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
-        ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <=s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
-        ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000000 == V|1|) : (0x0000000000000000 == (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
-        ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
-        !(((0b000 == extract[0-2](V|1|)) ? (0x0000000000000000 <s V|1|) : (0x0000000000000000 <s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|))))) /\
-        (V|1| <=u 0x00000000000003ff)
-  PC 2: ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff8 != (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
-        ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <=s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
-        !(((0b000 == extract[0-2](V|1|)) ? (0x0000000000000000 == V|1|) : (0x0000000000000000 == (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|))))) /\
-        ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & (0x0000000000000008 +ck V|1|)))) /\
-        (V|1| <=u 0x00000000000003ff)
+  PC 1: (size<T> <=u 0x00000000000003ff) /\
+        !(((0b000 == extract[0-2](size<T>)) ? (0x0000000000000000 <s size<T>) : (0x0000000000000000 <s (0xfffffffffffffff8 & (0x0000000000000008 +ck size<T>)))))
+  PC 2: (size<T> <=u 0x00000000000003ff) /\
+        !(((0b000 == extract[0-2](size<T>)) ? (0x0000000000000000 == size<T>) : (0x0000000000000000 == (0xfffffffffffffff8 & (0x0000000000000008 +ck size<T>)))))
+  Variables:
+    size<T> (size<T>) — symbolic size of polymorphic type variable T
   
 Ensure generic args are passed through function calls and not lost
   $ soteria-rust exec subst_generics.rs --frontend charon --poly
@@ -41,14 +36,19 @@ Try creating a generic vec
       │ │     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering operation
       │ ╰───────────────────────────────────────' 1: Entry point
     7 │    }
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  PC 1: (0x0000000000000000 == size<T>)
+  Variables:
+    size<T> (size<T>) — symbolic size of polymorphic type variable T
   
   => Running vec::with_capacity...
   note: vec::with_capacity: done in <time>, ran 2 branches
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
-  PC 2: (V|2| <u (0x7fffffffffffffff - (0x000000000000000a *ck V|1|))) /\
-        (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
-        (0x0000000000000001 <=u V|2|)
+  PC 1: (0x0000000000000000 == size<T>)
+  PC 2: (0x0000000000000001 <=u V|2|) /\ (size<T> <=u 0x00000000000003ff) /\
+        (0x0000000000000001 <=u size<T>) /\
+        (V|2| <u (0x7fffffffffffffff - (0x000000000000000a *ck size<T>)))
+  Variables:
+    size<T> (size<T>) — symbolic size of polymorphic type variable T
+    |2| — address of a pointer
   
   [1]
 
@@ -57,12 +57,14 @@ Try generics when moving them between argumen ts
   Compiling... done in <time>
   => Running moving_generics::two_generics...
   note: moving_generics::two_generics: done in <time>, ran 3 branches
-  PC 1: (V|1| <u V|2|) /\ (V|1| <=u 0x00000000000003ff) /\
-        (V|2| <=u 0x00000000000003ff)
-  PC 2: (V|2| <=u V|1|) /\ (V|2| <u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
-        (V|2| <=u 0x00000000000003ff)
-  PC 3: (V|2| <=u V|1|) /\ (V|1| <=u V|2|) /\ (V|1| <=u 0x00000000000003ff) /\
-        (V|2| <=u 0x00000000000003ff) /\ (V|1| == V|2|)
+  PC 1: (size<U> <=u 0x00000000000003ff) /\ (size<T> <=u 0x00000000000003ff) /\
+        (size<T> <u size<U>)
+  PC 2: (size<U> <=u 0x00000000000003ff) /\ (size<T> <=u 0x00000000000003ff) /\
+        (size<U> <u size<T>)
+  PC 3: (size<T> == size<U>) /\ (size<T> <=u 0x00000000000003ff)
+  Variables:
+    size<T> (size<T>) — symbolic size of polymorphic type variable T
+    size<U> (size<U>) — symbolic size of polymorphic type variable U
   
 Try const generics
   $ soteria-rust exec const_generics.rs --frontend charon --poly
@@ -77,68 +79,52 @@ Try const generics
   
   => Running const_generics::test_poly_const_generic...
   note: const_generics::test_poly_const_generic: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  PC 1: (0x0000000000000000 == V|1|)
+  Variables:
+    |1| — nondet usize, created at .../cram/poly.t/const_generics.rs:<range>
   
   => Running const_generics::test_poly_const_generic2...
   note: const_generics::test_poly_const_generic2: done in <time>, ran 6 branches
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
-  PC 2: (0x0000000000000001 == V|1|) /\ (0x0000000000000001 == V|1|)
-  PC 3: (V|1| == 0x0000000000000008) /\ (V|1| == 0x0000000000000008)
-  PC 4: (V|1| == 0x000000000000000f) /\ (V|1| == 0x000000000000000f)
-  PC 5: (V|1| == 0x00000000000000ff) /\ (V|1| == 0x00000000000000ff)
-  PC 6: (0x0000000000000002 <=u V|1|) /\ (V|1| != 0x0000000000000008) /\
-        (V|1| != 0x000000000000000f) /\ (V|1| != 0x00000000000000ff)
+  PC 1: (0x0000000000000000 == V|1|)
+  PC 2: (0x0000000000000001 == V|1|)
+  PC 3: (V|1| == 0x0000000000000008)
+  PC 4: (V|1| == 0x000000000000000f)
+  PC 5: (V|1| == 0x00000000000000ff)
+  PC 6: (V|1| != 0x00000000000000ff) /\ (V|1| != 0x000000000000000f) /\
+        (V|1| != 0x0000000000000008) /\ (0x0000000000000002 <=u V|1|)
+  Variables:
+    |1| — nondet usize, created at .../cram/poly.t/const_generics.rs:<range>
   
 Test generating nondeterministic values of type T
   $ soteria-rust exec nondet_t.rs --frontend charon --poly
   Compiling... done in <time>
   => Running nondet_t::nondet_t...
   note: nondet_t::nondet_t: done in <time>, ran 2 branches
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
-  PC 2: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff)
+  PC 1: (0x0000000000000000 == size<T>)
+  PC 2: (size<T> <=u 0x00000000000003ff) /\ (0x0000000000000001 <=u size<T>)
+  Variables:
+    size<T> (size<T>) — symbolic size of polymorphic type variable T
   
 Test linked lists, to ensure dropping the list works despite the generic type
   $ soteria-rust exec linked_list.rs --frontend charon --poly
   Compiling... done in <time>
   => Running linked_list::test_linked_list...
   note: linked_list::test_linked_list: done in <time>, ran 3 branches
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000008 <=u V|2|) /\
-        (V|2| <=u 0x7fffffffffffffee) /\ (0x0000000000000000 == V|1|) /\
-        (0b000 == extract[0-2](V|2|))
-  PC 2: ((extract[0-2](V|1|) == 0b000) || ((0xfffffffffffffff8 & V|1|) <=s 0x7fffffffffffffe7)) /\
-        ((extract[0-2](V|1|) == 0b000) || ((0xfffffffffffffff8 & V|1|) != 0xffffffffffffffe8)) /\
-        ((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        (V|1| != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 <=s (0xfffffffffffffff8 & V|1|))) /\
-        (((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) || ((extract[0-2](V|1|) != 0b000) && ((0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)) <=s V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (V|1| <s (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        ((extract[0-2](V|1|) == 0b000) || ((0xfffffffffffffff8 & V|1|) <=u 0x7fffffffffffffe7)) /\
-        ((extract[0-2](V|1|) == 0b000) ? (V|2| <u (0x7fffffffffffffef - V|1|)) : (V|2| <u (0x7fffffffffffffe7 - (0xfffffffffffffff8 & V|1|)))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 != (0xfffffffffffffff8 & V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & V|1|))) /\
-        (((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) || ((extract[0-2](V|1|) != 0b000) && ((0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)) <=s V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (V|1| <s (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xffffffffffffffe8 <s (0xfffffffffffffff8 & V|1|))) /\
-        (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
-        (0x0000000000000008 <=u V|2|) /\
-        (V|1| == ((extract[0-2](V|1|) == 0b000) ? V|1| : (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        (0b000 == extract[0-2](V|2|))
-  PC 3: ((extract[0-2](V|1|) == 0b000) || ((0xfffffffffffffff8 & V|1|) <=s 0x7fffffffffffffe7)) /\
-        ((extract[0-2](V|1|) == 0b000) || ((0xfffffffffffffff8 & V|1|) != 0xffffffffffffffe8)) /\
-        ((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        (V|1| != ((extract[0-2](V|1|) == 0b000) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000018 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 <=s (0xfffffffffffffff8 & V|1|))) /\
-        (((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) || ((extract[0-2](V|1|) != 0b000) && ((0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)) <=s V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (V|1| <s (0x0000000000000010 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        (V|1| != ((extract[0-2](V|1|) == 0b000) ? V|1| : (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        (((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) || ((extract[0-2](V|1|) != 0b000) && ((0xfffffffffffffff8 & V|1|) <=s 0xfffffffffffffff8))) /\
-        (V|1| <=s ((extract[0-2](V|1|) == 0b000) ? V|1| : (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        ((extract[0-2](V|1|) == 0b000) || ((0xfffffffffffffff8 & V|1|) <=u 0x7fffffffffffffe7)) /\
-        ((extract[0-2](V|1|) == 0b000) ? (V|2| <u (0x7fffffffffffffef - V|1|)) : (V|2| <u (0x7fffffffffffffe7 - (0xfffffffffffffff8 & V|1|)))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 != (0xfffffffffffffff8 & V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xfffffffffffffff8 <s (0xfffffffffffffff8 & V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (0xffffffffffffffe8 <s (0xfffffffffffffff8 & V|1|))) /\
-        ((extract[0-2](V|1|) == 0b000) || (V|1| <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & V|1|)))) /\
-        (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
-        (0x0000000000000008 <=u V|2|) /\ (0b000 == extract[0-2](V|2|))
+  PC 1: (0b000 == extract[0-2](V|2|)) /\ (V|2| <=u 0x7fffffffffffffee) /\
+        (0x0000000000000008 <=u V|2|) /\ (0x0000000000000000 == size<T>)
+  PC 2: (0b000 == extract[0-2](V|2|)) /\
+        (size<T> == ((extract[0-2](size<T>) == 0b000) ? size<T> : (0x0000000000000008 +ck (0xfffffffffffffff8 & size<T>)))) /\
+        (0x0000000000000008 <=u V|2|) /\ (size<T> <=u 0x00000000000003ff) /\
+        (0x0000000000000001 <=u size<T>) /\
+        (size<T> != ((extract[0-2](size<T>) == 0b000) ? (0x0000000000000010 +ck size<T>) : (0x0000000000000018 +ck (0xfffffffffffffff8 & size<T>)))) /\
+        ((extract[0-2](size<T>) == 0b000) ? (V|2| <u (0x7fffffffffffffef - size<T>)) : (V|2| <u (0x7fffffffffffffe7 - (0xfffffffffffffff8 & size<T>))))
+  PC 3: (0b000 == extract[0-2](V|2|)) /\ (0x0000000000000008 <=u V|2|) /\
+        (size<T> <=u 0x00000000000003ff) /\ (0x0000000000000001 <=u size<T>) /\
+        (size<T> != ((extract[0-2](size<T>) == 0b000) ? (0x0000000000000010 +ck size<T>) : (0x0000000000000018 +ck (0xfffffffffffffff8 & size<T>)))) /\
+        (size<T> != ((extract[0-2](size<T>) == 0b000) ? size<T> : (0x0000000000000008 +ck (0xfffffffffffffff8 & size<T>)))) /\
+        ((extract[0-2](size<T>) == 0b000) || (size<T> <=s (0x0000000000000008 +ck (0xfffffffffffffff8 & size<T>)))) /\
+        ((extract[0-2](size<T>) == 0b000) ? (V|2| <u (0x7fffffffffffffef - size<T>)) : (V|2| <u (0x7fffffffffffffe7 - (0xfffffffffffffff8 & size<T>))))
+  Variables:
+    size<T> (size<T>) — symbolic size of polymorphic type variable T
+    |2| — address of a pointer
   

@@ -27,8 +27,10 @@ Test memory leaks
       │    --------- 1: Leaking function
     2 │        std::mem::forget(Box::new(11));
       │                         ------------ 2: Call trace
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   [1]
 
@@ -77,20 +79,27 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   Compiling... done in <time>
   => Running unwind::main...
   note: unwind::main: done in <time>, ran 2 branches
-  PC 1: (V|1| == 0x01) /\ (0x0000000000000001 <=u V|2|) /\
-        (V|2| <=u 0x7ffffffffffffffd) /\ (V|1| == 0x01)
-  PC 2: (0x00 == V|1|) /\ (0x00 == V|1|)
+  PC 1: (V|2| <=u 0x7ffffffffffffffd) /\ (0x0000000000000001 <=u V|2|) /\
+        (V|1| == 0x01)
+  PC 2: (0x00 == V|1|)
+  Variables:
+    |1| — nondet bool, created at .../cram/simple.t/unwind.rs:<range>
+    |2| — address of a pointer
   
 Test that we properly handle the niche optimisation
   $ soteria-rust exec niche_optim.rs --ignore-leaks
   Compiling... done in <time>
   => Running niche_optim::main...
   note: niche_optim::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0x0000000000000004 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffff6) /\
-        (0x0000000000000004 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00) /\ (0b00 == extract[0-1](V|2|)) /\
-        (0b00 == extract[0-1](V|3|))
+  PC 1: (0b00 == extract[0-1](V|3|)) /\ (0b00 == extract[0-1](V|2|)) /\
+        (extract[0-1](V|1|) == 0b00) /\ (V|3| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|3|) /\ (V|2| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000004 <=u V|2|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
+    |2| — address of a pointer
+    |3| — address of a pointer
   
 Test function calls on function pointers
   $ soteria-rust exec fn_ptr.rs
@@ -138,7 +147,9 @@ Check strict provenance disables int to ptr casts
       ·  
     6 │      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
       │                   ---------------------------------------------- 2: Call trace
-  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
+  PC 1: (V|1| <=u 0x7ffffffffffffffd) /\ (0x0000000000000001 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   [1]
 
@@ -147,7 +158,9 @@ Check permissive provenance allows int to ptr casts
   Compiling... done in <time>
   => Running provenance::with_exposed...
   note: provenance::with_exposed: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
+  PC 1: (V|1| <=u 0x7ffffffffffffffd) /\ (0x0000000000000001 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
 
 Check corner cases with permissive provenance, around transmutes
@@ -162,7 +175,9 @@ Check corner cases with permissive provenance, around transmutes
       ·  
     9 │          *p_back = 1;
       │          ^^^^^^^^^^^ Memory store
-  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
+  PC 1: (V|1| <=u 0x7ffffffffffffffd) /\ (0x0000000000000001 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   => Running provenance_transmute::transmute_doesnt_restore_provenance...
   error: provenance_transmute::transmute_doesnt_restore_provenance: found issues in <time>, errors in 1 branch (out of 1)
@@ -173,7 +188,9 @@ Check corner cases with permissive provenance, around transmutes
       ·  
    22 │          *p_back = 1;
       │          ^^^^^^^^^^^ Memory store
-  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
+  PC 1: (V|1| <=u 0x7ffffffffffffffd) /\ (0x0000000000000001 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   [1]
 
@@ -182,13 +199,19 @@ Test transmutations keeping the bit-patterns the same
   Compiling... done in <time>
   => Running transmute_roundtrip::one_way_u32_f32...
   note: transmute_roundtrip::one_way_u32_f32: done in <time>, ran 1 branch
-  PC 1: !(fis(NaN)(bv2f[F32](V|1|))) /\ (V|1| == V|2|) /\
-        (bv2f[F32](V|1|) == bv2f[F32](V|2|))
+  PC 1: (bv2f[F32](V|1|) == bv2f[F32](float_bits)) /\ (V|1| == float_bits) /\
+        !(fis(NaN)(bv2f[F32](V|1|)))
+  Variables:
+    |1| — nondet u32, created at .../cram/simple.t/transmute_roundtrip.rs:<range>
+    float_bits (float_bits) — bitvector representation of a float (engine-generated)
   
   => Running transmute_roundtrip::one_way_f32_u32...
   note: transmute_roundtrip::one_way_f32_u32: done in <time>, ran 2 branches
-  PC 1: fis(NaN)(V|1|) /\ (bv2f[F32](V|2|) == V|1|)
-  PC 2: !(fis(NaN)(V|1|)) /\ (bv2f[F32](V|2|) == V|1|)
+  PC 1: (bv2f[F32](float_bits) == V|1|) /\ fis(NaN)(V|1|)
+  PC 2: (bv2f[F32](float_bits) == V|1|) /\ !(fis(NaN)(V|1|))
+  Variables:
+    |1| — nondet f32, created at .../cram/simple.t/transmute_roundtrip.rs:<range>
+    float_bits (float_bits) — bitvector representation of a float (engine-generated)
   
   => Running transmute_roundtrip::two_way_u32_i32...
   note: transmute_roundtrip::two_way_u32_i32: done in <time>, ran 1 branch
@@ -234,16 +257,20 @@ Test exposing function pointers
   Compiling... done in <time>
   => Running expose_fn_ptr::main...
   note: expose_fn_ptr::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffe) /\
-        (extract[0-3](V|1|) == 0x0)
+  PC 1: (extract[0-3](V|1|) == 0x0) /\ (V|1| <=u 0x7ffffffffffffffe) /\
+        (0x0000000000000010 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
   $ soteria-rust exec thread_local.rs
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   => Running thread_local::static_ref_cell...
   warning: thread_local::static_ref_cell (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::list::register: GAst.Missing
@@ -275,7 +302,9 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
       │          │
       │          Triggering operation
       │          2: Call trace
-  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
+  PC 1: (V|1| == 0x01)
+  Variables:
+    |1| — nondet bool, created at .../cram/simple.t/fail_fast.rs:<range>
   
   [1]
 
@@ -284,8 +313,10 @@ Test recursive validity check for references; disabled
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -296,8 +327,10 @@ Test recursive validity check for references; disabled
       ·  
    17 │      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       │                                       ^^^^^^^^ Dangling check
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -308,8 +341,10 @@ Test recursive validity check for references; disabled
       ·  
    25 │      let as_ref: &u64 = unsafe { &*as_ptr };
       │                                  ^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   [1]
 
@@ -325,8 +360,10 @@ Test recursive validity check for references; enabled
       ·  
     7 │      let as_ref: &u32 = unsafe { &*as_ptr };
       │                                  ^^^^^^^^ Fake read
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -337,8 +374,10 @@ Test recursive validity check for references; enabled
       ·  
    17 │      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       │                                       ^^^^^^^^ Dangling check
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -349,8 +388,10 @@ Test recursive validity check for references; enabled
       ·  
    25 │      let as_ref: &u64 = unsafe { &*as_ptr };
       │                                  ^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   [1]
 
@@ -366,8 +407,10 @@ Test recursive validity check for references; warn
     7 │      let as_ref: &u32 = unsafe { &*as_ptr };
       │                                  ^^^^^^^^ Triggering operation
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -378,8 +421,10 @@ Test recursive validity check for references; warn
       ·  
    17 │      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       │                                       ^^^^^^^^ Dangling check
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -390,8 +435,10 @@ Test recursive validity check for references; warn
       ·  
    25 │      let as_ref: &u64 = unsafe { &*as_ptr };
       │                                  ^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   [1]
 
@@ -402,8 +449,10 @@ Test approximation of complex float operations -- warn (default)
   warning: A complex floating point intrinsic was encountered; it will be executed with a significant over-approximation.
   note: approx_float::main: done in <time>, ran 1 branch
   PC 1: !(fis(Infinite)(V|1|)) /\ !(fis(NaN)(V|1|)) /\
-        ((V|2| ==. 1.0f) || !((V|1| ==. 0.0f))) /\ (-1.0f <=. V|2|) /\
-        (V|2| <=. 1.0f) /\ (-1f <=. V|2|) /\ (V|2| <=. 1f)
+        ((V|2| ==. 1.0f) || !((V|1| ==. 0.0f))) /\ (-1f <=. V|2|) /\
+        (V|2| <=. 1f)
+  Variables:
+    |1| — nondet f32, created at .../cram/simple.t/approx_float.rs:<range>
   
 
 Test approximation of complex float operations -- denied
@@ -420,8 +469,10 @@ Test approximation of complex float operations -- allowed
   => Running approx_float::main...
   note: approx_float::main: done in <time>, ran 1 branch
   PC 1: !(fis(Infinite)(V|1|)) /\ !(fis(NaN)(V|1|)) /\
-        ((V|2| ==. 1.0f) || !((V|1| ==. 0.0f))) /\ (-1.0f <=. V|2|) /\
-        (V|2| <=. 1.0f) /\ (-1f <=. V|2|) /\ (V|2| <=. 1f)
+        ((V|2| ==. 1.0f) || !((V|1| ==. 0.0f))) /\ (-1f <=. V|2|) /\
+        (V|2| <=. 1f)
+  Variables:
+    |1| — nondet f32, created at .../cram/simple.t/approx_float.rs:<range>
   
 Test enum constructors as functions; this broke with a rust toolchain update
   $ soteria-rust exec enum_constructor.rs
@@ -435,8 +486,10 @@ Print the callgraph
   Compiling... done in <time>
   => Running callgraph::main...
   note: callgraph::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   digraph callgraph {
     node [shape=box fontname="monospace"];

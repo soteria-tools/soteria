@@ -42,7 +42,9 @@ Test running Soteria Rust on a crate with tests
   Compiling... done in <time>
   => Running soteria::tests::test_ok...
   note: soteria::tests::test_ok: done in <time>, ran 1 branch
-  PC 1: (V|1| == 0x0000002a) /\ (V|1| == 0x0000002a)
+  PC 1: (V|1| == 0x0000002a)
+  Variables:
+    |1| — nondet i32, created at tests/soteria.rs:<range>
   
   => Running soteria::tests::test_nok...
   error: soteria::tests::test_nok: found issues in <time>, errors in 1 branch (out of 2)
@@ -60,10 +62,14 @@ Test running Soteria Rust on a crate with tests
    15 │          assert_eq!(x, get_answer());
       │          --------------------------- 2: Call trace
   PC 1: (V|1| != 0x0000002a)
+  Variables:
+    |1| — nondet i32, created at tests/soteria.rs:<range>
   
   => Running soteria::tests::test_nok_ok...
   note: soteria::tests::test_nok_ok: done in <time>, ran 2 branches
   PC 1: (V|1| != 0x0000002a)
+  Variables:
+    |1| — nondet i32, created at tests/soteria.rs:<range>
   
   [1]
 

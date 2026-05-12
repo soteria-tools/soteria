@@ -37,6 +37,8 @@ Executing a symbolic process is done using the {{!Soteria.Symex.S.run}run} funct
 - : ?flamegraph:string Symex.effect_handling ->
     ?stats:unit Symex.effect_handling ->
     ?fuel:Symex.Fuel_gauge.t ->
+    ?include_hidden:bool ->
+    ?simplify_pc:bool ->
     mode:Symex.Approx.t ->
     'a Symex.t -> ('a * Symex.Value.sbool Typed.t list) list
 = <fun>
@@ -59,7 +61,8 @@ A core necessity of symbolic execution is the ability to introduce fresh symboli
 
 {@ocaml[
 # Symex.nondet;;
-- : 'a Typed.ty -> 'a Typed.t Symex.t = <fun>
+- : ?name:string -> ?metadata:string -> 'a Typed.ty -> 'a Typed.t Symex.t =
+<fun>
 ]}
 
 {{!Soteria.Symex.S.nondet}[nondet]} receives a type [ty] and returns a symbolic process that produces a fresh symbolic value of that type.

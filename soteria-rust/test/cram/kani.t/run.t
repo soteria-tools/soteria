@@ -3,25 +3,33 @@ Test kani::any
   Compiling... done in <time>
   => Running any::any_bool...
   note: any::any_bool: done in <time>, ran 2 branches
-  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
-  PC 2: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (V|1| == 0x01)
+  PC 2: (V|1| == 0x00)
+  Variables:
+    |1| — nondet bool, created at src/lib.rs:<range>
   
   => Running any::any_i8...
   note: any::any_i8: done in <time>, ran 3 branches
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (V|1| == 0x00)
   PC 2: (0x80 <=u V|1|)
-  PC 3: (0x01 <=u V|1|) /\ (V|1| <=u 0x7f)
+  PC 3: (V|1| <=u 0x7f) /\ (0x01 <=u V|1|)
+  Variables:
+    |1| — nondet i8, created at src/lib.rs:<range>
   
 Test kani::assume
   $ soteria-rust exec assume.rs --kani
   Compiling... done in <time>
   => Running assume::assume_bool...
   note: assume::assume_bool: done in <time>, ran 1 branch
-  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
+  PC 1: (V|1| == 0x01)
+  Variables:
+    |1| — nondet bool, created at src/lib.rs:<range>
   
   => Running assume::assume_i32...
   note: assume::assume_i32: done in <time>, ran 1 branch
   PC 1: (0x00000001 <=u V|1|)
+  Variables:
+    |1| — nondet i32, created at src/lib.rs:<range>
   
 Test #[kani::should_panic]
   $ soteria-rust exec should_panic.rs --kani
@@ -45,7 +53,9 @@ Test kani::assert
       │      │
       │      Triggering operation
       │      2: Call trace
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (V|1| == 0x00)
+  Variables:
+    |1| — nondet bool, created at src/lib.rs:<range>
   
   => Running assert::fancy_assert_false...
   error: assert::fancy_assert_false: found issues in <time>, errors in 1 branch (out of 2)
@@ -59,7 +69,9 @@ Test kani::assert
       │      │
       │      Triggering operation
       │      2: Call trace
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (V|1| == 0x00)
+  Variables:
+    |1| — nondet bool, created at src/lib.rs:<range>
   
   => Running assert::override_assert_macro...
   error: assert::override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
@@ -73,7 +85,9 @@ Test kani::assert
       │      │
       │      Triggering operation
       │      2: Call trace
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (V|1| == 0x00)
+  Variables:
+    |1| — nondet bool, created at src/lib.rs:<range>
   
   => Running assert::override_asserteq_macro...
   error: assert::override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
@@ -91,6 +105,9 @@ Test kani::assert
    23 │      assert_eq!(a, b, "I used \"assert_eq!\"");
       │      ----------------------------------------- 2: Call trace
   PC 1: (V|1| != V|2|)
+  Variables:
+    |1| — nondet u32, created at src/lib.rs:<range>
+    |2| — nondet u32, created at src/lib.rs:<range>
   
   [1]
 
@@ -99,60 +116,25 @@ Test kani::slice::any_slice_of_array
   Compiling... done in <time>
   => Running any_slice::main...
   note: any_slice::main: done in <time>, ran 8 branches
-  PC 1: (V|1| <=u V|2|) /\
-        ((V|1| <=u 0x3fffffffffffffff) || (0x0000000000000000 == V|1|)) /\
-        (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|2|) /\
-        (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|2|)
-  PC 2: (V|1| <=u V|2|) /\
-        ((V|1| <=u 0x3fffffffffffffff) || (0x0000000000000000 == V|1|)) /\
-        (0x0000000000000000 == V|1|) /\ (0x0000000000000003 == V|2|) /\
-        (0x0000000000000000 == V|1|) /\ (0x0000000000000003 == V|2|)
-  PC 3: (V|1| <=u V|2|) /\
-        ((V|1| <=u 0x3fffffffffffffff) || (0x0000000000000000 == V|1|)) /\
-        (0x0000000000000000 == V|1|) /\ (0x0000000000000002 == V|2|) /\
-        (0x0000000000000000 == V|1|) /\ (0x0000000000000002 == V|2|)
-  PC 4: (V|1| <=u V|2|) /\
-        ((V|1| <=u 0x3fffffffffffffff) || (0x0000000000000000 == V|1|)) /\
-        (0x0000000000000000 == V|1|) /\ (0x0000000000000001 == V|2|) /\
-        (0x0000000000000000 == V|1|) /\ (0x0000000000000001 == V|2|)
-  PC 5: (V|1| <=u V|2|) /\
-        ((V|1| <=u 0x3fffffffffffffff) || (0x0000000000000000 == V|1|)) /\
-        ((V|2| -ck V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x0000000000000003) /\
-        (V|2| <=u 0x0000000000000003) /\
-        (0x0000000000000000 == (V|2| -ck V|1|))
-  PC 6: (V|1| <=u V|2|) /\
-        ((V|1| <=u 0x3fffffffffffffff) || (0x0000000000000000 == V|1|)) /\
-        ((V|2| -ck V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 != (V|2| -ck V|1|)) /\
-        (0x0000000000000000 <s (V|2| -ck V|1|)) /\
-        (0x0000000000000000 <=s (V|2| -ck V|1|)) /\
-        ((V|2| -ck V|1|) <=u 0x0000000000000003) /\
-        (0x0000000000000001 <u (V|2| -ck 0x0000000000000001)) /\
+  PC 1: (0x0000000000000000 == V|2|) /\ (0x0000000000000000 == V|1|)
+  PC 2: (0x0000000000000003 == V|2|) /\ (0x0000000000000000 == V|1|)
+  PC 3: (0x0000000000000002 == V|2|) /\ (0x0000000000000000 == V|1|)
+  PC 4: (0x0000000000000001 == V|2|) /\ (0x0000000000000000 == V|1|)
+  PC 5: (0x0000000000000000 == (V|2| -ck V|1|)) /\
+        (V|2| <=u 0x0000000000000003) /\ (V|1| <=u 0x3fffffffffffffff) /\
+        (0x0000000000000001 <=u V|1|)
+  PC 6: (V|2| <=u 0x0000000000000003) /\ (0x0000000000000001 == V|1|) /\
         (0x0000000000000001 <s (V|2| -ck 0x0000000000000001)) /\
-        ((V|2| -ck 0x0000000000000001) <=u 0x0000000000000002) /\
-        (0x0000000000000001 == V|1|) /\ (V|2| <=u 0x0000000000000003) /\
-        (0x0000000000000001 == V|1|)
-  PC 7: (V|1| <=u V|2|) /\
-        ((V|1| <=u 0x3fffffffffffffff) || (0x0000000000000000 == V|1|)) /\
-        ((V|2| -ck V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 != (V|2| -ck V|1|)) /\
-        (0x0000000000000000 <s (V|2| -ck V|1|)) /\
-        (0x0000000000000000 <=s (V|2| -ck V|1|)) /\
-        ((V|2| -ck V|1|) <=u 0x0000000000000003) /\
-        ((V|2| -ck 0x0000000000000001) <=u 0x0000000000000001) /\
-        (0x0000000000000001 == V|1|) /\ (V|2| <=u 0x0000000000000003) /\
-        (0x0000000000000001 == V|1|)
-  PC 8: (V|1| <=u V|2|) /\
-        ((V|1| <=u 0x3fffffffffffffff) || (0x0000000000000000 == V|1|)) /\
-        ((V|2| -ck V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 != (V|2| -ck V|1|)) /\
-        (0x0000000000000000 <s (V|2| -ck V|1|)) /\
-        (0x0000000000000000 <=s (V|2| -ck V|1|)) /\
-        ((V|2| -ck V|1|) <=u 0x0000000000000003) /\
-        ((V|2| -ck 0x0000000000000002) <=u 0x0000000000000001) /\
-        (0x0000000000000002 == V|1|) /\ (V|2| <=u 0x0000000000000003) /\
-        (0x0000000000000002 == V|1|)
+        ((V|2| -ck 0x0000000000000001) <=u 0x0000000000000002)
+  PC 7: (V|2| <=u 0x0000000000000003) /\ (0x0000000000000001 == V|1|) /\
+        (0x0000000000000000 <s (V|2| -ck 0x0000000000000001)) /\
+        ((V|2| -ck 0x0000000000000001) <=u 0x0000000000000001)
+  PC 8: (V|2| <=u 0x0000000000000003) /\ (0x0000000000000002 == V|1|) /\
+        (0x0000000000000000 <s (V|2| -ck 0x0000000000000002)) /\
+        ((V|2| -ck 0x0000000000000002) <=u 0x0000000000000001)
+  Variables:
+    |1| — nondet usize, created at src/lib.rs:<range>
+    |2| — nondet usize, created at src/lib.rs:<range>
   
 
 Test kani::vec::any_vec
@@ -160,103 +142,74 @@ Test kani::vec::any_vec
   Compiling... done in <time>
   => Running any_vec::len_capacity_invariant...
   note: any_vec::len_capacity_invariant: done in <time>, ran 17 branches
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000000 == V|1|) /\
-        (extract[0-1](V|18|) == 0b00)
-  PC 2: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (V|1| == 0x0000000000000010) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (V|1| == 0x0000000000000010) /\
-        (extract[0-1](V|18|) == 0b00)
-  PC 3: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-        (V|1| == 0x000000000000000f) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-        (V|19| <=u 0x7fffffffffffffc2) /\ (V|1| == 0x000000000000000f) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 4: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-        (V|1| == 0x000000000000000e) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-        (V|19| <=u 0x7fffffffffffffc6) /\ (V|1| == 0x000000000000000e) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 5: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-        (V|1| == 0x000000000000000d) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-        (V|19| <=u 0x7fffffffffffffca) /\ (V|1| == 0x000000000000000d) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 6: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-        (V|1| == 0x000000000000000c) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-        (V|19| <=u 0x7fffffffffffffce) /\ (V|1| == 0x000000000000000c) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 7: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-        (V|1| == 0x000000000000000b) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-        (V|19| <=u 0x7fffffffffffffd2) /\ (V|1| == 0x000000000000000b) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 8: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-        (V|1| == 0x000000000000000a) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-        (V|19| <=u 0x7fffffffffffffd6) /\ (V|1| == 0x000000000000000a) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 9: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-        (V|1| == 0x0000000000000009) /\ (0x0000000000000004 <=u V|18|) /\
-        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-        (V|19| <=u 0x7fffffffffffffda) /\ (V|1| == 0x0000000000000009) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 10: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-         (V|1| == 0x0000000000000008) /\ (0x0000000000000004 <=u V|18|) /\
-         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-         (V|19| <=u 0x7fffffffffffffde) /\ (V|1| == 0x0000000000000008) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 11: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-         (V|1| == 0x0000000000000007) /\ (0x0000000000000004 <=u V|18|) /\
-         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-         (V|19| <=u 0x7fffffffffffffe2) /\ (V|1| == 0x0000000000000007) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 12: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-         (V|1| == 0x0000000000000006) /\ (0x0000000000000004 <=u V|18|) /\
-         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-         (V|19| <=u 0x7fffffffffffffe6) /\ (V|1| == 0x0000000000000006) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 13: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-         (V|1| == 0x0000000000000005) /\ (0x0000000000000004 <=u V|18|) /\
-         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-         (V|19| <=u 0x7fffffffffffffea) /\ (V|1| == 0x0000000000000005) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 14: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-         (V|1| == 0x0000000000000004) /\ (0x0000000000000004 <=u V|18|) /\
-         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-         (V|19| <=u 0x7fffffffffffffee) /\ (V|1| == 0x0000000000000004) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 15: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-         (V|1| == 0x0000000000000003) /\ (0x0000000000000004 <=u V|18|) /\
-         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-         (V|19| <=u 0x7ffffffffffffff2) /\ (V|1| == 0x0000000000000003) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 16: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-         (V|1| == 0x0000000000000002) /\ (0x0000000000000004 <=u V|18|) /\
-         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-         (V|19| <=u 0x7ffffffffffffff6) /\ (V|1| == 0x0000000000000002) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
-  PC 17: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
-         (0x0000000000000001 == V|1|) /\ (0x0000000000000004 <=u V|18|) /\
-         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
-         (V|19| <=u 0x7ffffffffffffffa) /\ (0x0000000000000001 == V|1|) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+  PC 1: (extract[0-1](V|18|) == 0b00) /\ (V|18| <=u 0x7fffffffffffffbe) /\
+        (0x0000000000000004 <=u V|18|) /\ (0x0000000000000000 == V|1|)
+  PC 2: (extract[0-1](V|18|) == 0b00) /\ (V|18| <=u 0x7fffffffffffffbe) /\
+        (0x0000000000000004 <=u V|18|) /\ (V|1| == 0x0000000000000010)
+  PC 3: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+        (V|19| <=u 0x7fffffffffffffc2) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|1| == 0x000000000000000f)
+  PC 4: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+        (V|19| <=u 0x7fffffffffffffc6) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|1| == 0x000000000000000e)
+  PC 5: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+        (V|19| <=u 0x7fffffffffffffca) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|1| == 0x000000000000000d)
+  PC 6: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+        (V|19| <=u 0x7fffffffffffffce) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|1| == 0x000000000000000c)
+  PC 7: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+        (V|19| <=u 0x7fffffffffffffd2) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|1| == 0x000000000000000b)
+  PC 8: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+        (V|19| <=u 0x7fffffffffffffd6) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|1| == 0x000000000000000a)
+  PC 9: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+        (V|19| <=u 0x7fffffffffffffda) /\ (0x0000000000000004 <=u V|19|) /\
+        (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|1| == 0x0000000000000009)
+  PC 10: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+         (V|19| <=u 0x7fffffffffffffde) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|1| == 0x0000000000000008)
+  PC 11: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+         (V|19| <=u 0x7fffffffffffffe2) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|1| == 0x0000000000000007)
+  PC 12: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+         (V|19| <=u 0x7fffffffffffffe6) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|1| == 0x0000000000000006)
+  PC 13: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+         (V|19| <=u 0x7fffffffffffffea) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|1| == 0x0000000000000005)
+  PC 14: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+         (V|19| <=u 0x7fffffffffffffee) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|1| == 0x0000000000000004)
+  PC 15: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+         (V|19| <=u 0x7ffffffffffffff2) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|1| == 0x0000000000000003)
+  PC 16: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+         (V|19| <=u 0x7ffffffffffffff6) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|1| == 0x0000000000000002)
+  PC 17: (0b00 == extract[0-1](V|19|)) /\ (extract[0-1](V|18|) == 0b00) /\
+         (V|19| <=u 0x7ffffffffffffffa) /\ (0x0000000000000004 <=u V|19|) /\
+         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|18|) /\
+         (0x0000000000000001 == V|1|)
+  Variables:
+    |1| — nondet usize, created at src/lib.rs:<range>
+    |18| — address of a pointer
+    |19| — address of a pointer
   
 Test our simple Kani demo works
   $ soteria-rust exec demo.rs --kani
@@ -271,11 +224,17 @@ Test our simple Kani demo works
    11 │      if a + b < u32::MAX {
       │         ^^^^^ Triggering operation
   PC 1: (V|1| +u_ovf V|2|)
+  Variables:
+    |1| — nondet u32, created at src/lib.rs:<range>
+    |2| — nondet u32, created at src/lib.rs:<range>
   
   => Running demo::saturating_add...
   note: demo::saturating_add: done in <time>, ran 2 branches
   PC 1: (V|1| <u (0xffffffff -ck V|2|)) /\ !((V|1| +u_ovf V|2|))
   PC 2: ((0xffffffff -ck V|2|) <=u V|1|)
+  Variables:
+    |1| — nondet u32, created at src/lib.rs:<range>
+    |2| — nondet u32, created at src/lib.rs:<range>
   
   => Running demo::memory_leak...
   error: demo::memory_leak: found issues in <time>, errors in 1 branch (out of 1)
@@ -303,8 +262,10 @@ Test our simple Kani demo works
       │    ---------------- 1: Leaking function
    33 │        let allocated = Box::new(11);
       │                        ------------ 2: Call trace
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+  PC 1: (extract[0-1](V|1|) == 0b00) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|1|)
+  Variables:
+    |1| — address of a pointer
   
   => Running demo::uninit_access...
   error: demo::uninit_access: found issues in <time>, errors in 1 branch (out of 2)
@@ -315,6 +276,8 @@ Test our simple Kani demo works
       ·  
    63 │          let value: u32 = *addr_value;
       │                           ^^^^^^^^^^^ Memory load
-  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
+  PC 1: (0x00 == V|1|)
+  Variables:
+    |1| — nondet bool, created at src/lib.rs:<range>
   
   [1]
