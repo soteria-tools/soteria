@@ -103,9 +103,9 @@ let pp fmt = function
 
 let nondet (ty : Charon.Types.ty) : t list =
   let module Encoder = Value_codec.Encoder (State.Sptr) in
-  Rustsymex.run_needs_stats ~mode:UX @@ Encoder.nondet_valid ty
+  Rustsymex.run ~stats:Caller ~mode:UX @@ Encoder.nondet_valid ty
   |> ListLabels.map ~f:(function
-    | Soteria.Symex.Compo_res.Ok ret, pcs ->
+    | Soteria.Soteria_std.Compo_res.Ok ret, pcs ->
         let ret = Ret.to_syn ret in
         let pure = List.map Typed.Expr.of_value pcs in
         let asrt = Logic.Asrt.make ~spatial:[] ~pure in
@@ -220,7 +220,7 @@ let run_producer (subst : Typed.Expr.Subst.t) (summ : t) :
     (Ret.t * Typed.Expr.Subst.t) State.SM.t =
  fun st ->
   let symex = Rustsymex.Producer.run ~subst @@ produce summ st in
-  Rustsymex.map symex (fun ((ret, st), subst) -> ((ret, subst), st))
+  Rustsymex.map (fun ((ret, st), subst) -> ((ret, subst), st)) symex
 
 let implies s_pre s_post =
   let process =
@@ -231,8 +231,8 @@ let implies s_pre s_post =
     let* (ret, _), st = run_producer subst s_pre State.empty in
     Rustsymex.Consumer.run ~subst @@ consume s_post ret st
   in
-  match Rustsymex.run_needs_stats ~mode:OX process with
-  | [ (Soteria.Symex.Compo_res.Ok (st, _), _) ] -> st = State.empty
+  match Rustsymex.run ~stats:Caller ~mode:OX process with
+  | [ (Soteria.Soteria_std.Compo_res.Ok (st, _), _) ] -> st = State.empty
   | _ -> false
 
 module Context = struct

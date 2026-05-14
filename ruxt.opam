@@ -17,6 +17,7 @@ depends: [
   "dune" {>= "3.14"}
   "soteria-rust"
   "odoc" {with-doc}
+  "menhir" {>= "20180523"}
 ]
 build: [
   ["dune" "subst"] {dev}

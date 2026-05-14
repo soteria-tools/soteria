@@ -25,9 +25,9 @@ let exec_crate (crate : Crate.t) =
       find_unsoundness (passes - 1) summ_ctx
   in
   (* Collect statistics from all the runs *)
-  let Soteria.Stats.{ res; stats } =
+  let res, stats =
     let@ () = Layout.Session.with_layout_cache in
-    Soteria.Stats.As_ctx.with_stats () (fun () ->
+    Soteria.Stats.As_ctx.with_ () (fun () ->
         (* Run the algorithm starting from the base summary context *)
         let* summ_ctx = Library.init_summaries ~fuel library in
         find_unsoundness config.pass_fuel summ_ctx)

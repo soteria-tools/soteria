@@ -1,7 +1,6 @@
 open Soteria_rust_lib
 module State = Summary.State
 open State.SM.Syntax
-open Soteria.Symex
 open Charon
 module Wpst_interp = Interp.Make (State)
 
@@ -15,9 +14,9 @@ let exec_fun ~args fun_decl =
 
 module Symok = struct
   let unwrap res =
-    State.SM.map res (function
-      | Compo_res.Ok v -> v
-      | _ -> failwith "Expected Ok in wrapper")
+    State.SM.map
+      (function Compo_res.Ok v -> v | _ -> failwith "Expected Ok in wrapper")
+      res
 
   let load ptr ty = State.load ptr ty |> unwrap
   let store ptr ty rv = State.store ptr ty rv |> unwrap
@@ -132,7 +131,7 @@ let branch drops wrapper =
           let* () =
             ListLabels.fold_left arg_ptrs ~init:(drop_ret ())
               ~f:(fun (st : unit State.SM.t) (ty, ptr) ->
-                State.SM.bind st (drop_ptr ty ptr))
+                State.SM.bind (drop_ptr ty ptr) st)
           in
           let* nondet = lift_nondet ty ret in
           State.SM.Result.ok (ty, nondet)
@@ -162,7 +161,7 @@ let make drops (fun_decl : UllbcAst.fun_decl) : t * Types.ty list =
 let exec ~fuel (wrapper : t) summs =
   (* Symbolically execute the wrapped function call *)
   State.SM.Result.run_with_state ~state:State.empty (wrapper summs)
-  |> Rustsymex.run_needs_stats ~mode:UX ~fuel
+  |> Rustsymex.run ~stats:Caller ~mode:UX ~fuel
   |> Result.fold_list ~init:[] ~f:(fun summs -> function
     (* Successful termination: a new summary can been inferred *)
     | Compo_res.Ok ((ty, ret), state), pcs ->
