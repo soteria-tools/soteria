@@ -44,7 +44,6 @@ depends: [
   "ppx_deriving_yojson"
   "ocamlformat" {with-dev-setup & = "0.28.1"}
   "ocaml-lsp-server" {with-dev-setup}
-  "menhir" {>= "20180523"}
 ]
 build: [
   ["dune" "subst"] {dev}

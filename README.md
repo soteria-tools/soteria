@@ -137,12 +137,12 @@ We support two frontends: [Obol](https://github.com/soteria-tools/obol) and [Cha
 
 **Manual installation:**
 1. **Clone Obol at the correct commit:**
-   <!-- [versionsync: OBOL_COMMIT_HASH=ddea5ca5da4c07301584f47f05ea8615fc365b41] -->
+   <!-- [versionsync: OBOL_COMMIT_HASH=70610866c606acc9b4c3a460ac586d81459d1304] -->
    ```sh
    cd ..
    git clone https://github.com/soteria-tools/obol.git
    cd obol
-   git checkout ddea5ca5da4c07301584f47f05ea8615fc365b41
+   git checkout 70610866c606acc9b4c3a460ac586d81459d1304
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `OBOL_COMMIT_HASH`.
 
@@ -168,12 +168,12 @@ We support two frontends: [Obol](https://github.com/soteria-tools/obol) and [Cha
 
 **Manual installation:**
 1. **Clone Charon at the correct commit:**
-   <!-- [versionsync: CHARON_COMMIT_HASH=fa7ff7118fc9f695ecde2b4aa8401fe3ea195fba] -->
+   <!-- [versionsync: CHARON_COMMIT_HASH=1ec8d4bb0116abf4486bac234ac01acf84e2a83a] -->
    ```sh
    cd ..
    git clone https://github.com/soteria-tools/charon.git
    cd charon
-   git checkout fa7ff7118fc9f695ecde2b4aa8401fe3ea195fba
+   git checkout 1ec8d4bb0116abf4486bac234ac01acf84e2a83a
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `CHARON_COMMIT_HASH`.
 

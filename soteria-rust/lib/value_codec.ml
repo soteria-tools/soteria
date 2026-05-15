@@ -13,16 +13,10 @@ let variant_for_discr discr adt =
   let open Rustsymex in
   let open Syntax in
   let variants = Crate.as_enum adt in
-  let variants = List.mapi (fun i v -> (i, v)) variants in
   let* variant =
-    match_on variants ~constr:(fun (_, v) ->
-        BV.of_literal v.discriminant ==@ discr)
+    match_on variants ~constr:(fun v -> BV.of_literal v.discriminant ==@ discr)
   in
-  let+ i, variant =
-    of_opt_not_impl "no matching variant for enum discriminant" variant
-  in
-  let vid = Types.VariantId.of_int i in
-  (vid, variant)
+  of_opt_not_impl "no matching variant for enum discriminant" variant
 
 (** Iterator over the fields and offsets of a type; for primitive types, returns
     a singleton iterator for that value. *)
@@ -69,7 +63,7 @@ let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
   | Arbitrary (variant, _) -> aux ~variant layout.fields
   | Enum (_, variant_layouts) ->
       let variant = Option.get ~msg:"variant required for enum" variant in
-      let fields = variant_layouts.(Types.VariantId.to_int variant) in
+      let _, fields = variant_layouts.(Types.VariantId.to_int variant) in
       aux ~variant fields
 
 let size_of =
@@ -197,30 +191,38 @@ struct
   let variant_of_enum ~offset ty : Types.variant_id ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
+    let rec exec ?(pp_info = Fmt.nop) :
+        Fields_shape.discriminator -> Types.variant_id ParserMonad.t = function
+      | Known v -> ok v
+      | Branch { offset = tag_ofs; tag_ty; children; fallback } ->
+          let* tag = query (TLiteral tag_ty, offset +!!@ tag_ofs) in
+          let tag = as_base tag_ty tag in
+          let pp_info ft () =
+            Fmt.pf ft ", read %a: %s at offset %a" Typed.ppa tag
+              (Print.literal_type_to_string tag_ty)
+              Typed.ppa offset
+          in
+          let rec aux = function
+            | [] -> exec fallback
+            | (from_, to_, discr) :: rest when Typed.equal from_ to_ ->
+                if%sat tag ==@ from_ then exec ~pp_info discr else aux rest
+            | (from_, to_, discr) :: rest ->
+                if%sat from_ <=@ tag &&@ (tag <=@ to_) then exec ~pp_info discr
+                else aux rest
+          in
+          aux children
+      | Invalid ->
+          let adt = ty_as_adt ty in
+          let adt = Crate.get_adt adt in
+          error
+            (`UBTransmute
+               (Fmt.str "No valid variant for enum %a%a" Crate.pp_name
+                  adt.item_meta.name pp_info ()))
+    in
     let* layout = layout_of ty in
     match layout.fields with
     | Arbitrary (vid, _) -> ok vid
-    | Enum (tag_layout, _) -> (
-        let offset = offset +!!@ tag_layout.offset in
-        let* tag = query (TLiteral tag_layout.ty, offset) in
-        let tag = as_base tag_layout.ty tag in
-        let tags = Array.to_seqi tag_layout.tags |> List.of_seq in
-        let*^ res =
-          match_on tags ~constr:(function
-            | _, None -> Typed.v_false
-            | _, Some t -> tag ==@ t)
-        in
-        match (tag_layout.encoding, res) with
-        | _, Some (vid, _) -> ok (Types.VariantId.of_int vid)
-        | Niche untagged, None -> ok untagged
-        | Direct, None ->
-            let adt = ty_as_adt ty in
-            let adt = Crate.get_adt adt in
-            let msg =
-              Fmt.str "Unmatched discriminant for enum %a: %a" Crate.pp_name
-                adt.item_meta.name Typed.ppa tag
-            in
-            error (`UBTransmute msg))
+    | Enum (discriminator, _) -> exec discriminator
     | Array _ | Primitive -> failwith "Unexpected layout for enum"
 
   (** [decode ~meta ~offset ty] Parses a rust value of type [ty] at the given
@@ -326,15 +328,15 @@ module Encoder (Sptr : Sptr.S) = struct
           ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
       | Primitive, _ -> ok (Iter.singleton (value, offset))
       | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
-      | Enum (tag_layout, _), Enum (disc, _) -> (
+      | Enum (_, layouts), Enum (disc, _) -> (
           let adt = ty_as_adt ty in
-          let* variant, _ = variant_for_discr disc adt in
-          let i = Types.VariantId.to_int variant in
+          let* variant = variant_for_discr disc adt in
+          let variant = variant.id in
           let++ fields = chain (iter_fields ~variant layout ty) in
-          match tag_layout.tags.(i) with
+          match fst layouts.(Types.VariantId.to_int variant) with
           | None -> fields
-          | Some tag ->
-              let offset = tag_layout.offset +!!@ offset in
+          | Some (ofs, tag) ->
+              let offset = ofs +!!@ offset in
               Iter.cons (Int tag, offset) fields)
       | Enum _, _ ->
           Fmt.kstr not_impl "encode: expected enum value for enum type %a" pp_ty
@@ -421,7 +423,7 @@ module Encoder (Sptr : Sptr.S) = struct
     | Tuple _, TAdt { id = TBuiltin TStr; _ } -> ok ()
     (* undefined.validity.enum *)
     | Enum (discr, vs), TAdt adt ->
-        let* _, variant = variant_for_discr discr adt in
+        let* variant = variant_for_discr discr adt in
         List.combine (field_tys variant.fields) vs
         |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
     (* undefined.validity.struct *)

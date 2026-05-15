@@ -6,8 +6,8 @@ on:
 env:
   # [versionsync: OBOL_REPO=soteria-tools/obol]
   OBOL_REPO: soteria-tools/obol
-  # [versionsync: OBOL_COMMIT_HASH=ddea5ca5da4c07301584f47f05ea8615fc365b41]
-  OBOL_COMMIT_HASH: ddea5ca5da4c07301584f47f05ea8615fc365b41
+  # [versionsync: OBOL_COMMIT_HASH=70610866c606acc9b4c3a460ac586d81459d1304]
+  OBOL_COMMIT_HASH: 70610866c606acc9b4c3a460ac586d81459d1304
 
 jobs:
   test-soteria-c-package:

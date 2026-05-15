@@ -110,11 +110,12 @@ let default () =
       ([
          "--ullbc";
          "--extract-opaque-bodies";
-         "--mir elaborated";
+         "--mir=elaborated";
          "--reconstruct-fallible-operations";
          "--reconstruct-asserts";
          "--desugar-drops";
          "--precise-drops";
+         "--format=postcard";
        ]
       @ opaque_names
       @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
@@ -162,8 +163,8 @@ let miri () =
     included; otherwise, a name is included if it matches any filter and doesn't
     match any exclude. *)
 let filter_name crate name =
-  let fmt_env = PrintUllbcAst.Crate.crate_to_fmt_env crate in
-  let name = PrintTypes.name_to_string fmt_env name in
+  let fmt_env = Print.crate_to_fmt_env crate in
+  let name = Print.name_to_string fmt_env name in
 
   let filters = (Config.get ()).filter in
   let excludes = (Config.get ()).exclude in
@@ -253,22 +254,20 @@ let parse_ullbc ~mode ~cmd ~output ~pwd () =
           err;
     Cleaner.touched output);
   let crate =
-    match
-      output |> Yojson.Basic.from_file |> Charon.UllbcOfJson.crate_of_json
-    with
+    match output |> Charon.OfPostcard.crate_of_postcard_file with
     | Ok crate -> crate
-    | Error _ ->
+    | Error msg ->
         Fmt.kstr frontend_err
           "Failed to parse ULLBC. Do you have the right version of %a \
-           installed?"
-          Config.pp_frontend (Config.get ()).frontend
+           installed?@.Error: %s"
+          Config.pp_frontend (Config.get ()).frontend msg
     | exception Sys_error _ -> frontend_err "File doesn't exist"
     | exception e -> Fmt.kstr frontend_err "Unexpected error: %a" Fmt.exn e
   in
   if (Config.get ()).output_crate then (
     (* save pretty-printed crate to local file *)
     let crate_file = Printf.sprintf "%s.crate" output in
-    let str = Charon.PrintUllbcAst.Crate.crate_to_string crate in
+    let str = Charon.Print.crate_to_string crate in
     let oc = open_out_bin crate_file in
     output_string oc str;
     close_out oc;

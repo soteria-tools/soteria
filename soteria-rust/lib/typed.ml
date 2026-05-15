@@ -104,7 +104,7 @@ module BitVec = struct
     | VBool b -> of_bool (Bool.of_bool b)
     | l ->
         Fmt.failwith "Cannot convert non-scalar literal %s to bitvector"
-          (PrintValues.literal_to_string l)
+          (Print.literal_to_string l)
 
   let of_constant_expr : Types.constant_expr -> [> T.sint ] t = function
     | { kind = CLiteral lit; _ } -> of_literal lit

@@ -195,61 +195,62 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   (* Others (unhandled for now) *)
   | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
   | TError _ -> not_impl_layout "error" ty
-  | TTraitType (tref, ty_name) ->
-      let** resolved = resolve_trait_ty tref ty_name in
+  | TTraitType (tref, assoc_ty_id) ->
+      let** resolved = resolve_trait_ty tref assoc_ty_id in
       layout_of resolved
+
+and translate_discriminator : Types.discriminator -> Fields_shape.discriminator
+    = function
+  | Known v -> Known v
+  | Invalid -> Invalid
+  | Branch (offset, int_ty, children, fallback) ->
+      let offset = BV.usizei offset in
+      let children =
+        List.map
+          (fun ((from_, to_), discr) ->
+            (BV.of_scalar from_, BV.of_scalar to_, translate_discriminator discr))
+          children
+      in
+      let tag_ty = lit_of_int_ty int_ty in
+      let fallback = translate_discriminator fallback in
+      Branch { offset; tag_ty; children; fallback }
 
 and translate_layout ty (layout : Types.layout) =
   let size = compute_size ty layout.size in
   let align = compute_align ty layout.align in
   let uninhabited = layout.uninhabited in
-  let tag_layout =
-    Option.map
-      (fun (discr_layout : Types.discriminant_layout) : Tag_layout.t ->
-        let tags =
-          List.map
-            (fun (v : Types.variant_layout) -> Option.map BV.of_scalar v.tag)
-            layout.variant_layouts
-        in
-        let tags = Array.of_list tags in
-        let ty = lit_of_int_ty discr_layout.tag_ty in
-        let offset = BV.usizei discr_layout.offset in
-        let encoding : Tag_layout.encoding =
-          match discr_layout.encoding with
-          | Niche v -> Niche v
-          | Direct -> Direct
-        in
-        { offset; ty; tags; encoding })
-      layout.discriminant_layout
-  in
+  let discriminator = Option.map translate_discriminator layout.discriminator in
   let variant_layouts =
     List.mapi
-      (fun i (v : Types.variant_layout) : Fields_shape.t ->
-        if v.uninhabited then Primitive
+      (fun i (v : Types.variant_layout) : (Fields_shape.tagger * Fields_shape.t)
+         ->
+        if v.uninhabited then (None, Primitive)
         else
           let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
-          Arbitrary (Types.VariantId.of_int i, ofs))
+          let tagger =
+            match v.tagger with
+            | [] -> None
+            | [ (ofs, value) ] -> Some (BV.usizei ofs, BV.of_scalar value)
+            | _ :: _ :: _ -> failwith "unsupported: >1 tagger values"
+          in
+          (tagger, Arbitrary (Types.VariantId.of_int i, ofs)))
       layout.variant_layouts
   in
   let fields : Fields_shape.t =
-    match (tag_layout, variant_layouts) with
+    match (discriminator, variant_layouts) with
     (* tag layouts only exist on enum layouts *)
-    | Some tag_layout, _ -> Enum (tag_layout, Array.of_list variant_layouts)
-    (* no variants, so this is uninhabited; we can use primitive *)
-    | None, [] -> Primitive
-    (* there should be only one inhabited (non-Primitive) variant *)
-    | None, _ -> (
-        let is_inhabited = function
-          | Fields_shape.Arbitrary _ -> true
-          | _ -> false
-        in
-        let inhabited = List.filter is_inhabited variant_layouts in
-        match inhabited with
-        | [] -> Primitive
-        | [ single ] -> single
-        | _ :: _ :: _ -> failwith ">1 inhabited variants with no tag encoding?")
+    | Some (Branch _ as d), _ -> Enum (d, Array.of_list variant_layouts)
+    (* no variants/invalid, so this is uninhabited; we can use primitive *)
+    | _, [] | Some Invalid, _ -> Primitive
+    (* there is only one inhabited (non-Primitive) variant *)
+    | Some (Known v), _ -> snd (Types.VariantId.nth variant_layouts v)
+    (* we didn't translate a discriminator; we hope it's a struct-like! *)
+    | None, [ (_, v) ] -> v
+    | None, _ -> failwith "no discriminator and >1 variant layouts?"
   in
-  ok @@ mk ~size ~align ~uninhabited ~fields ()
+  let layout = mk ~size ~align ~uninhabited ~fields () in
+  [%l.trace "Translated layout for %a:@.%a" pp_ty ty pp layout];
+  ok layout
 
 and compute_size ty size =
   match size with
@@ -308,40 +309,48 @@ and compute_enum_layout ty (variants : Types.variant list) =
   | _ :: _ ->
       let tags =
         List.map
-          (fun (v : Types.variant) -> Some (BV.of_literal v.discriminant))
+          (fun (v : Types.variant) -> BV.of_literal v.discriminant)
           variants
       in
-      let tags = Array.of_list tags in
-      let tag_layout : Tag_layout.t =
+      let tag_ty =
+        match variants with
+        | [] -> Values.TInt I32 (* Shouldn't matter *)
+        | v :: _ -> lit_ty_of_lit v.discriminant
+      in
+      let discriminator : Fields_shape.discriminator =
         (* best effort: we assume direct encoding *)
-        let ty : Types.literal_type =
-          match variants with
-          | [] -> TInt I32 (* Shouldn't matter *)
-          | v :: _ -> lit_ty_of_lit v.discriminant
+        let children =
+          List.map
+            (fun (v : Types.variant) ->
+              let tag = Types.VariantId.nth tags v.id in
+              (tag, tag, Fields_shape.Known v.id))
+            variants
         in
-        { offset = Usize.(0s); ty; tags; encoding = Direct }
+        let offset = Usize.(0s) in
+        Branch { offset; tag_ty; children; fallback = Invalid }
       in
-      let** tag = layout_of (TLiteral tag_layout.ty) in
-      let variants =
-        List.mapi (fun i v -> (Types.VariantId.of_int i, v)) variants
-      in
+      let** tag = layout_of (TLiteral tag_ty) in
       let++ size, align, variants, uninhabited =
         Result.fold_list variants
           ~init:(Usize.(0s), Usize.(1s), [], true)
-          ~f:(fun (size, align, variants, uninhabited) (i, v) ->
+          ~f:(fun (size, align, variants, uninhabited) v ->
             let++ l =
               compute_arbitrary_layout ty ~fst_size:tag.size
-                ~fst_align:tag.align ~variant:i (field_tys v.fields)
+                ~fst_align:tag.align ~variant:v.id (field_tys v.fields)
+            in
+            let tagger =
+              if l.uninhabited then None
+              else Some (BV.usizei 0, Types.VariantId.nth tags v.id)
             in
             ( BV.max ~signed:false size l.size,
               BV.max ~signed:false align l.align,
-              l.fields :: variants,
+              (tagger, l.fields) :: variants,
               uninhabited && l.uninhabited ))
       in
       let variants = List.rev variants in
       let layout =
         mk ~size ~align ~uninhabited
-          ~fields:(Enum (tag_layout, Array.of_list variants))
+          ~fields:(Enum (discriminator, Array.of_list variants))
           ()
       in
       Fmt.kstr layout_warning "Computed an enum layout:@.%a" pp layout ty;
@@ -360,19 +369,14 @@ and compute_union_layout ty members =
   let fields = Array.make (List.length members) (BV.usizei 0) in
   mk ~size ~align ~fields:(Arbitrary (Types.VariantId.zero, fields)) ()
 
-and resolve_trait_ty (tref : Types.trait_ref) ty_name =
+and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id =
   match tref.kind with
-  | TraitImpl timplref -> (
+  | TraitImpl timplref ->
       let impl = Crate.get_trait_impl timplref in
-      match List.find_opt (fun (n, _) -> ty_name = n) impl.types with
-      | Some (_, ty) -> ok ty.binder_value.value
-      | None ->
-          let msg =
-            Fmt.str "missing type '%s' in impl %a" ty_name Crate.pp_name
-              impl.item_meta.name
-          in
-          not_impl_layout msg (TTraitType (tref, ty_name)))
-  | _ -> not_impl_layout "trait type" (TTraitType (tref, ty_name))
+      let trait_assoc_ty = Types.AssocTypeId.Map.find assoc_ty_id impl.types in
+      (* HACK: we skip the binder here! *)
+      ok trait_assoc_ty.binder_value.value
+  | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id))
 
 (** Normalise a type, by substituting any generics with the current generic
     environment, and resolving the trait type if needed. *)

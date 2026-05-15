@@ -35,7 +35,6 @@ depends: [
   "dune" {>= "3.14" & build & >= "3.14.0"}
   "ocamlformat" {with-dev-setup & = "0.28.1"}
   "ocaml-lsp-server" {with-dev-setup}
-  "menhir" {>= "20180523"}
 ]
 build: [
   ["dune" "subst"] {dev}
@@ -56,8 +55,8 @@ build: [
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
 # Versions managed by scripts/versionsync.py - edit scripts/versions.json to change
 pin-depends: [
-  # [versionsync: CHARON_COMMIT_HASH=fa7ff7118fc9f695ecde2b4aa8401fe3ea195fba]
-  ["name_matcher_parser.~dev" "git+https://github.com/soteria-tools/charon#fa7ff7118fc9f695ecde2b4aa8401fe3ea195fba"]
-  # [versionsync: CHARON_COMMIT_HASH=fa7ff7118fc9f695ecde2b4aa8401fe3ea195fba]
-  ["charon.~dev" "git+https://github.com/soteria-tools/charon#fa7ff7118fc9f695ecde2b4aa8401fe3ea195fba"]
+  # [versionsync: CHARON_COMMIT_HASH=1ec8d4bb0116abf4486bac234ac01acf84e2a83a]
+  ["name_matcher_parser.~dev" "git+https://github.com/soteria-tools/charon#1ec8d4bb0116abf4486bac234ac01acf84e2a83a"]
+  # [versionsync: CHARON_COMMIT_HASH=1ec8d4bb0116abf4486bac234ac01acf84e2a83a]
+  ["charon.~dev" "git+https://github.com/soteria-tools/charon#1ec8d4bb0116abf4486bac234ac01acf84e2a83a"]
 ]

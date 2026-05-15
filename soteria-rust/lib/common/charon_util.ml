@@ -46,13 +46,13 @@ let type_of_operand : Expressions.operand -> Types.ty = function
   | Constant c -> c.ty
   | Copy p | Move p -> p.ty
 
-let lit_to_string = PrintValues.literal_type_to_string
+let lit_to_string = Print.literal_type_to_string
 
 let ty_as_float : Types.ty -> Values.float_type = function
   | TLiteral (TFloat f) -> f
   | _ -> failwith "ty_as_float: not a float type"
 
-let pp_literal_ty = Fmt.of_to_string PrintValues.literal_type_to_string
+let pp_literal_ty = Fmt.of_to_string Print.literal_type_to_string
 
 let rec pp_ty fmt : Types.ty -> unit = function
   | TAdt { id = TAdtId id; generics } ->
@@ -91,14 +91,15 @@ let rec pp_ty fmt : Types.ty -> unit = function
         Fmt.(list ~sep:(any ", ") pp_ty)
         inputs pp_ty output
   | TDynTrait _ -> Fmt.string fmt "dyn <trait>"
-  | TTraitType (tref, name) ->
-      Fmt.pf fmt "Trait<%a>::%s" Crate.pp_trait_ref tref name
+  | TTraitType (tref, type_id) ->
+      Fmt.pf fmt "Trait<%a>::%s" Crate.pp_trait_ref tref
+        (Crate.get_assoc_type_name tref type_id)
   | TFnDef { binder_value = { kind = FunId (FRegular fid); _ }; _ } ->
       let f = Crate.get_fun fid in
       Fmt.pf fmt "fn %a" Crate.pp_name f.item_meta.name
   | TPtrMetadata ty -> Fmt.pf fmt "meta(%a)" pp_ty ty
   | TFnDef _ -> Fmt.string fmt "fn ?"
-  | TVar var -> Fmt.string fmt (PrintTypes.type_db_var_to_pretty_string var)
+  | TVar var -> Fmt.string fmt (Print.type_db_var_to_pretty_string var)
   | TError err -> Fmt.pf fmt "Error(%s)" err
 
 let lit_of_int_ty : Types.integer_type -> Types.literal_type = function
@@ -115,6 +116,11 @@ let lit_ty_of_lit : Values.literal -> Types.literal_type = function
   | VChar _ -> TChar
   | VFloat { float_ty; _ } -> TFloat float_ty
   | VStr _ | VByteStr _ -> failwith "lit_ty_of_lit: not a literal type"
+
+let int_ty_of_lit_ty : Types.literal_type -> Types.integer_type = function
+  | TInt ity -> Signed ity
+  | TUInt uty -> Unsigned uty
+  | _ -> Fmt.failwith "int_ty_of_lit_ty: not an int literal"
 
 let z_of_constant_expr : Types.constant_expr -> Z.t = function
   | { kind = CLiteral (VScalar s); _ } -> z_of_scalar s
@@ -167,7 +173,7 @@ let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)
 
 let unit_ref = Types.TRef (RErased, TypesUtils.mk_unit_ty, RShared)
 
-let decl_has_attr (decl : 'a GAst.gfun_decl) attr =
+let decl_has_attr (decl : GAst.fun_decl) attr =
   List.exists
     (function Meta.AttrUnknown { path; _ } -> path = attr | _ -> false)
     decl.item_meta.attr_info.attributes
@@ -178,7 +184,7 @@ let meta_get_attr (meta : Types.item_meta) attr =
       | Meta.AttrUnknown { path; args } when path = attr -> args | _ -> None)
     meta.attr_info.attributes
 
-let decl_get_attr (decl : 'a GAst.gfun_decl) attr =
+let decl_get_attr (decl : GAst.fun_decl) attr =
   meta_get_attr decl.item_meta attr
 
 let adt_is_box (adt : Types.type_decl_ref) =
