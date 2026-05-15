@@ -955,19 +955,20 @@ module Make (StateImpl : State.S) = struct
             map_env (Store.dealloc local)
         | Uninit | Value _ -> map_env (Store.dealloc local)
         | Dead -> ok ())
-    | Assert ({ cond; expected; check_kind = _ }, on_failure) -> (
+    | Assert ({ cond; expected; check_kind = _ }, on_failure) ->
         let* cond = eval_operand cond in
         let cond_int = as_base TBool cond in
         let cond_bool = BV.to_bool cond_int in
         let cond_bool = if expected then cond_bool else Typed.not cond_bool in
-        if%sat cond_bool then ok ()
-        else
+        let err =
           match on_failure with
-          | UndefinedBehavior -> error `UBAbort
-          | UnwindTerminate -> error `UnwindTerminate
+          | UndefinedBehavior -> `UBAbort
+          | UnwindTerminate -> `UnwindTerminate
           | Panic name ->
               let name = Option.map (Fmt.to_to_string Crate.pp_name) name in
-              error (`Panic name))
+              `Panic name
+        in
+        assert_ cond_bool err
     | CopyNonOverlapping { src; dst; count } ->
         let ty = get_pointee (type_of_operand src) in
         let* src = eval_operand src in
