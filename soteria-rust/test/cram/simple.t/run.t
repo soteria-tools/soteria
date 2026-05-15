@@ -493,3 +493,14 @@ Print the callgraph
     n1 -> n16;
     n1 -> n17;
   }
+
+Check we trust addresses for pointer alignment
+  $ soteria-rust exec assumed_align.rs
+  Compiling... done in <time>
+  => Running assumed_align::main...
+  note: assumed_align::main: done in <time>, ran 2 branches
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
+        (extract[0-0](V|1|) == 0b0)
+  PC 2: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
+        (extract[0-0](V|1|) == 0b1)
+  
