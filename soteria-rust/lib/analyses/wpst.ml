@@ -104,27 +104,30 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let branches =
     (* If any of the results were "Gave_up", we raise an exception to be caught
        by [print_outcomes] *)
-    let map_first f (x, y) = (f x, y) in
-    List.map
-      (map_first @@ Compo_res.map_error Soteria.Symex.Or_gave_up.unwrap_exn)
-      branches
+    branches
+    |> List.map @@ Pair.map_fst
+       @@ function
+       | Compo_res.Ok v -> Ok v
+       | Missing _ -> execution_err "Miss encountered in WPST"
+       | Error e -> (
+           match Soteria.Symex.Or_gave_up.unwrap_exn e with
+           | (`OkExit, _), st -> Ok (Rust_val.unit_, st)
+           | e -> Error e)
   in
   (* inverse ok and errors if we expect a failure *)
   let branches =
     if not expect_error then branches
     else
-      let open Compo_res in
       let oks, errors =
         branches
         |> List.partition_map @@ function
-           | Ok _, pcs ->
+           | Ok (_, st), pcs ->
                let trace =
                  Soteria.Terminal.Call_trace.singleton
                    ~loc:fun_decl.item_meta.span.data ()
                in
-               Left (Error ((`MetaExpectedError, trace), State.empty), pcs)
-           | Error _, pcs -> Right (Ok (Rust_val.unit_, State.empty), pcs)
-           | v -> Left v
+               Left (Error ((`MetaExpectedError, trace), st), pcs)
+           | Error (_, st), pcs -> Right (Ok (Rust_val.unit_, st), pcs)
       in
       if List.is_empty errors then oks else errors
   in
@@ -143,18 +146,16 @@ let exec_crate (crate : Charon.UllbcAst.crate)
         "Note that at least %a were left unexplored due to fuel exhaustion. \
          Errors may have been missed."
         pp_branches unexplored
-    else Fmt.kstr execution_err "Missed %a" pp_branches unexplored
-  else if List.exists Compo_res.is_missing outcomes then
-    execution_err "Miss encountered in WPST";
+    else Fmt.kstr execution_err "Missed %a" pp_branches unexplored;
 
-  if not (List.exists Compo_res.is_error outcomes) then
+  if not (List.exists Result.is_error outcomes) then
     let pcs = List.map snd branches in
     Ok (pcs, nbranches, unexplored > 0)
   else
     let errors =
       branches
       |> List.filter_map (function
-        | Compo_res.Error (e, _st), pc -> Some (e, pc)
+        | Error (e, _st), pc -> Some (e, pc)
         | _ -> None)
       |> List.group_by ~compare:Error.compare_with_trace
     in
