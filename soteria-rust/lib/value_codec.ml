@@ -382,10 +382,10 @@ module Encoder (Sptr : Sptr.S) = struct
       | Len len, LenKind ->
           if is_raw_ptr then ok ()
           else f Usize.(0s <=$@ len) (`UBTransmute "Negative slice length")
-      | VTable _, VTableKind ->
+      | VTable vt, VTableKind ->
           (* TODO: the vtable must always match the trait type of the pointee.
              Will require a new input to this function (?) *)
-          ok ()
+          f (Typed.not (Sptr.is_null vt)) (`UBTransmute "Null vtable pointer")
       | Thin, (LenKind | VTableKind) ->
           f Typed.v_false (`UBTransmute "Thin pointer to DST")
       | (Len _ | VTable _), NoneKind ->
