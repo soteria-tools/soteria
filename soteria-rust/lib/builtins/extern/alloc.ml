@@ -12,6 +12,7 @@ type fn =
   | Dealloc
   | Realloc
   | NoAllocShimIsUnstable
+  | ErrorHandler
 
 let fn_pats =
   [
@@ -20,6 +21,7 @@ let fn_pats =
     ("__rust_dealloc", Dealloc);
     ("__rust_no_alloc_shim_is_unstable_v2", NoAllocShimIsUnstable);
     ("__rust_realloc", Realloc);
+    ("__rust_alloc_error_handler", ErrorHandler);
   ]
 
 module M (StateM : State.StateM.S) = struct
@@ -83,10 +85,12 @@ module M (StateM : State.StateM.S) = struct
     Ptr new_ptr
 
   let no_alloc_shim_is_unstable _ = ok (Tuple [])
+  let error_handler _ = error `InvalidAlloc
 
   let[@inline] fn_to_stub = function
     | Alloc { zeroed } -> alloc ~zeroed
     | Dealloc -> dealloc
     | NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
     | Realloc -> realloc
+    | ErrorHandler -> error_handler
 end
