@@ -11,6 +11,10 @@ val singleton : 'a -> 'a t
 (** Add an element to the set. *)
 val add : 'a t -> 'a -> unit
 
+(** [add_check set x] adds [x] to [set] and returns [true] if it was {e not}
+    already present, and [false] otherwise. *)
+val add_check : 'a t -> 'a -> bool
+
 (** Add elements from an iterator to the set. *)
 val add_iter : 'a t -> 'a Iter.t -> unit
 
@@ -59,6 +63,10 @@ module type S = sig
 
   (** Add an element to the set. *)
   val add : t -> elt -> unit
+
+  (** [add_check set x] adds [x] to [set] and returns [true] if it was {e not}
+      already present, and [false] otherwise. *)
+  val add_check : t -> elt -> bool
 
   (** Add elements from an iterator to the set. *)
   val add_iter : t -> elt Iter.t -> unit
