@@ -141,7 +141,8 @@ soteria-core-deps:
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc -y
 	$(OPAM) install dune.$(DUNE_VERSION) ocamlformat.$(OCAMLFORMAT_VERSION) -y
-	$(OPAM) install sherlodoc -y
+#   DO NOT MERGE WHILE THIS IS STILL COMMENTED OUT  
+# 	$(OPAM) install sherlodoc -y
 
 # Clears all *.llbc.json, Cargo.lock and target/ subflders in soteria-rust/test/cram/
 # We make sure that every file or folder deleted is displayed in the terminal.
