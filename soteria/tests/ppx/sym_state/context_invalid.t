@@ -163,7 +163,6 @@ Context that doesn't match the monad type
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]
-  ocamlfind: [WARNING] Package `mtime.clock.os': Deprecated, use the mtime.clock library.
   File "out.ml", line 108, characters 16-52:
   108 |                 (Excl_int.produce v st.my_super_int)
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
