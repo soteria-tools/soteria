@@ -195,9 +195,9 @@ module type Base = sig
 
       This is provided as a utility, and is equivalent to
       {@ocaml[
-        branch_on (not guard)
-          ~then_:(fun () -> return (Compo_res.error err))
-          ~else_:(fun () -> return (Compo_res.ok ()))
+      branch_on (not guard)
+        ~then_:(fun () -> return (Compo_res.error err))
+        ~else_:(fun () -> return (Compo_res.ok ()))
       ]} *)
   val assert_or_error :
     Value.(sbool t) -> 'err -> (unit, 'err, 'f) Compo_res.t t
