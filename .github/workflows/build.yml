@@ -4,8 +4,8 @@ on:
   workflow_call:
 
 env:
-  # [versionsync: OCAML_VERSION=5.4.0]
-  OCAML_VERSION: 5.4.0
+  # [versionsync: OCAML_VERSION=5.4.1]
+  OCAML_VERSION: 5.4.1
   # [versionsync: OBOL_REPO=soteria-tools/obol]
   OBOL_REPO: soteria-tools/obol
   # [versionsync: OBOL_COMMIT_HASH=70610866c606acc9b4c3a460ac586d81459d1304]
