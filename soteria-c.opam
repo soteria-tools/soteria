@@ -14,7 +14,7 @@ license: "Apache-2.0"
 homepage: "https://github.com/soteria-tools/soteria"
 bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
-  "ocaml" {>= "5.4.0"}
+  "ocaml" {>= "5.5.0~beta1"}
   "shexp" {build}
   "soteria"
   "cerberus-lib"
@@ -31,7 +31,7 @@ depends: [
   "alcotest" {with-test}
   "yojson" {< "3.0"}
   "dune" {>= "3.14" & build & >= "3.14.0"}
-  "ocamlformat" {with-dev-setup & = "0.28.1"}
+  "ocamlformat" {with-dev-setup & = "0.29.0"}
   "ocaml-lsp-server" {with-dev-setup}
   "menhir" {>= "20180523"}
 ]
