@@ -21,7 +21,7 @@ let as_namematcher_ctx () = NameMatcher.ctx_from_crate (get_crate ())
 
 let as_fmt_env () =
   let crate = get_crate () in
-  PrintUllbcAst.Crate.crate_to_fmt_env crate
+  Print.crate_to_fmt_env crate
 
 let[@inline] mk_pp to_string =
  fun ft v -> Fmt.of_to_string (to_string (as_fmt_env ())) ft v
@@ -31,23 +31,23 @@ let[@inline] mk_pp_indent to_string =
   let to_str = to_string (as_fmt_env ()) "" in
   Fmt.pf ft "%s" (to_str v)
 
-let pp_constant_expr = mk_pp PrintTypes.constant_expr_to_string
-let pp_fn_operand = mk_pp PrintUllbcAst.Ast.fn_operand_to_string
-let pp_fun_decl_ref = mk_pp PrintTypes.fun_decl_ref_to_string
-let pp_generic_args = mk_pp PrintTypes.generic_args_to_string
-let pp_operand = mk_pp PrintExpressions.operand_to_string
+let pp_constant_expr = mk_pp Print.constant_expr_to_string
+let pp_fn_operand = mk_pp Print.fn_operand_to_string
+let pp_fun_decl_ref = mk_pp Print.fun_decl_ref_to_string
+let pp_generic_args = mk_pp Print.generic_args_to_string
+let pp_operand = mk_pp Print.operand_to_string
 
 let pp_generic_params =
   mk_pp (fun env params ->
-      let generics, clauses = PrintTypes.generic_params_to_strings env params in
+      let generics, clauses = Print.generic_params_to_strings env params in
       String.concat " + " (generics @ clauses))
 
-let pp_global_decl_ref = mk_pp PrintTypes.global_decl_ref_to_string
-let pp_name = mk_pp PrintTypes.name_to_string
-let pp_place = mk_pp PrintExpressions.place_to_string
-let pp_trait_ref = mk_pp PrintTypes.trait_ref_to_string
-let pp_statement = mk_pp_indent PrintUllbcAst.Ast.statement_to_string
-let pp_terminator = mk_pp_indent PrintUllbcAst.Ast.terminator_to_string
+let pp_global_decl_ref = mk_pp Print.global_decl_ref_to_string
+let pp_name = mk_pp Print.name_to_string
+let pp_place = mk_pp Print.place_to_string
+let pp_trait_ref = mk_pp Print.trait_ref_to_string
+let pp_statement = mk_pp_indent Print.Ullbc.statement_to_string
+let pp_terminator = mk_pp_indent Print.Ullbc.terminator_to_string
 
 let get_adt_raw id =
   let crate = get_crate () in
@@ -111,6 +111,14 @@ let get_trait_decl (trait_ref : Types.trait_decl_ref) =
   in
   let subst = subst_at_binder_zero subst in
   st_substitute_visitor#visit_trait_decl subst trait
+
+let get_assoc_type_name (trait_ref : Types.trait_ref) type_id =
+  Charon.GAstUtils.get_assoc_type_name (get_crate ())
+    trait_ref.trait_decl_ref.binder_value.id type_id
+
+let get_method_name (trait_ref : Types.trait_ref) method_id =
+  Charon.GAstUtils.get_method_name (get_crate ())
+    trait_ref.trait_decl_ref.binder_value.id method_id
 
 let is_enum (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with

@@ -39,7 +39,11 @@ ocaml-format-check:
 
 .PHONY: check-opam-files
 check-opam-files:
-	@git diff --name-only HEAD | grep -q '\.opam$$' && echo "Error: .opam files have changed since last commit" && exit 1 || exit 0
+	@if git diff --name-only HEAD | grep -q '\.opam$$'; then \
+		echo "Error: .opam files have changed since last commit:"; \
+		git --no-pager diff HEAD -- '*.opam'; \
+		exit 1; \
+	fi
 
 
 .PHONY: ocaml-test

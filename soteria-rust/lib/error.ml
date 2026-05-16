@@ -62,7 +62,13 @@ type t =
     (** Function was marked as expecting an error; none happened *)
   | `InvalidLayout of Types.ty  (** Type is too large for memory *)
   | `InvalidAlloc
-    (** Error in alloc/realloc; a wrong alignment or size was provided *) ]
+    (** Error in alloc/realloc; a wrong alignment or size was provided *)
+  | `OkExit
+    (** Zero (succesful) exit; this is used to have short-circuiting; it should
+        not be reported as an error! *)
+  | `Exit of Typed.T.sint Typed.t
+    (** Exit with a specific (non-zero) code; this should be reported
+        (probably..?). *) ]
 
 type warn_reason = InvalidReference of Typed.T.sloc Typed.t [@@deriving hash]
 
@@ -107,6 +113,8 @@ let rec pp ft : [> t ] -> unit = function
         Typed.ppa exp Typed.ppa got Typed.ppa ofs
   | `NotAFnPointer -> Fmt.string ft "Not a function pointer"
   | `NullDereference -> Fmt.string ft "Null dereference"
+  | `OkExit -> Fmt.string ft "Exited successfully with code 0"
+  | `Exit code -> Fmt.pf ft "Exited with code %a" Typed.ppa code
   | `OutOfBounds -> Fmt.string ft "Out of bounds"
   | `Overflow -> Fmt.string ft "Overflow"
   | `Panic (Some msg) -> Fmt.pf ft "Panic: %s" msg

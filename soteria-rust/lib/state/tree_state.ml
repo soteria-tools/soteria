@@ -490,7 +490,19 @@ module Make (Borrows : Tree_borrows.T) = struct
     let is_aligned =
       ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
     in
-    assert_or_error is_aligned (`MisalignedPointer (exp_align, align, ofs))
+    if%sat Typed.not is_aligned then
+      (* If we can't guarantee the pointer is aligned from the type's alignment,
+         we try decaying it and seeing if its (symbolic) address **implies** its
+         alignment. Note this is not OX sound; we only take the ok path if the
+         pointer **must** be aligned, rather than also when it may be aligned.
+
+         This avoids going through extra branches, as a pointer can pretty much
+         always be aligned; what matters most is whether it is guaranteed to be
+         aligned. *)
+      let* address = with_pointers_sym @@ Sptr_base.decay ptr in
+      if%sure address %@ exp_align ==@ Usize.(0s) then Result.ok ()
+      else Result.error (`MisalignedPointer (exp_align, align, ofs))
+    else Result.ok ()
 
   and check_non_dangling_untyped ((ptr : Sptr_base.t), _) size =
     if%sat size ==@ Usize.(0s) then Result.ok ()

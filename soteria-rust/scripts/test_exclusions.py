@@ -32,6 +32,7 @@ KNOWN_ISSUES = {
     "fail/function_calls/arg_inplace_mutate.rs": "We don't check that arguments aren't mutated in place",
     "fail/function_calls/return_pointer_aliasing_read.rs": "We don't check arguments don't alias with the return place",
     "fail/function_calls/return_pointer_aliasing_write.rs": "We don't check arguments don't alias with the return place",
+    "fail/function_calls/return_pointer_on_unwind.rs": "We model printing as a no-op so the dereference doesn't occur",
     "fail/overlapping_assignment.rs": "MIR-only check for assignment overlap (we don't do this atm)",
     "fail/validity/cast_fn_ptr_invalid_caller_ret.rs": "We don't use a fn ptr's type for checking validity",
     "fail/validity/nonzero.rs": "The valid_range_start attribute isn't parsed by Charon?",

@@ -712,6 +712,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let ptr_guaranteed_cmp ~t:_ ~ptr ~other =
     Core.eval_ptr_binop Eq (Ptr ptr) (Ptr other)
 
+  let ptr_mask ~t:_ ~ptr:(ptr, meta) ~mask =
+    let* addr = Sptr.decay ptr in
+    let addr = addr &@ mask in
+    ok (Sptr.of_address addr, meta)
+
   let ptr_offset_from_ ~unsigned ~t ~ptr:((ptr, _) : full_ptr)
       ~base:((base, _) : full_ptr) : T.sint Typed.t ret =
     let zero = Usize.(0s) in

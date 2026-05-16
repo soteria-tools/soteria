@@ -246,10 +246,10 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
         (extract[0-1](V|1|) == 0b00)
   
   => Running thread_local::static_ref_cell...
-  warning: thread_local::static_ref_cell (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::list::register: GAst.Missing
+  warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::list::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
   
   => Running thread_local::pub_static_from_const_expr...
-  warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::list::register: GAst.Missing
+  warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::list::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
   
   [2]
 
@@ -262,10 +262,10 @@ This test must be run separtely on linux and macos as it yields different error 
         (extract[0-1](V|1|) == 0b00)
   
   => Running thread_local::static_ref_cell...
-  warning: thread_local::static_ref_cell (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::linux_like::register: GAst.Missing
+  warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::linux_like::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
   
   => Running thread_local::pub_static_from_const_expr...
-  warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, Can't execute function std::sys::thread_local::destructors::linux_like::register: GAst.Missing
+  warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::linux_like::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
   
   [2]
 
@@ -493,3 +493,14 @@ Print the callgraph
     n1 -> n16;
     n1 -> n17;
   }
+
+Check we trust addresses for pointer alignment
+  $ soteria-rust exec assumed_align.rs
+  Compiling... done in <time>
+  => Running assumed_align::main...
+  note: assumed_align::main: done in <time>, ran 2 branches
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
+        (extract[0-0](V|1|) == 0b0)
+  PC 2: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
+        (extract[0-0](V|1|) == 0b1)
+  

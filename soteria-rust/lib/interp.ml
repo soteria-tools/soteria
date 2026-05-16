@@ -154,7 +154,7 @@ module Make (StateImpl : State.S) = struct
     let open Fun_kind in
     match fn.kind with
     | FunId (FRegular id) -> ok (Real { id; generics = fn.generics })
-    | TraitMethod (tref, name, _) -> (
+    | TraitMethod (tref, method_id, _) -> (
         let* tref = Poly.subst_tref tref in
         let trait_ref = tref.trait_decl_ref.binder_value in
         let* timplref =
@@ -166,7 +166,8 @@ module Make (StateImpl : State.S) = struct
               | Some "destruct" -> ok (`Synth GenericDropInPlace)
               | Some _ | None ->
                   Fmt.kstr not_impl "trait call %a::%s on generic" Crate.pp_name
-                    trait_decl.item_meta.name name)
+                    trait_decl.item_meta.name
+                    (Crate.get_method_name tref method_id))
           | _ ->
               Fmt.kstr not_impl "Unexpected tref kind, got: %a"
                 Types.pp_trait_ref_kind tref.kind
@@ -176,7 +177,7 @@ module Make (StateImpl : State.S) = struct
         | `Impl timplref -> (
             let timpl = Crate.get_trait_impl timplref in
             match
-              Substitute.lookup_and_subst_trait_impl_method timpl name
+              Substitute.lookup_and_subst_trait_impl_method timpl method_id
                 timplref.generics fn.generics
             with
             | Some fn -> ok (Real fn)
@@ -184,8 +185,8 @@ module Make (StateImpl : State.S) = struct
                 (* get the default method *)
                 let trait_decl = Crate.get_trait_decl trait_ref in
                 match
-                  Substitute.lookup_and_subst_trait_decl_method trait_decl name
-                    tref fn.generics
+                  Substitute.lookup_and_subst_trait_decl_method trait_decl
+                    method_id tref fn.generics
                 with
                 | Some fn -> ok (Real fn)
                 | None -> not_impl "Could not resolve trait method")))
@@ -222,15 +223,28 @@ module Make (StateImpl : State.S) = struct
             let+ () = State.store_str_global str ptr in
             Ptr ptr)
     | CFnDef _ -> ok (Tuple [])
+    | CPtrNoProvenance v -> ok (Ptr (Sptr.of_address (BV.usize v), Thin))
+    | CArray cs ->
+        let+ vals = map_list cs ~f:resolve_constant in
+        Tuple vals
+    | CAdt (None, fields) ->
+        let+ vals = map_list fields ~f:resolve_constant in
+        Tuple vals
+    | CAdt (Some var, fields) ->
+        let variants = Crate.as_enum @@ ty_as_adt const.ty in
+        let variant = Types.VariantId.nth variants var in
+        let discr = BV.of_literal variant.discriminant in
+        let+ vals = map_list fields ~f:resolve_constant in
+        Enum (discr, vals)
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't
        too bad *)
-    | CTraitConst (tref, name) -> (
+    | CTraitConst (tref, const_id) -> (
         let* tref = Poly.subst_tref tref in
         match tref.kind with
         | TraitImpl implref ->
             let timpl = Crate.get_trait_impl implref in
-            let _, global = List.find (fun (n, _) -> n = name) timpl.consts in
+            let global = Types.AssocConstId.Map.find const_id timpl.consts in
             let* glob_ptr = resolve_global global in
             let glob = Crate.get_global global.id in
             State.load glob_ptr glob.ty
@@ -307,8 +321,7 @@ module Make (StateImpl : State.S) = struct
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
-    | CAdt _ | CArray _ | CRef _ | CPtr _ | CFnPtr _ | CPtrNoProvenance _
-    | CVTableRef _ ->
+    | CRef _ | CPtr _ | CFnPtr _ | CVTableRef _ ->
         Fmt.kstr not_impl "TODO: complex constant %a" Crate.pp_constant_expr
           const
 
@@ -942,19 +955,20 @@ module Make (StateImpl : State.S) = struct
             map_env (Store.dealloc local)
         | Uninit | Value _ -> map_env (Store.dealloc local)
         | Dead -> ok ())
-    | Assert ({ cond; expected; check_kind = _ }, on_failure) -> (
+    | Assert ({ cond; expected; check_kind = _ }, on_failure) ->
         let* cond = eval_operand cond in
         let cond_int = as_base TBool cond in
         let cond_bool = BV.to_bool cond_int in
         let cond_bool = if expected then cond_bool else Typed.not cond_bool in
-        if%sat cond_bool then ok ()
-        else
+        let err =
           match on_failure with
-          | UndefinedBehavior -> error `UBAbort
-          | UnwindTerminate -> error `UnwindTerminate
+          | UndefinedBehavior -> `UBAbort
+          | UnwindTerminate -> `UnwindTerminate
           | Panic name ->
               let name = Option.map (Fmt.to_to_string Crate.pp_name) name in
-              error (`Panic name))
+              `Panic name
+        in
+        assert_ cond_bool err
     | CopyNonOverlapping { src; dst; count } ->
         let ty = get_pointee (type_of_operand src) in
         let* src = eval_operand src in
@@ -1056,7 +1070,7 @@ module Make (StateImpl : State.S) = struct
                   list ~sep:comma
                   @@ pair ~sep:(any "->") string UllbcAst.pp_block_id)
                 (List.map
-                   (fun (v, b) -> (PrintValues.literal_to_string v, b))
+                   (fun (v, b) -> (Print.literal_to_string v, b))
                    options)
                 UllbcAst.pp_block_id default pp_rust_val discr];
             let compare_discr =
@@ -1072,50 +1086,30 @@ module Make (StateImpl : State.S) = struct
                       "Didn't know how to compare discriminant %a with scalar \
                        %s"
                       pp_rust_val discr
-                      (PrintValues.literal_to_string v)
+                      (Print.literal_to_string v)
             in
             let*^ block = match_on options ~constr:compare_discr in
             let block = Option.fold ~none:default ~some:snd block in
             let block = UllbcAst.BlockId.nth body.body block in
             exec_block ~body block)
-    | Drop (drop_kind, place, trait_ref, target, on_unwind) -> (
+    | Drop (drop_kind, place, fn_ptr, target, on_unwind) ->
         assert (drop_kind = Precise);
         let* place_ptr = resolve_place place in
-        (* Try to find a drop function that exists; it may be opaque if the drop
-           contains polymorphic types. *)
-        let drop_fn : Fun_kind.t option =
-          match trait_ref.kind with
-          | TraitImpl impl_ref -> (
-              let impl = Crate.get_trait_impl impl_ref in
-              (* The Drop trait will only have the drop function *)
-              let _, drop_ref = List.hd impl.methods in
-              let drop = Crate.get_fun drop_ref.binder_value.id in
-              match drop.body with
-              (* TODO: i don't think we should read [binder_value] here *)
-              | Body _ -> Some (Real drop_ref.binder_value)
-              | _ -> None)
-          | _ -> None
+        let* drop_fn = resolve_fn_ptr fn_ptr in
+        let fun_exec =
+          with_extra_call_trace ~loc:terminator.span.data ~msg:"Drop"
+          @@ with_env ~env:()
+          @@ exec_fun drop_fn [ Ptr place_ptr ]
         in
-        match drop_fn with
-        | Some drop ->
-            let fun_exec =
-              with_extra_call_trace ~loc:terminator.span.data ~msg:"Drop"
-              @@ with_env ~env:()
-              @@ exec_fun drop [ Ptr place_ptr ]
-            in
-            unwind_with fun_exec
-              ~f:(fun _ ->
-                let block = UllbcAst.BlockId.nth body.body target in
-                [%l.info "Dropped with %a" Fun_kind.pp drop];
-                exec_block ~body block)
-              ~fe:(fun err ->
-                let* () = State.add_error err in
-                [%l.info "Unwinding drop from %a" Fun_kind.pp drop];
-                let block = UllbcAst.BlockId.nth body.body on_unwind in
-                exec_block ~body block)
-        | None ->
-            let* () = State.uninit place_ptr place.ty in
+        unwind_with fun_exec
+          ~f:(fun _ ->
             let block = UllbcAst.BlockId.nth body.body target in
+            [%l.info "Dropped with %a" Fun_kind.pp drop_fn];
+            exec_block ~body block)
+          ~fe:(fun err ->
+            let* () = State.add_error err in
+            [%l.info "Unwinding drop from %a" Fun_kind.pp drop_fn];
+            let block = UllbcAst.BlockId.nth body.body on_unwind in
             exec_block ~body block)
     | Abort kind -> (
         match kind with
@@ -1135,10 +1129,10 @@ module Make (StateImpl : State.S) = struct
     let@ generics = Poly.push_generics ~params:fundef.generics ~args:generics in
     let () = Soteria.Stats.As_ctx.incr StatKeys.function_calls in
     match fundef.body with
-    | Intrinsic { name; arg_names = _ } ->
+    | IntrinsicBody (name, _arg_names) ->
         Std_funs.eval_intrinsic fundef name generics exec_fun args
-    | Extern name -> Std_funs.eval_extern name args
-    | Body body -> (
+    | ExternBody name -> Std_funs.eval_extern name args
+    | UnstructuredBody body -> (
         match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args
         | None ->
@@ -1163,13 +1157,26 @@ module Make (StateImpl : State.S) = struct
               ~fe:(fun err ->
                 let* () = dealloc_stack protected in
                 error_raw err))
-    | Opaque | TraitMethodWithoutDefault | Missing | Error _ -> (
+    | OpaqueBody | TraitMethodWithoutDefaultBody | MissingBody | ErrorBody _
+      -> (
         match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args
         | None ->
-            Fmt.kstr not_impl "Can't execute function %a: %a" Crate.pp_name name
-              (GAst.pp_body Fmt.nop) fundef.body)
-    | TargetDispatch _ -> failwith "Target dispatch not supported"
+            let msg =
+              match fundef.body with
+              | OpaqueBody -> "compilation skipped it"
+              | TraitMethodWithoutDefaultBody -> "this is a trait method stub"
+              | MissingBody ->
+                  "the function's body was not found while compiling; try \
+                   using a sysroot (with --sysroot)"
+              | ErrorBody err ->
+                  "the frontend does not support compiling it (" ^ err.msg ^ ")"
+              | _ -> failwith "impossible"
+            in
+            Fmt.kstr not_impl "can't execute function %a, %s" Crate.pp_name name
+              msg)
+    | TargetDispatchBody _ -> failwith "Target dispatch not supported"
+    | StructuredBody _ -> failwith "Impossibe: encountered LLBC?"
 
   and exec_fun (fn : Fun_kind.t) =
     match fn with
