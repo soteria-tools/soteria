@@ -289,27 +289,18 @@ let rec iter_leaves_rev t f =
       iter_leaves_rev right f;
       iter_leaves_rev left f
 
-(* FIXME: to be replaced soon when modular explicits make an appearance. *)
-module With_monad3 (M : sig
-  type ('ok, 'err, 'fix) t
-
-  val bind :
-    ('ok -> ('a, 'err, 'fix) t) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
-
-  val map : ('ok -> 'a) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
-end) =
-struct
-  let ( let+ ) x f = M.map f x
-  let ( let* ) x f = M.bind f x
-
-  let rec map_leaves (f : 'a -> ('a, 'b, 'c) M.t) (t : ('a, 'sint) t) :
-      (('a, 'sint) t, 'b, 'c) M.t =
+let map_leaves (module M : Compo_res.Base) (f : 'a -> ('a, 'b, 'c) M.t)
+    (t : ('a, 'sint) t) : (('a, 'sint) t, 'b, 'c) M.t =
+  let ( let+ ) x f = M.map f x in
+  let ( let* ) x f = M.bind f x in
+  let rec aux t =
     match t.children with
     | None ->
         let+ node = f t.node in
         { t with node }
     | Some (l, r) ->
-        let* l = map_leaves f l in
-        let+ r = map_leaves f r in
+        let* l = aux l in
+        let+ r = aux r in
         { t with children = Some (l, r) }
-end
+  in
+  aux t
