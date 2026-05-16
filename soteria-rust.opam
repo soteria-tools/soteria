@@ -32,7 +32,7 @@ depends: [
   "odoc" {with-doc}
   "alcotest" {with-test}
   "yojson" {< "3.0"}
-  "dune" {>= "3.14" & build & >= "3.14.0"}
+  "dune" {>= "3.23" & build & >= "3.14.0"}
   "ocamlformat" {with-dev-setup & = "0.29.0"}
   "ocaml-lsp-server" {with-dev-setup}
   "menhir" {>= "20180523"}
@@ -54,6 +54,7 @@ build: [
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
+x-maintenance-intent: ["(latest)"]
 # Versions managed by scripts/versionsync.py - edit scripts/versions.json to change
 pin-depends: [
   # [versionsync: CHARON_COMMIT_HASH=1ec8d4bb0116abf4486bac234ac01acf84e2a83a]
