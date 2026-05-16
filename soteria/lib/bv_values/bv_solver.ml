@@ -247,10 +247,7 @@ struct
       let to_encode = Dynarray.create () in
       let add_vars_raw vars = Var.Hashset.add_iter var_set vars in
       let add_vars vars =
-        vars @@ fun v ->
-        let prev_size = Var.Hashset.cardinal var_set in
-        Var.Hashset.add var_set v;
-        if Var.Hashset.cardinal var_set <> prev_size then changed := true
+        vars @@ fun v -> changed := Var.Hashset.add_check var_set v || !changed
       in
       let relevant = Iter.exists (Var.Hashset.mem var_set) in
       (* We need to reach some kind of fixpoint *)
