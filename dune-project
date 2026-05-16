@@ -1,4 +1,4 @@
-(lang dune 3.14)
+(lang dune 3.23)
 
 (cram enable)
 

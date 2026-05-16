@@ -8,4 +8,6 @@
 
 (cram
  (deps ../../bin/soteria_rust.exe)
+ (shell bash)
+ (setup_scripts cleanup.sh)
  (applies_to :whole_subtree))
