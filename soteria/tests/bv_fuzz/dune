@@ -1,6 +1,6 @@
 (executables
  (names fuzz_bool fuzz_bv)
- (libraries soteria simple_smt qcheck-core qcheck-alcotest alcotest))
+ (libraries soteria soteria.smt qcheck-core qcheck-alcotest alcotest))
 
 ; running each tests 4 times in parallel
 ; will run locally using 8 threads, and in CI using 4 threads (because that's what GH Actions provides)

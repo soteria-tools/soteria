@@ -1,5 +1,5 @@
 open Soteria_std
-open Simple_smt
+open Soteria_smt
 
 type t = Svalue.t
 type ty = Svalue.ty

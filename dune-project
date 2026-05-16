@@ -35,7 +35,6 @@
    (>= 5.4.0))
   (tsort
    (>= 2.1.0))
-  simple_smt
   iter
   patricia-tree
   (cmdliner

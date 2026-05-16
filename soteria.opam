@@ -16,7 +16,6 @@ bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
   "ocaml" {>= "5.4.0"}
   "tsort" {>= "2.1.0"}
-  "simple_smt"
   "iter"
   "patricia-tree"
   "cmdliner" {>= "2.0.0"}
@@ -63,6 +62,3 @@ build: [
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
-pin-depends: [
-  ["simple_smt.~dev" "git+https://github.com/NatKarmios/simple-smt-ocaml#9db7ef0bb61a76010de255af3cbe4066dd8dd622"]
-]

@@ -43,5 +43,5 @@ module type S = sig
   val pop : t -> int -> unit
 
   (** Gets the model from the last satisfiability check, if available. *)
-  val get_model : t -> Sexplib.Sexp.t option
+  val get_model : t -> Soteria_smt.sexp option
 end

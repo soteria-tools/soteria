@@ -14,4 +14,3 @@ module Solver_interface = Solver_interface
 module Value = Value
 module Z3 = Z3
 module Config = Config
-module Smt_utils = Smt_utils
