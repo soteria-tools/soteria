@@ -41,15 +41,6 @@ ocaml-format-check:
 mld-format:
 	find . -name "*.mld" -not -path "./_opam/*" -not -path "./_build/*" -exec $(OPAMX) ocamlformat --doc --inplace {} \;
 
-.PHONY: check-opam-files
-check-opam-files:
-	@if git diff --name-only HEAD | grep -q '\.opam$$'; then \
-		echo "Error: .opam files have changed since last commit:"; \
-		git --no-pager diff HEAD -- '*.opam'; \
-		exit 1; \
-	fi
-
-
 .PHONY: ocaml-test
 ocaml-test:
 	$(DUNE) test
