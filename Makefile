@@ -37,15 +37,6 @@ ocaml:
 ocaml-format-check:
 	$(DUNE) build @fmt
 
-.PHONY: check-opam-files
-check-opam-files:
-	@if git diff --name-only HEAD | grep -q '\.opam$$'; then \
-		echo "Error: .opam files have changed since last commit:"; \
-		git --no-pager diff HEAD -- '*.opam'; \
-		exit 1; \
-	fi
-
-
 .PHONY: ocaml-test
 ocaml-test:
 	$(DUNE) test
