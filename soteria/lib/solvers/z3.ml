@@ -42,44 +42,51 @@ module Make (Value : Value.S) :
   module Dump = struct
     let current_channel = ref None
 
-    let close_channel () =
+    (* Serialises all use of the shared SMT-dump channel across analysis
+       domains/solvers. The [_locked] helpers assume the lock is held; public
+       entry points take it exactly once (the mutex is not reentrant). *)
+    let mutex = Mutex.create ()
+
+    let close_channel_locked () =
       match !current_channel with
       | None -> ()
       | Some (oc, _) ->
           close_out oc;
           current_channel := None
 
-    let () = at_exit close_channel
+    let () = at_exit (fun () -> Mutex.protect mutex close_channel_locked)
 
-    let open_channel f =
+    let open_channel_locked f =
       let oc = open_out f in
       current_channel := Some (oc, f);
       Some oc
 
-    let channel () =
+    let channel_locked () =
       (* We only open if current file is not None and its different from current
          config *)
       match ((Config.get ()).dump_smt_file, !current_channel) with
       | None, None -> None
-      | Some f, None -> open_channel f
+      | Some f, None -> open_channel_locked f
       | Some f, Some (oc, f') ->
           if f == f' then Some oc
           else (
-            close_channel ();
-            open_channel f)
+            close_channel_locked ();
+            open_channel_locked f)
       | None, Some _ ->
-          close_channel ();
+          close_channel_locked ();
           None
 
     let log_sexp sexp =
-      match channel () with
+      Mutex.protect mutex @@ fun () ->
+      match channel_locked () with
       | None -> ()
       | Some oc ->
           Sexplib.Sexp.output_hum oc sexp;
           flush oc
 
     let log_response response elapsed =
-      match channel () with
+      Mutex.protect mutex @@ fun () ->
+      match channel_locked () with
       | None -> ()
       | Some oc ->
           let fmt = Format.formatter_of_out_channel oc in
