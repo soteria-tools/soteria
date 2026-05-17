@@ -183,9 +183,12 @@ module Diagnostic = struct
   let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col - 1)
 
   let replace_subpath_opt sub replacement path =
-    if String.contains ~sub path then
-      Some (String.replace_first ~sub ~by:replacement path)
-    else None
+    match String.find_first ~sub path with
+    | Some idx ->
+        let idx = idx + String.length sub in
+        let rel_path = String.sub path idx (String.length path - idx) in
+        Some (replacement ^ rel_path)
+    | None -> None
 
   let as_ranges (span : Charon.Meta.span_data) =
     match span.file.name with
