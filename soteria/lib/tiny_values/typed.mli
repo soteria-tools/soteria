@@ -66,6 +66,7 @@ val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
 val or_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
 val not : sbool t -> sbool t
 val distinct : 'a t list -> [> sbool ] t
+val distinct_seq : 'a t Seq.t -> [> sbool ] t
 val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
 val int_z : Z.t -> [> sint ] t
 val int : int -> [> sint ] t

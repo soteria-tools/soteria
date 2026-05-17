@@ -134,6 +134,7 @@ module type Bool_ := sig
 
   val not : [< sbool ] t -> [> sbool ] t
   val distinct : 'a t list -> [> sbool ] t
+  val distinct_seq : 'a t Seq.t -> [> sbool ] t
   val ite : [< sbool ] t -> 'a t -> 'a t -> 'a t
   val exists_1 : not_in:_ t -> 'a ty -> ('a t -> [< sbool ] t) -> [> sbool ] t
 

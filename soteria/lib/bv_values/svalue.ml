@@ -343,6 +343,7 @@ module type Bool = sig
   val not : t -> t
   val split_ands : t -> t Iter.t
   val distinct : t list -> t
+  val distinct_seq : t Seq.t -> t
   val ite : t -> t -> t -> t
 
   (** Do not use this directly when instantiating your own binders, use
@@ -765,12 +766,12 @@ module rec Bool : Bool = struct
         split_ands s2 f
     | _ -> f sv
 
-  let distinct l =
+  let distinct_raw s ?(l = List.of_seq s) () =
     (* [Distinct l] when l is empty or of size 1 is always true *)
     match l with
     | [] | [ _ ] -> v_true
     | l -> (
-        let cross_product = List.to_seq l |> Seq.self_cross_product in
+        let cross_product = Seq.self_cross_product s in
         let rec aux seq =
           match seq () with
           | Seq.Nil -> Some true
@@ -784,6 +785,9 @@ module rec Bool : Bool = struct
         | Some true -> v_true
         | Some false -> v_false
         | None -> mk_commut_nop Distinct l <| TBool)
+
+  let distinct_seq s = distinct_raw s ()
+  let distinct l = distinct_raw (List.to_seq l) ~l ()
 end
 
 (** {2 Bit vectors} *)

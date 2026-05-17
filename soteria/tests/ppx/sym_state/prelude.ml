@@ -7,6 +7,7 @@ module S_int = struct
   type t = Typed.T.sint Typed.t
   type syn = Typed.Expr.t
 
+  let distinct s = Typed.distinct_seq s
   let simplify = Symex.simplify
   let fresh () = Symex.nondet Typed.t_int
   let pp = Typed.ppa

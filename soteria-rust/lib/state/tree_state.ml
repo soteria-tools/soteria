@@ -155,7 +155,7 @@ module Make (Borrows : Tree_borrows.T) = struct
 
     let distinct vs =
       match Config.get_mode () with
-      | Compositional -> distinct vs
+      | Compositional -> distinct_seq vs
       | Whole_program -> v_true
 
     let fresh () =
