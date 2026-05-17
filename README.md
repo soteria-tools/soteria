@@ -37,7 +37,7 @@ opam pin add soteria git+https://github.com/soteria-tools/soteria.git#<commit>
 
 ### Install Soteria-Rust
 
-Soteria-Rust can be installed with `cargo` on **macOS** and **Linux x86_64**:
+Soteria-Rust can be installed with `cargo` on **macOS with M-series chips** and **Linux x86_64**:
 
 ```sh
 cargo install soteria --git https://github.com/soteria-tools/cargo-soteria.git
