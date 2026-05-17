@@ -133,7 +133,11 @@ let sure_neq a b =
   | Bool a, Bool b -> a <> b
   | _ -> false
 
-module Hcons = Hc.Make (struct
+(* Thread-safe: hash-consed values flow out of per-analysis domains into the
+   main domain (printed/serialised/compared), so tags must stay consistent
+   across domains. A single shared, internally-synchronised table is
+   required. *)
+module Hcons = Hc.Make_thread_safe (struct
   type t = t_node
 
   let equal = equal_t_node
