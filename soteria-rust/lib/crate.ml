@@ -3,13 +3,40 @@ open Charon
 exception MissingDecl of string
 
 type t = UllbcAst.crate
-type _ Effect.t += Get_crate : t Effect.t
+
+(* These computations are pure and safe to cache accross execution, as long as
+   it is within the same crate. *)
+type decl_cache = {
+  adt : (Types.type_decl_ref, Types.type_decl) Hashtbl.t;
+  trait_impl : (Types.trait_impl_ref, GAst.trait_impl) Hashtbl.t;
+  trait_decl : (Types.trait_decl_ref, GAst.trait_decl) Hashtbl.t;
+}
+
+type _ Effect.t += Get_crate : t Effect.t | Get_decl_cache : decl_cache Effect.t
 
 let get_crate () = Effect.perform Get_crate
+let get_decl_cache () = Effect.perform Get_decl_cache
+
+let memoize tbl key compute =
+  match Hashtbl.find_opt tbl key with
+  | Some v -> v
+  | None ->
+      let v = compute () in
+      Hashtbl.add tbl key v;
+      v
 
 let with_crate (crate : t) f =
   let open Effect.Deep in
-  try f () with effect Get_crate, k -> continue k crate
+  let dc =
+    {
+      adt = Hashtbl.create 256;
+      trait_impl = Hashtbl.create 64;
+      trait_decl = Hashtbl.create 64;
+    }
+  in
+  try f () with
+  | effect Get_crate, k -> continue k crate
+  | effect Get_decl_cache, k -> continue k dc
 
 let pointer_size () =
   let crate = get_crate () in
@@ -59,6 +86,7 @@ let get_adt_raw id =
 let get_adt (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with
   | TAdtId id ->
+      memoize (get_decl_cache ()).adt adt_ref @@ fun () ->
       let open Substitute in
       let adt = get_adt_raw id in
       let subst =
@@ -89,6 +117,7 @@ let get_trait_impl_raw id =
   | None -> raise (MissingDecl "TraitImpl")
 
 let get_trait_impl (timplref : Types.trait_impl_ref) =
+  memoize (get_decl_cache ()).trait_impl timplref @@ fun () ->
   let open Substitute in
   let impl = get_trait_impl_raw timplref.id in
   let subst =
@@ -104,6 +133,7 @@ let get_trait_decl_raw id =
   | None -> raise (MissingDecl "TraitDecl")
 
 let get_trait_decl (trait_ref : Types.trait_decl_ref) =
+  memoize (get_decl_cache ()).trait_decl trait_ref @@ fun () ->
   let open Substitute in
   let trait = get_trait_decl_raw trait_ref.id in
   let subst =
