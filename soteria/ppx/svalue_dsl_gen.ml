@@ -64,6 +64,9 @@ type lit_info = {
   li_ty : string;  (** ty name, e.g. [Int] *)
   li_ctor : string;  (** term constructor, e.g. [int_z] *)
   li_pay : string;  (** printed payload type, e.g. ["Z.t"] *)
+  li_params : (string * Ppxlib.core_type) list;
+      (** size/precision params of a parameterized literal *)
+  li_build : Ppxlib.expression option;  (** custom builder body *)
 }
 
 type ctx = {
@@ -73,10 +76,12 @@ type ctx = {
   lits : lit_info list;
   ops : op_decl list;
   nops : nop_decl list;
+  kinds : kind_decl list;
   by_name : (string, op_decl) Hashtbl.t;
   by_sym : (string, op_decl) Hashtbl.t;
   by_ctor : (string, op_decl) Hashtbl.t;  (** raw-construction RHS *)
   leaf_names : string list;
+  prelude : Ppxlib.structure list;
   aux : Ppxlib.structure list;
   lit_by_ty : (string, lit_info) Hashtbl.t;
   sorts : sort_decl list;
@@ -96,9 +101,12 @@ let payload_string ct =
 let build_ctx (p : program) : ctx =
   let tys = ref [] and leaves = ref [] and lits = ref [] in
   let ops = ref [] and nops = ref [] and aux = ref [] in
+  let kinds = ref [] in
+  let prelude = ref [] in
   let sorts = ref [] and ty_sort_l = ref [] and ty_args = ref [] in
   List.iter
     (function
+      | DPrelude s -> prelude := !prelude @ [ s ]
       | DAux s -> aux := !aux @ [ s ]
       | DSort s -> sorts := !sorts @ [ s ]
       | DTy t ->
@@ -120,10 +128,13 @@ let build_ctx (p : program) : ctx =
                   li_ty = l.lit_ty;
                   li_ctor;
                   li_pay = payload_string l.lit_payload;
+                  li_params = l.lit_params;
+                  li_build = l.lit_build;
                 };
               ]
       | DOp o -> ops := !ops @ [ o ]
-      | DNop n -> nops := !nops @ [ n ])
+      | DNop n -> nops := !nops @ [ n ]
+      | DKind k -> kinds := !kinds @ [ k ])
     p;
   (* Typed signatures keep the original (sort) tokens; everything else uses
      the runtime [ty] behind them. *)
@@ -172,10 +183,12 @@ let build_ctx (p : program) : ctx =
     lits = !lits;
     ops = !ops;
     nops = !nops;
+    kinds = !kinds;
     by_name;
     by_sym;
     by_ctor;
     leaf_names = List.map (fun (l : leaf_decl) -> l.leaf_name) !leaves;
+    prelude = !prelude;
     aux = !aux;
     lit_by_ty;
     sorts = !sorts;
@@ -187,6 +200,19 @@ let build_ctx (p : program) : ctx =
 let ty_ctor name = "T" ^ name
 let arity o = List.length o.op_args
 let is_ite o = o.op_ctor = "Ite"
+
+(* {2 Generic structural kinds} *)
+
+let kind_field_type ~loc = function
+  | KRec -> [%type: t]
+  | KRecList -> [%type: t list]
+  | KOpaque ct -> ct
+
+(* [(field, "f<i>")] for each payload field of a kind *)
+let kind_fvars (k : kind_decl) =
+  List.mapi (fun i fld -> (fld, Printf.sprintf "f%d" i)) k.k_fields
+
+let is_kind_ctor ctx name = List.exists (fun k -> k.k_ctor = name) ctx.kinds
 
 let resolve_op ctx name =
   match Hashtbl.find_opt ctx.by_name name with
@@ -299,6 +325,30 @@ let rec compile_pat ctx ~loc ~expect_ty ~seen e :
       let p, g = compile_pat ctx ~loc ~expect_ty:None ~seen arg in
       let p = match p with { ppat_desc = Ppat_record _; _ } -> B.ppat_any ~loc | _ -> p in
       (pat_kind ~loc (pconstr ~loc lname [ p ]), g)
+  | EApp (kname, [], args, _) when is_kind_ctor ctx kname ->
+      (* generic structural-kind pattern, e.g. [Ptr l o] / [Seq xs] *)
+      let k = List.find (fun kk -> kk.k_ctor = kname) ctx.kinds in
+      if List.length args <> List.length k.k_fields then
+        Location.raise_errorf ~loc "kind %s expects %d field(s)" kname
+          (List.length k.k_fields);
+      let subs =
+        List.map2
+          (fun fld a ->
+            match fld with
+            | KRec -> compile_pat ctx ~loc ~expect_ty:None ~seen a
+            | KRecList | KOpaque _ -> (
+                match a with
+                | EVar (x, _) ->
+                    seen := x :: !seen;
+                    (pvar ~loc x, [])
+                | EWild _ -> (B.ppat_any ~loc, [])
+                | _ ->
+                    Location.raise_errorf ~loc
+                      "kind %s field must be a variable or '_'" kname))
+          k.k_fields args
+      in
+      let pats, gs = List.split subs in
+      (pat_kind ~loc (pconstr ~loc kname pats), List.concat gs)
   | EApp (opname, params, args, _) -> (
       match resolve_op ctx opname with
       | None -> Location.raise_errorf ~loc "unknown operator %s in pattern" opname
@@ -331,9 +381,14 @@ let rec compile_pat ctx ~loc ~expect_ty ~seen e :
           (pat_kind ~loc kpat, guards))
   | EOcaml _ -> Location.raise_errorf ~loc "{{ ... }} not allowed in a rule LHS"
 
-(* Term constructor that wraps a literal payload for ty [ty]. *)
+(* Term constructor that wraps a literal payload for ty [ty]. A
+   parameterized literal (size-carrying [BitVec]) cannot be built from the
+   payload alone, so no implicit [#x]/integer coercion is offered — those
+   rules must build explicitly via [{{ ... }}]. *)
 let lit_ctor_for ctx ty =
-  match Hashtbl.find_opt ctx.lit_by_ty ty with Some l -> Some l.li_ctor | None -> None
+  match Hashtbl.find_opt ctx.lit_by_ty ty with
+  | Some l when l.li_build = None && l.li_params = [] -> Some l.li_ctor
+  | _ -> None
 
 let rec emit_term ctx ~loc ~env ~expect_ty e : expression =
   match e with
@@ -369,19 +424,22 @@ let rec emit_term ctx ~loc ~env ~expect_ty e : expression =
           args o.op_args
       in
       let ty_e =
-        if o.op_ret = "any" then
-          let idx =
-            let rec f i = function
-              | "any" :: _ -> i
-              | _ :: tl -> f (i + 1) tl
-              | [] -> 0
-            in
-            f 0 o.op_args
-          in
-          B.pexp_field ~loc
-            (B.pexp_field ~loc (List.nth aes idx) (lid ~loc "node"))
-            (lid ~loc "ty")
-        else econstr ~loc (ty_ctor o.op_ret) []
+        match o.op_ret_ty with
+        | Some f -> eapply ~loc f (pes @ aes)
+        | None ->
+            if o.op_ret = "any" then
+              let idx =
+                let rec f i = function
+                  | "any" :: _ -> i
+                  | _ :: tl -> f (i + 1) tl
+                  | [] -> 0
+                in
+                f 0 o.op_args
+              in
+              B.pexp_field ~loc
+                (B.pexp_field ~loc (List.nth aes idx) (lid ~loc "node"))
+                (lid ~loc "ty")
+            else econstr ~loc (ty_ctor o.op_ret) []
       in
       let cexp = econstr ~loc o.op_ctor pes in
       let kind =
@@ -651,12 +709,22 @@ let kind_type ~loc ctx =
   let has_bin = List.exists (fun o -> arity o = 2 && not (is_ite o)) ctx.ops in
   let has_nop = ctx.nops <> [] in
   let has_ite = List.exists is_ite ctx.ops in
+  let struct_cds =
+    List.map
+      (fun (k : kind_decl) ->
+        B.constructor_declaration ~loc ~name:{ txt = k.k_ctor; loc }
+          ~args:
+            (Pcstr_tuple (List.map (kind_field_type ~loc) k.k_fields))
+          ~res:None)
+      ctx.kinds
+  in
   let kind_cds =
     leaf_cds @ lit_cds
     @ (if has_un then [ unop_cd ] else [])
     @ (if has_bin then [ binop_cd ] else [])
     @ (if has_nop then [ nop_cd ] else [])
-    @ if has_ite then [ ite_cd ] else []
+    @ (if has_ite then [ ite_cd ] else [])
+    @ struct_cds
   in
   let kind_td =
     B.type_declaration ~loc ~name:{ txt = "t_kind"; loc } ~params:[] ~cstrs:[]
@@ -696,6 +764,14 @@ let kind_type ~loc ctx =
 (* {2 Smart constructors} *)
 
 let result_ty_expr ~loc _ctx o =
+  match o.op_ret_ty with
+  | Some f ->
+      (* [fun <params> <args> -> ty]; smart-ctor binds params by name and
+         args as [__a0..]. *)
+      eapply ~loc f
+        (List.map (fun (nm, _) -> evar ~loc nm) o.op_params
+        @ List.init (arity o) (fun i -> evar ~loc (Printf.sprintf "__a%d" i)))
+  | None ->
   if o.op_ret = "any" then
     (* take the ty of the first [any] argument (e.g. the [if_] of an ite) *)
     let idx =
@@ -882,12 +958,19 @@ let leaf_lit_ctors ~loc ctx =
   let lit_ctors =
     List.map
       (fun (li : lit_info) ->
-        let_fun ~loc li.li_ctor [ "x" ]
-          (eapply ~loc (evar ~loc "<|")
-             [
-               econstr ~loc li.li_kind [ evar ~loc "x" ];
-               econstr ~loc (ty_ctor li.li_ty) [];
-             ]))
+        match li.li_build with
+        | Some build ->
+            (* parameterized / size-carrying literal: the builder
+               [fun <params> <payload> -> t] is the constructor *)
+            B.pstr_value ~loc Nonrecursive
+              [ B.value_binding ~loc ~pat:(pvar ~loc li.li_ctor) ~expr:build ]
+        | None ->
+            let_fun ~loc li.li_ctor [ "x" ]
+              (eapply ~loc (evar ~loc "<|")
+                 [
+                   econstr ~loc li.li_kind [ evar ~loc "x" ];
+                   econstr ~loc (ty_ctor li.li_ty) [];
+                 ]))
       ctx.lits
   in
   (* bool conveniences *)
@@ -955,6 +1038,19 @@ let pp_fun ~loc ctx =
     add
       (B.case ~lhs:[%pat? Ite (c, t, e)] ~guard:None
          ~rhs:[%expr Fmt.pf ft "(%a ? %a : %a)" pp c pp t pp e]);
+  List.iter
+    (fun (k : kind_decl) ->
+      (* pp need not be faithful (equivalence is by [eval]); just total. *)
+      add
+        (B.case
+           ~lhs:
+             (pconstr ~loc k.k_ctor
+                (List.map (fun _ -> B.ppat_any ~loc) k.k_fields))
+           ~guard:None
+           ~rhs:
+             (eapply ~loc (evar ~loc "Fmt.string")
+                [ evar ~loc "ft"; B.estring ~loc ("<" ^ k.k_ctor ^ ">") ])))
+    ctx.kinds;
   let m = B.pexp_match ~loc [%expr t.node.kind] (List.rev !cases) in
   [ [%stri let rec pp ft t = [%e m]] ]
 
@@ -984,9 +1080,55 @@ let core_items ~loc ctx =
     | Some l -> pconstr ~loc l.leaf_name [ pvar ~loc "v" ]
     | None -> [%pat? Var v]
   in
-  let iter_cases =
+  let has_binder = List.exists (fun k -> k.k_binder) ctx.kinds in
+  let kind_iter_case (k : kind_decl) =
+    let fvs = kind_fvars k in
+    let pat =
+      pconstr ~loc k.k_ctor
+        (List.map
+           (fun (fld, nm) ->
+             match fld with
+             | KRec | KRecList -> pvar ~loc nm
+             | KOpaque _ ->
+                 if k.k_binder then pvar ~loc nm else B.ppat_any ~loc)
+           fvs)
+    in
+    if k.k_binder then (
+      let bl = snd (List.hd fvs) in
+      let body = snd (List.nth fvs (List.length fvs - 1)) in
+      B.case ~lhs:pat ~guard:None
+        ~rhs:
+          [%expr
+            let ignore =
+              List.fold_left
+                (fun ig (v, _) -> Var.Set.add v ig)
+                ignore [%e evar ~loc bl]
+            in
+            aux ~ignore [%e evar ~loc body]])
+    else
+      let stmts =
+        List.filter_map
+          (fun (fld, nm) ->
+            match fld with
+            | KRec -> Some (eapply ~loc (evar ~loc "recurse") [ evar ~loc nm ])
+            | KRecList ->
+                Some
+                  (eapply ~loc (evar ~loc "List.iter")
+                     [ evar ~loc "recurse"; evar ~loc nm ])
+            | KOpaque _ -> None)
+          fvs
+      in
+      let rhs =
+        match stmts with
+        | [] -> [%expr ()]
+        | s :: tl ->
+            List.fold_left (fun acc e -> B.pexp_sequence ~loc acc e) s tl
+      in
+      B.case ~lhs:pat ~guard:None ~rhs
+  in
+  let make_iter_cases ~var_rhs =
     [
-      B.case ~lhs:var_pat ~guard:None ~rhs:[%expr f (v, sv.node.ty)];
+      B.case ~lhs:var_pat ~guard:None ~rhs:var_rhs;
       B.case ~lhs:leaf_lit_or ~guard:None ~rhs:[%expr ()];
     ]
     @ (if has_un then
@@ -1004,15 +1146,58 @@ let core_items ~loc ctx =
              ~rhs:[%expr List.iter recurse l];
          ]
        else [])
-    @
-    if has_ite then
-      [
-        B.case ~lhs:[%pat? Ite (c, t, e)] ~guard:None
-          ~rhs:[%expr recurse c; recurse t; recurse e];
-      ]
-    else []
+    @ (if has_ite then
+         [
+           B.case ~lhs:[%pat? Ite (c, t, e)] ~guard:None
+             ~rhs:[%expr recurse c; recurse t; recurse e];
+         ]
+       else [])
+    @ List.map kind_iter_case ctx.kinds
   in
-  let iter_match = B.pexp_match ~loc [%expr sv.node.kind] iter_cases in
+  let iter_match =
+    B.pexp_match ~loc [%expr sv.node.kind]
+      (make_iter_cases ~var_rhs:[%expr f (v, sv.node.ty)])
+  in
+  let iter_match_aux =
+    B.pexp_match ~loc [%expr sv.node.kind]
+      (make_iter_cases
+         ~var_rhs:
+           [%expr if Var.Set.mem v ignore then () else f (v, sv.node.ty)])
+  in
+  let iter_vars_item =
+    if has_binder then
+      [%stri
+        let iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
+          let rec aux ~ignore (sv : t) : unit =
+            let recurse = aux ~ignore in
+            [%e iter_match_aux]
+          in
+          aux ~ignore:Var.Set.empty sv]
+    else
+      [%stri
+        let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
+          let recurse s = iter_vars s f in
+          [%e iter_match]]
+  in
+  let kind_hash_case (k : kind_decl) =
+    let fvs = kind_fvars k in
+    let pat =
+      pconstr ~loc k.k_ctor (List.map (fun (_, nm) -> pvar ~loc nm) fvs)
+    in
+    let elems =
+      List.map
+        (fun (fld, nm) ->
+          match fld with
+          | KRec -> [%expr [%e evar ~loc nm].tag]
+          | KRecList ->
+              [%expr List.map (fun s -> s.tag) [%e evar ~loc nm]]
+          | KOpaque _ -> evar ~loc nm)
+        fvs
+    in
+    B.case ~lhs:pat ~guard:None
+      ~rhs:
+        [%expr Hashtbl.hash [%e B.pexp_tuple ~loc (elems @ [ [%expr hty] ])]]
+  in
   let hash_cases =
     [ B.case ~lhs:leaf_lit_or ~guard:None ~rhs:[%expr Hashtbl.hash (kind, hty)] ]
     @ (if has_un then
@@ -1034,12 +1219,13 @@ let core_items ~loc ctx =
          ]
        else [])
     @
-    if has_ite then
-      [
-        B.case ~lhs:[%pat? Ite (c, t, e)] ~guard:None
-          ~rhs:[%expr Hashtbl.hash (c.tag, t.tag, e.tag, hty)];
-      ]
-    else []
+    (if has_ite then
+       [
+         B.case ~lhs:[%pat? Ite (c, t, e)] ~guard:None
+           ~rhs:[%expr Hashtbl.hash (c.tag, t.tag, e.tag, hty)];
+       ]
+     else [])
+    @ List.map kind_hash_case ctx.kinds
   in
   let hash_match = B.pexp_match ~loc [%expr kind] hash_cases in
   let commut =
@@ -1067,10 +1253,7 @@ let core_items ~loc ctx =
       [%stri let kind t = t.node.kind];
       [%stri let[@inline] equal a b = Int.equal a.tag b.tag];
       [%stri let[@inline] compare a b = Int.compare a.tag b.tag];
-      [%stri
-        let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
-          let recurse s = iter_vars s f in
-          [%e iter_match]];
+      iter_vars_item;
       [%stri let pp_full ft t = pp_t_node ft t.node];
     ]
   @ pp_fun ~loc ctx
@@ -1212,6 +1395,85 @@ let eval_items ~loc ctx =
              if equal g v_true then eval t
              else if equal g v_false then eval e
              else ite g (eval t) (eval e)]);
+  List.iter
+    (fun (k : kind_decl) ->
+      let fvs = kind_fvars k in
+      let pat =
+        pat_kind ~loc
+          (pconstr ~loc k.k_ctor
+             (List.map (fun (_, nm) -> pvar ~loc nm) fvs))
+      in
+      let rhs =
+        match k.k_eval with
+        | Some body ->
+            (* explicit reconstructor: [fun x f0 f1 ... -> t] *)
+            eapply ~loc body
+              (evar ~loc "x" :: List.map (fun (_, nm) -> evar ~loc nm) fvs)
+        | None ->
+            (* recurse recursive fields, raw-rebuild reusing the ty *)
+            let info =
+              List.map
+                (fun (fld, nm) ->
+                  match fld with
+                  | KRec -> (fld, nm, "n_" ^ nm, None)
+                  | KRecList -> (fld, nm, "n_" ^ nm, Some ("c_" ^ nm))
+                  | KOpaque _ -> (fld, nm, nm, None))
+                fvs
+            in
+            let rebuilt =
+              eapply ~loc (evar ~loc "<|")
+                [
+                  econstr ~loc k.k_ctor
+                    (List.map (fun (_, _, o, _) -> evar ~loc o) info);
+                  [%expr x.node.ty];
+                ]
+            in
+            let conds =
+              List.filter_map
+                (fun (fld, nm, o, ch) ->
+                  match fld with
+                  | KRec ->
+                      Some [%expr [%e evar ~loc nm] == [%e evar ~loc o]]
+                  | KRecList ->
+                      Some
+                        [%expr Stdlib.not [%e evar ~loc (Option.get ch)]]
+                  | KOpaque _ -> None)
+                info
+            in
+            let core =
+              match conds with
+              | [] -> rebuilt
+              | c :: tl ->
+                  let all =
+                    List.fold_left
+                      (fun a c -> [%expr [%e a] && [%e c]])
+                      c tl
+                  in
+                  [%expr if [%e all] then x else [%e rebuilt]]
+            in
+            List.fold_right
+              (fun (fld, nm, o, ch) acc ->
+                match fld with
+                | KRec ->
+                    [%expr
+                      let [%p pvar ~loc o] = eval [%e evar ~loc nm] in
+                      [%e acc]]
+                | KRecList ->
+                    let tpat =
+                      B.ppat_tuple ~loc
+                        [ pvar ~loc o; pvar ~loc (Option.get ch) ]
+                    in
+                    [%expr
+                      let [%p tpat] =
+                        Soteria_std.List.map_changed eval
+                          [%e evar ~loc nm]
+                      in
+                      [%e acc]]
+                | KOpaque _ -> acc)
+              info core
+      in
+      add (B.case ~lhs:pat ~guard:None ~rhs))
+    ctx.kinds;
   let m = B.pexp_match ~loc [%expr x] (List.rev !arms) in
   [
     [%stri
@@ -1298,7 +1560,15 @@ let typed_module ~loc ctx =
     List.iter
       (fun (li : lit_info) ->
         let s = sort_of ctx li.li_ty in
-        p "  val %s : %s -> [> %s ] t\n" li.li_ctor li.li_pay s;
+        let pty =
+          List.map
+            (fun (_, ct) ->
+              "(" ^ Format.asprintf "%a" Pprintast.core_type ct ^ ")")
+            li.li_params
+        in
+        p "  val %s : %s\n" li.li_ctor
+          (String.concat " -> "
+             (pty @ [ li.li_pay; Printf.sprintf "[> %s ] t" s ]));
         if li.li_pay = "bool" then (
           p "  val v_true : [> %s ] t\n" s;
           p "  val v_false : [> %s ] t\n" s;
@@ -1424,7 +1694,8 @@ let generate ~loc (p : program) : structure =
   let pp_of o = match o.op_symbol with Some s -> s | None -> o.op_name in
   let op_def o = (o.op_ctor, List.map snd o.op_params, pp_of o) in
   let items =
-    [ ty_decl ~loc ctx ]
+    List.concat ctx.prelude
+    @ [ ty_decl ~loc ctx ]
     @ ty_helpers ~loc ctx
     @ op_module ~loc ~name:"Nop"
         (List.map

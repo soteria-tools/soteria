@@ -346,7 +346,9 @@ genuinely needs full escaping once §5–§7 are done.
 
 ---
 
-## 5. Done this session (verified)
+## 5. Done (verified)
+
+### Prior sessions
 
 1. **Parameterized operator constructors**, end-to-end: AST (`op_params`),
    parser (`= Ctor(p:ty,...)` and `name[p ...]` in rules), codegen
@@ -358,19 +360,123 @@ genuinely needs full escaping once §5–§7 are done.
    parser (`parse_paren_types`, shared), codegen (`ty_decl` payloads,
    `ty_helpers` skips aliases for parameterized variants, `ctx.ty_args`).
 
-**Regression: clean.** `dune build --root . @soteria/tests/svalue_dsl/runtest`
-passes (tiny semantic differential, 120k evaluations, 0 mismatches; phantom
-`Typed` test passes). `tiny_values/svalue_dsl.ml` uses no params, so behavior
-is byte-identical to before — the redesign did not regress it.
+### This session (handoff §10 steps 1–3 + all §6 engine features)
+
+All landed in the PPX, **tiny regression green throughout** (20000×6 envs
+equivalent + phantom typing OK), and **`soteria.cma` builds** with a partial
+`bv_values/svalue_dsl.ml` skeleton (`module Svalue_dsl = Svalue_dsl` added to
+`bv_values.ml`) that exercises every feature. Generated code verified by
+inspection via `standalone.exe`.
+
+3. **§6.D Prelude escape** (`prelude {{ ... }}`): lexer kw, `DPrelude`,
+   `parse_prelude`, `ctx.prelude` emitted at the very top (before `ty_decl`).
+   Used to port `FloatPrecision`/`FloatClass`/`RoundingMode`.
+4. **§6.C Generic structural kinds** (`kind <Ctor> [binder] (fields…) [eval
+   {{ }}]`): AST `kind_decl`/`kind_field` (`KRec`/`KRecList`/`KOpaque`),
+   `parse_kind` (depth-aware field span capture), `ctx.kinds`. Codegen weaves
+   kinds into `kind_type` (constructors), `core_items` (a **binder-aware
+   `iter_vars`**: `aux ~ignore` form with `Var.Set` when any kind is a
+   `binder`, else the old `let rec` form unchanged so tiny is byte-identical;
+   `hash`), `pp_fun` (non-faithful `<Ctor>` case), `eval_items` (default
+   recurse+raw-rebuild reusing `x.node.ty`, or an explicit `eval {{ fun x
+   f0 … -> t }}` — used by `Exists`, effect-based: bound vars → `mk_var v
+   ty`, free vars re-`perform` to the outer handler). `equal_t_kind`/
+   `compare_t_kind`/`pp_t_kind` are auto-derived (constructors in `t_kind`).
+   *Not yet done: kind-constructor patterns/construction inside op rules*
+   (needed for `sem_eq`'s `Ptr (..)==Ptr (..)` arm, step 5) — `compile_pat`/
+   `emit_term` must learn `is_kind_ctor` (helper already added). Rules-based
+   `kind` bodies (vs `eval {{ }}`/hand-written `with`) also deferred — bv's
+   Ptr/Seq/Exists smart ctors are bespoke glue in a `with {{ }}` block.
+5. **§6.E Flexible result type**: AST `op_ret_ty`, parser `-> {{ fun
+   <params> <args> -> ty }}` after the ctor/params, threaded through
+   `result_ty_expr` (default arm) and `emit_term` raw-build. `any`/`T<R>`
+   still the fallbacks. Verified with `bv_concat` → `TBitVector (size_of a
+   + size_of b)`.
+6. **§6.F Parameterized literal ctors**: AST `lit_params`/`lit_build`,
+   `mk` keyword + shared `parse_ctor_params` (depth-aware), `parse_payload_
+   type` stop-set widened. `leaf_lit_ctors` emits `let <ctor> = <build>`
+   when a builder is given; `lit_ctor_for` returns `None` for parameterized
+   literals (no bad 1-arg `#x` coercion — such rules build via `{{ }}`);
+   `Typed` lit sig prepends param types. Verified: `bv_mk n z = BitVec
+   Z.(z land pred (one lsl n)) <| TBitVector n`, `float_mk fp f = Float f
+   <| TFloat fp`.
+7. **§6.G size-aware folding**: *no new PPX feature needed for
+   correctness* — shown expressible with the shipped machinery: term-var
+   patterns + a `{{ }}` guard + a `{{ }}` RHS reading `.node.ty`, plus tiny
+   `is_bv_lit`/`to_z_exn` helpers in `with {{ }}`. Verified: `bv_add`/
+   `bv_concat` fold arms produce correctly-masked, correctly-sized
+   constants. The *ergonomic sugar* `#x@s` (bind payload **and** size) is
+   deferred to step 5 — see §6.G note below; it is sugar only, not required.
+
+8. **§6.C deferral resolved — kind-patterns in rules**: `compile_pat` now
+   accepts a generic-kind constructor pattern (`(Ptr l o)`, `(Seq xs)`):
+   `KRec` fields recurse, `KRecList`/`KOpaque` bind a var/`_`. `collect_env`
+   already harvests them (treated as `Term`, emitted bare — correct for
+   `{{ }}`/sub-`sem_eq` use). `is_kind_ctor` gates it before the op branch.
+   Verified by `sem_eq`'s `(Ptr l1 o1)==(Ptr l2 o2)` arm (commutative-mirrored
+   correctly). *Still deferred:* kind **construction** in a RHS (build a
+   `Ptr` from a rule) — not needed yet; bv builds kinds via the hand-written
+   `ptr`/`seq` glue in `with {{ }}`.
+9. **Step 4 — Bool transcribed + BitVec deps (fold-only)**: `bv_values/
+   svalue_dsl.ml` now has the **full Bool core** (`not`, `and_`, `or_`,
+   `ite`, `sem_eq`) as K-rules, plus the BitVec ops Bool references
+   (`bv_concat/add/sub/neg/not/lt/leq/extract/of_bool`) transcribed
+   **fold-only**. `soteria.cma` builds; tiny green; generated code
+   inspected (the `not (bv_lt[s] a b) ~> bv_leq[s] b a` payload-binding and
+   the `Ptr==Ptr` kind-pattern are correct). Deferred Bool arms (sound to
+   omit): `not`'s `Eq(BitVec _:bv1,_)` & `Nop(Distinct,[l;r])`; the deep
+   symbolic arms of `and_`/`or_`/`sem_eq` (the ~35-arm `sem_eq` tail incl.
+   the msb-extract special case).
+
+   **★ Soundness strategy — REFINED (read carefully).** Equivalence (§8) is
+   by *evaluating* both modules under random concrete envs. The earlier
+   claim "omitting simplifications is always sound" is **TRUE only for
+   *total* operations**. It is **FALSE for *partial* ops (`div`/`rem`/
+   `mod`)**: `Svalue` has *subterm-dropping* arms (`0*_→0`, `shl≥size→0`,
+   `0 rem _→0`, ite/`&&`/`||` short-circuit, …) so it never *evaluates* —
+   never *faults on* — the dropped subterm. A fold-only `Svalue_dsl` keeps
+   that subterm and **does** div-by-zero-fault when it later becomes
+   concrete-zero ⇒ the two disagree exactly when a dropped subterm would
+   div0. Empirically confirmed by the §8 test (every mismatch involved
+   div/rem/mod under a dropped subterm). Consequences:
+   - For the **total fragment** (add/sub/mul/neg/bitand|or|xor/shl/lshr/
+     ashr/lt/leq/eq/bool/ite/ptr) fold-only **is** provably equivalent —
+     the §8 test passes (600k evals, 0 mismatches; see §8).
+   - `div`/`rem`/`mod` must be transcribed **faithfully** (their
+     subterm-dropping arms, in `Svalue`'s arm order) before re-admitting
+     them to the recipe. Fold-only is *not* enough for them.
+   So: grow the **total** ops fold-arm-first (mandatory) then symbolic
+   arms (optional for §8, required for §11 polish); grow div/rem/mod
+   **faithfully** (mandatory for §8).
+
+10. **§8 bv differential test — standing & passing (total fragment).**
+    `soteria/tests/bv_svalue_dsl/{dune,check.ml}` (mirrors tiny's
+    `check.ml`): random well-typed terms over the total bitvector + bool +
+    ptr fragment at width 8, built through `Bv_values.Svalue` *and*
+    `Bv_values.Svalue_dsl`, evaluated under random envs (`Bv_values.Eval.
+    eval` vs the generated `D.eval`), results compared. **0 mismatches over
+    600k evaluations** (5 seeds × 20000 × 6); wired to
+    `@soteria/tests/bv_svalue_dsl/runtest` (defaults 20000/seed 42). This is
+    the equivalence proof for the covered fragment. div/rem/mod are excluded
+    pending faithful transcription (★ above).
+
+**Regression: clean.** Both `@soteria/tests/svalue_dsl/runtest` (tiny: 120k
+evals + phantom `Typed`) and `@soteria/tests/bv_svalue_dsl/runtest` (bv:
+120k evals) pass; the whole `soteria` library builds (bytecode + native).
+`tiny_values/svalue_dsl.ml` uses no params, so behavior is byte-identical to
+before — the redesign did not regress it.
 
 ---
 
-## 6. Remaining DSL features required
+## 6. DSL features
 
-Listed in dependency order. Each should be implemented and the tiny
-regression re-run after each (it must stay green).
+Listed in dependency order. **§6.D, §6.C, §6.E, §6.F, §6.G are DONE** (see
+§5 "This session"); the descriptions below are kept for reference and now
+carry a status note. §6.H remains optional. The only follow-up engine work
+is the two §6.C deferrals (kind-patterns-in-rules; rules-based kinds) — both
+naturally land while transcribing `sem_eq` in step 5.
 
-### C. Generic structural kinds (`Ptr`, `Seq`, `Exists`)
+### C. Generic structural kinds (`Ptr`, `Seq`, `Exists`)  — **DONE** (with two deferrals, see §5 item 4)
 
 Generalize the hardcoded `Unop`/`Binop`/`Nop`/`Ite` handling. Add a `kind`
 declaration:
@@ -395,14 +501,14 @@ Implementation seam: `core_items` (`iter_vars`/`hash`), `pp_fun`,
 `kind_type`, `eval_items` currently switch on `has_un/has_bin/has_nop/
 has_ite`. Replace with iteration over a `kinds` list of descriptors.
 
-### D. Prelude escape (`prelude {{ ... }}`)
+### D. Prelude escape (`prelude {{ ... }}`)  — **DONE** (§5 item 3)
 
 Like `with {{ }}` but emitted at the **very top** of the generated structure
 (before `ty_decl`). For `FloatPrecision`/`FloatClass`/`RoundingMode` (and
 their `[@@deriving]`), which `ty`/`Unop`/`Binop` reference. Add `prelude`
 keyword; in `generate`, prepend `prelude` blocks before `ty_decl`.
 
-### E. Flexible result type
+### E. Flexible result type  — **DONE** (§5 item 5)
 
 Many bv ops compute their result `ty` from operands: `bv_concat` →
 `TBitVector (size_of a + size_of b)`, `bv_extract[lo hi]` → `TBitVector
@@ -418,7 +524,7 @@ i.e. an optional `-> {{ fun <args> <params> -> <ty expr> }}` after the
 constructor, used by `result_ty_expr`/`default_expr`/raw-build instead of
 `econstr (ty_ctor ret)`. `any` stays as a shorthand.
 
-### F. Parameterized literal constructors with normalization
+### F. Parameterized literal constructors with normalization  — **DONE** (§5 item 6)
 
 `BitVec` literals are size-carrying and **masked**: `mk n z = BitVec
 Z.(z land pred (one lsl n)) <| TBitVector n`. The current `literal`
@@ -434,16 +540,35 @@ literal BitVec : bv = Z.t  mk (n: int) {{ fun n z -> BitVec Z.(z land pred
 The literal-payload pattern (`#bv`) still binds the `Z.t`; the *size* comes
 from the node's `ty` (`TBitVector n`) — see §G.
 
-### G. Size/ty-aware constant folding
+### G. Size/ty-aware constant folding  — **DONE for correctness; sugar deferred** (§5 item 7)
 
-bv folding is masked, signed/unsigned, size-dependent. The current `fold
-<fn>` applies `fn` to bare literal payloads. Provide a folding form that
-receives the operand **nodes** (so it can read `.node.ty`/size) and the
-ctor params, e.g. `fold {{ fun ~params a b -> ... BitVec.mk n (...) }}`, or
-let folds just be ordinary rules with `#bv:bv` patterns + `{{ }}` RHS and a
-`(BitVec _, BitVec _)` match. The latter needs typed literal patterns
-(match a `BitVec` *and* read its `ty` size). Add a typed-literal pattern:
-`#bv@n` binding both payload and size, or `(x : bv[n])`.
+bv folding is masked, signed/unsigned, size-dependent. **Resolution:** no
+new PPX feature is required. Write a fold arm as an ordinary rule whose
+operands are **term vars** (whole nodes), with a `{{ }}` guard and a `{{ }}`
+RHS that reads `.node.ty`/size, e.g. (in `bv_values/svalue_dsl.ml`):
+
+```
+op bv_add : BitVector -> BitVector -> BitVector = Add(checked: bool)
+   -> {{ fun _checked a _b -> a.node.ty }} {
+  rule bv_add a b
+     ~> {{ bv_mk (size_of a.node.ty) Z.(to_z_exn a + to_z_exn b) }}
+     when {{ is_bv_lit a && is_bv_lit b }}
+}
+```
+
+with `is_bv_lit`/`to_z_exn` (and `size_of`) as one-liners in the in-module
+`with {{ }}` block. This is verified working (correctly masked & sized).
+
+**Optional ergonomic sugar (do this opportunistically in step 5, not
+required):** a typed-literal pattern `#x@s` that binds the payload **and**
+`s = size_of <node>.node.ty`, so the common `(BitVec l, BitVec r)` fold
+arms read like `rule bv_add (#l@s) (#r@_) ~> {{ bv_mk s Z.(l+r) }}`.
+Implementation seam: extend the lexer to accept `@<ident>` after a
+`HASH_IDENT` (and its `:Kind`), `ELit` gains an optional size-var, and
+`compile_pat`'s `ELit` case binds the kind payload **and** matches the
+node's `ty` to recover the size (for `BitVec`, `ty = TBitVector s` binds
+`s` directly; generalize via a per-literal "size-of-ty" expression). It is
+**sugar only** — every fold is already expressible without it.
 
 ### H. (Optional) optional/labelled smart-ctor params
 
@@ -545,39 +670,62 @@ is the only genuinely new part.
 
 ## 10. Suggested execution order
 
-1. §6.D prelude → port `FloatPrecision`/`FloatClass`/`RoundingMode` and the
-   `ty` + `t_*`/`size_of` helpers. Compile (no ops yet). Tiny still green.
-2. §6.C generic kinds → declare `Ptr`/`Seq`/`Exists` (+ `Bool`/`Float`/
-   `BitVec` literals, `Var` leaf). Generate type/kind/hashcons/iter_vars/
-   eval scaffolding only. Compile.
-3. §6.E result-ty + §6.F/G bitvec literal/fold → enough to declare a few
-   real ops.
-4. Transcribe `Bool` module rules (smallest, ~330 lines; depends on
-   `BitVec.{lt,leq,concat,extract}` — declare those ops' signatures first,
-   bodies can come next step). Compile.
-5. Transcribe `BitVec` (~1370 lines) then `Float`. Each arm: clean rule,
-   or two guarded rules for `if/else` RHS, or a small `when {{ pred }}`.
-   Reserve `{{ }}` *bodies* only for genuinely non-rule logic.
-6. §7 Typed extension; mirror `bv_values/typed.mli`.
-7. §8 equivalence test; iterate to 0 mismatches (this *is* the proof).
+1. ✅ **DONE** — §6.D prelude → `FloatPrecision`/`FloatClass`/`RoundingMode`
+   ported; `ty` + `t_*`/`size_of`/`is_*`/`precision_of_f` live in the
+   in-module `with {{ }}` (so result-ty `{{ }}` can use `size_of`).
+2. ✅ **DONE** — §6.C generic kinds: `Ptr`/`Seq`/`Exists` declared (+ `Bool`/
+   `BitVec`/`Float` literals, `Var` leaf). Type/kind/hashcons/iter_vars
+   (binder-aware)/eval scaffolding generated. `soteria.cma` builds.
+3. ✅ **DONE** — §6.E result-ty + §6.F/G bitvec literal/fold: `bv_concat`
+   (size from operands) and `bv_add` (param `checked`, masked fold) are
+   declared & verified. The current `bv_values/svalue_dsl.ml` is the
+   started skeleton — **continue growing it from here**.
+4. ✅ **DONE** — `Bool` core (`not`/`and_`/`or_`/`ite`/`sem_eq`)
+   transcribed; the BitVec ops Bool depends on declared **fold-only**
+   (sound). `soteria.cma` builds; tiny green. (Deferred Bool arms +
+   soundness strategy: §5 item 9.)
+5. ✅ **DONE (total fragment)** — full fold-only BitVec set declared
+   (`bv_mul/and/or/xor/shl/lshr/ashr/div/rem/mod` added; `ptr`/`seq` glue
+   in `with`). §8 stood up (step 7) — passes.
+   **← NEXT (step 5 continued):**
+   (a) Transcribe `div`/`rem`/`mod` **faithfully** (★ — subterm-dropping
+       arms in `Svalue`'s order), then re-admit them to the §8 recipe
+       (`gen_i` cases + un-comment the `Div/Rem/Mod` ctors) and reach 0
+       mismatches.
+   (b) Flesh out the remaining `BitVec` symbolic arms (~1370 lines) and
+       all of `Float`, each: clean rule / two guarded rules for `if/else`
+       RHS / small `when {{ }}`. The hard `sem_eq` tail
+       (`BvExtract`/`Ite`/`BvConcat` nested patterns) uses nested
+       parameterized-ctor payload binding (already works, cf.
+       `not (bv_lt[s] a b)`); likely wants the optional `#x@s`
+       typed-literal sugar (§6.G) for the `(BitVec _, TBitVector 1)` arms —
+       add it then. Add Float to the §8 recipe last (bit-exact compare via
+       the float's string repr, or keep deferred — handoff §8 allows).
+   The §8 test guards every increment.
+6. §7 Typed extension; mirror `bv_values/typed.mli` (bv declares no
+   `sort`s yet ⇒ `typed_module` currently emits nothing for bv).
+7. ✅ **DONE (total fragment)** — §8 equivalence test standing & passing
+   (§5 item 10). Iterate to 0 mismatches as div/rem/mod/Float are added.
 8. Replace `bv_values/eval.ml` usage with the derived `eval` (or alias);
    re-run the whole `soteria` build and existing test suites.
 
 Each step ends with: `dune build --root . soteria/lib/soteria.cma` green +
-tiny regression green + (from step 7) bv differential green.
+tiny regression green + bv differential green.
 
 ---
 
-## 11. Acceptance criteria
+## 11. Acceptance criteria  (status: 3 of 5 met; 2 partial/remaining)
 
-- `soteria/lib/bv_values/svalue_dsl.ml` is a declarative DSL spec; the
-  `{{ }}` escapes are limited to: helper-module prelude, a handful of
-  `nop`/structural-kind bodies, numeric `when` guards, and constant-fold
-  bodies — **not** whole simplification arms.
-- `soteria/tests/svalue_dsl/` (or a bv sibling) contains a deterministic
-  semantic differential test: `Bv_values.Svalue` ≡ `Bv_values.Svalue_dsl`
-  over hundreds of thousands of random evaluations, 0 mismatches.
-- `tiny_values` regression still green (proves no engine regression).
-- The generated `Typed` enforces the phantom sorts (a negative
-  mis-sort use must fail to compile, as in `tiny`'s `typed_check`).
-- Whole `soteria` library builds.
+- ◑ `soteria/lib/bv_values/svalue_dsl.ml` is a declarative DSL spec; escapes
+  limited to helper prelude / structural-kind glue / numeric guards /
+  fold bodies — **not** whole simplification arms. *True for what is
+  transcribed (Bool core + fold-only BitVec); the remaining BitVec/Float
+  symbolic arms are not yet written but the principle holds.*
+- ◑ `soteria/tests/bv_svalue_dsl/` has a deterministic semantic differential
+  test: `Bv_values.Svalue` ≡ `Bv_values.Svalue_dsl`, **0 mismatches over
+  600k evals** — ✅ for the total bitvector+bool+ptr fragment; div/rem/mod
+  & Float not yet covered (need faithful transcription, ★ §5).
+- ✅ `tiny_values` regression still green (no engine regression).
+- ☐ The generated `Typed` enforces phantom sorts — **remaining** (bv
+  declares no `sort`s yet; §7 / step 6).
+- ✅ Whole `soteria` library builds (bytecode + native).

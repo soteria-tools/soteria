@@ -13,8 +13,8 @@ type lexeme = { tok : token; pos : int }
 (** [pos] is the byte offset of the lexeme in the source string. *)
 
 let keywords =
-  [ "ty"; "leaf"; "literal"; "op"; "nop"; "sort"; "with"; "rule"; "when"; "as";
-    "print";
+  [ "ty"; "leaf"; "literal"; "op"; "nop"; "kind"; "binder"; "eval"; "sort";
+    "with"; "prelude"; "rule"; "when"; "as"; "mk"; "print";
     "commutative"; "idempotent"; "involutive"; "identity"; "absorbing";
     "fold"; "true"; "false" ]
 

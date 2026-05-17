@@ -234,6 +234,47 @@ let parse_paren_types st =
     in
     go []
 
+(* [( name : ty , name : ty , ... )] -> (name, core_type) list, with
+   balanced parentheses/brackets in each type. Shared by [op] and
+   [literal] constructor payloads. *)
+let parse_ctor_params st =
+  if not (eat_sym st "(") then []
+  else
+    let rec ps acc =
+      let pn = ident st in
+      expect_sym st ":";
+      let start = (peek st).pos in
+      let depth = ref 0 in
+      let rec stop () =
+        match (peek st).tok with
+        | SYM ("(" | "[") ->
+            incr depth;
+            ignore (advance st);
+            stop ()
+        | SYM (")" | "]") when !depth > 0 ->
+            decr depth;
+            ignore (advance st);
+            stop ()
+        | SYM ("," | ")") when !depth = 0 -> (peek st).pos
+        | EOF -> fail st start "unterminated constructor payload"
+        | _ ->
+            ignore (advance st);
+            stop ()
+      in
+      let endp = stop () in
+      let txt = String.trim (String.sub st.src start (endp - start)) in
+      let cty =
+        try Ppxlib.Parse.core_type (Lexing.from_string txt)
+        with _ -> fail st start "could not parse param type %S" txt
+      in
+      let acc = (pn, cty) :: acc in
+      if eat_sym st "," then ps acc
+      else (
+        expect_sym st ")";
+        List.rev acc)
+    in
+    ps []
+
 let parse_ty st =
   expect_kw st "ty";
   let sorts = ref [] and args = ref [] in
@@ -278,7 +319,10 @@ let parse_payload_type st =
   let start = (peek st).pos in
   let rec stop () =
     match (peek st).tok with
-    | KW ("as" | "print" | "op" | "nop" | "leaf" | "literal" | "ty") | EOF ->
+    | KW
+        ( "as" | "mk" | "print" | "op" | "nop" | "leaf" | "literal" | "ty"
+        | "kind" | "sort" | "with" | "prelude" )
+    | EOF ->
         (peek st).pos
     | _ ->
         ignore (advance st);
@@ -316,6 +360,16 @@ let parse_literal st =
   expect_sym st "=";
   let payload = parse_payload_type st in
   let ctor = if eat_kw st "as" then Some (ident st) else None in
+  (* optional size/precision-carrying builder:
+     [mk (n : int) {{ fun n z -> ... }}] *)
+  let params, build =
+    if eat_kw st "mk" then (
+      let params = parse_ctor_params st in
+      match (advance st).tok with
+      | OCAML t -> (params, Some (ocaml_expr st t))
+      | _ -> fail st (peek st).pos "'mk' expects a {{ fun ... }} builder")
+    else ([], None)
+  in
   let print =
     if eat_kw st "print" then (
       let l = advance st in
@@ -331,6 +385,8 @@ let parse_literal st =
       lit_ty = ty;
       lit_payload = payload;
       lit_ctor = ctor;
+      lit_params = params;
+      lit_build = build;
       lit_print = print;
       lit_loc = loc st;
     }
@@ -343,6 +399,71 @@ let parse_aux st =
       try DAux (Ppxlib.Parse.implementation (Lexing.from_string txt))
       with _ -> fail st l.pos "could not parse OCaml in 'with {{ ... }}'")
   | _ -> fail st l.pos "'with' expects a {{ ... }} block"
+
+let parse_prelude st =
+  expect_kw st "prelude";
+  let l = advance st in
+  match l.tok with
+  | OCAML txt -> (
+      try DPrelude (Ppxlib.Parse.implementation (Lexing.from_string txt))
+      with _ -> fail st l.pos "could not parse OCaml in 'prelude {{ ... }}'")
+  | _ -> fail st l.pos "'prelude' expects a {{ ... }} block"
+
+(* [kind Ptr (t, t)] / [kind Seq (t list)] /
+   [kind Exists binder ((Var.t * ty) list, t) eval {{ ... }}]. Each field is
+   [t] (recursive), [t list] (recursive list), or any other OCaml type
+   (opaque); fields are comma-separated with balanced parentheses. *)
+let parse_kind st =
+  expect_kw st "kind";
+  let ctor = ident st in
+  let binder = eat_kw st "binder" in
+  expect_sym st "(";
+  let parse_field () =
+    let start = (peek st).pos in
+    let depth = ref 0 in
+    let rec stop () =
+      match (peek st).tok with
+      | SYM "(" | SYM "[" ->
+          incr depth;
+          ignore (advance st);
+          stop ()
+      | SYM ")" when !depth = 0 -> (peek st).pos
+      | SYM ")" | SYM "]" ->
+          decr depth;
+          ignore (advance st);
+          stop ()
+      | SYM "," when !depth = 0 -> (peek st).pos
+      | EOF -> fail st start "unterminated kind field list"
+      | _ ->
+          ignore (advance st);
+          stop ()
+    in
+    let endp = stop () in
+    let txt = String.trim (String.sub st.src start (endp - start)) in
+    match txt with
+    | "t" -> KRec
+    | "t list" -> KRecList
+    | "" -> fail st start "empty kind field"
+    | _ -> (
+        try KOpaque (Ppxlib.Parse.core_type (Lexing.from_string txt))
+        with _ -> fail st start "could not parse kind field type %S" txt)
+  in
+  let rec fields acc =
+    let f = parse_field () in
+    if eat_sym st "," then fields (f :: acc)
+    else (
+      expect_sym st ")";
+      List.rev (f :: acc))
+  in
+  let k_fields = fields [] in
+  let k_eval =
+    if eat_kw st "eval" then
+      match (advance st).tok with
+      | OCAML t -> Some (ocaml_expr st t)
+      | _ -> fail st (peek st).pos "'eval' expects a {{ ... }} block"
+    else None
+  in
+  DKind { k_ctor = ctor; k_binder = binder; k_fields; k_eval; k_loc = loc st }
 
 let parse_nop st =
   expect_kw st "nop";
@@ -400,34 +521,14 @@ let parse_op st =
   in
   let ctor = if eat_sym st "=" then ident st else String.capitalize_ascii name in
   (* optional constructor payload: [= Ctor(name : ty, name : ty, ...)] *)
-  let params =
-    if eat_sym st "(" then (
-      let rec ps acc =
-        let pn = ident st in
-        expect_sym st ":";
-        let start = (peek st).pos in
-        let rec stop () =
-          match (peek st).tok with
-          | SYM ("," | ")") -> (peek st).pos
-          | EOF -> fail st start "unterminated constructor payload"
-          | _ ->
-              ignore (advance st);
-              stop ()
-        in
-        let endp = stop () in
-        let txt = String.trim (String.sub st.src start (endp - start)) in
-        let cty =
-          try Ppxlib.Parse.core_type (Lexing.from_string txt)
-          with _ -> fail st start "could not parse param type %S" txt
-        in
-        let acc = (pn, cty) :: acc in
-        if eat_sym st "," then ps acc
-        else (
-          expect_sym st ")";
-          List.rev acc)
-      in
-      ps [])
-    else []
+  let params = parse_ctor_params st in
+  (* optional result-type function: [-> {{ fun <params> <args> -> ty }}] *)
+  let ret_ty =
+    if eat_sym st "->" then
+      match (advance st).tok with
+      | OCAML t -> Some (ocaml_expr st t)
+      | _ -> fail st (peek st).pos "expected {{ ... }} after result-type '->'"
+    else None
   in
   expect_sym st "{";
   let commutative = ref false
@@ -491,6 +592,7 @@ let parse_op st =
       op_ret = ret;
       op_symbol = symbol;
       op_ctor = ctor;
+      op_ret_ty = ret_ty;
       op_params = params;
       op_commutative = !commutative;
       op_idempotent = !idempotent;
@@ -518,7 +620,9 @@ let parse_program ~(base : Ppxlib.location) (src : string) : program =
     | KW "literal" -> go (parse_literal st :: acc)
     | KW "op" -> go (parse_op st :: acc)
     | KW "nop" -> go (parse_nop st :: acc)
+    | KW "kind" -> go (parse_kind st :: acc)
     | KW "with" -> go (parse_aux st :: acc)
+    | KW "prelude" -> go (parse_prelude st :: acc)
     | KW "sort" -> go (parse_sort st :: acc)
     | _ -> fail st (peek st).pos "expected a top-level declaration"
   in

@@ -74,6 +74,12 @@ type literal_decl = {
   lit_ty : string;  (** associated [ty] name, e.g. [Int] *)
   lit_payload : ocaml_type;  (** OCaml payload type, e.g. [Z.t] *)
   lit_ctor : string option;  (** friendly constructor name, e.g. [int_z] *)
+  lit_params : (string * ocaml_type) list;
+      (** size/precision params, e.g. [BitVec] -> [("n", int)] *)
+  lit_build : ocaml_expr option;
+      (** custom builder [fun <params> <payload> -> t] (size-carrying /
+          masked literals, e.g. [fun n z -> BitVec (mask z n) <| TBitVector n]);
+          when present, defines the constructor body *)
   lit_print : ocaml_expr option;  (** printer for the payload *)
   lit_loc : loc;
 }
@@ -103,6 +109,10 @@ type op_decl = {
   op_ret : string;  (** result [ty] name *)
   op_symbol : string option;  (** infix / pretty symbol, e.g. ["+"] *)
   op_ctor : string;  (** OCaml constructor, e.g. [Plus] *)
+  op_ret_ty : ocaml_expr option;
+      (** optional result-[ty] function [fun <params> <args> -> <ty>]
+          (e.g. [bv_concat] -> [TBitVector (size_of a + size_of b)]); overrides
+          the default [T<R>] / [any] result ty *)
   op_params : (string * ocaml_type) list;
       (** constructor payload, e.g. [Lt of bool] -> [("signed", bool)] *)
   op_commutative : bool;
@@ -127,13 +137,39 @@ type nop_decl = {
 
 type ocaml_struct = Ppxlib.structure
 
+(* A field of a generic structural kind's payload. *)
+type kind_field =
+  | KRec  (** a recursive [t] *)
+  | KRecList  (** a [t list] *)
+  | KOpaque of ocaml_type  (** an opaque payload, e.g. [(Var.t * ty) list] *)
+
+(* A generic structural kind (e.g. [Ptr], [Seq], [Exists]). Generalises the
+   hard-wired [Unop]/[Binop]/[Nop]/[Ite]: the PPX derives the [t_kind]
+   constructor, [iter_vars]/[hash]/[pp]/[eval] wiring and [deriving]. The
+   smart constructor is value-specific glue, written by hand in a [with {{
+   }}] block (exactly like [Ptr.mk]/[mk_exists] in the original). *)
+type kind_decl = {
+  k_ctor : string;  (** OCaml constructor, e.g. [Ptr] *)
+  k_binder : bool;
+      (** if [true]: first field is the bound [(Var.t * ty) list], last field
+          is the body [t]; [iter_vars] ignores the bound vars in the body *)
+  k_fields : kind_field list;
+  k_eval : ocaml_expr option;
+      (** optional explicit [eval] reconstructor [fun x f0 f1 ... -> t];
+          default: recurse recursive fields and raw-rebuild reusing the ty *)
+  k_loc : loc;
+}
+
 type decl =
   | DTy of ty_decl
   | DLeaf of leaf_decl
   | DLiteral of literal_decl
   | DOp of op_decl
   | DNop of nop_decl
+  | DKind of kind_decl
   | DSort of sort_decl
   | DAux of ocaml_struct  (** [with {{ ... }}] in-module helper code *)
+  | DPrelude of ocaml_struct
+      (** [prelude {{ ... }}] code emitted at the very top, before [ty] *)
 
 type program = decl list
