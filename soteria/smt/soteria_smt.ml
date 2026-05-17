@@ -46,14 +46,14 @@ let a_distinct = Atom "distinct"
 let a_not = Atom "not"
 let a_and = Atom "and"
 let a_or = Atom "or"
-let ite x y z = List [ a_ite; x; y; z ]
-let eq x y = List [ a_eq; x; y ]
-let distinct xs = match xs with [] -> s_true | _ -> List (a_distinct :: xs)
-let bool_not p = List [ a_not; p ]
-let bool_and p q = List [ a_and; p; q ]
-let bool_ands ps = match ps with [] -> s_true | _ -> List (a_and :: ps)
-let bool_or p q = List [ a_or; p; q ]
-let bool_ors ps = match ps with [] -> s_false | _ -> List (a_or :: ps)
+let ite x y z = a_ite $$ [ x; y; z ]
+let eq x y = a_eq $$ [ x; y ]
+let distinct xs = match xs with [] -> s_true | _ -> a_distinct $$ xs
+let bool_not p = a_not $ p
+let bool_and p q = a_and $$ [ p; q ]
+let bool_ands ps = match ps with [] -> s_true | _ -> a_and $$ ps
+let bool_or p q = a_or $$ [ p; q ]
+let bool_ors ps = match ps with [] -> s_false | _ -> a_or $$ ps
 
 (** {2 Integers} *)
 
