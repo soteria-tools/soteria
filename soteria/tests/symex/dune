@@ -1,5 +1,12 @@
 (tests
- (names run_twice deep_give_up if_sure interrupt fail_fast consume)
+ (names
+  run_twice
+  deep_give_up
+  if_sure
+  interrupt
+  fail_fast
+  consume
+  parallel_thread_safety)
  (libraries soteria soteria_c_lib alcotest)
  (flags :standard -open Soteria.Tiny_values)
  (preprocess
