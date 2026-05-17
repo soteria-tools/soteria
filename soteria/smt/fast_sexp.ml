@@ -81,12 +81,12 @@ module Reader = struct
     else if refill r then peek r
     else None
 
-  let advance r = r.pos <- r.pos + 1
-  let is_ws = function ' ' | '\t' | '\n' | '\r' -> true | _ -> false
+  let[@inline] advance r = r.pos <- r.pos + 1
+  let[@inline] is_ws = function ' ' | '\t' | '\n' | '\r' -> true | _ -> false
 
   (* [;] ends a plain atom: in SMT-LIB it always starts a line comment, so a
      simple (unquoted) symbol can never contain one. *)
-  let is_delim = function
+  let[@inline] is_delim = function
     | ' ' | '\t' | '\n' | '\r' | '(' | ')' | '|' | '"' | ';' -> true
     | _ -> false
 

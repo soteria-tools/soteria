@@ -14,7 +14,9 @@ end
 module Make (Value : Value.S) :
   Solver_interface.S with type value = Value.t and type ty = Value.ty = struct
   let initialize_solver : (Soteria_smt.solver -> unit) ref =
-    ref (fun solver -> List.iter (command solver) Value.init_commands)
+    ref (fun solver ->
+        command solver (set_option ":produce-models" "true");
+        List.iter (command solver) Value.init_commands)
 
   let register_solver_init f =
     let old = !initialize_solver in
@@ -32,7 +34,7 @@ module Make (Value : Value.S) :
             command solver (set_option ":timeout" (string_of_int timeout)))
 
   let solver_log =
-    let debug ~prefix thunk = L.smt (fun m -> m "%s: %s" prefix (thunk ())) in
+    let debug ~prefix thunk = [%l.smt "%s: %s" prefix (thunk ())] in
     { send = debug ~prefix:"-> "; receive = debug ~prefix:"<- "; stop = Fun.id }
 
   module Dump = struct

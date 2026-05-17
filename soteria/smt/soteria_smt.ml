@@ -54,12 +54,13 @@ let bool_and p q = a_and $$ [ p; q ]
 let bool_ands ps = match ps with [] -> s_true | _ -> a_and $$ ps
 let bool_or p q = a_or $$ [ p; q ]
 let bool_ors ps = match ps with [] -> s_false | _ -> a_or $$ ps
+let exists qs body = app_ "exists" [ list qs; body ]
 
 (** {2 Integers} *)
 
 let t_int = Atom "Int"
 let a_neg = Atom "-"
-let num_neg x = List [ a_neg; x ]
+let num_neg x = a_neg $ x
 let int_k x = if x < 0 then num_neg (nat_k (-x)) else nat_k x
 let int_zk x = if Z.lt x Z.zero then num_neg (nat_zk (Z.neg x)) else nat_zk x
 let a_lt = Atom "<"
@@ -70,14 +71,14 @@ let a_mul = Atom "*"
 let a_div = Atom "div"
 let a_mod = Atom "mod"
 let a_rem = Atom "rem"
-let num_lt x y = List [ a_lt; x; y ]
-let num_leq x y = List [ a_leq; x; y ]
-let num_add x y = List [ a_add; x; y ]
-let num_sub x y = List [ a_sub; x; y ]
-let num_mul x y = List [ a_mul; x; y ]
-let num_div x y = List [ a_div; x; y ]
-let num_mod x y = List [ a_mod; x; y ]
-let num_rem x y = List [ a_rem; x; y ]
+let num_lt x y = a_lt $$ [ x; y ]
+let num_leq x y = a_leq $$ [ x; y ]
+let num_add x y = a_add $$ [ x; y ]
+let num_sub x y = a_sub $$ [ x; y ]
+let num_mul x y = a_mul $$ [ x; y ]
+let num_div x y = a_div $$ [ x; y ]
+let num_mod x y = a_mod $$ [ x; y ]
+let num_rem x y = a_rem $$ [ x; y ]
 
 (** {2 Bit-vectors} *)
 
@@ -90,7 +91,7 @@ let bv_nat_bin w v = Atom ("#b" ^ Z.format ("0" ^ string_of_int w ^ "b") v)
 (* A non-negative bit-vector literal in hex (width must be a multiple of 4). *)
 let bv_nat_hex w v = Atom ("#x" ^ Z.format ("0" ^ string_of_int (w / 4) ^ "x") v)
 let a_bvneg = Atom "bvneg"
-let bv_neg x = List [ a_bvneg; x ]
+let bv_neg x = a_bvneg $ x
 
 let bv_bin w v =
   if Z.geq v Z.zero then bv_nat_bin w v else bv_neg (bv_nat_bin w (Z.neg v))
@@ -120,32 +121,170 @@ let a_bvsmod = Atom "bvsmod"
 let a_bvshl = Atom "bvshl"
 let a_bvlshr = Atom "bvlshr"
 let a_bvashr = Atom "bvashr"
-let bv_ult x y = List [ a_bvult; x; y ]
-let bv_uleq x y = List [ a_bvule; x; y ]
-let bv_slt x y = List [ a_bvslt; x; y ]
-let bv_sleq x y = List [ a_bvsle; x; y ]
-let bv_concat x y = List [ a_concat; x; y ]
-let bv_sign_extend i x = app (ifam "sign_extend" [ i ]) [ x ]
-let bv_zero_extend i x = app (ifam "zero_extend" [ i ]) [ x ]
+let bv_ult x y = a_bvult $$ [ x; y ]
+let bv_uleq x y = a_bvule $$ [ x; y ]
+let bv_slt x y = a_bvslt $$ [ x; y ]
+let bv_sleq x y = a_bvsle $$ [ x; y ]
+let bv_concat x y = a_concat $$ [ x; y ]
+let bv_sign_extend i x = ifam "sign_extend" [ i ] $ x
+let bv_zero_extend i x = ifam "zero_extend" [ i ] $ x
+let bv_extract last_ix first_ix x = ifam "extract" [ last_ix; first_ix ] $ x
+let bv_not x = a_bvnot $ x
+let bv_and x y = a_bvand $$ [ x; y ]
+let bv_or x y = a_bvor $$ [ x; y ]
+let bv_xor x y = a_bvxor $$ [ x; y ]
+let bv_add x y = a_bvadd $$ [ x; y ]
+let bv_sub x y = a_bvsub $$ [ x; y ]
+let bv_mul x y = a_bvmul $$ [ x; y ]
+let bv_udiv x y = a_bvudiv $$ [ x; y ]
+let bv_urem x y = a_bvurem $$ [ x; y ]
+let bv_sdiv x y = a_bvsdiv $$ [ x; y ]
+let bv_srem x y = a_bvsrem $$ [ x; y ]
+let bv_smod x y = a_bvsmod $$ [ x; y ]
+let bv_shl x y = a_bvshl $$ [ x; y ]
+let bv_lshr x y = a_bvlshr $$ [ x; y ]
+let bv_ashr x y = a_bvashr $$ [ x; y ]
 
-let bv_extract last_ix first_ix x =
-  app (ifam "extract" [ last_ix; first_ix ]) [ x ]
+(** {2 Rounding modes} *)
 
-let bv_not x = List [ a_bvnot; x ]
-let bv_and x y = List [ a_bvand; x; y ]
-let bv_or x y = List [ a_bvor; x; y ]
-let bv_xor x y = List [ a_bvxor; x; y ]
-let bv_add x y = List [ a_bvadd; x; y ]
-let bv_sub x y = List [ a_bvsub; x; y ]
-let bv_mul x y = List [ a_bvmul; x; y ]
-let bv_udiv x y = List [ a_bvudiv; x; y ]
-let bv_urem x y = List [ a_bvurem; x; y ]
-let bv_sdiv x y = List [ a_bvsdiv; x; y ]
-let bv_srem x y = List [ a_bvsrem; x; y ]
-let bv_smod x y = List [ a_bvsmod; x; y ]
-let bv_shl x y = List [ a_bvshl; x; y ]
-let bv_lshr x y = List [ a_bvlshr; x; y ]
-let bv_ashr x y = List [ a_bvashr; x; y ]
+module RoundingMode = struct
+  type t =
+    | NearestTiesToEven  (** ties to even (RNE) *)
+    | NearestTiesToAway  (** ties away from zero (RNA) *)
+    | Ceil  (** toward +inf (RTP) *)
+    | Floor  (** toward -inf (RTN) *)
+    | Truncate  (** toward zero (RTZ) *)
+  [@@deriving eq, show { with_path = false }, ord]
+
+  let to_sexp = function
+    | NearestTiesToEven -> atom "RNE"
+    | NearestTiesToAway -> atom "RNA"
+    | Ceil -> atom "RTP"
+    | Floor -> atom "RTN"
+    | Truncate -> atom "RTZ"
+
+  (* Equivalent to NearestTiesToAway; default for FloatingPoint operations. *)
+  let default = to_sexp NearestTiesToAway
+end
+
+(** {2 Floating-point} *)
+
+(* [float_shape n] is [[exp; mant]] for an IEEE float of [n] bits, where [mant]
+   includes the hidden bit (so [n = exp + mant]). Sizes 16/32/64/128 only. *)
+let float_shape = function
+  | 16 -> [ 5; 11 ]
+  | 32 -> [ 8; 24 ]
+  | 64 -> [ 11; 53 ]
+  | 128 -> [ 15; 113 ]
+  | n -> failwith (Printf.sprintf "Unsupported float size: %d" n)
+
+let t_f16 = atom "Float16"
+let t_f32 = atom "Float32"
+let t_f64 = atom "Float64"
+let t_f128 = atom "Float128"
+
+(* Float32 constant from an OCaml float (8 exponent, 23 explicit mantissa bits);
+   may lose precision. *)
+let f32_k f =
+  let bin = Int32.bits_of_float f in
+  app_ "fp"
+    [
+      bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
+      bv_nat_bin 8
+        (Z.of_int32 @@ Int32.logand 0xffl @@ Int32.shift_right_logical bin 23);
+      bv_nat_bin 23 (Z.of_int32 @@ Int32.logand bin 0x7fffffl);
+    ]
+
+(* Float64 constant from an OCaml float (11 exponent, 52 mantissa bits);
+   lossless. *)
+let f64_k f =
+  let bin = Int64.bits_of_float f in
+  app_ "fp"
+    [
+      bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
+      bv_nat_bin 11
+        (Z.of_int64 @@ Int64.logand 0x7ffL @@ Int64.shift_right_logical bin 52);
+      bv_nat_bin 52 (Z.of_int64 @@ Int64.logand bin 0xfffffffffffffL);
+    ]
+
+(* Float128 constant, via Float64 then [to_fp]; lossy. *)
+let f128_k f =
+  app (ifam "to_fp" (float_shape 128)) [ RoundingMode.default; f64_k f ]
+
+(* Float16 constant, via Float32 then [to_fp]; lossy. *)
+let f16_k f =
+  app (ifam "to_fp" (float_shape 16)) [ RoundingMode.default; f32_k f ]
+
+let fp_abs f = app_ "fp.abs" [ f ]
+let fp_eq f1 f2 = app_ "fp.eq" [ f1; f2 ]
+let fp_leq f1 f2 = app_ "fp.leq" [ f1; f2 ]
+let fp_lt f1 f2 = app_ "fp.lt" [ f1; f2 ]
+let fp_add f1 f2 = app_ "fp.add" [ RoundingMode.default; f1; f2 ]
+let fp_sub f1 f2 = app_ "fp.sub" [ RoundingMode.default; f1; f2 ]
+let fp_mul f1 f2 = app_ "fp.mul" [ RoundingMode.default; f1; f2 ]
+let fp_div f1 f2 = app_ "fp.div" [ RoundingMode.default; f1; f2 ]
+let fp_rem f1 f2 = app_ "fp.rem" [ f1; f2 ]
+
+(* [fp_is fc f] tests if [f] belongs to floating-point class [fc]. *)
+let fp_is (fc : fpclass) f =
+  match fc with
+  | FP_normal -> app_ "fp.isNormal" [ f ]
+  | FP_subnormal -> app_ "fp.isSubnormal" [ f ]
+  | FP_zero -> app_ "fp.isZero" [ f ]
+  | FP_infinite -> app_ "fp.isInfinite" [ f ]
+  | FP_nan -> app_ "fp.isNaN" [ f ]
+
+let fp_round (rm : RoundingMode.t) f =
+  app_ "fp.roundToIntegral" [ RoundingMode.to_sexp rm; f ]
+
+(** {2 Float/bit-vector conversions} *)
+
+(* Bitwise reinterpretation of [bv] as a float of [size] bits (16/32/64/128). *)
+let float_of_bv size bv = app (ifam "to_fp" (float_shape size)) [ bv ]
+
+(* Numeric conversion of an unsigned bit-vector to a float. *)
+let float_of_ubv rm size bv =
+  app (ifam "to_fp_unsigned" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
+
+(* Numeric conversion of a signed bit-vector to a float. *)
+let float_of_sbv rm size bv =
+  app (ifam "to_fp" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
+
+(* Numeric conversion of a float to an unsigned [n]-bit bit-vector; undefined if
+   out of range, NaN or inf. *)
+let ubv_of_float rm n f =
+  app (ifam "fp.to_ubv" [ n ]) [ RoundingMode.to_sexp rm; f ]
+
+(* Numeric conversion of a float to a signed [n]-bit bit-vector; undefined if
+   out of range, NaN or inf. *)
+let sbv_of_float rm n f =
+  app (ifam "fp.to_sbv" [ n ]) [ RoundingMode.to_sexp rm; f ]
+
+(** {2 Int/bit-vector conversions} *)
+
+(* [int_of_bv signed bv] reads [bv] as a (signed or unsigned) integer. *)
+let int_of_bv signed bv =
+  if signed then app_ "sbv_to_int" [ bv ] else app_ "ubv_to_int" [ bv ]
+
+(* [bv_of_int size n] converts integer [n] to a [size]-bit bit-vector. *)
+let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]
+
+(** {2 Bit-vector overflow predicates} *)
+
+let bv_nego x = app_ "bvnego" [ x ]
+let bv_uaddo l r = app_ "bvuaddo" [ l; r ]
+let bv_saddo l r = app_ "bvsaddo" [ l; r ]
+let bv_usubo l r = app_ "bvusubo" [ l; r ]
+let bv_ssubo l r = app_ "bvssubo" [ l; r ]
+let bv_umulo l r = app_ "bvumulo" [ l; r ]
+let bv_smulo l r = app_ "bvsmulo" [ l; r ]
+
+(** {2 Sequences} *)
+
+(* [t_seq $ elt] is the type of sequences of [elt]. *)
+let t_seq = atom "Seq"
+let seq_singl x = atom "seq.unit" $$ [ x ]
+let seq_concat xs = atom "seq.++" $$ xs
 
 (** {2 Commands} *)
 
@@ -170,6 +309,9 @@ let declare_datatype name type_params cons =
   app_ "declare-datatype" [ Atom name; def ]
 
 let assume e = app_ "assert" [ e ]
+
+(* SMT-LIB [(reset)] command to reset the solver state. *)
+let reset = simple_command [ "reset" ]
 
 (** {1 Solver} *)
 
@@ -344,21 +486,22 @@ let new_solver (cfg : solver_config) : solver =
      ...)] if a command actually failed), so we must consume all [n] of them to
      keep the stream aligned -- bailing out on the first error would leave the
      remaining acknowledgements unread and desynchronise every later response.
-     We therefore drain the full batch and only afterwards surface the first
-     unexpected line, the same way [ack_command] would (the next
+     We therefore drain the full batch and only afterwards surface the
+     unexpected lines, the same way [ack_command] would (the next
      [check]/[get_model] is wrapped to turn this into [Unknown]/[None]). *)
   let drain () =
     let n = !pending in
     pending := 0;
-    let bad = ref None in
+    let bad = ref [] in
     for _ = 1 to n do
       match read_response () with
       | Atom "success" -> ()
-      | ans -> if Option.is_none !bad then bad := Some ans
+      | ans -> bad := ans :: !bad
     done;
-    match !bad with
-    | None -> ()
-    | Some ans -> raise (UnexpectedSolverResponse ans)
+    match List.rev !bad with
+    | [] -> ()
+    | [ ans ] -> raise (UnexpectedSolverResponse ans)
+    | bads -> raise (UnexpectedSolverResponse (List bads))
   in
   let command_no_ack c =
     write_command c;
@@ -399,8 +542,12 @@ let new_solver (cfg : solver_config) : solver =
       config = cfg;
     }
   in
+  (* [:print-success] is mandatory for the acknowledgement protocol that
+     {!field:command}/{!field:ack_command} rely on, so it is owned here rather
+     than left to the client. Z3 keeps it set across [(reset)]; any other
+     per-client options (models, timeout, ...) are (re-)established by the
+     client, including after a reset. *)
   ack_command s (set_option ":print-success" "true");
-  ack_command s (set_option ":produce-models" "true");
   Gc.finalise (fun me -> me.stop ()) s;
   s
 
@@ -426,244 +573,3 @@ let cvc5 : solver_config =
 
 let z3 : solver_config =
   { exe = "z3"; opts = [ "-in"; "-smt2" ]; exts = Z3; log = quiet_log }
-
-(** {1 SMT-LIB utilities}
-
-    Utilities for SMT-LIB's
-    {{:https://smt-lib.org/theories-FloatingPoint.shtml} FloatingPoint theory}
-    and
-    {{:https://smt-lib.org/theories-FixedSizeBitVecs.shtml} FixedSizeBitVecs
-     theory}, as well as some extra solver commands. *)
-
-(** {2 Boolean Stuff} *)
-
-let exists qs body = app_ "exists" [ list qs; body ]
-
-(** {2 Rounding Modes} *)
-
-module RoundingMode = struct
-  type t =
-    | NearestTiesToEven  (** Round to nearest, ties to even (RNE) *)
-    | NearestTiesToAway  (** Round to nearest, ties away from zero (RNA) *)
-    | Ceil  (** Round toward positive infinity (RTP) *)
-    | Floor  (** Round toward negative infinity (RTN) *)
-    | Truncate  (** Round toward zero (RTZ) *)
-  [@@deriving eq, show { with_path = false }, ord]
-
-  let to_sexp = function
-    | NearestTiesToEven -> atom "RNE"
-    | NearestTiesToAway -> atom "RNA"
-    | Ceil -> atom "RTP"
-    | Floor -> atom "RTN"
-    | Truncate -> atom "RTZ"
-
-  (** Equivalent to NearestTiesToAway; default mode for FloatingPoint
-      operations. *)
-  let default = to_sexp NearestTiesToAway
-end
-
-(** {2 FloatingPoint} *)
-
-(** [float_shape n] is the shape of a IEEE float of a given size in bits.
-    Returns a two element list [[exp, mant]], where [exp] is the number of
-    exponent bits, and [mant] is the number of mantissa/significand bits. [mant]
-    {b includes the hidden bit} which is always [1], as per SMT-lib's
-    expectations. Always holds that [n = mant + exp]. Only implemented for
-    [n = 16, 32, 64, 128]. *)
-let float_shape = function
-  | 16 -> [ 5; 11 ]
-  | 32 -> [ 8; 24 ]
-  | 64 -> [ 11; 53 ]
-  | 128 -> [ 15; 113 ]
-  | n -> failwith (Printf.sprintf "Unsupported float size: %d" n)
-
-(** SMT-LIB Float16 type. *)
-let t_f16 = atom "Float16"
-
-(** SMT-LIB Float32 type. *)
-let t_f32 = atom "Float32"
-
-(** SMT-LIB Float64 type. *)
-let t_f64 = atom "Float64"
-
-(** SMT-LIB Float128 type. *)
-let t_f128 = atom "Float128"
-
-(** [f32_k f] creates a Float32 constant from an OCaml float [f].
-
-    Directly encodes the IEEE 754 binary32 representation. This may incur some
-    loss of precision. *)
-let f32_k f =
-  let bin = Int32.bits_of_float f in
-  (* a Float32 has 8 exponent bits, 23 explicit mantissa bits *)
-  app_ "fp"
-    [
-      bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
-      bv_nat_bin 8
-        (Z.of_int32 @@ Int32.logand 0xffl @@ Int32.shift_right_logical bin 23);
-      bv_nat_bin 23 (Z.of_int32 @@ Int32.logand bin 0x7fffffl);
-    ]
-
-(** [f64_k f] creates a Float64 constant from an OCaml float [f].
-
-    Directly encodes the IEEE 754 binary64 representation, so no precision is
-    lost. *)
-let f64_k f =
-  let bin = Int64.bits_of_float f in
-  (* a Float64 has 11 exponent bits, 52 mantissa bits, with a 53rd implicit 1 *)
-  app_ "fp"
-    [
-      bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
-      bv_nat_bin 11
-        (Z.of_int64 @@ Int64.logand 0x7ffL @@ Int64.shift_right_logical bin 52);
-      bv_nat_bin 52 (Z.of_int64 @@ Int64.logand bin 0xfffffffffffffL);
-    ]
-
-(** [f128_k f] creates a Float128 constant from OCaml float [f].
-
-    The value is first converted into a Float64, and we then use the [to_fp]
-    SMT-LIB function to convert it to a Float128, using [RoundingMode.default].
-    Necessarily implies a loss of precision. *)
-let f128_k f =
-  let f64 = f64_k f in
-  let fam = ifam "to_fp" (float_shape 128) in
-  app fam [ RoundingMode.default; f64 ]
-
-(** [f16_k f] creates a Float16 constant from OCaml float [f].
-
-    The value is first converted into a Float32, and we then use the [to_fp]
-    SMT-LIB function to convert it to a Float16, using [RoundingMode.default].
-    Necessarily implies a loss of precision. *)
-let f16_k f =
-  let f32 = f32_k f in
-  let fam = ifam "to_fp" (float_shape 16) in
-  app fam [ RoundingMode.default; f32 ]
-
-(** [fp_abs f] returns the absolute value of [f]. *)
-let fp_abs f = app_ "fp.abs" [ f ]
-
-(** [fp_eq f1 f2] returns true if [f1] equals [f2] (IEEE 754 equality). *)
-let fp_eq f1 f2 = app_ "fp.eq" [ f1; f2 ]
-
-(** [fp_leq f1 f2] returns true if [f1 <= f2]. *)
-let fp_leq f1 f2 = app_ "fp.leq" [ f1; f2 ]
-
-(** [fp_lt f1 f2] returns true if [f1 < f2]. *)
-let fp_lt f1 f2 = app_ "fp.lt" [ f1; f2 ]
-
-(** [fp_add f1 f2] returns [f1 + f2] using the default rounding mode (see
-    [RoundingMode.default]). *)
-let fp_add f1 f2 = app_ "fp.add" [ RoundingMode.default; f1; f2 ]
-
-(** [fp_sub f1 f2] returns [f1 - f2] using the default rounding mode (see
-    [RoundingMode.default]). *)
-let fp_sub f1 f2 = app_ "fp.sub" [ RoundingMode.default; f1; f2 ]
-
-(** [fp_mul f1 f2] returns [f1 * f2] using the default rounding mode (see
-    [RoundingMode.default]). *)
-let fp_mul f1 f2 = app_ "fp.mul" [ RoundingMode.default; f1; f2 ]
-
-(** [fp_div f1 f2] returns [f1 / f2] using the default rounding mode (see
-    [RoundingMode.default]). *)
-let fp_div f1 f2 = app_ "fp.div" [ RoundingMode.default; f1; f2 ]
-
-(** [fp_rem f1 f2] returns [f1 % f2] (no rounding mode is involved here). *)
-let fp_rem f1 f2 = app_ "fp.rem" [ f1; f2 ]
-
-(** [fp_is fc f] tests if [f] belongs to floating-point class [fc] (which is of
-    OCaml's builtin [fpclass] type).*)
-let fp_is (fc : fpclass) f =
-  match fc with
-  | FP_normal -> app_ "fp.isNormal" [ f ]
-  | FP_subnormal -> app_ "fp.isSubnormal" [ f ]
-  | FP_zero -> app_ "fp.isZero" [ f ]
-  | FP_infinite -> app_ "fp.isInfinite" [ f ]
-  | FP_nan -> app_ "fp.isNaN" [ f ]
-
-(** [fp_round rm f] rounds [f] to an integer using rounding mode [rm]. *)
-let fp_round (rm : RoundingMode.t) f =
-  app_ "fp.roundToIntegral" [ RoundingMode.to_sexp rm; f ]
-
-(** {2 FloatingPoint - BitVec conversions} *)
-
-(** [float_of_bv size bv] interprets bitvector [bv] as a float of [size] bits.
-    [size] must be one of 16, 32, 64 or 128.
-
-    This is a bitwise reinterpretation, not a numeric conversion. *)
-let float_of_bv size bv = app (ifam "to_fp" (float_shape size)) [ bv ]
-
-(** [float_of_ubv rm size bv] converts unsigned bitvector [bv] to a float, with
-    rounding mode [rm]. [size] must be one of 16, 32, 64 or 128. *)
-let float_of_ubv rm size bv =
-  app (ifam "to_fp_unsigned" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
-
-(** [float_of_sbv rm size bv] converts signed bitvector [bv] to a float, with
-    rounding mode [rm]. [size] must be one of 16, 32, 64 or 128. *)
-let float_of_sbv rm size bv =
-  app (ifam "to_fp" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
-
-(** [ubv_of_float rm size f] converts float [f] to an unsigned bitvector of
-    [size] bits, with rounding mode [rm]. This is a numeric conversion, not a
-    bitwise reinterpretation. If [f] is out of range for the target bitvector,
-    or NaN or inf, the result is undefined. *)
-let ubv_of_float rm n f =
-  app (ifam "fp.to_ubv" [ n ]) [ RoundingMode.to_sexp rm; f ]
-
-(** [sbv_of_float rm size f] converts float [f] to a signed bitvector of [size]
-    bits, with rounding mode [rm]. This is a numeric conversion, not a bitwise
-    reinterpretation. If [f] is out of range for the target bitvector, or NaN or
-    inf, the result is undefined. *)
-let sbv_of_float rm n f =
-  app (ifam "fp.to_sbv" [ n ]) [ RoundingMode.to_sexp rm; f ]
-
-(** {2 Int - BitVec conversions} *)
-
-(** [int_of_bv signed bv] converts bitvector [bv] to an integer. If [signed] is
-    true, [bv] is interpreted as a signed bitvector; otherwise, it is
-    interpreted as unsigned. *)
-let int_of_bv signed bv =
-  if signed then app_ "sbv_to_int" [ bv ] else app_ "ubv_to_int" [ bv ]
-
-(** [bv_of_int size n] converts integer [n] to a bitvector of [size] bits. *)
-let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]
-
-(** {2 BitVec overflow predicates} *)
-
-(** [bv_nego x] is true if negating [x] would overflow (signed). *)
-let bv_nego x = app_ "bvnego" [ x ]
-
-(** [bv_uaddo l r] returns true if [l + r] would overflow (unsigned). *)
-let bv_uaddo l r = app_ "bvuaddo" [ l; r ]
-
-(** [bv_saddo l r] returns true if [l + r] would overflow (signed). *)
-let bv_saddo l r = app_ "bvsaddo" [ l; r ]
-
-(** [bv_usubo l r] returns true if [l - r] would underflow (unsigned). *)
-let bv_usubo l r = app_ "bvusubo" [ l; r ]
-
-(** [bv_ssubo l r] returns true if [l - r] would underflow or overflow (signed).
-*)
-let bv_ssubo l r = app_ "bvssubo" [ l; r ]
-
-(** [bv_umulo l r] returns true if [l * r] would overflow (unsigned). *)
-let bv_umulo l r = app_ "bvumulo" [ l; r ]
-
-(** [bv_smulo l r] returns true if [l * r] would overflow (signed). *)
-let bv_smulo l r = app_ "bvsmulo" [ l; r ]
-
-(** {2 Sequences} *)
-
-(** The SMT-LIB sequence sort constructor: [t_seq $ elt] is the type of
-    sequences of [elt]. *)
-let t_seq = atom "Seq"
-
-(** [seq_singl x] is the singleton sequence containing [x]. *)
-let seq_singl x = atom "seq.unit" $$ [ x ]
-
-(** [seq_concat xs] is the concatenation of the sequences [xs]. *)
-let seq_concat xs = atom "seq.++" $$ xs
-
-(** {2 Commands} *)
-
-(** SMT-LIB [(reset)] command to reset the solver state. *)
-let reset = simple_command [ "reset" ]
