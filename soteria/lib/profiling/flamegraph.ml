@@ -58,6 +58,11 @@ module Make (M : Monad.Base) = struct
           pop_frame ();
           r
 
+  (** {2 Bookkeeping}
+      Implementing {!Effects.Bookkeeping} *)
+
+  type arg = string
+
   let with_ _name f =
     let stacks = ref [] in
     let current_stack : stack Dynarray.t = Dynarray.create () in
