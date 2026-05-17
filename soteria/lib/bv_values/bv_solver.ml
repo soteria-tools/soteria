@@ -2,6 +2,10 @@ open Soteria_std
 open Logs.Import
 module Var = Svalue.Var
 
+(* Domain-local RNG: the global [Random] state is not safe across domains. Each
+   analysis domain gets its own self-seeded generator. *)
+let rng = Dls.make (fun () -> Random.State.make_self_init ())
+
 let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
   let simplify = simplify ~trivial_truthiness ~fallback in
   match v.node.kind with
@@ -330,11 +334,11 @@ struct
     let value_generator : Svalue.ty -> unit -> Svalue.t = function
       | TLoc n ->
           let max = Z.(shift_left one n) in
-          fun () -> Svalue.Ptr.loc_of_z n (Z.random_int max)
+          fun () -> Svalue.Ptr.loc_of_z n (Z.random_int ~rng:(Dls.get rng) max)
       | TBitVector n ->
           let max = Z.(shift_left one n) in
-          fun () -> Svalue.BitVec.mk n (Z.random_int max)
-      | TBool -> fun () -> Svalue.Bool.of_bool (Random.bool ())
+          fun () -> Svalue.BitVec.mk n (Z.random_int ~rng:(Dls.get rng) max)
+      | TBool -> fun () -> Svalue.Bool.of_bool (Random.State.bool (Dls.get rng))
       (* TODO: because we can't evaluate floats, we can never do a trivial check
          for them. *)
       | TFloat _ -> raise No_model
