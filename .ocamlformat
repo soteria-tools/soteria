@@ -1,7 +1,7 @@
-# [versionsync: OCAMLFORMAT_VERSION=0.28.1]
-version=0.28.1
-# [versionsync: OCAML_VERSION=5.4] [versionsync.slice: ..-2]
-ocaml-version = 5.4
+# [versionsync: OCAMLFORMAT_VERSION=0.29.0]
+version=0.29.0
+# [versionsync: OCAML_VERSION=5.5.0~bet] [versionsync.slice: ..-2]
+ocaml-version = 5.5.0~bet
 break-infix=wrap-or-vertical
 doc-comments=before
 infix-precedence=parens

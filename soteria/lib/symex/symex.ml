@@ -195,9 +195,9 @@ module type Base = sig
 
       This is provided as a utility, and is equivalent to
       {@ocaml[
-        branch_on (not guard)
-          ~then_:(fun () -> return (Compo_res.error err))
-          ~else_:(fun () -> return (Compo_res.ok ()))
+      branch_on (not guard)
+        ~then_:(fun () -> return (Compo_res.error err))
+        ~else_:(fun () -> return (Compo_res.ok ()))
       ]} *)
   val assert_or_error :
     Value.(sbool t) -> 'err -> (unit, 'err, 'f) Compo_res.t t
@@ -1010,20 +1010,16 @@ module Make (Sol : Solver.Mutable_incremental) :
    *   | Caller -> fun f -> f ()
    *)
 
-  let manage_flamegraph = function
-    | Ignore -> Flamegraph.with_ignored ()
-    | Dump name -> Flamegraph.with_dumped name
-    | Caller -> fun f -> f ()
-
-  let manage_stats = function
-    | Ignore -> Stats.As_ctx.with_ignored ()
-    | Dump name -> Stats.As_ctx.with_dumped name
+  let manage (module M : Effects.Bookkeeping) (x : M.arg effect_handling) =
+    match x with
+    | Ignore -> M.with_ignored ()
+    | Dump arg -> M.with_dumped arg
     | Caller -> fun f -> f ()
 
   let setup ?(flamegraph = Ignore) ?(stats = Ignore)
       ?(fuel = Fuel_gauge.infinite) ~mode f =
-    let@ () = manage_flamegraph flamegraph in
-    let@ () = manage_stats stats in
+    let@ () = manage (module Flamegraph) flamegraph in
+    let@ () = manage (module Stats.As_ctx) stats in
     let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
     let@ () = Symex_state.run ~init_fuel:fuel in
     let@ () = Approx.As_ctx.with_mode mode in

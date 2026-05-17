@@ -182,10 +182,10 @@ let decorate (where : Trace.t) (e : t) : with_trace =
 module Diagnostic = struct
   let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col - 1)
 
-  let replace_subpath_opt sub_str replacement path =
-    match String.index_of ~sub_str path with
+  let replace_subpath_opt sub replacement path =
+    match String.find_first ~sub path with
     | Some idx ->
-        let idx = idx + String.length sub_str in
+        let idx = idx + String.length sub in
         let rel_path = String.sub path idx (String.length path - idx) in
         Some (replacement ^ rel_path)
     | None -> None

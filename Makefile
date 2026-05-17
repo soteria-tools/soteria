@@ -1,7 +1,7 @@
-# [versionsync: OCAML_VERSION=5.4.0]
-OCAML_VERSION=5.4.0
-# [versionsync: OCAMLFORMAT_VERSION=0.28.1]
-OCAMLFORMAT_VERSION=0.28.1
+# [versionsync: OCAML_VERSION=5.5.0~beta1]
+OCAML_VERSION=5.5.0~beta1
+# [versionsync: OCAMLFORMAT_VERSION=0.29.0]
+OCAMLFORMAT_VERSION=0.29.0
 # [versionsync: DUNE_VERSION=3.23.0]
 DUNE_VERSION=3.23.0
 
@@ -36,15 +36,6 @@ ocaml:
 .PHONY: ocaml-format-check
 ocaml-format-check:
 	$(DUNE) build @fmt
-
-.PHONY: check-opam-files
-check-opam-files:
-	@if git diff --name-only HEAD | grep -q '\.opam$$'; then \
-		echo "Error: .opam files have changed since last commit:"; \
-		git --no-pager diff HEAD -- '*.opam'; \
-		exit 1; \
-	fi
-
 
 .PHONY: ocaml-test
 ocaml-test:
@@ -141,10 +132,24 @@ soteria-core-deps:
 ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc -y
 	$(OPAM) install dune.$(DUNE_VERSION) ocamlformat.$(OCAMLFORMAT_VERSION) -y
-	$(OPAM) install sherlodoc -y
+#   DO NOT MERGE WHILE THIS IS STILL COMMENTED OUT  
+# 	$(OPAM) install sherlodoc -y
+
+# Clears all *.llbc.json, Cargo.lock and target/ subflders in soteria-rust/test/cram/
+# We make sure that every file or folder deleted is displayed in the terminal.
+.PHONY: clean-rust-tests
+clean-rust-tests:
+	@echo "Cleaning Rust test artifacts in soteria-rust/test/cram/..."
+	find soteria-rust/test/cram/ -type f -name '*.llbc.json' -print -delete
+	@echo ""
+	find soteria-rust/test/cram/ -type f -name 'Cargo.lock' -print -delete
+	@echo ""
+	find soteria-rust/test/cram/ -type d -name 'target' -print -exec rm -rf {} +
+	
+	
 
 .PHONY: clean
-clean:
+clean: clean-rust-tests
 	$(DUNE) clean
 	rm -rf packages
 	rm -rf packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt packaging/soteria-c/linux_dylibs.txt

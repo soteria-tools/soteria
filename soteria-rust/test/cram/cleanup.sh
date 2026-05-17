@@ -1,0 +1,1 @@
+rm -rf *.llbc.json target/ Cargo.lock

@@ -180,10 +180,8 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
     let rebuild t = Data.Range_tree.rebuild ~merge:node_merge t
     let is_empty t = Node.is_empty t.node
     let not_owned range = make ~node:(NotOwned Totally) ~range ?children:None ()
-
-    include Data.Range_tree.With_monad3 (Symex.Result)
-
     let iter_leaves_rev = Data.Range_tree.iter_leaves_rev
+    let map_leaves f t = Data.Range_tree.map_leaves (module Symex.Result) f t
 
     let of_children_s ~left ~right =
       let range = (fst left.range, snd right.range) in

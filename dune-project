@@ -1,4 +1,4 @@
-(lang dune 3.14)
+(lang dune 3.23)
 
 (cram enable)
 
@@ -30,9 +30,9 @@
  (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools")
  (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
-  ; [versionsync: OCAML_VERSION=5.4.0]
+  ; [versionsync: OCAML_VERSION=5.5.0~beta1]
   (ocaml
-   (>= 5.4.0))
+   (>= 5.5.0~beta1))
   (tsort
    (>= 2.1.0))
   simple_smt
@@ -74,11 +74,11 @@
    (< 3.0))
   unionFind
   ppx_deriving_yojson
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.28.1)))
+    (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -88,9 +88,9 @@
  (sites
   (share includes))
  (depends
-  ; [versionsync: OCAML_VERSION=5.4.0]
+  ; [versionsync: OCAML_VERSION=5.5.0~beta1]
   (ocaml
-   (>= 5.4.0))
+   (>= 5.5.0~beta1))
   (shexp :build)
   soteria
   cerberus-lib
@@ -113,11 +113,11 @@
    (and
     :build
     (>= 3.14.0)))
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.28.1)))
+    (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -127,9 +127,9 @@
  (sites
   (share plugins))
  (depends
-  ; [versionsync: OCAML_VERSION=5.4.0]
+  ; [versionsync: OCAML_VERSION=5.5.0~beta1]
   (ocaml
-   (>= 5.4.0))
+   (>= 5.5.0~beta1))
   (shexp :build)
   soteria
   dune-site
@@ -154,9 +154,9 @@
    (and
     :build
     (>= 3.14.0)))
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.28.1)))
+    (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))

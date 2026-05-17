@@ -255,20 +255,20 @@ struct
 
       I.e. one can do
       {@ocaml[
-        module Rev1 = Make_effectful (struct
-          type t = int
-        end)
+      module Rev1 = Make_effectful (struct
+        type t = int
+      end)
 
-        module Rev2 = Make_effectful (struct
-          type t = string
-        end)
+      module Rev2 = Make_effectful (struct
+        type t = string
+      end)
 
-        let computation () =
-          Rev1.save ();
-          Rev2.save ();
-          Rev1.backtrack ()
+      let computation () =
+        Rev1.save ();
+        Rev2.save ();
+        Rev1.backtrack ()
 
-        let () = Rev1.run ~init:0 @@ fun () -> Rev2.run ~init:"x" @@ computation
+      let () = Rev1.run ~init:0 @@ fun () -> Rev2.run ~init:"x" @@ computation
       ]} *)
 
   type t = M.t
