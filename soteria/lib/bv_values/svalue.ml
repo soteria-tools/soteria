@@ -602,8 +602,8 @@ module rec Bool : Bool = struct
         else if Z.(divisible n m) then
           sem_eq x (BitVec.mk (size_of x.node.ty) Z.(n / m))
         else v_false
-    (* Cancelling a common factor [a] from [a*b == a*d] is only sound when
-       [a] is odd (invertible modulo 2^n), or when both multiplications are
+    (* Cancelling a common factor [a] from [a*b == a*d] is only sound when [a]
+       is odd (invertible modulo 2^n), or when both multiplications are
        overflow-checked (so they behave like exact integer arithmetic). *)
     | ( Binop (Mul { checked = ck1 }, { node = { kind = BitVec a; _ }; _ }, b),
         Binop (Mul { checked = ck2 }, { node = { kind = BitVec c; _ }; _ }, d) )
