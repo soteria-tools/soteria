@@ -379,8 +379,11 @@ struct
     if not (Var.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
 
-  let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
-    Hashtbl.Hint.create 1023
+  (* Shared across domains: keyed by the formula's hash-cons tag, the sat result
+     is a pure function of the formula, so cross-analysis reuse is sound and
+     avoids solver calls. *)
+  let memo_sat_check_tbl : (int, Symex.Solver_result.t) Concurrent_tbl.t =
+    Concurrent_tbl.create 1023
 
   let trivial_model_works to_check =
     (* We try a trivial model where replacing each variable with name [|n|] with
@@ -431,11 +434,11 @@ struct
 
   let check_sat_raw_memo solver relevant_vars to_check =
     let to_check = Typed.untyped to_check in
-    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
+    match Concurrent_tbl.find_opt memo_sat_check_tbl to_check.Hc.tag with
     | Some result -> result
     | None ->
         let result = check_sat_raw solver relevant_vars to_check in
-        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
+        Concurrent_tbl.add memo_sat_check_tbl to_check.Hc.tag result;
         result
 
   let sat solver : Symex.Solver_result.t =
