@@ -189,26 +189,24 @@ let t_f128 = atom "Float128"
 let f32_k f =
   let bin = Int32.bits_of_float f in
   "fp"
-  $$.
-  [
-    bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
-    bv_nat_bin 8
-      (Z.of_int32 @@ Int32.logand 0xffl @@ Int32.shift_right_logical bin 23);
-    bv_nat_bin 23 (Z.of_int32 @@ Int32.logand bin 0x7fffffl);
-  ]
+  $$. [
+        bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
+        bv_nat_bin 8
+          (Z.of_int32 @@ Int32.logand 0xffl @@ Int32.shift_right_logical bin 23);
+        bv_nat_bin 23 (Z.of_int32 @@ Int32.logand bin 0x7fffffl);
+      ]
 
 (* Float64 constant from an OCaml float (11 exponent, 52 mantissa bits);
    lossless. *)
 let f64_k f =
   let bin = Int64.bits_of_float f in
   "fp"
-  $$.
-  [
-    bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
-    bv_nat_bin 11
-      (Z.of_int64 @@ Int64.logand 0x7ffL @@ Int64.shift_right_logical bin 52);
-    bv_nat_bin 52 (Z.of_int64 @@ Int64.logand bin 0xfffffffffffffL);
-  ]
+  $$. [
+        bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
+        bv_nat_bin 11
+          (Z.of_int64 @@ Int64.logand 0x7ffL @@ Int64.shift_right_logical bin 52);
+        bv_nat_bin 52 (Z.of_int64 @@ Int64.logand bin 0xfffffffffffffL);
+      ]
 
 (* Float128 constant, via Float64 then [to_fp]; lossy. *)
 let f128_k f =
@@ -346,8 +344,7 @@ type solver = {
           produces exactly one [success] (or error) line; those are drained in
           one batch by the next {!field:ack_command}. This turns the long chain
           of synchronous round-trips (declare / assert / push / pop / reset that
-          precedes every [check-sat]) into pipelined writes, which is where most
-          of the solver wall-clock time was being spent. *)
+          precedes every [check-sat]) into pipelined writes. *)
   stop : unit -> unit;
   force_stop : unit -> unit;
   config : solver_config;
