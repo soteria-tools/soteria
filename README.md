@@ -5,7 +5,7 @@
 </picture>
 
 Soteria is an OCaml library for writing efficient symbolic interpreters directly in OCaml.
-The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. Currently, two symbolic interpreters have been written: Soteria-Rust and Soteria-C. Our current main focus is Soteria-Rust.
+The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. Currently, two symbolic interpreters have been written: Soteria Rust and Soteria C. Our current main focus is Soteria Rust.
 
 
 [![Zulip Chat](https://img.shields.io/badge/join-zulip?logo=zulip&label=Zulip&labelColor=%2330363D&color=%232FBC4F)](https://soteria.zulipchat.com/)
@@ -18,7 +18,7 @@ The core library provides a set of batteries-included abstractions for writing o
 
 - [Getting Started](#getting-started)
 - [Soteria Rust](#soteria-rust)
-- [Soteria-C](#soteria-c)
+- [Soteria C](#soteria-c)
 - [Contributing](#contributing)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
@@ -35,9 +35,9 @@ Pin it with opam:
 opam pin add soteria git+https://github.com/soteria-tools/soteria.git#<commit>
 ```
 
-### Install Soteria-Rust
+### Install Soteria Rust
 
-Soteria-Rust can be installed with `cargo` on **macOS with M-series chips** and **Linux x86_64**:
+Soteria Rust can be installed with `cargo` on **macOS with M-series chips** and **Linux x86_64**:
 
 ```sh
 cargo install soteria --git https://github.com/soteria-tools/cargo-soteria.git
@@ -78,9 +78,9 @@ Soteria Rust supports a large subset of Rust, but some features are not yet supp
 - Inline assembly
 - SIMD intrinsics
 
-## Soteria-C
+## Soteria C
 
-Soteria-C is an automatic bug finder for C programs. It is in heavy development.
+Soteria C is an automatic bug finder for C programs. It is in heavy development.
 
 ### Usage
 
@@ -114,8 +114,8 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
 Soteria relies on many excellent open source libraries and tools, and we are deeply grateful to their authors and contributors.
 
 We would especially like to thank:
-- The [Charon](https://github.com/AeneasVerif/charon) team for providing the MIR frontend that powers Soteria-Rust
-- The [Cerberus](https://github.com/rems-project/cerberus) team for providing the C frontend that powers Soteria-C
+- The [Charon](https://github.com/AeneasVerif/charon) team for providing the MIR frontend that powers Soteria Rust
+- The [Cerberus](https://github.com/rems-project/cerberus) team for providing the C frontend that powers Soteria C
 
 ## License
 

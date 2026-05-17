@@ -125,7 +125,7 @@ let current_mode () = Effect.perform GetMode
 
 let test_comp_warning =
   String.Interned.intern
-    "Test-Comp compatibility mode enabled. Note that Soteria-C is *not* \
+    "Test-Comp compatibility mode enabled. Note that Soteria C is *not* \
      optimised for this test suite, and does not aim to be performant on it."
 
 let with_config ~(config : t) ~(mode : mode) f =

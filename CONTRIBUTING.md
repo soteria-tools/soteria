@@ -32,13 +32,14 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
 
 ### Prerequisites
 
+<!-- [versionsync: OCAML_VERSION=5.4.0] -->
 | Dependency | Version | Notes |
 |------------|---------|-------|
 | OCaml | >= 5.4.0 | [ocaml.org/docs/installing-ocaml](https://ocaml.org/docs/installing-ocaml) |
 | opam | >= 2.0 | Included with OCaml installation |
 | Z3 | latest | [github.com/Z3Prover/z3](https://github.com/Z3Prover/z3) |
-| Rustup | latest | Required for Soteria-Rust; [rustup.rs](https://rustup.rs/) |
-| Obol / Charon | see below | Required for Soteria-Rust; [Installing Rust Frontends](#installing-rust-frontends) |
+| Rustup | latest | Required for Soteria Rust; [rustup.rs](https://rustup.rs/) |
+| Obol / Charon | see below | Required for Soteria Rust; [Installing Rust Frontends](#installing-rust-frontends) |
 
 ### Installing for Use
 
@@ -83,13 +84,13 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
    ```sh
    dune test              # All tests (requires Rust frontends)
    dune test soteria      # Core library tests only
-   dune test soteria-c    # Soteria-C tests only
+   dune test soteria-c    # Soteria C tests only
    dune build @doc        # Build documentation
    ```
 
 ### Installing Rust Frontends
 
-To use Soteria-Rust, you need a frontend to translate Rust code to an intermediate representation. We support two frontends: [Obol](https://github.com/soteria-tools/obol) and [Charon](https://github.com/AeneasVerif/charon).
+To use Soteria Rust, you need a frontend to translate Rust code to an intermediate representation. We support two frontends: [Obol](https://github.com/soteria-tools/obol) and [Charon](https://github.com/AeneasVerif/charon).
 
 > **Quick Setup:** Use the versionsync script to automatically install both frontends:
 > ```sh
@@ -195,7 +196,7 @@ To run tests for specific packages without Rust frontends:
 
 ```sh
 dune test soteria      # Core library tests only
-dune test soteria-c    # Soteria-C tests only
+dune test soteria-c    # Soteria C tests only
 ```
 
 ### Writing Tests
