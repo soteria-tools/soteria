@@ -82,6 +82,11 @@ Soteria Rust supports a large subset of Rust, but some features are not yet supp
 
 Soteria C is an automatic bug finder for C programs. It is in heavy development.
 
+### Installatation
+
+Binaries for Linux x86 and MacOS Arm are available in the latest release on this GitHub repository.
+For other architectures, please follow the [manual installation instructions](./CONTRIBUTING.md#installing-from-source).
+
 ### Usage
 
 Run on a standalone C file:
