@@ -1,14 +1,8 @@
 open Soteria_std
-open Simple_smt
+open Soteria_smt
 
 type t = Svalue.t
 type ty = Svalue.ty
-
-let ( $$ ) = app
-let ( $ ) f v = f $$ [ v ]
-let t_seq = atom "Seq"
-let seq_singl t = atom "seq.unit" $$ [ t ]
-let seq_concat ts = atom "seq.++" $$ ts
 
 let t_ptr, mk_ptr, get_loc, get_ofs, init_commands =
   let ptr = "Ptr" in

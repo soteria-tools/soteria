@@ -1,0 +1,8 @@
+(library
+ (name soteria_smt)
+ (public_name soteria.smt)
+ (libraries unix zarith)
+ (preprocess
+  (pps ppx_deriving.std))
+ (instrumentation
+  (backend landmarks --auto)))

@@ -1,4 +1,4 @@
-open Simple_smt
+open Soteria_smt
 open Logs.Import
 
 module StatKeys = struct
@@ -13,8 +13,10 @@ end
     {!Config}. *)
 module Make (Value : Value.S) :
   Solver_interface.S with type value = Value.t and type ty = Value.ty = struct
-  let initialize_solver : (Simple_smt.solver -> unit) ref =
-    ref (fun solver -> List.iter (ack_command solver) Value.init_commands)
+  let initialize_solver : (Soteria_smt.solver -> unit) ref =
+    ref (fun solver ->
+        command solver (set_option ":produce-models" "true");
+        List.iter (command solver) Value.init_commands)
 
   let register_solver_init f =
     let old = !initialize_solver in
@@ -29,15 +31,11 @@ module Make (Value : Value.S) :
         match (Config.get ()).solver_timeout with
         | None -> ()
         | Some timeout ->
-            ack_command solver (set_option ":timeout" (string_of_int timeout)))
+            command solver (set_option ":timeout" (string_of_int timeout)))
 
   let solver_log =
-    let debug_str ~prefix s = L.smt (fun m -> m "%s: %s" prefix s) in
-    {
-      send = debug_str ~prefix:"-> ";
-      receive = debug_str ~prefix:"<- ";
-      stop = Fun.id;
-    }
+    let debug ~prefix thunk = [%l.smt "%s: %s" prefix (thunk ())] in
+    { send = debug ~prefix:"-> "; receive = debug ~prefix:"<- "; stop = Fun.id }
 
   module Dump = struct
     let current_channel = ref None
@@ -75,7 +73,7 @@ module Make (Value : Value.S) :
       match channel () with
       | None -> ()
       | Some oc ->
-          Sexplib.Sexp.output_hum oc sexp;
+          Soteria_smt.output_sexp oc sexp;
           flush oc
 
     let log_response response elapsed =
@@ -83,11 +81,11 @@ module Make (Value : Value.S) :
       | None -> ()
       | Some oc ->
           let fmt = Format.formatter_of_out_channel oc in
-          Fmt.pf fmt " ; -> %a (%a)\n@?" Sexplib.Sexp.pp_hum response
+          Fmt.pf fmt " ; -> %a (%a)\n@?" Soteria_smt.pp_sexp response
             Logs.Printers.pp_time elapsed
   end
 
-  type t = Simple_smt.solver
+  type t = Soteria_smt.solver
   type value = Value.t
   type ty = Value.ty
 
@@ -96,15 +94,19 @@ module Make (Value : Value.S) :
 
   let init () =
     let solver = new_solver (solver_config ()) in
-    let command sexp =
+    let ack_command sexp =
       Dump.log_sexp sexp;
       let now = Unix.gettimeofday () in
-      let res = solver.command sexp in
+      let res = solver.ack_command sexp in
       let elapsed = Unix.gettimeofday () -. now in
       Dump.log_response res elapsed;
       res
     in
-    let solver = { solver with command } in
+    let command sexp =
+      Dump.log_sexp sexp;
+      solver.command sexp
+    in
+    let solver = { solver with ack_command; command } in
     !initialize_solver solver;
     solver
 
@@ -112,20 +114,19 @@ module Make (Value : Value.S) :
     let name = Symex.Var.to_string name in
     let ty = Value.sort_of_ty ty in
     let sexp = declare name ty in
-    ack_command solver sexp
+    command solver sexp
 
   let add_constraint solver v =
     let v = Value.encode_value v in
-    let sexp = Simple_smt.assume v in
-    ack_command solver sexp
+    let sexp = Soteria_smt.assume v in
+    command solver sexp
 
   let check_sat solver : Symex.Solver_result.t =
     Stats.As_ctx.incr StatKeys.check_sats;
     let smt_res =
       try check solver
-      with Simple_smt.UnexpectedSolverResponse s ->
-        [%l.error
-          "Unexpected solver response: %s" (Sexplib.Sexp.to_string_hum s)];
+      with Soteria_smt.UnexpectedSolverResponse s ->
+        [%l.error "Unexpected solver response: %s" (Soteria_smt.to_string s)];
         Unknown
     in
     match smt_res with
@@ -135,14 +136,15 @@ module Make (Value : Value.S) :
         [%l.info "Solver returned unknown"];
         Unknown
 
-  let push solver n = ack_command solver (Simple_smt.push n)
-  let pop solver n = ack_command solver (Simple_smt.pop n)
+  let push solver n = command solver (Soteria_smt.push n)
+  let pop solver n = command solver (Soteria_smt.pop n)
   let save solver = push solver 1
   let backtrack_n solver n = pop solver n
 
   let reset solver =
-    ack_command solver Smt_utils.reset;
+    command solver reset;
     !initialize_solver solver
 
-  let get_model solver = try Some (Simple_smt.get_model solver) with _ -> None
+  let get_model solver =
+    try Some (Soteria_smt.get_model solver) with _ -> None
 end

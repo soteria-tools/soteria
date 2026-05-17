@@ -1,18 +1,11 @@
 open Soteria_std
-open Simple_smt
-open Solvers.Smt_utils
+open Soteria_smt
 
 let pointers_not_supported () =
   failwith "Encoding of pointers is not supported in Bv_values"
 
 type t = Svalue.t
 type ty = Svalue.ty
-
-let ( $$ ) = app
-let ( $ ) f v = f $$ [ v ]
-let t_seq = atom "Seq"
-let seq_singl t = atom "seq.unit" $$ [ t ]
-let seq_concat ts = atom "seq.++" $$ ts
 
 let rec sort_of_ty : Svalue.ty -> sexp = function
   | TBool -> t_bool
@@ -27,8 +20,7 @@ let rec sort_of_ty : Svalue.ty -> sexp = function
 
 let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 
-let rm_to_smt : Svalue.RoundingMode.t -> Solvers.Smt_utils.RoundingMode.t =
-  function
+let rm_to_smt : Svalue.RoundingMode.t -> Soteria_smt.RoundingMode.t = function
   | NearestTiesToEven -> NearestTiesToEven
   | NearestTiesToAway -> NearestTiesToAway
   | Ceil -> Ceil

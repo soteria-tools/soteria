@@ -194,21 +194,21 @@ end = struct
     let apply state f = Pool.apply ~auth state f in
     apply state M.reset;
     (* Being conservative and resetting state on acquisition *)
-    let r =
-      try f () with
-      | effect Backtrack_n n, k ->
-          apply state (fun state -> M.backtrack_n state n);
-          Effect.Deep.continue k ()
-      | effect Save, k ->
-          apply state M.save;
-          Effect.Deep.continue k ()
-      | effect Wrap g, k ->
-          let result = apply state g in
-          Effect.Deep.continue k result
+    let release_back () =
+      apply state M.reset;
+      Pool.release pool auth state
     in
-    apply state M.reset;
-    Pool.release pool auth state;
-    r
+    Fun.protect ~finally:release_back @@ fun () ->
+    try f () with
+    | effect Backtrack_n n, k ->
+        apply state (fun state -> M.backtrack_n state n);
+        Effect.Deep.continue k ()
+    | effect Save, k ->
+        apply state M.save;
+        Effect.Deep.continue k ()
+    | effect Wrap g, k ->
+        let result = apply state g in
+        Effect.Deep.continue k result
 
   let total_resources () = Pool.total_resources pool
   let available_resources () = Pool.available_resources pool
