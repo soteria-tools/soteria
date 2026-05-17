@@ -1,10 +1,6 @@
 (** A small, performance-focused SMT-LIB s-expression and solver-process
     library, specialised to Soteria's needs.
 
-    This is an in-tree replacement for the (unpublished) [simple_smt] library.
-    The public surface mirrors the subset of [Simple_smt] that Soteria uses, so
-    that consumers only need to swap [open Simple_smt] for [open Soteria_smt].
-
     Performance notes:
     - Serialization writes directly into a reused {!Buffer.t} (no
       pretty-printing, no whole-tree intermediate string).
@@ -24,6 +20,10 @@ module StrMap = Map.Make (String)
 (* Apply a function to some arguments. *)
 let app f args = match args with [] -> f | _ -> List (f :: args)
 let app_ f (args : sexp list) : sexp = app (Atom f) args
+
+(* Application as infix operators: [f $$ args] (multiple) and [f $ arg]. *)
+let ( $$ ) = app
+let ( $ ) f v = f $$ [ v ]
 
 (* Type annotation *)
 let as_type x t = app_ "as" [ x; t ]
@@ -304,18 +304,25 @@ let new_solver (cfg : solver_config) : solver =
     cfg.log.receive (fun () -> to_string ans);
     ans
   in
+  (* [stop] is idempotent: it can be called explicitly and is also registered as
+     a GC finaliser, so [Unix.close_process_full] must not run twice. *)
+  let stopped = ref false in
   let stop_command () =
-    (try
-       output_string out_chan "(exit)\n";
-       flush out_chan
-     with Sys_error _ -> ());
-    let _ = Unix.close_process_full proc in
-    cfg.log.stop ()
+    if not !stopped then (
+      stopped := true;
+      (try
+         output_string out_chan "(exit)\n";
+         flush out_chan
+       with Sys_error _ -> ());
+      let _ = Unix.close_process_full proc in
+      cfg.log.stop ())
   in
   let force_stop_command () =
-    (try Unix.kill pid 9 with Unix.Unix_error _ -> ());
-    let _ = Unix.close_process_full proc in
-    cfg.log.stop ()
+    if not !stopped then (
+      stopped := true;
+      (try Unix.kill pid 9 with Unix.Unix_error _ -> ());
+      let _ = Unix.close_process_full proc in
+      cfg.log.stop ())
   in
   let s =
     {
@@ -576,6 +583,18 @@ let bv_umulo l r = app_ "bvumulo" [ l; r ]
 
 (** [bv_smulo l r] returns true if [l * r] would overflow (signed). *)
 let bv_smulo l r = app_ "bvsmulo" [ l; r ]
+
+(** {2 Sequences} *)
+
+(** The SMT-LIB sequence sort constructor: [t_seq $ elt] is the type of
+    sequences of [elt]. *)
+let t_seq = atom "Seq"
+
+(** [seq_singl x] is the singleton sequence containing [x]. *)
+let seq_singl x = atom "seq.unit" $$ [ x ]
+
+(** [seq_concat xs] is the concatenation of the sequences [xs]. *)
+let seq_concat xs = atom "seq.++" $$ xs
 
 (** {2 Commands} *)
 

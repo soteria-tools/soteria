@@ -84,6 +84,8 @@ module Reader = struct
   let advance r = r.pos <- r.pos + 1
   let is_ws = function ' ' | '\t' | '\n' | '\r' -> true | _ -> false
 
+  (* [;] ends a plain atom: in SMT-LIB it always starts a line comment, so a
+     simple (unquoted) symbol can never contain one. *)
   let is_delim = function
     | ' ' | '\t' | '\n' | '\r' | '(' | ')' | '|' | '"' | ';' -> true
     | _ -> false

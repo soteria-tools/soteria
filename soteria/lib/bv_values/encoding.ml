@@ -7,12 +7,6 @@ let pointers_not_supported () =
 type t = Svalue.t
 type ty = Svalue.ty
 
-let ( $$ ) = app
-let ( $ ) f v = f $$ [ v ]
-let t_seq = atom "Seq"
-let seq_singl t = atom "seq.unit" $$ [ t ]
-let seq_concat ts = atom "seq.++" $$ ts
-
 let rec sort_of_ty : Svalue.ty -> sexp = function
   | TBool -> t_bool
   | TLoc n -> t_bits n
