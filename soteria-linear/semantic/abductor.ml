@@ -11,14 +11,13 @@ let bi_abd_fuel =
 type res =
   (Aux.S_val.t, Aux.Error.t, State.syn list) Compo_res.t * Bi_state.t option
 
-type branch = (args:Aux.S_val.t list * res:res) * LSymex.Value.(sbool t) list
+type branch = (args:Aux.S_val.t list * res:res) * LSymex.Value.Expr.t list
 
 let make_spec_opt (((~args, ~res), pc) : branch) : Context.spec option =
   let open Syntaxes.Option in
   let res, bstate = res in
   let ~pre, ~post = Bi_state.to_spec bstate in
   let args = List.map Aux.S_val.to_syn args in
-  let pc = List.map LSymex.Value.Expr.of_value pc in
   let+ ret =
     match res with
     | Ok v ->

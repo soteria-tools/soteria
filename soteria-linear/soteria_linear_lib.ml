@@ -18,7 +18,7 @@ let pp_results ft v =
               (Soteria.Symex.Or_gave_up.pp
                  (pair State.pp_err (Fmt.Dump.option State.pp)))
             ~miss:Fmt.nop)
-         (list Interp.S_val.ppa)
+         (list Interp.S_val.Expr.pp)
   in
   pp ft v
 
