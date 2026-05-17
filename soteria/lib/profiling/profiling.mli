@@ -19,7 +19,7 @@ module Flamegraph : sig
       it easy and convenient to use. *)
 
   module Make (M : Monad.Base) : sig
-    include Effects.Bookkeeping with type arg := string
+    include Effects.Bookkeeping with type arg = string
 
     (* FIXME: unfortunately we can't just reuse [Reversible.Effectful] here as
        we don't want to expose a [wrap] or [run] *)
