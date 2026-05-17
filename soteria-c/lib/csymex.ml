@@ -1,11 +1,11 @@
 module SYMEX = Soteria.Symex.Make (Bv_solver.Z3_solver)
 
 module Concrete_alloc_id = struct
-  let next_id = ref 1
+  (* Atomic: globally-unique monotonic ids, safe across analysis domains. *)
+  let next_id = Atomic.make 1
 
   let get_next () =
-    let id = !next_id in
-    incr next_id;
+    let id = Atomic.fetch_and_add next_id 1 in
     Typed.Ptr.loc_of_int id
 end
 

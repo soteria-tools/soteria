@@ -150,7 +150,9 @@ module Make (Borrows : Tree_borrows.T) = struct
     let pp = ppa
     let show = Fmt.to_to_string pp
     let to_int = unique_tag
-    let concrete_loc = ref 0
+
+    (* Atomic: globally-unique monotonic location ids, safe across domains. *)
+    let concrete_loc = Atomic.make 0
     let simplify = DecayMap.SM.simplify
 
     let distinct vs =
@@ -162,8 +164,8 @@ module Make (Borrows : Tree_borrows.T) = struct
       match Config.get_mode () with
       | Compositional -> DecayMap.SM.nondet (Typed.t_loc ())
       | Whole_program ->
-          incr concrete_loc;
-          DecayMap.SM.return (Ptr.loc_of_int !concrete_loc)
+          let loc = Atomic.fetch_and_add concrete_loc 1 + 1 in
+          DecayMap.SM.return (Ptr.loc_of_int loc)
   end
 
   module Freeable = Soteria.Sym_states.Freeable.Make (DecayMap.SM)
