@@ -23,10 +23,11 @@ let app_ f (args : sexp list) : sexp = app (Atom f) args
 
 (* Application as infix operators: [f $$ args] (multiple) and [f $ arg]. *)
 let ( $$ ) = app
+let ( $$. ) = app_
 let ( $ ) f v = f $$ [ v ]
 
 (* Type annotation *)
-let as_type x t = app_ "as" [ x; t ]
+let as_type x t = "as" $$. [ x; t ]
 let nat_k x = Atom (string_of_int x)
 let nat_zk x = Atom (Z.to_string x)
 
@@ -54,7 +55,7 @@ let bool_and p q = a_and $$ [ p; q ]
 let bool_ands ps = match ps with [] -> s_true | _ -> a_and $$ ps
 let bool_or p q = a_or $$ [ p; q ]
 let bool_ors ps = match ps with [] -> s_false | _ -> a_or $$ ps
-let exists qs body = app_ "exists" [ list qs; body ]
+let exists qs body = "exists" $$. [ list qs; body ]
 
 (** {2 Integers} *)
 
@@ -187,25 +188,27 @@ let t_f128 = atom "Float128"
    may lose precision. *)
 let f32_k f =
   let bin = Int32.bits_of_float f in
-  app_ "fp"
-    [
-      bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
-      bv_nat_bin 8
-        (Z.of_int32 @@ Int32.logand 0xffl @@ Int32.shift_right_logical bin 23);
-      bv_nat_bin 23 (Z.of_int32 @@ Int32.logand bin 0x7fffffl);
-    ]
+  "fp"
+  $$.
+  [
+    bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
+    bv_nat_bin 8
+      (Z.of_int32 @@ Int32.logand 0xffl @@ Int32.shift_right_logical bin 23);
+    bv_nat_bin 23 (Z.of_int32 @@ Int32.logand bin 0x7fffffl);
+  ]
 
 (* Float64 constant from an OCaml float (11 exponent, 52 mantissa bits);
    lossless. *)
 let f64_k f =
   let bin = Int64.bits_of_float f in
-  app_ "fp"
-    [
-      bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
-      bv_nat_bin 11
-        (Z.of_int64 @@ Int64.logand 0x7ffL @@ Int64.shift_right_logical bin 52);
-      bv_nat_bin 52 (Z.of_int64 @@ Int64.logand bin 0xfffffffffffffL);
-    ]
+  "fp"
+  $$.
+  [
+    bv_nat_bin 1 (if Float.sign_bit f then Z.one else Z.zero);
+    bv_nat_bin 11
+      (Z.of_int64 @@ Int64.logand 0x7ffL @@ Int64.shift_right_logical bin 52);
+    bv_nat_bin 52 (Z.of_int64 @@ Int64.logand bin 0xfffffffffffffL);
+  ]
 
 (* Float128 constant, via Float64 then [to_fp]; lossy. *)
 let f128_k f =
@@ -215,27 +218,27 @@ let f128_k f =
 let f16_k f =
   app (ifam "to_fp" (float_shape 16)) [ RoundingMode.default; f32_k f ]
 
-let fp_abs f = app_ "fp.abs" [ f ]
-let fp_eq f1 f2 = app_ "fp.eq" [ f1; f2 ]
-let fp_leq f1 f2 = app_ "fp.leq" [ f1; f2 ]
-let fp_lt f1 f2 = app_ "fp.lt" [ f1; f2 ]
-let fp_add f1 f2 = app_ "fp.add" [ RoundingMode.default; f1; f2 ]
-let fp_sub f1 f2 = app_ "fp.sub" [ RoundingMode.default; f1; f2 ]
-let fp_mul f1 f2 = app_ "fp.mul" [ RoundingMode.default; f1; f2 ]
-let fp_div f1 f2 = app_ "fp.div" [ RoundingMode.default; f1; f2 ]
-let fp_rem f1 f2 = app_ "fp.rem" [ f1; f2 ]
+let fp_abs f = "fp.abs" $$. [ f ]
+let fp_eq f1 f2 = "fp.eq" $$. [ f1; f2 ]
+let fp_leq f1 f2 = "fp.leq" $$. [ f1; f2 ]
+let fp_lt f1 f2 = "fp.lt" $$. [ f1; f2 ]
+let fp_add f1 f2 = "fp.add" $$. [ RoundingMode.default; f1; f2 ]
+let fp_sub f1 f2 = "fp.sub" $$. [ RoundingMode.default; f1; f2 ]
+let fp_mul f1 f2 = "fp.mul" $$. [ RoundingMode.default; f1; f2 ]
+let fp_div f1 f2 = "fp.div" $$. [ RoundingMode.default; f1; f2 ]
+let fp_rem f1 f2 = "fp.rem" $$. [ f1; f2 ]
 
 (* [fp_is fc f] tests if [f] belongs to floating-point class [fc]. *)
 let fp_is (fc : fpclass) f =
   match fc with
-  | FP_normal -> app_ "fp.isNormal" [ f ]
-  | FP_subnormal -> app_ "fp.isSubnormal" [ f ]
-  | FP_zero -> app_ "fp.isZero" [ f ]
-  | FP_infinite -> app_ "fp.isInfinite" [ f ]
-  | FP_nan -> app_ "fp.isNaN" [ f ]
+  | FP_normal -> "fp.isNormal" $$. [ f ]
+  | FP_subnormal -> "fp.isSubnormal" $$. [ f ]
+  | FP_zero -> "fp.isZero" $$. [ f ]
+  | FP_infinite -> "fp.isInfinite" $$. [ f ]
+  | FP_nan -> "fp.isNaN" $$. [ f ]
 
 let fp_round (rm : RoundingMode.t) f =
-  app_ "fp.roundToIntegral" [ RoundingMode.to_sexp rm; f ]
+  "fp.roundToIntegral" $$. [ RoundingMode.to_sexp rm; f ]
 
 (** {2 Float/bit-vector conversions} *)
 
@@ -264,20 +267,20 @@ let sbv_of_float rm n f =
 
 (* [int_of_bv signed bv] reads [bv] as a (signed or unsigned) integer. *)
 let int_of_bv signed bv =
-  if signed then app_ "sbv_to_int" [ bv ] else app_ "ubv_to_int" [ bv ]
+  if signed then "sbv_to_int" $$. [ bv ] else "ubv_to_int" $$. [ bv ]
 
 (* [bv_of_int size n] converts integer [n] to a [size]-bit bit-vector. *)
 let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]
 
 (** {2 Bit-vector overflow predicates} *)
 
-let bv_nego x = app_ "bvnego" [ x ]
-let bv_uaddo l r = app_ "bvuaddo" [ l; r ]
-let bv_saddo l r = app_ "bvsaddo" [ l; r ]
-let bv_usubo l r = app_ "bvusubo" [ l; r ]
-let bv_ssubo l r = app_ "bvssubo" [ l; r ]
-let bv_umulo l r = app_ "bvumulo" [ l; r ]
-let bv_smulo l r = app_ "bvsmulo" [ l; r ]
+let bv_nego x = "bvnego" $$. [ x ]
+let bv_uaddo l r = "bvuaddo" $$. [ l; r ]
+let bv_saddo l r = "bvsaddo" $$. [ l; r ]
+let bv_usubo l r = "bvusubo" $$. [ l; r ]
+let bv_ssubo l r = "bvssubo" $$. [ l; r ]
+let bv_umulo l r = "bvumulo" $$. [ l; r ]
+let bv_smulo l r = "bvsmulo" $$. [ l; r ]
 
 (** {2 Sequences} *)
 
@@ -292,7 +295,7 @@ let simple_command xs = List (List.map atom xs)
 let set_option x y = simple_command [ "set-option"; x; y ]
 let push n = simple_command [ "push"; string_of_int n ]
 let pop n = simple_command [ "pop"; string_of_int n ]
-let declare_fun f ps r = app_ "declare-fun" [ Atom f; List ps; r ]
+let declare_fun f ps r = "declare-fun" $$. [ Atom f; List ps; r ]
 let declare f t = declare_fun f [] t
 
 type con_field = string * sexp
@@ -304,11 +307,11 @@ let declare_datatype name type_params cons =
   let def =
     match type_params with
     | [] -> mk_cons
-    | _ -> app_ "par" [ List (List.map atom type_params); mk_cons ]
+    | _ -> "par" $$. [ List (List.map atom type_params); mk_cons ]
   in
-  app_ "declare-datatype" [ Atom name; def ]
+  "declare-datatype" $$. [ Atom name; def ]
 
-let assume e = app_ "assert" [ e ]
+let assume e = "assert" $$. [ e ]
 
 (* SMT-LIB [(reset)] command to reset the solver state. *)
 let reset = simple_command [ "reset" ]
