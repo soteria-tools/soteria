@@ -14,7 +14,7 @@ end
 module Make (Value : Value.S) :
   Solver_interface.S with type value = Value.t and type ty = Value.ty = struct
   let initialize_solver : (Soteria_smt.solver -> unit) ref =
-    ref (fun solver -> List.iter (ack_command solver) Value.init_commands)
+    ref (fun solver -> List.iter (command solver) Value.init_commands)
 
   let register_solver_init f =
     let old = !initialize_solver in
@@ -29,7 +29,7 @@ module Make (Value : Value.S) :
         match (Config.get ()).solver_timeout with
         | None -> ()
         | Some timeout ->
-            ack_command solver (set_option ":timeout" (string_of_int timeout)))
+            command solver (set_option ":timeout" (string_of_int timeout)))
 
   let solver_log =
     let debug ~prefix thunk = L.smt (fun m -> m "%s: %s" prefix (thunk ())) in
@@ -92,15 +92,19 @@ module Make (Value : Value.S) :
 
   let init () =
     let solver = new_solver (solver_config ()) in
-    let command sexp =
+    let ack_command sexp =
       Dump.log_sexp sexp;
       let now = Unix.gettimeofday () in
-      let res = solver.command sexp in
+      let res = solver.ack_command sexp in
       let elapsed = Unix.gettimeofday () -. now in
       Dump.log_response res elapsed;
       res
     in
-    let solver = { solver with command } in
+    let command sexp =
+      Dump.log_sexp sexp;
+      solver.command sexp
+    in
+    let solver = { solver with ack_command; command } in
     !initialize_solver solver;
     solver
 
@@ -108,12 +112,12 @@ module Make (Value : Value.S) :
     let name = Symex.Var.to_string name in
     let ty = Value.sort_of_ty ty in
     let sexp = declare name ty in
-    ack_command solver sexp
+    command solver sexp
 
   let add_constraint solver v =
     let v = Value.encode_value v in
     let sexp = Soteria_smt.assume v in
-    ack_command solver sexp
+    command solver sexp
 
   let check_sat solver : Symex.Solver_result.t =
     Stats.As_ctx.incr StatKeys.check_sats;
@@ -130,13 +134,13 @@ module Make (Value : Value.S) :
         [%l.info "Solver returned unknown"];
         Unknown
 
-  let push solver n = ack_command solver (Soteria_smt.push n)
-  let pop solver n = ack_command solver (Soteria_smt.pop n)
+  let push solver n = command solver (Soteria_smt.push n)
+  let pop solver n = command solver (Soteria_smt.pop n)
   let save solver = push solver 1
   let backtrack_n solver n = pop solver n
 
   let reset solver =
-    ack_command solver reset;
+    command solver reset;
     !initialize_solver solver
 
   let get_model solver =

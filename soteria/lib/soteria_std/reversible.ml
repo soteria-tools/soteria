@@ -194,21 +194,34 @@ end = struct
     let apply state f = Pool.apply ~auth state f in
     apply state M.reset;
     (* Being conservative and resetting state on acquisition *)
-    let r =
-      try f () with
-      | effect Backtrack_n n, k ->
-          apply state (fun state -> M.backtrack_n state n);
-          Effect.Deep.continue k ()
-      | effect Save, k ->
-          apply state M.save;
-          Effect.Deep.continue k ()
-      | effect Wrap g, k ->
-          let result = apply state g in
-          Effect.Deep.continue k result
+    (* The resource must go back to the pool on *every* exit, including when
+       [f] raises. [f] raising is not exceptional here: symbolic execution
+       calls [give_up], which makes [Symex.run] raise [Symex.Gave_up], and
+       callers (e.g. [Summary.analyse]) deliberately catch it. Without this,
+       the acquired solver would be leaked from the pool and a fresh one
+       (a new Z3 process) spawned for the next [run].
+
+       We reset before releasing so the next user gets a clean solver. If that
+       reset itself fails the underlying solver is broken (e.g. the Z3 process
+       died), so we drop the resource instead of recycling a bad one -- the
+       next [acquire] will create a fresh one. Cleanup never raises, so the
+       original outcome of [f] (value or exception) is preserved. *)
+    let release_back () =
+      match apply state M.reset with
+      | () -> ( try Pool.release pool auth state with _ -> ())
+      | exception _ -> ()
     in
-    apply state M.reset;
-    Pool.release pool auth state;
-    r
+    Fun.protect ~finally:release_back @@ fun () ->
+    try f () with
+    | effect Backtrack_n n, k ->
+        apply state (fun state -> M.backtrack_n state n);
+        Effect.Deep.continue k ()
+    | effect Save, k ->
+        apply state M.save;
+        Effect.Deep.continue k ()
+    | effect Wrap g, k ->
+        let result = apply state g in
+        Effect.Deep.continue k result
 
   let total_resources () = Pool.total_resources pool
   let available_resources () = Pool.available_resources pool

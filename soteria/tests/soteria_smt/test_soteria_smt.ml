@@ -52,7 +52,8 @@ let big_list n = list (List.init n (fun i -> atom (Printf.sprintf "a%d" i)))
 
 let fake_cfg exts resp =
   {
-    command = (fun _ -> resp);
+    ack_command = (fun _ -> resp);
+    command = (fun _ -> ());
     stop = (fun () -> ());
     force_stop = (fun () -> ());
     config = { z3 with exts };

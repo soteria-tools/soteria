@@ -189,7 +189,20 @@ type solver_config = {
 }
 
 type solver = {
-  command : sexp -> sexp;
+  ack_command : sexp -> sexp;
+      (** Send a command and synchronously wait for its response. Any
+          fire-and-forget commands sent earlier with {!field:command} are
+          flushed (their acknowledgements drained) first, so the response read
+          here lines up with this command's own query. Used for the commands
+          whose answer we actually need ([check-sat], [get-model]). *)
+  command : sexp -> unit;
+      (** Send a command without waiting for its acknowledgement. The solver
+          still runs in [:print-success true] mode, so each such command still
+          produces exactly one [success] (or error) line; those are drained in
+          one batch by the next {!field:ack_command}. This turns the long chain
+          of synchronous round-trips (declare / assert / push / pop / reset
+          that precedes every [check-sat]) into pipelined writes, which is
+          where most of the solver wall-clock time was being spent. *)
   stop : unit -> unit;
   force_stop : unit -> unit;
   config : solver_config;
@@ -197,17 +210,25 @@ type solver = {
 
 (** {2 Acknowledged commands and checking} *)
 
+(** Send a command and verify the solver acknowledged it with [success].
+
+    This goes through {!field:ack_command}, so it is synchronous: prefer
+    {!command} on the hot path where the acknowledgement can be deferred. *)
 let ack_command (s : solver) cmd =
-  match s.command cmd with
+  match s.ack_command cmd with
   | Atom "success" -> ()
   | ans -> raise (UnexpectedSolverResponse ans)
+
+(** Send a command without waiting for its acknowledgement; see
+    {!field:command}. *)
+let command (s : solver) cmd = s.command cmd
 
 type result = Unsat | Unknown | Sat [@@deriving show { with_path = false }]
 
 let s_check_sat = List [ Atom "check-sat" ]
 
 let check s =
-  match s.command s_check_sat with
+  match s.ack_command s_check_sat with
   | Atom "unsat" -> Unsat
   | Atom "sat" -> Sat
   | Atom "unknown" -> Unknown
@@ -218,7 +239,7 @@ let check s =
 let s_get_model = List [ Atom "get-model" ]
 
 let get_model s =
-  let ans = s.command s_get_model in
+  let ans = s.ack_command s_get_model in
   match s.config.exts with
   | CVC5 | Other -> ans
   | Z3 -> (
@@ -285,6 +306,14 @@ let get_model s =
 
 (** {2 Creating solvers} *)
 
+(* Outstanding fire-and-forget commands are drained before the pipe buffer can
+   fill: each un-acked command queues a short [success] line in the solver's
+   stdout pipe, and left unbounded that could deadlock (we block writing while
+   the solver blocks writing its output). The acknowledgements for
+   already-sent commands are guaranteed to be in flight, so reading exactly
+   [pending] of them never blocks indefinitely. *)
+let drain_threshold = 1024
+
 let new_solver (cfg : solver_config) : solver =
   let args = Array.of_list (cfg.exe :: cfg.opts) in
   let proc = Unix.open_process_args_full cfg.exe args [||] in
@@ -292,17 +321,52 @@ let new_solver (cfg : solver_config) : solver =
   let in_chan, out_chan, in_err_chan = proc in
   let reader = Reader.create in_chan in_err_chan in
   let cmd_buf = Buffer.create 4096 in
+  (* Number of fire-and-forget commands whose [success] acknowledgement has not
+     been read back yet. *)
+  let pending = ref 0 in
 
-  let send_command c =
+  let write_command c =
     Buffer.clear cmd_buf;
     write_buf cmd_buf c;
     Buffer.output_buffer out_chan cmd_buf;
     output_char out_chan '\n';
     flush out_chan;
-    cfg.log.send (fun () -> Buffer.contents cmd_buf);
+    cfg.log.send (fun () -> Buffer.contents cmd_buf)
+  in
+  let read_response () =
     let ans = Reader.read_sexp reader in
     cfg.log.receive (fun () -> to_string ans);
     ans
+  in
+  (* Read and discard the acknowledgements of all commands sent with [send].
+
+     The solver emits exactly one line per command (a [success], or an
+     [(error ...)] if a command actually failed), so we must consume all [n]
+     of them to keep the stream aligned -- bailing out on the first error
+     would leave the remaining acknowledgements unread and desynchronise every
+     later response. We therefore drain the full batch and only afterwards
+     surface the first unexpected line, the same way [ack_command] would (the
+     next [check]/[get_model] is wrapped to turn this into [Unknown]/[None]). *)
+  let drain () =
+    let n = !pending in
+    pending := 0;
+    let bad = ref None in
+    for _ = 1 to n do
+      match read_response () with
+      | Atom "success" -> ()
+      | ans -> if Option.is_none !bad then bad := Some ans
+    done;
+    match !bad with None -> () | Some ans -> raise (UnexpectedSolverResponse ans)
+  in
+  let command_no_ack c =
+    write_command c;
+    incr pending;
+    if !pending >= drain_threshold then drain ()
+  in
+  let command_with_ack c =
+    drain ();
+    write_command c;
+    read_response ()
   in
   (* [stop] is idempotent: it can be called explicitly and is also registered as
      a GC finaliser, so [Unix.close_process_full] must not run twice. *)
@@ -326,7 +390,8 @@ let new_solver (cfg : solver_config) : solver =
   in
   let s =
     {
-      command = send_command;
+      ack_command = command_with_ack;
+      command = command_no_ack;
       stop = stop_command;
       force_stop = force_stop_command;
       config = cfg;
