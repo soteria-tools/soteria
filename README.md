@@ -4,7 +4,7 @@
   <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
 </picture>
 
-Soteria is an OCaml toolchain for symbolic execution of Rust programs.
+Soteria is an OCaml library for writing efficient symbolic interpreters directly in OCaml.
 The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. Currently, two symbolic interpreters have been written: Soteria-Rust and Soteria-C. Our current main focus is Soteria-Rust.
 
 
