@@ -15,7 +15,10 @@
       [unknown]) are interned, so the [check] / [ack_command] round-trips do
       not allocate a fresh atom. *)
 
-include Fast_smt
+include Fast_sexp
+
+module StrSet = Set.Make (String)
+module StrMap = Map.Make (String)
 
 (** {1 SMT term and command builders} *)
 
@@ -206,16 +209,7 @@ let ack_command (s : solver) cmd =
   | ans -> raise (UnexpectedSolverResponse ans)
 
 type result = Unsat | Unknown | Sat
-
-let pp_result fmt = function
-  | Unsat -> Format.pp_print_string fmt "Unsat"
-  | Unknown -> Format.pp_print_string fmt "Unknown"
-  | Sat -> Format.pp_print_string fmt "Sat"
-
-let show_result = function
-  | Unsat -> "Unsat"
-  | Unknown -> "Unknown"
-  | Sat -> "Sat"
+[@@deriving show { with_path = false }]
 
 let s_check_sat = List [ Atom "check-sat" ]
 
@@ -253,7 +247,7 @@ let get_model s =
         match x with
         | Atom a -> if StrSet.mem a bound then vars else a :: vars
         | List [ Atom q; List vs; body ]
-          when String.equal q "forall" || String.equal q "exist"
+          when String.equal q "forall" || String.equal q "exists"
                || String.equal q "let" ->
             free (add_bound bound vs) vars body
         | List xs -> List.fold_left (free bound) vars xs

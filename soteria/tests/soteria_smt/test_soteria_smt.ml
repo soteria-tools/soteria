@@ -52,14 +52,6 @@ let big_list n = list (List.init n (fun i -> atom (Printf.sprintf "a%d" i)))
 
 (* {1 Fake solver} *)
 
-let fake resp =
-  {
-    command = (fun _ -> resp);
-    stop = (fun () -> ());
-    force_stop = (fun () -> ());
-    config = z3;
-  }
-
 let fake_cfg exts resp =
   {
     command = (fun _ -> resp);
@@ -67,6 +59,8 @@ let fake_cfg exts resp =
     force_stop = (fun () -> ());
     config = { z3 with exts };
   }
+
+let fake resp = fake_cfg Z3 resp
 
 (* {1 Serializer (original) } *)
 

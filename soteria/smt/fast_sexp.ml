@@ -2,9 +2,6 @@
 
     This module is [include]d by {!Soteria_smt}; do not use it directly. *)
 
-module StrSet = Set.Make (String)
-module StrMap = Map.Make (String)
-
 (** {1 S-expressions} *)
 
 type sexp = Atom of string | List of sexp list
@@ -61,9 +58,11 @@ module Reader = struct
     mutable buf : bytes;
     mutable pos : int;
     mutable len : int;
+    atom_buf : Buffer.t;
   }
 
-  let create ic err = { ic; err; buf = Bytes.create 65536; pos = 0; len = 0 }
+  let create ic err =
+    { ic; err; buf = Bytes.create 65536; pos = 0; len = 0; atom_buf = Buffer.create 64 }
 
   (* Refill the buffer; returns false at EOF. *)
   let refill r =
@@ -106,41 +105,41 @@ module Reader = struct
 
   (* Read a delimited token (verbatim, keeping any quoting). *)
   let read_plain r =
-    let b = Buffer.create 16 in
+    Buffer.clear r.atom_buf;
     let rec loop () =
       match peek r with
       | Some c when not (is_delim c) ->
-          Buffer.add_char b c;
+          Buffer.add_char r.atom_buf c;
           advance r;
           loop ()
-      | _ -> Buffer.contents b
+      | _ -> Buffer.contents r.atom_buf
     in
     loop ()
 
   let read_quoted r =
     (* assumes leading '|' already at peek *)
-    let b = Buffer.create 16 in
+    Buffer.clear r.atom_buf;
     advance r;
-    Buffer.add_char b '|';
+    Buffer.add_char r.atom_buf '|';
     let rec loop () =
       match peek r with
       | Some '|' ->
           advance r;
-          Buffer.add_char b '|';
-          Buffer.contents b
+          Buffer.add_char r.atom_buf '|';
+          Buffer.contents r.atom_buf
       | Some c ->
           advance r;
-          Buffer.add_char b c;
+          Buffer.add_char r.atom_buf c;
           loop ()
-      | None -> Buffer.contents b
+      | None -> Buffer.contents r.atom_buf
     in
     loop ()
 
   let read_string r =
     (* assumes leading '"' already at peek; "" is an escaped quote *)
-    let b = Buffer.create 16 in
+    Buffer.clear r.atom_buf;
     advance r;
-    Buffer.add_char b '"';
+    Buffer.add_char r.atom_buf '"';
     let rec loop () =
       match peek r with
       | Some '"' -> (
@@ -148,16 +147,16 @@ module Reader = struct
           match peek r with
           | Some '"' ->
               advance r;
-              Buffer.add_string b "\"\"";
+              Buffer.add_string r.atom_buf "\"\"";
               loop ()
           | _ ->
-              Buffer.add_char b '"';
-              Buffer.contents b)
+              Buffer.add_char r.atom_buf '"';
+              Buffer.contents r.atom_buf)
       | Some c ->
           advance r;
-          Buffer.add_char b c;
+          Buffer.add_char r.atom_buf c;
           loop ()
-      | None -> Buffer.contents b
+      | None -> Buffer.contents r.atom_buf
     in
     loop ()
 
@@ -174,14 +173,7 @@ module Reader = struct
     | "unknown" -> a_unknown
     | s -> Atom s
 
-  let read_all_err r =
-    let b = Buffer.create 256 in
-    (try
-       while true do
-         Buffer.add_channel b r.err 1
-       done
-     with End_of_file -> ());
-    Buffer.contents b
+  let read_all_err r = In_channel.input_all r.err
 
   let rec read_sexp r : sexp =
     skip_ws r;
