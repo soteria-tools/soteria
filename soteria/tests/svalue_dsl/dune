@@ -1,0 +1,3 @@
+(tests
+ (names check typed_check)
+ (libraries soteria))

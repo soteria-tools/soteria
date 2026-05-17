@@ -43,3 +43,6 @@ let () =
 
 (* Register [@@deriving sym_state] *)
 let () = Sym_state.register ()
+
+(* Register [%%svalue { ... }] value-language DSL *)
+let () = Svalue_dsl_ppx.register ()

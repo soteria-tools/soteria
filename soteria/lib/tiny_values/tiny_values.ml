@@ -5,5 +5,6 @@ module Encoding = Encoding
 module Eval = Eval
 module Save_counter = Save_counter
 module Svalue = Svalue
+module Svalue_dsl = Svalue_dsl
 module Tiny_solver = Tiny_solver
 module Typed = Typed
