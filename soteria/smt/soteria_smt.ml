@@ -200,9 +200,9 @@ type solver = {
           still runs in [:print-success true] mode, so each such command still
           produces exactly one [success] (or error) line; those are drained in
           one batch by the next {!field:ack_command}. This turns the long chain
-          of synchronous round-trips (declare / assert / push / pop / reset
-          that precedes every [check-sat]) into pipelined writes, which is
-          where most of the solver wall-clock time was being spent. *)
+          of synchronous round-trips (declare / assert / push / pop / reset that
+          precedes every [check-sat]) into pipelined writes, which is where most
+          of the solver wall-clock time was being spent. *)
   stop : unit -> unit;
   force_stop : unit -> unit;
   config : solver_config;
@@ -309,9 +309,9 @@ let get_model s =
 (* Outstanding fire-and-forget commands are drained before the pipe buffer can
    fill: each un-acked command queues a short [success] line in the solver's
    stdout pipe, and left unbounded that could deadlock (we block writing while
-   the solver blocks writing its output). The acknowledgements for
-   already-sent commands are guaranteed to be in flight, so reading exactly
-   [pending] of them never blocks indefinitely. *)
+   the solver blocks writing its output). The acknowledgements for already-sent
+   commands are guaranteed to be in flight, so reading exactly [pending] of them
+   never blocks indefinitely. *)
 let drain_threshold = 1024
 
 let new_solver (cfg : solver_config) : solver =
@@ -340,13 +340,13 @@ let new_solver (cfg : solver_config) : solver =
   in
   (* Read and discard the acknowledgements of all commands sent with [send].
 
-     The solver emits exactly one line per command (a [success], or an
-     [(error ...)] if a command actually failed), so we must consume all [n]
-     of them to keep the stream aligned -- bailing out on the first error
-     would leave the remaining acknowledgements unread and desynchronise every
-     later response. We therefore drain the full batch and only afterwards
-     surface the first unexpected line, the same way [ack_command] would (the
-     next [check]/[get_model] is wrapped to turn this into [Unknown]/[None]). *)
+     The solver emits exactly one line per command (a [success], or an [(error
+     ...)] if a command actually failed), so we must consume all [n] of them to
+     keep the stream aligned -- bailing out on the first error would leave the
+     remaining acknowledgements unread and desynchronise every later response.
+     We therefore drain the full batch and only afterwards surface the first
+     unexpected line, the same way [ack_command] would (the next
+     [check]/[get_model] is wrapped to turn this into [Unknown]/[None]). *)
   let drain () =
     let n = !pending in
     pending := 0;
@@ -356,7 +356,9 @@ let new_solver (cfg : solver_config) : solver =
       | Atom "success" -> ()
       | ans -> if Option.is_none !bad then bad := Some ans
     done;
-    match !bad with None -> () | Some ans -> raise (UnexpectedSolverResponse ans)
+    match !bad with
+    | None -> ()
+    | Some ans -> raise (UnexpectedSolverResponse ans)
   in
   let command_no_ack c =
     write_command c;
