@@ -194,7 +194,10 @@ end = struct
     let apply state f = Pool.apply ~auth state f in
     apply state M.reset;
     (* Being conservative and resetting state on acquisition *)
-    let release_back () = Pool.release pool auth state in
+    let release_back () =
+      apply state M.reset;
+      Pool.release pool auth state
+    in
     Fun.protect ~finally:release_back @@ fun () ->
     try f () with
     | effect Backtrack_n n, k ->
