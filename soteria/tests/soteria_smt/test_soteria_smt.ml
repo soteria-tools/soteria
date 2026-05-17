@@ -4,9 +4,7 @@ let sexp = Alcotest.testable pp_sexp ( = )
 
 let contains ~needle s =
   let nl = String.length needle and sl = String.length s in
-  let rec go i =
-    i + nl <= sl && (String.sub s i nl = needle || go (i + 1))
-  in
+  let rec go i = i + nl <= sl && (String.sub s i nl = needle || go (i + 1)) in
   go 0
 
 (* {1 Reader helpers} *)
@@ -67,35 +65,45 @@ let fake resp = fake_cfg Z3 resp
 let test_serialize () =
   Alcotest.(check string) "atom" "foo" (to_string (atom "foo"));
   Alcotest.(check string) "empty list" "()" (to_string (list []));
-  Alcotest.(check string) "flat list" "(a b c)"
+  Alcotest.(check string)
+    "flat list" "(a b c)"
     (to_string (list [ atom "a"; atom "b"; atom "c" ]));
-  Alcotest.(check string) "nested" "(= (bvadd x y) #x0f)"
+  Alcotest.(check string)
+    "nested" "(= (bvadd x y) #x0f)"
     (to_string (eq (bv_add (atom "x") (atom "y")) (bv_k 8 (Z.of_int 15))));
-  Alcotest.(check string) "bv binary (non-mult-of-4)" "#b101"
+  Alcotest.(check string)
+    "bv binary (non-mult-of-4)" "#b101"
     (to_string (bv_k 3 (Z.of_int 5)));
-  Alcotest.(check string) "indexed sort" "(_ BitVec 32)"
-    (to_string (t_bits 32));
-  Alcotest.(check string) "assert" "(assert (and p q))"
+  Alcotest.(check string) "indexed sort" "(_ BitVec 32)" (to_string (t_bits 32));
+  Alcotest.(check string)
+    "assert" "(assert (and p q))"
     (to_string (assume (bool_and (atom "p") (atom "q"))))
 
 (* {1 Serializer corner cases} *)
 
 let test_structure_edges () =
-  Alcotest.(check string) "single-elt list" "(a)"
+  Alcotest.(check string)
+    "single-elt list" "(a)"
     (to_string (list [ atom "a" ]));
-  Alcotest.(check string) "deep nesting" "(((x)))"
+  Alcotest.(check string)
+    "deep nesting" "(((x)))"
     (to_string (list [ list [ list [ atom "x" ] ] ]));
-  Alcotest.(check string) "app no args is identity" "f"
+  Alcotest.(check string)
+    "app no args is identity" "f"
     (to_string (app (atom "f") []));
-  Alcotest.(check string) "app_ no args is identity" "f"
+  Alcotest.(check string)
+    "app_ no args is identity" "f"
     (to_string (app_ "f" []));
-  Alcotest.(check string) "non-atom head" "((f x) y)"
+  Alcotest.(check string)
+    "non-atom head" "((f x) y)"
     (to_string (app (list [ atom "f"; atom "x" ]) [ atom "y" ]));
-  Alcotest.(check string) "verbatim quoted atom" "(|a b| \"c d\")"
+  Alcotest.(check string)
+    "verbatim quoted atom" "(|a b| \"c d\")"
     (to_string (list [ atom "|a b|"; atom "\"c d\"" ]));
   Alcotest.(check bool) "is_atom atom" true (is_atom (atom "x"));
   Alcotest.(check bool) "is_atom list" false (is_atom (list []));
-  Alcotest.(check bool) "to_list some" true
+  Alcotest.(check bool)
+    "to_list some" true
     (to_list (list [ atom "a" ]) = Some [ atom "a" ]);
   Alcotest.(check bool) "to_list none" true (to_list (atom "x") = None)
 
@@ -106,36 +114,44 @@ let test_numerals () =
   Alcotest.(check string) "int_k neg" "(- 3)" (to_string (int_k (-3)));
   Alcotest.(check string) "int_k pos" "7" (to_string (int_k 7));
   let big = Z.pow (Z.of_int 2) 70 in
-  Alcotest.(check string) "very large" (Z.to_string big)
+  Alcotest.(check string)
+    "very large" (Z.to_string big)
     (to_string (int_zk big))
 
 let test_bitvectors () =
   Alcotest.(check string) "hex byte" "#xff" (to_string (bv_k 8 (Z.of_int 255)));
-  Alcotest.(check string) "hex zero-pad" "#x0001"
-    (to_string (bv_k 16 Z.one));
-  Alcotest.(check string) "hex 32 zero" "#x00000000"
+  Alcotest.(check string) "hex zero-pad" "#x0001" (to_string (bv_k 16 Z.one));
+  Alcotest.(check string)
+    "hex 32 zero" "#x00000000"
     (to_string (bv_k 32 Z.zero));
-  Alcotest.(check string) "width-1 binary" "#b1"
-    (to_string (bv_k 1 Z.one));
-  Alcotest.(check string) "non-mult-of-4" "#b101"
+  Alcotest.(check string) "width-1 binary" "#b1" (to_string (bv_k 1 Z.one));
+  Alcotest.(check string)
+    "non-mult-of-4" "#b101"
     (to_string (bv_k 3 (Z.of_int 5)));
-  Alcotest.(check string) "negative hex" "(bvneg #x01)"
+  Alcotest.(check string)
+    "negative hex" "(bvneg #x01)"
     (to_string (bv_k 8 (Z.of_int (-1))));
-  Alcotest.(check string) "bv_nat_bin pad" "#b00001"
+  Alcotest.(check string)
+    "bv_nat_bin pad" "#b00001"
     (to_string (bv_nat_bin 5 Z.one));
-  Alcotest.(check string) "bv_nat_hex pad" "#x00ff"
+  Alcotest.(check string)
+    "bv_nat_hex pad" "#x00ff"
     (to_string (bv_nat_hex 16 (Z.of_int 255)));
-  Alcotest.(check string) "bv_bin negative" "(bvneg #b0001)"
+  Alcotest.(check string)
+    "bv_bin negative" "(bvneg #b0001)"
     (to_string (bv_bin 4 (Z.of_int (-1))))
 
 let test_logic_helpers () =
   Alcotest.(check string) "distinct []" "true" (to_string (distinct []));
-  Alcotest.(check string) "distinct [x]" "(distinct x)"
+  Alcotest.(check string)
+    "distinct [x]" "(distinct x)"
     (to_string (distinct [ atom "x" ]));
-  Alcotest.(check string) "distinct xyz" "(distinct x y z)"
+  Alcotest.(check string)
+    "distinct xyz" "(distinct x y z)"
     (to_string (distinct [ atom "x"; atom "y"; atom "z" ]));
   Alcotest.(check string) "bool_ands []" "true" (to_string (bool_ands []));
-  Alcotest.(check string) "bool_ands [p]" "(and p)"
+  Alcotest.(check string)
+    "bool_ands [p]" "(and p)"
     (to_string (bool_ands [ atom "p" ]));
   Alcotest.(check string) "bool_ors []" "false" (to_string (bool_ors []));
   Alcotest.(check string) "bool_k true" "true" (to_string (bool_k true));
@@ -145,40 +161,47 @@ let test_logic_helpers () =
 
 let test_commands () =
   Alcotest.(check string) "reset" "(reset)" (to_string reset);
-  Alcotest.(check string) "set_option" "(set-option :x y)"
+  Alcotest.(check string)
+    "set_option" "(set-option :x y)"
     (to_string (set_option ":x" "y"));
   Alcotest.(check string) "push" "(push 1)" (to_string (push 1));
   Alcotest.(check string) "pop" "(pop 2)" (to_string (pop 2));
-  Alcotest.(check string) "declare const" "(declare-fun v () Int)"
+  Alcotest.(check string)
+    "declare const" "(declare-fun v () Int)"
     (to_string (declare "v" t_int));
-  Alcotest.(check string) "declare_fun" "(declare-fun f (Int Bool) Bool)"
+  Alcotest.(check string)
+    "declare_fun" "(declare-fun f (Int Bool) Bool)"
     (to_string (declare_fun "f" [ t_int; t_bool ] t_bool));
-  Alcotest.(check string) "declare_datatype"
-    "(declare-datatype Ptr ((mk-ptr (loc Int) (ofs Int))))"
+  Alcotest.(check string)
+    "declare_datatype" "(declare-datatype Ptr ((mk-ptr (loc Int) (ofs Int))))"
     (to_string
        (declare_datatype "Ptr" []
           [ ("mk-ptr", [ ("loc", t_int); ("ofs", t_int) ]) ]));
-  Alcotest.(check string) "assume" "(assert p)"
-    (to_string (assume (atom "p")));
-  Alcotest.(check string) "exists" "(exists (x) b)"
+  Alcotest.(check string) "assume" "(assert p)" (to_string (assume (atom "p")));
+  Alcotest.(check string)
+    "exists" "(exists (x) b)"
     (to_string (exists [ atom "x" ] (atom "b")))
 
 let test_indexed () =
-  Alcotest.(check string) "extract" "((_ extract 7 0) x)"
+  Alcotest.(check string)
+    "extract" "((_ extract 7 0) x)"
     (to_string (bv_extract 7 0 (atom "x")));
-  Alcotest.(check string) "sign_extend" "((_ sign_extend 8) x)"
+  Alcotest.(check string)
+    "sign_extend" "((_ sign_extend 8) x)"
     (to_string (bv_sign_extend 8 (atom "x")));
-  Alcotest.(check string) "zero_extend" "((_ zero_extend 4) x)"
+  Alcotest.(check string)
+    "zero_extend" "((_ zero_extend 4) x)"
     (to_string (bv_zero_extend 4 (atom "x")));
   Alcotest.(check string) "t_bits" "(_ BitVec 32)" (to_string (t_bits 32));
-  Alcotest.(check string) "fam" "(_ foo a b)"
+  Alcotest.(check string)
+    "fam" "(_ foo a b)"
     (to_string (fam "foo" [ atom "a"; atom "b" ]));
-  Alcotest.(check string) "ifam" "(_ bar 1 2)"
-    (to_string (ifam "bar" [ 1; 2 ]))
+  Alcotest.(check string) "ifam" "(_ bar 1 2)" (to_string (ifam "bar" [ 1; 2 ]))
 
 let test_printers () =
   let s = eq (bv_add (atom "x") (atom "y")) (bv_k 8 (Z.of_int 15)) in
-  Alcotest.(check string) "pp_sexp = to_string" (to_string s)
+  Alcotest.(check string)
+    "pp_sexp = to_string" (to_string s)
     (Format.asprintf "%a" pp_sexp s);
   let tmp = Filename.temp_file "soteria_smt" ".out" in
   let oc = open_out tmp in
@@ -192,8 +215,7 @@ let test_printers () =
 
 let test_roundtrip () =
   List.iter
-    (fun s ->
-      Alcotest.(check sexp) "roundtrip" s (parse_one (to_string s)))
+    (fun s -> Alcotest.(check sexp) "roundtrip" s (parse_one (to_string s)))
     [
       atom "x";
       list [];
@@ -209,34 +231,38 @@ let test_roundtrip () =
 let is_fp = function List (Atom "fp" :: _) -> true | _ -> false
 
 let test_fp_constants () =
-  Alcotest.(check string) "f32 1.0"
-    "(fp #b0 #b01111111 #b00000000000000000000000)"
+  Alcotest.(check string)
+    "f32 1.0" "(fp #b0 #b01111111 #b00000000000000000000000)"
     (to_string (f32_k 1.0));
-  Alcotest.(check string) "f32 -1.0"
-    "(fp #b1 #b01111111 #b00000000000000000000000)"
+  Alcotest.(check string)
+    "f32 -1.0" "(fp #b1 #b01111111 #b00000000000000000000000)"
     (to_string (f32_k (-1.0)));
-  Alcotest.(check string) "f64 0.0"
+  Alcotest.(check string)
+    "f64 0.0"
     "(fp #b0 #b00000000000 \
      #b0000000000000000000000000000000000000000000000000000)"
     (to_string (f64_k 0.0));
-  Alcotest.(check string) "f64 -0.0"
+  Alcotest.(check string)
+    "f64 -0.0"
     "(fp #b1 #b00000000000 \
      #b0000000000000000000000000000000000000000000000000000)"
     (to_string (f64_k (-0.0)));
-  Alcotest.(check string) "f16 wraps f32"
+  Alcotest.(check string)
+    "f16 wraps f32"
     (Printf.sprintf "((_ to_fp 5 11) RNA %s)" (to_string (f32_k 1.0)))
     (to_string (f16_k 1.0));
-  Alcotest.(check string) "f128 wraps f64"
+  Alcotest.(check string)
+    "f128 wraps f64"
     (Printf.sprintf "((_ to_fp 15 113) RNA %s)" (to_string (f64_k 1.0)))
     (to_string (f128_k 1.0));
   Alcotest.(check bool) "f32 nan well-formed" true (is_fp (f32_k Float.nan));
-  Alcotest.(check bool) "f64 inf well-formed" true
+  Alcotest.(check bool)
+    "f64 inf well-formed" true
     (is_fp (f64_k Float.infinity))
 
 let test_fp_shape_failure () =
-  Alcotest.check_raises "bad float size"
-    (Failure "Unsupported float size: 7") (fun () ->
-      ignore (float_shape 7))
+  Alcotest.check_raises "bad float size" (Failure "Unsupported float size: 7")
+    (fun () -> ignore (float_shape 7))
 
 let test_rounding_modes () =
   let open RoundingMode in
@@ -254,70 +280,91 @@ let test_rounding_deriving () =
   Alcotest.(check bool) "compare diff <> 0" true (compare Ceil Floor <> 0);
   Alcotest.(check int) "compare refl" 0 (compare Truncate Truncate);
   Alcotest.(check string) "show no path" "Ceil" (show Ceil);
-  Alcotest.(check string) "pp no path" "Floor"
-    (Format.asprintf "%a" pp Floor)
+  Alcotest.(check string) "pp no path" "Floor" (Format.asprintf "%a" pp Floor)
 
 let test_fp_ops () =
-  Alcotest.(check string) "fp_add carries rm" "(fp.add RNA a b)"
+  Alcotest.(check string)
+    "fp_add carries rm" "(fp.add RNA a b)"
     (to_string (fp_add (atom "a") (atom "b")));
-  Alcotest.(check string) "fp_rem no rm" "(fp.rem a b)"
+  Alcotest.(check string)
+    "fp_rem no rm" "(fp.rem a b)"
     (to_string (fp_rem (atom "a") (atom "b")));
-  Alcotest.(check string) "fp_abs" "(fp.abs f)"
-    (to_string (fp_abs (atom "f")));
-  Alcotest.(check string) "fp_eq" "(fp.eq a b)"
+  Alcotest.(check string) "fp_abs" "(fp.abs f)" (to_string (fp_abs (atom "f")));
+  Alcotest.(check string)
+    "fp_eq" "(fp.eq a b)"
     (to_string (fp_eq (atom "a") (atom "b")));
-  Alcotest.(check string) "fp_leq" "(fp.leq a b)"
+  Alcotest.(check string)
+    "fp_leq" "(fp.leq a b)"
     (to_string (fp_leq (atom "a") (atom "b")));
-  Alcotest.(check string) "fp_lt" "(fp.lt a b)"
+  Alcotest.(check string)
+    "fp_lt" "(fp.lt a b)"
     (to_string (fp_lt (atom "a") (atom "b")));
-  Alcotest.(check string) "fp_round RTZ" "(fp.roundToIntegral RTZ x)"
+  Alcotest.(check string)
+    "fp_round RTZ" "(fp.roundToIntegral RTZ x)"
     (to_string (fp_round RoundingMode.Truncate (atom "x")))
 
 let test_fp_is_class () =
-  Alcotest.(check string) "normal" "(fp.isNormal x)"
+  Alcotest.(check string)
+    "normal" "(fp.isNormal x)"
     (to_string (fp_is FP_normal (atom "x")));
-  Alcotest.(check string) "subnormal" "(fp.isSubnormal x)"
+  Alcotest.(check string)
+    "subnormal" "(fp.isSubnormal x)"
     (to_string (fp_is FP_subnormal (atom "x")));
-  Alcotest.(check string) "zero" "(fp.isZero x)"
+  Alcotest.(check string)
+    "zero" "(fp.isZero x)"
     (to_string (fp_is FP_zero (atom "x")));
-  Alcotest.(check string) "infinite" "(fp.isInfinite x)"
+  Alcotest.(check string)
+    "infinite" "(fp.isInfinite x)"
     (to_string (fp_is FP_infinite (atom "x")));
-  Alcotest.(check string) "nan" "(fp.isNaN x)"
+  Alcotest.(check string)
+    "nan" "(fp.isNaN x)"
     (to_string (fp_is FP_nan (atom "x")))
 
 let test_fp_conversions () =
-  Alcotest.(check string) "float_of_bv" "((_ to_fp 8 24) x)"
+  Alcotest.(check string)
+    "float_of_bv" "((_ to_fp 8 24) x)"
     (to_string (float_of_bv 32 (atom "x")));
-  Alcotest.(check string) "float_of_ubv" "((_ to_fp_unsigned 5 11) RNE x)"
-    (to_string
-       (float_of_ubv RoundingMode.NearestTiesToEven 16 (atom "x")));
-  Alcotest.(check string) "float_of_sbv" "((_ to_fp 11 53) RTN x)"
+  Alcotest.(check string)
+    "float_of_ubv" "((_ to_fp_unsigned 5 11) RNE x)"
+    (to_string (float_of_ubv RoundingMode.NearestTiesToEven 16 (atom "x")));
+  Alcotest.(check string)
+    "float_of_sbv" "((_ to_fp 11 53) RTN x)"
     (to_string (float_of_sbv RoundingMode.Floor 64 (atom "x")));
-  Alcotest.(check string) "ubv_of_float" "((_ fp.to_ubv 8) RTP f)"
+  Alcotest.(check string)
+    "ubv_of_float" "((_ fp.to_ubv 8) RTP f)"
     (to_string (ubv_of_float RoundingMode.Ceil 8 (atom "f")));
-  Alcotest.(check string) "sbv_of_float" "((_ fp.to_sbv 16) RTZ f)"
+  Alcotest.(check string)
+    "sbv_of_float" "((_ fp.to_sbv 16) RTZ f)"
     (to_string (sbv_of_float RoundingMode.Truncate 16 (atom "f")));
-  Alcotest.(check string) "bv_of_int" "((_ int_to_bv 32) n)"
+  Alcotest.(check string)
+    "bv_of_int" "((_ int_to_bv 32) n)"
     (to_string (bv_of_int 32 (atom "n")));
-  Alcotest.(check string) "int_of_bv signed" "(sbv_to_int x)"
+  Alcotest.(check string)
+    "int_of_bv signed" "(sbv_to_int x)"
     (to_string (int_of_bv true (atom "x")));
-  Alcotest.(check string) "int_of_bv unsigned" "(ubv_to_int x)"
+  Alcotest.(check string)
+    "int_of_bv unsigned" "(ubv_to_int x)"
     (to_string (int_of_bv false (atom "x")))
 
 let test_bv_overflow () =
-  Alcotest.(check string) "nego" "(bvnego x)"
-    (to_string (bv_nego (atom "x")));
-  Alcotest.(check string) "uaddo" "(bvuaddo l r)"
+  Alcotest.(check string) "nego" "(bvnego x)" (to_string (bv_nego (atom "x")));
+  Alcotest.(check string)
+    "uaddo" "(bvuaddo l r)"
     (to_string (bv_uaddo (atom "l") (atom "r")));
-  Alcotest.(check string) "saddo" "(bvsaddo l r)"
+  Alcotest.(check string)
+    "saddo" "(bvsaddo l r)"
     (to_string (bv_saddo (atom "l") (atom "r")));
-  Alcotest.(check string) "usubo" "(bvusubo l r)"
+  Alcotest.(check string)
+    "usubo" "(bvusubo l r)"
     (to_string (bv_usubo (atom "l") (atom "r")));
-  Alcotest.(check string) "ssubo" "(bvssubo l r)"
+  Alcotest.(check string)
+    "ssubo" "(bvssubo l r)"
     (to_string (bv_ssubo (atom "l") (atom "r")));
-  Alcotest.(check string) "umulo" "(bvumulo l r)"
+  Alcotest.(check string)
+    "umulo" "(bvumulo l r)"
     (to_string (bv_umulo (atom "l") (atom "r")));
-  Alcotest.(check string) "smulo" "(bvsmulo l r)"
+  Alcotest.(check string)
+    "smulo" "(bvsmulo l r)"
     (to_string (bv_smulo (atom "l") (atom "r")))
 
 (* {1 Reader (original) } *)
@@ -341,15 +388,15 @@ let test_reader () =
     (parse_one "((define-fun x () Int 3))")
 
 let test_reader_interns () =
-  Alcotest.(check bool) "success interned" true
+  Alcotest.(check bool)
+    "success interned" true
     (parse_one "success" == Reader.a_success);
   Alcotest.(check bool) "sat interned" true (parse_one "sat" == Reader.a_sat)
 
 (* {1 Reader corner cases} *)
 
 let test_reader_whitespace_comments () =
-  Alcotest.check sexp "tabs/crlf" (atom "foo")
-    (parse_one "\t\r\n  foo \r\n");
+  Alcotest.check sexp "tabs/crlf" (atom "foo") (parse_one "\t\r\n  foo \r\n");
   Alcotest.check sexp "comment between elements"
     (list [ atom "a"; atom "b" ])
     (parse_one "(a ; comment here\n b)");
@@ -385,7 +432,8 @@ let test_reader_sequential_interning () =
   in
   Alcotest.(check bool) "1st is interned sat" true (a == Reader.a_sat);
   Alcotest.(check bool) "2nd is interned unsat" true (b == Reader.a_unsat);
-  Alcotest.(check bool) "unknown interned" true
+  Alcotest.(check bool)
+    "unknown interned" true
     (parse_one "unknown" == Reader.a_unknown);
   let l1, l2 =
     with_reader "(a) (b)" (fun r ->
@@ -407,11 +455,9 @@ let test_reader_sequential_interning () =
 let test_reader_refill_boundary () =
   let l = big_list 30000 in
   let s = to_string l in
-  Alcotest.(check bool) "exceeds 64KiB buffer" true
-    (String.length s > 65536);
+  Alcotest.(check bool) "exceeds 64KiB buffer" true (String.length s > 65536);
   (match parse_one s with
-  | List xs ->
-      Alcotest.(check int) "list length" 30000 (List.length xs)
+  | List xs -> Alcotest.(check int) "list length" 30000 (List.length xs)
   | Atom _ -> Alcotest.fail "expected a list");
   Alcotest.(check bool) "big list roundtrips" true (roundtrips l);
   let big_atom = atom (String.make 100000 'a') in
@@ -433,53 +479,52 @@ let test_reader_error_response () =
 let test_ack () =
   ack_command (fake (atom "success")) (atom "anything");
   Alcotest.check_raises "non-success raises"
-    (UnexpectedSolverResponse (atom "boom")) (fun () ->
-      ack_command (fake (atom "boom")) (atom "x"))
+    (UnexpectedSolverResponse (atom "boom"))
+    (fun () -> ack_command (fake (atom "boom")) (atom "x"))
 
 let test_check () =
   Alcotest.(check string) "sat" "Sat" (show_result (check (fake (atom "sat"))));
-  Alcotest.(check string) "unsat" "Unsat"
+  Alcotest.(check string)
+    "unsat" "Unsat"
     (show_result (check (fake (atom "unsat"))));
-  Alcotest.(check string) "unknown" "Unknown"
+  Alcotest.(check string)
+    "unknown" "Unknown"
     (show_result (check (fake (atom "unknown"))));
   Alcotest.check_raises "garbage raises"
-    (UnexpectedSolverResponse (atom "weird")) (fun () ->
-      ignore (check (fake (atom "weird"))))
+    (UnexpectedSolverResponse (atom "weird"))
+    (fun () -> ignore (check (fake (atom "weird"))))
 
 (* {1 Protocol corner cases} *)
 
 let test_protocol_list_responses () =
   let err = list [ atom "error"; atom "\"oops\"" ] in
-  Alcotest.check_raises "ack list resp raises"
-    (UnexpectedSolverResponse err) (fun () ->
-      ack_command (fake err) (atom "x"));
-  Alcotest.check_raises "check list resp raises"
-    (UnexpectedSolverResponse err) (fun () -> ignore (check (fake err)))
+  Alcotest.check_raises "ack list resp raises" (UnexpectedSolverResponse err)
+    (fun () -> ack_command (fake err) (atom "x"));
+  Alcotest.check_raises "check list resp raises" (UnexpectedSolverResponse err)
+    (fun () -> ignore (check (fake err)))
 
 let test_protocol_printers () =
   let e = UnexpectedSolverResponse (eq (atom "a") (atom "b")) in
   let s = Printexc.to_string e in
-  Alcotest.(check bool) "exn name" true
+  Alcotest.(check bool)
+    "exn name" true
     (contains ~needle:"UnexpectedSolverResponse" s);
   Alcotest.(check bool) "exn payload" true (contains ~needle:"(= a b)" s);
   Alcotest.(check string) "show Sat" "Sat" (show_result Sat);
   Alcotest.(check string) "show Unsat" "Unsat" (show_result Unsat);
   Alcotest.(check string) "show Unknown" "Unknown" (show_result Unknown);
-  Alcotest.(check string) "pp_result" "Unsat"
+  Alcotest.(check string)
+    "pp_result" "Unsat"
     (Format.asprintf "%a" pp_result Unsat)
 
 (* {1 get_model workarounds} *)
 
 let dfun name args ret def =
-  list
-    [ atom "define-fun"; atom name; list (List.map atom args); ret; def ]
+  list [ atom "define-fun"; atom name; list (List.map atom args); ret; def ]
 
 let test_model_passthrough () =
-  let m =
-    list [ dfun "a" [] t_int (int_k 1) ]
-  in
-  Alcotest.check sexp "Other passthrough" m
-    (get_model (fake_cfg Other m));
+  let m = list [ dfun "a" [] t_int (int_k 1) ] in
+  Alcotest.check sexp "Other passthrough" m (get_model (fake_cfg Other m));
   Alcotest.check sexp "CVC5 passthrough" m (get_model (fake_cfg CVC5 m));
   Alcotest.check sexp "Other atom passthrough" (atom "weird")
     (get_model (fake_cfg Other (atom "weird")))
@@ -493,27 +538,20 @@ let test_model_z3_reorder () =
 
 let test_model_z3_drop_as_array () =
   let body = list [ atom "_"; atom "as-array"; atom "k" ] in
-  let def_f =
-    dfun "f" [] (list [ atom "Array"; t_int; t_int ]) body
-  in
-  let expected =
-    dfun "f" [] (list [ atom "Array"; t_int; t_int ]) (atom "k")
-  in
-  Alcotest.check sexp "as-array stripped"
-    (list [ expected ])
+  let def_f = dfun "f" [] (list [ atom "Array"; t_int; t_int ]) body in
+  let expected = dfun "f" [] (list [ atom "Array"; t_int; t_int ]) (atom "k") in
+  Alcotest.check sexp "as-array stripped" (list [ expected ])
     (get_model (fake_cfg Z3 (list [ def_f ])))
 
 let test_model_z3_error_cases () =
   Alcotest.check_raises "atom response raises"
-    (UnexpectedSolverResponse (atom "model")) (fun () ->
-      ignore (get_model (fake_cfg Z3 (atom "model"))));
+    (UnexpectedSolverResponse (atom "model"))
+    (fun () -> ignore (get_model (fake_cfg Z3 (atom "model"))));
   let cyclic =
-    list
-      [ dfun "a" [] t_int (atom "b"); dfun "b" [] t_int (atom "a") ]
+    list [ dfun "a" [] t_int (atom "b"); dfun "b" [] t_int (atom "a") ]
   in
-  Alcotest.check_raises "cyclic raises"
-    (UnexpectedSolverResponse cyclic) (fun () ->
-      ignore (get_model (fake_cfg Z3 cyclic)));
+  Alcotest.check_raises "cyclic raises" (UnexpectedSolverResponse cyclic)
+    (fun () -> ignore (get_model (fake_cfg Z3 cyclic)));
   let malformed = list [ atom "oops" ] in
   Alcotest.check_raises "malformed def raises"
     (UnexpectedSolverResponse malformed) (fun () ->
@@ -531,7 +569,8 @@ let test_z3_smoke () =
   ack_command s (assume (bv_ult (atom "x") (bv_k 8 (Z.of_int 5))));
   Alcotest.(check string) "sat" "Sat" (show_result (check s));
   let m = get_model s in
-  Alcotest.(check bool) "model is a list" true
+  Alcotest.(check bool)
+    "model is a list" true
     (match m with List _ -> true | Atom _ -> false);
   ack_command s (assume (bv_ult (bv_k 8 (Z.of_int 5)) (atom "x")));
   Alcotest.(check string) "unsat" "Unsat" (show_result (check s));
@@ -576,11 +615,11 @@ let test_z3_datatype_and_overflow () =
   ack_command s (declare "b" (t_bits 8));
   ack_command s (assume (bv_uaddo (atom "a") (atom "b")));
   ack_command s (assume (eq (atom "a") (bv_k 8 (Z.of_int 200))));
-  Alcotest.(check string) "overflow possible sat" "Sat"
-    (show_result (check s));
+  Alcotest.(check string) "overflow possible sat" "Sat" (show_result (check s));
   ack_command s (push 1);
   ack_command s (assume (eq (atom "b") (bv_k 8 Z.zero)));
-  Alcotest.(check string) "no overflow + overflow asserted unsat" "Unsat"
+  Alcotest.(check string)
+    "no overflow + overflow asserted unsat" "Unsat"
     (show_result (check s));
   ack_command s (pop 1);
   s.stop ()
@@ -624,8 +663,7 @@ let () =
           Alcotest.test_case "refill-boundary" `Quick
             test_reader_refill_boundary;
           Alcotest.test_case "eof-fallback" `Quick test_reader_eof_fallback;
-          Alcotest.test_case "error-response" `Quick
-            test_reader_error_response;
+          Alcotest.test_case "error-response" `Quick test_reader_error_response;
         ] );
       ( "protocol",
         [
@@ -642,8 +680,7 @@ let () =
           Alcotest.test_case "z3-reorder" `Quick test_model_z3_reorder;
           Alcotest.test_case "z3-drop-as-array" `Quick
             test_model_z3_drop_as_array;
-          Alcotest.test_case "z3-error-cases" `Quick
-            test_model_z3_error_cases;
+          Alcotest.test_case "z3-error-cases" `Quick test_model_z3_error_cases;
         ] );
       ( "z3",
         [

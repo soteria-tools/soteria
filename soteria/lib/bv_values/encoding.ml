@@ -26,8 +26,7 @@ let rec sort_of_ty : Svalue.ty -> sexp = function
 
 let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 
-let rm_to_smt : Svalue.RoundingMode.t -> Soteria_smt.RoundingMode.t =
-  function
+let rm_to_smt : Svalue.RoundingMode.t -> Soteria_smt.RoundingMode.t = function
   | NearestTiesToEven -> NearestTiesToEven
   | NearestTiesToAway -> NearestTiesToAway
   | Ceil -> Ceil

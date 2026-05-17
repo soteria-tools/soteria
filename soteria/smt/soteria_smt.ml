@@ -9,14 +9,13 @@
     - Serialization writes directly into a reused {!Buffer.t} (no
       pretty-printing, no whole-tree intermediate string).
     - Solver responses are read with a hand-written buffered reader and a
-      recursive-descent parser specialised to the small response grammar,
-      rather than a generic s-expression lexer.
-    - The handful of hot response tokens ([success], [sat], [unsat],
-      [unknown]) are interned, so the [check] / [ack_command] round-trips do
-      not allocate a fresh atom. *)
+      recursive-descent parser specialised to the small response grammar, rather
+      than a generic s-expression lexer.
+    - The handful of hot response tokens ([success], [sat], [unsat], [unknown])
+      are interned, so the [check] / [ack_command] round-trips do not allocate a
+      fresh atom. *)
 
 include Fast_sexp
-
 module StrSet = Set.Make (String)
 module StrMap = Map.Make (String)
 
@@ -28,7 +27,6 @@ let app_ f (args : sexp list) : sexp = app (Atom f) args
 
 (* Type annotation *)
 let as_type x t = app_ "as" [ x; t ]
-
 let nat_k x = Atom (string_of_int x)
 let nat_zk x = Atom (Z.to_string x)
 
@@ -42,14 +40,12 @@ let t_bool = Atom "Bool"
 let s_true = Atom "true"
 let s_false = Atom "false"
 let bool_k b = if b then s_true else s_false
-
 let a_ite = Atom "ite"
 let a_eq = Atom "="
 let a_distinct = Atom "distinct"
 let a_not = Atom "not"
 let a_and = Atom "and"
 let a_or = Atom "or"
-
 let ite x y z = List [ a_ite; x; y; z ]
 let eq x y = List [ a_eq; x; y ]
 let distinct xs = match xs with [] -> s_true | _ -> List (a_distinct :: xs)
@@ -66,7 +62,6 @@ let a_neg = Atom "-"
 let num_neg x = List [ a_neg; x ]
 let int_k x = if x < 0 then num_neg (nat_k (-x)) else nat_k x
 let int_zk x = if Z.lt x Z.zero then num_neg (nat_zk (Z.neg x)) else nat_zk x
-
 let a_lt = Atom "<"
 let a_leq = Atom "<="
 let a_add = Atom "+"
@@ -75,7 +70,6 @@ let a_mul = Atom "*"
 let a_div = Atom "div"
 let a_mod = Atom "mod"
 let a_rem = Atom "rem"
-
 let num_lt x y = List [ a_lt; x; y ]
 let num_leq x y = List [ a_leq; x; y ]
 let num_add x y = List [ a_add; x; y ]
@@ -95,7 +89,6 @@ let bv_nat_bin w v = Atom ("#b" ^ Z.format ("0" ^ string_of_int w ^ "b") v)
 
 (* A non-negative bit-vector literal in hex (width must be a multiple of 4). *)
 let bv_nat_hex w v = Atom ("#x" ^ Z.format ("0" ^ string_of_int (w / 4) ^ "x") v)
-
 let a_bvneg = Atom "bvneg"
 let bv_neg x = List [ a_bvneg; x ]
 
@@ -107,7 +100,6 @@ let bv_hex w v =
 
 (* Bit-vector literal, hex if width is a multiple of 4, binary otherwise. *)
 let bv_k w v = if w mod 4 = 0 then bv_hex w v else bv_bin w v
-
 let a_bvult = Atom "bvult"
 let a_bvule = Atom "bvule"
 let a_bvslt = Atom "bvslt"
@@ -128,7 +120,6 @@ let a_bvsmod = Atom "bvsmod"
 let a_bvshl = Atom "bvshl"
 let a_bvlshr = Atom "bvlshr"
 let a_bvashr = Atom "bvashr"
-
 let bv_ult x y = List [ a_bvult; x; y ]
 let bv_uleq x y = List [ a_bvule; x; y ]
 let bv_slt x y = List [ a_bvslt; x; y ]
@@ -136,7 +127,10 @@ let bv_sleq x y = List [ a_bvsle; x; y ]
 let bv_concat x y = List [ a_concat; x; y ]
 let bv_sign_extend i x = app (ifam "sign_extend" [ i ]) [ x ]
 let bv_zero_extend i x = app (ifam "zero_extend" [ i ]) [ x ]
-let bv_extract last_ix first_ix x = app (ifam "extract" [ last_ix; first_ix ]) [ x ]
+
+let bv_extract last_ix first_ix x =
+  app (ifam "extract" [ last_ix; first_ix ]) [ x ]
+
 let bv_not x = List [ a_bvnot; x ]
 let bv_and x y = List [ a_bvand; x; y ]
 let bv_or x y = List [ a_bvor; x; y ]
@@ -208,8 +202,7 @@ let ack_command (s : solver) cmd =
   | Atom "success" -> ()
   | ans -> raise (UnexpectedSolverResponse ans)
 
-type result = Unsat | Unknown | Sat
-[@@deriving show { with_path = false }]
+type result = Unsat | Unknown | Sat [@@deriving show { with_path = false }]
 
 let s_check_sat = List [ Atom "check-sat" ]
 
@@ -228,7 +221,7 @@ let get_model s =
   let ans = s.command s_get_model in
   match s.config.exts with
   | CVC5 | Other -> ans
-  | Z3 ->
+  | Z3 -> (
       (* Workaround z3 bug #7270: remove `as-array`. *)
       let rec drop_as_array x =
         match x with
@@ -247,7 +240,8 @@ let get_model s =
         match x with
         | Atom a -> if StrSet.mem a bound then vars else a :: vars
         | List [ Atom q; List vs; body ]
-          when String.equal q "forall" || String.equal q "exists"
+          when String.equal q "forall"
+               || String.equal q "exists"
                || String.equal q "let" ->
             free (add_bound bound vs) vars body
         | List xs -> List.fold_left (free bound) vars xs
@@ -259,7 +253,7 @@ let get_model s =
             (name, free bound [] def, x)
         | _ -> raise (UnexpectedSolverResponse ans)
       in
-      (match ans with
+      match ans with
       | Atom _ -> raise (UnexpectedSolverResponse ans)
       | List xs ->
           let defs = List.map check_def xs in
@@ -270,11 +264,11 @@ let get_model s =
           let decls = ref [] in
           let rec arrange todo =
             match todo with
-            | x :: xs ->
+            | x :: xs -> (
                 if StrSet.mem x !processed then arrange xs
                 else if StrSet.mem x !processing then
                   raise (UnexpectedSolverResponse ans) (* recursive *)
-                else (
+                else
                   match StrMap.find_opt x deps with
                   | None -> arrange xs
                   | Some (ds, e) ->

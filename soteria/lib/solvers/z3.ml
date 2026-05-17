@@ -33,11 +33,7 @@ module Make (Value : Value.S) :
 
   let solver_log =
     let debug ~prefix thunk = L.smt (fun m -> m "%s: %s" prefix (thunk ())) in
-    {
-      send = debug ~prefix:"-> ";
-      receive = debug ~prefix:"<- ";
-      stop = Fun.id;
-    }
+    { send = debug ~prefix:"-> "; receive = debug ~prefix:"<- "; stop = Fun.id }
 
   module Dump = struct
     let current_channel = ref None
@@ -124,8 +120,7 @@ module Make (Value : Value.S) :
     let smt_res =
       try check solver
       with Soteria_smt.UnexpectedSolverResponse s ->
-        [%l.error
-          "Unexpected solver response: %s" (Soteria_smt.to_string s)];
+        [%l.error "Unexpected solver response: %s" (Soteria_smt.to_string s)];
         Unknown
     in
     match smt_res with
@@ -144,5 +139,6 @@ module Make (Value : Value.S) :
     ack_command solver reset;
     !initialize_solver solver
 
-  let get_model solver = try Some (Soteria_smt.get_model solver) with _ -> None
+  let get_model solver =
+    try Some (Soteria_smt.get_model solver) with _ -> None
 end

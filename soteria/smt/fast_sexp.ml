@@ -8,7 +8,6 @@ type sexp = Atom of string | List of sexp list
 
 let atom f : sexp = Atom f
 let list (xs : sexp list) : sexp = List xs
-
 let is_atom = function Atom _ -> true | List _ -> false
 let to_list = function Atom _ -> None | List xs -> Some xs
 
@@ -62,7 +61,14 @@ module Reader = struct
   }
 
   let create ic err =
-    { ic; err; buf = Bytes.create 65536; pos = 0; len = 0; atom_buf = Buffer.create 64 }
+    {
+      ic;
+      err;
+      buf = Bytes.create 65536;
+      pos = 0;
+      len = 0;
+      atom_buf = Buffer.create 64;
+    }
 
   (* Refill the buffer; returns false at EOF. *)
   let refill r =
@@ -76,7 +82,6 @@ module Reader = struct
     else None
 
   let advance r = r.pos <- r.pos + 1
-
   let is_ws = function ' ' | '\t' | '\n' | '\r' -> true | _ -> false
 
   let is_delim = function
