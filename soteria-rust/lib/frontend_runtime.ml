@@ -110,8 +110,21 @@ end
 (** Simple utility to create and then delete files *)
 module Cleaner = struct
   let files = ref []
-  let touched file = files := file :: !files
-  let cleanup () = List.iter Sys.remove !files
+
+  (* The registry is populated during the single-threaded compile phase, but
+     guard it so it is robust if touched concurrently. *)
+  let mutex = Mutex.create ()
+  let touched file = Mutex.protect mutex (fun () -> files := file :: !files)
+
+  let cleanup () =
+    let fs =
+      Mutex.protect mutex (fun () ->
+          let fs = !files in
+          files := [];
+          fs)
+    in
+    List.iter Sys.remove fs
+
   let () = at_exit (fun () -> if (Config.get ()).cleanup then cleanup ())
 end
 
