@@ -24,8 +24,16 @@ let format_level level =
     Format.pp_print_flush fmt ();
     Buffer.contents buf
 
-type logger = { oc : Out_channel.t; mutable depth_counter : int }
+type logger = { oc : Out_channel.t }
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
+
+(* Serialises all writes to the shared log channel across analysis domains. *)
+let io_mutex = Mutex.create ()
+
+(* Domain-local: HTML section nesting is per-execution display state, so
+   per-domain counters are the correct semantics and avoid races. *)
+let depth_counter : int ref Soteria_std.Dls.t =
+  Soteria_std.Dls.make (fun () -> ref 0)
 
 let init () =
   let oc =
@@ -40,14 +48,15 @@ let init () =
         Out_channel.flush oc
     | _ -> ()
   in
-  let logger = { oc; depth_counter = 0 } in
+  let logger = { oc } in
   let () =
     match (Config.get ()).kind with
     | Html ->
         at_exit (fun () ->
             (* If program is interrupted and not all sections have been closed,
-               close them all! *)
-            for _ = 0 to logger.depth_counter - 1 do
+               close them all! Best-effort using the exiting (main) domain's
+               nesting counter. *)
+            for _ = 0 to !(Soteria_std.Dls.get depth_counter) - 1 do
               Out_channel.output_string oc Html.section_closing;
               Out_channel.output_char oc '\n'
             done;
@@ -59,26 +68,32 @@ let init () =
 let logger = lazy (init ())
 let[@inline] logger () = Lazy.force logger
 
+(* Force the logger (and its channel/header) while single-threaded: [Lazy.force]
+   is not safe under concurrent first force across domains. The intended
+   parallel model is to call this before spawning analysis domains. *)
+let warmup () = ignore (logger ())
+
 let write_string str =
   let logger = logger () in
   let do_ () =
-    Out_channel.output_string logger.oc str;
-    Out_channel.output_char logger.oc '\n';
-    Out_channel.flush logger.oc
+    Mutex.protect io_mutex (fun () ->
+        Out_channel.output_string logger.oc str;
+        Out_channel.output_char logger.oc '\n';
+        Out_channel.flush logger.oc)
   in
   (* We could avoid the below by defining loggers à la Logs, so that interject
      would be part of a given logger. *)
   match (Config.get ()).kind with
   | Html -> do_ ()
-  | Stderr -> !Config.cur_interject do_
+  | Stderr -> Config.get_interject () do_
 
 let incr_depth_counter () =
-  let logger = logger () in
-  logger.depth_counter <- logger.depth_counter + 1
+  let d = Soteria_std.Dls.get depth_counter in
+  d := !d + 1
 
 let decr_depth_counter () =
-  let logger = logger () in
-  logger.depth_counter <- logger.depth_counter - 1
+  let d = Soteria_std.Dls.get depth_counter in
+  d := !d - 1
 
 module L = struct
   let start_section ?(is_branch = false) str =

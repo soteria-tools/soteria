@@ -6,6 +6,12 @@
 
 type ('a, 'b) msgf = (('a, Format.formatter, unit, 'b) format4 -> 'a) -> 'b
 
+(** Force lazily-initialised logging state (the log channel and, in HTML mode,
+    the header). Call this once while still single-threaded, before spawning
+    analysis domains: {!Stdlib.Lazy.force} is not safe under concurrent first
+    force. Idempotent. *)
+val warmup : unit -> unit
+
 module Level : sig
   type t =
     | Smt  (** For messages that describe interaction with an SMT solver *)

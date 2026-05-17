@@ -92,24 +92,36 @@ let should_log level =
 
 let channel =
   let oc_ref = ref None in
+  (* The HTML file is opened at most once; guard the lazy open so a concurrent
+     first call from two domains cannot open it twice / race on [oc_ref].
+     {!Logs.warmup} forces this once before any domain is spawned. *)
+  let mutex = Mutex.create () in
   fun () ->
     match !oc_ref with
     | Some oc -> oc
-    | None -> (
-        match (get ()).kind with
-        | Stderr -> Out_channel.stderr
-        | Html ->
-            let oc = open_out "soteria_logs.html" in
-            at_exit (fun () -> close_out oc);
-            oc_ref := Some oc;
-            oc)
+    | None ->
+        Mutex.protect mutex (fun () ->
+            match !oc_ref with
+            | Some oc -> oc
+            | None -> (
+                match (get ()).kind with
+                | Stderr -> Out_channel.stderr
+                | Html ->
+                    let oc = open_out "soteria_logs.html" in
+                    at_exit (fun () -> close_out oc);
+                    oc_ref := Some oc;
+                    oc))
 
 type interject = (unit -> unit) -> unit
 
-let cur_interject : interject ref = ref (fun f -> f ())
+(* Domain-local: the interject hook is per-execution display state (the progress
+   bar). Per-domain copies make the save/restore in [with_interject] race-free
+   across analysis domains. *)
+let cur_interject : interject Dls.t = Dls.make (fun () f -> f ())
+let get_interject () = Dls.get cur_interject
 
 let with_interject : interject:interject -> (unit -> 'a) -> 'a =
  fun ~interject f ->
-  let old = !cur_interject in
-  cur_interject := interject;
-  Fun.protect ~finally:(fun () -> cur_interject := old) f
+  let old = Dls.get cur_interject in
+  Dls.set cur_interject interject;
+  Fun.protect ~finally:(fun () -> Dls.set cur_interject old) f
