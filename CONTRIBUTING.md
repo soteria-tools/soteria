@@ -81,10 +81,10 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
 
 3. **Run tests:**
    ```sh
-   dune test          # All tests (requires Rust frontends)
+   dune test              # All tests (requires Rust frontends)
    dune test soteria      # Core library tests only
    dune test soteria-c    # Soteria-C tests only
-   dune build @doc    # Build documentation
+   dune build @doc        # Build documentation
    ```
 
 ### Installing Rust Frontends
