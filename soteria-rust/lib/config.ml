@@ -183,10 +183,10 @@ let term = cmdliner_term ()
 let default = make ()
 
 let get, set_and_lock =
-  Soteria.Soteria_std.Write_once.make ~name:"Soteria-Rust" ~default ()
+  Soteria.Soteria_std.Write_once.make ~name:"Soteria Rust" ~default ()
 
 let get_mode, set_mode_and_lock =
-  Soteria.Soteria_std.Write_once.make ~name:"Soteria-Rust mode"
+  Soteria.Soteria_std.Write_once.make ~name:"Soteria Rust mode"
     ~default:Whole_program ()
 
 type global = {

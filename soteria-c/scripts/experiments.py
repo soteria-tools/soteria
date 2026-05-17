@@ -65,14 +65,14 @@ available_experiments: list[str] = []
 
 
 parser = argparse.ArgumentParser(
-    description="Run Soteria-C experiments with configurable options."
+    description="Run Soteria C experiments with configurable options."
 )
 
 # Add subparsers for different commands
 subparsers = parser.add_subparsers(dest="command", help="Subcommand to run")
 
 # Run subcommand (default behavior)
-run_parser = subparsers.add_parser("run", help="Run Soteria-C experiments (default)")
+run_parser = subparsers.add_parser("run", help="Run Soteria C experiments (default)")
 
 run_parser.add_argument(
     "--experiment-folder",
@@ -151,7 +151,7 @@ infer_parser.add_argument(
 # Compare subcommand
 compare_parser = subparsers.add_parser(
     "compare",
-    help="Run both Soteria-C and Infer on experiments and compare results",
+    help="Run both Soteria C and Infer on experiments and compare results",
 )
 
 compare_parser.add_argument(
@@ -321,7 +321,7 @@ class Experiment(PrintersMixin):
             ask_and_remove(self.infer_out)
 
     def get_compile_commands_for_soteria(self) -> Path:
-        """Get the appropriate compile_commands.json file to use for Soteria-C."""
+        """Get the appropriate compile_commands.json file to use for Soteria C."""
         if self.config.exclude_folders:
             return self.compile_commands_filtered
         return self.compile_commands
@@ -381,7 +381,7 @@ class Experiment(PrintersMixin):
         if compile_db is None or not compile_db.exists():
             self.print_error("Script error: compile_commands.json not generated.")
             exit(3)
-        self.print_info(f"Running Soteria-C with compile_commands: {compile_db}")
+        self.print_info(f"Running Soteria C with compile_commands: {compile_db}")
         os.makedirs(self.result_folder, exist_ok=True)
         cmd = (
             f"{global_config.soteria_c_cmd()} capture-db "
@@ -404,7 +404,7 @@ class Experiment(PrintersMixin):
         elapsed = time.time()
         self.run_command(cmd)
         elapsed = time.time() - elapsed
-        self.print_success(f"Soteria-C analysis complete! Took {elapsed:.2f} seconds.")
+        self.print_success(f"Soteria C analysis complete! Took {elapsed:.2f} seconds.")
 
     def generate_parsed_db_only(self):
         """Generate the parsed compilation database without running full analysis."""
@@ -428,7 +428,7 @@ class Experiment(PrintersMixin):
         self.run_soteria_c()
 
     def run_soteria_c_timed(self) -> tuple[float, int, int, int, dict]:
-        """Run Soteria-C and return (time_seconds, bug_count, total_files, parsed_files, stats_dict).
+        """Run Soteria C and return (time_seconds, bug_count, total_files, parsed_files, stats_dict).
 
         First runs with --parse-only to generate parsed compilation database,
         then runs the actual analysis on the parsed database and times only that.
@@ -498,7 +498,7 @@ class Experiment(PrintersMixin):
             return (0.0, 0, 0, 0, {})
 
         # Step 2: Run analysis on parsed database and time this part
-        self.print_info("Running Soteria-C analysis on parsed database")
+        self.print_info("Running Soteria C analysis on parsed database")
         analysis_cmd = (
             global_config.soteria_c_argv()
             + [
@@ -770,7 +770,7 @@ def run_infer_on_experiment(experiment_name: str):
     # Check if compile_commands.parsed.json exists, if not run soteria-c first
     if not experiment.compile_commands_parsed.exists():
         global_printer.print_info(
-            "Parsed compilation database not found. Running Soteria-C in parse-only mode to generate it..."
+            "Parsed compilation database not found. Running Soteria C in parse-only mode to generate it..."
         )
         # Make sure compile_commands.json exists
         if not experiment.compile_commands.exists():
@@ -822,13 +822,13 @@ def calculate_parsing_percentage(stats_dict: dict) -> float:
 
 
 def run_comparison(experiments: list):
-    """Run both Soteria-C and Infer on all experiments and collect results."""
+    """Run both Soteria C and Infer on all experiments and collect results."""
     results = []
     for exp in experiments:
         print(f"\n{BOLD}{CYAN}Comparing experiment: {exp.config.name}{RESET}")
 
-        # Run Soteria-C
-        print(f"{BOLD}Running Soteria-C...{RESET}")
+        # Run Soteria C
+        print(f"{BOLD}Running Soteria C...{RESET}")
         soteria_time, soteria_bugs, total_files, parsed_files, stats_dict = (
             exp.run_soteria_c_timed()
         )

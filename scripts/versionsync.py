@@ -32,6 +32,7 @@ FILES_TO_SCAN = [
     ".ocamlformat",
     "Makefile",
     "README.md",
+    "CONTRIBUTING.md",
 ]
 
 # How many lines after the tag to search for the value
@@ -376,7 +377,9 @@ def run_command(cmd: list[str], cwd: Path) -> tuple[bool, str]:
         sys.exit(1)
 
 
-def validate_git_repo(target_dir: Path, project: str, expected_repo: str, allow_init: bool) -> str | None:
+def validate_git_repo(
+    target_dir: Path, project: str, expected_repo: str, allow_init: bool
+) -> str | None:
     """
     Validate that the directory exists, is a git repo, and has the correct remote.
     Returns the name of the remote to use, or None if initialization is needed.
@@ -390,7 +393,9 @@ def validate_git_repo(target_dir: Path, project: str, expected_repo: str, allow_
         error(f"Directory does not exist: {target_dir}")
         info(f"Please clone {project} first:")
         info(f"  scripts/versionsync.py pull {project} --init")
-        info(f"Or manually: git clone https://github.com/{expected_repo}.git {target_dir}")
+        info(
+            f"Or manually: git clone https://github.com/{expected_repo}.git {target_dir}"
+        )
         sys.exit(1)
 
     # Check if it's a git repository
@@ -401,7 +406,9 @@ def validate_git_repo(target_dir: Path, project: str, expected_repo: str, allow_
         error(f"Directory is not a git repository: {target_dir}")
         info(f"Please clone {project} first:")
         info(f"  scripts/versionsync.py pull {project} --init")
-        info(f"Or manually: git clone https://github.com/{expected_repo}.git {target_dir}")
+        info(
+            f"Or manually: git clone https://github.com/{expected_repo}.git {target_dir}"
+        )
         sys.exit(1)
 
     # Get all remotes
@@ -412,12 +419,12 @@ def validate_git_repo(target_dir: Path, project: str, expected_repo: str, allow_
         text=True,
         check=False,
     )
-    
+
     if result.returncode != 0:
         error(f"Failed to list remotes for {project}")
         error(f"Error: {result.stderr.strip()}")
         sys.exit(1)
-    
+
     # Parse remotes output: "remote_name\turl (fetch)"
     remotes = {}
     for line in result.stdout.strip().split("\n"):
@@ -428,29 +435,41 @@ def validate_git_repo(target_dir: Path, project: str, expected_repo: str, allow_
             remote_name = parts[0]
             remote_url = parts[1]
             # Normalize remote URLs (handle both https and git@ formats)
-            normalized = remote_url.replace("https://github.com/", "").replace("git@github.com:", "").replace(".git", "")
+            normalized = (
+                remote_url.replace("https://github.com/", "")
+                .replace("git@github.com:", "")
+                .replace(".git", "")
+            )
             remotes[remote_name] = normalized
-    
+
     normalized_expected = expected_repo.replace(".git", "")
-    
+
     # Check if any remote matches the expected repo
     for remote_name, normalized_url in remotes.items():
         if normalized_url == normalized_expected:
             info(f"Found matching remote '{remote_name}' for {expected_repo}")
             return remote_name
-    
+
     # No matching remote found - add one
     # Use a safe remote name based on the repo (e.g., 'soteria-obol')
-    org_name = expected_repo.split('/')[0]
-    repo_name = expected_repo.split('/')[1]
+    org_name = expected_repo.split("/")[0]
+    repo_name = expected_repo.split("/")[1]
     new_remote_name = f"{org_name}-{repo_name}".replace("_", "-")
-    
+
     info(f"No remote found for {expected_repo}, adding remote '{new_remote_name}'")
     run_command(
-        ["git", "remote", "add", new_remote_name, f"https://github.com/{expected_repo}.git"],
-        target_dir
+        [
+            "git",
+            "remote",
+            "add",
+            new_remote_name,
+            f"https://github.com/{expected_repo}.git",
+        ],
+        target_dir,
     )
-    success(f"Added remote '{new_remote_name}' -> https://github.com/{expected_repo}.git")
+    success(
+        f"Added remote '{new_remote_name}' -> https://github.com/{expected_repo}.git"
+    )
     return new_remote_name
 
 
@@ -473,7 +492,15 @@ def get_make_command() -> str:
     return "make"
 
 
-def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, build_cmd: str, allow_init: bool, post_build_cmds: list[list[str]] | None = None) -> None:
+def pull_project(
+    project: str,
+    target_dir: Path,
+    commit_hash: str,
+    repo: str,
+    build_cmd: str,
+    allow_init: bool,
+    post_build_cmds: list[list[str]] | None = None,
+) -> None:
     """
     Pull and build a single project.
 
@@ -489,57 +516,59 @@ def pull_project(project: str, target_dir: Path, commit_hash: str, repo: str, bu
             rust-toolchain.toml is in scope.
     """
     step(f"Processing {project}...")
-    
+
     # Validate the repository and get the remote name to use
     remote_name = validate_git_repo(target_dir, project, repo, allow_init)
-    
+
     # If remote_name is None, we need to initialize the repository
     if remote_name is None:
         info(f"Initializing {project} repository at {target_dir}")
-        
+
         # Create parent directory if needed
         target_dir.parent.mkdir(parents=True, exist_ok=True)
-        
+
         # Initialize git repo
         target_dir.mkdir(parents=True, exist_ok=True)
         run_command(["git", "init"], target_dir)
-        
+
         # Add the remote
         remote_name = "origin"
         run_command(
             ["git", "remote", "add", remote_name, f"https://github.com/{repo}.git"],
-            target_dir
+            target_dir,
         )
         success(f"Initialized git repository with remote '{remote_name}'")
     else:
         success(f"Validated {project} repository at {target_dir}")
-    
+
     # Fetch only the specific commit with depth 1
     info(f"Fetching commit {commit_hash[:8]} from {remote_name}...")
     run_command(["git", "fetch", "--depth=1", remote_name, commit_hash], target_dir)
     success(f"Fetched commit {commit_hash[:8]}")
-    
+
     # Force checkout the target commit
     info(f"Checking out commit {commit_hash[:8]}...")
     run_command(["git", "checkout", "-f", commit_hash], target_dir)
     success(f"Checked out {commit_hash[:8]}")
-    
+
     # Run the build command
     make_cmd = get_make_command()
     build_cmd_parts = build_cmd.split()
     # Replace 'make' with the detected make command (gmake or make)
     if build_cmd_parts[0] == "make":
         build_cmd_parts[0] = make_cmd
-    
+
     info(f"Running build command: {' '.join(build_cmd_parts)}")
     run_command(build_cmd_parts, target_dir)
     success(f"Build completed successfully")
 
-    for cmd in (post_build_cmds or []):
+    for cmd in post_build_cmds or []:
         info(f"Running post-build command: {' '.join(cmd)}")
         run_command(cmd, target_dir)
 
-    color_print(f"\n✓ {project} updated and built successfully!\n", Colors.GREEN + Colors.BOLD)
+    color_print(
+        f"\n✓ {project} updated and built successfully!\n", Colors.GREEN + Colors.BOLD
+    )
 
 
 def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> int:
@@ -554,7 +583,13 @@ def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> 
             # for platforms other than the host. Run from the obol directory so
             # that rustup picks up its rust-toolchain.toml.
             "post_build_cmds": [
-                ["rustup", "target", "add", "x86_64-unknown-linux-gnu", "aarch64-apple-darwin"],
+                [
+                    "rustup",
+                    "target",
+                    "add",
+                    "x86_64-unknown-linux-gnu",
+                    "aarch64-apple-darwin",
+                ],
             ],
         },
         "charon": {
@@ -564,18 +599,18 @@ def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> 
             "build_cmd": "make build-charon-rust",
         },
     }
-    
+
     # Determine which projects to pull
     projects = []
     if args.project == "all":
         projects = ["obol", "charon"]
     else:
         projects = [args.project]
-    
+
     # Process each project
     for project in projects:
         config = projects_config[project]
-        
+
         # Check if required keys exist in versions
         if config["repo_key"] not in versions:
             error(f"Missing {config['repo_key']} in versions.json")
@@ -583,24 +618,31 @@ def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> 
         if config["version_key"] not in versions:
             error(f"Missing {config['version_key']} in versions.json")
             return 1
-        
+
         # Determine target directory
         if args.dir and len(projects) == 1:
             # Only use custom dir if pulling a single project
             target_dir = Path(args.dir).expanduser().resolve()
         else:
             target_dir = config["default_dir"]
-        
+
         repo = versions[config["repo_key"]]
         commit_hash = versions[config["version_key"]]
-        
+
         try:
-            pull_project(project, target_dir, commit_hash, repo, config["build_cmd"], args.init,
-                         post_build_cmds=config.get("post_build_cmds"))
+            pull_project(
+                project,
+                target_dir,
+                commit_hash,
+                repo,
+                config["build_cmd"],
+                args.init,
+                post_build_cmds=config.get("post_build_cmds"),
+            )
         except SystemExit:
             # Error already printed
             return 1
-    
+
     return 0
 
 

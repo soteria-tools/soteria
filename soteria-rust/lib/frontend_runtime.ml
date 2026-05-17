@@ -115,7 +115,7 @@ module Cleaner = struct
   let () = at_exit (fun () -> if (Config.get ()).cleanup then cleanup ())
 end
 
-(** Organise commands to send to the Soteria-Rust frontend *)
+(** Organise commands to send to the Soteria Rust frontend *)
 module Cmd = struct
   type entry = Attrib of string | Name of string | Pub
 

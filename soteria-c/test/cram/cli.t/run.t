@@ -175,7 +175,7 @@
   
          0   on successful analysis (no bugs found).
   
-         2   when Soteria-C did not complete the analysis because of a missing
+         2   when Soteria C did not complete the analysis because of a missing
              feature or internal error.
   
          13  when a bug or error was found in the analysed program.
@@ -405,7 +405,7 @@
   
          0   on successful analysis (no bugs found).
   
-         2   when Soteria-C did not complete the analysis because of a missing
+         2   when Soteria C did not complete the analysis because of a missing
              feature or internal error.
   
          13  when a bug or error was found in the analysed program.
@@ -632,7 +632,7 @@
   
          0   on successful analysis (no bugs found).
   
-         2   when Soteria-C did not complete the analysis because of a missing
+         2   when Soteria C did not complete the analysis because of a missing
              feature or internal error.
   
          13  when a bug or error was found in the analysed program.
@@ -847,7 +847,7 @@
   
          0   on successful analysis (no bugs found).
   
-         2   when Soteria-C did not complete the analysis because of a missing
+         2   when Soteria C did not complete the analysis because of a missing
              feature or internal error.
   
          13  when a bug or error was found in the analysed program.

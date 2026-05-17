@@ -1,4 +1,4 @@
-(** Call graph for Soteria-Rust.
+(** Call graph for Soteria Rust.
 
     Records a directed edge from caller to callee on each function call in the
     interpreter. The graph is stored in a single global variable and is {b NOT}
