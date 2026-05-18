@@ -1027,14 +1027,12 @@ module Make (Sol : Solver.Mutable_incremental) :
     let@ () = Give_up.with_give_up_raising in
     f ()
 
-  let solver_as_exprs () = Solver.as_values () |> List.map Value.Expr.of_value
-
   let run_iter ~mode (iter : 'a t) : ('a * Value.Expr.t list) Iter.t =
    fun continue ->
     (* Make sure to drop branches that have leftover assumes with unsatisfiable
        PCs. *)
     let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
-    iter @@ fun x -> if admissible () then continue (x, solver_as_exprs ())
+    iter @@ fun x -> if admissible () then continue (x, Solver.as_exprs ())
 
   let run ?flamegraph ?stats ?fuel ~mode iter =
     let@ () = setup ?flamegraph ?stats ?fuel ~mode in
@@ -1055,7 +1053,7 @@ module Make (Sol : Solver.Mutable_incremental) :
           if fail_fast && Compo_res.is_error res then raise Fail_fast
         with
         | effect Give_up.Gave_up_eff reason, k ->
-            l := (Error (Gave_up reason), solver_as_exprs ()) :: !l;
+            l := (Error (Gave_up reason), Solver.as_exprs ()) :: !l;
             if fail_fast then Effect.Deep.discontinue k Fail_fast
             else Effect.Deep.continue k ()
         | Fail_fast -> ()
