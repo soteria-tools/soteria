@@ -2,7 +2,14 @@ This file provides guidance to AI Agents when working with code in this reposito
 
 ## Agent Behaviour
 
-This codebase is extremely sensitive to correctness. AI Agents are *never allowed* to push code on their own without manual human review and full validation.
+This codebase is extremely sensitive to correctness.
+AI Agents are *never allowed* to push code on their own without manual human review and full validation.
+
+All code will be reviewed by a human. To facilitate this:
+- Keep the changes minimal
+- Do not modify code that is unrelated to your task
+- Do not add comments unless they add value to the codebase
+
 
 ## What is Soteria
 
