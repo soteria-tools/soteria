@@ -351,11 +351,6 @@ let exec_and_print soteria_config config fuel includes file_names entry_point :
              print_diagnostic ~fid:entry_point ~call_trace:Call_trace.empty
                ~error:(`Gave_up msg));
     let success = List.is_empty errors_to_signal in
-    let steps_number =
-      let stats = Soteria.Stats.As_ctx.get_copy () in
-      Soteria.Stats.get_int stats Soteria.Symex.StatKeys.steps
-    in
-    Fmt.pr "Executed %d statements" steps_number;
     if success then (
       Fmt.pr "@.%a@.@?" pp_ok "Verification Success!";
       Error.Exit_code.Success)

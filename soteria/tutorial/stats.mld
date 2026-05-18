@@ -20,7 +20,14 @@ A key feature of the statistics system is that it automatically {e merges} stati
 
 {2:basic Getting Started with Statistics}
 
-To collect statistics, you need to wrap your computation with {{!Soteria.Stats.As_ctx.with_}[with_]}. Note that [with_] must be called outside of any symbolic process (i.e. outside functions returning ['a Symex.t]):
+To collect statistics, you need to wrap your computation with {{!Soteria.Stats.As_ctx.with_}[with_]}.
+Note that [with_] must be called outside of any symbolic process (i.e. outside functions returning ['a Symex.t]).
+Also note that stats are {b only recorded} if the [--dump-stats] flag is used (or if the {{!Soteria.Stats.Config.output_stats}[output_stats]} configuration is programmatically set to [Some _]).
+
+{@ocaml[
+  (* Manually initialising stats configuration, should be done using the Cmdliner term in practice *)
+  let () = Soteria.Stats.Config.set_and_lock { output_stats = Some "stats.json" };;
+]}
 
 {@ocaml[
 # let computation () =

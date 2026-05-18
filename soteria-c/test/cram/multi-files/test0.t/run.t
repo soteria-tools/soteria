@@ -131,7 +131,7 @@
   `-AilCNpredicates EMPTY
   
 
-  $ soteria-c exec file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
+  $ ../../exec_test.sh file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
     [Ok: (0x00000019,
           Some
@@ -150,5 +150,8 @@
              (Ser_globs (x_<id>, 0x0000000000000002));
              (Ser_globs (x_<id>, 0x0000000000000001))])]
   
-  Executed 7 statements
+  
   Verification Success!
+  
+  Executed 7 statements
+  Exit code: 0

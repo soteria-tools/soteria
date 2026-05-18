@@ -14,14 +14,14 @@ let execution_err msg = raise (ExecutionError msg)
 let print_outcomes entry_name f =
   let time = Unix.gettimeofday () in
   match f () with
-  | Ok (pcs, ntotal, partial) ->
+  | Ok (pcs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
       Fmt.kstr
         (print_diagnostic_simple ~severity:Note)
         "%s: done in %a, ran %a" entry_name pp_time time pp_branches ntotal;
       print_pcs pcs;
       Fmt.pr "@.";
-      (entry_name, if partial then Outcome.OkPartial else Outcome.Ok)
+      (entry_name, Outcome.Ok)
   | Error (errs, ntotal) ->
       let time = Unix.gettimeofday () -. time in
       let err_branches =
@@ -86,8 +86,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
       [ Int (Typed.BV.usizei 0); Ptr (State.Sptr.null (), Thin) ]
     else []
   in
-  let branches, stats =
-    let@ () = Stats.As_ctx.with_ () in
+  let branches =
     let@ () = L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
     let@@ () =
@@ -97,7 +96,6 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     in
     exec_fun fun_decl ~args
   in
-  Soteria.Stats.output stats;
 
   let nbranches = List.length branches in
 
@@ -133,24 +131,8 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   in
 
   (* check for uncaught failure conditions *)
-  let outcomes = List.map fst branches in
-  let unexplored =
-    Stats.get_int stats Soteria.Symex.StatKeys.unexplored_branches
-  in
-  if unexplored > 0 then
-    if
-      Option.is_some (Config.get ()).branch_fuel
-      || Option.is_some (Config.get ()).step_fuel
-    then
-      Fmt.kstr Soteria.Terminal.Warn.warn
-        "Note that at least %a were left unexplored due to fuel exhaustion. \
-         Errors may have been missed."
-        pp_branches unexplored
-    else Fmt.kstr execution_err "Missed %a" pp_branches unexplored;
-
-  if not (List.exists Result.is_error outcomes) then
-    let pcs = List.map snd branches in
-    Ok (pcs, nbranches, unexplored > 0)
+  let outcomes, pcs = List.split branches in
+  if not (List.exists Result.is_error outcomes) then Ok (pcs, nbranches)
   else
     let errors =
       branches

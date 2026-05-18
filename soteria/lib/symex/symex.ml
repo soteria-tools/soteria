@@ -528,11 +528,22 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       Fuel.run ~init:init_fuel @@ fun () -> f ()
   end
 
+  let signal_unexplored_branch =
+    let msg =
+      String.Interned.intern
+        "At least one branch was dropped because of fuel. The program is not \
+         fully verified."
+    in
+    fun kind ->
+      Stats.As_ctx.incr StatKeys.unexplored_branches;
+      if Approx.As_ctx.is_ox () then Terminal.Warn.warn_once msg;
+      match kind with
+      | `Step -> [%l.debug "Exhausted step fuel"]
+      | `Branch -> [%l.debug "Exhausted branch fuel"]
+
   let consume_fuel_steps n f =
     match Fuel.consume_fuel_steps n with
-    | Exhausted ->
-        Stats.As_ctx.incr StatKeys.unexplored_branches;
-        [%l.debug "Exhausted step fuel"]
+    | Exhausted -> signal_unexplored_branch `Step
     | Not_exhausted ->
         Stats.As_ctx.add_int StatKeys.steps n;
         f ()
@@ -618,9 +629,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
             else (
               Stats.As_ctx.incr StatKeys.branch_on_branched;
               match Fuel.consume_branching 1 with
-              | Exhausted ->
-                  Stats.As_ctx.incr StatKeys.unexplored_branches;
-                  [%l.debug "Exhausted branching fuel, not continuing"]
+              | Exhausted -> signal_unexplored_branch `Branch
               | Not_exhausted ->
                   Stats.As_ctx.incr StatKeys.branches;
                   if Solver_result.is_sat (Solver.sat ()) then else_ () f
