@@ -9,7 +9,7 @@ let merge o1 o2 =
   | Ok, Ok -> Ok
 
 let merge_list l = List.fold_left (fun o1 (_, o2) -> merge o1 o2) Ok l
-let as_status_code = function Ok | Error -> 1 | Fatal -> 2
+let as_status_code = function Ok -> 0 | Error -> 1 | Fatal -> 2
 let exit o = exit (as_status_code o)
 
 let pp ft = function
