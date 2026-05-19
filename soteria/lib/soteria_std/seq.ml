@@ -25,3 +25,18 @@ let init_z n f =
     if Z.lt i j then Cons (f i, init_aux_z f (Z.succ i) j) else Nil
   in
   if Z.lt n Z.zero then invalid_arg "Seq.init_z" else init_aux_z f Z.zero n
+
+(** Compare the length of a sequence with a given number. Returns 1 if the
+    sequence is longer, 0 if it has the same length, and -1 if it is shorter.
+    The sequence must be persistent, otherwise the result is unspecified. Will
+    only traverse the sequence up to [n + 1] elements, so it is efficient even
+    for infinite sequences. *)
+let compare_length_with seq n =
+  let rec aux seq n =
+    if n < 0 then 1
+    else
+      match seq () with
+      | Nil -> if n = 0 then 0 else -1
+      | Cons (_, seq) -> aux seq (n - 1)
+  in
+  aux seq n

@@ -766,11 +766,11 @@ module rec Bool : Bool = struct
         split_ands s2 f
     | _ -> f sv
 
-  let distinct_raw s ?(l = List.of_seq s) () =
+  let distinct_raw s ?l () =
     (* [Distinct l] when l is empty or of size 1 is always true *)
-    match l with
-    | [] | [ _ ] -> v_true
-    | l -> (
+    match Seq.compare_length_with s 2 with
+    | -1 -> v_true
+    | _ -> (
         let cross_product = Seq.self_cross_product s in
         let rec aux seq =
           match seq () with
@@ -781,10 +781,11 @@ module rec Bool : Bool = struct
               else None
         in
         let res = aux cross_product in
-        match res with
-        | Some true -> v_true
-        | Some false -> v_false
-        | None -> mk_commut_nop Distinct l <| TBool)
+        match (res, l) with
+        | Some true, _ -> v_true
+        | Some false, _ -> v_false
+        | None, Some l -> mk_commut_nop Distinct l <| TBool
+        | None, None -> mk_commut_nop Distinct (List.of_seq s) <| TBool)
 
   let distinct_seq s = distinct_raw s ()
   let distinct l = distinct_raw (List.to_seq l) ~l ()
