@@ -9,7 +9,6 @@ module S_int = struct
   type syn = Typed.Expr.t
 
   let simplify = Symex.simplify
-  let distinct vs = Typed.distinct_seq vs
   let fresh () = Symex.nondet Typed.t_int
   let pp = Typed.ppa
   let show x = (Fmt.to_to_string pp) x

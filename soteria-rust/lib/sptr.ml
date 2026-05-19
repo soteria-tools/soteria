@@ -47,7 +47,6 @@ module DecayMap = struct
     let pp = ppa
     let show = Fmt.to_to_string pp
     let simplify = Rustsymex.simplify
-    let distinct vs = Typed.distinct_seq vs
     let fresh _ = failwith "Cannot allocate in DecayMap"
     let to_syn = Expr.of_value
     let learn_eq s l = Consumer.learn_eq s l

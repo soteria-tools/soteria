@@ -60,7 +60,9 @@ struct
     let*^ key = Key.fresh () in
     let* () =
       SM.assume
-        [ Key.distinct (Seq.cons key (syntactic_bindings st |> Seq.map fst)) ]
+        [
+          Key.distinct_seq (Seq.cons key (syntactic_bindings st |> Seq.map fst));
+        ]
     in
     let+ () = SM.set_state (to_opt (syntactic_add key new_codom st)) in
     Ok key
@@ -81,7 +83,7 @@ struct
       Seq.fold_left (fun st (k, v) -> syntactic_add k v st) st bindings
     in
     let* () =
-      SM.assume [ Key.distinct (syntactic_bindings st |> Seq.map fst) ]
+      SM.assume [ Key.distinct_seq (syntactic_bindings st |> Seq.map fst) ]
     in
     let+ () = SM.set_state (to_opt st) in
     Ok out_keys

@@ -29,7 +29,6 @@ module Heap = struct
               return (Csymex.Concrete_alloc_id.get_next ())
 
         let simplify = Csymex.simplify
-        let distinct vs = Typed.distinct_seq vs
         let to_int = unique_tag
       end)
       (Block)
