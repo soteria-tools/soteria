@@ -120,14 +120,16 @@ jobs:
       - name: Store benchmark result
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          name: Soteria benchmarks${{ inputs.pr-number != '' && format(' (PR #{0})', inputs.pr-number) || '' }}
+          # Double-quoted so the `#` inside `format(' (PR #{0})', ...)` is not
+          # parsed as a YAML comment.
+          name: "Soteria benchmarks${{ inputs.pr-number != '' && format(' (PR #{0})', inputs.pr-number) || '' }}"
           tool: customSmallerIsBetter
           output-file-path: benchmark-results.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-pages-branch: gh-pages
           # Per-PR runs get their own history directory so they never pollute
           # the main baseline; the cleanup workflow removes it on PR close.
-          benchmark-data-dir-path: dev/bench${{ inputs.pr-number != '' && format('/pr-{0}', inputs.pr-number) || '' }}
+          benchmark-data-dir-path: "dev/bench${{ inputs.pr-number != '' && format('/pr-{0}', inputs.pr-number) || '' }}"
           auto-push: true
           save-data-file: true
           comment-on-alert: true
