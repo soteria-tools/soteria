@@ -48,6 +48,12 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends hyperfine cmake python3
 
+      - name: Trust the workspace for git
+        # Self-hosted runner writes the workspace as the host user; the
+        # container runs as root, so git's "dubious ownership" guard would
+        # otherwise reject later operations like the gh-pages fetch.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
