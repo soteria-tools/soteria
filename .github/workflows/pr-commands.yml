@@ -1,0 +1,207 @@
+name: PR Commands
+
+# Single entry point for PR comment commands. A maintainer comment containing
+# any of the following dispatches the matching reusable workflow:
+#   !run-benchmarks   -> benchmarks.yml   (publishes dev/bench/pr-<n>)
+#   !build-doc        -> doc-pr.yml       (publishes api/pr-<n>)
+#   !run-bv-fuzzer    -> bv-fuzzer.yml
+# Per-PR artifacts are removed by cleanup-pr.yml when the PR closes.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  pull-requests: write
+  actions: read
+
+concurrency:
+  group: pr-commands-${{ github.event.comment.id }}
+  cancel-in-progress: false
+
+jobs:
+  # Inspects the comment body exactly once and exposes the derived booleans
+  # (one per command, plus the `any` / `needs_ci` aggregates) as outputs used
+  # by every downstream job. The body is passed via env so it is never
+  # interpolated into a shell or script, which keeps the workflow injection-safe.
+  parse:
+    name: Parse command
+    if: |
+      github.event.issue.pull_request &&
+      contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.comment.author_association)
+    runs-on: ubuntu-latest
+    outputs:
+      run_benchmarks: ${{ steps.parse.outputs.run_benchmarks }}
+      build_doc:      ${{ steps.parse.outputs.build_doc }}
+      run_bv_fuzzer:  ${{ steps.parse.outputs.run_bv_fuzzer }}
+      any:            ${{ steps.parse.outputs.any }}
+      needs_ci:       ${{ steps.parse.outputs.needs_ci }}
+    steps:
+      - id: parse
+        uses: actions/github-script@v9
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        with:
+          script: |
+            const body = process.env.COMMENT_BODY || '';
+            const flags = {
+              run_benchmarks: body.includes('!run-benchmarks'),
+              build_doc:      body.includes('!build-doc'),
+              run_bv_fuzzer:  body.includes('!run-bv-fuzzer'),
+            };
+            const needs_ci = flags.run_benchmarks || flags.build_doc;
+            const any = needs_ci || flags.run_bv_fuzzer;
+            for (const [k, v] of Object.entries({ ...flags, needs_ci, any })) {
+              core.setOutput(k, String(v));
+            }
+
+  dispatch:
+    name: Dispatch command
+    needs: parse
+    if: needs.parse.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.pr.outputs.sha }}
+      run_id: ${{ steps.find-run.outputs.run_id }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Add eyes reaction
+        uses: actions/github-script@v9
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+
+      - name: Get PR head SHA
+        id: pr
+        run: |
+          SHA=$(gh pr view ${{ github.event.issue.number }} --repo ${{ github.repository }} --json headRefOid --jq .headRefOid)
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+      - name: Find CI workflow run
+        id: find-run
+        if: needs.parse.outputs.needs_ci == 'true'
+        run: |
+          # Wait up to 5 minutes for a CI run to appear for this commit.
+          for ATTEMPT in $(seq 1 30); do
+            RUN_ID=$(gh run list --repo ${{ github.repository }} \
+              --commit ${{ steps.pr.outputs.sha }} \
+              --workflow ci.yml \
+              --json databaseId \
+              --jq '.[0].databaseId // empty')
+            if [ -n "$RUN_ID" ]; then
+              echo "run_id=$RUN_ID" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            echo "Waiting for CI workflow to start... (attempt $ATTEMPT/30)"
+            sleep 10
+          done
+          echo "No CI workflow run found for commit ${{ steps.pr.outputs.sha }}"
+          exit 1
+
+      - name: Wait for CI workflow to complete
+        if: needs.parse.outputs.needs_ci == 'true'
+        run: gh run watch ${{ steps.find-run.outputs.run_id }} --repo ${{ github.repository }} --exit-status
+
+  benchmarks:
+    needs: [parse, dispatch]
+    if: needs.parse.outputs.run_benchmarks == 'true'
+    uses: ./.github/workflows/benchmarks.yml
+    with:
+      ref: ${{ needs.dispatch.outputs.sha }}
+      artifact-run-id: ${{ needs.dispatch.outputs.run_id }}
+      pr-number: ${{ github.event.issue.number }}
+    secrets: inherit
+
+  doc:
+    needs: [parse, dispatch]
+    if: needs.parse.outputs.build_doc == 'true'
+    uses: ./.github/workflows/doc-pr.yml
+    with:
+      run-id: ${{ needs.dispatch.outputs.run_id }}
+      pr-number: ${{ github.event.issue.number }}
+    secrets: inherit
+
+  bv-fuzzer:
+    needs: [parse, dispatch]
+    if: needs.parse.outputs.run_bv_fuzzer == 'true'
+    uses: ./.github/workflows/bv-fuzzer.yml
+    with:
+      ref: ${{ needs.dispatch.outputs.sha }}
+    secrets: inherit
+
+  report:
+    name: Report command status
+    needs: [parse, dispatch, benchmarks, doc, bv-fuzzer]
+    # Report on success (commands ran) or failure (e.g. no CI build found);
+    # stay silent when dispatch was skipped (not a command) or cancelled.
+    if: always() && (needs.dispatch.result == 'success' || needs.dispatch.result == 'failure')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build status comment and react
+        id: status
+        uses: actions/github-script@v9
+        env:
+          DISPATCH_RESULT: ${{ needs.dispatch.result }}
+          RUN_BENCHMARKS: ${{ needs.parse.outputs.run_benchmarks }}
+          BUILD_DOC: ${{ needs.parse.outputs.build_doc }}
+          RUN_BV_FUZZER: ${{ needs.parse.outputs.run_bv_fuzzer }}
+          BENCHMARKS_RESULT: ${{ needs.benchmarks.result }}
+          DOC_RESULT: ${{ needs.doc.result }}
+          BV_FUZZER_RESULT: ${{ needs.bv-fuzzer.result }}
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const pr = context.payload.issue.number;
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+            const pages = `https://${owner}.github.io/${repo}`;
+
+            const commands = [
+              { on: process.env.RUN_BENCHMARKS, result: process.env.BENCHMARKS_RESULT,
+                ok: `Benchmarks published at ${pages}/dev/bench/pr-${pr}`, fail: 'Benchmarks failed' },
+              { on: process.env.BUILD_DOC, result: process.env.DOC_RESULT,
+                ok: `Documentation published at ${pages}/api/pr-${pr}`, fail: 'Documentation build failed' },
+              { on: process.env.RUN_BV_FUZZER, result: process.env.BV_FUZZER_RESULT,
+                ok: 'BV fuzzer tests passed', fail: 'BV fuzzer tests failed' },
+            ].filter(c => c.on === 'true');
+
+            let allOk = process.env.DISPATCH_RESULT === 'success';
+            const lines = commands.map(c => {
+              const ok = c.result === 'success';
+              if (!ok) allOk = false;
+              return `- ${ok ? '✅' : '❌'} ${ok ? c.ok : c.fail}.`;
+            });
+            if (process.env.DISPATCH_RESULT !== 'success') {
+              lines.unshift('- ❌ Could not locate the PR build; commands did not run.');
+            }
+
+            const body = `${lines.join('\n')}\n\nRun: ${runUrl}`;
+            core.setOutput('body', body);
+
+            await github.rest.reactions.createForIssueComment({
+              owner, repo,
+              comment_id: context.payload.comment.id,
+              content: allOk ? 'rocket' : '-1',
+            });
+
+      - name: Checkout status-comment action
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: source-repo
+          sparse-checkout: .github/actions/post-pr-status-comment
+
+      - name: Post status comment
+        uses: ./source-repo/.github/actions/post-pr-status-comment
+        with:
+          issue-number: ${{ github.event.issue.number }}
+          marker: soteria:pr-command-status
+          body: ${{ steps.status.outputs.body }}

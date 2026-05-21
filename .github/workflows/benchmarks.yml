@@ -1,0 +1,136 @@
+name: Benchmarks
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to checkout for the benchmark script and config.
+        required: false
+        type: string
+        default: ""
+      artifact-run-id:
+        description: >-
+          Workflow run id to download the soteria-c/soteria-rust package
+          artifacts from. When empty, artifacts of the current run are used.
+        required: false
+        type: string
+        default: ""
+      pr-number:
+        description: >-
+          When set, benchmark history is stored under a per-PR directory
+          (dev/bench/pr-<n>) instead of the main history (dev/bench).
+        required: false
+        type: string
+        default: ""
+
+env:
+  # [versionsync: OBOL_REPO=soteria-tools/obol]
+  OBOL_REPO: soteria-tools/obol
+  # [versionsync: OBOL_COMMIT_HASH=70610866c606acc9b4c3a460ac586d81459d1304]
+  OBOL_COMMIT_HASH: 70610866c606acc9b4c3a460ac586d81459d1304
+
+jobs:
+  benchmarks:
+    name: Run benchmarks
+    # Runs on a self-hosted Linux runner so we benchmark on stable hardware;
+    # the official Rust nightly image gives a fixed, reproducible toolchain
+    # and OS environment on top of it.
+    runs-on: [self-hosted, linux]
+    container:
+      image: rustlang/rust:nightly
+    permissions:
+      contents: write
+    steps:
+      - name: Install benchmark dependencies
+        # The Rust nightly image is Debian-based and ships rustup + nightly,
+        # curl, git, and gcc — but not the tools below.
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends hyperfine cmake python3
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      # The Obol-pinned rust-toolchain.toml drives rustup inside the container
+      # so the .rs files / crates are compiled with the same toolchain CI uses.
+      - name: Get Rust toolchain
+        run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
+
+      # Packages produced by the Build workflow (.github/workflows/build.yml).
+      # When artifact-run-id is set we pull them from that run (PR case),
+      # otherwise from the current run (push-to-main case).
+      - name: Download soteria-c package (current run)
+        if: inputs.artifact-run-id == ''
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-x86_64-soteria-c-package
+          path: soteria-c-package
+      - name: Download soteria-rust package (current run)
+        if: inputs.artifact-run-id == ''
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-x86_64-soteria-rust-package
+          path: soteria-rust-package
+      - name: Download soteria-c package (run ${{ inputs.artifact-run-id }})
+        if: inputs.artifact-run-id != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-x86_64-soteria-c-package
+          path: soteria-c-package
+          run-id: ${{ inputs.artifact-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download soteria-rust package (run ${{ inputs.artifact-run-id }})
+        if: inputs.artifact-run-id != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-x86_64-soteria-rust-package
+          path: soteria-rust-package
+          run-id: ${{ inputs.artifact-run-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add executable permissions
+        run: chmod -R +x ./soteria-c-package/bin ./soteria-rust-package/bin
+
+      - name: Setup environment variables
+        run: |
+          C_DIR="${GITHUB_WORKSPACE}/soteria-c-package"
+          RUST_DIR="${GITHUB_WORKSPACE}/soteria-rust-package"
+          echo "C_DIR=${C_DIR}" >> $GITHUB_ENV
+          echo "RUST_DIR=${RUST_DIR}" >> $GITHUB_ENV
+          # Binaries consumed by scripts/run_benchmarks.py
+          echo "SOTERIA_C=${C_DIR}/bin/soteria-c" >> $GITHUB_ENV
+          echo "SOTERIA_RUST=${RUST_DIR}/bin/soteria-rust" >> $GITHUB_ENV
+          # soteria-c runtime configuration
+          echo "CERB_INSTALL_PREFIX=${C_DIR}" >> $GITHUB_ENV
+          echo "SOTERIA_AUTO_INCLUDE_PATH=${C_DIR}/lib/soteria-c" >> $GITHUB_ENV
+          echo "SOTERIA_USE_CERB_HEADERS=true" >> $GITHUB_ENV
+          # soteria-rust runtime configuration
+          echo "SOTERIA_OBOL_PATH=${RUST_DIR}/bin/obol" >> $GITHUB_ENV
+          echo "SOTERIA_CHARON_PATH=${RUST_DIR}/bin/charon" >> $GITHUB_ENV
+          echo "SOTERIA_RUST_PLUGINS=${RUST_DIR}/plugins" >> $GITHUB_ENV
+          # Each tool resolves z3 from its own package.
+          echo "SOTERIA_Z3_PATH=${C_DIR}/bin/z3" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=${C_DIR}/lib:${RUST_DIR}/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+
+      - name: Run benchmarks
+        run: python3 scripts/run_benchmarks.py --output benchmark-results.json
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Soteria benchmarks${{ inputs.pr-number != '' && format(' (PR #{0})', inputs.pr-number) || '' }}
+          tool: customSmallerIsBetter
+          output-file-path: benchmark-results.json
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          gh-pages-branch: gh-pages
+          # Per-PR runs get their own history directory so they never pollute
+          # the main baseline; the cleanup workflow removes it on PR close.
+          benchmark-data-dir-path: dev/bench${{ inputs.pr-number != '' && format('/pr-{0}', inputs.pr-number) || '' }}
+          auto-push: true
+          save-data-file: true
+          comment-on-alert: true
+          summary-always: true
+          alert-threshold: "150%"
+          fail-on-alert: false

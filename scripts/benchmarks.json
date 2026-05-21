@@ -1,0 +1,37 @@
+{
+  "rust_files": [
+    {
+      "name": "char_min_max",
+      "path": "soteria-rust/test/cram/simple.t/char_min_max.rs"
+    },
+    {
+      "name": "kani-any",
+      "path": "soteria-rust/test/cram/kani.t/any.rs",
+      "args": ["--kani"]
+    }
+  ],
+  "rust_crates": [
+    {
+      "name": "cargo.t",
+      "path": "soteria-rust/test/cram/cargo.t"
+    }
+  ],
+  "c_files": [
+    {
+      "name": "array",
+      "path": "soteria-c/test/cram/simple.t/array.c"
+    },
+    {
+      "name": "duffs",
+      "path": "soteria-c/test/cram/simple.t/duffs.c"
+    }
+  ],
+  "c_projects": [
+    {
+      "name": "simple.t-gen-summaries",
+      "path": "soteria-c/test/cram/simple.t",
+      "mode": "gen-summaries",
+      "no_hyperfine": true
+    }
+  ]
+}
