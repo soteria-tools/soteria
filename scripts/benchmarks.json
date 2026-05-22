@@ -28,5 +28,12 @@
       ]
     }
   ],
-  "c_biab": []
+  "c_biab": [
+    {
+      "name": "Collections-C",
+      "path": "benchmark-projects/Collections-C",
+      "mode": "capture-db",
+      "no_hyperfine": true
+    }
+  ]
 }

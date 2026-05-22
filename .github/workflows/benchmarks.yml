@@ -59,6 +59,16 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.ref }}
 
+      # Benchmark target. Pinned to the same commit as test-packages.yml so
+      # the benchmarked input is identical to the version tested there
+      # (which contains a known bug → analysis exits non-zero, tolerated).
+      - name: Checkout Collections-C (benchmark target)
+        uses: actions/checkout@v6
+        with:
+          repository: srdja/Collections-C
+          ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
+          path: benchmark-projects/Collections-C
+
       # The Obol-pinned rust-toolchain.toml drives rustup inside the container
       # so the .rs files / crates are compiled with the same toolchain CI uses.
       - name: Get Rust toolchain
