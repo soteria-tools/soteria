@@ -1,37 +1,32 @@
 {
+  "$schema": "./benchmarks.schema.json",
   "rust_files": [
     {
-      "name": "char_min_max",
-      "path": "soteria-rust/test/cram/simple.t/char_min_max.rs"
+      "name": "write-a-lot",
+      "path": "soteria-rust/test/cram/perf.t/writealot.rs"
     },
     {
-      "name": "kani-any",
-      "path": "soteria-rust/test/cram/kani.t/any.rs",
-      "args": ["--kani"]
-    }
-  ],
-  "rust_crates": [
-    {
-      "name": "cargo.t",
-      "path": "soteria-rust/test/cram/cargo.t"
-    }
-  ],
-  "c_files": [
-    {
-      "name": "array",
-      "path": "soteria-c/test/cram/simple.t/array.c"
+      "name": "write-a-lot (for loop)",
+      "path": "soteria-rust/test/cram/perf.t/writealotloop.rs"
     },
     {
-      "name": "duffs",
-      "path": "soteria-c/test/cram/simple.t/duffs.c"
+      "name": "ctpop",
+      "path": "soteria-rust/test/cram/perf.t/ctpop.rs"
+    },
+    {
+      "name": "array_init (rust)",
+      "path": "soteria-rust/test/cram/perf.t/array_init.rs"
     }
   ],
-  "c_projects": [
+  "rust_crates": [],
+  "c_wpst": [
     {
-      "name": "simple.t-gen-summaries",
-      "path": "soteria-c/test/cram/simple.t",
-      "mode": "gen-summaries",
-      "no_hyperfine": true
+      "name": "array_init (c)",
+      "path": "soteria-c/test/cram/perf.t/array_init.c",
+      "args": [
+        "--infinite-fuel"
+      ]
     }
-  ]
+  ],
+  "c_biab": []
 }

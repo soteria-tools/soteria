@@ -11,8 +11,8 @@ benchmarks.json (every entry accepts `args` and `no_hyperfine`, see below):
 
   - "rust_files":   a single .rs file, compiled once then run with --no-compile
   - "rust_crates":  a crate root, compiled once then run with --no-compile
-  - "c_files":      a C file run in wpst mode (`soteria-c exec`)
-  - "c_projects":   a C project run in bi-abduction, with `mode` set to either
+  - "c_wpst":      a C file run in wpst mode (`soteria-c exec`)
+  - "c_biab":   a C project run in bi-abduction, with `mode` set to either
                     "gen-summaries" or "capture-db"
 
 Per-entry fields:
@@ -21,11 +21,11 @@ Per-entry fields:
   - "args"          (optional) list of extra arguments passed to the tool
   - "no_hyperfine"  (optional) if true, time a single run instead of using
                     hyperfine (use for benchmarks too long to run repeatedly)
-  - "mode"          (c_projects only) "gen-summaries" or "capture-db"
-  - "compile_commands" (c_projects/capture-db only) path to compile_commands.json
+  - "mode"          (c_biab only) "gen-summaries" or "capture-db"
+  - "compile_commands" (c_biab/capture-db only) path to compile_commands.json
                     relative to the project root; defaults to
                     "build/compile_commands.json", generated with cmake if absent
-  - "cmake_args"    (c_projects/capture-db only) extra args for the cmake
+  - "cmake_args"    (c_biab/capture-db only) extra args for the cmake
                     invocation used to generate the compilation database
 """
 
@@ -81,7 +81,7 @@ def measure(cmd: list[str], no_hyperfine: bool, cwd: Optional[Path] = None) -> d
 
     if shutil.which("hyperfine") is None:
         raise SystemExit(
-            "hyperfine not found in PATH; install it or set \"no_hyperfine\": true"
+            'hyperfine not found in PATH; install it or set "no_hyperfine": true'
         )
 
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
@@ -140,7 +140,7 @@ def bench_c_project(entry: dict) -> dict:
     mode = entry.get("mode")
     if mode not in ("gen-summaries", "capture-db"):
         raise SystemExit(
-            f"c_projects entry {entry['path']!r} needs \"mode\": "
+            f'c_projects entry {entry["path"]!r} needs "mode": '
             '"gen-summaries" or "capture-db"'
         )
 
@@ -188,8 +188,8 @@ def make_result(entry: dict, kind: str, stats: dict) -> dict:
 SECTIONS: dict[str, Callable[[dict], dict]] = {
     "rust_files": lambda e: bench_rust(e, "rust-file"),
     "rust_crates": lambda e: bench_rust(e, "rust-crate"),
-    "c_files": bench_c_file,
-    "c_projects": bench_c_project,
+    "c_wpst": bench_c_file,
+    "c_biab": bench_c_project,
 }
 
 
