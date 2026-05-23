@@ -167,5 +167,17 @@ jobs:
         # We do this on linux because linux runners are cheaper.
         if: runner.os == 'linux'
 
+      - name: Build JSON documentation
+        run: make doc-json
+        if: runner.os == 'linux'
+
+      - name: Upload JSON documentation artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: odoc-json
+          path: _build/default/_doc/_html
+          if-no-files-found: error
+        if: runner.os == 'linux'
+
       - name: Opam Cleanup
         run: opam clean -a -r
