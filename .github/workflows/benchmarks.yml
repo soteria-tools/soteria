@@ -48,11 +48,14 @@ jobs:
           apt-get update
           apt-get install -y --no-install-recommends hyperfine cmake python3
 
-      - name: Trust the workspace for git
+      - name: Trust git in this container
         # Self-hosted runner writes the workspace as the host user; the
         # container runs as root, so git's "dubious ownership" guard would
-        # otherwise reject later operations like the gh-pages fetch.
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        # otherwise reject later operations (the workspace itself, the
+        # Collections-C sub-checkout, and the gh-pages worktree used to seed
+        # the PR dashboard). The container is ephemeral, so trusting any
+        # path inside it is safe.
+        run: git config --global --add safe.directory '*'
 
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -133,22 +136,63 @@ jobs:
       - name: Run benchmarks
         run: python3 scripts/run_benchmarks.py --output benchmark-results.json
 
+      # Main pushes publish the new data point to gh-pages so the dashboard's
+      # history advances. PR runs deliberately skip the publish — the
+      # comparison-table flow below shows the PR author how this run compares
+      # to main without touching the published history.
       - name: Store benchmark result
+        if: inputs.pr-number == ''
         uses: benchmark-action/github-action-benchmark@v1
         with:
-          # Double-quoted so the `#` inside `format(' (PR #{0})', ...)` is not
-          # parsed as a YAML comment.
-          name: "Soteria benchmarks${{ inputs.pr-number != '' && format(' (PR #{0})', inputs.pr-number) || '' }}"
+          name: Soteria benchmarks
           tool: customSmallerIsBetter
           output-file-path: benchmark-results.json
           github-token: ${{ secrets.GITHUB_TOKEN }}
           gh-pages-branch: gh-pages
-          # Per-PR runs get their own history directory so they never pollute
-          # the main baseline; the cleanup workflow removes it on PR close.
-          benchmark-data-dir-path: "dev/bench${{ inputs.pr-number != '' && format('/pr-{0}', inputs.pr-number) || '' }}"
+          benchmark-data-dir-path: dev/bench
           auto-push: true
           save-data-file: true
           comment-on-alert: true
           summary-always: true
           alert-threshold: "150%"
           fail-on-alert: false
+
+      # PR-only path: pull just main's data.js, build a comparison table, and
+      # surface it via the step summary + an artifact that pr-commands.yml's
+      # report job embeds in the PR status comment.
+      - name: Fetch main benchmark history (PR only)
+        if: inputs.pr-number != ''
+        run: |
+          set -euo pipefail
+          mkdir -p main-bench
+          if git ls-remote --heads origin gh-pages | grep -q gh-pages; then
+            git fetch --depth=1 origin gh-pages
+            # `git show` exits non-zero if the file doesn't exist on gh-pages
+            # (first run, dir not yet created); tolerate that and leave the
+            # file empty — the compare script then renders every row as new.
+            git --no-pager show origin/gh-pages:dev/bench/data.js \
+              > main-bench/data.js 2>/dev/null || true
+          else
+            echo "No gh-pages branch yet; comparing against an empty baseline."
+          fi
+
+      - name: Build comparison table (PR only)
+        if: inputs.pr-number != ''
+        run: |
+          python3 scripts/compare_to_main.py \
+            --current benchmark-results.json \
+            --main-data main-bench/data.js \
+            --output benchmark-comparison.md
+          {
+            echo "## Soteria benchmarks vs \`main\`"
+            echo
+            cat benchmark-comparison.md
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload comparison artifact (PR only)
+        if: inputs.pr-number != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-comparison
+          path: benchmark-comparison.md
+          if-no-files-found: error

@@ -146,6 +146,18 @@ jobs:
     if: always() && (needs.dispatch.result == 'success' || needs.dispatch.result == 'failure')
     runs-on: ubuntu-latest
     steps:
+      # Benchmarks no longer publish to gh-pages — instead they upload a
+      # comparison-vs-main table as an artifact, which we embed in the PR
+      # comment below. Tolerate the artifact being absent (older run, no
+      # benchmarks command, or benchmarks failed before upload).
+      - name: Download benchmark comparison
+        if: needs.parse.outputs.run_benchmarks == 'true' && needs.benchmarks.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: benchmark-comparison
+          path: comparison
+        continue-on-error: true
+
       - name: Build status comment and react
         id: status
         uses: actions/github-script@v9
@@ -157,16 +169,30 @@ jobs:
           BENCHMARKS_RESULT: ${{ needs.benchmarks.result }}
           DOC_RESULT: ${{ needs.doc.result }}
           BV_FUZZER_RESULT: ${{ needs.bv-fuzzer.result }}
+          COMPARISON_PATH: comparison/benchmark-comparison.md
         with:
           script: |
+            const fs = require('fs');
             const { owner, repo } = context.repo;
             const pr = context.payload.issue.number;
             const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
             const pages = `https://${owner}.github.io/${repo}`;
 
+            let benchmarkTable = '';
+            try {
+              const md = fs.readFileSync(process.env.COMPARISON_PATH, 'utf8').trim();
+              if (md) {
+                benchmarkTable =
+                  '\n\n<details><summary>Benchmark comparison vs <code>main</code></summary>\n\n' +
+                  md +
+                  '\n</details>';
+              }
+            } catch { /* artifact absent — leave the section out */ }
+
             const commands = [
               { on: process.env.RUN_BENCHMARKS, result: process.env.BENCHMARKS_RESULT,
-                ok: `Benchmarks published at ${pages}/dev/bench/pr-${pr}`, fail: 'Benchmarks failed' },
+                ok: `Benchmarks ran — see the table below and the [step summary](${runUrl}).${benchmarkTable}`,
+                fail: 'Benchmarks failed' },
               { on: process.env.BUILD_DOC, result: process.env.DOC_RESULT,
                 ok: `Documentation published at ${pages}/api/pr-${pr}`, fail: 'Documentation build failed' },
               { on: process.env.RUN_BV_FUZZER, result: process.env.BV_FUZZER_RESULT,
