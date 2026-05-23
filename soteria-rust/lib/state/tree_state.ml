@@ -153,7 +153,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let concrete_loc = ref 0
     let simplify = DecayMap.SM.simplify
 
-    let distinct vs =
+    let distinct_seq vs =
       match Config.get_mode () with
       | Compositional -> distinct_seq vs
       | Whole_program -> v_true
