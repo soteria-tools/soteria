@@ -444,6 +444,7 @@ class ItemInfo(TypedDict):
 class StubInfo(ItemInfo):
     variant_name: str
     is_dummy: bool
+    aliases: list[str]
 
 
 def make_args_and_tys(
@@ -1069,6 +1070,7 @@ def generate_custom_stubs() -> None:
                     "rust_path": pattern.pattern,
                     "variant_name": variant_name,
                     "is_dummy": False,
+                    "aliases": list(pattern.aliases),
                 }
             )
 
@@ -1099,6 +1101,7 @@ def generate_custom_stubs() -> None:
                     "types": [],
                     "consts": [],
                     "ret": ("unknown", None),
+                    "aliases": list(pattern.aliases),
                 }
             )
 
@@ -1119,6 +1122,8 @@ def generate_custom_stubs() -> None:
         for info in infos:
             fn_variants.add(info["variant_name"])
             fn_map_entries += f"(\"{info['rust_path']}\", {info['variant_name']});"
+            for alias in info.get("aliases", []):
+                fn_map_entries += f"(\"{alias}\", {info['variant_name']});"
             args_and_tys = make_args_and_tys(info)
             intf_entries.add(make_val_entry(info, args_and_tys))
 
