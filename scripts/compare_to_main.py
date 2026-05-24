@@ -20,7 +20,10 @@ import re
 from pathlib import Path
 from typing import Optional
 
-DATA_JS_RE = re.compile(r"^window\.BENCHMARK_DATA\s*=\s*(\{.*\})\s*;\s*$", re.DOTALL)
+# github-action-benchmark writes `window.BENCHMARK_DATA = {…}` with no trailing
+# semicolon (ASI handles it). Accept either form, and use re.search so we don't
+# require a strict bound at position 0 either.
+DATA_JS_RE = re.compile(r"window\.BENCHMARK_DATA\s*=\s*(\{.*\})\s*;?\s*$", re.DOTALL)
 
 # Canonical workflow name written by benchmarks.yml. Older history may live
 # under a different key — fall back to whichever entry is present.
@@ -35,7 +38,7 @@ def parse_baseline(path: Path) -> dict[str, float]:
     """Return {name: value} from the last run on main, or {} if unavailable."""
     if not path.exists() or path.stat().st_size == 0:
         return {}
-    m = DATA_JS_RE.match(path.read_text())
+    m = DATA_JS_RE.search(path.read_text())
     if not m:
         return {}
     try:
