@@ -161,10 +161,10 @@ For instance, we can create a symbolic process that introduces a
 nondeterministic integer, and then asserts that this integer is positive:
 
 {@ocaml[
-    # let process =
-      let* x = Symex.nondet Typed.t_int in
-      Symex.assert_ (x >@ 0s);;
-    val process : bool Symex.t = <abstr>
+  # let process =
+    let* x = Symex.nondet Typed.t_int in
+    Symex.assert_ (x >@ 0s);;
+  val process : bool Symex.t = <abstr>
 
   # Symex.run ~mode:OX process;;
   - : (bool * Typed.Expr.t list) list = [(false, [])]
@@ -175,11 +175,11 @@ This process returns a single branch with the value [false], as it is not
 assumption that, say, [x] is greater than 10, we get a different result:
 
 {@ocaml[
-    # let process =
-      let* x = Symex.nondet Typed.t_int in
-      let* () = Symex.assume [ x >@ 10s ] in
-      Symex.assert_ (x >@ 0s);;
-    val process : bool Symex.t = <abstr>
+  # let process =
+    let* x = Symex.nondet Typed.t_int in
+    let* () = Symex.assume [ x >@ 10s ] in
+    Symex.assert_ (x >@ 0s);;
+  val process : bool Symex.t = <abstr>
 
   # Symex.run ~mode:OX process;;
   - : (bool * Typed.Expr.t list) list = [(true, [(11 <= V|1|)])]
@@ -200,13 +200,13 @@ provides convenient syntactic sugar (accessed when we opened
 [if] statement to work with symbolic values:
 
 {@ocaml[
-    # let process =
-        let* x = Symex.nondet Typed.t_int in
-        if%sat (x %@ 2s) ==@ 0s then
-          Symex.return (Fmt.str "%a is even" Typed.ppa x)
-        else
-          Symex.return (Fmt.str "%a is odd" Typed.ppa x)
-    val process : string Symex.t = <abstr>
+  # let process =
+      let* x = Symex.nondet Typed.t_int in
+      if%sat (x %@ 2s) ==@ 0s then
+        Symex.return (Fmt.str "%a is even" Typed.ppa x)
+      else
+        Symex.return (Fmt.str "%a is odd" Typed.ppa x)
+  val process : string Symex.t = <abstr>
 
   # Symex.run ~mode:OX process;;
   - : (string * Typed.Expr.t list) list =
