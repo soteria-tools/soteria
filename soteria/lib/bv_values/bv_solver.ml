@@ -2,6 +2,36 @@ open Soteria_std
 open Logs.Import
 module Var = Svalue.Var
 
+(** Returns [Some true] if PC slot [pc] implies query [q], [Some false] if [pc]
+    implies the negation of [q], and [None] otherwise. Used to suppress
+    redundant ordering constraints (e.g. [a <= b] becomes trivially true once
+    [a < b] is in the PC). *)
+let implies_or_contradicts (q : Svalue.t) (pc : Svalue.t) : bool option =
+  let open Svalue in
+  match (q.node.kind, pc.node.kind) with
+  (* [a < b] in PC implies [a <= b] *)
+  | Binop (Leq qs, qa, qb), Binop (Lt ps, pa, pb)
+    when qs = ps && equal qa pa && equal qb pb ->
+      Some true
+  (* [a < b] in PC implies ~[b <= a] and ~[b < a] *)
+  | Binop ((Lt qs | Leq qs), qa, qb), Binop (Lt ps, pa, pb)
+    when qs = ps && equal qa pb && equal qb pa ->
+      Some false
+  (* [a <= b] in PC implies ~[b < a] *)
+  | Binop (Lt qs, qa, qb), Binop (Leq ps, pa, pb)
+    when qs = ps && equal qa pb && equal qb pa ->
+      Some false
+  (* [a < b] (either direction) in PC implies ~[a = b] *)
+  | Binop (Eq, qa, qb), Binop (Lt _, pa, pb)
+    when (equal qa pa && equal qb pb) || (equal qa pb && equal qb pa) ->
+      Some false
+  (* [a < b] (either direction) in PC implies [~(a = b)] *)
+  | ( Unop (Not, { node = { kind = Binop (Eq, qa, qb); _ }; _ }),
+      Binop (Lt _, pa, pb) )
+    when (equal qa pa && equal qb pb) || (equal qa pb && equal qb pa) ->
+      Some true
+  | _ -> None
+
 let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
   let simplify = simplify ~trivial_truthiness ~fallback in
   match v.node.kind with
@@ -77,7 +107,7 @@ struct
       find_map t (fun value ->
           if Typed.equal value v then Some true
           else if Typed.equal value neg_v then Some false
-          else None)
+          else implies_or_contradicts (Typed.untyped v) (Typed.untyped value))
   end
 
   type t = {
@@ -201,14 +231,13 @@ struct
           Some false
       | _ -> None
 
-    (* We check if the thing contains the value itself, or its negation. *)
     let trivial_truthiness_of (t : t) (v : Typed.sbool Typed.t) =
       let neg_v = Typed.not v in
       find_map t @@ function
       | { value = Asrt value; _ } ->
           if Typed.equal value v then Some true
           else if Typed.equal value neg_v then Some false
-          else None
+          else implies_or_contradicts (Typed.untyped v) (Typed.untyped value)
       | _ -> None
 
     (** Iterate over the assertions in the PC. *)
