@@ -114,7 +114,7 @@ TypeNever = Literal["Never"]
 
 
 class TypeArray(TypedDict):
-    Array: tuple[UniqueType, UniqueType]
+    Array: tuple["UniqueType", "UniqueType"]
 
 
 Type = TypeAdt | TypeLiteral | TypeTypeVar | TypeRef | TypePtr | TypeNever | TypeArray
@@ -444,6 +444,7 @@ class ItemInfo(TypedDict):
 class StubInfo(ItemInfo):
     variant_name: str
     is_dummy: bool
+    aliases: list[str]
 
 
 def make_args_and_tys(
@@ -844,8 +845,8 @@ class Pattern:
                     raise ValueError(
                         f"Invalid extra '{extra}' in pattern '{self.pattern}'"
                     )
-            if "alias" in entry:
-                self.aliases = json_as_str_list(entry["alias"])
+            if "aliases" in entry:
+                self.aliases = json_as_str_list(entry["aliases"])
             if "include" in entry:
                 self.include = json_as_str_list(entry["include"])
 
@@ -864,7 +865,7 @@ class Pattern:
         return meta_args
 
     def include_pats(self) -> list[str]:
-        return [self.pattern, *self.aliases, *self.include]
+        return [self.pattern, *self.include]
 
 
 class CategorySpec:
@@ -1001,11 +1002,6 @@ def generate_custom_stubs() -> None:
                     missing_patterns.remove(pattern)
                     categories[category].append((pattern, fun))
                     break
-                for alias in pattern.aliases:
-                    if matches_pattern(name, alias):
-                        missing_patterns.remove(pattern)
-                        categories[category].append((pattern, fun))
-                        break
 
     if missing_patterns:
         pprint(
@@ -1069,6 +1065,7 @@ def generate_custom_stubs() -> None:
                     "rust_path": pattern.pattern,
                     "variant_name": variant_name,
                     "is_dummy": False,
+                    "aliases": list(pattern.aliases),
                 }
             )
 
@@ -1099,6 +1096,7 @@ def generate_custom_stubs() -> None:
                     "types": [],
                     "consts": [],
                     "ret": ("unknown", None),
+                    "aliases": list(pattern.aliases),
                 }
             )
 
@@ -1113,12 +1111,13 @@ def generate_custom_stubs() -> None:
 
         intf_entries: set[str] = set()
         fn_variants: set[str] = set()
-        fn_map_entries = ""
+        fn_map_pairs: dict[str, str] = {}
         eval_entries = ""
 
         for info in infos:
             fn_variants.add(info["variant_name"])
-            fn_map_entries += f"(\"{info['rust_path']}\", {info['variant_name']});"
+            for path in [info["rust_path"], *info.get("aliases", [])]:
+                fn_map_pairs.setdefault(path, info["variant_name"])
             args_and_tys = make_args_and_tys(info)
             intf_entries.add(make_val_entry(info, args_and_tys))
 
@@ -1144,6 +1143,9 @@ def generate_custom_stubs() -> None:
 
         intf_entries_str = "\n\n".join(sorted(intf_entries, key=intf_entry_key))
         fn_variants_str = " | ".join(sorted(fn_variants))
+        fn_map_entries = "".join(
+            f'("{path}", {variant});' for path, variant in fn_map_pairs.items()
+        )
 
         # intf.ml — generated module type that impl.ml must satisfy
         intf_generated = f"""

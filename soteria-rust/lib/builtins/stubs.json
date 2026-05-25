@@ -19,6 +19,7 @@
     },
     {
       "pattern": "std::thread::functions::available_parallelism",
+      "aliases": ["std::thread::available_parallelism"],
       "extra_args": ["sig"]
     },
     "std::sys::time::unix::Instant::now",
@@ -57,18 +58,13 @@
       "core::f128::_::is_sign_positive",
       "core::f128::_::is_subnormal",
       "std::io::stdio::_eprint",
-      "std::io::stdio::_print",
       {
-        "pattern": "std::io::_print",
-        "alias": "std::io::stdio::_print"
+        "pattern": "std::io::stdio::_print",
+        "aliases": ["std::io::_print"]
       },
       "std::io::stdio::print_to",
       "std::io::stdio::print_to_buffer_if_capture_used",
       "alloc::raw_vec::handle_error",
-      {
-        "pattern": "std::rt::begin_panic",
-        "alias": "std::panicking::begin_panic"
-      },
       "core::panicking::panic",
       "core::panicking::panic_fmt",
       "core::panicking::panic_nounwind_fmt",
@@ -76,7 +72,10 @@
       "alloc::alloc::handle_alloc_error",
       "core::option::unwrap_failed",
       "core::result::unwrap_failed",
-      "std::panicking::begin_panic"
+      {
+        "pattern": "std::panicking::begin_panic",
+        "aliases": ["std::rt::begin_panic"]
+      }
     ]
   },
   "Fixme": {

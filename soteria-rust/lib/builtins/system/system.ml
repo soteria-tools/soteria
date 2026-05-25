@@ -22,6 +22,8 @@ let fn_pats : (string * fn) list =
     ("std::sys::time::unix::Instant::now", StdSysTimeUnixInstantNow);
     ( "std::thread::functions::available_parallelism",
       StdThreadFunctionsAvailableParallelism );
+    ( "std::thread::available_parallelism",
+      StdThreadFunctionsAvailableParallelism );
   ]
 
 module M (StateM : State.StateM.S) = struct
