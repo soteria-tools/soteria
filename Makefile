@@ -143,8 +143,8 @@ soteria-core-deps:
 
 .PHONY: ocaml-deps
 ocaml-deps:
-	$(OPAM) install . --deps-only --with-test --with-doc -y
 	$(OPAM) install dune.$(DUNE_VERSION) ocamlformat.$(OCAMLFORMAT_VERSION) -y
+	$(OPAM) install . --deps-only --with-test --with-doc -y
 	$(OPAM) install sherlodoc -y
 
 .PHONY: clean

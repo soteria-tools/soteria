@@ -27,6 +27,14 @@ jobs:
     needs: build
     uses: ./.github/workflows/test-packages.yml
 
+  benchmarks:
+    needs: build
+    # Only run (and record history) on direct pushes to main. PRs trigger
+    # benchmarks on demand via a `!run-benchmarks` comment (pr-commands.yml).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    uses: ./.github/workflows/benchmarks.yml
+    secrets: inherit
+
   publish-doc:
     name: Publish documentation
     runs-on: ubuntu-latest
