@@ -78,11 +78,9 @@ let pp_state fmt = function
   | ReservedIM -> Fmt.string fmt "ReIM"
   | Cell -> Fmt.string fmt "Cell"
   | Disabled -> Fmt.string fmt "Dis "
-  | UB -> Fmt.string fmt "UB  "
 
 let[@inline] meet st1 st2 =
   match (st1, st2) with
-  | UB, _ | _, UB -> UB
   | Disabled, _ | _, Disabled -> Disabled
   | Frozen, _ | _, Frozen -> Frozen
   | Unique, _ | _, Unique -> Unique
@@ -95,6 +93,8 @@ let[@inline] meet st1 st2 =
 
 let[@inline] meet' (p1, st1) (p2, st2) = (p1 || p2, meet st1 st2)
 
+type exn += AliasingError
+
 let transition =
   let[@inline] transition st local act =
     match (st, local, act) with
@@ -106,23 +106,24 @@ let transition =
     | Unique, Foreign, Read -> Frozen
     | Unique, Foreign, Write -> Disabled
     | Frozen, _, Read -> Frozen
-    | Frozen, Local, Write -> UB
+    | Frozen, Local, Write -> raise_notrace AliasingError
     | Frozen, Foreign, Write -> Disabled
     | ReservedIM, _, Read | ReservedIM, Foreign, _ -> ReservedIM
     | ReservedIM, Local, Write -> Unique
     | Disabled, Foreign, _ -> Disabled
-    | Disabled, Local, _ -> UB
-    | UB, _, _ -> UB
+    | Disabled, Local, _ -> raise_notrace AliasingError
   in
 
   let[@inline] transition_protected st local act =
     match (st, local, act) with
     | Reserved false, Foreign, Read -> Reserved true
-    | Reserved true, _, Write -> UB
-    | Unique, Foreign, Read -> UB
+    | Reserved true, _, Write -> raise_notrace AliasingError
+    | Unique, Foreign, Read -> raise_notrace AliasingError
     | _ ->
         let st' = transition st local act in
-        if st' = Disabled then UB else st'
+        if[@cold] Common.equal_state st' Disabled then
+          raise_notrace AliasingError;
+        st'
   in
   fun ~protected -> if protected then transition_protected else transition
 
@@ -141,7 +142,7 @@ let init ?(initial_state = Unique) () =
   let node = { protector = None; parents; initial_state } in
   (tag, Tag.WeakMap.singleton tag node)
 
-let ub_state = fst @@ init ~initial_state:UB ()
+let ub_state = fst @@ init ~initial_state:Disabled ()
 
 let borrow ?protector parent ~state st =
   let tag = Tag.fresh_tag () in
@@ -191,10 +192,9 @@ let set_protector ~protected tag root =
     [state] for the tree structure [structure] with an event [e], that happened
     at [accessed]. *)
 let access accessed e (root : t) (st : tb_state) =
-  let ub_happened = ref false in
   let accessed_node = Tag.WeakMap.find accessed root in
   let parents = accessed_node.parents in
-  let st' =
+  try
     Tag.WeakMap.filter_map_no_share
       (fun tag { protector; initial_state; _ } ->
         let protected, st =
@@ -209,17 +209,14 @@ let access accessed e (root : t) (st : tb_state) =
           (Tag.equal tag accessed || protected) && Option.is_some protector
         in
         let st' = transition ~protected st rel e in
-        if Common.equal_state st' UB then (
-          ub_happened := true;
-          [%l.debug
-            "TB: Undefined behavior encountered for %a, %a %a (protected? %b): \
-             %a -> %a in structure@.%a"
-            Tag.pp tag pp_locality rel pp_access e protected pp_state st
-              pp_state st' pp root]);
         if (not protected) && Common.equal_state st' initial_state then None
         else Some (protected, st'))
       root
-  in
-  if !ub_happened then Result.error `AliasingError else Result.ok st'
+    |> Result.ok
+  with AliasingError ->
+    [%l.debug
+      "TB: Undefined behavior encountered for %a at %a in structure@.%a"
+        pp_access e Tag.pp accessed pp root];
+    Result.error `AliasingError
 
 let merge = Tag.WeakMap.idempotent_union @@ fun _ -> meet'
