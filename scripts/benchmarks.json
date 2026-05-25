@@ -16,6 +16,10 @@
     {
       "name": "array_init (rust)",
       "path": "soteria-rust/test/cram/perf.t/array_init.rs"
+    },
+    {
+      "name": "btreeset sort (size 4)",
+      "path": "soteria-rust/test/cram/perf.t/btreeset_sort.rs"
     }
   ],
   "rust_crates": [],
