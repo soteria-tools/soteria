@@ -1,7 +1,7 @@
 {0 Soteria Documentation}
 
 {!Soteria} is a comprehensive library for writing symbolic execution engines.
-The library is very parametric and allows for defining one's own notion of
+The library is parametric and allows for defining one's own notion of
 {{!Soteria.Symex.Value.S}symbolic value} or
 {{!Soteria.Symex.Solver.Mutable_incremental}solver}, enabling arbitrary
 language-specific optimisations. Our goal is for symbolic execution engines to
