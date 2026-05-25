@@ -1,6 +1,6 @@
 {0 Soteria Logging Tutorial}
 
-Welcome to the Soteria logging tutorial! This tutorial will guide you through using the {{!Soteria.Logs}Logs} module for debugging and analyzing your symbolic execution programs.
+Welcome to the Soteria logging tutorial! This tutorial will guide you through using the {{!Soteria.Logs}[Logs]} module for debugging and analyzing your symbolic execution programs.
 
 Soteria's logging interface is inspired by the {{:https://opam.ocaml.org/packages/logs/}[logs]} library, but its implementation is adapted to integrate with symbolic execution and produce structured HTML output.
 
@@ -14,7 +14,7 @@ Today you'll be learning how to:
 
 {2:basic Basic Logging}
 
-The Soteria logging system provides a simple, flexible way to output diagnostic information. To get started, you need to open the {{!Soteria.Logs.Import}Logs.Import} module, which brings the [L] logging module into scope:
+The Soteria logging system provides a simple, flexible way to output diagnostic information. To get started, you need to open the {{!Soteria.Logs.Import}[Logs.Import]} module, which brings the [L] logging module into scope:
 
 {@ocaml[
 open Soteria.Logs.Import;;
@@ -26,7 +26,7 @@ To ensure this import is always available in your project, you can instead also 
 (flags :standard -open Soteria.Logs.Import)
 ]}
 
-The [L] module provides logging functions for different severity levels. The most common one is {{!Soteria.Logs.L.info}info}, which logs informational messages:
+The [L] module provides logging functions for different severity levels. The most common one is {{!Soteria.Logs.L.info}[info]}, which logs informational messages:
 
 {@ocaml[
 L.info (fun m -> m "Starting symbolic execution");;
@@ -47,12 +47,12 @@ L.info (fun m -> m "The answer is %d" x);;
 
 Soteria provides six log levels, from most verbose to least verbose:
 
-- {{!Soteria.Logs.Level.Smt}Smt}: For messages about SMT solver interactions (queries, results)
-- {{!Soteria.Logs.Level.Trace}Trace}: For very detailed execution traces
-- {{!Soteria.Logs.Level.Debug}Debug}: For debugging information
-- {{!Soteria.Logs.Level.Info}Info}: For general informational messages
-- {{!Soteria.Logs.Level.Warn}Warn}: For warnings about potential issues
-- {{!Soteria.Logs.Level.Error}Error}: For errors and exceptions
+- {{!Soteria.Logs.Level.Smt}[Smt]}: For messages about SMT solver interactions (queries, results)
+- {{!Soteria.Logs.Level.Trace}[Trace]}: For very detailed execution traces
+- {{!Soteria.Logs.Level.Debug}[Debug]}: For debugging information
+- {{!Soteria.Logs.Level.Info}[Info]}: For general informational messages
+- {{!Soteria.Logs.Level.Warn}[Warn]}: For warnings about potential issues
+- {{!Soteria.Logs.Level.Error}[Error]}: For errors and exceptions
 
 Each level has a corresponding logging function in the [L] module:
 
@@ -69,7 +69,7 @@ L.error (fun m -> m "Failed to parse input");
 (* -> [ERROR] Failed to parse input *)
 ]}
 
-The {{!Soteria.Logs.L.smt}smt} level is special: it's designed for logging SMT solver interactions, which can be extremely verbose but crucial for understanding solver behavior. Unless you're implementing a solver backend, you usually shouldn't need this level:
+The {{!Soteria.Logs.L.smt}[smt]} level is special: it's designed for logging SMT solver interactions, which can be extremely verbose but crucial for understanding solver behavior. Unless you're implementing a solver backend, you usually shouldn't need this level:
 
 {@ocaml[
 L.smt (fun m -> m "Querying solver: (assert (> x 0))");;
@@ -78,7 +78,7 @@ L.smt (fun m -> m "Querying solver: (assert (> x 0))");;
 
 {2:config Configuration}
 
-Logging behavior is controlled by {{!Soteria.Logs.Config}Logs.Config}. You can configure:
+Logging behavior is controlled by {{!Soteria.Logs.Config}[Logs.Config]}. You can configure:
 
 - The maximum verbosity level to display
 - The output format (text to stderr or HTML)
@@ -100,14 +100,14 @@ Soteria.Logs.Config.set_and_lock log_config;
 
 {b Important:} configuration is global and can only be set once. After calling [set_and_lock], trying to set it again will raise an exception.
 
-For command-line applications, Soteria provides Cmdliner integration via {{!Soteria.Logs.Config.cmdliner_term}Logs.Config.cmdliner_term}.
+For command-line applications, Soteria provides Cmdliner integration via {{!Soteria.Logs.Config.cmdliner_term}[Logs.Config.cmdliner_term]}.
 
 {2:html HTML Output}
 
 Soteria natively supports outputting logs in HTML format. This allows you to
 view logs in a browser, with a search/filter bar, and {i collapsible sections}.
 
-You can organize output into collapsible sections using {{!Soteria.Logs.L.with_section}with_section}:
+You can organize output into collapsible sections using {{!Soteria.Logs.L.with_section}[with_section]}:
 
 {@ocaml[
 L.with_section "Analyzing Module" (fun () ->
@@ -245,17 +245,17 @@ In HTML mode, each call to [with_section] renders as a collapsible block that ca
 
 {b Important:} Do not use [with_section] inside symbolic processes (functions that return ['a Symex.t]) that may branch, because the section will be opened once but closed multiple times. Soteria will automatically create sections when branching occurs inside a process.
 
-{b Note:} {{!Soteria.Logs.L.with_section}with_section} has a [?is_branch] parameter, that is meant only for use when writing your own {{!Soteria.Symex.S}Symex} implementation; most users should {i never} use this parameter.
+{b Note:} {{!Soteria.Logs.L.with_section}[with_section]} has a [?is_branch] parameter, that is meant only for use when writing your own {{!Soteria.Symex.S}[Symex]} implementation; most users should {i never} use this parameter.
 
 {2:printers Pretty Printing and Formatting}
 
-The {{!Soteria.Logs.Printers}Logs.Printers} module provides utilities for formatting output with colors, styles, and special formatting:
+The {{!Soteria.Logs.Printers}[Logs.Printers]} module provides utilities for formatting output with colors, styles, and special formatting:
 
 {3 Colors and Styles}
 
 {b Note:} colored text only works in stderr mode ([~kind:Stderr]); colors are not applied in HTML mode.
 
-You can print colored text using {{!Soteria.Logs.Printers.pp_clr}pp_clr}, apply text styles with {{!Soteria.Logs.Printers.pp_style}pp_style}, or combine both with {{!Soteria.Logs.Printers.pp_clr2}pp_clr2}:
+You can print colored text using {{!Soteria.Logs.Printers.pp_clr}[pp_clr]}, apply text styles with {{!Soteria.Logs.Printers.pp_style}[pp_style]}, or combine both with {{!Soteria.Logs.Printers.pp_clr2}[pp_clr2]}:
 
 {@ocaml[
 let open Soteria.Logs.Printers in
@@ -282,10 +282,10 @@ L.info (fun m -> m "%a, %a, %a, %a"
 
 The following formatters are available for common value types:
 
-- {{!Soteria.Logs.Printers.pp_time}pp_time}: formats float seconds as [12ms] or [1.54s]
-- {{!Soteria.Logs.Printers.pp_percent}pp_percent}: formats a [(total, part)] float pair as a percentage, and {{!Soteria.Logs.Printers.pp_percenti}pp_percenti} does the same with integers
-- {{!Soteria.Logs.Printers.pp_plural}pp_plural}: handles singular/plural forms based on count
-- {{!Soteria.Logs.Printers.pp_unstable}pp_unstable}: hides values that change between runs (when [hide_unstable] is set in config)
+- {{!Soteria.Logs.Printers.pp_time}[pp_time]}: formats float seconds as [12ms] or [1.54s]
+- {{!Soteria.Logs.Printers.pp_percent}[pp_percent]}: formats a [(total, part)] float pair as a percentage, and {{!Soteria.Logs.Printers.pp_percenti}[pp_percenti]} does the same with integers
+- {{!Soteria.Logs.Printers.pp_plural}[pp_plural]}: handles singular/plural forms based on count
+- {{!Soteria.Logs.Printers.pp_unstable}[pp_unstable]}: hides values that change between runs (when [hide_unstable] is set in config)
 
 {@ocaml[
 let open Soteria.Logs.Printers in
@@ -298,7 +298,7 @@ L.info (fun m -> m "Time: %a, Coverage: %a, Found: %a"
 
 {3 Unstable Values}
 
-When writing tests or generating reproducible output, you can hide values that change between runs (like timestamps or durations) using {{!Soteria.Logs.Printers.pp_unstable}pp_unstable}. Note that {{!Soteria.Logs.Printers.pp_time}pp_time} is already predefined as an unstable printer.
+When writing tests or generating reproducible output, you can hide values that change between runs (like timestamps or durations) using {{!Soteria.Logs.Printers.pp_unstable}[pp_unstable]}. Note that {{!Soteria.Logs.Printers.pp_time}[pp_time]} is already predefined as an unstable printer.
 
 {@ocaml[
 let open Soteria.Logs.Printers in

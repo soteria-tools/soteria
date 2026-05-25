@@ -350,7 +350,7 @@ module type S = sig
         handled and ignored by this function (default).
       - [flamegraph] specifies whether a flamegraph should be created from this
         symbolic process or if it should be ignored (default). The value passed
-        in the {{!effect_handling.Dump}Dump} variant is the name of the created
+        in the {{!effect_handling.Dump}[Dump]} variant is the name of the created
         file (while the {{!Profiling.Config}configuration} for flamegraphs
         specifies the directory in which flamegraphs are saved).
 
@@ -368,7 +368,7 @@ module type S = sig
   module Result : sig
     include module type of Result
 
-    (** Same as {{!Symex.S.run}run}, but receives a symbolic process that
+    (** Same as {{!Symex.S.run}[run]}, but receives a symbolic process that
         returns a {!Symex.Compo_res.t} and maps the result to an
         {!Symex.Or_gave_up.t}, potentially adding any path that gave up to the
         list. *)

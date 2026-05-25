@@ -11,8 +11,8 @@ Today you'll be learning how to:
 
 {2:instantiate Instantiating the [Symex.Make] functor}
 
-The main utility of the Soteria library is the {{!Soteria.Symex.Make} Symex.Make} functor, which provides the necessary infrastructure to define and run a symbolic execution engine.
-To instantiate it, you need to provide a {{!Soteria.Symex.Solver.Mutable_incremental} Solver} module, which defines {e symbolic values} and the solver interface to decide whether a symbolic expression of type {{!Soteria.Symex.Value.S.sbool}Value.sbool} is satisfiable.
+The main utility of the Soteria library is the {{!Soteria.Symex.Make}[Symex.Make]} functor, which provides the necessary infrastructure to define and run a symbolic execution engine.
+To instantiate it, you need to provide a {{!Soteria.Symex.Solver.Mutable_incremental}[Solver]} module, which defines {e symbolic values} and the solver interface to decide whether a symbolic expression of type {{!Soteria.Symex.Value.S.sbool}[Value.sbool]} is satisfiable.
 
 {@ocaml[
 module Symex = Symex.Make (Tiny_solver.Z3_solver)
@@ -21,7 +21,7 @@ module Symex = Symex.Make (Tiny_solver.Z3_solver)
 
 {2:return Write your first symbolic process}
 
-Soteria is a library made for writing {e symbolic processes}. A symbolic process is a value of the type {{!Soteria.Symex.S.t}Symex.t}, which is effectively a symbolic computation waiting to be executed. It is an execution that may depend on {e symbolic variables}, and therefore may branch into multiple paths depending on the values of these variables.
+Soteria is a library made for writing {e symbolic processes}. A symbolic process is a value of the type {{!Soteria.Symex.S.t}[Symex.t]}, which is effectively a symbolic computation waiting to be executed. It is an execution that may depend on {e symbolic variables}, and therefore may branch into multiple paths depending on the values of these variables.
 
 The simplest such process is the symbolic process just returns a single branch with a given value, say the integer [0].
 
@@ -31,7 +31,7 @@ The simplest such process is the symbolic process just returns a single branch w
 ]}
 
 This process has type [int Symex.t], that is, a symbolic process that returns a value of type [int]. Again, this is a symbolic process, so it is {e not yet executed}.
-Executing a symbolic process is done using the {{!Soteria.Symex.S.run}run} function:
+Executing a symbolic process is done using the {{!Soteria.Symex.S.run}[run]} function:
 {@ocaml[
 # Symex.run
 - : ?flamegraph:string Symex.effect_handling ->
@@ -54,7 +54,7 @@ As expected the result of the symbolic process is a single branch with the value
 
 {2:nondet Introducing fresh symbolic values}
 
-A core necessity of symbolic execution is the ability to introduce fresh symbolic values. Soteria provides a convenient way to do this using the {{!Soteria.Symex.S.nondet}nondet} function, which creates a fresh symbolic value of a given type. It is called {e nondet} because it "abstracts over" a nondeterministic choice of any value of that given type:
+A core necessity of symbolic execution is the ability to introduce fresh symbolic values. Soteria provides a convenient way to do this using the {{!Soteria.Symex.S.nondet}[nondet]} function, which creates a fresh symbolic value of a given type. It is called {e nondet} because it "abstracts over" a nondeterministic choice of any value of that given type:
 
 {@ocaml[
 # Symex.nondet;;
@@ -111,7 +111,7 @@ Running this symbolic process yields a single branch with no path condition:
 [((V|1| + 2), [])]
 ]}
 
-We can now build more complex symbolic processes, and make use of other basic operations such as {{!Soteria.Symex.S.assume}assume} and {{!Soteria.Symex.S.assert_}assert_}.
+We can now build more complex symbolic processes, and make use of other basic operations such as {{!Soteria.Symex.S.assume}[assume]} and {{!Soteria.Symex.S.assert_}[assert_]}.
 
 For instance, we can create a symbolic process that introduces a nondeterministic integer, and then asserts that this integer is positive:
 

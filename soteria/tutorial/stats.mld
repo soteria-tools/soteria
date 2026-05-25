@@ -1,6 +1,6 @@
 {0 Soteria Statistics Tutorial}
 
-Welcome to the Soteria statistics tutorial! This tutorial will guide you through using the {{!Soteria.Stats}Stats} module for tracking, aggregating, and reporting metrics during symbolic execution and program analysis.
+Welcome to the Soteria statistics tutorial! This tutorial will guide you through using the {{!Soteria.Stats}[Stats]} module for tracking, aggregating, and reporting metrics during symbolic execution and program analysis.
 
 Today you'll be learning how to:
 - {{!basic}Track basic statistics} like counters and timers
@@ -103,11 +103,11 @@ Use {{!Soteria.Stats.As_ctx.add_time_of_to}[add_time_of_to]} to measure how long
 
 The {{!Soteria.Stats.stat_entry}[stat_entry]} type supports five kinds of statistics:
 
-- {{!Soteria.Stats.stat_entry.Int}Int}: Integer values (merged by addition)
-- {{!Soteria.Stats.stat_entry.Float}Float}: Floating-point values (merged by addition)
-- {{!Soteria.Stats.stat_entry.StrSeq}StrSeq}: Sequences of strings (merged by concatenation)
-- {{!Soteria.Stats.stat_entry.Map}Map}: Nested maps of statistics (merged recursively)
-- {{!Soteria.Stats.stat_entry.Yojson}Yojson}: Arbitrary JSON data (merged into arrays)
+- {{!Soteria.Stats.stat_entry.Int}[Int]}: Integer values (merged by addition)
+- {{!Soteria.Stats.stat_entry.Float}[Float]}: Floating-point values (merged by addition)
+- {{!Soteria.Stats.stat_entry.StrSeq}[StrSeq]}: Sequences of strings (merged by concatenation)
+- {{!Soteria.Stats.stat_entry.Map}[Map]}: Nested maps of statistics (merged recursively)
+- {{!Soteria.Stats.stat_entry.Yojson}[Yojson]}: Arbitrary JSON data (merged into arrays)
 
 {3 String Sequences}
 
@@ -201,7 +201,7 @@ Statistics:
 
 {2:integration Integration with Symbolic Execution}
 
-The statistics system is designed to work seamlessly with Soteria's symbolic execution engine. Furthermore, the {{!Soteria.Symex}Symex} module internally uses statistics to track important metrics during symbolic execution, such as:
+The statistics system is designed to work seamlessly with Soteria's symbolic execution engine. Furthermore, the {{!Soteria.Symex}[Symex]} module internally uses statistics to track important metrics during symbolic execution, such as:
 - Execution time
 - SAT solving time
 - Number of SAT checks
@@ -217,7 +217,7 @@ The {{!Soteria.Symex.S.run}[Symex.S.run]} function receives an optional [stats] 
 
 {3 Configuration}
 
-The {{!Soteria.Stats.Config}Stats.Config} module controls where statistics are output: either to stdout, to a JSON file, or disabled entirely. You can set the configuration at the start of your program before any statistics are collected with {{!Soteria.Stats.Config.set_and_lock}[set_and_lock]}.
+The {{!Soteria.Stats.Config}[Stats.Config]} module controls where statistics are output: either to stdout, to a JSON file, or disabled entirely. You can set the configuration at the start of your program before any statistics are collected with {{!Soteria.Stats.Config.set_and_lock}[set_and_lock]}.
 
 A {{!Soteria.Stats.Config.cmdliner_term}Cmdliner term} is provided, exposing a [--output-stats] flag to configure this from the command line.
 
