@@ -1,0 +1,53 @@
+name: BV Fuzzer
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check out. Defaults to main when empty.
+        required: false
+        type: string
+        default: ""
+  workflow_dispatch:
+
+env:
+  # [versionsync: OCAML_VERSION=5.4.0]
+  OCAML_VERSION: 5.4.0
+
+jobs:
+  run-bv-fuzzer:
+    name: Run BV Fuzzer
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.ref || 'main' }}
+
+      - name: Setup Z3
+        uses: cda-tum/setup-z3@v1
+        id: z3
+
+      - name: Setup OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: ${{ env.OCAML_VERSION }}
+          dune-cache: true
+          opam-pin: false
+
+      - name: Restore opam cache
+        uses: actions/cache/restore@v5
+        with:
+          path: _opam
+          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-${{ hashFiles('*.opam') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-
+
+      - name: Update opam
+        run: opam update
+
+      - name: Install dependencies
+        run: make soteria-core-deps
+
+      - name: Run the BV simplification fuzzer
+        run: make ocaml-very-slow-tests

@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/soteria-tools/soteria/main/scripts/benchmarks.schema.json",
+  "title": "Soteria benchmarks configuration",
+  "description": "Benchmark suite consumed by scripts/run_benchmarks.py. The script produces a github-action-benchmark customSmallerIsBetter JSON from these entries.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional pointer to this JSON schema; ignored by the runner."
+    },
+    "rust_files": {
+      "type": "array",
+      "description": "Single .rs files. Each is compiled once (untimed), then benchmarked with `soteria-rust exec <path> --no-compile`.",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "rust_crates": {
+      "type": "array",
+      "description": "Cargo crate roots. Each is compiled once (untimed), then benchmarked with `soteria-rust exec <path> --no-compile`.",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "c_wpst": {
+      "type": "array",
+      "description": "C files benchmarked with `soteria-c exec` (whole-program symbolic testing).",
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "c_biab": {
+      "type": "array",
+      "description": "C projects benchmarked with `soteria-c` in bi-abduction mode (`gen-summaries` or `capture-db`).",
+      "items": {
+        "$ref": "#/$defs/c_biab_entry"
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "File or project root. Relative paths are resolved against the repo root."
+        },
+        "name": {
+          "type": "string",
+          "description": "Label used in the benchmark report; defaults to `path` when omitted."
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Extra arguments forwarded to the Soteria tool."
+        },
+        "no_hyperfine": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, time a single run instead of using hyperfine. Use for benchmarks that are too slow to run 10+ times."
+        }
+      }
+    },
+    "c_biab_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "mode"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Project root. Relative paths are resolved against the repo root."
+        },
+        "name": {
+          "type": "string",
+          "description": "Label used in the benchmark report; defaults to `path` when omitted."
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Extra arguments forwarded to soteria-c."
+        },
+        "no_hyperfine": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true, time a single run instead of using hyperfine."
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "gen-summaries",
+            "capture-db"
+          ],
+          "description": "Bi-abduction mode. `gen-summaries` runs on every .c file under `path`. `capture-db` runs on a compile_commands.json."
+        },
+        "compile_commands": {
+          "type": "string",
+          "default": "build/compile_commands.json",
+          "description": "Path to the compilation database, relative to `path`. Only used when `mode` is `capture-db`. If the file does not exist, the runner generates it with cmake."
+        },
+        "cmake_args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Extra arguments passed to the cmake invocation that produces `compile_commands`. Only used when `mode` is `capture-db` and the database is missing."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mode": {
+                "const": "gen-summaries"
+              }
+            },
+            "required": [
+              "mode"
+            ]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "compile_commands"
+                  ]
+                },
+                {
+                  "required": [
+                    "cmake_args"
+                  ]
+                }
+              ]
+            },
+            "description": "`compile_commands` and `cmake_args` only apply to `capture-db`."
+          }
+        }
+      ]
+    }
+  }
+}
