@@ -35,10 +35,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run_benchmarks: ${{ steps.parse.outputs.run_benchmarks }}
-      build_doc:      ${{ steps.parse.outputs.build_doc }}
-      run_bv_fuzzer:  ${{ steps.parse.outputs.run_bv_fuzzer }}
-      any:            ${{ steps.parse.outputs.any }}
-      needs_ci:       ${{ steps.parse.outputs.needs_ci }}
+      build_doc: ${{ steps.parse.outputs.build_doc }}
+      run_bv_fuzzer: ${{ steps.parse.outputs.run_bv_fuzzer }}
+      any: ${{ steps.parse.outputs.any }}
+      needs_ci: ${{ steps.parse.outputs.needs_ci }}
     steps:
       - id: parse
         uses: actions/github-script@v9
@@ -203,7 +203,7 @@ jobs:
             const lines = commands.map(c => {
               const ok = c.result === 'success';
               if (!ok) allOk = false;
-              return `- ${ok ? '✅' : '❌'} ${ok ? c.ok : c.fail}.`;
+              return `- ${ok ? '✅' : '❌'} ${ok ? c.ok : c.fail}`;
             });
             if (process.env.DISPATCH_RESULT !== 'success') {
               lines.unshift('- ❌ Could not locate the PR build; commands did not run.');

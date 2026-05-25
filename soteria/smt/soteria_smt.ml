@@ -355,7 +355,7 @@ type solver = {
 (** Send a command and verify the solver acknowledged it with [success].
 
     This goes through {!field:ack_command}, so it is synchronous: prefer
-    {!command} on the hot path where the acknowledgement can be deferred. *)
+    {!val:command} on the hot path where the acknowledgement can be deferred. *)
 let ack_command (s : solver) cmd =
   match s.ack_command cmd with
   | Atom "success" -> ()

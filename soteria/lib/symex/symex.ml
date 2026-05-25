@@ -350,9 +350,9 @@ module type S = sig
         handled and ignored by this function (default).
       - [flamegraph] specifies whether a flamegraph should be created from this
         symbolic process or if it should be ignored (default). The value passed
-        in the {{!effect_handling.Dump}Dump} variant is the name of the created
-        file (while the {{!Profiling.Config}configuration} for flamegraphs
-        specifies the directory in which flamegraphs are saved).
+        in the {{!effect_handling.Dump}[Dump]} variant is the name of the
+        created file (while the {{!Profiling.Config}configuration} for
+        flamegraphs specifies the directory in which flamegraphs are saved).
 
       @raise Symex.Gave_up
         if the symbolic process calls [give_up] and the mode is
@@ -368,10 +368,10 @@ module type S = sig
   module Result : sig
     include module type of Result
 
-    (** Same as {{!Symex.S.run}run}, but receives a symbolic process that
-        returns a {!Symex.Compo_res.t} and maps the result to an
-        {!Symex.Or_gave_up.t}, potentially adding any path that gave up to the
-        list. *)
+    (** Same as {{!Symex.S.run}[run]}, but receives a symbolic process that
+        returns a {{!Soteria_std.Compo_res.t}[Compo_res.t]} and maps the result
+        to an {{!Symex.Or_gave_up.t}[Or_gave_up.t]}, potentially adding any path
+        that gave up to the list. *)
     val run :
       ?flamegraph:string effect_handling ->
       ?stats:unit effect_handling ->

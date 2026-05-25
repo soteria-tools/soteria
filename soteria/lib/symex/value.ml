@@ -6,9 +6,10 @@ module type Expr = sig
       ['a v]. Syntactic objects, unlike semantic values, can contain "free"
       variables and operations such as substitution have meaning.
 
-      [Expr.t] objects are used in, for instance, assertions ({!Logic}). They
-      can be substituted through a {!Symex.S.Producer} monad or learned through
-      a {!Symex.S.Consumer} monad. *)
+      [Expr.t] objects are used in, for instance, assertions
+      ({{!Soteria.Logic}[Logic]}). They can be substituted through a
+      {{!Soteria.Symex.S.Producer}[Producer]} monad or learned through a
+      {{!Soteria.Symex.S.Consumer}[Consumer]} monad. *)
 
   type 'a ty
   type 'a v
@@ -69,8 +70,8 @@ module type S = sig
   (** The type of symbolic values, parameterized by their type. For example,
       [sbool t] represents a symbolic boolean.
 
-      Values also expose an {!Expr} module for their syntactic representation.
-  *)
+      Values also expose an {!module:Expr} module for their syntactic
+      representation. *)
   type +'a t
 
   (** Type of values. *)

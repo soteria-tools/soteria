@@ -158,7 +158,7 @@ val output : t -> unit
 module As_ctx : sig
   (** Module for manipulating statistics as a context using algebraic effects
       (that are hidden). All calls to any function in this module should happen
-      only inside a function wrapped with {!val-with_stats}, ensuring that the
+      only inside a function wrapped with {!val:with_}, ensuring that the
       statistics are properly passed around. *)
 
   include Effects.Bookkeeping with type arg := unit and type t := t
