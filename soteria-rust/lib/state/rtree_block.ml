@@ -447,7 +447,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let offset, len = t.range in
         lift_miss ~offset ~len @@ decode_mem_val ~ty node
 
-  let merge_Borrows t =
+  let merge_borrows t =
     fold_iter ~init:None
       ~f:(fun acc ((offset, len), _, tb_st) ->
         match (tb_st, acc) with
@@ -520,7 +520,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ t = as_owned ~mk_fixes t in
-          let** tb_st = merge_Borrows t in
+          let** tb_st = merge_borrows t in
           match tag with
           | Some tag ->
               let++ tb_st' =
@@ -559,7 +559,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ _ = as_owned ~mk_fixes t in
-          let++ tb_st = merge_Borrows t in
+          let++ tb_st = merge_borrows t in
           uninit range tb_st
         in
         let rebuild_parent = Tree.of_children in
@@ -576,7 +576,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let open DecayMap.SM.Syntax in
         let replace_node t =
           let@ t = as_owned ~mk_fixes t in
-          let++ tb_st = merge_Borrows t in
+          let++ tb_st = merge_borrows t in
           zeros range tb_st
         in
         let rebuild_parent = Tree.of_children in

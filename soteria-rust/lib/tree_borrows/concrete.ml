@@ -25,7 +25,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
     let nondet () = return None
   end
 
-  let unwrap x = Option.get ~msg:"missing state in concrete TB" x
+  let[@inline] unwrap x = Option.get ~msg:"missing state in concrete TB" x
 
   module Tree = struct
     type nonrec t = t
@@ -52,7 +52,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
 
     let borrow ?protector parent ~state st =
       let st = unwrap st in
-      let st', tag = borrow ?protector parent ~state st in
+      let tag, st' = borrow ?protector parent ~state st in
       return (Ok tag, Some st')
 
     let unprotect tag st = return (Ok (), Some (unwrap st |> unprotect tag))
@@ -83,7 +83,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
     let produce (s : syn) _ = match s with _ -> .
     let fix_empty () = []
 
-    let access accessed e root st =
+    let[@inline] access accessed e root st =
       match access accessed e (unwrap root) (unwrap st) with
       | Ok st' -> Symex.Result.ok (Some st')
       | Error e -> Symex.Result.error e
