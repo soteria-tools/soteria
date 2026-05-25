@@ -7,5 +7,5 @@ fn access(x: &mut u32) {
 fn main() {
     let mut x = 0;
     access(&mut x);
-    assert_eq!(x, 500);
+    soteria::assert(x == 500, "ok");
 }
