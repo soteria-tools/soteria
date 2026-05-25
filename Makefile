@@ -37,6 +37,10 @@ ocaml:
 ocaml-format-check:
 	$(DUNE) build @fmt
 
+.PHONY: mld-format
+mld-format:
+	find . -name "*.mld" -not -path "./_opam/*" -not -path "./_build/*" -exec $(OPAMX) ocamlformat --doc --inplace {} \;
+
 .PHONY: check-opam-files
 check-opam-files:
 	@if git diff --name-only HEAD | grep -q '\.opam$$'; then \

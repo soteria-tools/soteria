@@ -51,6 +51,8 @@ jobs:
         run: make ocaml
       - name: Check formatting
         run: make ocaml-format-check
+      - name: Check mld formatting
+        run: find . -name "*.mld" -not -path "./_opam/*" -not -path "./_build/*" -exec ocamlformat --doc --check {} \;
       - name: Check that opam files were up to date
         run: make check-opam-files
 
