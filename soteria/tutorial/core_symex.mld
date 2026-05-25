@@ -47,7 +47,7 @@ For instance, let's execute the symbolic process we just created, using the {{!S
 
 {@ocaml[
 # Symex.return 0 |> Symex.run ~mode:OX;;
-- : (int * Typed.Expr.t list) list = [(0, [])]]}
+- : (int * Typed.Expr.t list) list = [(0, [])]
 ]}
 
 As expected the result of the symbolic process is a single branch with the value [0] and an empty path condition [[]], which means that there is no condition for taking this branch, i.e., it is always taken.
