@@ -37,7 +37,6 @@
         "patterns": {
           "type": "array",
           "items": { "$ref": "#/$defs/entry" },
-          "required": true,
           "description": "Patterns for functions to stub out in this category."
         },
         "dependencies": {
@@ -71,15 +70,10 @@
               "items": { "$ref": "#/$defs/extra_arg" },
               "uniqueItems": true
             },
-            "alias": {
-              "oneOf": [
-                { "$ref": "#/$defs/pattern" },
-                {
-                  "type": "array",
-                  "items": { "$ref": "#/$defs/pattern" },
-                  "description": "Alternative patterns to match the same stub implementation. Useful for functions that have multiple names because of re-exports. Avoid using this if possible."
-                }
-              ]
+            "aliases": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/pattern" },
+              "description": "Additional Rust paths to register as fn_pats keys pointing to the same stub. Useful for re-exports. The pattern itself is what resolves the signature."
             },
             "include": {
               "oneOf": [

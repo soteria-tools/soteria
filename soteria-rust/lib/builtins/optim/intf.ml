@@ -16,6 +16,7 @@ module M (StateM : State.StateM.S) = struct
 
   module type S = sig
     val _eprint : args:rust_val -> unit ret
+    val _print : args:rust_val -> unit ret
 
     val alloc_impl :
       self:full_ptr ->
@@ -29,6 +30,13 @@ module M (StateM : State.StateM.S) = struct
       right:full_ptr ->
       args:rust_val ->
       unit ret
+
+    (** {@markdown[
+          This is the entry point of panicking for the non-format-string variants of
+           panic!() and assert!(). In particular, this is the only entry point that supports
+           arbitrary payloads, not just format strings.
+        ]} *)
+    val begin_panic : m:Types.ty -> msg:rust_val -> unit ret
 
     (** {@markdown[
           Returns `true` if this number is neither infinite nor NaN.
@@ -713,13 +721,6 @@ module M (StateM : State.StateM.S) = struct
     val panic_nounwind_fmt :
       fmt:rust_val -> force_no_backtrace:[< Typed.T.sbool ] Typed.t -> unit ret
 
-    (** {@markdown[
-          This is the entry point of panicking for the non-format-string variants of
-           panic!() and assert!(). In particular, this is the only entry point that supports
-           arbitrary payloads, not just format strings.
-        ]} *)
-    val panicking_begin_panic : m:Types.ty -> msg:rust_val -> unit ret
-
     val print_to :
       t:Types.ty ->
       args:rust_val ->
@@ -731,6 +732,5 @@ module M (StateM : State.StateM.S) = struct
       args:rust_val -> Typed.T.sbool Typed.t ret
 
     val result_unwrap_failed : msg:full_ptr -> error:full_ptr -> unit ret
-    val stdio__print : args:rust_val -> unit ret
   end
 end

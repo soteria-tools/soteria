@@ -89,9 +89,9 @@ let fn_pats : (string * fn) list =
     ("core::panicking::panic_fmt", CorePanickingPanicFmt);
     ("core::panicking::panic_nounwind_fmt", CorePanickingPanicNounwindFmt);
     ("core::result::unwrap_failed", CoreResultUnwrapFailed);
-    ("std::io::_print", StdIoStdioPrint);
     ("std::io::stdio::_eprint", StdIoStdioEprint);
     ("std::io::stdio::_print", StdIoStdioPrint);
+    ("std::io::_print", StdIoStdioPrint);
     ("std::io::stdio::print_to", StdIoStdioPrintTo);
     ( "std::io::stdio::print_to_buffer_if_capture_used",
       StdIoStdioPrintToBufferIfCaptureUsed );
@@ -276,14 +276,11 @@ module M (StateM : State.StateM.S) = struct
         let error = as_ptr error in
         let+ () = result_unwrap_failed ~msg ~error in
         Tuple []
-    | StdIoStdioPrint, [], [], [ args ] ->
-        let+ () = stdio__print ~args in
-        Tuple []
     | StdIoStdioEprint, [], [], [ args ] ->
         let+ () = _eprint ~args in
         Tuple []
     | StdIoStdioPrint, [], [], [ args ] ->
-        let+ () = stdio__print ~args in
+        let+ () = _print ~args in
         Tuple []
     | StdIoStdioPrintTo, [ t ], [], [ args; global_s; label ] ->
         let global_s = as_ptr global_s in
@@ -294,10 +291,7 @@ module M (StateM : State.StateM.S) = struct
         let+ ret = print_to_buffer_if_capture_used ~args in
         Int (Typed.BitVec.of_bool ret)
     | StdPanickingBeginPanic, [ m ], [], [ msg ] ->
-        let+ () = panicking_begin_panic ~m ~msg in
-        Tuple []
-    | StdPanickingBeginPanic, [ m ], [], [ msg ] ->
-        let+ () = panicking_begin_panic ~m ~msg in
+        let+ () = begin_panic ~m ~msg in
         Tuple []
     | _, tys, cs, args ->
         Fmt.kstr not_impl
