@@ -1,0 +1,37 @@
+name: PR Documentation
+
+on:
+  workflow_call:
+    inputs:
+      run-id:
+        description: CI workflow run id to download the odoc artifact from.
+        required: true
+        type: string
+      pr-number:
+        description: PR number; documentation is published under api/pr-<n>.
+        required: true
+        type: string
+
+jobs:
+  publish:
+    name: Publish PR documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    steps:
+      - name: Download documentation artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: odoc
+          path: site
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.run-id }}
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          destination_dir: ./api/pr-${{ inputs.pr-number }}

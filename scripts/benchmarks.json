@@ -1,0 +1,39 @@
+{
+  "$schema": "./benchmarks.schema.json",
+  "rust_files": [
+    {
+      "name": "write-a-lot",
+      "path": "soteria-rust/test/cram/perf.t/writealot.rs"
+    },
+    {
+      "name": "write-a-lot (for loop)",
+      "path": "soteria-rust/test/cram/perf.t/writealotloop.rs"
+    },
+    {
+      "name": "ctpop",
+      "path": "soteria-rust/test/cram/perf.t/ctpop.rs"
+    },
+    {
+      "name": "array_init (rust)",
+      "path": "soteria-rust/test/cram/perf.t/array_init.rs"
+    }
+  ],
+  "rust_crates": [],
+  "c_wpst": [
+    {
+      "name": "array_init (c)",
+      "path": "soteria-c/test/cram/perf.t/array_init.c",
+      "args": [
+        "--infinite-fuel"
+      ]
+    }
+  ],
+  "c_biab": [
+    {
+      "name": "Collections-C",
+      "path": "benchmark-projects/Collections-C",
+      "mode": "capture-db",
+      "no_hyperfine": true
+    }
+  ]
+}

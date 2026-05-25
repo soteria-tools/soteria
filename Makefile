@@ -64,6 +64,10 @@ doc:
 	chmod u+w _build/default/_doc/_html/odoc.support/odoc.css
 	cp doc/odoc-theme/odoc.css _build/default/_doc/_html/odoc.support/odoc.css
 
+.PHONY: doc-json
+doc-json:
+	$(DUNE) build @doc-json --only-packages soteria
+
 ##### Packaging soteria-c #####
 
 # From inside the package folder one can run:
@@ -139,8 +143,8 @@ soteria-core-deps:
 
 .PHONY: ocaml-deps
 ocaml-deps:
-	$(OPAM) install . --deps-only --with-test --with-doc -y
 	$(OPAM) install dune.$(DUNE_VERSION) ocamlformat.$(OCAMLFORMAT_VERSION) -y
+	$(OPAM) install . --deps-only --with-test --with-doc -y
 	$(OPAM) install sherlodoc -y
 
 .PHONY: clean
