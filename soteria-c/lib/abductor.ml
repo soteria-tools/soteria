@@ -43,7 +43,6 @@ let generate_summaries_for (fundef : fundef) =
   let+ (args, ret, bi_state), pc = res in
   let args = List.map Aggregate_val.to_syn args in
   let ret = Result.map Aggregate_val.to_syn ret in
-  let pc = List.map Typed.Expr.of_value pc in
   let@ () = L.with_section "Building summary" in
   [%l.trace
     "@[<2>Building summary for %a using bistate:@ %a@]" Fmt_ail.pp_sym fid

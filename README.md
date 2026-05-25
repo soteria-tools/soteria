@@ -114,6 +114,10 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
 - **Submit a PR:** Read our [contribution guidelines](./CONTRIBUTING.md) first
 - **License agreement:** Review the [Contributor License Agreement](./CLA.md) before contributing
 
+### AI Policy
+
+We welcome contributions assisted by AI, as long as they follow our [AI Policy](./AI_POLICY.md).
+
 ## Acknowledgements
 
 Soteria relies on many excellent open source libraries and tools, and we are deeply grateful to their authors and contributors.

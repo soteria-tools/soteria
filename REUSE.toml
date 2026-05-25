@@ -28,6 +28,7 @@ path = [
   "odoc-config.sexp",
   ".github/**",
   ".vscode/**",
+  ".claude/skills/**",
   ".gitignore",
   ".ocamlformat",
   ".ocamlformat-ignore",
@@ -36,6 +37,9 @@ path = [
   "CONTRIBUTING.md",
   "shell.nix",
   "CLA.md",
+  "CLAUDE.md",
+  "AGENTS.md",
+  "AI_POLICY.md",
 ]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Soteria Tools Ltd."

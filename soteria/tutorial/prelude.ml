@@ -13,6 +13,7 @@ let pp_hstring pp_v ft m =
 #install_printer pp_stats;;
 #install_printer pp_run_results;;
 #install_printer Soteria.Tiny_values.Typed.ppa;;
+#install_printer Soteria.Tiny_values.Svalue.pp;;
 #install_printer Soteria.Soteria_std.Dynarray.pp;;
 #install_printer pp_hstring;;
 #require "soteria.ppx";;

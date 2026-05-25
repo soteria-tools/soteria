@@ -246,7 +246,9 @@ soteria_logs.html
 *.kani-metadata.json
 *.rlib
 
-
+### Claude ###
+.claude/
+!.claude/skills
 
 # Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml
 # and modified by hand afterwards
