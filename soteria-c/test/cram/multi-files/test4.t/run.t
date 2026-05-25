@@ -155,9 +155,12 @@
   `-AilCNpredicates EMPTY
   
 
-  $ soteria-c exec file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
+  $ ../../exec_test.sh file1.c file2.c -I . --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
     [Ok: (0x00000000, None)]
   
-  Executed 27 statements
+  
   Verification Success!
+  
+  Executed 27 statements
+  Exit code: 0

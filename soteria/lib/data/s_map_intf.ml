@@ -29,7 +29,7 @@ module Key (Symex : Symex.Base) = struct
     [@@mixins Stdlib.Map.OrderedType + Abstr.Sem_eq + Abstr.Simplifiable]
     [@@deriving show]
 
-    val distinct : t list -> Symex.Value.(sbool t)
+    val distinct_seq : t Seq.t -> Symex.Value.(sbool t)
   end
 
   module type S_patricia_tree = sig

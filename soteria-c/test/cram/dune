@@ -5,5 +5,5 @@
    (TERM dumb))))
 
 (cram
- (deps ../../bin/soteria_c.exe)
+ (deps ../../bin/soteria_c.exe exec_test.sh)
  (applies_to :whole_subtree))

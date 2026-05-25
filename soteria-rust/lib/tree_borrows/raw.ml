@@ -10,6 +10,7 @@ module Tag : sig
   val zero : t
 
   module Map : PatriciaTree.MAP with type key = t
+  module Set : PatriciaTree.SET with type elt = t
 end = struct
   type t = int [@@deriving eq]
 
@@ -23,6 +24,7 @@ end = struct
     !tag_counter
 
   module Map = PatriciaTree.MakeMap (Int)
+  module Set = PatriciaTree.MakeSet (Int)
 end
 
 (** Whether this node has a protector (this is distinct from having the
@@ -30,7 +32,7 @@ end
     initial state if it doesn't exist in the state. *)
 type node = {
   protector : protector option;
-  parents : Tag.t list;
+  parents : Tag.Set.t;
   initial_state : state;
 }
 [@@deriving show { with_path = false }, eq]
@@ -103,7 +105,9 @@ let show = Fmt.to_to_string pp
 
 let init ?(initial_state = Unique) () =
   let tag = Tag.fresh_tag () in
-  let node = { protector = None; parents = [ tag ]; initial_state } in
+  let node =
+    { protector = None; parents = Tag.Set.singleton tag; initial_state }
+  in
   (tag, Tag.Map.singleton tag node)
 
 let ub_state = fst @@ init ~initial_state:UB ()
@@ -112,7 +116,11 @@ let borrow ?protector parent ~state st =
   let tag = Tag.fresh_tag () in
   let node_parent = Tag.Map.find parent st in
   let node =
-    { protector; parents = tag :: node_parent.parents; initial_state = state }
+    {
+      protector;
+      parents = Tag.Set.add tag node_parent.parents;
+      initial_state = state;
+    }
   in
   (Tag.Map.add tag node st, tag)
 
@@ -161,7 +169,7 @@ let access accessed e (root : t) (st : tb_state) =
           | Some ps -> ps
         in
         let rel =
-          if List.mem tag accessed_node.parents then Local else Foreign
+          if Tag.Set.mem tag accessed_node.parents then Local else Foreign
         in
         (* if the tag has a protector and is accessed, this toggles the
            protector! *)

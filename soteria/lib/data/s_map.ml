@@ -9,7 +9,7 @@ struct
 
   let sem_eq x y = Symex.Value.of_bool (x = y)
   let simplify = Symex.return
-  let distinct _ = Symex.Value.of_bool true
+  let distinct_seq _ = Symex.Value.of_bool true
 end
 
 module Build
@@ -102,9 +102,7 @@ struct
     match M.find_opt key st with
     | Some v -> Symex.return (key, Some v)
     | None ->
-        let not_in_map =
-          M.to_seq st |> Seq.map fst |> List.of_seq |> Key.distinct
-        in
+        let not_in_map = M.to_seq st |> Seq.map fst |> Key.distinct_seq in
         if%sat1 not_in_map then Symex.return (key, None)
         else M.to_seq st |> find_bindings
 end

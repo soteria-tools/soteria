@@ -219,6 +219,8 @@ let distinct l =
       in
       if sure_distinct then v_true else Nop (Distinct, l) <| TBool
 
+let distinct_seq s = distinct (List.of_seq s)
+
 let ite guard if_ else_ =
   match (guard.node.kind, if_.node.kind, else_.node.kind) with
   | Bool true, _, _ -> if_

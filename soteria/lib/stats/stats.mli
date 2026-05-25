@@ -202,7 +202,12 @@ end
 module Config : sig
   (** Configuration options for statistics output. *)
 
-  type t
+  type t = {
+    output_stats : string option;
+        (** If stats should be output. If the value is "stdout", prints the
+            stats to stdout; otherwise, stores them as JSON in the specified
+            file. *)
+  }
 
   val cmdliner_term : unit -> t Cmdliner.Term.t
   val set_and_lock : t -> unit

@@ -204,7 +204,8 @@ module As_ctx = struct
     if Option.is_some (Config.get ()).output_stats then output stats;
     res
 
-  let[@inline] apply f = Effect.perform (Apply f)
+  let[@inline] apply f =
+    if Option.is_some (Config.get ()).output_stats then Effect.perform (Apply f)
 
   let push_entry key entry =
     apply (fun stats ->
