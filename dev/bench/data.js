@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779704893782,
+  "lastUpdate": 1779714518339,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -176,6 +176,65 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.679007767990697,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "035d37887b87d6bdcb76ca809a93e89bae883a1c",
+          "message": "Minor doc improvements (#355)\n\n* Add missing code formatting on links\n\n* Fix some broken links\n\n* Reformat .mld files (max col = 80!)\n\n* Add CI step to make sure mld files are formatted\n\n* minor: remove trailing `.` in CI output\n\n* re-format\n\n* whitespace\n\n* ... formatting?\n\n* ~~very~~ parametric",
+          "timestamp": "2026-05-25T12:55:19Z",
+          "tree_id": "a94d1e9dc1c898c212bb9e741226cdec58a97355",
+          "url": "https://github.com/soteria-tools/soteria/commit/035d37887b87d6bdcb76ca809a93e89bae883a1c"
+        },
+        "date": 1779714515400,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.0797010953,
+            "range": "± 0.004",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.98175352674,
+            "range": "± 0.0097",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.8548734561,
+            "range": "± 0.0125",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.24685573912,
+            "range": "± 0.0044",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.3071739005799996,
+            "range": "± 0.039",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.781565395998769,
             "unit": "s"
           }
         ]
