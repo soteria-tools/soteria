@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779714518339,
+  "lastUpdate": 1779732913973,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -235,6 +235,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.781565395998769,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1acb32890c4aaadc7b719cafacfbfa5cef7eda4c",
+          "message": "BtreeSet sort benchmark + trivial inequalities (#356)\n\n* btreeset_sort perf test\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* add it to benchmarks\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Trivial truthines of inequalities.\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Opale's comments\n\nCo-authored-by: N1ark <opale.sjostedt@gmail.com>\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\nCo-authored-by: N1ark <opale.sjostedt@gmail.com>",
+          "timestamp": "2026-05-25T17:59:58Z",
+          "tree_id": "f508648f9181a23b874335546031b7c4630fa5e2",
+          "url": "https://github.com/soteria-tools/soteria/commit/1acb32890c4aaadc7b719cafacfbfa5cef7eda4c"
+        },
+        "date": 1779732912795,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.07900557242,
+            "range": "± 0.0022",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.97816865092,
+            "range": "± 0.01",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.8503823429000001,
+            "range": "± 0.0116",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.2420915451,
+            "range": "± 0.0032",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.90169984512,
+            "range": "± 0.0237",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.28718126018,
+            "range": "± 0.0355",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.58647286699852,
             "unit": "s"
           }
         ]
