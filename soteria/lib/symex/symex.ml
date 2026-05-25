@@ -331,9 +331,6 @@ module type S = sig
     val total_available : unit -> int
   end
 
-  type 'a v := 'a Value.t
-  type sbool := Value.sbool
-
   (** [run ~mode p] actually performs symbolic execution of the symbolic process
       [p] and returns a list of obtained branches which capture the outcome
       together with a path condition that is a list of boolean symbolic values.
@@ -366,7 +363,7 @@ module type S = sig
     ?fuel:Fuel_gauge.t ->
     mode:Approx.t ->
     'a t ->
-    ('a * sbool v list) list
+    ('a * Value.Expr.t list) list
 
   module Result : sig
     include module type of Result
@@ -382,7 +379,7 @@ module type S = sig
       ?fail_fast:bool ->
       mode:Approx.t ->
       ('ok, 'err, 'fix) t ->
-      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.(sbool t) list) list
+      (('ok, 'err Or_gave_up.t, 'fix) Compo_res.t * Value.Expr.t list) list
   end
 end
 
@@ -1030,12 +1027,12 @@ module Make (Sol : Solver.Mutable_incremental) :
     let@ () = Give_up.with_give_up_raising in
     f ()
 
-  let run_iter ~mode (iter : 'a t) : ('a * Value.(sbool t) list) Iter.t =
+  let run_iter ~mode (iter : 'a t) : ('a * Value.Expr.t list) Iter.t =
    fun continue ->
     (* Make sure to drop branches that have leftover assumes with unsatisfiable
        PCs. *)
     let admissible () = Solver_result.admissible ~mode (Solver.sat ()) in
-    iter @@ fun x -> if admissible () then continue (x, Solver.as_values ())
+    iter @@ fun x -> if admissible () then continue (x, Solver.as_exprs ())
 
   let run ?flamegraph ?stats ?fuel ~mode iter =
     let@ () = setup ?flamegraph ?stats ?fuel ~mode in
@@ -1056,7 +1053,7 @@ module Make (Sol : Solver.Mutable_incremental) :
           if fail_fast && Compo_res.is_error res then raise Fail_fast
         with
         | effect Give_up.Gave_up_eff reason, k ->
-            l := (Error (Gave_up reason), Solver.as_values ()) :: !l;
+            l := (Error (Gave_up reason), Solver.as_exprs ()) :: !l;
             if fail_fast then Effect.Deep.discontinue k Fail_fast
             else Effect.Deep.continue k ()
         | Fail_fast -> ()

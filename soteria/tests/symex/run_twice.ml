@@ -36,7 +36,7 @@ let fn () =
 let branches_are_deterministic () =
   let pp =
     let open Fmt in
-    list ~sep:semi (braces (pair ~sep:comma bool (Dump.list Typed.ppa)))
+    list ~sep:semi (braces (pair ~sep:comma bool (Dump.list Svalue.pp)))
   in
   let b1 = run ~fuel ~mode:OX (fn ()) in
   let b2 = run ~fuel ~mode:OX (fn ()) in

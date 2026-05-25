@@ -134,10 +134,11 @@ struct
             [%l.info "Solver returned unknown"];
             Unknown)
 
-  let as_values solver =
+  let as_exprs solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
+    |> Iter.map Typed.Expr.of_value
     |> Iter.to_list
 end
 
@@ -413,10 +414,11 @@ struct
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
-  let as_values solver =
+  let as_exprs solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
+    |> Iter.map Typed.Expr.of_value
     |> Iter.to_list
 end
 

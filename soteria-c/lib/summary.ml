@@ -268,7 +268,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
                     list ~sep:cut (fun ft (res, pc) ->
                         let pp_pc ft pc =
                           Fmt.pf ft "@[<2>Path condition: %a@]"
-                            (Fmt.Dump.list Typed.ppa) pc
+                            (Fmt.Dump.list Svalue.pp) pc
                         in
                         Fmt.pf ft "<v 2>Branch:@.Res: %a@.%a@]" Fmt.bool res
                           pp_pc pc))
