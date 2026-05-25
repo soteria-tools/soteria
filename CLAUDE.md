@@ -52,12 +52,12 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 Organized as qualified submodules (`include_subdirs qualified`). Key subsystems:
 
-- **`symex/`**: The generic symbolic execution monad — path exploration, branching, merging, path condition tracking
-- **`sym_states/`**: Symbolic state management, memory model abstraction
+- **`symex/`**: The generic symbolic execution monad — path exploration, branching, path condition tracking
+- **`sym_states/`**: Symbolic separation-logic compatible state management, memory model abstraction
 - **`solvers/`**: SMT solver integration (Z3)
 - **`bv_values/`**: Bitvector value abstraction for bit-accurate analysis
-- **`logic/`**: Logical operators and predicates for constraint generation
-- **`data/`**: Shared data structures (e.g. `Range_tree`)
+- **`logic/`**: Modules to facilitate the substitution and usage of symbolic booleans.
+- **`data/`**: Shared symbolic data structures (e.g. `S_map`, `Range_tree`)
 - **`soteria_std/`**: Utility modules extending the OCaml stdlib
 - **`logs/`**: Execution trace logging and interactive HTML viewer
 
