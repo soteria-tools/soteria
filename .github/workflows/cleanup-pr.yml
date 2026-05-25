@@ -1,0 +1,60 @@
+name: Cleanup PR Artifacts
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cleanup:
+    name: Remove PR artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v6
+        with:
+          ref: gh-pages
+
+      - name: Remove PR documentation and benchmarks
+        id: cleanup
+        run: |
+          PR=${{ github.event.pull_request.number }}
+          REMOVED=()
+          for DIR in "api/pr-${PR}" "dev/bench/pr-${PR}"; do
+            if [ -d "$DIR" ]; then
+              rm -rf "$DIR"
+              REMOVED+=("$DIR")
+              echo "Removed $DIR"
+            fi
+          done
+          if [ ${#REMOVED[@]} -gt 0 ]; then
+            echo "removed=${REMOVED[*]}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push
+        if: steps.cleanup.outputs.removed != ''
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Remove artifacts for PR #${{ github.event.pull_request.number }}"
+          git push
+
+      - name: Checkout status-comment action
+        if: steps.cleanup.outputs.removed != ''
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: source-repo
+          sparse-checkout: .github/actions/post-pr-status-comment
+
+      - name: Post comment on PR
+        if: steps.cleanup.outputs.removed != ''
+        uses: ./source-repo/.github/actions/post-pr-status-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          marker: soteria:pr-cleanup
+          body: "Per-PR artifacts have been removed: ${{ steps.cleanup.outputs.removed }}."

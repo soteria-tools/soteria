@@ -27,6 +27,14 @@ jobs:
     needs: build
     uses: ./.github/workflows/test-packages.yml
 
+  benchmarks:
+    needs: build
+    # Only run (and record history) on direct pushes to main. PRs trigger
+    # benchmarks on demand via a `!run-benchmarks` comment (pr-commands.yml).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    uses: ./.github/workflows/benchmarks.yml
+    secrets: inherit
+
   publish-doc:
     name: Publish documentation
     runs-on: ubuntu-latest
@@ -47,3 +55,38 @@ jobs:
           destination_dir: ./api/main
 
       - run: echo "Successfully published documentation to https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/api/main"
+
+  publish-doc-json:
+    name: Publish JSON docs to branch
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Download JSON documentation artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: odoc-json
+          path: odoc-json
+
+      - name: Push to docs-json branch
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./odoc-json
+          publish_branch: docs-json
+          force_orphan: true
+          commit_message: "Update JSON docs from soteria@${{ github.sha }}"
+
+  trigger-website-update:
+    name: Trigger website docs update
+    runs-on: ubuntu-latest
+    needs: publish-doc-json
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Dispatch to website repo
+        run: |
+          gh api repos/soteria-tools/website/dispatches \
+            -f event_type=docs-updated \
+            -F client_payload[sha]=${{ github.sha }}
+        env:
+          GH_TOKEN: ${{ secrets.WEBSITE_PAT }}
