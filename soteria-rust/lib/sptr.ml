@@ -152,7 +152,7 @@ module D_abstr = Soteria.Data.Abstr.M (DecayMap.SM)
 
 (** The base type of pointers, permitting simple operations on the pointer type.
     The majority of relevant operations are exposed via the state monad's
-    pointer module, {!Rust_state_m.S.Sptr}. *)
+    pointer module, {{!State.StateM.S.Sptr}Sptr}. *)
 module type S = sig
   (** pointer type *)
   type t [@@mixins D_abstr.S_with_syn]
