@@ -96,32 +96,32 @@ let[@inline] meet st1 st2 =
 let[@inline] meet' (p1, st1) (p2, st2) = (p1 || p2, meet st1 st2)
 
 let transition =
-  let transition st e =
-    match (st, e) with
-    | Cell, _ -> Cell
-    | Reserved b, (_, Read) -> Reserved b
-    | Reserved _, (Local, Write) -> Unique
-    | Reserved _, (Foreign, Write) -> Disabled
-    | Unique, (Local, _) -> Unique
-    | Unique, (Foreign, Read) -> Frozen
-    | Unique, (Foreign, Write) -> Disabled
-    | Frozen, (_, Read) -> Frozen
-    | Frozen, (Local, Write) -> UB
-    | Frozen, (Foreign, Write) -> Disabled
-    | ReservedIM, (_, Read | Foreign, _) -> ReservedIM
-    | ReservedIM, (Local, Write) -> Unique
-    | Disabled, (Foreign, _) -> Disabled
-    | Disabled, (Local, _) -> UB
-    | UB, _ -> UB
+  let[@inline] transition st local act =
+    match (st, local, act) with
+    | Cell, _, _ -> Cell
+    | Reserved b, _, Read -> Reserved b
+    | Reserved _, Local, Write -> Unique
+    | Reserved _, Foreign, Write -> Disabled
+    | Unique, Local, _ -> Unique
+    | Unique, Foreign, Read -> Frozen
+    | Unique, Foreign, Write -> Disabled
+    | Frozen, _, Read -> Frozen
+    | Frozen, Local, Write -> UB
+    | Frozen, Foreign, Write -> Disabled
+    | ReservedIM, _, Read | ReservedIM, Foreign, _ -> ReservedIM
+    | ReservedIM, Local, Write -> Unique
+    | Disabled, Foreign, _ -> Disabled
+    | Disabled, Local, _ -> UB
+    | UB, _, _ -> UB
   in
 
-  let transition_protected st e =
-    match (st, e) with
-    | Reserved false, (Foreign, Read) -> Reserved true
-    | Reserved true, (_, Write) -> UB
-    | Unique, (Foreign, Read) -> UB
+  let[@inline] transition_protected st local act =
+    match (st, local, act) with
+    | Reserved false, Foreign, Read -> Reserved true
+    | Reserved true, _, Write -> UB
+    | Unique, Foreign, Read -> UB
     | _ ->
-        let st' = transition st e in
+        let st' = transition st local act in
         if st' = Disabled then UB else st'
   in
   fun ~protected -> if protected then transition_protected else transition
@@ -193,6 +193,7 @@ let set_protector ~protected tag root =
 let access accessed e (root : t) (st : tb_state) =
   let ub_happened = ref false in
   let accessed_node = Tag.WeakMap.find accessed root in
+  let parents = accessed_node.parents in
   let st' =
     Tag.WeakMap.filter_map_no_share
       (fun tag { protector; initial_state; _ } ->
@@ -201,23 +202,21 @@ let access accessed e (root : t) (st : tb_state) =
           | None -> (false, initial_state)
           | Some ps -> ps
         in
-        let rel =
-          if Tag.WeakSet.mem accessed_node.parents tag then Local else Foreign
-        in
+        let rel = if Tag.WeakSet.mem parents tag then Local else Foreign in
         (* if the tag has a protector and is accessed, this toggles the
            protector! *)
         let protected =
-          (tag = accessed || protected) && Option.is_some protector
+          (Tag.equal tag accessed || protected) && Option.is_some protector
         in
-        let st' = transition ~protected st (rel, e) in
-        if st' = UB then (
+        let st' = transition ~protected st rel e in
+        if Common.equal_state st' UB then (
           ub_happened := true;
           [%l.debug
             "TB: Undefined behavior encountered for %a, %a %a (protected? %b): \
              %a -> %a in structure@.%a"
             Tag.pp tag pp_locality rel pp_access e protected pp_state st
               pp_state st' pp root]);
-        if (not protected) && st' = initial_state then None
+        if (not protected) && Common.equal_state st' initial_state then None
         else Some (protected, st'))
       root
   in
