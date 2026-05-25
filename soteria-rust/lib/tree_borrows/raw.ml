@@ -16,11 +16,10 @@ end = struct
   let pp fmt tag = Fmt.pf fmt "‖%d‖" tag
   let show = Fmt.to_to_string pp
   let zero = 0
-  let tag_counter = ref 0
 
-  let fresh_tag () =
-    incr tag_counter;
-    !tag_counter
+  (* Atomic: globally-unique monotonic tags, safe across analysis domains. *)
+  let tag_counter = Atomic.make 0
+  let fresh_tag () = Atomic.fetch_and_add tag_counter 1 + 1
 
   module Map = PatriciaTree.MakeMap (Int)
 end

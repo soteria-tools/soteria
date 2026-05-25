@@ -2,6 +2,10 @@ open Soteria_std
 open Logs.Import
 module Var = Svalue.Var
 
+(* Domain-local RNG: the global [Random] state is not safe across domains. Each
+   analysis domain gets its own self-seeded generator. *)
+let rng = Dls.make (fun () -> Random.State.make_self_init ())
+
 let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
   let simplify = simplify ~trivial_truthiness ~fallback in
   match v.node.kind with
@@ -318,19 +322,23 @@ struct
     if not (Var.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
 
-  let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
-    Hashtbl.Hint.create 1023
+  (* Shared across domains: keyed by the formula's hash-cons tag.
+     [check_sat_raw] resets the solver and checks the formula in isolation, so
+     the result is a pure function of the formula and reuse across analyses is
+     sound and avoids solver calls. *)
+  let memo_sat_check_tbl : (int, Symex.Solver_result.t) Concurrent_tbl.t =
+    Concurrent_tbl.create 1023
 
   let trivial_model_works solver to_check var_tys =
     let exception No_model in
     let value_generator : Svalue.ty -> unit -> Svalue.t = function
       | TLoc n ->
           let max = Z.(shift_left one n) in
-          fun () -> Svalue.Ptr.loc_of_z n (Z.random_int max)
+          fun () -> Svalue.Ptr.loc_of_z n (Z.random_int ~rng:(Dls.get rng) max)
       | TBitVector n ->
           let max = Z.(shift_left one n) in
-          fun () -> Svalue.BitVec.mk n (Z.random_int max)
-      | TBool -> fun () -> Svalue.Bool.of_bool (Random.bool ())
+          fun () -> Svalue.BitVec.mk n (Z.random_int ~rng:(Dls.get rng) max)
+      | TBool -> fun () -> Svalue.Bool.of_bool (Random.State.bool (Dls.get rng))
       (* TODO: because we can't evaluate floats, we can never do a trivial check
          for them. *)
       | TFloat _ -> raise No_model
@@ -387,11 +395,11 @@ struct
 
   let check_sat_raw_memo solver to_check =
     let to_check = Typed.untyped to_check in
-    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
+    match Concurrent_tbl.find_opt memo_sat_check_tbl to_check.Hc.tag with
     | Some result -> result
     | None ->
         let result = check_sat_raw solver to_check in
-        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
+        Concurrent_tbl.add memo_sat_check_tbl to_check.Hc.tag result;
         result
 
   let sat solver =

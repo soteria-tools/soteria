@@ -18,7 +18,10 @@ let rec sort_of_ty : Svalue.ty -> sexp = function
   | TPointer _ -> pointers_not_supported ()
   | TBitVector n -> t_bits n
 
-let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
+(* Shared across domains: a pure-by-tag memo. Tags are globally consistent via
+   thread-safe hash-consing, so cross-domain reuse is sound and saves work. *)
+let memo_encode_value_tbl : (int, sexp) Concurrent_tbl.t =
+  Concurrent_tbl.create 1023
 
 let rm_to_smt : Svalue.RoundingMode.t -> Soteria_smt.RoundingMode.t = function
   | NearestTiesToEven -> NearestTiesToEven
@@ -124,11 +127,11 @@ let rec encode_value (v : Svalue.t) =
       distinct vs
 
 and encode_value_memo v =
-  match Hashtbl.Hint.find_opt memo_encode_value_tbl v.Hc.tag with
+  match Concurrent_tbl.find_opt memo_encode_value_tbl v.Hc.tag with
   | Some k -> k
   | None ->
       let k = encode_value v in
-      Hashtbl.Hint.add memo_encode_value_tbl v.Hc.tag k;
+      Concurrent_tbl.add memo_encode_value_tbl v.Hc.tag k;
       k
 
 let encode_value (v : Svalue.t) =
