@@ -24,13 +24,15 @@ module Make (StateImpl : State.S) = struct
   type lazy_ptr = Store of Expressions.local_id | Heap of full_ptr
   [@@deriving show { with_path = false }]
 
-  (** Attempts to trigger a GC cleanup. We do this every 64th call to this
-      function, as it seems to strike a good balance of performance. *)
+  (** Attempts to trigger a GC cleanup. We do this every N call to this
+      function. This is quite performance sensitive: do it too much and you kill
+      performance, do it too rarely and state never gets cleaned up (notably
+      Tree Borrows tags). *)
   let attempt_gc_cleanup =
     let gc_counter = ref 0 in
     fun () ->
       incr gc_counter;
-      if !gc_counter land 0x3f = 0 then Gc.full_major ()
+      if !gc_counter land 0xff = 0 then Gc.full_major ()
 
   let get_variable_ptr var_id =
     let* store = get_env () in
