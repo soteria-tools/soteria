@@ -26,7 +26,13 @@ end = struct
 
   let fresh_tag () =
     incr tag_counter;
-    Tag !tag_counter
+    let counter = !tag_counter in
+    (* Attempts to trigger a GC cleanup. We do this every N call to this
+       function. This is quite performance sensitive: do it too much and you
+       kill performance, do it too rarely and state never gets cleaned up
+       (notably Tree Borrows tags). *)
+    if counter land 0x7ff = 0 then Gc.full_major ();
+    Tag counter
 
   module Key = struct
     type nonrec t = t

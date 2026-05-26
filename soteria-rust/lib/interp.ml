@@ -24,16 +24,6 @@ module Make (StateImpl : State.S) = struct
   type lazy_ptr = Store of Expressions.local_id | Heap of full_ptr
   [@@deriving show { with_path = false }]
 
-  (** Attempts to trigger a GC cleanup. We do this every N call to this
-      function. This is quite performance sensitive: do it too much and you kill
-      performance, do it too rarely and state never gets cleaned up (notably
-      Tree Borrows tags). *)
-  let attempt_gc_cleanup =
-    let gc_counter = ref 0 in
-    fun () ->
-      incr gc_counter;
-      if !gc_counter land 0xff = 0 then Gc.full_major ()
-
   let get_variable_ptr var_id =
     let* store = get_env () in
     let binding = Store.find var_id store in
@@ -1192,9 +1182,7 @@ module Make (StateImpl : State.S) = struct
     | Synthetic GenericDropInPlace -> ok (Tuple [])
     | Real fundef ->
         let fn = Crate.get_fun fundef.id in
-        let+ res = exec_real_fun fn fundef.generics args in
-        attempt_gc_cleanup ();
-        res
+        exec_real_fun fn fundef.generics args
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
