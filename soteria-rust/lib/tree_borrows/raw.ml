@@ -9,6 +9,11 @@ module Tag : sig
   val fresh_tag : unit -> t
   val zero : t
 
+  (** [is_gc_boundary tag] is true when [tag] was created by the [fresh_tag]
+      call that triggered a [Gc.full_major]. Use this to decide when to compact
+      data structures keyed on tags. *)
+  val is_gc_boundary : t -> bool
+
   module WeakMap : PatriciaTree.MAP with type key = t
 
   module WeakSet : sig
@@ -23,6 +28,7 @@ end = struct
   let show = Fmt.to_to_string pp
   let zero = Tag 0
   let tag_counter = ref 0
+  let gc_freq = 0x7ff
 
   let fresh_tag () =
     incr tag_counter;
@@ -31,8 +37,10 @@ end = struct
        function. This is quite performance sensitive: do it too much and you
        kill performance, do it too rarely and state never gets cleaned up
        (notably Tree Borrows tags). *)
-    if counter land 0x7ff = 0 then Gc.full_major ();
+    if counter land gc_freq = 0 then Gc.full_major ();
     Tag counter
+
+  let[@inline] is_gc_boundary (Tag t) = t land gc_freq = 0
 
   module Key = struct
     type nonrec t = t
@@ -152,6 +160,15 @@ let ub_state = fst @@ init ~initial_state:Disabled ()
 
 let borrow ?protector parent ~state st =
   let tag = Tag.fresh_tag () in
+  (* After a GC cycle, dead ephemeron leaves in the root trie become Empty but
+     their parents remain, accumulating over time and making filter_map_no_share
+     in [access] O(total borrows) instead of O(live). Compacting right after the
+     GC that nulled those keys fixes this. *)
+  let st =
+    if Tag.is_gc_boundary tag then
+      Tag.WeakMap.filter_map_no_share (Fun.const Option.some) st
+    else st
+  in
   let node_parent = Tag.WeakMap.find parent st in
   let parents =
     Tag.WeakSet.create (Tag.WeakSet.count node_parent.parents + 1)
