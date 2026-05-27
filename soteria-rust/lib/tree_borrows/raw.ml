@@ -127,7 +127,15 @@ let transition =
   in
   fun ~protected -> if protected then transition_protected else transition
 
-type t = { tags : node Tag.WeakMap.t; known_size : int }
+(* Compact the root trie when it reaches this size. Dead ephemeron leaves become
+   Empty after GC but their parent Branch nodes persist, making
+   [filter_map_no_share] in [access] O(total borrows) instead of O(live).
+   Triggering on map size rather than tag count means small maps (e.g. a freshly
+   allocated variable with few borrows) never pay the GC cost. *)
+let compact_threshold = 128
+let compact_map = Tag.WeakMap.filter_map_no_share (Fun.const Option.some)
+
+type t = { tags : node Tag.WeakMap.t; known_size : int; next_compact_at : int }
 
 let pp ft { tags; _ } =
   Fmt.iter_bindings Tag.WeakMap.iter
@@ -142,35 +150,31 @@ let init ?(initial_state = Unique) () =
   Tag.WeakSet.add parents tag;
   let node = { protector = None; parents; initial_state } in
   let tags = Tag.WeakMap.singleton tag node in
-  (tag, { tags; known_size = 1 })
+  (tag, { tags; known_size = 1; next_compact_at = compact_threshold })
 
 let ub_state = fst @@ init ~initial_state:Disabled ()
 
-(* Compact the root trie when it reaches this size. Dead ephemeron leaves become
-   Empty after GC but their parent Branch nodes persist, making
-   [filter_map_no_share] in [access] O(total borrows) instead of O(live).
-   Triggering on map size rather than tag count means small maps (e.g. a freshly
-   allocated variable with few borrows) never pay the GC cost. *)
-let compact_threshold = 64
-let compact_map = Tag.WeakMap.filter_map_no_share (Fun.const Option.some)
-
-let borrow ?protector parent ~state ({ tags; known_size } : t) =
+let borrow ?protector parent ~state ({ tags; known_size; next_compact_at } : t)
+    =
   let tag = Tag.fresh_tag () in
-  let tags, known_size =
-    if known_size >= compact_threshold then (
+  let tags, known_size, next_compact_at =
+    if known_size >= next_compact_at then (
       Gc.minor ();
-      let tags' = compact_map tags in
-      let known_size = Tag.WeakMap.cardinal tags' in
-      (* If most entries survived the minor GC they are promoted to the major
-         heap; a full cycle is needed to null their ephemeron keys. *)
-      if known_size >= compact_threshold then begin
+      let tags = compact_map tags in
+      let live = Tag.WeakMap.cardinal tags in
+      if live >= next_compact_at then (
+        (* Tags survived minor GC — they are promoted; need a full cycle. *)
         Gc.full_major ();
-        let tags' = compact_map tags in
-        let known_size = Tag.WeakMap.cardinal tags' in
-        (tags', known_size)
-      end
-      else (tags', known_size))
-    else (tags, known_size)
+        let tags = compact_map tags in
+        let live = Tag.WeakMap.cardinal tags in
+        (* If still large after a full GC all entries are genuinely live; back
+           off exponentially so we don't retry on every subsequent borrow. *)
+        let next_compact_at =
+          if live >= next_compact_at then live * 3 / 2 else compact_threshold
+        in
+        (tags, live, next_compact_at))
+      else (tags, live, compact_threshold))
+    else (tags, known_size, next_compact_at)
   in
   let node_parent = Tag.WeakMap.find parent tags in
   let parents =
@@ -180,7 +184,7 @@ let borrow ?protector parent ~state ({ tags; known_size } : t) =
   Tag.WeakSet.iter (Tag.WeakSet.add parents) node_parent.parents;
   let node = { protector; parents; initial_state = state } in
   let tags = Tag.WeakMap.add tag node tags in
-  (tag, { tags; known_size = known_size + 1 })
+  (tag, { tags; known_size = known_size + 1; next_compact_at })
 
 let unprotect tag ({ tags; _ } as st) =
   let tags =
