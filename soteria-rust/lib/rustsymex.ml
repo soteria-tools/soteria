@@ -15,7 +15,7 @@ module StatKeys = struct
         Fmt.int)
 end
 
-module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver)
+module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver (Typed.TypedCore))
 
 module TypeMap = Map.Make (struct
   type t = Charon.Types.ty [@@deriving show]
