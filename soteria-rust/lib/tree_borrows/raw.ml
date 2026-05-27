@@ -150,9 +150,7 @@ let ub_state = fst @@ init ~initial_state:Disabled ()
    Triggering on map size rather than tag count means small maps (e.g. a freshly
    allocated variable with few borrows) never pay the GC cost. *)
 let compact_threshold = 64
-
-let[@inline] compact_map =
-  Tag.WeakMap.filter_map_no_share (Fun.const Option.some)
+let compact_map = Tag.WeakMap.filter_map_no_share (Fun.const Option.some)
 
 let borrow ?protector parent ~state st =
   let tag = Tag.fresh_tag () in
