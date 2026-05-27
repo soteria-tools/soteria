@@ -1,9 +1,13 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/LOGO-SOTERIA-FULL-WHITE.png">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
-  <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="./assets/LOGO-SOTERIA-FULL-COLOUR.png"
-    style="width: 335px; height: 64.5; margin-bottom: 1.5rem;">
-</picture>
+<div align="center">
+    <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/LOGO-SOTERIA-FULL-WHITE.png">
+    <source media="(prefers-color-scheme: light)" srcset="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
+    <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="./assets/LOGO-SOTERIA-FULL-COLOUR.png"
+        style="width: 335px; height: 64.5; margin-bottom: 1.5rem;">
+    </picture>
+</div>
+
+<br />
 
 Soteria is an OCaml library for writing efficient symbolic interpreters directly in OCaml.
 The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. Currently, two symbolic interpreters have been written: Soteria Rust and Soteria C. Our current main focus is Soteria Rust.
