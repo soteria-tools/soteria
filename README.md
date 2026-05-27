@@ -1,18 +1,30 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./assets/LOGO-SOTERIA-FULL-WHITE.png">
-  <source media="(prefers-color-scheme: light)" srcset="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
-  <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
-</picture>
+<div align="center">
+    <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./assets/LOGO-SOTERIA-FULL-WHITE.png">
+    <source media="(prefers-color-scheme: light)" srcset="./assets/LOGO-SOTERIA-FULL-COLOUR.png">
+    <img alt="Shows a black logo in light color mode and a white one in dark color mode." src="./assets/LOGO-SOTERIA-FULL-COLOUR.png"
+        style="width: 335px; height: 64.5; margin-bottom: 1.5rem;">
+    </picture>
+</div>
+
+<br />
+
+<div align="center">
+    <a href="https://soteria.zulipchat.com/"><img src="https://img.shields.io/badge/join-zulip?logo=zulip&label=Zulip&labelColor=%2330363D&color=%232FBC4F" alt="Zulip Chat"></a>
+    <a href="https://github.com/soteria-tools/soteria/actions/workflows/ci.yml"><img src="https://github.com/soteria-tools/soteria/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://soteria-tools.github.io/soteria/dev/bench/"><img src="https://img.shields.io/badge/benchmark-results-blue?label=Benchmarks&labelColor=%2330363D" alt="Benchmarks"></a>
+    <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg?labelColor=%2330363D" alt="License"></a>
+</div>
+
+<div align="center">
+    <strong><a href="https://soteria-tools.com">Website</a></strong> | <strong><a href="https://soteria-tools.com/docs/library">API Documentation</a></strong>
+</div>
+
+<br />
 
 Soteria is an OCaml library for writing efficient symbolic interpreters directly in OCaml.
+
 The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. Currently, two symbolic interpreters have been written: Soteria Rust and Soteria C. Our current main focus is Soteria Rust.
-
-
-[![Zulip Chat](https://img.shields.io/badge/join-zulip?logo=zulip&label=Zulip&labelColor=%2330363D&color=%232FBC4F)](https://soteria.zulipchat.com/)
-[![CI](https://github.com/soteria-tools/soteria/actions/workflows/ci.yml/badge.svg)](https://github.com/soteria-tools/soteria/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg?labelColor=%2330363D)](https://opensource.org/licenses/Apache-2.0)
-
-**[Website](https://soteria-tools.com)** | **[API Documentation](https://soteria-tools.github.io/soteria/api/main/soteria/index.html)**
 
 ## Table of Contents
 
@@ -27,7 +39,7 @@ The core library provides a set of batteries-included abstractions for writing o
 
 ### Install the Soteria Library
 
-Soteria can be used as a library to build your own symbolic execution engines. The [API documentation](https://soteria-tools.github.io/soteria/api/main/soteria/index.html) provides a complete reference, and includes a tutorial on how to get started building your own analysis tools.
+Soteria can be used as a library to build your own symbolic execution engines. The [API documentation](https://soteria-tools.com/docs/library) provides a complete reference, and includes a tutorial on how to get started building your own analysis tools.
 
 Pin it with opam:
 
