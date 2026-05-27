@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779901240059,
+  "lastUpdate": 1779905401422,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -365,6 +365,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.818454856984317,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "919823a852f74c5df3f665f8237a5ef61e22e67b",
+          "message": "Update the README.md (#358)\n\n* Update README.md\n\n* Update README.md\n\n* center stuff\n\n* Update README.md\n\n* Update README.md\n\n* Update README.md\n\n* Update README.md",
+          "timestamp": "2026-05-27T17:52:29Z",
+          "tree_id": "894597abf00b134096efb2836d8e0c181c09b555",
+          "url": "https://github.com/soteria-tools/soteria/commit/919823a852f74c5df3f665f8237a5ef61e22e67b"
+        },
+        "date": 1779905400166,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08190774696,
+            "range": "± 0.0076",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.61021212628,
+            "range": "± 0.0146",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.8971920621200002,
+            "range": "± 0.0073",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.24360055631999997,
+            "range": "± 0.0024",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.890714196120001,
+            "range": "± 0.0487",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.3139297710000006,
+            "range": "± 0.0412",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.873503129929304,
             "unit": "s"
           }
         ]
