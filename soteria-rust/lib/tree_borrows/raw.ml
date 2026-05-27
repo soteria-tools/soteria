@@ -127,11 +127,12 @@ let transition =
   in
   fun ~protected -> if protected then transition_protected else transition
 
-type t = node Tag.WeakMap.t
+type t = { tags : node Tag.WeakMap.t; known_size : int }
 
-let pp =
-  Fmt.iter_bindings Tag.WeakMap.iter (fun ft (tag, node) ->
-      Fmt.pf ft "%a -> %a" Tag.pp tag pp_node node)
+let pp ft { tags; _ } =
+  Fmt.iter_bindings Tag.WeakMap.iter
+    (fun ft (tag, node) -> Fmt.pf ft "%a -> %a" Tag.pp tag pp_node node)
+    ft tags
 
 let show = Fmt.to_to_string pp
 
@@ -140,7 +141,8 @@ let init ?(initial_state = Unique) () =
   let parents = Tag.WeakSet.create 1 in
   Tag.WeakSet.add parents tag;
   let node = { protector = None; parents; initial_state } in
-  (tag, Tag.WeakMap.singleton tag node)
+  let tags = Tag.WeakMap.singleton tag node in
+  (tag, { tags; known_size = 1 })
 
 let ub_state = fst @@ init ~initial_state:Disabled ()
 
@@ -152,40 +154,49 @@ let ub_state = fst @@ init ~initial_state:Disabled ()
 let compact_threshold = 64
 let compact_map = Tag.WeakMap.filter_map_no_share (Fun.const Option.some)
 
-let borrow ?protector parent ~state st =
+let borrow ?protector parent ~state ({ tags; known_size } : t) =
   let tag = Tag.fresh_tag () in
-  let st =
-    if Tag.WeakMap.cardinal st >= compact_threshold then begin
+  let tags, known_size =
+    if known_size >= compact_threshold then (
       Gc.minor ();
-      let st' = compact_map st in
+      let tags' = compact_map tags in
+      let known_size = Tag.WeakMap.cardinal tags' in
       (* If most entries survived the minor GC they are promoted to the major
          heap; a full cycle is needed to null their ephemeron keys. *)
-      if Tag.WeakMap.cardinal st' >= compact_threshold then begin
+      if known_size >= compact_threshold then begin
         Gc.full_major ();
-        compact_map st'
+        let tags' = compact_map tags in
+        let known_size = Tag.WeakMap.cardinal tags' in
+        (tags', known_size)
       end
-      else st'
-    end
-    else st
+      else (tags', known_size))
+    else (tags, known_size)
   in
-  let node_parent = Tag.WeakMap.find parent st in
+  let node_parent = Tag.WeakMap.find parent tags in
   let parents =
     Tag.WeakSet.create (Tag.WeakSet.count node_parent.parents + 1)
   in
   Tag.WeakSet.add parents tag;
   Tag.WeakSet.iter (Tag.WeakSet.add parents) node_parent.parents;
   let node = { protector; parents; initial_state = state } in
-  (tag, Tag.WeakMap.add tag node st)
+  let tags = Tag.WeakMap.add tag node tags in
+  (tag, { tags; known_size = known_size + 1 })
 
-let unprotect tag =
-  Tag.WeakMap.update tag (function
-    | None -> raise Not_found
-    | Some n -> Some { n with protector = None })
+let unprotect tag ({ tags; _ } as st) =
+  let tags =
+    Tag.WeakMap.update tag
+      (function
+        | None -> raise Not_found | Some n -> Some { n with protector = None })
+      tags
+  in
+  { st with tags }
 
-let strong_protector_exists =
+let strong_protector_exists { tags; _ } =
   (* Annoyingly, there is no [exists], only [for_all] *)
-  Fun.negate
-  @@ Tag.WeakMap.for_all (fun _ { protector; _ } -> protector <> Some Strong)
+  not
+    (Tag.WeakMap.for_all
+       (fun _ { protector; _ } -> protector <> Some Strong)
+       tags)
 
 (** [tag -> (protected * state)], [protected] indicating the tag's protector
     (managed outside [tb_state]) was toggled. *)
@@ -203,18 +214,18 @@ let is_empty_state = Tag.WeakMap.is_empty
 let equal_state =
   Tag.WeakMap.reflexive_equal (Pair.equal Bool.equal equal_state)
 
-let set_protector ~protected tag root =
+let set_protector ~protected tag ({ tags; _ } : t) =
   Tag.WeakMap.update tag (function
     | None ->
-        let node = Tag.WeakMap.find tag root in
+        let node = Tag.WeakMap.find tag tags in
         Some (protected, node.initial_state)
     | Some (_, st) -> Some (protected, st))
 
 (** [access accessed im e structure state]: Update all nodes in the mapping
     [state] for the tree structure [structure] with an event [e], that happened
     at [accessed]. *)
-let access accessed e (root : t) (st : tb_state) =
-  let accessed_node = Tag.WeakMap.find accessed root in
+let access accessed e ({ tags; _ } as root : t) (st : tb_state) =
+  let accessed_node = Tag.WeakMap.find accessed tags in
   let parents = accessed_node.parents in
   try
     Tag.WeakMap.filter_map_no_share
@@ -233,7 +244,7 @@ let access accessed e (root : t) (st : tb_state) =
         let st' = transition ~protected st rel e in
         if (not protected) && Common.equal_state st' initial_state then None
         else Some (protected, st'))
-      root
+      tags
     |> Result.ok
   with AliasingError ->
     [%l.debug
