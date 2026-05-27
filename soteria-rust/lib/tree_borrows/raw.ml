@@ -10,8 +10,8 @@ module Tag : sig
   val zero : t
 
   (** [is_gc_boundary tag] is true when [tag] was created by the [fresh_tag]
-      call that triggered a GC (minor or major). Use this to decide when to
-      compact data structures keyed on tags. *)
+      call that triggered a [Gc.full_major]. Use this to decide when to compact
+      data structures keyed on tags. *)
   val is_gc_boundary : t -> bool
 
   module WeakMap : PatriciaTree.MAP with type key = t
@@ -28,24 +28,19 @@ end = struct
   let show = Fmt.to_to_string pp
   let zero = Tag 0
   let tag_counter = ref 0
-
-  (* Two-level GC schedule. Most reborrow tags are short-lived and die in the
-     minor heap; a minor collection is sufficient to null their ephemeron keys
-     and let the root-trie compaction in [borrow] prune the dead branches.
-     Promoted tags need a full major cycle; that runs less frequently. *)
-  let gc_minor_mask = 0xff (* every 256 tags: Gc.minor() *)
-  let gc_major_mask = 0x7ff (* every 2048 tags: Gc.full_major() *)
+  let gc_freq = 0x7ff
 
   let fresh_tag () =
     incr tag_counter;
     let counter = !tag_counter in
-    if counter land gc_major_mask = 0 then Gc.full_major ()
-    else if counter land gc_minor_mask = 0 then Gc.minor ();
+    (* Attempts to trigger a GC cleanup. We do this every N call to this
+       function. This is quite performance sensitive: do it too much and you
+       kill performance, do it too rarely and state never gets cleaned up
+       (notably Tree Borrows tags). *)
+    if counter land gc_freq = 0 then Gc.full_major ();
     Tag counter
 
-  (* True whenever a GC just ran (minor or major), i.e. at every multiple of
-     256. Used by [borrow] to decide when to compact the root trie. *)
-  let[@inline] is_gc_boundary (Tag t) = t land gc_minor_mask = 0
+  let[@inline] is_gc_boundary (Tag t) = t land gc_freq = 0
 
   module Key = struct
     type nonrec t = t
