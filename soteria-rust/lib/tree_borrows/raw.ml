@@ -144,26 +144,31 @@ let init ?(initial_state = Unique) () =
 
 let ub_state = fst @@ init ~initial_state:Disabled ()
 
-(* Compact the root trie when it reaches this size. Dead ephemeron leaves
-   become Empty after GC but their parent Branch nodes persist, making
+(* Compact the root trie when it reaches this size. Dead ephemeron leaves become
+   Empty after GC but their parent Branch nodes persist, making
    [filter_map_no_share] in [access] O(total borrows) instead of O(live).
-   Triggering on map size rather than tag count means small maps (e.g. a
-   freshly allocated variable with few borrows) never pay the GC cost. *)
+   Triggering on map size rather than tag count means small maps (e.g. a freshly
+   allocated variable with few borrows) never pay the GC cost. *)
 let compact_threshold = 64
+
+let[@inline] compact_map =
+  Tag.WeakMap.filter_map_no_share (Fun.const Option.some)
 
 let borrow ?protector parent ~state st =
   let tag = Tag.fresh_tag () in
   let st =
     if Tag.WeakMap.cardinal st >= compact_threshold then begin
       Gc.minor ();
-      let st' = Tag.WeakMap.filter_map_no_share (Fun.const Option.some) st in
+      let st' = compact_map st in
       (* If most entries survived the minor GC they are promoted to the major
          heap; a full cycle is needed to null their ephemeron keys. *)
       if Tag.WeakMap.cardinal st' >= compact_threshold then begin
         Gc.full_major ();
-        Tag.WeakMap.filter_map_no_share (Fun.const Option.some) st'
-      end else st'
-    end else st
+        compact_map st'
+      end
+      else st'
+    end
+    else st
   in
   let node_parent = Tag.WeakMap.find parent st in
   let parents =
