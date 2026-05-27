@@ -43,7 +43,7 @@ module G = Graph.Make_with_dot (FunNode)
 type _ Effect.t +=
   | Add_edge : Types.name option * Types.name option -> unit Effect.t
 
-let with_callgraph () f : 'a * G.t =
+let with_ () f : 'a * G.t =
   let callgraph = G.with_node_capacity 64 in
   let res =
     try f ()
@@ -61,7 +61,8 @@ let with_callgraph () f : 'a * G.t =
 (** Adds an edge to the global callgraph. Always needs to be called within a
     crate context! *)
 let add_edge (from : Types.name option) (to_ : Types.name option) =
-  Effect.perform (Add_edge (from, to_))
+  if Option.is_some (Config.get ()).dump_callgraph then
+    Effect.perform (Add_edge (from, to_))
 
 (** Dump the call graph as a DOT file at [path]. *)
 let dump path graph =
@@ -71,11 +72,13 @@ let dump path graph =
   Format.pp_print_flush fmt ();
   close_out oc
 
-let with_dumped_callgraph () (f : unit -> 'a) : 'a =
-  let res, graph = with_callgraph () f in
-  let () =
-    match (Config.get ()).dump_callgraph with
-    | None -> ()
-    | Some path -> dump path graph
-  in
-  res
+let with_ignored () (f : unit -> 'a) : 'a =
+  try f () with effect Add_edge _, k -> Effect.Deep.continue k ()
+
+let with_dumped () (f : unit -> 'a) : 'a =
+  match (Config.get ()).dump_callgraph with
+  | None -> with_ignored () f
+  | Some path ->
+      let res, graph = with_ () f in
+      dump path graph;
+      res

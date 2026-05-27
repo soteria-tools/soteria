@@ -485,16 +485,15 @@ module Make (StateImpl : State.S) = struct
         Fun_kind.t -> ('a fun_exec * Types.name option * Types.ty list) t =
       function
       | Synthetic _ as fn -> ok (exec_fun fn, None, in_tys)
-      | Real fn ->
-          let fundef = Crate.get_fun fn.id in
+      | Real fn_decl as fn ->
+          let fundef = Crate.get_fun fn_decl.id in
           let+ inputs =
-            Poly.push_generics ~params:fundef.generics ~args:fn.generics
+            Poly.push_generics ~params:fundef.generics ~args:fn_decl.generics
             @@ fun _ -> Poly.subst_tys fundef.signature.inputs
           in
           [%l.info
             "Resolved function call to %a" Crate.pp_name fundef.item_meta.name];
-          let exec = exec_real_fun fundef fn.generics in
-          (exec, Some fundef.item_meta.name, inputs)
+          (exec_fun fn, Some fundef.item_meta.name, inputs)
     in
     function
     (* Handle builtins separately *)
@@ -1178,12 +1177,12 @@ module Make (StateImpl : State.S) = struct
     | TargetDispatchBody _ -> failwith "Target dispatch not supported"
     | StructuredBody _ -> failwith "Impossibe: encountered LLBC?"
 
-  and exec_fun (fn : Fun_kind.t) =
+  and exec_fun (fn : Fun_kind.t) args =
     match fn with
-    | Synthetic GenericDropInPlace -> fun _ -> ok (Tuple [])
+    | Synthetic GenericDropInPlace -> ok (Tuple [])
     | Real fundef ->
         let fn = Crate.get_fun fundef.id in
-        exec_real_fun fn fundef.generics
+        exec_real_fun fn fundef.generics args
 
   (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
