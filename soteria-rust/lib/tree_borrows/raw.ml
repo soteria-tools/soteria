@@ -154,28 +154,30 @@ let init ?(initial_state = Unique) () =
 
 let ub_state = fst @@ init ~initial_state:Disabled ()
 
-let borrow ?protector parent ~state ({ tags; known_size; next_compact_at } : t)
-    =
-  let tag = Tag.fresh_tag () in
-  let tags, known_size, next_compact_at =
-    if known_size >= next_compact_at then (
-      Gc.minor ();
+let compact ({ tags; known_size; next_compact_at } as st : t) =
+  if known_size < next_compact_at then st
+  else (
+    Gc.minor ();
+    let tags = compact_map tags in
+    let known_size = Tag.WeakMap.cardinal tags in
+    if known_size < next_compact_at then
+      { tags; known_size; next_compact_at = compact_threshold }
+    else (
+      (* Tags survived minor GC — they are promoted; need a full cycle. *)
+      Gc.full_major ();
       let tags = compact_map tags in
-      let live = Tag.WeakMap.cardinal tags in
-      if live >= next_compact_at then (
-        (* Tags survived minor GC — they are promoted; need a full cycle. *)
-        Gc.full_major ();
-        let tags = compact_map tags in
-        let live = Tag.WeakMap.cardinal tags in
-        (* If still large after a full GC all entries are genuinely live; back
-           off exponentially so we don't retry on every subsequent borrow. *)
-        let next_compact_at =
-          if live >= next_compact_at then live * 3 / 2 else compact_threshold
-        in
-        (tags, live, next_compact_at))
-      else (tags, live, compact_threshold))
-    else (tags, known_size, next_compact_at)
-  in
+      let known_size = Tag.WeakMap.cardinal tags in
+      (* If still large after a full GC all entries are genuinely live; back off
+         exponentially so we don't retry on every subsequent borrow. *)
+      let next_compact_at =
+        if known_size >= next_compact_at then known_size * 3 / 2
+        else compact_threshold
+      in
+      { tags; known_size; next_compact_at }))
+
+let borrow ?protector parent ~state (st : t) =
+  let tag = Tag.fresh_tag () in
+  let ({ tags; known_size; _ } as st) = compact st in
   let node_parent = Tag.WeakMap.find parent tags in
   let parents =
     Tag.WeakSet.create (Tag.WeakSet.count node_parent.parents + 1)
@@ -184,7 +186,7 @@ let borrow ?protector parent ~state ({ tags; known_size; next_compact_at } : t)
   Tag.WeakSet.iter (Tag.WeakSet.add parents) node_parent.parents;
   let node = { protector; parents; initial_state = state } in
   let tags = Tag.WeakMap.add tag node tags in
-  (tag, { tags; known_size = known_size + 1; next_compact_at })
+  (tag, { st with tags; known_size = known_size + 1 })
 
 let unprotect tag ({ tags; _ } as st) =
   let tags =
