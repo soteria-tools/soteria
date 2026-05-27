@@ -10,11 +10,6 @@
 <br />
 
 <div align="center">
-    Soteria is an OCaml library for writing efficient symbolic interpreters directly in OCaml.
-    The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. Currently, two symbolic interpreters have been written: Soteria Rust and Soteria C. Our current main focus is Soteria Rust.
-</div>
-
-<div align="center">
     <a href="https://soteria.zulipchat.com/"><img src="https://img.shields.io/badge/join-zulip?logo=zulip&label=Zulip&labelColor=%2330363D&color=%232FBC4F" alt="Zulip Chat"></a>
     <a href="https://github.com/soteria-tools/soteria/actions/workflows/ci.yml"><img src="https://github.com/soteria-tools/soteria/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="https://soteria-tools.github.io/soteria/dev/bench/"><img src="https://img.shields.io/badge/benchmark-results-blue?label=Benchmarks&labelColor=%2330363D" alt="Benchmarks"></a>
@@ -24,6 +19,11 @@
 <div align="center">
     <strong><a href="https://soteria-tools.com">Website</a></strong> | <strong><a href="https://soteria-tools.com/docs/library">API Documentation</a></strong>
 </div>
+
+<br />
+
+Soteria is an OCaml library for writing efficient symbolic interpreters directly in OCaml.
+The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. Currently, two symbolic interpreters have been written: Soteria Rust and Soteria C. Our current main focus is Soteria Rust.
 
 ## Table of Contents
 
