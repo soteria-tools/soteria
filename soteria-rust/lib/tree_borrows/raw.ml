@@ -154,7 +154,7 @@ let init ?(initial_state = Unique) () =
 
 let ub_state = fst @@ init ~initial_state:Disabled ()
 
-let compact ({ tags; known_size; next_compact_at } as st : t) =
+let[@inline] compact ({ tags; known_size; next_compact_at } as st : t) =
   if known_size < next_compact_at then st
   else (
     Gc.minor ();
