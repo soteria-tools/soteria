@@ -222,8 +222,8 @@ let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
   let open Producer in
   let open Syntax in
   let syn v = Typed.Expr.of_value v in
-  let loc = Svalue.Ptr.loc ptr in
-  let offset = Svalue.Ptr.ofs ptr in
+  let loc = Typed.Svalue.Ptr.loc ptr in
+  let offset = Typed.Svalue.Ptr.ofs ptr in
   match (v, ty) with
   | Basic v, _ -> produce_basic_val loc offset ty v st
   | Array elems, ty ->
@@ -235,7 +235,7 @@ let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
         fold_list elems ~init:(ptr, st) ~f:(fun (ptr, st) elem ->
             let* st = produce_aggregate ptr elem_ty elem st in
             let+^ elem_size = Layout.size_of_s elem_ty in
-            (Svalue.Ptr.add_ofs ptr (syn elem_size), st))
+            (Typed.Svalue.Ptr.add_ofs ptr (syn elem_size), st))
       in
       st
   | Struct values, ty ->
@@ -263,7 +263,7 @@ let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
             value :: rest_values ) ->
             let* st =
               produce_aggregate
-                (Svalue.Ptr.mk loc (syn @@ BV.usizei ofs))
+                (Typed.Svalue.Ptr.mk loc (syn @@ BV.usizei ofs))
                 mem_ty value st
             in
             aux rest_ofs rest_mems rest_values st

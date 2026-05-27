@@ -523,7 +523,7 @@ module Make (State : State_intf.S) = struct
     | TPointer _, _ | _, TPointer _ -> error `UBPointerArithmetic
     | ty1, ty2 ->
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
-          Svalue.pp_ty ty1 Svalue.pp_ty ty2
+          Typed.Svalue.pp_ty ty1 Typed.Svalue.pp_ty ty2
 
   let arith new_ty (v1, t1) a_op (v2, t2) : [> T.sint ] Typed.t InterpM.t =
     match ((a_op : AilSyntax.arithmeticOperator), unwrap_ctype new_ty) with
