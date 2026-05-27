@@ -23,6 +23,7 @@
 <br />
 
 Soteria is an OCaml library for writing efficient symbolic interpreters directly in OCaml.
+
 The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. Currently, two symbolic interpreters have been written: Soteria Rust and Soteria C. Our current main focus is Soteria Rust.
 
 ## Table of Contents
