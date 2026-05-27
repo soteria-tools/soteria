@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779732913973,
+  "lastUpdate": 1779901240059,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -300,6 +300,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.58647286699852,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0c8229b3139d620335b8e18a29ff23edbfb91b82",
+          "message": "Weak Tree Borrows (#357)\n\n* Weakly referenced pointer tags !\n\n* minor optim\n\n* Remove `UB` state, use an exception\n\n* Better Rust `Call_graph`\n\n* Update writealotloop.rs\n\n* Less GC cleanups\n\n* Create compare_landmarks.py\n\n* Move GC cleanup to tag creation\n\n* reset node map at GC boundary !\n\n* final attempt\n\n* Revert \"final attempt\"\n\nThis reverts commit 37ecbdfcc62d94555547c1c23ddc76251d38dfc6.\n\n* Call me ratatouille the way im always cooking\n\n* Update raw.ml\n\n* Update raw.ml\n\n* Keep track of `known_size`\n\n* Resizable compact thershold !\n\n* Delete compare_landmarks.py\n\n* factor out the `compact` code\n\n* inline",
+          "timestamp": "2026-05-27T16:45:09Z",
+          "tree_id": "066c5fae0a042a7179439b2abd2169249cb12aad",
+          "url": "https://github.com/soteria-tools/soteria/commit/0c8229b3139d620335b8e18a29ff23edbfb91b82"
+        },
+        "date": 1779901238229,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08186097789999999,
+            "range": "± 0.0077",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.60968420724,
+            "range": "± 0.0119",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.89271253452,
+            "range": "± 0.0136",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.24718004946,
+            "range": "± 0.0033",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.9201989588,
+            "range": "± 0.0608",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.32188418934,
+            "range": "± 0.0356",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.818454856984317,
             "unit": "s"
           }
         ]
