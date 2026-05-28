@@ -460,7 +460,7 @@ module rec Bool : Bool = struct
   let v_true = Bool true <| TBool
   let v_false = Bool false <| TBool
 
-  let to_bool t =
+  let[@inline] to_bool t =
     if equal t v_true then Some true
     else if equal t v_false then Some false
     else None
@@ -798,7 +798,18 @@ and BitVec : BitVec = struct
     assert (Z.(zero <= bv && bv < one lsl n));
     BitVec bv <| t_bv n
 
-  let mk_masked n bv = BitVec Z.(bv land pred (one lsl n)) <| t_bv n
+  (* Bitwidth -> [(1 lsl n) - 1] mask. Memoized to avoid re-allocating the mask
+     bignum on each [mk_masked] call (expensive in pathological cases). *)
+  let mask_cache : Z.t Array.t = Array.init 257 (fun n -> Z.(pred (one lsl n)))
+  let mask_of_bits n = mask_cache.(n)
+
+  let mk_masked n bv =
+    let mask = mask_of_bits n in
+    let masked =
+      if Z.leq bv mask && Z.(geq bv zero) then bv else Z.logand bv mask
+    in
+    BitVec masked <| t_bv n
+
   let mki n i = mk n (Z.of_int i)
   let zero n = mk n Z.zero
   let one n = mk n Z.one
