@@ -2,6 +2,7 @@
     instead modify the script and re-run it. *)
 
 open Charon
+open Svalue
 open Common
 
 module M (StateM : State.StateM.S) = struct

@@ -1,3 +1,5 @@
+open Svalue
+
 module StatKeys = struct
   let load_accesses = "soteria-rust.loads"
   let loads_from_store = "soteria-rust.loads_from_store"
@@ -15,7 +17,8 @@ module StatKeys = struct
         Fmt.int)
 end
 
-module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver (Typed.TypedCore))
+module MonoSymex =
+  Soteria.Symex.Make (Bv_solver.Z3_solver (Svalue.Typed.TypedCore))
 
 module TypeMap = Map.Make (struct
   type t = Charon.Types.ty [@@deriving show]

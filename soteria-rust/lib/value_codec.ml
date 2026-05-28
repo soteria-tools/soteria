@@ -1,4 +1,5 @@
 open Charon
+open Svalue
 open Typed.Syntax
 open Typed.Infix
 open Common.Charon_util
@@ -76,7 +77,7 @@ let size_of =
   function
   | Int v -> ok (BV.usizei (Typed.size_of_int v / 8))
   | Float f ->
-      ok (BV.usizei (Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8))
+      ok (BV.usizei (Typed.FloatPrecision.size (Typed.Float.fp_of f) / 8))
   | Ptr (_, Thin) -> ok (BV.usizei (Crate.pointer_size ()))
   | Ptr (_, (Len _ | VTable _)) -> ok (BV.usizei (Crate.pointer_size () * 2))
   | PolyVal tid -> Layout.size_of (TVar (Free tid))
@@ -518,7 +519,7 @@ module Encoder (Sptr : Sptr.S) = struct
         Int sv'
     | (TInt _ | TUInt _), TFloat fp ->
         let sv = Typed.cast_lit from_ty v in
-        let fp = float_precision fp in
+        let fp = Typed.float_precision fp in
         let signed = Layout.is_signed from_ty in
         let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
         Float sv'
@@ -547,7 +548,7 @@ module Encoder (Sptr : Sptr.S) = struct
   let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
       Typed.([> T.sint ] t) DecayMap.SM.t =
     let fp = Typed.Float.fp_of f in
-    let size = Svalue.FloatPrecision.size fp in
+    let size = Typed.FloatPrecision.size fp in
     let* bv = nondet (Typed.t_int size) in
     let bv_f = BV.to_float_raw bv in
     (* here we use structural equality rather than float equality; this is

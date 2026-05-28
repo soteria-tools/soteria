@@ -220,12 +220,6 @@ let rec get_pointee : Types.ty -> Types.ty = function
         | _ -> failwith "Box with non instantiates args in monomorphic mode?")
   | _ -> failwith "Non-pointer type given to get_pointee"
 
-let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
-  | F16 -> F16
-  | F32 -> F32
-  | F64 -> F64
-  | F128 -> F128
-
 let ty_as_adt (ty : Types.ty) : Types.type_decl_ref =
   match ty with
   | TAdt tref -> tref

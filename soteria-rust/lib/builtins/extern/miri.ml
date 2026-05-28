@@ -3,6 +3,7 @@
     See https://github.com/rust-lang/miri/blob/master/tests/utils/miri_extern.rs
 *)
 
+open Svalue
 open Rust_val
 open Typed.Infix
 open Typed.Syntax

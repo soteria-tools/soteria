@@ -4,6 +4,7 @@
 [@@@warning "-unused-open"]
 
 open Charon
+open Svalue
 open Common
 
 module M (StateM : State.StateM.S) = struct

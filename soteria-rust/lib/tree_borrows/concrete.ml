@@ -2,6 +2,7 @@
     support compositionality, just lifts {!Raw} to fit the state model shape. *)
 
 open Compo_res
+open Svalue
 
 module Make (Symex : Tree_borrows_intf.Rust_symex) :
   Tree_borrows_intf.M(Symex).S = struct

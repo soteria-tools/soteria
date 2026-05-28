@@ -1,6 +1,7 @@
 (** This file was generated with [scripts/stubs.py] -- do not edit it manually,
     instead modify the script and re-run it. *)
 
+open Svalue
 open Rust_val
 open Common
 

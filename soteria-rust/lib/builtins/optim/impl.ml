@@ -1,3 +1,4 @@
+open Svalue
 open Rust_val
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
@@ -43,7 +44,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   (* ---- float helpers ---- *)
 
-  let float_is (fp : Svalue.FloatClass.t) =
+  let float_is (fp : Typed.FloatClass.t) =
     match fp with
     | Zero -> Typed.Float.is_zero
     | NaN -> Typed.Float.is_nan
