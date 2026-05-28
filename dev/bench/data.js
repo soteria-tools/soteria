@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779979986337,
+  "lastUpdate": 1779981269569,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -495,6 +495,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.857336894026957,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "184fa00876da75c3dc6c36660682787b9b343201",
+          "message": "More performance improvements (#360)\n\n* Cache masks\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Don't throw an effect when value is already a concrete boolean\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* cache zeros and ones\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Don't throw flamegraph effects if they're not enabled\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Domain local storage to cache crate stuff\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Optimise if%sat information tracking\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Zeros and ones are cached so they come left in expressions, promote tests\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* simplify\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-05-28T14:57:45Z",
+          "tree_id": "1b99eb4dbf972af9ddfd3d6b3421fffb9cc5bd0b",
+          "url": "https://github.com/soteria-tools/soteria/commit/184fa00876da75c3dc6c36660682787b9b343201"
+        },
+        "date": 1779981267680,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.07795116236,
+            "range": "± 0.0021",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.5573845076,
+            "range": "± 0.0074",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.85760233932,
+            "range": "± 0.0099",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.21275034062000003,
+            "range": "± 0.0032",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.218485337159999,
+            "range": "± 0.0669",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9703423238,
+            "range": "± 0.0248",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.855916576925665,
             "unit": "s"
           }
         ]
