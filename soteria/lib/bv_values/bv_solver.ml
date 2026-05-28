@@ -451,9 +451,9 @@ struct
       | TBool -> fun () -> Svalue.Bool.of_bool (Random.bool ())
       (* TODO: because we can't evaluate floats, we can never do a trivial check
          for them. *)
-      | TFloat _ -> raise No_model
+      | TFloat _ -> raise_notrace No_model
       (* TODO: figure this out *)
-      | TPointer _ | TSeq _ | TExtension _ -> raise No_model
+      | TPointer _ | TSeq _ | TExtension _ -> raise_notrace No_model
     in
     let fuel = 3 in
     try
@@ -466,7 +466,7 @@ struct
               |> Iter.take fuel
               |> Iter.to_array
             in
-            if Array.length values = 0 then raise No_model;
+            if Array.length values = 0 then raise_notrace No_model;
             Var.Map.add v values acc)
           var_tys Var.Map.empty
       in
