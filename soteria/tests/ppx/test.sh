@@ -10,7 +10,7 @@ else
 fi
 
 if [ $? -ne 0 ]; then
-  cat out.err
+  grep -v '^ocamlfind: \[WARNING\]' out.err
   exit 1
 else
   echo "Success ✅"

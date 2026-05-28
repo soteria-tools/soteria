@@ -5,6 +5,6 @@
   "OBOL_REPO": "soteria-tools/obol",
   "OBOL_COMMIT_HASH": "70610866c606acc9b4c3a460ac586d81459d1304",
   "OCAMLFORMAT_VERSION": "0.28.1",
-  "OCAML_VERSION": "5.4.0",
-  "DUNE_VERSION": "3.23.0"
+  "OCAML_VERSION": "5.4.1",
+  "DUNE_VERSION": "3.23.1"
 }

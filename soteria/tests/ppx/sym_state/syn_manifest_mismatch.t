@@ -121,7 +121,6 @@ Reject manifest syn mismatch
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]
-  ocamlfind: [WARNING] Package `mtime.clock.os': Deprecated, use the mtime.clock library.
   File "out.ml", lines 36-37, characters 4-28:
   36 | ....type syn = Syn.t =
   37 |       | Ser_heap of Heap.syn.

@@ -32,10 +32,10 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
 
 ### Prerequisites
 
-<!-- [versionsync: OCAML_VERSION=5.4.0] -->
+<!-- [versionsync: OCAML_VERSION=5.4.1] -->
 | Dependency | Version | Notes |
 |------------|---------|-------|
-| OCaml | >= 5.4.0 | [ocaml.org/docs/installing-ocaml](https://ocaml.org/docs/installing-ocaml) |
+| OCaml | >= 5.4.1 | [ocaml.org/docs/installing-ocaml](https://ocaml.org/docs/installing-ocaml) |
 | opam | >= 2.0 | Included with OCaml installation |
 | Z3 | latest | [github.com/Z3Prover/z3](https://github.com/Z3Prover/z3) |
 | Rustup | latest | Required for Soteria Rust; [rustup.rs](https://rustup.rs/) |

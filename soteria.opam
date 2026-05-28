@@ -14,7 +14,7 @@ license: "Apache-2.0"
 homepage: "https://github.com/soteria-tools/soteria"
 bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
-  "ocaml" {>= "5.4.0"}
+  "ocaml" {>= "5.4.1"}
   "tsort" {>= "2.1.0"}
   "iter"
   "patricia-tree"
@@ -34,7 +34,7 @@ depends: [
   "alcotest" {with-test}
   "qcheck-core" {with-test}
   "qcheck-alcotest" {with-test}
-  "dune" {>= "3.14" & build & >= "3.14.0"}
+  "dune" {>= "3.23" & build & >= "3.14.0"}
   "ppxlib" {>= "0.38.0"}
   "ppx_mixins" {>= "0.2.0"}
   "hc" {>= "0.5"}
@@ -43,7 +43,6 @@ depends: [
   "ppx_deriving_yojson"
   "ocamlformat" {with-dev-setup & = "0.28.1"}
   "ocaml-lsp-server" {with-dev-setup}
-  "menhir" {>= "20180523"}
 ]
 build: [
   ["dune" "subst"] {dev}
@@ -62,3 +61,4 @@ build: [
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
+x-maintenance-intent: ["(latest)"]

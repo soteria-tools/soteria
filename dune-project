@@ -1,4 +1,4 @@
-(lang dune 3.14)
+(lang dune 3.23)
 
 (cram enable)
 
@@ -30,9 +30,9 @@
  (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools")
  (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
-  ; [versionsync: OCAML_VERSION=5.4.0]
+  ; [versionsync: OCAML_VERSION=5.4.1]
   (ocaml
-   (>= 5.4.0))
+   (>= 5.4.1))
   (tsort
    (>= 2.1.0))
   iter
@@ -87,9 +87,9 @@
  (sites
   (share includes))
  (depends
-  ; [versionsync: OCAML_VERSION=5.4.0]
+  ; [versionsync: OCAML_VERSION=5.4.1]
   (ocaml
-   (>= 5.4.0))
+   (>= 5.4.1))
   (shexp :build)
   soteria
   cerberus-lib
@@ -126,9 +126,9 @@
  (sites
   (share plugins))
  (depends
-  ; [versionsync: OCAML_VERSION=5.4.0]
+  ; [versionsync: OCAML_VERSION=5.4.1]
   (ocaml
-   (>= 5.4.0))
+   (>= 5.4.1))
   (shexp :build)
   soteria
   dune-site

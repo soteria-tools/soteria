@@ -14,7 +14,7 @@ license: "Apache-2.0"
 homepage: "https://github.com/soteria-tools/soteria"
 bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
-  "ocaml" {>= "5.4.0"}
+  "ocaml" {>= "5.4.1"}
   "shexp" {build}
   "soteria"
   "cerberus-lib"
@@ -30,10 +30,9 @@ depends: [
   "odoc" {with-doc}
   "alcotest" {with-test}
   "yojson" {< "3.0"}
-  "dune" {>= "3.14" & build & >= "3.14.0"}
+  "dune" {>= "3.23" & build & >= "3.14.0"}
   "ocamlformat" {with-dev-setup & = "0.28.1"}
   "ocaml-lsp-server" {with-dev-setup}
-  "menhir" {>= "20180523"}
 ]
 build: [
   ["dune" "subst"] {dev}
@@ -52,6 +51,7 @@ build: [
   ["dune" "install" "-p" name "--create-install-files" name]
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
+x-maintenance-intent: ["(latest)"]
 pin-depends: [
   ["cerberus-lib.~dev" "git+https://github.com/kmemarian/cerberus#frontend-for-system-libc"]
 ]
