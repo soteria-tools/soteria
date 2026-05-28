@@ -28,7 +28,7 @@ Test memory leaks
     2 |        std::mem::forget(Box::new(11));
       |                         ------------ 2: Call trace
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   [1]
 
@@ -77,8 +77,8 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   Compiling... done in <time>
   => Running unwind::main...
   note: unwind::main: done in <time>, ran 2 branches
-  PC 1: (V|1| == 0x01) /\ (0x0000000000000001 <=u V|2|) /\
-        (V|2| <=u 0x7ffffffffffffffd) /\ (V|1| == 0x01)
+  PC 1: (0x01 == V|1|) /\ (0x0000000000000001 <=u V|2|) /\
+        (V|2| <=u 0x7ffffffffffffffd) /\ (0x01 == V|1|)
   PC 2: (0x00 == V|1|) /\ (0x00 == V|1|)
   
 Test that we properly handle the niche optimisation
@@ -89,7 +89,7 @@ Test that we properly handle the niche optimisation
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
         (0x0000000000000004 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffff6) /\
         (0x0000000000000004 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00) /\ (0b00 == extract[0-1](V|2|)) /\
+        (0b00 == extract[0-1](V|1|)) /\ (0b00 == extract[0-1](V|2|)) /\
         (0b00 == extract[0-1](V|3|))
   
 Test function calls on function pointers
@@ -235,7 +235,7 @@ Test exposing function pointers
   => Running expose_fn_ptr::main...
   note: expose_fn_ptr::main: done in <time>, ran 1 branch
   PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffe) /\
-        (extract[0-3](V|1|) == 0x0)
+        (0x0 == extract[0-3](V|1|))
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
   $ soteria-rust exec thread_local.rs --target aarch64-apple-darwin
@@ -243,7 +243,7 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   => Running thread_local::static_ref_cell...
   warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::list::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
@@ -259,7 +259,7 @@ This test must be run separtely on linux and macos as it yields different error 
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   => Running thread_local::static_ref_cell...
   warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::linux_like::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
@@ -291,7 +291,7 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
       |          |
       |          Triggering operation
       |          2: Call trace
-  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
+  PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
   
   [1]
 
@@ -301,7 +301,7 @@ Test recursive validity check for references; disabled
   => Running ref_validity::test_uninit_ref...
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -313,7 +313,7 @@ Test recursive validity check for references; disabled
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -325,7 +325,7 @@ Test recursive validity check for references; disabled
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   [1]
 
@@ -342,7 +342,7 @@ Test recursive validity check for references; enabled
     7 |      let as_ref: &u32 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Fake read
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -354,7 +354,7 @@ Test recursive validity check for references; enabled
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -366,7 +366,7 @@ Test recursive validity check for references; enabled
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   [1]
 
@@ -383,7 +383,7 @@ Test recursive validity check for references; warn
       |                                  ^^^^^^^^ Triggering operation
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -395,7 +395,7 @@ Test recursive validity check for references; warn
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -407,7 +407,7 @@ Test recursive validity check for references; warn
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   [1]
 
@@ -452,7 +452,7 @@ Print the callgraph
   => Running callgraph::main...
   note: callgraph::main: done in <time>, ran 1 branch
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   digraph callgraph {
     node [shape=box fontname="monospace"];
@@ -500,7 +500,7 @@ Check we trust addresses for pointer alignment
   => Running assumed_align::main...
   note: assumed_align::main: done in <time>, ran 2 branches
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
-        (extract[0-0](V|1|) == 0b0)
+        (0b0 == extract[0-0](V|1|))
   PC 2: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
-        (extract[0-0](V|1|) == 0b1)
+        (0b1 == extract[0-0](V|1|))
   

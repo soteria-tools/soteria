@@ -3,7 +3,7 @@ Test base functions
   Compiling... done in <time>
   => Running lib_fns::main...
   note: lib_fns::main: done in <time>, ran 1 branch
-  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
+  PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
   
 
 Test #[soteria::*] annotations
@@ -31,8 +31,8 @@ Test #[soteria::*] annotations
   PC 6: (V|1| == 0x04) /\ (V|1| == 0x04)
   PC 7: (V|1| == 0x03) /\ (V|1| == 0x03)
   PC 8: (V|1| == 0x02) /\ (V|1| == 0x02)
-  PC 9: (V|1| == 0x01) /\ (V|1| == 0x01)
-  PC 10: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 9: (0x01 == V|1|) /\ (0x01 == V|1|)
+  PC 10: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   => Running annots::test_step_fuel...
   note: annots::test_step_fuel: done in <time>, ran 1 branch

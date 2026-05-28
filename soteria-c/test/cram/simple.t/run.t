@@ -1410,7 +1410,7 @@ Checking that code cannot branch infinitely
 Should return a single branch!
   $ ../exec_test.sh short_circuit_opt.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --print-states
   Symex terminated with the following outcomes:
-    [Ok: (b2bv[32](((V|2| != 0x00000000) && (V|1| != 0x00000000))), None)]
+    [Ok: (b2bv[32](((0x00000000 != V|2|) && (0x00000000 != V|1|))), None)]
   
   
   Verification Success!

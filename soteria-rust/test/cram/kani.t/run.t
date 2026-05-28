@@ -3,12 +3,12 @@ Test kani::any
   Compiling... done in <time>
   => Running any::any_bool...
   note: any::any_bool: done in <time>, ran 2 branches
-  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
-  PC 2: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
+  PC 2: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   => Running any::any_i8...
   note: any::any_i8: done in <time>, ran 3 branches
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   PC 2: (0x80 <=u V|1|)
   PC 3: (0x01 <=u V|1|) /\ (V|1| <=u 0x7f)
   
@@ -17,7 +17,7 @@ Test kani::assume
   Compiling... done in <time>
   => Running assume::assume_bool...
   note: assume::assume_bool: done in <time>, ran 1 branch
-  PC 1: (V|1| == 0x01) /\ (V|1| == 0x01)
+  PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
   
   => Running assume::assume_i32...
   note: assume::assume_i32: done in <time>, ran 1 branch
@@ -45,7 +45,7 @@ Test kani::assert
       |      |
       |      Triggering operation
       |      2: Call trace
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   => Running assert::fancy_assert_false...
   error: assert::fancy_assert_false: found issues in <time>, errors in 1 branch (out of 2)
@@ -59,7 +59,7 @@ Test kani::assert
       |      |
       |      Triggering operation
       |      2: Call trace
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   => Running assert::override_assert_macro...
   error: assert::override_assert_macro: found issues in <time>, errors in 1 branch (out of 2)
@@ -73,7 +73,7 @@ Test kani::assert
       |      |
       |      Triggering operation
       |      2: Call trace
-  PC 1: (V|1| == 0x00) /\ (V|1| == 0x00)
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|1|)
   
   => Running assert::override_asserteq_macro...
   error: assert::override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
@@ -159,101 +159,101 @@ Test kani::vec::any_vec
   note: any_vec::len_capacity_invariant: done in <time>, ran 17 branches
   PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000004 <=u V|18|) /\
         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000000 == V|1|) /\
-        (extract[0-1](V|18|) == 0b00)
+        (0b00 == extract[0-1](V|18|))
   PC 2: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
         (V|1| == 0x0000000000000010) /\ (0x0000000000000004 <=u V|18|) /\
         (V|18| <=u 0x7fffffffffffffbe) /\ (V|1| == 0x0000000000000010) /\
-        (extract[0-1](V|18|) == 0b00)
+        (0b00 == extract[0-1](V|18|))
   PC 3: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
         (V|1| == 0x000000000000000f) /\ (0x0000000000000004 <=u V|18|) /\
         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
         (V|19| <=u 0x7fffffffffffffc2) /\ (V|1| == 0x000000000000000f) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+        (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 4: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
         (V|1| == 0x000000000000000e) /\ (0x0000000000000004 <=u V|18|) /\
         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
         (V|19| <=u 0x7fffffffffffffc6) /\ (V|1| == 0x000000000000000e) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+        (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 5: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
         (V|1| == 0x000000000000000d) /\ (0x0000000000000004 <=u V|18|) /\
         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
         (V|19| <=u 0x7fffffffffffffca) /\ (V|1| == 0x000000000000000d) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+        (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 6: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
         (V|1| == 0x000000000000000c) /\ (0x0000000000000004 <=u V|18|) /\
         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
         (V|19| <=u 0x7fffffffffffffce) /\ (V|1| == 0x000000000000000c) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+        (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 7: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
         (V|1| == 0x000000000000000b) /\ (0x0000000000000004 <=u V|18|) /\
         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
         (V|19| <=u 0x7fffffffffffffd2) /\ (V|1| == 0x000000000000000b) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+        (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 8: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
         (V|1| == 0x000000000000000a) /\ (0x0000000000000004 <=u V|18|) /\
         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
         (V|19| <=u 0x7fffffffffffffd6) /\ (V|1| == 0x000000000000000a) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+        (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 9: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
         (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
         (V|1| == 0x0000000000000009) /\ (0x0000000000000004 <=u V|18|) /\
         (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
         (V|19| <=u 0x7fffffffffffffda) /\ (V|1| == 0x0000000000000009) /\
-        (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+        (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 10: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
          (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
          (V|1| == 0x0000000000000008) /\ (0x0000000000000004 <=u V|18|) /\
          (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
          (V|19| <=u 0x7fffffffffffffde) /\ (V|1| == 0x0000000000000008) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+         (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 11: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
          (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
          (V|1| == 0x0000000000000007) /\ (0x0000000000000004 <=u V|18|) /\
          (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
          (V|19| <=u 0x7fffffffffffffe2) /\ (V|1| == 0x0000000000000007) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+         (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 12: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
          (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
          (V|1| == 0x0000000000000006) /\ (0x0000000000000004 <=u V|18|) /\
          (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
          (V|19| <=u 0x7fffffffffffffe6) /\ (V|1| == 0x0000000000000006) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+         (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 13: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
          (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
          (V|1| == 0x0000000000000005) /\ (0x0000000000000004 <=u V|18|) /\
          (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
          (V|19| <=u 0x7fffffffffffffea) /\ (V|1| == 0x0000000000000005) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+         (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 14: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
          (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
          (V|1| == 0x0000000000000004) /\ (0x0000000000000004 <=u V|18|) /\
          (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
          (V|19| <=u 0x7fffffffffffffee) /\ (V|1| == 0x0000000000000004) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+         (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 15: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
          (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
          (V|1| == 0x0000000000000003) /\ (0x0000000000000004 <=u V|18|) /\
          (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
          (V|19| <=u 0x7ffffffffffffff2) /\ (V|1| == 0x0000000000000003) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+         (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 16: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
          (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
          (V|1| == 0x0000000000000002) /\ (0x0000000000000004 <=u V|18|) /\
          (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
          (V|19| <=u 0x7ffffffffffffff6) /\ (V|1| == 0x0000000000000002) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+         (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   PC 17: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
          (0x0000000000000000 <s (0x0000000000000010 - V|1|)) /\
          (0x0000000000000001 == V|1|) /\ (0x0000000000000004 <=u V|18|) /\
          (V|18| <=u 0x7fffffffffffffbe) /\ (0x0000000000000004 <=u V|19|) /\
          (V|19| <=u 0x7ffffffffffffffa) /\ (0x0000000000000001 == V|1|) /\
-         (extract[0-1](V|18|) == 0b00) /\ (0b00 == extract[0-1](V|19|))
+         (0b00 == extract[0-1](V|18|)) /\ (0b00 == extract[0-1](V|19|))
   
 Test our simple Kani demo works
   $ soteria-rust exec demo.rs --kani
@@ -301,7 +301,7 @@ Test our simple Kani demo works
    33 |        let allocated = Box::new(11);
       |                        ------------ 2: Call trace
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (extract[0-1](V|1|) == 0b00)
+        (0b00 == extract[0-1](V|1|))
   
   => Running demo::uninit_access...
   error: demo::uninit_access: found issues in <time>, errors in 1 branch (out of 2)
