@@ -805,10 +805,7 @@ and BitVec : BitVec = struct
 
   let mk_masked n bv =
     let mask = mask_of_bits n in
-    let masked =
-      if Z.leq bv mask && Z.(geq bv zero) then bv else Z.logand bv mask
-    in
-    BitVec masked <| t_bv n
+    BitVec (Z.logand bv mask) <| t_bv n
 
   let mki n i = mk n (Z.of_int i)
 
