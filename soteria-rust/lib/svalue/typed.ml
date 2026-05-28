@@ -1,10 +1,6 @@
 open Charon
 open Common.Charon_util
-(* module Ext : Soteria.Bv_values.Svalue.Value_ext = struct end *)
-
-module TypedCore =
-  Soteria.Bv_values.Typed.Make (Soteria.Bv_values.Svalue.Dummy_ext)
-
+module TypedCore = Soteria.Bv_values.Typed.Make (Ext.Rust_ext)
 include TypedCore
 
 (** [CastError (value, expected, got)] *)

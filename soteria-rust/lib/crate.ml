@@ -107,6 +107,7 @@ let pp_global_decl_ref = mk_pp Print.global_decl_ref_to_string
 let pp_name = mk_pp Print.name_to_string
 let pp_place = mk_pp Print.place_to_string
 let pp_trait_ref = mk_pp Print.trait_ref_to_string
+let pp_type_decl_ref = mk_pp Print.type_decl_ref_to_string
 let pp_statement = mk_pp_indent Print.Ullbc.statement_to_string
 let pp_terminator = mk_pp_indent Print.Ullbc.terminator_to_string
 
