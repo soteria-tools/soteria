@@ -545,6 +545,19 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
         Stats.As_ctx.add_int StatKeys.steps n;
         f ()
 
+  (** [Solver.simplify] throws an effect to ask the solver for simplification.
+      When the value is already a concrete boolean literal, we can skip the
+      effect dispatch entirely.
+
+      [simplified_bool] returns the simplified value together with an its
+      to_bool. *)
+  let[@inline] simplified_bool v =
+    match Value.to_bool v with
+    | Some _ as b -> (v, b)
+    | None ->
+        let v = Solver.simplify v in
+        (v, Value.to_bool v)
+
   let assume learned f =
     let rec aux acc learned =
       match learned with
@@ -552,8 +565,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
           Solver.add_constraints acc;
           f ()
       | l :: ls -> (
-          let l = Solver.simplify l in
-          match Value.to_bool l with
+          let l, to_bool = simplified_bool l in
+          match to_bool with
           | Some true -> aux acc ls
           | Some false -> [%l.trace "Assuming false, stopping this branch"]
           | None -> aux (l :: acc) ls)
@@ -564,8 +577,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       to the user, because without proper care, this could have unwanted
       side-effects at the wrong time. *)
   let assert_raw value : bool =
-    let value = Solver.simplify value in
-    match Value.to_bool value with
+    let value, to_bool = simplified_bool value in
+    match to_bool with
     | Some true -> true
     | Some false -> false
     | None ->
@@ -601,8 +614,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
       ~(else_ : unit -> 'a t) : 'a t =
    fun f ->
     Stats.As_ctx.incr StatKeys.branch_on_calls;
-    let guard = Solver.simplify guard in
-    match Value.to_bool guard with
+    let guard, to_bool = simplified_bool guard in
+    match to_bool with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
        remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
@@ -635,8 +648,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let if_sure ?left_branch_name:_ ?right_branch_name:_ guard
       ~(then_ : unit -> 'a t) ~(else_ : unit -> 'a t) : 'a t =
    fun f ->
-    let guard = Solver.simplify guard in
-    match Value.to_bool guard with
+    let guard, to_bool = simplified_bool guard in
+    match to_bool with
     (* [then_] and [else_] could be ['a t] instead of [unit -> 'a t], if we
        remove the Some true and Some false optimisation. *)
     | Some true -> then_ () f
@@ -661,8 +674,8 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
   let branch_on_take_one_ux ?left_branch_name:_ ?right_branch_name:_ guard
       ~then_ ~else_ : 'a t =
    fun f ->
-    let guard = Solver.simplify guard in
-    match Value.to_bool guard with
+    let guard, to_bool = simplified_bool guard in
+    match to_bool with
     | Some true -> then_ () f
     | Some false -> else_ () f
     | None ->
