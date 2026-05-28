@@ -1,4 +1,5 @@
 module Stats = Soteria.Stats
+open Svalue
 open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap
 module State = State.Tree_state.Make (Tree_borrows.Concrete.Make)

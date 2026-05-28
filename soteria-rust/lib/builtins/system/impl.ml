@@ -1,4 +1,5 @@
 open Charon
+open Svalue
 open Rust_val
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct

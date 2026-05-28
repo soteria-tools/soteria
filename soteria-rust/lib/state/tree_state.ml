@@ -1,4 +1,5 @@
 open Compo_res
+open Svalue
 open Rust_val
 open Typed.Infix
 open Typed.Syntax

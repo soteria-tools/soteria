@@ -4,6 +4,7 @@
 [@@@warning "-unused-open"]
 
 open Common
+open Svalue
 open Rust_val
 
 type fn = TokioUtilRandRngSeedNew

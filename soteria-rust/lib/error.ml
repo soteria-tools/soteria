@@ -1,5 +1,6 @@
 open Charon
 open Common.Charon_util
+open Svalue
 
 type t =
   [ `DoubleFree  (** Tried freeing the same allocation twice *)

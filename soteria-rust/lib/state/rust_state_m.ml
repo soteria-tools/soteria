@@ -2,6 +2,7 @@ open Compo_res
 open Rustsymex
 open Charon
 open Common
+open Svalue
 
 module Compo_resT2 (I : sig
   type fix

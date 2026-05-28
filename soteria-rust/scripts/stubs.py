@@ -751,6 +751,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         {GENERATED_WARNING}
 
         open Charon
+        open Svalue
         open Common
 
         module M (StateM : State.StateM.S) = struct
@@ -782,6 +783,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     main_str = f"""
         {GENERATED_WARNING}
 
+        open Svalue
         open Rust_val
         open Common
 
@@ -1154,6 +1156,7 @@ def generate_custom_stubs() -> None:
             [@@@warning "-unused-open"]
 
             open Charon
+            open Svalue
             open Common
 
             module M (StateM : State.StateM.S) = struct
@@ -1176,6 +1179,7 @@ def generate_custom_stubs() -> None:
             [@@@warning "-unused-open"]
 
             open Common
+            open Svalue
             open Rust_val
 
             type fn = {fn_variants_str}

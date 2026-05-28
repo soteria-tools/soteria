@@ -1,3 +1,4 @@
+open Svalue
 open Rust_val
 open Typed.Syntax
 open Typed.Infix

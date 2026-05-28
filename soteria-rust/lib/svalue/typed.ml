@@ -1,5 +1,6 @@
 open Charon
 open Common.Charon_util
+(* module Ext : Soteria.Bv_values.Svalue.Value_ext = struct end *)
 
 module TypedCore =
   Soteria.Bv_values.Typed.Make (Soteria.Bv_values.Svalue.Dummy_ext)
@@ -21,6 +22,13 @@ let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
   raise
     (CastError
        ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
+
+let float_precision :
+    Values.float_type -> Soteria.Bv_values.Svalue.FloatPrecision.t = function
+  | F16 -> F16
+  | F32 -> F32
+  | F64 -> F64
+  | F128 -> F128
 
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)

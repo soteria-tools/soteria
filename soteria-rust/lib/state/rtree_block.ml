@@ -1,4 +1,5 @@
 open Compo_res
+open Svalue
 open Typed.Infix
 module BV = Typed.BV
 open Charon
@@ -204,8 +205,6 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       in
       TB.build_tree_leaf ~range:t.range ~node ()
 
-    module Rust_val_consumer = Rust_val.Learn_eq (DecayMap.SM)
-
     let consume (s : syn) (t : tree) : (tree, syn list) DecayMap.SM.Consumer.t =
       let open DecayMap.SM.Consumer in
       let open Syntax in
@@ -218,9 +217,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       let* v =
         match (s, v) with
         (* init *)
-        | SInit e, Init v ->
-            let+ () = Rust_val_consumer.learn_eq Sptr.learn_eq e v in
-            Unowned
+        | SInit _e, Init _v ->
+            failwith "TODO: Rust_val.learn_eq"
+            (* let+ () = Rust_val_consumer.learn_eq Sptr.learn_eq e v in
+               Unowned *)
         | SInit _, Zeros -> lift @@ not_impl "Assume rust_val.syn == 0s"
         | SInit _, _ -> lfail Typed.v_false
         (* any *)

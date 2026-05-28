@@ -1,5 +1,6 @@
 open Rustsymex
 open Charon
+open Svalue
 open Typed
 open Typed.Syntax
 open Typed.Infix

@@ -116,46 +116,25 @@ let rec to_syn ptr_to_syn x =
   | Ptr p -> Ptr (full_ptr_to_syn p)
   | PolyVal v -> PolyVal v
 
-module Learn_eq (Symex : Soteria.Symex.Base with module Value = Rustsymex.Value) =
-struct
-  let learn_eq_meta learn_eq_ptr s t =
-    let open Symex.Consumer in
-    match (s, t) with
-    | Thin, Thin -> ok ()
-    | Len s, Len v -> learn_eq s v
-    | VTable ps, VTable p -> learn_eq_ptr ps p
-    | _ -> lfail Typed.v_false
+(* module Learn_eq (Symex : Soteria.Symex.Base with module Value =
+   Rustsymex.Value) = struct let learn_eq_meta learn_eq_ptr s t = let open
+   Symex.Consumer in match (s, t) with | Thin, Thin -> ok () | Len s, Len v ->
+   learn_eq s v | VTable ps, VTable p -> learn_eq_ptr ps p | _ -> lfail
+   Typed.v_false
 
-  let rec learn_eq learn_eq_ptr syn t =
-    let rec_call = learn_eq learn_eq_ptr in
-    let open Symex.Consumer in
-    let open Syntax in
-    let learn_list ~learn ls l =
-      let* combined =
-        List.combine_or ~ok ~err:(fun () -> lfail Typed.v_false) ls l
-      in
-      iter_list ~f:(fun (a, b) -> learn a b) combined
-    in
-    match (syn, t) with
-    | Int s, Int v -> learn_eq s v
-    | Float s, Float v -> learn_eq s v
-    | Ptr (ps, meta_s), Ptr (p, meta) ->
-        let* () = learn_eq_ptr ps p in
-        learn_eq_meta learn_eq_ptr meta_s meta
-    | Enum (disc_s, vals_s), Enum (disc, vals) ->
-        let* () = learn_eq disc_s disc in
-        learn_list ~learn:rec_call vals_s vals
-    | Tuple vals_s, Tuple vals -> learn_list ~learn:rec_call vals_s vals
-    | Union vs1, Union vs2 ->
-        learn_list
-          ~learn:(fun (v1, ofs1) (v2, ofs2) ->
-            let* () = rec_call v1 v2 in
-            learn_eq ofs1 ofs2)
-          vs1 vs2
-    | PolyVal _, PolyVal _ ->
-        lift @@ Symex.give_up "Learning equality of polymorphic values"
-    | _ -> Fmt.failwith "Mismatching rust_val kinds: %a vs %a" ppa_syn syn ppa t
-end
+   let rec learn_eq learn_eq_ptr syn t = let rec_call = learn_eq learn_eq_ptr in
+   let open Symex.Consumer in let open Syntax in let learn_list ~learn ls l =
+   let* combined = List.combine_or ~ok ~err:(fun () -> lfail Typed.v_false) ls l
+   in iter_list ~f:(fun (a, b) -> learn a b) combined in match (syn, t) with |
+   Int s, Int v -> learn_eq s v | Float s, Float v -> learn_eq s v | Ptr (ps,
+   meta_s), Ptr (p, meta) -> let* () = learn_eq_ptr ps p in learn_eq_meta
+   learn_eq_ptr meta_s meta | Enum (disc_s, vals_s), Enum (disc, vals) -> let*
+   () = learn_eq disc_s disc in learn_list ~learn:rec_call vals_s vals | Tuple
+   vals_s, Tuple vals -> learn_list ~learn:rec_call vals_s vals | Union vs1,
+   Union vs2 -> learn_list ~learn:(fun (v1, ofs1) (v2, ofs2) -> let* () =
+   rec_call v1 v2 in learn_eq ofs1 ofs2) vs1 vs2 | PolyVal _, PolyVal _ -> lift
+   @@ Symex.give_up "Learning equality of polymorphic values" | _ ->
+   Fmt.failwith "Mismatching rust_val kinds: %a vs %a" ppa_syn syn ppa t end *)
 
 (** [is_empty v] is true if the value is "empty"; ie. it doesn't contain any
     [Base] or [Ptr] value. We also consider [Enum] to be non-empty, because of

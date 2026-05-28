@@ -1,4 +1,5 @@
 open Charon
+open Svalue
 
 module Map = Stdlib.Map.Make (struct
   type t = Expressions.LocalId.id
