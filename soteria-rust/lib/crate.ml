@@ -97,6 +97,7 @@ let pp_name = mk_pp PrintFmt.pp_name
 let pp_place = mk_pp PrintFmt.pp_place
 let pp_trait_impl_ref = mk_pp PrintFmt.pp_trait_impl_ref
 let pp_trait_ref = mk_pp PrintFmt.pp_trait_ref
+let pp_type_decl_ref = mk_pp PrintFmt.pp_type_decl_ref
 let pp_statement = mk_pp_indent PrintFmt.Ullbc.pp_statement
 let pp_terminator = mk_pp_indent PrintFmt.Ullbc.pp_terminator
 
