@@ -229,7 +229,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
     Analysed {
       raw =
       { args = [V|1|; &(V|2|, V|3|)]; pre = [];
-        pc = [((0x7fffffff <u V|1|) || (V|1| == 0x00000000))]; post = [];
+        pc = [((0x7fffffff <u V|1|) || (0x00000000 == V|1|))]; post = [];
         ret = (Ok 0x00000000) };
       manifest_bugs = []}
   
@@ -240,7 +240,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
     Analysed {
       raw =
       { args = [&(V|1|, V|2|); V|3|]; pre = [];
-        pc = [((V|3| == 0x00000000) || (0x7fffffff <u V|3|))]; post = [];
+        pc = [((0x00000000 == V|3|) || (0x7fffffff <u V|3|))]; post = [];
         ret = (Ok 0x00000000) };
       manifest_bugs = []}
     Analysed {
@@ -268,7 +268,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
           ];
         pc =
         [(0x0000000000000000 != V|1|); (V|2| <=u 0x7ffffffffffffffb);
-          (V|3| == 0x00000001); (V|3| == 0x00000001)];
+          (0x00000001 == V|3|); (0x00000001 == V|3|)];
         post =
         [(Ser_heap
             (V|1|,

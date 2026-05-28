@@ -39,24 +39,30 @@ module Make (M : Monad.Base) = struct
 
   type t = stack list
 
-  let push_frame (s : string) : unit =
-    Effect.perform (Map_stack (push_string_to_stack s))
+  let perform_ eff =
+    if Option.is_some (Config.get ()).flamegraphs then Effect.perform eff
+    else ()
 
-  let pop_frame () = Effect.perform (Map_stack pop_stack)
-  let save () = Effect.perform Save
-  let backtrack_n n = Effect.perform (Backtrack_n n)
-  let checkpoint () = Effect.perform Checkpoint
+  let push_frame (s : string) : unit =
+    perform_ (Map_stack (push_string_to_stack s))
+
+  let pop_frame () = perform_ (Map_stack pop_stack)
+  let save () = perform_ Save
+  let backtrack_n n = perform_ (Backtrack_n n)
+  let checkpoint () = perform_ Checkpoint
 
   let with_frame (name : string) (f : unit -> 'a M.t) : 'a M.t =
-    (* the bind + return to make sure the effect isn't raised until the
-       computation is ran. *)
-    M.return ()
-    |> M.bind @@ fun () ->
-       push_frame name;
-       f ()
-       |> M.map @@ fun r ->
-          pop_frame ();
-          r
+    if Option.is_some (Config.get ()).flamegraphs then (
+      (* the bind + return to make sure the effect isn't raised until the
+         computation is ran. *)
+      M.return ()
+      |> M.bind @@ fun () ->
+         push_frame name;
+         f ()
+         |> M.map @@ fun r ->
+            pop_frame ();
+            r)
+    else f ()
 
   let with_ _name f =
     let stacks = ref [] in

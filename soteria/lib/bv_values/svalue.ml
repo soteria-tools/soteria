@@ -460,7 +460,7 @@ module rec Bool : Bool = struct
   let v_true = Bool true <| TBool
   let v_false = Bool false <| TBool
 
-  let to_bool t =
+  let[@inline] to_bool t =
     if equal t v_true then Some true
     else if equal t v_false then Some false
     else None
@@ -798,10 +798,23 @@ and BitVec : BitVec = struct
     assert (Z.(zero <= bv && bv < one lsl n));
     BitVec bv <| t_bv n
 
-  let mk_masked n bv = BitVec Z.(bv land pred (one lsl n)) <| t_bv n
+  (* Bitwidth -> [(1 lsl n) - 1] mask. Memoized to avoid re-allocating the mask
+     bignum on each [mk_masked] call (expensive in pathological cases). *)
+  let mask_cache : Z.t Array.t = Array.init 257 (fun n -> Z.(pred (one lsl n)))
+  let mask_of_bits n = mask_cache.(n)
+
+  let mk_masked n bv =
+    let mask = mask_of_bits n in
+    BitVec (Z.logand bv mask) <| t_bv n
+
   let mki n i = mk n (Z.of_int i)
-  let zero n = mk n Z.zero
-  let one n = mk n Z.one
+
+  (* Index [n-1] holds the cached value for bitwidth [n]; we skip [n=0] because
+     [mk] asserts [n > 0]. *)
+  let zero_cache : t Array.t = Array.init 256 (fun n -> mk (n + 1) Z.zero)
+  let[@inline] zero n = zero_cache.(n - 1)
+  let one_cache : t Array.t = Array.init 256 (fun n -> mk (n + 1) Z.one)
+  let[@inline] one n = one_cache.(n - 1)
 
   (** [bv_to_z signed bits z] parses a BitVector [z], for a given bitwidth
       [bits], with [signed], into an integer. *)

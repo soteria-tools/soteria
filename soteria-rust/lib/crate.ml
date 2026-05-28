@@ -14,8 +14,23 @@ type decl_cache = {
 
 type _ Effect.t += Get_crate : t Effect.t | Get_decl_cache : decl_cache Effect.t
 
-let get_crate () = Effect.perform Get_crate
-let get_decl_cache () = Effect.perform Get_decl_cache
+(* DLS-backed cache for the active crate / decl cache. These are constants for
+   the duration of [with_crate], but [Effect.perform] is much heavier than a DLS
+   read and the get_crate path is on the symex hot path. *)
+let crate_dls : t option Domain.DLS.key = Domain.DLS.new_key (fun () -> None)
+
+let decl_cache_dls : decl_cache option Domain.DLS.key =
+  Domain.DLS.new_key (fun () -> None)
+
+let[@inline] get_crate () =
+  match Domain.DLS.get crate_dls with
+  | Some c -> c
+  | None -> Effect.perform Get_crate
+
+let[@inline] get_decl_cache () =
+  match Domain.DLS.get decl_cache_dls with
+  | Some dc -> dc
+  | None -> Effect.perform Get_decl_cache
 
 let memoize tbl key compute =
   match Hashtbl.find_opt tbl key with
@@ -24,6 +39,14 @@ let memoize tbl key compute =
       let v = compute () in
       Hashtbl.add tbl key v;
       v
+
+(* Cache for [pointer_size]; populated by [with_crate]. The value is constant
+   over a single symex run, but each [pointer_size ()] call would otherwise
+   perform a [Get_crate] effect — millions of times on Rust hot paths. The DLS
+   makes the cache safe across parallel [Symex.run] calls in different
+   domains. *)
+let pointer_size_dls =
+  Domain.DLS.new_key ~split_from_parent:Fun.id (fun () -> 8)
 
 let with_crate (crate : t) f =
   let open Effect.Deep in
@@ -34,16 +57,27 @@ let with_crate (crate : t) f =
       trait_decl = Hashtbl.create 64;
     }
   in
+  assert (List.length crate.target_information = 1);
+  let _, info = List.hd crate.target_information in
+  (* We save the values just in case, for some unknown reason, [with_crate] is
+     called within itself. *)
+  let saved_ps = Domain.DLS.get pointer_size_dls in
+  let saved_crate = Domain.DLS.get crate_dls in
+  let saved_dc = Domain.DLS.get decl_cache_dls in
+  Domain.DLS.set pointer_size_dls info.target_pointer_size;
+  Domain.DLS.set crate_dls (Some crate);
+  Domain.DLS.set decl_cache_dls (Some dc);
+  let finally () =
+    Domain.DLS.set pointer_size_dls saved_ps;
+    Domain.DLS.set crate_dls saved_crate;
+    Domain.DLS.set decl_cache_dls saved_dc
+  in
+  Fun.protect ~finally @@ fun () ->
   try f () with
   | effect Get_crate, k -> continue k crate
   | effect Get_decl_cache, k -> continue k dc
 
-let pointer_size () =
-  let crate = get_crate () in
-  assert (List.length crate.target_information = 1);
-  let _triple, info = List.hd crate.target_information in
-  info.target_pointer_size
-
+let[@inline] pointer_size () = Domain.DLS.get pointer_size_dls
 let as_namematcher_ctx () = NameMatcher.ctx_from_crate (get_crate ())
 
 let as_fmt_env () =

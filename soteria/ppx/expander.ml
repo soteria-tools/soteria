@@ -46,21 +46,35 @@ module If_sat = struct
     | Sat1 -> [%expr Symex_syntax.branch_on_take_one]
     | Sure -> [%expr Symex_syntax.if_sure]
 
+  (* Build the location-suffixed branch name as a compile-time string constant
+     instead of a runtime [String.cat ... __LOC__] call.
+
+     Our previous implementation allocated a fresh string on every [if%sat] hit
+     even when logs are disabled — millions of allocations per symex run. *)
+  let loc_string (loc : Location.t) =
+    Printf.sprintf "File %S, line %d, characters %d-%d" loc.loc_start.pos_fname
+      loc.loc_start.pos_lnum
+      (loc.loc_start.pos_cnum - loc.loc_start.pos_bol)
+      (loc.loc_end.pos_cnum - loc.loc_start.pos_bol)
+
   let expand_if ~loc ~ext guard then_ else_ =
     let associated_fn = associated_fn ~loc ext in
-    let lname =
-      get_attr ~name:Branch_names.branch_name then_
-      |> Option.fold ~some:Branch_names.attribute_expr
-           ~none:[%expr Stdlib.String.cat "Left branch at " __LOC__]
+    let here = loc_string loc in
+    let lname_attr = get_attr ~name:Branch_names.branch_name then_ in
+    let rname_attr = get_attr ~name:Branch_names.branch_name else_ in
+    let lname_expr =
+      match lname_attr with
+      | Some attr -> Branch_names.attribute_expr attr
+      | None -> Ast_builder.Default.estring ~loc ("Left branch at " ^ here)
     in
-    let rname =
-      get_attr ~name:Branch_names.branch_name else_
-      |> Option.fold ~some:Branch_names.attribute_expr
-           ~none:[%expr Stdlib.String.cat "Right branch at " __LOC__]
+    let rname_expr =
+      match rname_attr with
+      | Some attr -> Branch_names.attribute_expr attr
+      | None -> Ast_builder.Default.estring ~loc ("Right branch at " ^ here)
     in
     [%expr
-      [%e associated_fn] [%e guard] ~left_branch_name:[%e lname]
-        ~right_branch_name:[%e rname]
+      [%e associated_fn] [%e guard] ~left_branch_name:[%e lname_expr]
+        ~right_branch_name:[%e rname_expr]
         ~then_:(fun () -> [%e then_])
         ~else_:(fun () -> [%e else_])]
 
