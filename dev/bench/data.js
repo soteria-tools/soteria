@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779905401422,
+  "lastUpdate": 1779979986337,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -430,6 +430,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.873503129929304,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "8d0c0dd2c44bd4eb1ea34049373a7bb4b66d999a",
+          "message": "Don't hardcode name of the repo in actions (#361)",
+          "timestamp": "2026-05-28T14:10:51Z",
+          "tree_id": "66f6553ba0975249c9709ecb5cab6519cc38c17a",
+          "url": "https://github.com/soteria-tools/soteria/commit/8d0c0dd2c44bd4eb1ea34049373a7bb4b66d999a"
+        },
+        "date": 1779979984599,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.07828744182000001,
+            "range": "± 0.0024",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.6107941336,
+            "range": "± 0.0098",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.89772864408,
+            "range": "± 0.0212",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.24279650467999997,
+            "range": "± 0.0038",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.8729035471,
+            "range": "± 0.0838",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.3234484337,
+            "range": "± 0.0228",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.857336894026957,
             "unit": "s"
           }
         ]
