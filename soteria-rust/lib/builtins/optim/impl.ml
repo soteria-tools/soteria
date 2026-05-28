@@ -123,4 +123,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let _print ~args:_ = ok ()
   let print_to ~t:_ ~args:_ ~global_s:_ ~label:_ = ok ()
   let print_to_buffer_if_capture_used ~args:_ = ok Typed.v_true
+
+  (* FIXME(frontend): [std::rt::panic_count] uses [AtomicPrimitive::AtomicInner]
+     which obol does not yet translate. Hard-coding true is sound: the panic
+     count is only consulted to decide whether to take fast paths. *)
+  let count_is_zero () = ok Typed.v_true
 end

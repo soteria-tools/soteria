@@ -38,6 +38,8 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val begin_panic : m:Types.ty -> msg:rust_val -> unit ret
 
+    val count_is_zero : unit -> Typed.T.sbool Typed.t ret
+
     (** {@markdown[
           Returns `true` if this number is neither infinite nor NaN.
 

@@ -146,6 +146,105 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       ok (Tuple [ curr; Int (BV.of_bool Typed.v_true) ])
     else ok (Tuple [ curr; Int (BV.of_bool Typed.v_false) ])
 
+  (* The strong variant has identical semantics under our sequential execution
+     model -- the only difference is the spurious-failure allowance of the
+     [weak] variant, which is concurrency-only. *)
+  let atomic_cxchg = atomic_cxchgweak
+
+  (** Common pattern for [fetch_op] atomics on integer types: load, combine old
+      and src with [op], store back, return old. *)
+  let atomic_fetch_int_op ~name ~op ~t ~(dst : full_ptr) ~(src : rust_val) =
+    atomic_warn ();
+    let* old = State.load dst t in
+    match t with
+    | TLiteral lit ->
+        let src = as_base lit src in
+        let old_v = as_base lit old in
+        let new_ = op lit old_v src in
+        let+ () = State.store dst t (Int new_) in
+        old
+    | _ -> Fmt.kstr failwith "%s: invalid type, expects integer" name
+
+  let atomic_xsub ~t ~(u : Types.ty) ~ord:_ ~(dst : full_ptr) ~(src : rust_val)
+      =
+    atomic_warn ();
+    let* old = State.load dst t in
+    match (t, u) with
+    | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
+        let src = as_base_i Usize src in
+        let neg_src = Typed.BitVec.(no_ovf_unsafe (neg src)) in
+        let old_v =
+          match as_ptr old with
+          | old, Thin -> old
+          | _ -> failwith "atomic_xsub: pointer with metadata other than Thin"
+        in
+        let* new_ = Sptr.offset ~check:false ~signed:false neg_src old_v in
+        let new_ = Ptr (new_, Thin) in
+        let* () = State.store dst t new_ in
+        ok old
+    | TLiteral lit, TLiteral lit' when Types.equal_literal_type lit lit' ->
+        let src = as_base lit src in
+        let old_v = as_base lit old in
+        let* new_ = Core.eval_lit_binop (Sub OWrap) lit old_v src in
+        let+ () = State.store dst t (Int new_) in
+        old
+    | _ ->
+        failwith
+          "atomic_xsub: invalid types, expects to follow the rules of \
+           atomic_xsub"
+
+  let atomic_and ~t ~u:_ ~ord:_ ~dst ~src =
+    atomic_fetch_int_op ~name:"atomic_and" ~t ~dst ~src ~op:(fun lit a b ->
+        let a = Typed.cast_lit lit a in
+        let b = Typed.cast_lit lit b in
+        a &@ b)
+
+  let atomic_or ~t ~u:_ ~ord:_ ~dst ~src =
+    atomic_fetch_int_op ~name:"atomic_or" ~t ~dst ~src ~op:(fun lit a b ->
+        let a = Typed.cast_lit lit a in
+        let b = Typed.cast_lit lit b in
+        a |@ b)
+
+  let atomic_xor ~t ~u:_ ~ord:_ ~dst ~src =
+    atomic_fetch_int_op ~name:"atomic_xor" ~t ~dst ~src ~op:(fun lit a b ->
+        let a = Typed.cast_lit lit a in
+        let b = Typed.cast_lit lit b in
+        a ^@ b)
+
+  let atomic_nand ~t ~u:_ ~ord:_ ~dst ~src =
+    atomic_fetch_int_op ~name:"atomic_nand" ~t ~dst ~src ~op:(fun lit a b ->
+        let a = Typed.cast_lit lit a in
+        let b = Typed.cast_lit lit b in
+        Typed.BitVec.not (a &@ b))
+
+  (** [atomic_min]/[atomic_max] use a signed comparison; their unsigned
+      counterparts use unsigned. *)
+  let atomic_lit_op ~name ~fn ~t ~dst ~src =
+    atomic_fetch_int_op ~name ~t ~dst ~src ~op:(fun lit a b ->
+        let a = Typed.cast_lit lit a in
+        let b = Typed.cast_lit lit b in
+        fn a b)
+
+  let atomic_max ~t ~ord:_ ~dst ~src =
+    atomic_lit_op ~name:"atomic_max"
+      ~fn:(Typed.BitVec.max ~signed:true)
+      ~t ~dst ~src
+
+  let atomic_min ~t ~ord:_ ~dst ~src =
+    atomic_lit_op ~name:"atomic_min"
+      ~fn:(Typed.BitVec.min ~signed:true)
+      ~t ~dst ~src
+
+  let atomic_umax ~t ~ord:_ ~dst ~src =
+    atomic_lit_op ~name:"atomic_umax"
+      ~fn:(Typed.BitVec.max ~signed:false)
+      ~t ~dst ~src
+
+  let atomic_umin ~t ~ord:_ ~dst ~src =
+    atomic_lit_op ~name:"atomic_umin"
+      ~fn:(Typed.BitVec.min ~signed:false)
+      ~t ~dst ~src
+
   let black_box ~t:_ ~dummy = ok dummy
   let breakpoint () : unit ret = error `Breakpoint
 

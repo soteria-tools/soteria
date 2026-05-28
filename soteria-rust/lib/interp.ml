@@ -1002,9 +1002,38 @@ module Make (StateImpl : State.S) = struct
         in
         (* the expected types of the function may differ to those passed, e.g.
            with function pointers or dyn calls, so we transmute here. *)
+        let combined =
+          match List.combine3_opt args in_tys exp_tys with
+          | Some xs -> xs
+          | None ->
+              let callee_src =
+                match func with
+                | FnOpRegular { kind = FunId (FRegular id); _ } ->
+                    let fundef = Crate.get_fun id in
+                    (match fundef.src with
+                    | TopLevelItem -> "TopLevel (regular fn OR coroutine)"
+                    | ClosureItem info ->
+                        Fmt.str "Closure (kind=%s)"
+                          (match info.kind with
+                           | Fn -> "Fn"
+                           | FnMut -> "FnMut"
+                           | FnOnce -> "FnOnce")
+                    | TraitDeclItem _ -> "TraitDecl"
+                    | TraitImplItem _ -> "TraitImpl"
+                    | _ -> "Other")
+                | _ -> "<dyn or builtin>"
+              in
+              Fmt.failwith
+                "Arity mismatch calling %a (item_source: %s): %d args of \
+                 types [%a], but callee signature expects [%a]"
+                Crate.pp_fn_operand func callee_src (List.length in_tys)
+                Fmt.(list ~sep:comma Common.Charon_util.pp_ty)
+                in_tys
+                Fmt.(list ~sep:comma Common.Charon_util.pp_ty)
+                exp_tys
+        in
         let* args =
-          map_list (List.combine3 args in_tys exp_tys)
-            ~f:(fun (arg, from_ty, to_ty) ->
+          map_list combined ~f:(fun (arg, from_ty, to_ty) ->
               let* arg = eval_operand arg in
               if Types.equal_ty from_ty to_ty then ok arg
               else Core.transmute ~from_ty ~to_ty arg)
@@ -1131,7 +1160,7 @@ module Make (StateImpl : State.S) = struct
     match fundef.body with
     | IntrinsicBody (name, _arg_names) ->
         Std_funs.eval_intrinsic fundef name generics exec_fun args
-    | ExternBody name -> Std_funs.eval_extern name args
+    | ExternBody name -> Std_funs.eval_extern exec_fun name args
     | UnstructuredBody body -> (
         match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args

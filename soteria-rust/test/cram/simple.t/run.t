@@ -269,6 +269,13 @@ This test must be run separtely on linux and macos as it yields different error 
   
   [2]
 
+Repro for an obol bug: when a closure body fails to translate (here because
+`Atomic<usize>` uses the `AtomicPrimitive::AtomicInner` alias-projection
+that obol's `translate_ty` cannot handle), the emitted `error(...)` fallback
+signature drops the args tuple from `signature.inputs`. The closure body ends
+up with 1 input parameter, but call sites still pass 2 per the FnOnce ABI.
+  $ soteria-rust exec closure_fn_once.rs
+
 Test cloning ZSTs works; in particular, this generates a function with an empty body that just returns, so if we don't handle the ZST case we get an uninit access.
   $ soteria-rust exec clone_zst.rs
   Compiling... done in <time>

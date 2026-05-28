@@ -75,6 +75,10 @@
       {
         "pattern": "std::panicking::begin_panic",
         "aliases": ["std::rt::begin_panic"]
+      },
+      {
+        "pattern": "std::panicking::panic_count::count_is_zero",
+        "aliases": ["std::rt::panic_count::count_is_zero"]
       }
     ]
   },
@@ -112,6 +116,40 @@
     "code": "let _ = tokio::runtime::Runtime::new();",
     "patterns": [
       { "pattern": "tokio::util::rand::RngSeed::new", "extra_args": ["sig"] }
+    ]
+  },
+  "Pthread": {
+    "_comment": [
+      "POSIX pthread synchronization primitives (mutex / rwlock / condvar and",
+      "their attribute counterparts). These are declared via [extern \"C\"]",
+      "in libc/std; the body is [ExternBody name], dispatched by C-symbol."
+    ],
+    "kind": "extern",
+    "patterns": [
+      "pthread_mutexattr_init",
+      "pthread_mutexattr_settype",
+      "pthread_mutexattr_destroy",
+      "pthread_mutex_init",
+      "pthread_mutex_lock",
+      "pthread_mutex_trylock",
+      "pthread_mutex_unlock",
+      "pthread_mutex_destroy",
+      "pthread_rwlock_rdlock",
+      "pthread_rwlock_tryrdlock",
+      "pthread_rwlock_wrlock",
+      "pthread_rwlock_trywrlock",
+      "pthread_rwlock_unlock",
+      "pthread_rwlock_destroy",
+      "pthread_condattr_init",
+      "pthread_condattr_setclock",
+      "pthread_condattr_getclock",
+      "pthread_condattr_destroy",
+      "pthread_cond_init",
+      "pthread_cond_signal",
+      "pthread_cond_broadcast",
+      "pthread_cond_wait",
+      "pthread_cond_timedwait",
+      "pthread_cond_destroy"
     ]
   }
 }

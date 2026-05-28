@@ -870,6 +870,7 @@ class Pattern:
 
 class CategorySpec:
     patterns: list[Pattern]
+    kind: str = "stub"
     dependencies: list[str] = []
     features: list[str] = []
     code: Optional[str] = None
@@ -880,6 +881,12 @@ class CategorySpec:
             raw_patterns = raw_value
         elif isinstance(raw_value, dict):
             raw_patterns = raw_value.get("patterns", [])
+            self.kind = raw_value.get("kind", "stub")
+            if self.kind not in ("stub", "extern"):
+                raise ValueError(
+                    f"Category '{category}' has invalid kind '{self.kind}'; "
+                    f"must be 'stub' or 'extern'"
+                )
             self.dependencies = raw_value.get("dependencies", [])
             self.features = raw_value.get("features", [])
             self.code = raw_value.get("code")
@@ -928,6 +935,131 @@ def create_cargo_project(config: dict[str, CategorySpec]) -> Path:
     return project_dir
 
 
+def generate_extern_category(
+    category: str, spec: CategorySpec, ml_folder: Path
+) -> None:
+    """Generate scaffolding (intf.ml + entry.ml) for an [extern] category.
+
+    These are functions whose Rust [fn_decl] has [body = ExternBody name] -- so
+    they're dispatched by the C-symbol [name], not by their Rust path, and we
+    don't have a Rust signature to lift. The generated module exposes a
+    [type fn], a [fn_pats] map from C symbols to that type, and a
+    [fn_to_stub fun_exec] dispatcher. The user fills in [impl.ml] by hand.
+    """
+    if not spec.patterns:
+        pprint(f"Category {BOLD}{category}{RESET}: no extern patterns, skipping")
+        return
+
+    category_name = sanitize_ocaml_ident(category.lower())
+    category_dir = ml_folder / "extern" / category_name
+    category_dir.mkdir(parents=True, exist_ok=True)
+
+    intf_entries: list[str] = []
+    fn_variants: list[str] = []
+    fn_map_entries: list[str] = []
+    dispatch_entries: list[str] = []
+
+    used_variants: set[str] = set()
+    used_fn_names: set[str] = set()
+
+    for pattern in sorted(spec.patterns, key=lambda p: p.pattern):
+        c_symbol = pattern.pattern
+        # OCaml function name: keep the C symbol, but drop a leading [_] which
+        # would otherwise be read as an unused-binding marker in OCaml.
+        fn_name = sanitize_ocaml_ident(c_symbol.lstrip("_") or c_symbol)
+        if fn_name in used_fn_names:
+            raise ValueError(
+                f"Duplicate extern fn name '{fn_name}' in category '{category}'"
+            )
+        used_fn_names.add(fn_name)
+
+        variant_name = sanitize_variant_name([{"Ident": (c_symbol,)}])
+        if variant_name in used_variants:
+            raise ValueError(
+                f"Duplicate extern variant '{variant_name}' in category '{category}'"
+            )
+        used_variants.add(variant_name)
+        fn_variants.append(variant_name)
+
+        for path in [c_symbol, *pattern.aliases]:
+            fn_map_entries.append(f'("{path}", {variant_name});')
+
+        wants_fun_exec = "fun_exec" in pattern.extras
+        sig_parts = []
+        if wants_fun_exec:
+            sig_parts.append("fun_exec")
+        sig_parts.extend(["rust_val list", "rust_val ret"])
+        intf_entries.append(f"val {fn_name} : {' -> '.join(sig_parts)}")
+
+        call_expr = f"{fn_name} fun_exec" if wants_fun_exec else fn_name
+        dispatch_entries.append(f"| {variant_name} -> {call_expr}")
+
+    any_wants_fun_exec = any("fun_exec" in p.extras for p in spec.patterns)
+    fun_exec_arg = "fun_exec" if any_wants_fun_exec else "_fun_exec"
+
+    intf_entries_str = "\n".join(intf_entries)
+    fn_variants_str = " | ".join(fn_variants)
+    fn_map_str = "".join(fn_map_entries)
+    dispatch_str = "\n".join(dispatch_entries)
+
+    intf_generated = f"""
+        {GENERATED_WARNING}
+
+        [@@@warning "-unused-open"]
+
+        open Common
+
+        module M (StateM : State.StateM.S) = struct
+          open StateM
+
+          type rust_val = Sptr.t Rust_val.t
+          type 'a ret = ('a, unit) StateM.t
+          type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+          type full_ptr = StateM.Sptr.t Rust_val.full_ptr
+
+          module type S = sig
+            {intf_entries_str}
+          end
+        end
+    """
+    write_ocaml_file(category_dir / "intf.ml", intf_generated)
+
+    entry_generated = f"""
+        {GENERATED_WARNING}
+
+        [@@@warning "-unused-open"]
+
+        open Common
+        open Rust_val
+
+        type fn = {fn_variants_str}
+
+        let fn_pats : (string * fn) list = [ {fn_map_str} ]
+
+        module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
+          open StateM
+          open Syntax
+
+          type rust_val = Sptr.t Rust_val.t
+          type 'a ret = ('a, unit) StateM.t
+          type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+          type full_ptr = StateM.Sptr.t Rust_val.full_ptr
+
+          {OCAML_HELPERS}
+
+          include Impl.M (StateM)
+
+          let[@inline] fn_to_stub {fun_exec_arg} = function
+            {dispatch_str}
+        end
+    """
+    write_ocaml_file(category_dir / f"{category_name}.ml", entry_generated)
+    pprint(
+        f"Category {BOLD}{category}{RESET}: generated extern scaffolding "
+        f"for {BOLD}{len(spec.patterns)}{RESET} symbol(s)"
+    )
+
+
 def generate_custom_stubs() -> None:
     config_path = (PWD / ".." / "lib" / "builtins" / "stubs.json").resolve()
     if not config_path.exists():
@@ -944,10 +1076,22 @@ def generate_custom_stubs() -> None:
         for category, raw_value in raw_config.items()
         if category not in ["_comment", "$schema"]
     }
+
+    ml_folder = (PWD / ".." / "lib" / "builtins").resolve()
+
+    # Extern categories have no Rust crate to resolve signatures from -- their
+    # patterns are C-symbol names matched via the [ExternBody] path. Process
+    # them separately and exclude them from the cargo project.
+    extern_config = {k: v for k, v in config.items() if v.kind == "extern"}
+    stub_config = {k: v for k, v in config.items() if v.kind != "extern"}
+
+    for category, spec in extern_config.items():
+        generate_extern_category(category, spec, ml_folder)
+
     pattern_strs: list[str] = list(
         set(
             p
-            for spec in config.values()
+            for spec in stub_config.values()
             for pat in spec.patterns
             for p in pat.include_pats()
         )
@@ -958,11 +1102,12 @@ def generate_custom_stubs() -> None:
         return
 
     pprint("Loading custom stubs declarations...")
-    crate_path = create_cargo_project(config)
+    crate_path = create_cargo_project(stub_config)
     try:
         fun_decls = get_stubs(pattern_strs, crate_path)
     finally:
         shutil.rmtree(crate_path)
+    config = stub_config
     categories: dict[str, list[tuple[Pattern, FunDecl]]] = {
         k: [] for k in config.keys()
     }
@@ -1025,8 +1170,6 @@ def generate_custom_stubs() -> None:
         category: [p for p in spec.patterns if p in missing_patterns]
         for category, spec in config.items()
     }
-
-    ml_folder = (PWD / ".." / "lib" / "builtins").resolve()
 
     for category, functions in categories.items():
         unresolved = missing_by_category.get(category, [])
