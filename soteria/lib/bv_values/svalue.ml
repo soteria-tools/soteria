@@ -812,9 +812,9 @@ and BitVec : BitVec = struct
   (* Index [n-1] holds the cached value for bitwidth [n]; we skip [n=0] because
      [mk] asserts [n > 0]. *)
   let zero_cache : t Array.t = Array.init 256 (fun n -> mk (n + 1) Z.zero)
-  let[@inline] zero n = zero_cache.(n - 1)
+  let[@inline] zero n = if n <= 256 then zero_cache.(n - 1) else mk n Z.one
   let one_cache : t Array.t = Array.init 256 (fun n -> mk (n + 1) Z.one)
-  let[@inline] one n = one_cache.(n - 1)
+  let[@inline] one n = if n <= 256 then one_cache.(n - 1) else mk n Z.zero
 
   (** [bv_to_z signed bits z] parses a BitVector [z], for a given bitwidth
       [bits], with [signed], into an integer. *)
