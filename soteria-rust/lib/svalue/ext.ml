@@ -13,7 +13,7 @@ module Rust_ext : Soteria.Bv_values.Svalue.Value_ext = struct
   (* pointers; for simplicity's sake, we hardcode the pointer type. We can
      improve this later, but we lack a clear usecase for parametric pointer
      types, and have a clear reason to want deeply-embedded pointers *)
-  and ptr = { ptr : sv; tag : unit (* ???? *) }
+  and ptr = { ptr : sv; tag : Ptr_tag.t option; size : sv; align : sv }
 
   (* values *)
   and meta = Thin | Len of sv | VTable of sv

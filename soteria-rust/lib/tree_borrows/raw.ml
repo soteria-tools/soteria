@@ -2,63 +2,7 @@
     symbolic reasoning or anything fancy, it's just the raw logic. *)
 
 open Common
-
-module Tag : sig
-  type t [@@deriving show, eq]
-
-  val fresh_tag : unit -> t
-  val zero : t
-
-  module WeakMap : PatriciaTree.MAP with type key = t
-
-  module WeakSet : sig
-    include Weak.S with type data = t
-    include Sigs.Printable with type t := t
-  end
-end = struct
-  type t = Tag of int [@@ocaml.boxed]
-
-  let[@inline] equal (Tag t1) (Tag t2) = Int.equal t1 t2
-  let pp fmt (Tag tag) = Fmt.pf fmt "‖%d‖" tag
-  let show = Fmt.to_to_string pp
-  let zero = Tag 0
-  let tag_counter = ref 0
-
-  let fresh_tag () =
-    incr tag_counter;
-    Tag !tag_counter
-
-  module Key = struct
-    type nonrec t = t
-
-    let[@inline] to_int (Tag tag) = tag
-  end
-
-  module MapNode =
-    PatriciaTree.WeakNode
-      (struct
-        type 'k t = Key.t
-      end)
-      (PatriciaTree.WrappedHomogeneousValue)
-
-  module SetNode = PatriciaTree.WeakSetNode (struct
-    type 'k t = Key.t
-  end)
-
-  module WeakMap =
-    PatriciaTree.MakeCustomMap (Key) (PatriciaTree.Value) (MapNode)
-
-  module WeakSet = struct
-    include Weak.Make (struct
-      type nonrec t = t
-
-      let[@inline] hash (Tag tag) = tag
-      let equal = equal
-    end)
-
-    let pp = Fmt.iter ~sep:(Fmt.any ", ") iter pp
-  end
-end
+module Tag = Svalue.Ptr_tag
 
 (** Whether this node has a protector (this is distinct from having the
     protector toggled!), its parents (including this node's ID!), and its
