@@ -1,7 +1,6 @@
 open Charon
 open Common.Charon_util
-module TypedCore = Soteria.Bv_values.Typed.Make (Ext.Rust_ext)
-include TypedCore
+include Typed_core
 
 (** [CastError (value, expected, got)] *)
 exception CastError of T.any t * T.any ty * T.any ty
@@ -30,7 +29,7 @@ let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
 
-let t_lit : Types.literal_type -> [< T.cval ] ty = function
+let t_lit : Types.literal_type -> [> T.sint | T.sfloat ] ty = function
   | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
   | TFloat F16 -> t_f16
   | TFloat F32 -> t_f32
@@ -43,25 +42,15 @@ let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
 
-let cast_checked2 v1 v2 =
-  match cast_checked2 v1 v2 with
-  | Some (v1, v2, ty) -> (v1, v2, ty)
-  | None -> cast_error v1 (type_type @@ get_ty v2)
-
 let cast_lit ty (v : 'a t) : [> T.sint ] t =
   let size = 8 * size_of_literal_ty ty in
-  cast_checked ~ty:(t_int size) v
+  cast (cast_checked ~ty:(t_int size) v)
 
 let cast_i uty = cast_lit (TUInt uty)
 let cast_f fty v = cast_checked ~ty:(t_float fty) v
 
 let cast_float v =
   match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
-
-(** DEPRECATED: it is unlikely you need this; the interpreter should be well
-    typed *)
-let cast_int (v : 'a t) : [> T.sint ] t * int =
-  match cast_int v with Some v -> v | None -> cast_error v (t_int 0)
 
 module BitVec = struct
   include BitVec

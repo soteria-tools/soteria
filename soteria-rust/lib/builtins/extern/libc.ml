@@ -23,7 +23,7 @@ module M (StateM : State.StateM.S) = struct
         (* https://man7.org/linux/man-pages/man3/sysconf.3.html
          * It is basically ok to always return the i64 `-1` saying "I don't know"
          *)
-        let ret = Typed.BitVec.u64 Z.minus_one in
+        let ret = Typed.BitVec.u64i (-1) in
         ok (Int ret)
     | _ -> failwith "sysconf: invalid arguments"
 
