@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1779981269569,
+  "lastUpdate": 1780070677467,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -560,6 +560,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.855916576925665,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "55fa5c99921cdbdc7d24cc1c9321d745403bee9b",
+          "message": "Fix nondet_raw for unions (#362)\n\n* printer fix\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* drive-by: improve printing when cleaning rust files\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* only use cache if less than 265\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Fix union nondet\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* cleanup crate files as well\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* mask cache\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* add regression test\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* oops\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-05-29T15:53:39Z",
+          "tree_id": "e1b45db9c29837337747a493e969ec24bf613159",
+          "url": "https://github.com/soteria-tools/soteria/commit/55fa5c99921cdbdc7d24cc1c9321d745403bee9b"
+        },
+        "date": 1780070676128,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.0791825439,
+            "range": "± 0.0026",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.56589654636,
+            "range": "± 0.0092",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.8614671701799999,
+            "range": "± 0.01",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.21161119286000002,
+            "range": "± 0.0023",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.25596636778,
+            "range": "± 0.056",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9612227264600002,
+            "range": "± 0.0172",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.856619941070676,
             "unit": "s"
           }
         ]
