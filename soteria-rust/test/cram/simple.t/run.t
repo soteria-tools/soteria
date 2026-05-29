@@ -504,16 +504,6 @@ Check we trust addresses for pointer alignment
   PC 2: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
         (0b1 == extract[0-0](V|1|))
   
-Check we trust addresses for pointer alignment
-  $ soteria-rust exec assumed_align.rs
-  Compiling... done in <time>
-  => Running assumed_align::main...
-  note: assumed_align::main: done in <time>, ran 2 branches
-  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
-        (0b0 == extract[0-0](V|1|))
-  PC 2: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
-        (0b1 == extract[0-0](V|1|))
-  
 Check that nondet_raw for unions work
   $ soteria-rust exec union_nondet.rs
   Compiling... done in <time>
