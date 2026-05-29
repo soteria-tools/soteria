@@ -800,8 +800,8 @@ and BitVec : BitVec = struct
 
   (* Bitwidth -> [(1 lsl n) - 1] mask. Memoized to avoid re-allocating the mask
      bignum on each [mk_masked] call (expensive in pathological cases). *)
-  let mask_cache : Z.t Array.t = Array.init 257 (fun n -> Z.(pred (one lsl n)))
-  let mask_of_bits n = mask_cache.(n)
+  let mask_cache : Z.t Array.t = Array.init 256 (fun n -> Z.(pred (one lsl n)))
+  let mask_of_bits n = if n <= 255 then mask_cache.(n) else Z.(pred (one lsl n))
 
   let mk_masked n bv =
     let mask = mask_of_bits n in
