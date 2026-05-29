@@ -617,7 +617,7 @@ module Encoder (Sptr : Sptr.S) = struct
               | None -> vanish ()
             in
             let+ bytes = nondet (Typed.t_int (sizei * 8)) in
-            Ok (Union [ (Int bytes, size) ])
+            Ok (Union [ (Int bytes, Usize.(0s)) ])
         | ty ->
             Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
               Types.pp_type_decl_kind ty)

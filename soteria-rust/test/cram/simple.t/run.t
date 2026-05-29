@@ -504,3 +504,10 @@ Check we trust addresses for pointer alignment
   PC 2: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
         (0b1 == extract[0-0](V|1|))
   
+Check that nondet_raw for unions work
+  $ soteria-rust exec union_nondet.rs
+  Compiling... done in <time>
+  => Running union_nondet::read_d0...
+  note: union_nondet::read_d0: done in <time>, ran 1 branch
+  PC 1: empty
+  

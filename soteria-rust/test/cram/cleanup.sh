@@ -1,1 +1,1 @@
-rm -rf *.llbc.json target/ Cargo.lock
+rm -rf *.llbc.json *.llbc.json.crate target/ Cargo.lock

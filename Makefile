@@ -28,6 +28,10 @@ endif
 SOTERIA_C_PACKAGE=packages/soteria-c
 SOTERIA_RUST_PACKAGE=packages/soteria-rust
 
+COLOR_BLUE=\033[1;34m
+COLOR_GREEN=\033[1;32m
+COLOR_RESET=\033[0m
+
 ##### Normal ocaml stuff #####
 .PHONY: ocaml
 ocaml:
@@ -146,12 +150,12 @@ ocaml-deps:
 # We make sure that every file or folder deleted is displayed in the terminal.
 .PHONY: clean-rust-tests
 clean-rust-tests:
-	@echo "Cleaning Rust test artifacts in soteria-rust/test/cram/..."
-	find soteria-rust/test/cram/ -type f -name '*.llbc.json' -print -delete
-	@echo ""
-	find soteria-rust/test/cram/ -type f -name 'Cargo.lock' -print -delete
-	@echo ""
-	find soteria-rust/test/cram/ -type d -name 'target' -print -exec rm -rf {} +
+	@echo "$(COLOR_BLUE)==> Cleaning Rust test artifacts in soteria-rust/test/cram/$(COLOR_RESET)"
+	@find soteria-rust/test/cram/ -type f -name '*.llbc.json' -print -delete | sed 's/^/  🗑️ /'
+	@find soteria-rust/test/cram/ -type f -name '*.llbc.json.crate' -print -delete | sed 's/^/  🗑️ /'
+	@find soteria-rust/test/cram/ -type f -name 'Cargo.lock' -print -delete | sed 's/^/  🗑️ /'
+	@find soteria-rust/test/cram/ -type d -name 'target' -print -exec rm -rf {} + | sed 's/^/  🗑️ /'
+	@echo "$(COLOR_GREEN)==> Done$(COLOR_RESET)"
 	
 	
 
