@@ -15,30 +15,22 @@ module Make (Borrows : Tree_borrows.T) = struct
   (* Pointer implementation *)
 
   module Sptr_base = struct
-    module Logic = Soteria.Logic.Make (DecayMap.SM)
-    module L_option = Logic.Util.Option
-
-    (* TODO: we need a derive for S_with_syn; with the right abstractions in
-       Logic.Util it should be very straightforward. *)
-
-    type ('sptr, 'snonzero, 'sint, 'tag) base = {
+    type ('sptr, 'snonzero, 'sint) base = {
       ptr : 'sptr;
-      tag : 'tag option;
+      tag : Ptr_tag.t option;
       align : 'snonzero;
       size : 'sint;
     }
 
-    type t =
-      (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t, Borrows.Tag.t) base
+    type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t) base
+    type syn = (Typed.Expr.t, Typed.Expr.t, Typed.Expr.t) base
 
-    type syn = (Typed.Expr.t, Typed.Expr.t, Typed.Expr.t, Borrows.Tag.syn) base
+    let pp' pp_v fmt { ptr; tag; _ } =
+      Fmt.pf fmt "%a[%a]" pp_v ptr Fmt.(option ~none:(any "*") Ptr_tag.pp) tag
 
-    let pp' pp_v pp_tag fmt { ptr; tag; _ } =
-      Fmt.pf fmt "%a[%a]" pp_v ptr Fmt.(option ~none:(any "*") pp_tag) tag
-
-    let pp = pp' Typed.ppa Borrows.Tag.pp
+    let pp = pp' Typed.ppa
     let show = Fmt.to_to_string pp
-    let pp_syn = pp' Typed.Expr.pp Borrows.Tag.pp_syn
+    let pp_syn = pp' Typed.Expr.pp
     let show_syn = Fmt.to_to_string pp_syn
 
     let to_syn { ptr; tag; align; size } =
@@ -46,20 +38,23 @@ module Make (Borrows : Tree_borrows.T) = struct
         ptr = Typed.Expr.of_value ptr;
         align = Typed.Expr.of_value align;
         size = Typed.Expr.of_value size;
-        tag = L_option.to_syn Borrows.Tag.to_syn tag;
+        (* TODO: for now, pointer tags are never serialized *)
+        tag = None;
       }
 
     let learn_eq syn t =
       let open DecayMap.SM.Consumer in
       let open Syntax in
-      let* () = L_option.learn_eq Borrows.Tag.learn_eq syn.tag t.tag in
+      let* () =
+        if Option.equal Ptr_tag.equal syn.tag t.tag then ok ()
+        else lfail Typed.v_false
+      in
       let* () = learn_eq syn.ptr t.ptr in
       let* () = learn_eq syn.align t.align in
       learn_eq syn.size t.size
 
-    let exprs_syn { ptr; align; size; tag } =
-      L_option.exprs_syn Borrows.Tag.exprs_syn tag @ [ ptr; align; size ]
-
+    (* TODO: tags are concrete *)
+    let exprs_syn { ptr; align; size; tag = _ } = [ ptr; align; size ]
     let fresh () = failwith "Fresh unimplemented for sptr (for now)"
 
     let subst subst_val p =
@@ -67,8 +62,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       let ptr = se p.ptr in
       let align = se p.align in
       let size = se p.size in
-      let tag = L_option.subst Borrows.Tag.subst subst_val p.tag in
-      { ptr; align; size; tag }
+      { ptr; align; size; tag = p.tag }
 
     let null () =
       {
@@ -125,9 +119,8 @@ module Make (Borrows : Tree_borrows.T) = struct
       let** layout = Layout.layout_of ty in
       let* loc = nondet (Typed.t_loc ()) in
       let* ofs = nondet (Typed.t_usize ()) in
-      let* tag, _ =
-        DecayMap.SM.run_with_state ~state:None @@ Borrows.Tag.nondet ()
-      in
+      (* TODO: nondet pointer tags? *)
+      let tag = None in
       let ptr = Typed.Ptr.mk loc ofs in
       let ptr = { ptr; tag; align = layout.align; size = layout.size } in
       Result.ok ptr
@@ -174,7 +167,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     type t = {
       align : Typed.T.nonzero Typed.t;
       size : Typed.T.sint Typed.t;
-      tb_root : Borrows.Tag.t;
+      tb_root : Ptr_tag.t;
       kind : Alloc_kind.t;
       trace : Trace.t;
     }
@@ -300,7 +293,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       Soteria.Sym_states.With_info.Make (DecayMap.SM) (Meta) (Freeable_block)
 
     let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
-        (t * Borrows.Tag.t option) DecayMap.SM.t =
+        (t * Ptr_tag.t option) DecayMap.SM.t =
       let open DecayMap.SM.Syntax in
       let* tag, block = Block.alloc ?zeroed size in
       let+^ trace = get_trace () in
