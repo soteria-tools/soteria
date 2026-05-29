@@ -615,10 +615,8 @@ module Make (Borrows : Tree_borrows.T) = struct
     if Iter.is_empty parts then Result.ok ()
     else
       let** () = check_ptr_align fptr ty in
-      (* [%l.debug
-       *   "Parsed to parts [%a]"
-       *   Fmt.(list ~sep:comma Encoder.pp_cval_info)
-       *   parts]; *)
+      (* [%l.debug "Parsed to parts [%a]" (Iter.pp_seq ~sep:", " (Fmt.Dump.pair
+         Encoder.pp_rust_val Typed.ppa)) parts]; *)
       let* () = log "store" ptr in
       let**^ size = Layout.size_of ty in
       let@ ofs = with_ptr ptr in
