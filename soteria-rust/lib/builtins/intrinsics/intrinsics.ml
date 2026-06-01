@@ -127,12 +127,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         [],
         [ multiplier; multiplicand; addend; carry ] ) ->
         carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry
-    | "catch_unwind", [], [], [ try_fn; data; catch_fn ] ->
+    | "carryless_mul", [ t ], [], [ a; b ] -> carryless_mul ~t ~a ~b
+    | "catch_unwind", [ t_data ], [], [ try_fn; data; catch_fn ] ->
         let try_fn = as_ptr try_fn in
         let data = as_ptr data in
         let catch_fn = as_ptr catch_fn in
-        let+ ret = catch_unwind ~fun_exec ~try_fn ~data ~catch_fn in
-        Int ret
+        let+ ret = catch_unwind ~fun_exec ~t_data ~try_fn ~data ~catch_fn in
+        Int (Typed.BitVec.of_bool ret)
     | "ceilf128", [], [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = ceilf128 ~x in
@@ -278,26 +279,16 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let x = as_base_f F64 x in
         let+ ret = expf64 ~x in
         Float ret
-    | "fabsf128", [], [], [ x ] ->
-        let x = as_base_f F128 x in
-        let+ ret = fabsf128 ~x in
-        Float ret
-    | "fabsf16", [], [], [ x ] ->
-        let x = as_base_f F16 x in
-        let+ ret = fabsf16 ~x in
-        Float ret
-    | "fabsf32", [], [], [ x ] ->
-        let x = as_base_f F32 x in
-        let+ ret = fabsf32 ~x in
-        Float ret
-    | "fabsf64", [], [], [ x ] ->
-        let x = as_base_f F64 x in
-        let+ ret = fabsf64 ~x in
-        Float ret
+    | "fabs", [ t ], [], [ x ] -> fabs ~t ~x
     | "fadd_algebraic", [ t ], [], [ a; b ] -> fadd_algebraic ~t ~a ~b
     | "fadd_fast", [ t ], [], [ a; b ] -> fadd_fast ~t ~a ~b
     | "fdiv_algebraic", [ t ], [], [ a; b ] -> fdiv_algebraic ~t ~a ~b
     | "fdiv_fast", [ t ], [], [ a; b ] -> fdiv_fast ~t ~a ~b
+    | "field_offset", [ f ], [], [] ->
+        let+ ret = field_offset ~f in
+        Int ret
+    | "field_representing_type_actual_type_id", [], [], [ frt_type_id ] ->
+        field_representing_type_actual_type_id ~frt_type_id
     | "float_to_int_unchecked", [ float; int ], [], [ value ] ->
         float_to_int_unchecked ~float ~int ~value
     | "floorf128", [], [], [ x ] ->
@@ -424,6 +415,26 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let x = as_base_f F64 x in
         let+ ret = logf64 ~x in
         Float ret
+    | "maximum_number_nsz_f128", [], [], [ x; y ] ->
+        let x = as_base_f F128 x in
+        let y = as_base_f F128 y in
+        let+ ret = maximum_number_nsz_f128 ~x ~y in
+        Float ret
+    | "maximum_number_nsz_f16", [], [], [ x; y ] ->
+        let x = as_base_f F16 x in
+        let y = as_base_f F16 y in
+        let+ ret = maximum_number_nsz_f16 ~x ~y in
+        Float ret
+    | "maximum_number_nsz_f32", [], [], [ x; y ] ->
+        let x = as_base_f F32 x in
+        let y = as_base_f F32 y in
+        let+ ret = maximum_number_nsz_f32 ~x ~y in
+        Float ret
+    | "maximum_number_nsz_f64", [], [], [ x; y ] ->
+        let x = as_base_f F64 x in
+        let y = as_base_f F64 y in
+        let+ ret = maximum_number_nsz_f64 ~x ~y in
+        Float ret
     | "maximumf128", [], [], [ x; y ] ->
         let x = as_base_f F128 x in
         let y = as_base_f F128 y in
@@ -444,25 +455,25 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let y = as_base_f F64 y in
         let+ ret = maximumf64 ~x ~y in
         Float ret
-    | "maxnumf128", [], [], [ x; y ] ->
+    | "minimum_number_nsz_f128", [], [], [ x; y ] ->
         let x = as_base_f F128 x in
         let y = as_base_f F128 y in
-        let+ ret = maxnumf128 ~x ~y in
+        let+ ret = minimum_number_nsz_f128 ~x ~y in
         Float ret
-    | "maxnumf16", [], [], [ x; y ] ->
+    | "minimum_number_nsz_f16", [], [], [ x; y ] ->
         let x = as_base_f F16 x in
         let y = as_base_f F16 y in
-        let+ ret = maxnumf16 ~x ~y in
+        let+ ret = minimum_number_nsz_f16 ~x ~y in
         Float ret
-    | "maxnumf32", [], [], [ x; y ] ->
+    | "minimum_number_nsz_f32", [], [], [ x; y ] ->
         let x = as_base_f F32 x in
         let y = as_base_f F32 y in
-        let+ ret = maxnumf32 ~x ~y in
+        let+ ret = minimum_number_nsz_f32 ~x ~y in
         Float ret
-    | "maxnumf64", [], [], [ x; y ] ->
+    | "minimum_number_nsz_f64", [], [], [ x; y ] ->
         let x = as_base_f F64 x in
         let y = as_base_f F64 y in
-        let+ ret = maxnumf64 ~x ~y in
+        let+ ret = minimum_number_nsz_f64 ~x ~y in
         Float ret
     | "minimumf128", [], [], [ x; y ] ->
         let x = as_base_f F128 x in
@@ -484,26 +495,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let y = as_base_f F64 y in
         let+ ret = minimumf64 ~x ~y in
         Float ret
-    | "minnumf128", [], [], [ x; y ] ->
-        let x = as_base_f F128 x in
-        let y = as_base_f F128 y in
-        let+ ret = minnumf128 ~x ~y in
-        Float ret
-    | "minnumf16", [], [], [ x; y ] ->
-        let x = as_base_f F16 x in
-        let y = as_base_f F16 y in
-        let+ ret = minnumf16 ~x ~y in
-        Float ret
-    | "minnumf32", [], [], [ x; y ] ->
-        let x = as_base_f F32 x in
-        let y = as_base_f F32 y in
-        let+ ret = minnumf32 ~x ~y in
-        Float ret
-    | "minnumf64", [], [], [ x; y ] ->
-        let x = as_base_f F64 x in
-        let y = as_base_f F64 y in
-        let+ ret = minnumf64 ~x ~y in
-        Float ret
     | "mul_with_overflow", [ t ], [], [ x; y ] -> mul_with_overflow ~t ~x ~y
     | "needs_drop", [ t ], [], [] ->
         let+ ret = needs_drop ~t in
@@ -512,8 +503,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let ptr = as_ptr ptr in
         let+ () = nontemporal_store ~t ~ptr ~val_ in
         Tuple []
-    | "offload", [ t_f; t; r ], [], [ f; workgroup_dim; thread_dim; args ] ->
-        offload ~t_f ~t ~r ~f ~workgroup_dim ~thread_dim ~args
+    | ( "offload",
+        [ t_f; t; r ],
+        [],
+        [ f; workgroup_dim; thread_dim; dyn_cache; args ] ) ->
+        let dyn_cache = as_base_i U32 dyn_cache in
+        offload ~t_f ~t ~r ~f ~workgroup_dim ~thread_dim ~dyn_cache ~args
     | "offset", [ ptr; delta ], [], [ dst; offset_ ] ->
         offset ~ptr ~delta ~dst ~offset:offset_
     | "offset_of", [ t ], [], [ variant; field ] ->
@@ -611,6 +606,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "read_via_copy", [ t ], [], [ ptr ] ->
         let ptr = as_ptr ptr in
         read_via_copy ~t ~ptr
+    | "return_address", [], [], [] ->
+        let+ ret = return_address () in
+        Ptr ret
     | "rotate_left", [ t ], [], [ x; shift ] ->
         let shift = as_base_i U32 shift in
         rotate_left ~t ~x ~shift
@@ -674,6 +672,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "size_of", [ t ], [], [] ->
         let+ ret = size_of ~t in
         Int ret
+    | "size_of_type_id", [], [], [ id ] -> size_of_type_id ~id
     | "size_of_val", [ t ], [], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = size_of_val ~t ~ptr in
@@ -724,6 +723,21 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "type_id_eq", [], [], [ a; b ] ->
         let+ ret = type_id_eq ~a ~b in
         Int (Typed.BitVec.of_bool ret)
+    | ( "type_id_field_representing_type",
+        [],
+        [],
+        [ id; variant_index; field_index ] ) ->
+        let variant_index = as_base_i Usize variant_index in
+        let field_index = as_base_i Usize field_index in
+        type_id_field_representing_type ~id ~variant_index ~field_index
+    | "type_id_fields", [], [], [ id; variant_index ] ->
+        let variant_index = as_base_i Usize variant_index in
+        let+ ret = type_id_fields ~id ~variant_index in
+        Int ret
+    | "type_id_variants", [], [], [ id ] ->
+        let+ ret = type_id_variants ~id in
+        Int ret
+    | "type_id_vtable", [], [], [ id; trait ] -> type_id_vtable ~id ~trait
     | "type_name", [ t ], [], [] ->
         let+ ret = type_name ~t in
         Ptr ret
@@ -801,7 +815,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let ptr = as_ptr ptr in
         let+ ret = vtable_align ~ptr in
         Int ret
-    | "vtable_for", [ t; u ], [], [] -> vtable_for ~t ~u
     | "vtable_size", [], [], [ ptr ] ->
         let ptr = as_ptr ptr in
         let+ ret = vtable_size ~ptr in

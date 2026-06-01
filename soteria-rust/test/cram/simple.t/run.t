@@ -4,24 +4,24 @@ Test memory leaks
   => Running leak::main...
   error: leak::main: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak in leak::main
-      --> $RUSTLIB/library/alloc/src/alloc.rs:95:9
-   95 |            __rust_alloc(layout.size(), layout.align())
-      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      --> $RUSTLIB/library/alloc/src/alloc.rs:101:9
+  101 |            __rust_alloc(layout.size(), layout.alignment())
+      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       |            |
       |            Triggering operation
       |            5: Allocation
       .    
-  311 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
-  312 | /          core::intrinsics::const_eval_select(
-  313 | |              (layout, zeroed),
-  314 | |              Global::alloc_impl_const,
-  315 | |              Global::alloc_impl_runtime,
-  316 | |          )
+  331 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
+  332 | /          core::intrinsics::const_eval_select(
+  333 | |              (layout, zeroed),
+  334 | |              Global::alloc_impl_const,
+  335 | |              Global::alloc_impl_runtime,
+  336 | |          )
       | \----------' 4: Call trace
-  317 |        }
-      --> $RUSTLIB/library/alloc/src/boxed.rs:265:16
-  265 |            return box_new(x);
-      |                   ---------- 3: Call trace
+  337 |        }
+      --> $RUSTLIB/library/alloc/src/boxed.rs:286:19
+  286 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
+      |                      -------------------------------------------------- 3: Call trace
       --> $TESTCASE_ROOT/leak.rs:2:22
     1 |    fn main() {
       |    --------- 1: Leaking function
@@ -129,15 +129,15 @@ Check strict provenance disables int to ptr casts
   => Running provenance::with_exposed...
   error: provenance::with_exposed: found issues in <time>, errors in 1 branch (out of 1)
   bug: Attempted to cast an integer to an pointer with strict provenance in provenance::with_exposed
-      --> $RUSTLIB/library/core/src/ptr/mod.rs:988:5
-  988 |      addr as *const T
-      |      ^^^^^^^^^^^^^^^^ Casting integer to pointer
-      --> $TESTCASE_ROOT/provenance.rs:6:18
-    2 |  fn with_exposed() {
-      |  ----------------- 1: Entry point
-      .  
-    6 |      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
-      |                   ---------------------------------------------- 2: Call trace
+       --> $RUSTLIB/library/core/src/ptr/mod.rs:1005:5
+  1005 |      addr as *const T
+       |      ^^^^^^^^^^^^^^^^ Casting integer to pointer
+       --> $TESTCASE_ROOT/provenance.rs:6:18
+     2 |  fn with_exposed() {
+       |  ----------------- 1: Entry point
+       .  
+     6 |      let p_back = std::ptr::with_exposed_provenance::<u8>(p_int) as *mut u8;
+       |                   ---------------------------------------------- 2: Call trace
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
   [1]
@@ -457,6 +457,7 @@ Print the callgraph
   digraph callgraph {
     node [shape=box fontname="monospace"];
     n0 [label="Range<A>>::next" tooltip="std::iter::range::<impl std::iter::Iterator for std::ops::Range<A>>::next::<i32>"];
+    n14 [label="Arguments::<'a>::new" tooltip="std::fmt::Arguments::<'a>::new::<'_, 12 : usize, 1 : usize>"];
     n13 [label="io::_print" tooltip="std::io::_print"];
     n7 [label="callgraph::limit" tooltip="callgraph::limit"];
     n2 [label="callgraph::choose" tooltip="callgraph::choose"];
@@ -464,14 +465,13 @@ Print the callgraph
     n6 [label="callgraph::run" tooltip="callgraph::run"];
     n16 [label="Step>::forward_unchecked" tooltip="<i32 as std::iter::Step>::forward_unchecked"];
     n3 [label="callgraph::twice" tooltip="callgraph::twice"];
-    n14 [label="Argument::<'_>::new_display" tooltip="core::fmt::rt::Argument::<'_>::new_display::<'_, i32>"];
+    n15 [label="Argument::<'_>::new_display" tooltip="core::fmt::rt::Argument::<'_>::new_display::<'_, i32>"];
     n4 [label="callgraph::dec" tooltip="callgraph::dec"];
     n8 [label="callgraph::score" tooltip="callgraph::score"];
     n17 [label="PartialOrd for i32>::lt" tooltip="std::cmp::impls::<impl std::cmp::PartialOrd for i32>::lt"];
     n10 [label="callgraph::ping" tooltip="callgraph::ping"];
-    n15 [label="Arguments::<'a>::new" tooltip="std::fmt::Arguments::<'a>::new::<'_, 12usize, 1usize>"];
+    n9 [label="IntoIterator>::into_iter" tooltip="<I as std::iter::IntoIterator>::into_iter::<Range::<i32>>"];
     n11 [label="callgraph::pong" tooltip="callgraph::pong"];
-    n9 [label="IntoIterator>::into_iter" tooltip="<I as std::iter::IntoIterator>::into_iter::<std::ops::Range::<i32>>"];
     n5 [label="callgraph::inc" tooltip="callgraph::inc"];
     n1 [label="RangeIteratorImpl>::spec_next" tooltip="<std::ops::Range<T> as std::iter::range::RangeIteratorImpl>::spec_next::<i32>"];
     n0 -> n1;
@@ -484,8 +484,8 @@ Print the callgraph
     n6 -> n9;
     n10 -> n11;
     n12 -> n13;
-    n12 -> n6;
     n12 -> n14;
+    n12 -> n6;
     n12 -> n15;
     n8 -> n2;
     n8 -> n10;
@@ -511,3 +511,40 @@ Check that nondet_raw for unions work
   note: union_nondet::read_d0: done in <time>, ran 1 branch
   PC 1: empty
   
+Check we handle pattern types correctly
+  $ soteria-rust exec pattern_types.rs
+  Compiling... done in <time>
+  => Running pattern_types::nonnull_ok...
+  note: pattern_types::nonnull_ok: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running pattern_types::nonnull...
+  error: pattern_types::nonnull: found issues in <time>, errors in 1 branch (out of 2)
+  bug: UB: Transmute: Value violates pattern type constraint in pattern_types::nonnull
+      --> $RUSTLIB/library/core/src/ptr/non_null.rs:238:13
+  238 |              transmute(ptr)
+      |              ^^^^^^^^^^^^^^ Memory load
+      --> $TESTCASE_ROOT/pattern_types.rs:12:25
+   10 |  fn nonnull() {
+      |  ------------ 1: Entry point
+   11 |      let x: usize = soteria::nondet_bytes();
+   12 |      let _ptr = unsafe { NonNull::new_unchecked(x as *mut i32) };
+      |                          ------------------------------------- 2: Call trace
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  
+  => Running pattern_types::nonzero_ok...
+  note: pattern_types::nonzero_ok: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running pattern_types::nonzero_isize...
+  error: pattern_types::nonzero_isize: found issues in <time>, errors in 1 branch (out of 2)
+  bug: UB: Transmute: Value violates pattern type constraint in pattern_types::nonzero_isize
+      --> $TESTCASE_ROOT/pattern_types.rs:25:24
+   21 |  fn nonzero_isize() {
+      |  ------------------ 1: Entry point
+      .  
+   25 |      let _nz = unsafe { std::mem::transmute::<isize, NonZero<isize>>(x) };
+      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Memory load
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  
+  [1]

@@ -45,8 +45,9 @@ module Fields_shape = struct
             ID). The [discriminator] allows calculating the current variant.
             Using [offset_of] on this isn't valid; one must first retrieve the
             fields shape of the corresponding variant. *)
-    | Array of T.sint Typed.t
-        (** All fields are equally spaced (arrays, slices) *)
+    | Array of { stride : T.sint Typed.t; is_ptr : bool }
+        (** All fields are equally spaced (arrays, slices). We have a [is_ptr]
+            flag, as we also use this layout for fat pointers. *)
 
   let rec pp ft = function
     | Primitive -> Fmt.string ft "()"
@@ -58,13 +59,13 @@ module Fields_shape = struct
         Fmt.pf ft "Enum (%a, %a)" pp_discriminator discriminator
           Fmt.(brackets @@ array ~sep:comma (pair ~sep:comma pp_tagger pp))
           shapes
-    | Array stride -> Fmt.pf ft "Array(%a)" Typed.ppa stride
+    | Array { stride; _ } -> Fmt.pf ft "Array(%a)" Typed.ppa stride
 
   let offset_of f = function
     | Primitive -> failwith "This layout has no fields"
     | Enum _ -> failwith "Can't get fields of enum; use `shape_for_variant`"
     | Arbitrary (_, arr) -> arr.(f)
-    | Array stride -> BV.usizei f *!!@ stride
+    | Array { stride; _ } -> BV.usizei f *!!@ stride
 
   let shape_for_variant variant = function
     | Enum (_, shapes) -> snd shapes.(Types.VariantId.to_int variant)
@@ -104,7 +105,7 @@ module Fields_shape = struct
             iter_vars_tagger t f;
             iter_vars v f)
           layouts
-    | Array v -> Typed.iter_vars v f
+    | Array { stride; _ } -> Typed.iter_vars stride f
 end
 
 (* TODO: size should be an [option], for unsized types *)

@@ -11,9 +11,8 @@ Simple polymorphic function with no polymorphic values
   PC 1: (((((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <u 0x0000000000000008) && (0b000 != extract[0-2](V|1|))) || ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 != ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         (((((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <u 0x0000000000000008) && (0b000 != extract[0-2](V|1|))) || ((0b000 == extract[0-2](V|1|)) || (0x0000000000000008 <=s ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         (((((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <u 0x0000000000000008) && (0b000 != extract[0-2](V|1|))) || ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000000 == V|1|) : (0x0000000000000008 == ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
-        (((((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <u 0x0000000000000008) && (0b000 != extract[0-2](V|1|))) || ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <s ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
-        (((((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <u 0x0000000000000008) && (0b000 != extract[0-2](V|1|))) || ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <s ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         (((((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <u 0x0000000000000008) && (0b000 != extract[0-2](V|1|))) || !(((0b000 == extract[0-2](V|1|)) ? (0x0000000000000000 <s V|1|) : (0x0000000000000008 <s ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))))) /\
+        (((((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <u 0x0000000000000008) && (0b000 != extract[0-2](V|1|))) || ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <s ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         (V|1| <=u 0x00000000000003ff)
   PC 2: (((((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <u 0x0000000000000008) && (0b000 != extract[0-2](V|1|))) || ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 != ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         (((((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <u 0x0000000000000008) && (0b000 != extract[0-2](V|1|))) || ((0b000 == extract[0-2](V|1|)) || (0x0000000000000008 <=s ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
@@ -22,7 +21,6 @@ Simple polymorphic function with no polymorphic values
         ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 != ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
         ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <s ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
         ((0b000 == extract[0-2](V|1|)) || (0x0000000000000008 <=s ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
-        ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <s ((0x0000000000000010 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
         (V|1| <=u 0x00000000000003ff)
   
 Ensure generic args are passed through function calls and not lost
@@ -132,13 +130,12 @@ Test linked lists, to ensure dropping the list works despite the generic type
         !(((0b000 == extract[0-2](V|1|)) ? ((0b000 != extract[0-2](V|1|)) && ((0x0000000000000008 +ck V|1|) <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) : ((0b000 == extract[0-2](V|1|)) && ((0x0000000000000008 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))) <s V|1|)))) /\
         (((0b000 == extract[0-2](V|1|)) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000010 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) != ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000008 +ck V|1|) : (0x0000000000000008 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         ((0b000 == extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) != 0xfffffffffffffff0)) /\
+        !(((0b000 == extract[0-2](V|1|)) ? ((0b000 != extract[0-2](V|1|)) && (V|1| <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) : ((0b000 == extract[0-2](V|1|)) && (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s V|1|)))) /\
         ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff0 <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
         ((0b000 == extract[0-2](V|1|)) || (V|1| <=s (0x0000000000000010 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         (V|1| != ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000010 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff0 <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
-        ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff0 <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
         ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
-        !(((0b000 == extract[0-2](V|1|)) ? ((0b000 != extract[0-2](V|1|)) && (V|1| <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) : ((0b000 == extract[0-2](V|1|)) && (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s V|1|)))) /\
         (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
         (0x0000000000000008 <=u V|2|) /\
         (V|1| == ((0b000 == extract[0-2](V|1|)) ? V|1| : ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
@@ -177,19 +174,16 @@ Test linked lists, to ensure dropping the list works despite the generic type
         ((0b000 == extract[0-2](V|1|)) || ((0b000 != extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s (0x0000000000000008 +ck V|1|)))) /\
         (((0b000 == extract[0-2](V|1|)) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000010 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) != ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000008 +ck V|1|) : (0x0000000000000008 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         ((0b000 == extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) != 0xfffffffffffffff0)) /\
+        !(((0b000 == extract[0-2](V|1|)) ? ((0b000 != extract[0-2](V|1|)) && (V|1| <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) : ((0b000 == extract[0-2](V|1|)) && (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s V|1|)))) /\
         ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff0 <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
         ((0b000 == extract[0-2](V|1|)) || (V|1| <=s (0x0000000000000010 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         (V|1| != ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000010 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         ((0b000 == extract[0-2](V|1|)) || ((0b000 != extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s (0x0000000000000008 +ck V|1|)))) /\
         ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff0 <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
         ((0b000 == extract[0-2](V|1|)) || ((0b000 != extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s (0x0000000000000008 +ck V|1|)))) /\
-        ((0b000 == extract[0-2](V|1|)) || (0xfffffffffffffff0 <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
-        ((0b000 == extract[0-2](V|1|)) || ((0b000 != extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s (0x0000000000000008 +ck V|1|)))) /\
         ((0b000 == extract[0-2](V|1|)) || (0x0000000000000000 <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) /\
         ((0b000 == extract[0-2](V|1|)) || ((0b000 != extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s (0x0000000000000008 +ck V|1|)))) /\
         ((0b000 == extract[0-2](V|1|)) || ((0b000 != extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s (0x0000000000000008 +ck V|1|)))) /\
-        ((0b000 == extract[0-2](V|1|)) || ((0b000 != extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s (0x0000000000000008 +ck V|1|)))) /\
-        !(((0b000 == extract[0-2](V|1|)) ? ((0b000 != extract[0-2](V|1|)) && (V|1| <s ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) : ((0b000 == extract[0-2](V|1|)) && (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s V|1|)))) /\
         (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
         (0x0000000000000008 <=u V|2|) /\
         (((0b000 == extract[0-2](V|1|)) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000010 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) == (((0b000 == extract[0-2](V|1|)) ? (0b000 == extract[0-2](V|1|)) : (0b000 == extract[0-2](((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) ? ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000010 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) : (((0b000 == extract[0-2](V|1|)) ? (0x0000000000000018 +ck V|1|) : (0x0000000000000018 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) -ck ((0b000 == extract[0-2](V|1|)) ? extend[u61](extract[0-2](V|1|)) : extend[u61](extract[0-2](((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))))))) /\

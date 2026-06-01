@@ -20,11 +20,8 @@ let variant_for_discr discr adt =
 
 (** Iterator over the fields and offsets of a type; for primitive types, returns
     a singleton iterator for that value. *)
-let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
-  let aux ?variant fields =
-    Iter.mapi (fun i ty -> (ty, Fields_shape.offset_of i fields))
-    @@
-    match ty with
+let iter_fields ?variant ?meta layout (ty : Types.ty) =
+  let rec to_fields ?variant fields : Types.ty -> Types.ty Iter.t = function
     | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
     | TArray (ty, len) -> Iter.repeatz (z_of_constant_expr len) ty
     | TSlice _ | TAdt { id = TBuiltin TStr; _ } -> (
@@ -32,11 +29,14 @@ let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
           match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
         in
         match meta with
-        | Len len when Option.is_some (BV.to_z len) ->
+        | Some (Len len) -> (
             (* TODO: strings and slices of symbolic length *)
-            Iter.repeatz (Option.get (BV.to_z len)) sub_ty
-        | Thin | Len _ | VTable _ ->
-            failwith "iter_fields: invalid length for slice/str")
+            match BV.to_z len with
+            | Some len -> Iter.repeatz len sub_ty
+            | None ->
+                failwith
+                  "iter_fields: unsupported symbolic length for slice/str")
+        | _ -> failwith "iter_fields: invalid length for slice/str")
     | TAdt adt -> (
         let type_decl = Crate.get_adt adt in
         match (type_decl.kind, variant) with
@@ -53,18 +53,23 @@ let iter_fields ?variant ?(meta = Thin) layout (ty : Types.ty) =
         | NoneKind -> failwith "invalid iter_fields: no metadata"
         | LenKind -> Iter.of_list [ unit_ptr; TLiteral (TInt Isize) ]
         | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
+    | TPattern (inner, _) -> to_fields ?variant fields inner
     | TLiteral _ | TNever | TVar _ | TTraitType _ | TDynTrait _ | TFnPtr _
     | TFnDef _ | TPtrMetadata _ | TError _ ->
         Fmt.failwith "invalid iter_fields: %a" pp_ty ty
   in
+  let aux ?variant fields ty =
+    to_fields ?variant fields ty
+    |> Iter.mapi (fun i ty -> (ty, Fields_shape.offset_of i fields))
+  in
   match layout.fields with
   | Primitive -> Iter.singleton (ty, Usize.(0s))
-  | Array _ -> aux ?variant layout.fields
-  | Arbitrary (variant, _) -> aux ~variant layout.fields
+  | Array _ -> aux ?variant layout.fields ty
+  | Arbitrary (variant, _) -> aux ~variant layout.fields ty
   | Enum (_, variant_layouts) ->
       let variant = Option.get ~msg:"variant required for enum" variant in
       let _, fields = variant_layouts.(Types.VariantId.to_int variant) in
-      aux ~variant fields
+      aux ~variant fields ty
 
 let size_of =
   let open Rustsymex.Result in
@@ -260,15 +265,17 @@ struct
         if%sat layout.size ==@ Usize.(0s) then ok (PolyVal id)
         else query (ty, offset)
     | Primitive, _ -> query (ty, offset)
-    | Array _, (TRawPtr (pointee, _) | TRef (_, pointee, _)) -> (
+    | Array { is_ptr = true; _ }, _ -> (
         let+ vs = iter (iter_fields ~meta layout ty) offset in
         let vs = as_tuple vs in
+        let pointee = get_pointee ty in
         match (dst_kind pointee, vs) with
         | LenKind, [ Ptr (base, Thin); Int len ] -> Ptr (base, Len len)
         | VTableKind, [ Ptr (base, Thin); Ptr (vtable, Thin) ] ->
             Ptr (base, VTable vtable)
         | _ -> failwith "decode: invalid metadata for pointer type")
-    | Array _, _ -> iter (iter_fields ~meta layout ty) offset
+    | Array { is_ptr = false; _ }, _ ->
+        iter (iter_fields ~meta layout ty) offset
     | Arbitrary (variant, _), _ -> (
         let+ vs = iter (iter_fields ~meta layout ty) offset in
         match ty with
@@ -309,15 +316,14 @@ module Encoder (Sptr : Sptr.S) = struct
         | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
         | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
         | Ptr (_, Thin) | Int _ | Float _ | PolyVal _ ->
-            failwith "Cannot split primitive"
+            Fmt.failwith "Cannot split primitive: %a for %a" pp_rust_val value
+              pp_ty ty
         | Union _ -> failwith "Cannot encode union directly")
       |> Iter.combine_list iter
-      |> Result.fold_iter ~init:(0, Iter.empty)
-           ~f:(fun (i, acc) ((ty, ofs), v) ->
-             let offset = offset +!!@ ofs in
-             let++ ys = encode ~offset v ty in
-             (i + 1, Iter.append acc ys))
-      |> Result.map snd
+      |> Result.fold_iter ~init:Iter.empty ~f:(fun acc ((ty, ofs), v) ->
+          let offset = offset +!!@ ofs in
+          let++ ys = encode ~offset v ty in
+          Iter.append acc ys)
     in
     let** ty = Layout.normalise ty in
     let** layout = Layout.layout_of ty in
@@ -402,6 +408,25 @@ module Encoder (Sptr : Sptr.S) = struct
       if layout.uninhabited then f Typed.v_false (`RefToUninhabited pointee)
       else check_ref fptr pointee
     in
+    (* validity of pattern types (not stabilized) *)
+    let rec pattern_valid_cond (inner_ty : Types.ty) (v : rust_val)
+        (pat : Types.type_pattern) =
+      match pat with
+      | Range (start_expr, stop_expr) ->
+          let ty = TypesUtils.ty_as_literal inner_ty in
+          let v = as_base ty v in
+          let signed = is_signed ty in
+          let lo = BV.of_constant_expr start_expr in
+          let hi = BV.of_constant_expr stop_expr in
+          if signed then lo <=$@ v &&@ (v <=$@ hi) else lo <=@ v &&@ (v <=@ hi)
+      | NotNull ->
+          let ptr, _ = as_ptr v in
+          Typed.not (Sptr.is_null ptr)
+      | OrPattern pats ->
+          List.fold_left
+            (fun acc p -> acc ||@ pattern_valid_cond inner_ty v p)
+            Typed.v_false pats
+    in
     let** ty = Layout.normalise ty in
     match (v, (ty : Types.ty)) with
     (* undefined.validity.bool *)
@@ -447,8 +472,14 @@ module Encoder (Sptr : Sptr.S) = struct
     | Tuple [], TFnDef _ -> ok ()
     (* we assume polymorphic data has no validity requirement *)
     | PolyVal _, TVar (Free _) -> ok ()
+    (* undefined.validity.pattern-type *)
+    | _, TPattern (inner_ty, pat) ->
+        let** () = validity ~check_ref inner_ty v f in
+        f
+          (pattern_valid_cond inner_ty v pat)
+          (`UBTransmute "Value violates pattern type constraint")
     (* we fail loudly to avoid missing cases *)
-    | _ -> Fmt.failwith "validity: unhandled %a/%a" pp_rust_val v pp_ty ty
+    | _ -> Fmt.failwith "validity: unhandled %a / %a" pp_rust_val v pp_ty ty
 
   (** Applies a validity check for a value, given a [check_ref] state monad
       operation. This assumes [check_ref] is effect-free: the returned state is
@@ -527,7 +558,7 @@ module Encoder (Sptr : Sptr.S) = struct
   (** Transmutes a singular rust value, without splitting. This is under the
       assumption that [size_of to_ty = size_of v], and both are primitives
       (literal or pointer). *)
-  let transmute_one ~(to_ty : Types.ty) (v : rust_val) =
+  let rec transmute_one ~(to_ty : Types.ty) (v : rust_val) =
     match (to_ty, v) with
     | TLiteral (TFloat _), Float _ -> return v
     | TLiteral (TFloat _), Int v -> return (Float (BV.to_float_raw v))
@@ -541,6 +572,7 @@ module Encoder (Sptr : Sptr.S) = struct
     | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> return v
     | (TRawPtr _ | TRef _ | TFnPtr _), Int v ->
         return (Ptr (Sptr.of_address v, Thin))
+    | TPattern (inner_ty, _), v -> transmute_one ~to_ty:inner_ty v
     | TVar (Free type_var_id), (PolyVal tid as v) ->
         if Types.TypeVarId.equal_id type_var_id tid then return v
         else
@@ -637,32 +669,6 @@ module Encoder (Sptr : Sptr.S) = struct
           Compo_res.Ok ())
     in
     v
-
-  (** Apply the compiler-attribute to the given value *)
-  let apply_attribute v attr =
-    let open Rustsymex in
-    let open Syntax in
-    match (v, attr) with
-    | ( Int v,
-        Charon.Meta.AttrUnknown
-          { path = "rustc_layout_scalar_valid_range_start"; args = Some min } )
-      ->
-        let min = Z.of_string min in
-        let bits = Typed.size_of_int v in
-        if%sat v >=@ BV.mk bits min then Result.ok ()
-        else Result.error (`StdErr "rustc_layout_scalar_valid_range_start")
-    | ( Int v,
-        AttrUnknown
-          { path = "rustc_layout_scalar_valid_range_end"; args = Some max_s } )
-      ->
-        let max = Z.of_string max_s in
-        let bits = Typed.size_of_int v in
-        if%sat v <=@ BV.mk bits max then Result.ok ()
-        else Result.error (`StdErr "rustc_layout_scalar_valid_range_end")
-    | _ -> Result.ok ()
-
-  let apply_attributes v attributes =
-    Rustsymex.Result.iter_list attributes ~f:(apply_attribute v)
 
   (** Traverses the given type and rust value, and returns all findable
       references with their type (ignores pointers, except if [include_ptrs] is

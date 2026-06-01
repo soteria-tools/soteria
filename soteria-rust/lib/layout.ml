@@ -113,7 +113,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let ptr_size = Crate.pointer_size () in
       ok
         (mk_concrete ~size:(ptr_size * 2) ~align:ptr_size
-           ~fields:(Array (BV.usizei ptr_size))
+           ~fields:(Array { stride = BV.usizei ptr_size; is_ptr = true })
            ())
   (* Refs, pointers, boxes, function pointers *)
   | TAdt { id = TBuiltin TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) | TFnPtr _
@@ -130,7 +130,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let sub_ty = match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8) in
       let++ sub_layout = layout_of sub_ty in
       mk ~size:(BV.usizei 0) ~align:sub_layout.align
-        ~fields:(Array sub_layout.size) ()
+        ~fields:(Array { stride = sub_layout.size; is_ptr = false })
+        ()
   (* Same as above, but here we have even less information ! *)
   | TDynTrait _ -> ok (mk_concrete ~size:0 ~align:1 ())
   (* Tuples *)
@@ -170,12 +171,16 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
           (`InvalidLayout ty)
       in
       let size = len *!!@ sub_layout.size in
-      mk ~size ~align:sub_layout.align ~fields:(Array sub_layout.size) ()
+      mk ~size ~align:sub_layout.align
+        ~fields:(Array { stride = sub_layout.size; is_ptr = false })
+        ()
   (* Never -- zero sized type *)
   | TNever ->
       ok (mk_concrete ~size:0 ~align:1 ~uninhabited:true ~fields:Primitive ())
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
+  (* Pattern types -- just their content, we assume they're primitives *)
+  | TPattern (ty, _) -> layout_of ty
   (* Type variables : non-deterministically generate a layout *)
   | TVar (Free _) ->
       (* FIXME: we need to scope these type variables, as the T in foo<T> and in
@@ -195,8 +200,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   (* Others (unhandled for now) *)
   | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
   | TError _ -> not_impl_layout "error" ty
-  | TTraitType (tref, assoc_ty_id) ->
-      let** resolved = resolve_trait_ty tref assoc_ty_id in
+  | TTraitType (tref, assoc_ty_id, args) ->
+      let** resolved = resolve_trait_ty tref assoc_ty_id args in
       layout_of resolved
 
 and translate_discriminator : Types.discriminator -> Fields_shape.discriminator
@@ -222,18 +227,18 @@ and translate_layout ty (layout : Types.layout) =
   let discriminator = Option.map translate_discriminator layout.discriminator in
   let variant_layouts =
     List.mapi
-      (fun i (v : Types.variant_layout) : (Fields_shape.tagger * Fields_shape.t)
-         ->
-        if v.uninhabited then (None, Primitive)
-        else
-          let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
-          let tagger =
-            match v.tagger with
-            | [] -> None
-            | [ (ofs, value) ] -> Some (BV.usizei ofs, BV.of_scalar value)
-            | _ :: _ :: _ -> failwith "unsupported: >1 tagger values"
-          in
-          (tagger, Arbitrary (Types.VariantId.of_int i, ofs)))
+      (fun i v_opt : (Fields_shape.tagger * Fields_shape.t) ->
+        match (v_opt : Types.variant_layout option) with
+        | None | Some { uninhabited = true; _ } -> (None, Primitive)
+        | Some v ->
+            let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
+            let tagger =
+              match v.tagger with
+              | [] -> None
+              | [ (ofs, value) ] -> Some (BV.usizei ofs, BV.of_scalar value)
+              | _ :: _ :: _ -> failwith "unsupported: >1 tagger values"
+            in
+            (tagger, Arbitrary (Types.VariantId.of_int i, ofs)))
       layout.variant_layouts
   in
   let fields : Fields_shape.t =
@@ -369,21 +374,21 @@ and compute_union_layout ty members =
   let fields = Array.make (List.length members) (BV.usizei 0) in
   mk ~size ~align ~fields:(Arbitrary (Types.VariantId.zero, fields)) ()
 
-and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id =
+and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
   match tref.kind with
   | TraitImpl timplref ->
       let impl = Crate.get_trait_impl timplref in
       let trait_assoc_ty = Types.AssocTypeId.Map.find assoc_ty_id impl.types in
       (* HACK: we skip the binder here! *)
       ok trait_assoc_ty.binder_value.value
-  | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id))
+  | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id, args))
 
 (** Normalise a type, by substituting any generics with the current generic
     environment, and resolving the trait type if needed. *)
 let normalise (ty : Types.ty) =
   let** ty =
     match ty with
-    | TTraitType (tref, name) -> resolve_trait_ty tref name
+    | TTraitType (tref, name, args) -> resolve_trait_ty tref name args
     | _ -> ok ty
   in
   let+ ty = Poly.subst_ty ty in

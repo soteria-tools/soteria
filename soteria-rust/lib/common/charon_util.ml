@@ -54,6 +54,35 @@ let ty_as_float : Types.ty -> Values.float_type = function
 
 let pp_literal_ty = Fmt.of_to_string Print.literal_type_to_string
 
+let lit_of_int_ty : Types.integer_type -> Types.literal_type = function
+  | Signed ity -> TInt ity
+  | Unsigned uty -> TUInt uty
+
+let lit_of_scalar : Values.scalar_value -> Types.literal_type = function
+  | SignedScalar (ity, _) -> TInt ity
+  | UnsignedScalar (uty, _) -> TUInt uty
+
+let lit_ty_of_lit : Values.literal -> Types.literal_type = function
+  | VScalar s -> lit_of_scalar s
+  | VBool _ -> TBool
+  | VChar _ -> TChar
+  | VFloat { float_ty; _ } -> TFloat float_ty
+  | VStr _ | VByteStr _ -> failwith "lit_ty_of_lit: not a literal type"
+
+let int_ty_of_lit_ty : Types.literal_type -> Types.integer_type = function
+  | TInt ity -> Signed ity
+  | TUInt uty -> Unsigned uty
+  | _ -> Fmt.failwith "int_ty_of_lit_ty: not an int literal"
+
+let z_of_constant_expr : Types.constant_expr -> Z.t = function
+  | { kind = CLiteral (VScalar s); _ } -> z_of_scalar s
+  | cg ->
+      Fmt.failwith "int_of_const_generic: unhandled const: %a"
+        Types.pp_constant_expr cg
+
+let int_of_constant_expr (c : Types.constant_expr) : int =
+  Z.to_int (z_of_constant_expr c)
+
 let rec pp_ty fmt : Types.ty -> unit = function
   | TAdt { id = TAdtId id; generics } ->
       let adt = Crate.get_adt_raw id in
@@ -91,7 +120,7 @@ let rec pp_ty fmt : Types.ty -> unit = function
         Fmt.(list ~sep:(any ", ") pp_ty)
         inputs pp_ty output
   | TDynTrait _ -> Fmt.string fmt "dyn <trait>"
-  | TTraitType (tref, type_id) ->
+  | TTraitType (tref, type_id, _) ->
       Fmt.pf fmt "Trait<%a>::%s" Crate.pp_trait_ref tref
         (Crate.get_assoc_type_name tref type_id)
   | TFnDef { binder_value = { kind = FunId (FRegular fid); _ }; _ } ->
@@ -101,35 +130,17 @@ let rec pp_ty fmt : Types.ty -> unit = function
   | TFnDef _ -> Fmt.string fmt "fn ?"
   | TVar var -> Fmt.string fmt (Print.type_db_var_to_pretty_string var)
   | TError err -> Fmt.pf fmt "Error(%s)" err
+  | TPattern (ty, pat) -> Fmt.pf fmt "%a is %a" pp_ty ty pp_type_pattern pat
 
-let lit_of_int_ty : Types.integer_type -> Types.literal_type = function
-  | Signed ity -> TInt ity
-  | Unsigned uty -> TUInt uty
-
-let lit_of_scalar : Values.scalar_value -> Types.literal_type = function
-  | SignedScalar (ity, _) -> TInt ity
-  | UnsignedScalar (uty, _) -> TUInt uty
-
-let lit_ty_of_lit : Values.literal -> Types.literal_type = function
-  | VScalar s -> lit_of_scalar s
-  | VBool _ -> TBool
-  | VChar _ -> TChar
-  | VFloat { float_ty; _ } -> TFloat float_ty
-  | VStr _ | VByteStr _ -> failwith "lit_ty_of_lit: not a literal type"
-
-let int_ty_of_lit_ty : Types.literal_type -> Types.integer_type = function
-  | TInt ity -> Signed ity
-  | TUInt uty -> Unsigned uty
-  | _ -> Fmt.failwith "int_ty_of_lit_ty: not an int literal"
-
-let z_of_constant_expr : Types.constant_expr -> Z.t = function
-  | { kind = CLiteral (VScalar s); _ } -> z_of_scalar s
-  | cg ->
-      Fmt.failwith "int_of_const_generic: unhandled const: %a"
-        Types.pp_constant_expr cg
-
-let int_of_constant_expr (c : Types.constant_expr) : int =
-  Z.to_int (z_of_constant_expr c)
+and pp_type_pattern fmt : Types.type_pattern -> unit = function
+  | Range (start_expr, stop_expr) ->
+      Fmt.pf fmt "%a..=%a" Z.pp_print
+        (z_of_constant_expr start_expr)
+        Z.pp_print
+        (z_of_constant_expr stop_expr)
+  | OrPattern pats ->
+      Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any " | ") pp_type_pattern) pats
+  | NotNull -> Fmt.string fmt "!null"
 
 let field_tys = List.map (fun (f : Types.field) -> f.field_ty)
 
@@ -201,11 +212,12 @@ let adt_is_nonnull (adt : Types.type_decl_ref) =
       meta_get_attr adt.item_meta "rustc_diagnostic_item" = Some "NonNull"
   | _ -> false
 
-let get_pointee : Types.ty -> Types.ty = function
+let rec get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
   | TRawPtr (ty, _)
   | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
       ty
+  | TPattern (ty, _) -> get_pointee ty
   | TAdt adt when adt_is_box adt -> (
       if (Config.get ()).polymorphic then List.hd adt.generics.types
       else
