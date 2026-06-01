@@ -653,6 +653,7 @@ module Encoder (Sptr : Sptr.S) = struct
         | ty ->
             Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
               Types.pp_type_decl_kind ty)
+    | TPattern (inner, _) -> nondet_raw inner
     | TVar (Free id) -> Result.ok (PolyVal id)
     | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
 
@@ -705,6 +706,7 @@ module Encoder (Sptr : Sptr.S) = struct
            reference isn't some other field, e.g. in [union { a: &u8, b: &u16
            }] *)
         []
+    | _, TPattern (inner, _) -> f v inner
     | _ -> []
 
   (** Folds over all the references and boxes in the given value and type,
@@ -777,6 +779,7 @@ module Encoder (Sptr : Sptr.S) = struct
            reference isn't some other field, e.g. in [union { a: &u8, b: &u16
            }] *)
         Result.ok (v, init)
+    | v, TPattern (inner, _) -> f init v inner
     | v, _ -> Result.ok (v, init)
 
   (** Calculates the size and alignment of a type [t], according to the pointer

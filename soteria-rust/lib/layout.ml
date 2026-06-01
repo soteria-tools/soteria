@@ -450,12 +450,34 @@ let rec is_unsafe_cell : Types.ty -> bool = function
 
     The full specification is available at:
     https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility *)
-let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
+let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   let is_ptr_like : Types.ty -> bool = function
     | TRef _ | TRawPtr _ -> true
     | TAdt { id = TBuiltin TBox; _ } -> true
-    | TAdt adt -> adt_is_box adt || adt_is_nonnull adt
+    | TAdt adt -> adt_is_box adt
     | _ -> false
+  in
+  let[@inline] is_1zst ty =
+    let++ layout = layout_of ty in
+    layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
+  in
+  let is_repr_transparent (adt : Types.type_decl_ref) =
+    let adt = Crate.get_adt adt in
+    match adt.layout with
+    | [ (_triple, { repr = { transparent = true; _ }; _ }) ] -> true
+    | _ -> false
+  in
+  let rec find_non_zst_field = function
+    | [] -> Result.ok None
+    | ty :: rest ->
+        let** is_zst = is_1zst ty in
+        if%sat is_zst then find_non_zst_field rest else ok (Some ty)
+  in
+  let as_transparent (adt : Types.type_decl_ref) =
+    match (Crate.get_adt adt).kind with
+    | Struct fields -> find_non_zst_field (field_tys fields)
+    | Enum [ v ] -> find_non_zst_field (field_tys v.fields)
+    | _ -> ok None
   in
   match (ty1, ty2) with
   (* Hack: &dyn is always compatible *)
@@ -475,17 +497,29 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   | TLiteral (TUInt U32), TLiteral TChar | TLiteral TChar, TLiteral (TUInt U32)
     ->
       ok Typed.v_true
+  (* patterns: recurse *)
+  | TPattern (inner1, _), ty2 -> is_abi_compatible inner1 ty2
+  | ty1, TPattern (inner2, _) -> is_abi_compatible ty1 inner2
+  (* Function pointers are compatible if they have the same ABI-string *)
+  | TFnPtr sig1, TFnPtr sig2 ->
+      ok
+        (Typed.of_bool
+           (Types.equal_abi sig1.binder_value.abi sig2.binder_value.abi))
   (* We keep this later down to avoid the check for everything *)
   | ty1, ty2 when is_ptr_like ty1 && is_ptr_like ty2 -> ok Typed.v_true
-  (* FIXME: Function pointers are compatible if they have the same ABI-string
-     (unsupported) *)
-  | TFnPtr _, TFnPtr _ -> ok Typed.v_true
+  (* transparent ADTs: recurse *)
+  | TAdt adt1, _ when is_repr_transparent adt1 -> (
+      let** ty1 = as_transparent adt1 in
+      match ty1 with
+      | None -> is_1zst ty2
+      | Some ty1 -> is_abi_compatible ty1 ty2)
+  | _, TAdt adt2 when is_repr_transparent adt2 -> (
+      let** ty2 = as_transparent adt2 in
+      match ty2 with
+      | None -> is_1zst ty1
+      | Some ty2 -> is_abi_compatible ty1 ty2)
   | ty1, ty2 when Types.equal_ty ty1 ty2 -> ok Typed.v_true
   | _ ->
-      let[@inline] is_1zst ty =
-        let++ layout = layout_of ty in
-        layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
-      in
       let** ty1_1zst = is_1zst ty1 in
       let++ ty2_1zst = is_1zst ty2 in
       (* 1ZSTs are exclusively compatible with themselves; otherwise type

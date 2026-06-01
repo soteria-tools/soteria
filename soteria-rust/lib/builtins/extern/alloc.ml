@@ -36,6 +36,7 @@ module M (StateM : State.StateM.S) = struct
 
   let align_of_enum = function
     | Tuple [ Enum (disc, []) ] -> disc
+    | Int align -> align
     | v -> Fmt.failwith "alloc: invalid align argument: %a" pp_rust_val v
 
   let alloc ?(zeroed = false) args =

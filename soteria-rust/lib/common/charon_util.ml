@@ -205,13 +205,6 @@ let adt_is_box (adt : Types.type_decl_ref) =
       adt.item_meta.lang_item = Some "owned_box"
   | _ -> false
 
-let adt_is_nonnull (adt : Types.type_decl_ref) =
-  match adt.id with
-  | TAdtId id ->
-      let adt = Crate.get_adt_raw id in
-      meta_get_attr adt.item_meta "rustc_diagnostic_item" = Some "NonNull"
-  | _ -> false
-
 let rec get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
   | TRawPtr (ty, _)
