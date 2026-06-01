@@ -71,7 +71,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   if List.is_empty entry_points then fatal "No entry points found";
 
   (* prepare executing the entry points *)
-  let exec_fun = Interp.exec_fun ~state:State.empty in
+  let exec_fun = Interp.exec_fun_as_whole_prog ~state:State.empty in
 
   let@ { fuel; fun_decl; expect_error } : Frontend.entry_point =
     (Fun.flip List.map) entry_points
