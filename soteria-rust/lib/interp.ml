@@ -1184,9 +1184,7 @@ module Make (StateImpl : State.S) = struct
         let fn = Crate.get_fun fundef.id in
         exec_real_fun fn fundef.generics args
 
-  (* re-define this for the export, nowhere else: *)
   let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
-    let@ () = run ~env:() ~state in
     (* HACK: we protect this function with a bind to make sure no effects are
        raised before the handlers are correctly setup. For a way of fixing this,
        see
@@ -1198,7 +1196,15 @@ module Make (StateImpl : State.S) = struct
     in
     let@ () = StateM.with_frame "Entry point" in
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
-    let* value = exec_real_fun fundef generics args in
+    exec_real_fun fundef generics args
+
+  let exec_fun_compo ~args ~state (fundef : UllbcAst.fun_decl) =
+    let@ () = run ~env:() ~state in
+    exec_fun ~args ~state fundef
+
+  let exec_fun_as_whole_prog ~args ~state (fundef : UllbcAst.fun_decl) =
+    let@ () = run ~env:() ~state in
+    let* value = exec_fun ~args ~state fundef in
     let* () = State.run_thread_exits () in
     if (Config.get ()).ignore_leaks then ok value
     else
