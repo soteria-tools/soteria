@@ -39,6 +39,7 @@
     written in [<category>/impl.ml]. *)
 
 open Charon
+open Syntaxes.FunctionWrap
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 module SMap = Map.Make (String)
 
@@ -81,6 +82,48 @@ let std_fun_map =
   |> List.map (fun (p, v) -> (NameMatcher.parse_pattern p, v))
   |> NameMatcherMap.of_list
 
+let strip_instantiated name =
+  match List.rev name with
+  | Types.PeInstantiated _ :: rest -> List.rev rest
+  | _ -> name
+
+module Stub_cache = struct
+  module FunDeclIdTbl = Hashtbl.Make (struct
+    type t = Types.FunDeclId.id
+
+    let equal = Types.FunDeclId.equal_id
+    let hash x = Int.hash ((Types.FunDeclId.to_int [@inlined]) x)
+  end)
+
+  type t = fn option FunDeclIdTbl.t
+  type _ Effect.t += Get_stub_cache : t Effect.t
+
+  let dls : t option Domain.DLS.key = Domain.DLS.new_key (fun () -> None)
+
+  let[@inline] get_cache () =
+    match Domain.DLS.get dls with
+    | Some c -> c
+    | None -> Effect.perform Get_stub_cache
+
+  let memoize key compute =
+    let cache = get_cache () in
+    match FunDeclIdTbl.find_opt cache key with
+    | Some v -> v
+    | None ->
+        let v = compute () in
+        FunDeclIdTbl.add cache key v;
+        v
+
+  let with_cache () f =
+    let open Effect.Deep in
+    let cache = FunDeclIdTbl.create 256 in
+    let saved_cache = Domain.DLS.get dls in
+    Domain.DLS.set dls (Some cache);
+    let finally () = Domain.DLS.set dls saved_cache in
+    Fun.protect ~finally @@ fun () ->
+    try f () with effect Get_stub_cache, k -> continue k cache
+end
+
 module M (StateM : State.StateM.S) = struct
   (* intrinsics *)
   module Intrinsics = Intrinsics.M (StateM)
@@ -118,18 +161,14 @@ module M (StateM : State.StateM.S) = struct
     | Some (PeInstantiated mono) -> mono.binder_value
     | _ -> generics
 
-  let strip_instantiated name =
-    match List.rev name with
-    | Types.PeInstantiated _ :: rest -> List.rev rest
-    | _ -> name
-
   let eval_stub (f : UllbcAst.fun_decl) fun_exec generics =
-    let name = f.item_meta.name in
-    let ctx = Crate.as_namematcher_ctx () in
-    let generics = get_generics f generics in
-    NameMatcherMap.find_opt ctx match_config (strip_instantiated name)
-      std_fun_map
-    |> Option.map (fn_to_stub f.signature fun_exec generics)
+    Stub_cache.memoize f.def_id (fun () ->
+        let name = strip_instantiated f.item_meta.name in
+        let ctx = Crate.as_namematcher_ctx () in
+        NameMatcherMap.find_opt ctx match_config name std_fun_map)
+    |> Option.map (fun stub ->
+        let generics = get_generics f generics in
+        fn_to_stub f.signature fun_exec generics stub)
 
   let eval_intrinsic (f : UllbcAst.fun_decl) name generics fun_exec =
     let generics = get_generics f generics in
