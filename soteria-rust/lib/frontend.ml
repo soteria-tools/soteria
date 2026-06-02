@@ -116,6 +116,8 @@ let default () =
          "--desugar-drops";
          "--precise-drops";
          "--format=postcard";
+         "--no-typecheck";
+         "--no-normalize";
        ]
       @ opaque_names
       @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])

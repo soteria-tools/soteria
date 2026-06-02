@@ -321,8 +321,20 @@ module Make (StateImpl : State.S) = struct
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
-    | CRef _ | CPtr _ | CFnPtr _ | CVTableRef _ ->
-        Fmt.kstr not_impl "TODO: complex constant %a" Crate.pp_constant_expr
+    | CRef (expr, meta) ->
+        (* HACK: ideally Charon shouldn't have ref constants, those are entirely
+           separate allocations :/ *)
+        let* v = resolve_constant expr in
+        let* ptr = State.alloc_ty ~kind:AnonConst expr.ty in
+        let+ () = State.store ptr expr.ty v in
+        Ptr ptr
+    | CPtr _ ->
+        Fmt.kstr not_impl "TODO: CPtr constant %a" Crate.pp_constant_expr const
+    | CFnPtr _ ->
+        Fmt.kstr not_impl "TODO: CFnPtr constant %a" Crate.pp_constant_expr
+          const
+    | CVTableRef _ ->
+        Fmt.kstr not_impl "TODO: CVTableRef constant %a" Crate.pp_constant_expr
           const
 
   (** Resolves a place to a pointer *)

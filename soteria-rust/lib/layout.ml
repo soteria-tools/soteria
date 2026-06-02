@@ -462,9 +462,11 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
     layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
   in
   let is_repr_transparent (adt : Types.type_decl_ref) =
-    let adt = Crate.get_adt adt in
-    match adt.layout with
-    | [ (_triple, { repr = { transparent = true; _ }; _ }) ] -> true
+    match adt.id with
+    | TAdtId id -> (
+        match (Crate.get_adt_raw id).layout with
+        | [ (_triple, { repr = { transparent = true; _ }; _ }) ] -> true
+        | _ -> false)
     | _ -> false
   in
   let rec find_non_zst_field = function

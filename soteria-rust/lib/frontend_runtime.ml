@@ -124,7 +124,7 @@ module Cmd = struct
     | Name n -> (
         match (Config.get ()).frontend with
         | Obol -> [ "--start-from"; n ]
-        | Charon -> [ "--start-from-if-exists"; n ])
+        | Charon -> [ "--start-from-if-exists"; "crate::" ^ n ])
     | Pub -> [ "--start-from-pub" ]
 
   let entry_matches_fn (fn : UllbcAst.fun_decl) = function
@@ -234,11 +234,11 @@ module Cmd = struct
             match attribs with
             | [] -> []
             | [ h ] -> [ h ]
-            | h :: _ ->
+            | _ :: _ ->
                 [%l.warn
                   "Charon currently only support one entry attribute; more \
-                   than one was specified, only the first will be used"];
-                [ h ]
+                   than one was specified, only the last one will be used"];
+                [ List.last attribs ]
           in
           let entries = List.concat_map entry_as_flag (attribs @ non_attribs) in
           ((Config.get ()).charon_path, charon @ entries)
