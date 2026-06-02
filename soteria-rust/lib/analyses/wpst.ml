@@ -66,7 +66,6 @@ let flamegraph_name = Str.global_replace (Str.regexp_string "::") "-"
 let exec_crate (crate : Charon.UllbcAst.crate)
     (entry_points : Frontend.entry_point list) =
   let@ () = Crate.with_crate crate in
-  let@ () = Builtins.Eval.Stub_cache.with_cache () in
   let@ () = Call_graph.with_dumped () in
   (* get entry points to the crate *)
   if List.is_empty entry_points then fatal "No entry points found";
