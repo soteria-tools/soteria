@@ -50,3 +50,6 @@ let empty =
 let rename ?rev idx msg trace =
   let stack = Soteria.Terminal.Call_trace.rename ?rev idx msg trace.stack in
   { trace with stack }
+
+let toplevel ?loc ?name ?op () =
+  { loc; name; op; stack = Soteria.Terminal.Call_trace.empty }

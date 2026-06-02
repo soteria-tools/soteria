@@ -298,6 +298,14 @@ module Make (Borrows : Tree_borrows.T) = struct
     include
       Soteria.Sym_states.With_info.Make (DecayMap.SM) (Meta) (Freeable_block)
 
+    let is_freed : syn -> bool = function
+      | { node = Freed; _ } -> true
+      | _ -> false
+
+    let trace_syn : syn -> Trace.t option = function
+      | { info = Some { trace; _ }; _ } -> Some trace
+      | _ -> None
+
     let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
         (t * Borrows.Tag.t option) DecayMap.SM.t =
       let open DecayMap.SM.Syntax in
