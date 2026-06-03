@@ -532,12 +532,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let** size, _ = size_and_align_of_val ty meta in
     check_non_dangling_untyped ptr size
 
-  and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
-      (Sptr_base.t rust_val, Error.t, syn list) Result.t =
-    let** () = check_ptr_align fptr ty in
-    let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
-    let** value = apply_parser ?ignore_borrow ptr parser in
-    [%l.debug "Finished reading rust value %a" (Rust_val.pp Sptr_base.pp) value];
+  and check_validity ~check_refs ty value =
     let check_ref =
       if (Config.get ()).recursive_validity <> Allow && check_refs then
         fun ptr ty ->
@@ -549,7 +544,15 @@ module Make (Borrows : Tree_borrows.T) = struct
         let** () = check_ptr_align ptr ty in
         check_non_dangling ptr ty
     in
-    let++ () = Encoder.check_validity ~check_ref ty value in
+    Encoder.check_validity ~check_ref ty value
+
+  and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
+      (Sptr_base.t rust_val, Error.t, syn list) Result.t =
+    let** () = check_ptr_align fptr ty in
+    let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
+    let** value = apply_parser ?ignore_borrow ptr parser in
+    [%l.debug "Finished reading rust value %a" (Rust_val.pp Sptr_base.pp) value];
+    let++ () = check_validity ~check_refs ty value in
     value
 
   and load_discriminant ((ptr, _) as fptr) ty =
