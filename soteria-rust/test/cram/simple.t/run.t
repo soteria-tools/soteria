@@ -523,7 +523,7 @@ Check we handle pattern types correctly
   bug: UB: Transmute: Value violates pattern type constraint in pattern_types::nonnull
       --> $RUSTLIB/library/core/src/ptr/non_null.rs:238:13
   238 |              transmute(ptr)
-      |              ^^^^^^^^^^^^^^ Memory load
+      |              ^^^^^^^^^^^^^^ Transmute
       --> $TESTCASE_ROOT/pattern_types.rs:12:25
    10 |  fn nonnull() {
       |  ------------ 1: Entry point
@@ -544,7 +544,7 @@ Check we handle pattern types correctly
       |  ------------------ 1: Entry point
       .  
    25 |      let _nz = unsafe { std::mem::transmute::<isize, NonZero<isize>>(x) };
-      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Memory load
+      |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Transmute
   PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
   
   [1]
