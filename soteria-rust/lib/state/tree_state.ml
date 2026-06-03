@@ -652,11 +652,10 @@ module Make (Borrows : Tree_borrows.T) = struct
         type fix = Tree_block.syn list
       end)
 
-  let transmute ~from ~to_ v =
+  let transmute_full ~from ~to_ v =
     (* a transmute is just a write of one type with a read of another type; we
        provide a function to do it that avoids allocating, checking alignment
        etc. *)
-    let@ () = with_loc_err ~trace:"Transmute" () in
     let**^ size = Layout.size_of to_ in
     let** value =
       with_pointers
@@ -691,6 +690,22 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     let++ () = check_validity ~check_refs:true to_ value in
     value
+
+  let transmute ~from ~to_ v =
+    let@ () = with_loc_err ~trace:"Transmute" () in
+    (* Fast path: thin-pointer <-> thin-pointer transmutes share the same
+       symbolic representation: [Ptr ptr]. Skip encode-decode through the tree
+       block and just validate the target type's constraints (e.g. NotNull). *)
+    let rec is_thin_ptr : Types.ty -> bool = function
+      | TRawPtr (ty, _) | TRef (_, ty, _) -> not (Layout.is_dst ty)
+      | TFnPtr _ -> true
+      | TPattern (inner, _) -> is_thin_ptr inner
+      | _ -> false
+    in
+    if is_thin_ptr from && is_thin_ptr to_ then
+      let++ () = check_validity ~check_refs:true to_ v in
+      v
+    else transmute_full ~from ~to_ v
 
   module Sptr = struct
     include Sptr_base
