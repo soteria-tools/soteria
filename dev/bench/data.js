@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780485382470,
+  "lastUpdate": 1780496145009,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -755,6 +755,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.867492355871946,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c151bbcd98f1570def9d7da4cf5012f5fbbc0237",
+          "message": "Faster CI (#365)\n\n* Only wait for Ubuntu to be done to run PR commands\n\n* Try making `test-lib` faster\n\n* Fixup the test-lib\n\nCo-authored-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* setup-dune v2 🤦‍♂️\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* update actions versions\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* display: short\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\nCo-authored-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-06-03T13:51:38Z",
+          "tree_id": "8a284108f80ff1477e0e9f51e19084bda43cd22a",
+          "url": "https://github.com/soteria-tools/soteria/commit/c151bbcd98f1570def9d7da4cf5012f5fbbc0237"
+        },
+        "date": 1780496143719,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08093267652000001,
+            "range": "± 0.0023",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.58204885328,
+            "range": "± 0.0062",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.8949418894200005,
+            "range": "± 0.0124",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.22292018750000003,
+            "range": "± 0.0037",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.844865756600001,
+            "range": "± 0.0387",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9561474824399998,
+            "range": "± 0.0242",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.744375874986872,
             "unit": "s"
           }
         ]
