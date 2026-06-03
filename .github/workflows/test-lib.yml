@@ -58,9 +58,7 @@ jobs:
       - name: Setup dune
         uses: ocaml-dune/setup-dune@v1
         with:
-          steps: "install-dune enable-pkg"
           directory: tmp
-
-      - name: Lock dependencies and build
-        working-directory: tmp
-        run: dune pkg lock && dune build --display short
+          steps: all
+      - name: Build
+        run: dune pkg lock && dune build --display
