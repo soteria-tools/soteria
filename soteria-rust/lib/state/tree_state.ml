@@ -640,6 +640,58 @@ module Make (Borrows : Tree_borrows.T) = struct
           Result.iter_iter parts ~f:(fun (value, offset) ->
               Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
 
+  (** We can't use {!Heap.Decoder} for [transmute], since the transmute happens
+      regardless of the heap's state, so we need to re-instantiate it for tree
+      block instead *)
+  module Tree_block_decoder =
+    Value_codec.Decoder
+      (Sptr_base)
+      (struct
+        module SM = Tree_block.SM
+
+        type fix = Tree_block.syn list
+      end)
+
+  let transmute ~from ~to_ v =
+    (* a transmute is just a write of one type with a read of another type; we
+       provide a function to do it that avoids allocating, checking alignment
+       etc. *)
+    let@ () = with_loc_err ~trace:"Transmute" () in
+    let**^ size = Layout.size_of to_ in
+    let** value =
+      with_pointers
+        (let open DecayMap.SM in
+         let open Syntax in
+         let* block = Tree_block.alloc size in
+         Tree_block.SM.Result.run_with_state ~state:(Some block)
+           (let open Tree_block.SM in
+            let open Syntax in
+            let open Tree_block_decoder in
+            (* first, we write *)
+            let**^ parts =
+              DecayMap.SM.lift @@ Encoder.encode ~offset:Usize.(0s) v from
+            in
+            let** () =
+              Result.iter_iter parts ~f:(fun (value, offset) ->
+                  Tree_block.store offset value None None)
+            in
+            (* next, we read *)
+            let handler (ty, ofs) =
+              Tree_block.load ~ignore_borrow:true ofs ty None None
+            in
+            let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
+            ParserMonad.parse ~handler ~get_all
+            @@ decode ~meta:Thin ~offset:Usize.(0s) to_)
+         |> map (function
+           | Ok (value, _block) -> Ok value
+           | Error (e, _block) -> Error e
+           (* HACK: we add this because we can't lift misses for a part of state
+              that doesn't exist (and misses can't happen here anyways) *)
+           | Missing _ -> failwith "impossible : miss"))
+    in
+    let++ () = check_validity ~check_refs:true to_ value in
+    value
+
   module Sptr = struct
     include Sptr_base
 

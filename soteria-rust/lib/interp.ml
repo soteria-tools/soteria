@@ -639,8 +639,7 @@ module Make (StateImpl : State.S) = struct
             | _ ->
                 Fmt.kstr not_impl "Invalid types for CastRawPtr: %a -> %a" pp_ty
                   from_ty pp_ty to_ty)
-        | Cast (CastTransmute (from_ty, to_ty)) ->
-            Core.transmute ~from_ty ~to_ty v
+        | Cast (CastTransmute (from, to_)) -> State.transmute ~from ~to_ v
         | Cast (CastScalar (from_ty, to_ty)) ->
             let+ v =
               match v with
@@ -1008,10 +1007,10 @@ module Make (StateImpl : State.S) = struct
            with function pointers or dyn calls, so we transmute here. *)
         let* args =
           map_list (List.combine3 args in_tys exp_tys)
-            ~f:(fun (arg, from_ty, to_ty) ->
+            ~f:(fun (arg, from, to_) ->
               let* arg = eval_operand arg in
-              if Types.equal_ty from_ty to_ty then ok arg
-              else Core.transmute ~from_ty ~to_ty arg)
+              if Types.equal_ty from to_ then ok arg
+              else State.transmute ~from ~to_ arg)
         in
         [%l.info
           "Executing function with arguments [%a]"

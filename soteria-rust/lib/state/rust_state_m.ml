@@ -207,6 +207,9 @@ module type S = sig
       size:Typed.T.sint Typed.t ->
       (unit, 'env) t
 
+    val transmute :
+      from:Types.ty -> to_:Types.ty -> rust_val -> (rust_val, 'env) t
+
     val uninit : full_ptr -> Types.ty -> (unit, 'env) t
     val free : full_ptr -> (unit, 'env) t
     val borrow : ?protect:bool -> full_ptr -> Types.ty -> (full_ptr, 'env) t
@@ -491,6 +494,7 @@ module Make (State : State_intf.S) :
     let[@inline] copy_nonoverlapping ~src ~dst ~size =
       ESM.lift (copy_nonoverlapping ~src ~dst ~size)
 
+    let[@inline] transmute ~from ~to_ v = ESM.lift (transmute ~from ~to_ v)
     let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
     let[@inline] free ptr = ESM.lift (free ptr)
     let[@inline] borrow ?protect ptr ty = ESM.lift (borrow ?protect ptr ty)

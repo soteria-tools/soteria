@@ -81,6 +81,7 @@ module type S = sig
   val copy_nonoverlapping :
     src:full_ptr -> dst:full_ptr -> size:sint Typed.t -> unit ret
 
+  val transmute : from:Types.ty -> to_:Types.ty -> rust_val -> rust_val ret
   val uninit : full_ptr -> Types.ty -> unit ret
   val zeros : full_ptr -> sint Typed.t -> unit ret
   val with_pointers_sym : 'a DecayMap.SM.t -> 'a SM.t
