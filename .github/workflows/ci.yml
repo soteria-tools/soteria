@@ -42,13 +42,13 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Retrieve documentation artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: odoc
           path: site
 
       - name: Deploy
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 #[actionpin: v4]
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
@@ -63,13 +63,13 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Download JSON documentation artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: odoc-json
           path: odoc-json
 
       - name: Push to docs-json branch
-        uses: peaceiris/actions-gh-pages@v4
+        uses: peaceiris/actions-gh-pages@84c30a85c19949d7eee79c4ff27748b70285e453 #[actionpin: v4]
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./odoc-json

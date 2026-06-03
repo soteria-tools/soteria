@@ -14,7 +14,7 @@ runs:
   using: composite
   steps:
     - name: Replace previous status comment
-      uses: actions/github-script@v9
+      uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #[actionpin: v9]
       env:
         INPUT_ISSUE_NUMBER: ${{ inputs.issue-number }}
         INPUT_MARKER: ${{ inputs.marker }}

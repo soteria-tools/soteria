@@ -26,20 +26,20 @@ jobs:
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3,  ocaml and opam
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
       - name: Check versions.json sync
         run: python3 scripts/versionsync.py check
       - name: Setup Z3
-        uses: cda-tum/setup-z3@v1
+        uses: cda-tum/setup-z3@7bfe87519f27304460db44284cb8cc59f50f5fc9 #[actionpin: v1]
         id: z3
       - name: Setup OCaml
-        uses: ocaml/setup-ocaml@v3
+        uses: ocaml/setup-ocaml@e32b06a3e831ff2fbc6f08cf35be2085e3918014 #[actionpin: v3]
         with:
           ocaml-compiler: ${{ env.OCAML_VERSION }}
           dune-cache: true
           opam-pin: false
       - name: Restore opam cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #[actionpin: v5]
         with:
           path: _opam
           key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-${{ hashFiles('*.opam') }}
@@ -60,19 +60,19 @@ jobs:
       - name: Get Rust toolchain
         run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
       - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 #[actionpin: v1]
         with:
           target: x86_64-unknown-linux-gnu,aarch64-apple-darwin
       # Restore caches for Obol and Charon
       - name: Restore Obol cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #[actionpin: v5]
         id: restore-obol-cache
         with:
           path: obol-bin
           key: ${{ runner.os }}-${{ runner.arch }}-obol-${{ env.OBOL_COMMIT_HASH }}
       # Install Charon
       - name: Restore Charon cache
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #[actionpin: v5]
         id: restore-charon-cache
         with:
           path: charon-bin
@@ -141,7 +141,7 @@ jobs:
       - name: Create soteria-c package
         run: make package-soteria-c
       - name: Upload soteria-c package
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
         with:
           name: ${{ steps.platform.outputs.name }}-soteria-c-package
           path: packages/soteria-c
@@ -150,7 +150,7 @@ jobs:
       - name: Create soteria-rust package
         run: make package-soteria-rust
       - name: Upload soteria-rust package
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
         with:
           name: ${{ steps.platform.outputs.name }}-soteria-rust-package
           path: packages/soteria-rust
@@ -160,7 +160,7 @@ jobs:
         run: make doc
 
       - name: Upload documentation artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
         with:
           name: odoc
           path: _build/default/_doc/_html
@@ -174,7 +174,7 @@ jobs:
         if: runner.os == 'linux'
 
       - name: Upload JSON documentation artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
         with:
           name: odoc-json
           path: _build/default/_doc/_html

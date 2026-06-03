@@ -26,12 +26,12 @@ jobs:
             echo "name=linux-x86_64" >> $GITHUB_OUTPUT
           fi
       - name: Checkout Collections-C, version where we find a bug
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
         with:
           repository: srdja/Collections-C
           ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
       - name: Download package
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: ${{ steps.platform.outputs.name }}-soteria-c-package
           path: soteria-c-package
@@ -73,7 +73,7 @@ jobs:
           fi
           echo "✓ Collections-C test passed (found expected bug, exit code 13)"
       - name: Checkout Soteria repository for test files
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
         with:
           path: soteria-repo
       - name: Test symbolic execution with sym.c (nondet test)
@@ -101,11 +101,11 @@ jobs:
       - name: Get Rust toolchain
         run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
       - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 #[actionpin: v1]
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
       - name: Download package
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: ${{ steps.platform.outputs.name }}-soteria-rust-package
           path: soteria-rust-package

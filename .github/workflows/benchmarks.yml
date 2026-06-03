@@ -58,7 +58,7 @@ jobs:
         run: git config --global --add safe.directory '*'
 
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
         with:
           ref: ${{ inputs.ref || github.ref }}
 
@@ -66,7 +66,7 @@ jobs:
       # the benchmarked input is identical to the version tested there
       # (which contains a known bug → analysis exits non-zero, tolerated).
       - name: Checkout Collections-C (benchmark target)
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
         with:
           repository: srdja/Collections-C
           ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
@@ -82,19 +82,19 @@ jobs:
       # otherwise from the current run (push-to-main case).
       - name: Download soteria-c package (current run)
         if: inputs.artifact-run-id == ''
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: linux-x86_64-soteria-c-package
           path: soteria-c-package
       - name: Download soteria-rust package (current run)
         if: inputs.artifact-run-id == ''
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: linux-x86_64-soteria-rust-package
           path: soteria-rust-package
       - name: Download soteria-c package (run ${{ inputs.artifact-run-id }})
         if: inputs.artifact-run-id != ''
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: linux-x86_64-soteria-c-package
           path: soteria-c-package
@@ -102,7 +102,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download soteria-rust package (run ${{ inputs.artifact-run-id }})
         if: inputs.artifact-run-id != ''
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: linux-x86_64-soteria-rust-package
           path: soteria-rust-package
@@ -142,7 +142,7 @@ jobs:
       # to main without touching the published history.
       - name: Store benchmark result
         if: inputs.pr-number == ''
-        uses: benchmark-action/github-action-benchmark@v1
+        uses: benchmark-action/github-action-benchmark@52576c92bccf6ac60c8223ec7eb2565637cae9ba #[actionpin: v1]
         with:
           name: Soteria benchmarks
           tool: customSmallerIsBetter
@@ -191,7 +191,7 @@ jobs:
 
       - name: Upload comparison artifact (PR only)
         if: inputs.pr-number != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
         with:
           name: benchmark-comparison
           path: benchmark-comparison.md
