@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780439112556,
+  "lastUpdate": 1780485382470,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -690,6 +690,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.866082086926326,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6c67c719c78882a8c7877c059155f1b4f43c8fa5",
+          "message": "Bump Charon (#363)\n\n* Bump Charon\n\n* minor fixes\n\n* minor fixes to improve Charon support\n\n* dawg\n\n* Cache stub lookups\n\n* Revert \"Cache stub lookups\"\n\nThis reverts commit fa9be67ca0e166795cb882ccafef23bc2fb72490.\n\n* minor guaranteed improvement",
+          "timestamp": "2026-06-03T10:43:57Z",
+          "tree_id": "b8a35566ca7b5139d63948f791f94441d6d2160c",
+          "url": "https://github.com/soteria-tools/soteria/commit/6c67c719c78882a8c7877c059155f1b4f43c8fa5"
+        },
+        "date": 1780485380504,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08115670182,
+            "range": "± 0.0019",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.5840161312600001,
+            "range": "± 0.0045",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.8887559492200001,
+            "range": "± 0.0149",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.22229221744000002,
+            "range": "± 0.0025",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.82859007128,
+            "range": "± 0.0545",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9464446885799997,
+            "range": "± 0.0267",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.867492355871946,
             "unit": "s"
           }
         ]
