@@ -17,6 +17,8 @@ env:
 
 jobs:
   build:
+    # If the job name or matrix values change, update the job name matched in
+    # pr-commands.yml ("build / Build and Test (ubuntu-latest)").
     name: Build and Test
     strategy:
       matrix:

@@ -20,15 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout soteria
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: soteria
 
-      - name: Setup dune
-        uses: ocaml-dune/setup-dune@v1
-        with:
-          steps: "install-dune enable-pkg"
-
+      # Written before setup-dune so that setup-dune can cache tmp/_build and
+      # key the cache on tmp/dune-project (stable across commits).
       - name: Write minimal test project
         run: |
           SOTERIA_PATH="$GITHUB_WORKSPACE/soteria"
@@ -58,6 +55,8 @@ jobs:
           let () = ()
           EOF
 
-      - name: Lock dependencies and build
-        working-directory: tmp
-        run: dune pkg lock && dune build --display short
+      - name: Setup dune
+        uses: ocaml-dune/setup-dune@v2
+        with:
+          directory: tmp
+          display: short
