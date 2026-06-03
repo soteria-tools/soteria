@@ -56,9 +56,7 @@ jobs:
           EOF
 
       - name: Setup dune
-        uses: ocaml-dune/setup-dune@v1
+        uses: ocaml-dune/setup-dune@v2
         with:
           directory: tmp
           steps: all
-      - name: Build
-        run: dune pkg lock && dune build --display
