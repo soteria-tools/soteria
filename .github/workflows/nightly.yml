@@ -90,30 +90,30 @@ jobs:
     needs: [check-new-commits, test-packages]
     if: needs.check-new-commits.outputs.should_run == 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
         with:
           fetch-depth: 0
 
       - name: Download soteria-c macOS package
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: macos-arm64-soteria-c-package
           path: release-artifacts/soteria-c-macos-arm64
 
       - name: Download soteria-c Linux package
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: linux-x86_64-soteria-c-package
           path: release-artifacts/soteria-c-linux-x86_64
 
       - name: Download soteria-rust macOS package
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: macos-arm64-soteria-rust-package
           path: release-artifacts/soteria-rust-macos-arm64
 
       - name: Download soteria-rust Linux package
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: linux-x86_64-soteria-rust-package
           path: release-artifacts/soteria-rust-linux-x86_64

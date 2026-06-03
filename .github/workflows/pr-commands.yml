@@ -41,7 +41,7 @@ jobs:
       needs_ci: ${{ steps.parse.outputs.needs_ci }}
     steps:
       - id: parse
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #[actionpin: v9]
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
         with:
@@ -70,7 +70,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Add eyes reaction
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #[actionpin: v9]
         with:
           script: |
             await github.rest.reactions.createForIssueComment({
@@ -174,7 +174,7 @@ jobs:
       # benchmarks command, or benchmarks failed before upload).
       - name: Download benchmark comparison
         if: needs.parse.outputs.run_benchmarks == 'true' && needs.benchmarks.result == 'success'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
         with:
           name: benchmark-comparison
           path: comparison
@@ -182,7 +182,7 @@ jobs:
 
       - name: Build status comment and react
         id: status
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 #[actionpin: v9]
         env:
           DISPATCH_RESULT: ${{ needs.dispatch.result }}
           RUN_BENCHMARKS: ${{ needs.parse.outputs.run_benchmarks }}
@@ -241,7 +241,7 @@ jobs:
             });
 
       - name: Checkout status-comment action
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: source-repo

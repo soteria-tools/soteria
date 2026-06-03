@@ -235,6 +235,21 @@ soteria-rust/scripts/test.py miri
 
 If you want to upgrade a version, say of OCaml, see `./scripts/versionsync.py list` to see current versions and `./scripts/versionsync.py set OCAML_VERSION X.Y.Z` to update it accross all its references in the repo.
 
+### Pinning GitHub Actions
+
+For supply-chain safety, every external GitHub Action in `.github/` is pinned to an immutable commit SHA rather than a mutable tag. The tracked major version is recorded in a trailing annotation on the `uses:` line:
+
+```yaml
+uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
+```
+
+Use `./scripts/actionpin.py` (requires the [`gh` CLI](https://cli.github.com/), authenticated) to manage these pins:
+
+- `./scripts/actionpin.py renew-pins` — repin each action to the latest release **within its current major** (e.g. picks up `v6.0.2` → `v6.0.3`).
+- `./scripts/actionpin.py upgrade-versions` — bump an action to a **newer major** when one exists (e.g. `v6` → `v7`), then pin to its latest release. Review the changelog of any action this bumps, as a new major may change inputs/behaviour.
+
+Both commands accept `--dry-run` to preview changes without writing. A bare `uses: org/repo@vN` line (no annotation) is pinned and annotated automatically on the next `renew-pins`.
+
 ## Submitting Changes
 
 ### Before Submitting
