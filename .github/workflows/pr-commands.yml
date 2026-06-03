@@ -107,9 +107,31 @@ jobs:
           echo "No CI workflow run found for commit ${{ steps.pr.outputs.sha }}"
           exit 1
 
-      - name: Wait for CI workflow to complete
+      - name: Wait for Linux build job to complete
         if: needs.parse.outputs.needs_ci == 'true'
-        run: gh run watch ${{ steps.find-run.outputs.run_id }} --repo ${{ github.repository }} --exit-status
+        run: |
+          # Only the Linux (ubuntu-latest) job produces the artifacts needed by
+          # benchmarks and doc-pr, so we wait for that job rather than the full
+          # CI run (which also includes a slower macOS job).
+          for ATTEMPT in $(seq 1 80); do
+            # Job name format: "{caller-job-id} / {job-name} ({matrix-value})".
+            # If build.yml's job name or matrix values change, update this string.
+            STATUS=$(gh api "repos/${{ github.repository }}/actions/runs/${{ steps.find-run.outputs.run_id }}/jobs" \
+              --jq '(.jobs[] | select(.name == "build / Build and Test (ubuntu-latest)") | .conclusion // .status) // empty')
+            case "$STATUS" in
+              success)
+                echo "Linux build job completed successfully"
+                exit 0 ;;
+              failure|cancelled|timed_out|action_required)
+                echo "Linux build job ended with status: $STATUS"
+                exit 1 ;;
+              *)
+                echo "Waiting for Linux build job... (attempt $ATTEMPT/90, status: ${STATUS:-pending})"
+                sleep 15 ;;
+            esac
+          done
+          echo "Timed out waiting for Linux build job"
+          exit 1
 
   benchmarks:
     needs: [parse, dispatch]
