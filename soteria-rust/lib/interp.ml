@@ -321,8 +321,20 @@ module Make (StateImpl : State.S) = struct
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
-    | CRef _ | CPtr _ | CFnPtr _ | CVTableRef _ ->
-        Fmt.kstr not_impl "TODO: complex constant %a" Crate.pp_constant_expr
+    | CRef (expr, meta) ->
+        (* HACK: ideally Charon shouldn't have ref constants, those are entirely
+           separate allocations :/ *)
+        let* v = resolve_constant expr in
+        let* ptr = State.alloc_ty ~kind:AnonConst expr.ty in
+        let+ () = State.store ptr expr.ty v in
+        Ptr ptr
+    | CPtr _ ->
+        Fmt.kstr not_impl "TODO: CPtr constant %a" Crate.pp_constant_expr const
+    | CFnPtr _ ->
+        Fmt.kstr not_impl "TODO: CFnPtr constant %a" Crate.pp_constant_expr
+          const
+    | CVTableRef _ ->
+        Fmt.kstr not_impl "TODO: CVTableRef constant %a" Crate.pp_constant_expr
           const
 
   (** Resolves a place to a pointer *)
@@ -559,7 +571,7 @@ module Make (StateImpl : State.S) = struct
 
   and eval_rvalue (expr : Expressions.rvalue) expr_ty =
     match expr with
-    | Use op -> eval_operand op
+    | Use (op, _) -> eval_operand op
     (* Reference *)
     | RvRef (place, _borrow, _metadata) ->
         let* ptr = resolve_place place in
@@ -610,6 +622,13 @@ module Make (StateImpl : State.S) = struct
                 let v = as_base_i Usize v in
                 let+ ptr = State.with_exposed v in
                 Ptr ptr
+            | TLiteral _, TPattern (TRawPtr _, NotNull) ->
+                (* with provenance, not null *)
+                let v = as_base_i Usize v in
+                let* ((ptr, _) as fptr) = State.with_exposed v in
+                if%sat Sptr.is_null ptr then
+                  error (`UBTransmute "null pointer for !null pattern")
+                else ok (Ptr fptr)
             | _, (TRef (_, to_ty, _) | TRawPtr (to_ty, _)) -> (
                 match (v, Layout.is_dst to_ty) with
                 | Ptr (ptr, _), false -> ok (Ptr (ptr, Thin))
@@ -617,7 +636,9 @@ module Make (StateImpl : State.S) = struct
                     not_impl "Cannot cast to fat pointer without meta"
                 | Ptr _, true -> ok v
                 | _ -> not_impl "Invalid value for CastRawPtr")
-            | _ -> not_impl "Invalid types for CastRawPtr")
+            | _ ->
+                Fmt.kstr not_impl "Invalid types for CastRawPtr: %a -> %a" pp_ty
+                  from_ty pp_ty to_ty)
         | Cast (CastTransmute (from_ty, to_ty)) ->
             Core.transmute ~from_ty ~to_ty v
         | Cast (CastScalar (from_ty, to_ty)) ->
@@ -854,15 +875,7 @@ module Make (StateImpl : State.S) = struct
         Union op_blocks
     (* Struct aggregate *)
     | Aggregate (AggregatedAdt (adt, None, None), operands) ->
-        let* values = eval_operand_list operands in
-        let+ () =
-          match (adt.id, values) with
-          | TAdtId _, [ v ] ->
-              let type_decl = Crate.get_adt adt in
-              let attribs = type_decl.item_meta.attr_info.attributes in
-              Encoder.apply_attributes v attribs
-          | _ -> ok ()
-        in
+        let+ values = eval_operand_list operands in
         Tuple values
     (* Invalid aggregate (not sure, but seems like it) *)
     | Aggregate ((AggregatedAdt _ as v), _) ->
@@ -910,14 +923,6 @@ module Make (StateImpl : State.S) = struct
         (* FIXME: this is horrible for large arrays! *)
         let els = List.init len (fun _ -> value) in
         Tuple els
-    (* Shallow init box -- get the pointer and transmute it to a box *)
-    | ShallowInitBox (ptr, _) ->
-        let+ ptr = eval_operand ptr in
-        let non_null = Tuple [ ptr ] in
-        let phantom_data = Tuple [] in
-        let unique = Tuple [ non_null; phantom_data ] in
-        let allocator = Tuple [] in
-        Tuple [ unique; allocator ]
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) -> (
         let* _, meta = resolve_place place in
@@ -1119,6 +1124,7 @@ module Make (StateImpl : State.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
     | TAssert _ -> failwith "Charon desugars assert terminators for us"
+    | InlineAsm _ -> not_impl "inline assembly"
 
   and exec_real_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args)
       args =

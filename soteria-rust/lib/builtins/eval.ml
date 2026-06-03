@@ -118,12 +118,19 @@ module M (StateM : State.StateM.S) = struct
     | Some (PeInstantiated mono) -> mono.binder_value
     | _ -> generics
 
+  let strip_instantiated name =
+    match List.rev name with
+    | Types.PeInstantiated _ :: rest -> List.rev rest
+    | _ -> name
+
   let eval_stub (f : UllbcAst.fun_decl) fun_exec generics =
     let name = f.item_meta.name in
     let ctx = Crate.as_namematcher_ctx () in
-    let generics = get_generics f generics in
-    NameMatcherMap.find_opt ctx match_config name std_fun_map
-    |> Option.map (fn_to_stub f.signature fun_exec generics)
+    NameMatcherMap.find_opt ctx match_config (strip_instantiated name)
+      std_fun_map
+    |> Option.map (fun stub ->
+        let generics = get_generics f generics in
+        fn_to_stub f.signature fun_exec generics stub)
 
   let eval_intrinsic (f : UllbcAst.fun_decl) name generics fun_exec =
     let generics = get_generics f generics in

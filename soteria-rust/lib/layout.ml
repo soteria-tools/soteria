@@ -113,7 +113,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let ptr_size = Crate.pointer_size () in
       ok
         (mk_concrete ~size:(ptr_size * 2) ~align:ptr_size
-           ~fields:(Array (BV.usizei ptr_size))
+           ~fields:(Array { stride = BV.usizei ptr_size; is_ptr = true })
            ())
   (* Refs, pointers, boxes, function pointers *)
   | TAdt { id = TBuiltin TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) | TFnPtr _
@@ -130,7 +130,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let sub_ty = match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8) in
       let++ sub_layout = layout_of sub_ty in
       mk ~size:(BV.usizei 0) ~align:sub_layout.align
-        ~fields:(Array sub_layout.size) ()
+        ~fields:(Array { stride = sub_layout.size; is_ptr = false })
+        ()
   (* Same as above, but here we have even less information ! *)
   | TDynTrait _ -> ok (mk_concrete ~size:0 ~align:1 ())
   (* Tuples *)
@@ -170,12 +171,16 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
           (`InvalidLayout ty)
       in
       let size = len *!!@ sub_layout.size in
-      mk ~size ~align:sub_layout.align ~fields:(Array sub_layout.size) ()
+      mk ~size ~align:sub_layout.align
+        ~fields:(Array { stride = sub_layout.size; is_ptr = false })
+        ()
   (* Never -- zero sized type *)
   | TNever ->
       ok (mk_concrete ~size:0 ~align:1 ~uninhabited:true ~fields:Primitive ())
   (* Function definitions -- zero sized type *)
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
+  (* Pattern types -- just their content, we assume they're primitives *)
+  | TPattern (ty, _) -> layout_of ty
   (* Type variables : non-deterministically generate a layout *)
   | TVar (Free _) ->
       (* FIXME: we need to scope these type variables, as the T in foo<T> and in
@@ -195,8 +200,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   (* Others (unhandled for now) *)
   | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
   | TError _ -> not_impl_layout "error" ty
-  | TTraitType (tref, assoc_ty_id) ->
-      let** resolved = resolve_trait_ty tref assoc_ty_id in
+  | TTraitType (tref, assoc_ty_id, args) ->
+      let** resolved = resolve_trait_ty tref assoc_ty_id args in
       layout_of resolved
 
 and translate_discriminator : Types.discriminator -> Fields_shape.discriminator
@@ -222,18 +227,18 @@ and translate_layout ty (layout : Types.layout) =
   let discriminator = Option.map translate_discriminator layout.discriminator in
   let variant_layouts =
     List.mapi
-      (fun i (v : Types.variant_layout) : (Fields_shape.tagger * Fields_shape.t)
-         ->
-        if v.uninhabited then (None, Primitive)
-        else
-          let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
-          let tagger =
-            match v.tagger with
-            | [] -> None
-            | [ (ofs, value) ] -> Some (BV.usizei ofs, BV.of_scalar value)
-            | _ :: _ :: _ -> failwith "unsupported: >1 tagger values"
-          in
-          (tagger, Arbitrary (Types.VariantId.of_int i, ofs)))
+      (fun i v_opt : (Fields_shape.tagger * Fields_shape.t) ->
+        match (v_opt : Types.variant_layout option) with
+        | None | Some { uninhabited = true; _ } -> (None, Primitive)
+        | Some v ->
+            let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
+            let tagger =
+              match v.tagger with
+              | [] -> None
+              | [ (ofs, value) ] -> Some (BV.usizei ofs, BV.of_scalar value)
+              | _ :: _ :: _ -> failwith "unsupported: >1 tagger values"
+            in
+            (tagger, Arbitrary (Types.VariantId.of_int i, ofs)))
       layout.variant_layouts
   in
   let fields : Fields_shape.t =
@@ -369,21 +374,21 @@ and compute_union_layout ty members =
   let fields = Array.make (List.length members) (BV.usizei 0) in
   mk ~size ~align ~fields:(Arbitrary (Types.VariantId.zero, fields)) ()
 
-and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id =
+and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
   match tref.kind with
   | TraitImpl timplref ->
       let impl = Crate.get_trait_impl timplref in
       let trait_assoc_ty = Types.AssocTypeId.Map.find assoc_ty_id impl.types in
       (* HACK: we skip the binder here! *)
       ok trait_assoc_ty.binder_value.value
-  | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id))
+  | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id, args))
 
 (** Normalise a type, by substituting any generics with the current generic
     environment, and resolving the trait type if needed. *)
 let normalise (ty : Types.ty) =
   let** ty =
     match ty with
-    | TTraitType (tref, name) -> resolve_trait_ty tref name
+    | TTraitType (tref, name, args) -> resolve_trait_ty tref name args
     | _ -> ok ty
   in
   let+ ty = Poly.subst_ty ty in
@@ -445,12 +450,36 @@ let rec is_unsafe_cell : Types.ty -> bool = function
 
     The full specification is available at:
     https://doc.rust-lang.org/nightly/std/primitive.fn.html#abi-compatibility *)
-let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
+let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   let is_ptr_like : Types.ty -> bool = function
     | TRef _ | TRawPtr _ -> true
     | TAdt { id = TBuiltin TBox; _ } -> true
-    | TAdt adt -> adt_is_box adt || adt_is_nonnull adt
+    | TAdt adt -> adt_is_box adt
     | _ -> false
+  in
+  let[@inline] is_1zst ty =
+    let++ layout = layout_of ty in
+    layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
+  in
+  let is_repr_transparent (adt : Types.type_decl_ref) =
+    match adt.id with
+    | TAdtId id -> (
+        match (Crate.get_adt_raw id).layout with
+        | [ (_triple, { repr = { transparent = true; _ }; _ }) ] -> true
+        | _ -> false)
+    | _ -> false
+  in
+  let rec find_non_zst_field = function
+    | [] -> Result.ok None
+    | ty :: rest ->
+        let** is_zst = is_1zst ty in
+        if%sat is_zst then find_non_zst_field rest else ok (Some ty)
+  in
+  let as_transparent (adt : Types.type_decl_ref) =
+    match (Crate.get_adt adt).kind with
+    | Struct fields -> find_non_zst_field (field_tys fields)
+    | Enum [ v ] -> find_non_zst_field (field_tys v.fields)
+    | _ -> ok None
   in
   match (ty1, ty2) with
   (* Hack: &dyn is always compatible *)
@@ -470,17 +499,29 @@ let is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   | TLiteral (TUInt U32), TLiteral TChar | TLiteral TChar, TLiteral (TUInt U32)
     ->
       ok Typed.v_true
+  (* patterns: recurse *)
+  | TPattern (inner1, _), ty2 -> is_abi_compatible inner1 ty2
+  | ty1, TPattern (inner2, _) -> is_abi_compatible ty1 inner2
+  (* Function pointers are compatible if they have the same ABI-string *)
+  | TFnPtr sig1, TFnPtr sig2 ->
+      ok
+        (Typed.of_bool
+           (Types.equal_abi sig1.binder_value.abi sig2.binder_value.abi))
   (* We keep this later down to avoid the check for everything *)
   | ty1, ty2 when is_ptr_like ty1 && is_ptr_like ty2 -> ok Typed.v_true
-  (* FIXME: Function pointers are compatible if they have the same ABI-string
-     (unsupported) *)
-  | TFnPtr _, TFnPtr _ -> ok Typed.v_true
+  (* transparent ADTs: recurse *)
+  | TAdt adt1, _ when is_repr_transparent adt1 -> (
+      let** ty1 = as_transparent adt1 in
+      match ty1 with
+      | None -> is_1zst ty2
+      | Some ty1 -> is_abi_compatible ty1 ty2)
+  | _, TAdt adt2 when is_repr_transparent adt2 -> (
+      let** ty2 = as_transparent adt2 in
+      match ty2 with
+      | None -> is_1zst ty1
+      | Some ty2 -> is_abi_compatible ty1 ty2)
   | ty1, ty2 when Types.equal_ty ty1 ty2 -> ok Typed.v_true
   | _ ->
-      let[@inline] is_1zst ty =
-        let++ layout = layout_of ty in
-        layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
-      in
       let** ty1_1zst = is_1zst ty1 in
       let++ ty2_1zst = is_1zst ty2 in
       (* 1ZSTs are exclusively compatible with themselves; otherwise type

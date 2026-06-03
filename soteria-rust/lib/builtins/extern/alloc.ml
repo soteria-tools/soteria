@@ -28,10 +28,21 @@ module M (StateM : State.StateM.S) = struct
   open StateM
   open Syntax
 
+  (* NonNull<u8> is a struct { pointer: *const u8 is !null }. Extract the inner
+     ptr. *)
+  let ptr_of_nonnull = function
+    | Tuple [ Ptr ptr ] -> ptr
+    | v -> Fmt.failwith "alloc: invalid NonNull argument: %a" pp_rust_val v
+
+  let align_of_enum = function
+    | Tuple [ Enum (disc, []) ] -> disc
+    | Int align -> align
+    | v -> Fmt.failwith "alloc: invalid align argument: %a" pp_rust_val v
+
   let alloc ?(zeroed = false) args =
     let size, align =
       match args with
-      | [ Int size; Int align ] -> (size, align)
+      | [ Int size; align ] -> (size, align_of_enum align)
       | _ -> failwith "alloc: invalid arguments"
     in
     let align = Typed.cast_i Usize align in
@@ -48,11 +59,8 @@ module M (StateM : State.StateM.S) = struct
   let dealloc args =
     let ((ptr_in, _) as ptr), size, align =
       match args with
-      | [ Ptr ptr; Int size; Int align ] -> (ptr, size, align)
-      | [ Int ptr; Int size; Int align ] ->
-          let ptr = Typed.cast_i Usize ptr in
-          let ptr = Sptr.of_address ptr in
-          ((ptr, Thin), size, align)
+      | [ ptr_val; Int size; align ] ->
+          (ptr_of_nonnull ptr_val, size, align_of_enum align)
       | _ -> failwith "dealloc: invalid arguments"
     in
     let alloc_size, alloc_align = Sptr.allocation_info ptr_in in
@@ -65,8 +73,8 @@ module M (StateM : State.StateM.S) = struct
   let realloc args =
     let ptr, old_size, align, size =
       match args with
-      | [ Ptr ptr; Int old_size; Int align; Int size ] ->
-          (ptr, old_size, align, size)
+      | [ ptr; Int old_size; align; Int size ] ->
+          (ptr_of_nonnull ptr, old_size, align_of_enum align, size)
       | _ -> failwith "realloc: invalid arguments"
     in
     let ptr_in, _ = ptr in

@@ -205,7 +205,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     Tuple [ Int res_l; Int res_h ]
 
-  let catch_unwind ~fun_exec ~try_fn:try_fn_ptr ~data ~catch_fn:catch_fn_ptr =
+  let catch_unwind ~fun_exec ~t_data:_ ~try_fn:try_fn_ptr ~data
+      ~catch_fn:catch_fn_ptr =
     let* trace = get_trace () in
     let[@inline] exec_fun msg fn args =
       with_extra_call_trace ~loc:(Trace.loc_or_default trace) ~msg
@@ -215,14 +216,14 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* catch_fn = State.lookup_fn catch_fn_ptr in
     exec_fun "catch_unwind try" try_fn [ Ptr data ]
     |> unwind_with
-         ~f:(fun _ -> ok U32.(0s))
+         ~f:(fun _ -> ok Typed.v_false)
          ~fe:(fun _ ->
            (* We can't use [null] here because this messes up with the niche of
               the return type, which checks if the pointer is 0! *)
            exec_fun "catch_unwind catch" catch_fn
              [ Ptr data; Ptr (Sptr.of_address Usize.(1s), Thin) ]
            |> unwind_with
-                ~f:(fun _ -> ok U32.(1s))
+                ~f:(fun _ -> ok Typed.v_true)
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
 
   (* HACK: floating point intrinsics for complex float operations are heavily
@@ -615,11 +616,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     Int (Typed.cast res)
 
-  let abs ~x = ok (Typed.Float.abs x)
-  let fabsf16 = abs
-  let fabsf32 = abs
-  let fabsf64 = abs
-  let fabsf128 = abs
+  let fabs ~t ~x =
+    let t = TypesUtils.ty_as_literal t in
+    let f =
+      match t with TFloat f -> f | _ -> failwith "fabs with non-float?"
+    in
+    let x = as_base_f f x in
+    ok (Float (Typed.Float.abs x))
 
   let float_fast (bop : Expressions.binop) ~(t : Types.ty) ~a ~b : rust_val ret
       =

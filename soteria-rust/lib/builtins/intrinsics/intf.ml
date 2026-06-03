@@ -27,6 +27,8 @@ module M (StateM : State.StateM.S) = struct
            On Unix, the
            process will probably terminate with a signal like `SIGABRT`, `SIGILL`, `SIGTRAP`, `SIGSEGV` or
            `SIGBUS`.  The precise behavior is not guaranteed and not stable.
+
+           The stabilization-track version of this intrinsic is [`core::process::abort_immediate`].
         ]} *)
     val abort : unit -> unit ret
 
@@ -517,9 +519,17 @@ module M (StateM : State.StateM.S) = struct
       rust_val ret
 
     (** {@markdown[
+          Carryless multiply.
+
+           Safe versions of this intrinsic are available on the integer primitives
+           via the `carryless_mul` method. For example, [`u32::carryless_mul`].
+        ]} *)
+    val carryless_mul : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+
+    (** {@markdown[
           Rust's "try catch" construct for unwinding. Invokes the function pointer `try_fn` with the
            data pointer `data`, and calls `catch_fn` if unwinding occurs while `try_fn` runs.
-           Returns `1` if unwinding occurred and `catch_fn` was called; returns `0` otherwise.
+           Returns `true` if unwinding occurred and `catch_fn` was called; returns `false` otherwise.
 
            `catch_fn` must not unwind.
 
@@ -537,10 +547,11 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val catch_unwind :
       fun_exec:fun_exec ->
+      t_data:Types.ty ->
       try_fn:full_ptr ->
       data:full_ptr ->
       catch_fn:full_ptr ->
-      Typed.T.sint Typed.t ret
+      Typed.T.sbool Typed.t ret
 
     (** {@markdown[
           Returns the smallest integer greater than or equal to an `f128`.
@@ -582,7 +593,7 @@ module M (StateM : State.StateM.S) = struct
            Therefore, implementations must not require the user to uphold
            any safety invariants.
 
-           This intrinsic does not have a stable counterpart.
+           The stabilized version of this intrinsic is [`core::hint::cold_path`].
         ]} *)
     val cold_path : unit -> unit ret
 
@@ -1056,36 +1067,12 @@ module M (StateM : State.StateM.S) = struct
     val expf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
     (** {@markdown[
-          Returns the absolute value of an `f128`.
+          Returns the absolute value of a floating-point value.
 
-           The stabilized version of this intrinsic is
-           [`f128::abs`](../../std/primitive.f128.html#method.abs)
+           The stabilized versions of this intrinsic are available on the float
+           primitives via the `abs` method. For example, [`f32::abs`].
         ]} *)
-    val fabsf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
-
-    (** {@markdown[
-          Returns the absolute value of an `f16`.
-
-           The stabilized version of this intrinsic is
-           [`f16::abs`](../../std/primitive.f16.html#method.abs)
-        ]} *)
-    val fabsf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
-
-    (** {@markdown[
-          Returns the absolute value of an `f32`.
-
-           The stabilized version of this intrinsic is
-           [`f32::abs`](../../std/primitive.f32.html#method.abs)
-        ]} *)
-    val fabsf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
-
-    (** {@markdown[
-          Returns the absolute value of an `f64`.
-
-           The stabilized version of this intrinsic is
-           [`f64::abs`](../../std/primitive.f64.html#method.abs)
-        ]} *)
-    val fabsf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val fabs : t:Types.ty -> x:rust_val -> rust_val ret
 
     (** {@markdown[
           Float addition that allows optimizations based on algebraic rules.
@@ -1116,6 +1103,29 @@ module M (StateM : State.StateM.S) = struct
            This intrinsic does not have a stable counterpart.
         ]} *)
     val fdiv_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+
+    (** {@markdown[
+          The offset of a field queried by its field representing type.
+
+           Returns the offset of the field represented by `F`. This function essentially does the same as
+           the [`offset_of`] intrinsic, but expects the field to be represented by a generic rather than
+           the variant and field indices. This also is a safe intrinsic and can only be evaluated at
+           compile-time, so it should only appear in constants or inline const blocks.
+
+           There should be no need to call this intrinsic manually, as its value is used to define
+           [`Field::OFFSET`](crate::field::Field::OFFSET), which is publicly accessible.
+        ]} *)
+    val field_offset : f:Types.ty -> Typed.T.sint Typed.t ret
+
+    (** {@markdown[
+          Gets the actual field `TypeId` of the [`FieldRepresentingType`]'s `TypeId`.
+
+           The more user-friendly version of this intrinsic is [`core::mem::type_info::FieldId::type_id`].
+
+           [`FieldRepresentingType`]: crate::field::FieldRepresentingType
+        ]} *)
+    val field_representing_type_actual_type_id :
+      frt_type_id:rust_val -> rust_val ret
 
     (** {@markdown[
           Converts with LLVM’s fptoui/fptosi, which may return undef for values out of range
@@ -1374,14 +1384,6 @@ module M (StateM : State.StateM.S) = struct
            particular value, ever. However, the compiler will generally make it
            return `true` only if the value of the argument is actually known.
 
-           # Stability concerns
-
-           While it is safe to call, this intrinsic may behave differently in
-           a `const` context than otherwise. See the [`const_eval_select()`]
-           documentation for an explanation of the issues this can cause. Unlike
-           `const_eval_select`, this intrinsic isn't guaranteed to behave
-           deterministically even in a `const` context.
-
            # Type Requirements
 
            `T` must be either a `bool`, a `char`, a primitive numeric type (e.g. `f32`,
@@ -1512,6 +1514,90 @@ module M (StateM : State.StateM.S) = struct
     val logf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
     (** {@markdown[
+          Returns the maximum of two `f128` values, ignoring NaN.
+
+           This behaves like IEEE 754-2019 maximumNumber, *except* that it does not order signed
+           zeros deterministically. In particular:
+           If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+           both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+           and `-0.0`), either input may be returned non-deterministically.
+
+           Note that, unlike most intrinsics, this is safe to call;
+           it does not require an `unsafe` block.
+           Therefore, implementations must not require the user to uphold
+           any safety invariants.
+
+           The stabilized version of this intrinsic is [`f128::max`].
+        ]} *)
+    val maximum_number_nsz_f128 :
+      x:[< Typed.T.sfloat ] Typed.t ->
+      y:[< Typed.T.sfloat ] Typed.t ->
+      Typed.T.sfloat Typed.t ret
+
+    (** {@markdown[
+          Returns the maximum of two `f16` values, ignoring NaN.
+
+           This behaves like IEEE 754-2019 maximumNumber, *except* that it does not order signed
+           zeros deterministically. In particular:
+           If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+           both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+           and `-0.0`), either input may be returned non-deterministically.
+
+           Note that, unlike most intrinsics, this is safe to call;
+           it does not require an `unsafe` block.
+           Therefore, implementations must not require the user to uphold
+           any safety invariants.
+
+           The stabilized version of this intrinsic is [`f16::max`].
+        ]} *)
+    val maximum_number_nsz_f16 :
+      x:[< Typed.T.sfloat ] Typed.t ->
+      y:[< Typed.T.sfloat ] Typed.t ->
+      Typed.T.sfloat Typed.t ret
+
+    (** {@markdown[
+          Returns the maximum of two `f32` values, ignoring NaN.
+
+           This behaves like IEEE 754-2019 maximumNumber, *except* that it does not order signed
+           zeros deterministically. In particular:
+           If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+           both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+           and `-0.0`), either input may be returned non-deterministically.
+
+           Note that, unlike most intrinsics, this is safe to call;
+           it does not require an `unsafe` block.
+           Therefore, implementations must not require the user to uphold
+           any safety invariants.
+
+           The stabilized version of this intrinsic is [`f32::max`].
+        ]} *)
+    val maximum_number_nsz_f32 :
+      x:[< Typed.T.sfloat ] Typed.t ->
+      y:[< Typed.T.sfloat ] Typed.t ->
+      Typed.T.sfloat Typed.t ret
+
+    (** {@markdown[
+          Returns the maximum of two `f64` values, ignoring NaN.
+
+           This behaves like IEEE 754-2019 maximumNumber, *except* that it does not order signed
+           zeros deterministically. In particular:
+           If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
+           both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
+           and `-0.0`), either input may be returned non-deterministically.
+
+           Note that, unlike most intrinsics, this is safe to call;
+           it does not require an `unsafe` block.
+           Therefore, implementations must not require the user to uphold
+           any safety invariants.
+
+           The stabilized version of this intrinsic is [`f64::max`].
+        ]} *)
+    val maximum_number_nsz_f64 :
+      x:[< Typed.T.sfloat ] Typed.t ->
+      y:[< Typed.T.sfloat ] Typed.t ->
+      Typed.T.sfloat Typed.t ret
+
+    (** {@markdown[
           Returns the maximum of two `f128` values, propagating NaN.
 
            This behaves like IEEE 754-2019 maximum. In particular:
@@ -1580,8 +1666,10 @@ module M (StateM : State.StateM.S) = struct
       Typed.T.sfloat Typed.t ret
 
     (** {@markdown[
-          Returns the maximum of two `f128` values, ignoring NaN.
+          Returns the minimum of two `f128` values, ignoring NaN.
 
+           This behaves like IEEE 754-2019 minimumNumber, *except* that it does not order signed
+           zeros deterministically. In particular:
            If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
            both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
            and `-0.0`), either input may be returned non-deterministically.
@@ -1591,16 +1679,18 @@ module M (StateM : State.StateM.S) = struct
            Therefore, implementations must not require the user to uphold
            any safety invariants.
 
-           The stabilized version of this intrinsic is [`f128::max`].
+           The stabilized version of this intrinsic is [`f128::min`].
         ]} *)
-    val maxnumf128 :
+    val minimum_number_nsz_f128 :
       x:[< Typed.T.sfloat ] Typed.t ->
       y:[< Typed.T.sfloat ] Typed.t ->
       Typed.T.sfloat Typed.t ret
 
     (** {@markdown[
-          Returns the maximum of two `f16` values, ignoring NaN.
+          Returns the minimum of two `f16` values, ignoring NaN.
 
+           This behaves like IEEE 754-2019 minimumNumber, *except* that it does not order signed
+           zeros deterministically. In particular:
            If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
            both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
            and `-0.0`), either input may be returned non-deterministically.
@@ -1610,16 +1700,18 @@ module M (StateM : State.StateM.S) = struct
            Therefore, implementations must not require the user to uphold
            any safety invariants.
 
-           The stabilized version of this intrinsic is [`f16::max`].
+           The stabilized version of this intrinsic is [`f16::min`].
         ]} *)
-    val maxnumf16 :
+    val minimum_number_nsz_f16 :
       x:[< Typed.T.sfloat ] Typed.t ->
       y:[< Typed.T.sfloat ] Typed.t ->
       Typed.T.sfloat Typed.t ret
 
     (** {@markdown[
-          Returns the maximum of two `f32` values, ignoring NaN.
+          Returns the minimum of two `f32` values, ignoring NaN.
 
+           This behaves like IEEE 754-2019 minimumNumber, *except* that it does not order signed
+           zeros deterministically. In particular:
            If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
            both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
            and `-0.0`), either input may be returned non-deterministically.
@@ -1629,16 +1721,18 @@ module M (StateM : State.StateM.S) = struct
            Therefore, implementations must not require the user to uphold
            any safety invariants.
 
-           The stabilized version of this intrinsic is [`f32::max`].
+           The stabilized version of this intrinsic is [`f32::min`].
         ]} *)
-    val maxnumf32 :
+    val minimum_number_nsz_f32 :
       x:[< Typed.T.sfloat ] Typed.t ->
       y:[< Typed.T.sfloat ] Typed.t ->
       Typed.T.sfloat Typed.t ret
 
     (** {@markdown[
-          Returns the maximum of two `f64` values, ignoring NaN.
+          Returns the minimum of two `f64` values, ignoring NaN.
 
+           This behaves like IEEE 754-2019 minimumNumber, *except* that it does not order signed
+           zeros deterministically. In particular:
            If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
            both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
            and `-0.0`), either input may be returned non-deterministically.
@@ -1648,9 +1742,9 @@ module M (StateM : State.StateM.S) = struct
            Therefore, implementations must not require the user to uphold
            any safety invariants.
 
-           The stabilized version of this intrinsic is [`f64::max`].
+           The stabilized version of this intrinsic is [`f64::min`].
         ]} *)
-    val maxnumf64 :
+    val minimum_number_nsz_f64 :
       x:[< Typed.T.sfloat ] Typed.t ->
       y:[< Typed.T.sfloat ] Typed.t ->
       Typed.T.sfloat Typed.t ret
@@ -1719,82 +1813,6 @@ module M (StateM : State.StateM.S) = struct
            any safety invariants.
         ]} *)
     val minimumf64 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
-
-    (** {@markdown[
-          Returns the minimum of two `f128` values, ignoring NaN.
-
-           If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
-           both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
-           and `-0.0`), either input may be returned non-deterministically.
-
-           Note that, unlike most intrinsics, this is safe to call;
-           it does not require an `unsafe` block.
-           Therefore, implementations must not require the user to uphold
-           any safety invariants.
-
-           The stabilized version of this intrinsic is [`f128::min`].
-        ]} *)
-    val minnumf128 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
-
-    (** {@markdown[
-          Returns the minimum of two `f16` values, ignoring NaN.
-
-           If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
-           both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
-           and `-0.0`), either input may be returned non-deterministically.
-
-           Note that, unlike most intrinsics, this is safe to call;
-           it does not require an `unsafe` block.
-           Therefore, implementations must not require the user to uphold
-           any safety invariants.
-
-           The stabilized version of this intrinsic is [`f16::min`].
-        ]} *)
-    val minnumf16 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
-
-    (** {@markdown[
-          Returns the minimum of two `f32` values, ignoring NaN.
-
-           If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
-           both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
-           and `-0.0`), either input may be returned non-deterministically.
-
-           Note that, unlike most intrinsics, this is safe to call;
-           it does not require an `unsafe` block.
-           Therefore, implementations must not require the user to uphold
-           any safety invariants.
-
-           The stabilized version of this intrinsic is [`f32::min`].
-        ]} *)
-    val minnumf32 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
-
-    (** {@markdown[
-          Returns the minimum of two `f64` values, ignoring NaN.
-
-           If one of the arguments is NaN (quiet or signaling), then the other argument is returned. If
-           both arguments are NaN, returns NaN. If the inputs compare equal (such as for the case of `+0.0`
-           and `-0.0`), either input may be returned non-deterministically.
-
-           Note that, unlike most intrinsics, this is safe to call;
-           it does not require an `unsafe` block.
-           Therefore, implementations must not require the user to uphold
-           any safety invariants.
-
-           The stabilized version of this intrinsic is [`f64::min`].
-        ]} *)
-    val minnumf64 :
       x:[< Typed.T.sfloat ] Typed.t ->
       y:[< Typed.T.sfloat ] Typed.t ->
       Typed.T.sfloat Typed.t ret
@@ -1885,6 +1903,7 @@ module M (StateM : State.StateM.S) = struct
       f:rust_val ->
       workgroup_dim:rust_val ->
       thread_dim:rust_val ->
+      dyn_cache:[< Typed.T.sint ] Typed.t ->
       args:rust_val ->
       rust_val ret
 
@@ -1946,6 +1965,12 @@ module M (StateM : State.StateM.S) = struct
            `#[inline]`), gating assertions on `overflow_checks()` rather than `cfg!(overflow_checks)` means that
            assertions are enabled whenever the *user crate* has overflow checks enabled. However if the
            user has overflow checks disabled, the checks will still get optimized out.
+
+           # Consteval
+
+           In consteval, this function currently returns `true`. This is because the value of the `overflow_checks`
+           configuration can differ across crates, but we need this function to always return the same
+           value in consteval in order to avoid unsoundness.
         ]} *)
     val overflow_checks : unit -> Typed.T.sbool Typed.t ret
 
@@ -2176,6 +2201,17 @@ module M (StateM : State.StateM.S) = struct
     val read_via_copy : t:Types.ty -> ptr:full_ptr -> rust_val ret
 
     (** {@markdown[
+          Returns the return address of the caller function (after inlining) in a best-effort manner or a null pointer if it is not supported on the current backend.
+           Returning an accurate value is a quality-of-implementation concern, but no hard guarantees are
+           made about the return value: formally, the intrinsic non-deterministically returns
+           an arbitrary pointer without provenance.
+
+           Note that unlike most intrinsics, this is safe to call. This is because it only finds the return address of the immediate caller, which is guaranteed to be possible.
+           Other forms of the corresponding gcc or llvm intrinsic (which can have wildly unpredictable results or even crash at runtime) are not exposed.
+        ]} *)
+    val return_address : unit -> full_ptr ret
+
+    (** {@markdown[
           Performs rotate left.
 
            Note that, unlike most intrinsics, this is safe to call;
@@ -2398,6 +2434,13 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`core::mem::size_of`].
         ]} *)
     val size_of : t:Types.ty -> Typed.T.sint Typed.t ret
+
+    (** {@markdown[
+          Gets the size of the type represented by this `TypeId`.
+
+           The more user-friendly version of this intrinsic is [`core::any::TypeId::size`].
+        ]} *)
+    val size_of_type_id : id:rust_val -> rust_val ret
 
     (** {@markdown[
           The size of the referenced value in bytes.
@@ -2851,6 +2894,43 @@ module M (StateM : State.StateM.S) = struct
     val type_id_eq : a:rust_val -> b:rust_val -> Typed.T.sbool Typed.t ret
 
     (** {@markdown[
+          Gets the [`FieldRepresentingType`]'s `TypeId` at the given index of the type represented by this `TypeId`.
+
+           The more user-friendly version of this intrinsic is [`core::any::TypeId::field`].
+
+           [`FieldRepresentingType`]: crate::field::FieldRepresentingType
+        ]} *)
+    val type_id_field_representing_type :
+      id:rust_val ->
+      variant_index:[< Typed.T.sint ] Typed.t ->
+      field_index:[< Typed.T.sint ] Typed.t ->
+      rust_val ret
+
+    (** {@markdown[
+          Gets the number of fields at the given `variant_index` represented by this `TypeId`.
+
+           The more user-friendly version of this intrinsic is [`core::any::TypeId::fields`].
+        ]} *)
+    val type_id_fields :
+      id:rust_val ->
+      variant_index:[< Typed.T.sint ] Typed.t ->
+      Typed.T.sint Typed.t ret
+
+    (** {@markdown[
+          Gets the number of variants of the type represented by this `TypeId`.
+
+           The more user-friendly version of this intrinsic is [`core::any::TypeId::variants`].
+        ]} *)
+    val type_id_variants : id:rust_val -> Typed.T.sint Typed.t ret
+
+    (** {@markdown[
+          Check if a type represented by a `TypeId` implements a trait represented by a `TypeId`.
+           It can only be called at compile time, the backends do
+           not implement it. If it implements the trait the dyn metadata gets returned for vtable access.
+        ]} *)
+    val type_id_vtable : id:rust_val -> trait:rust_val -> rust_val ret
+
+    (** {@markdown[
           Gets a static string slice containing the name of a type.
 
            Note that, unlike most intrinsics, this can only be called at compile-time
@@ -2908,6 +2988,12 @@ module M (StateM : State.StateM.S) = struct
            assertions are enabled whenever the *user crate* has UB checks enabled. However, if the
            user has UB checks disabled, the checks will still get optimized out. This intrinsic is
            primarily used by [`crate::ub_checks::assert_unsafe_precondition`].
+
+           # Consteval
+
+           In consteval, this function currently returns `true`. This is because the value of the `ub_checks`
+           configuration can differ across crates, but we need this function to always return the same
+           value in consteval in order to avoid unsoundness.
         ]} *)
     val ub_checks : unit -> Typed.T.sbool Typed.t ret
 
@@ -3187,16 +3273,6 @@ module M (StateM : State.StateM.S) = struct
            `ptr` must point to a vtable.
         ]} *)
     val vtable_align : ptr:full_ptr -> Typed.T.sint Typed.t ret
-
-    (** {@markdown[
-          The intrinsic returns the `U` vtable for `T` if `T` can be coerced to the trait object type `U`.
-
-           # Compile-time failures
-           Determining whether `T` can be coerced to the trait object type `U` requires trait resolution by the compiler.
-           In some cases, that resolution can exceed the recursion limit,
-           and compilation will fail instead of this function returning `None`.
-        ]} *)
-    val vtable_for : t:Types.ty -> u:Types.ty -> rust_val ret
 
     (** {@markdown[
           The intrinsic will return the size stored in that vtable.
