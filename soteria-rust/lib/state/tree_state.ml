@@ -299,15 +299,15 @@ module Make (Borrows : Tree_borrows.T) = struct
     include
       Soteria.Sym_states.With_info.Make (DecayMap.SM) (Meta) (Freeable_block)
 
-    let is_freed : syn -> bool = function
+    let[@inline] is_freed : syn -> bool = function
       | { node = Freed; _ } -> true
       | _ -> false
 
-    let trace_syn : syn -> Trace.t option = function
+    let[@inline] trace_syn : syn -> Trace.t option = function
       | { info = Some { trace; _ }; _ } -> Some trace
       | _ -> None
 
-    let alloc_kind : t option -> Alloc_kind.t option = function
+    let[@inline] alloc_kind : t option -> Alloc_kind.t option = function
       | Some { info = Some { kind; _ }; _ } -> Some kind
       | _ -> None
 
@@ -331,7 +331,9 @@ module Make (Borrows : Tree_borrows.T) = struct
         (StateKey)
         (Freeable_block_with_meta)
 
-    let with_ptr (access : [ `Ghost | `Read | `Write ]) (ptr : Sptr_base.t)
+    type access = Ghost | Read | Write
+
+    let with_ptr (access : access) (ptr : Sptr_base.t)
         (f : [< T.sint ] Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
         ('a, 'err, syn list) SM.Result.t =
       let open SM in
@@ -346,9 +348,9 @@ module Make (Borrows : Tree_borrows.T) = struct
            let open SM.Syntax in
            let* block = SM.get_state () in
            match (alloc_kind block, access) with
-           | Some (Function _), (`Read | `Write) ->
+           | Some (Function _), (Read | Write) ->
                SM.Result.error `AccessedFnPointer
-           | Some ((Const _ | AnonConst | StaticString) as k), `Write ->
+           | Some ((Const _ | AnonConst | StaticString) as k), Write ->
                let*^ cur_kind = DecayMap.SM.lift @@ get_alloc_kind () in
                if cur_kind <> k then SM.Result.error `WriteToReadOnly
                else Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs)
@@ -463,11 +465,11 @@ module Make (Borrows : Tree_borrows.T) = struct
       (a, Error.t, syn list) Result.t =
     let* () = log "load" ptr in
     let handler (ty, ofs) =
-      let@ _ofs = Heap.with_ptr `Read ptr in
+      let@ _ofs = Heap.with_ptr Read ptr in
       Block.with_block_read_tb (Tree_block.load ~ignore_borrow ofs ty ptr.tag)
     in
     let get_all (size, ofs) =
-      let@ _ofs = Heap.with_ptr `Read ptr in
+      let@ _ofs = Heap.with_ptr Read ptr in
       Block.with_block (Tree_block.get_init_leaves ofs size)
     in
     let offset = Typed.Ptr.ofs ptr.ptr in
@@ -482,7 +484,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ () = with_loc_err ~trace:"Uninitialising memory" () in
     let* () = log "uninit" ptr in
     let**^ size = Layout.size_of ty in
-    let@ ofs = with_ptr `Write ptr in
+    let@ ofs = with_ptr Write ptr in
     Block.with_block @@ Tree_block.uninit_range ofs size
 
   let rec size_and_align_of_val t meta =
@@ -535,7 +537,7 @@ module Make (Borrows : Tree_borrows.T) = struct
           (ptr', Typed.(cast (BV.neg size)))
       in
       let open Block.SM.Syntax in
-      let@ ofs = with_ptr `Ghost ptr in
+      let@ ofs = with_ptr Ghost ptr in
       let+- _ =
         Block.with_block (Tree_block.check_owned ofs (Typed.cast size))
       in
@@ -621,7 +623,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         if%sat size ==@ Usize.(0s) then Result.ok ()
         else
           let* () = log "tb_load" ptr in
-          let@ ofs = with_ptr `Ghost ptr in
+          let@ ofs = with_ptr Ghost ptr in
           Block.with_block_read_tb (Tree_block.tb_access ofs size tag)
 
   (** Performs a load at the tree borrow level, by updating the borrow state,
@@ -643,7 +645,7 @@ module Make (Borrows : Tree_borrows.T) = struct
          Encoder.pp_rust_val Typed.ppa)) parts]; *)
       let* () = log "store" ptr in
       let**^ size = Layout.size_of ty in
-      let@ ofs = with_ptr `Write ptr in
+      let@ ofs = with_ptr Write ptr in
       Block.with_block_read_tb (fun tb ->
           let open Tree_block.SM in
           let open Tree_block.SM.Syntax in
@@ -772,13 +774,13 @@ module Make (Borrows : Tree_borrows.T) = struct
       (unit, Error.with_trace, syn list) Result.t =
     let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
     let** tree_to_write =
-      let@ ofs = with_ptr `Read src in
+      let@ ofs = with_ptr Read src in
       Block.with_block (fun tree_block ->
           let open DecayMap.SM.Syntax in
           let+ res, _ = Tree_block.get_raw_tree_owned ofs size tree_block in
           (res, tree_block))
     in
-    let@ ofs = with_ptr `Write dst in
+    let@ ofs = with_ptr Write dst in
     Block.with_block
       (let open Tree_block.SM in
        let open Tree_block.SM.Syntax in
@@ -904,7 +906,7 @@ module Make (Borrows : Tree_borrows.T) = struct
   let zeros (ptr, _) size =
     let@ () = with_loc_err ~trace:"Memory store (0s)" () in
     let* () = log "zeroes" ptr in
-    let@ ofs = with_ptr `Write ptr in
+    let@ ofs = with_ptr Write ptr in
     Block.with_block (Tree_block.zero_range ofs size)
 
   let store_str_global str ptr =
@@ -932,7 +934,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     match ptr.tag with
     | None -> Result.ok fptr
     | Some tag ->
-        let@ ofs = with_ptr `Ghost ptr in
+        let@ ofs = with_ptr Ghost ptr in
         Block.borrow ?protect fptr tag ty ofs
 
   let unprotect ((ptr : Sptr_base.t), _) (ty : Types.ty) =
@@ -944,7 +946,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         if freed then Result.ok ()
         else
           let**^ size = Layout.size_of ty in
-          let@ ofs = with_ptr `Ghost ptr in
+          let@ ofs = with_ptr Ghost ptr in
           [%l.debug "Unprotecting pointer %a" Sptr_base.pp ptr];
           Block.unprotect ofs tag size
 
