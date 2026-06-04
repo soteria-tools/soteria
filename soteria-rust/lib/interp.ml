@@ -122,8 +122,8 @@ module Make (StateImpl : State.S) = struct
     |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
         (* Passed (nested) references must be protected and be valid. *)
         let* value, protected' =
-          Encoder.update_ref_tys_in value local.local_ty ~init:acc
-            ~f:(fun acc ptr ptr_ty ->
+          Encoder.ref_tys_in local.local_ty value ~init:acc
+            ~f:(fun acc ptr_ty ptr ->
               let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
               let pointee = Charon_util.get_pointee ptr_ty in
               (ptr', (ptr', pointee) :: acc))
@@ -1042,11 +1042,11 @@ module Make (StateImpl : State.S) = struct
     | Return ->
         let* ptr, ty = get_variable_lazy_and_ty Expressions.LocalId.zero in
         let* value = load_lazy ptr ty in
-        let ptr_tys = Encoder.ref_tys_in value ty in
-        let+ () =
-          iter_list ptr_tys ~f:(fun (ptr, ty) -> State.tb_load ptr ty)
-        in
-        value
+        Encoder.ref_tys_in ty value ~init:() ~f:(fun () ptr_ty ptr ->
+            let pointee = get_pointee ptr_ty in
+            let+ () = State.tb_load ptr pointee in
+            (ptr, ()))
+        |> map fst
     | Switch (discr, switch) -> (
         let* discr = eval_operand discr in
         match switch with

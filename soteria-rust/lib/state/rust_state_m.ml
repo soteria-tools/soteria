@@ -165,13 +165,12 @@ module type S = sig
       rust_val
 
     val nondet_valid : Types.ty -> (rust_val, 'env) monad
-    val ref_tys_in : Types.ty -> rust_val -> (Types.ty * full_ptr) Iter.t
 
-    val update_ref_tys_in :
-      f:('acc -> full_ptr -> Types.ty -> (full_ptr * 'acc, 'env) monad) ->
+    val ref_tys_in :
+      f:('acc -> Types.ty -> full_ptr -> (full_ptr * 'acc, 'env) monad) ->
       init:'acc ->
-      rust_val ->
       Types.ty ->
+      rust_val ->
       (rust_val * 'acc, 'env) monad
   end
 
@@ -447,21 +446,21 @@ module Make (State : State_intf.S) :
     let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
     let[@inline] nondet_valid ty = lift_err (nondet_valid ty)
 
-    (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
-       without having to re-define. *)
-    let update_ref_tys_in
-        ~(f : 'acc -> full_ptr -> Types.ty -> (full_ptr * 'acc, 'env) monad)
-        ~(init : 'acc) (v : rust_val) (ty : Types.ty) :
+    (* We painfully lift [Layout.ref_tys_in] to make it nicer to use without
+       having to re-define. *)
+    let ref_tys_in
+        ~(f : 'acc -> Types.ty -> full_ptr -> (full_ptr * 'acc, 'env) monad)
+        ~(init : 'acc) (ty : Types.ty) (v : rust_val) :
         (rust_val * 'acc, 'env) monad =
      fun env state ->
       let open Rustsymex.Syntax in
       (* The inner function operates in Rustsymex.Result.t, carrying (acc, env,
          state) as accumulator *)
-      let f_inner (acc, env, state) ptr ty =
-        let+ (res, new_env), new_state = f acc ptr ty env state in
+      let f_inner (acc, env, state) ty ptr =
+        let+ (res, new_env), new_state = f acc ty ptr env state in
         Compo_res.map (fun (ptr, acc) -> (ptr, (acc, new_env, new_state))) res
       in
-      let+ res = update_ref_tys_in f_inner (init, env, state) v ty in
+      let+ res = ref_tys_in f_inner (init, env, state) ty v in
       match res with
       | Ok (v, (acc, env, state)) -> ((Ok (v, acc), env), state)
       | Error e -> ((Error e, env), state)
