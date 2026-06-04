@@ -1,6 +1,22 @@
 open Charon
 open Common.Charon_util
+open Soteria.Bv_values.Svalue
+open Ext.Rust_ext
 include Typed_core
+
+module T = struct
+  include T
+
+  type sptr_f = [ `FullPtr ]
+  type adt = [ `Adt ]
+
+  type any =
+    [ sint_ovf | sfloat | sbool | sptr | sloc | any sseq | sptr_f | adt ]
+
+  let pp_sptr_f = Fmt.nop
+  let pp_adt = Fmt.nop
+  let pp_any = Fmt.nop
+end
 
 (** [CastError (value, expected, got)] *)
 exception CastError of T.any t * T.any ty * T.any ty
@@ -25,7 +41,18 @@ let float_precision :
   | F64 -> F64
   | F128 -> F128
 
+type ptr = {
+  ptr : T.sptr t;
+  size : T.sint t;
+  align : T.nonzero t;
+  tag : Ptr_tag.t option;
+}
+
+type meta = Thin | Len of T.sint t | VTable of T.sptr t
+type full_ptr = ptr * meta
+
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
+let t_fptr () : 'a ty = type_type @@ TExtension FullPtr
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
 
@@ -51,6 +78,11 @@ let cast_f fty v = cast_checked ~ty:(t_float fty) v
 
 let cast_float v =
   match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
+
+let meta_as_len meta =
+  match meta with
+  | Len len -> len
+  | Thin | VTable _ -> failwith "meta_as_len: invalid length for slice/str"
 
 module BitVec = struct
   include BitVec

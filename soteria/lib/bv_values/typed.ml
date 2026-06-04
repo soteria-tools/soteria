@@ -3,7 +3,7 @@ open Svalue
 
 module type S = Typed_intf.S
 
-module Make (V : Value_ext) : Typed_intf.S with module Ext = V = struct
+module Make (V : Value_ext) : S with module Ext = V = struct
   (** IMPORTANT: Svalue.Make is not pure; it instantiates a hashcons table with
       it. This means we need to be very careful to {b not} instantiate new
       [Svalue]s again, as those hashcons tables will clash and will lead to odd

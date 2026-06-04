@@ -15,17 +15,17 @@ end)
     - Uninit: the symbol is bound to an immediate, uninitialized value.
     - Dead: the symbol is dead; it doesn't exist (e.g. after a [StorageDead]).
 *)
-type 'a binding_kind =
-  | Stackptr of 'a Rust_val.full_ptr
-  | Value of 'a Rust_val.t
+type binding_kind =
+  | Stackptr of Typed.T.sptr_f Typed.t
+  | Value of Typed.T.any Typed.t
   | Uninit
   | Dead
 [@@deriving show { with_path = false }]
 
-type 'a binding = { kind : 'a binding_kind; ty : Types.ty }
+type binding = { kind : binding_kind; ty : Types.ty }
 [@@deriving show { with_path = false }]
 
-type 'a t = 'a binding Map.t
+type t = binding Map.t
 
 let reserve sym ty =
   let binding = { kind = Dead; ty } in
@@ -46,6 +46,6 @@ let get_ty sym t =
   | None -> failwith "Store: Getting type of unknown symbol?"
   | Some { ty; _ } -> ty
 
-let find local (store : 'a t) = Map.find local store
+let find local (store : t) = Map.find local store
 let empty = Map.empty
-let bindings (store : 'a t) = Map.bindings store
+let bindings (store : t) = Map.bindings store

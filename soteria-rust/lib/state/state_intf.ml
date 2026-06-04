@@ -3,7 +3,6 @@ open Typed
 open T
 open Charon
 open Common
-open Rust_val
 open Sptr
 
 module type S = sig
@@ -30,30 +29,30 @@ module type S = sig
     (** Checks this pointer isn't dangling for the given type, i.e. it points to
         an allocation and doesn't range outside of it. This also checks the
         allocation is live. *)
-    val check_non_dangling : t full_ptr -> Types.ty -> unit ret
+    val check_non_dangling : full_ptr -> Types.ty -> unit ret
 
     (** Same as {!check_non_dangling}, but for untyped ranges, where only a size
         is known. The size is signed: if less than 0, the range preceding the
         pointer is checked. *)
-    val check_non_dangling_untyped : t full_ptr -> Typed.(T.sint t) -> unit ret
+    val check_non_dangling_untyped : full_ptr -> Typed.(T.sint t) -> unit ret
 
     (** Checks this pointer is sufficiently aligned for the given type. This
         takes into account the metadata: for a [&dyn Trait], it will access the
         VTable to check alignment. *)
-    val check_aligned : t full_ptr -> Types.ty -> unit ret
+    val check_aligned : full_ptr -> Types.ty -> unit ret
   end
-
-  type full_ptr := Sptr.t full_ptr
-  type rust_val := Sptr.t rust_val
 
   (** Prettier but expensive printing. *)
   val pp_pretty : ignore_freed:bool -> t Fmt.t
 
   val empty : t option
-  val load : ?ignore_borrow:bool -> full_ptr -> Types.ty -> rust_val ret
+
+  val load :
+    ?ignore_borrow:bool -> full_ptr -> Types.ty -> [> T.any ] Typed.t ret
+
   val tb_load : full_ptr -> Types.ty -> unit ret
   val load_discriminant : full_ptr -> Types.ty -> Types.variant_id ret
-  val store : full_ptr -> Types.ty -> rust_val -> unit ret
+  val store : full_ptr -> Types.ty -> [< T.any ] Typed.t -> unit ret
 
   val alloc_untyped :
     ?span:Meta.span_data ->
@@ -67,7 +66,9 @@ module type S = sig
   val free : full_ptr -> unit ret
 
   val size_and_align_of_val :
-    Types.ty -> Sptr.t Rust_val.meta -> (T.sint Typed.t * T.nonzero Typed.t) ret
+    Types.ty ->
+    T.ptr_meta Typed.t option ->
+    (T.sint Typed.t * T.nonzero Typed.t) ret
 
   val fake_read : full_ptr -> Types.ty -> unit ret
 
@@ -92,7 +93,7 @@ module type S = sig
   val lookup_fn : full_ptr -> Fun_kind.t ret
 
   val lookup_const_generic :
-    Types.const_generic_var_id -> Types.ty -> rust_val ret
+    Types.const_generic_var_id -> Types.ty -> [< T.any ] Typed.t ret
 
   val register_thread_exit : (unit -> unit ret) -> unit ret
   val run_thread_exits : unit -> unit ret
