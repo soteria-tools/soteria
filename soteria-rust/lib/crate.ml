@@ -84,31 +84,21 @@ let as_fmt_env () =
   let crate = get_crate () in
   Print.crate_to_fmt_env crate
 
-let[@inline] mk_pp to_string =
- fun ft v -> Fmt.of_to_string (to_string (as_fmt_env ())) ft v
-
-let[@inline] mk_pp_indent to_string =
- fun ft v ->
-  let to_str = to_string (as_fmt_env ()) "" in
-  Fmt.pf ft "%s" (to_str v)
-
-let pp_constant_expr = mk_pp Print.constant_expr_to_string
-let pp_fn_operand = mk_pp Print.fn_operand_to_string
-let pp_fun_decl_ref = mk_pp Print.fun_decl_ref_to_string
-let pp_generic_args = mk_pp Print.generic_args_to_string
-let pp_operand = mk_pp Print.operand_to_string
-
-let pp_generic_params =
-  mk_pp (fun env params ->
-      let generics, clauses = Print.generic_params_to_strings env params in
-      String.concat " + " (generics @ clauses))
-
-let pp_global_decl_ref = mk_pp Print.global_decl_ref_to_string
-let pp_name = mk_pp Print.name_to_string
-let pp_place = mk_pp Print.place_to_string
-let pp_trait_ref = mk_pp Print.trait_ref_to_string
-let pp_statement = mk_pp_indent Print.Ullbc.statement_to_string
-let pp_terminator = mk_pp_indent Print.Ullbc.terminator_to_string
+let[@inline] mk_pp pp = fun ft v -> (pp (as_fmt_env ())) ft v
+let[@inline] mk_pp_indent pp = fun ft v -> pp (as_fmt_env ()) "" ft v
+let pp_constant_expr = mk_pp PrintFmt.pp_constant_expr
+let pp_fn_operand = mk_pp PrintFmt.pp_fn_operand
+let pp_fun_decl_ref = mk_pp PrintFmt.pp_fun_decl_ref
+let pp_generic_args = mk_pp PrintFmt.pp_generic_args
+let pp_operand = mk_pp PrintFmt.pp_operand
+let pp_generic_params = mk_pp PrintFmt.pp_generic_params_single_line
+let pp_global_decl_ref = mk_pp PrintFmt.pp_global_decl_ref
+let pp_name = mk_pp PrintFmt.pp_name
+let pp_place = mk_pp PrintFmt.pp_place
+let pp_trait_impl_ref = mk_pp PrintFmt.pp_trait_impl_ref
+let pp_trait_ref = mk_pp PrintFmt.pp_trait_ref
+let pp_statement = mk_pp_indent PrintFmt.Ullbc.pp_statement
+let pp_terminator = mk_pp_indent PrintFmt.Ullbc.pp_terminator
 
 let get_adt_raw id =
   let crate = get_crate () in
