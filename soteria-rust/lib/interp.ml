@@ -543,7 +543,12 @@ module Make (StateImpl : State.S) = struct
           "Resolved global init call to %a" Crate.pp_name fundef.item_meta.name];
         let global_fn = exec_real_fun fundef glob.generics in
         (* First we allocate the global and store it in the State *)
-        let@ () = with_alloc_kind ~kind:(Static glob) in
+        let kind : Alloc_kind.t =
+          match decl.global_kind with
+          | Static | ThreadLocal -> Static glob
+          | NamedConst | AnonConst -> Const glob
+        in
+        let@ () = with_alloc_kind ~kind in
         let* ptr = State.alloc_ty ~span:decl.item_meta.span.data decl.ty in
         let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)

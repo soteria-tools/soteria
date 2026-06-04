@@ -553,6 +553,14 @@ Test that it's UB to write to a const (regardless of aliasing checks), and that 
   $ soteria-rust exec write_to_const.rs  --ignore-aliasing
   Compiling... done in <time>
   => Running write_to_const::main...
-  note: write_to_const::main: done in <time>, ran 1 branch
+  error: write_to_const::main: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Write to read-only location in write_to_const::main
+      --> $TESTCASE_ROOT/write_to_const.rs:5:14
+    3 |  fn main() {
+      |  --------- 1: Entry point
+    4 |      let ptr = REF as *const u8 as *mut u8;
+    5 |      unsafe { *ptr = 67 };
+      |               ^^^^^^^^^ Memory store
   PC 1: empty
   
+  [1]

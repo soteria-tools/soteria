@@ -18,6 +18,7 @@ type t =
   | `NotAFnPointer
     (** Tried calling a function pointer, but it doesn't represent a function *)
   | `AccessedFnPointer  (** Tried accessing a function pointer's pointee *)
+  | `WriteToReadOnly  (** Tried writing to a read-only location *)
   | `InvalidFnArgCount of int * int
     (** Invalid argument count for function (function pointers only)
         [(expected, received)] *)
@@ -136,6 +137,7 @@ let rec pp ft : [> t ] -> unit = function
   | `UBTransmute msg -> Fmt.pf ft "UB: Transmute: %s" msg
   | `UnwindTerminate -> Fmt.string ft "Terminated unwind"
   | `UseAfterFree -> Fmt.string ft "Use after free"
+  | `WriteToReadOnly -> Fmt.string ft "Write to read-only location"
 
 let severity : t -> Soteria.Terminal.Diagnostic.severity = function
   | `MemoryLeak -> Warning
