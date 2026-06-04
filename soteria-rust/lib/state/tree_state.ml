@@ -657,8 +657,14 @@ module Make (Borrows : Tree_borrows.T) = struct
     (* a transmute is just a write of one type with a read of another type; we
        provide a function to do it that avoids allocating, checking alignment
        etc. *)
+    [%l.debug
+      "Transmuting %a: %a -> %a" (pp_rust_val Sptr_base.pp) v pp_ty from pp_ty
+        to_];
     let@ () = with_loc_err ~trace:"Transmute" () in
-    let**^ size = Layout.size_of to_ in
+    (* We pick [from] rather than [to_], because we can transmute to a smaller
+       type, but not to a larger one, so it's guaranteed that [size(from) >=
+       size(to_)] *)
+    let**^ size = Layout.size_of from in
     let** value =
       with_pointers
         (let open DecayMap.SM in
