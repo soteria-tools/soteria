@@ -307,10 +307,11 @@ module Make (Borrows : Tree_borrows.T) = struct
       | { info = Some { trace; _ }; _ } -> Some trace
       | _ -> None
 
-    let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
+    let make ?span ?zeroed ~size ~align () :
         (t * Borrows.Tag.t option) DecayMap.SM.t =
       let open DecayMap.SM.Syntax in
       let* tag, block = Block.alloc ?zeroed size in
+      let*^ kind = get_alloc_kind () in
       let+^ trace = get_trace () in
       let trace = Trace.rename 0 "Allocation" trace in
       let trace = Trace.move_to_opt span trace in
@@ -434,6 +435,9 @@ module Make (Borrows : Tree_borrows.T) = struct
         ptr
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st]
+
+  let[@inline] with_alloc_kind kind (f : unit -> 'a t) : 'a t =
+   fun st -> with_alloc_kind kind (f () st)
 
   let[@inline] with_loc_err ?trace:msg ()
       (f : unit -> ('a, Error.t, 'f) SM.Result.t) :
@@ -824,12 +828,12 @@ module Make (Borrows : Tree_borrows.T) = struct
        in
        Tree_block.put_raw_tree ofs tree_to_write)
 
-  let alloc ?kind ?span ?zeroed size align =
+  let alloc ?span ?zeroed size align =
     with_heap
       (let open Heap.SM in
        let open Heap.SM.Syntax in
        let*^ block, tag =
-         Freeable_block_with_meta.make ?kind ?span ?zeroed ~align ~size ()
+         Freeable_block_with_meta.make ?span ?zeroed ~align ~size ()
        in
        let** loc = Heap.alloc ~new_codom:block in
        let ptr = Typed.Ptr.mk loc Usize.(0s) in
@@ -838,15 +842,14 @@ module Make (Borrows : Tree_borrows.T) = struct
        let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
        ok (ptr, Thin))
 
-  let alloc_untyped ?kind ?span ~zeroed ~size ~align =
-    alloc ?kind ?span ~zeroed size align
+  let alloc_untyped ?span ~zeroed ~size ~align = alloc ?span ~zeroed size align
 
-  let alloc_ty ?kind ?span ty =
+  let alloc_ty ?span ty =
     let@ () = with_loc_err ~trace:"Allocation" () in
     let**^ layout = Layout.layout_of ty in
-    alloc ?kind ?span layout.size layout.align
+    alloc ?span layout.size layout.align
 
-  let alloc_tys ?kind ?span tys : ('a, Error.with_trace, syn list) Result.t =
+  let alloc_tys ?span tys : ('a, Error.with_trace, syn list) Result.t =
     let@ () = with_loc_err ~trace:"Allocation" () in
     let**^ layouts = Rustsymex.Result.map_list tys ~f:Layout.layout_of in
     let layouts = List.rev layouts in
@@ -857,7 +860,7 @@ module Make (Borrows : Tree_borrows.T) = struct
            (* make Tree_block *)
            let { size; align; _ } : Layout.t = layout in
            let* block, tag =
-             Freeable_block_with_meta.make ?kind ?span ~align ~size ()
+             Freeable_block_with_meta.make ?span ~align ~size ()
            in
            (* create pointer *)
            let* () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
@@ -965,56 +968,28 @@ module Make (Borrows : Tree_borrows.T) = struct
                    Result.ok (ptr, Thin)))
 
   let leak_check () : (unit, Error.with_trace, syn list) Result.t =
-    (* FIXME: this is an unnecessarily complicated function; what we should do
-       is properly track what allocations come from a const/static (with
-       Alloc_kind), and then simply iterate over all allocations and look for
-       non-const/static allocations. *)
-    let* st = SM.get_state () in
-    let st = of_opt st in
-    let* global_addresses =
-      fold_list (GlobMap.bindings st.globals) ~init:[]
-        ~f:(fun acc (g, ((ptr : Sptr_base.t), _)) ->
-          let loc = Typed.Ptr.loc ptr.ptr in
-          match g with
-          | String _ -> return (loc :: acc)
-          | Global g -> (
-              let glob = Crate.get_global g in
-              let* res = load ~ignore_borrow:true (ptr, Thin) glob.ty in
-              match res with
-              | Ok v ->
-                  let ptrs = Encoder.ref_tys_in ~include_ptrs:true v glob.ty in
-                  let ptrs =
-                    List.map
-                      (fun (((p : Sptr_base.t), _), _) -> Typed.Ptr.loc p.ptr)
-                      ptrs
-                  in
-                  return (loc :: (ptrs @ acc))
-              | _ -> return acc))
-    in
     with_heap
       (let open Heap.SM in
        let open Heap.SM.Syntax in
        let* heap = get_state () in
-       let*^ leaks =
-         Heap.fold
-           (fun leaks (k, (v : Freeable_block_with_meta.t)) ->
+       let leaks =
+         Heap.syntactic_bindings (Heap.of_opt heap)
+         |> Seq.filter_map (fun (k, (v : Freeable_block_with_meta.t)) ->
              (* FIXME: This only works because our addresses are concrete *)
              let open DecayMap.SM in
-             match v with
-             | { node = Alive _; info = Some { kind = Heap; trace; _ }; _ }
-               when not (List.mem k global_addresses) ->
-                 return ((k, trace) :: leaks)
-             | _ -> return leaks)
-           [] heap
+             match (v.node, v.info) with
+             | Alive _, Some { kind = Heap; trace; _ } -> Some (k, trace)
+             | _ -> None)
        in
-       if List.is_empty leaks then Result.ok ()
+       if Seq.is_empty leaks then Result.ok ()
        else
          let pp_leak ft (k, trace) =
            Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp trace
          in
-         [%l.info "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks];
-         let wheres = List.map snd leaks in
-         let* leak_trace = branches (List.map (fun t () -> return t) wheres) in
+         [%l.info "Found leaks: %a" Fmt.(seq ~sep:(any ", ") pp_leak) leaks];
+         let* leak_trace =
+           Seq.map (fun (_, t) () -> return t) leaks |> List.of_seq |> branches
+         in
          let leak_trace =
            Trace.rename ~rev:true 0 "Leaking function" leak_trace
          in
@@ -1057,9 +1032,8 @@ module Make (Borrows : Tree_borrows.T) = struct
           | Synthetic _ -> None
         in
         let** ptr, meta =
-          alloc_untyped ~kind:(Function fn_def) ?span ~zeroed:false
-            ~size:Usize.(0s)
-            ~align
+          with_alloc_kind (Function fn_def) @@ fun () ->
+          alloc_untyped ?span ~zeroed:false ~size:Usize.(0s) ~align
         in
         let ptr = { ptr with tag = None } in
         let loc = Typed.Ptr.loc ptr.ptr in

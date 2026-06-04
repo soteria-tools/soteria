@@ -1,3 +1,4 @@
+open Syntaxes.FunctionWrap
 open Common
 open Rust_val
 open Typed.Infix
@@ -22,9 +23,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let cleanup ~payload =
     let ptr, _ = payload in
     let* usize_size = Layout.size_of (TLiteral (TUInt Usize)) in
+    let@ () = with_alloc_kind ~kind:(VTable Charon.TypesUtils.mk_unit_ty) in
     let* vtable, _ =
-      State.alloc_untyped ~kind:(VTable Charon.TypesUtils.mk_unit_ty)
-        ~zeroed:true
+      State.alloc_untyped ~zeroed:true
         ~size:Usize.(usize_size *!!@ 3s)
         ~align:(Typed.cast usize_size) ()
     in

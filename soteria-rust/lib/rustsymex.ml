@@ -25,9 +25,22 @@ end)
 
 module MonadState = struct
   type t = {
-    trace : Trace.t;
+    trace : Trace.t;  (** The current trace of execution *)
     subst : Charon.Substitute.subst;
+        (** In polymorphic mode, the current substitution to be applied to
+            generics. See also {!Poly}. *)
     generic_layouts : Layout_common.t TypeMap.t;
+        (** The map of generic layouts, for types with generics.
+            {b This is soundness critical}, it is not "just" a cache. A cache
+            implies that we are allowed to clear it, and things are okay. It is
+            not the case here: if we lose information on a generic
+            (nondeterministic) layout, recomputing it will create new symbolic
+            variables, which may not match the layout that was previously
+            computed. *)
+    alloc_kind : Common.Alloc_kind.t;
+        (** The current allocation kind. This is needed to mark all allocations
+            done in a constant's initialiser as related to the constant, so that
+            they are not considered when checking for memory leaks. *)
   }
 
   let empty =
@@ -35,6 +48,7 @@ module MonadState = struct
       trace = Trace.empty;
       subst = Charon.Substitute.empty_subst;
       generic_layouts = TypeMap.empty;
+      alloc_kind = Heap;
     }
 end
 
@@ -139,6 +153,17 @@ let get_trace () : Trace.t t =
   let open Syntax in
   let+ { trace; _ } = get_state () in
   trace
+
+let with_alloc_kind alloc_kind (f : 'a t) : 'a t =
+ fun st ->
+  let open MonoSymex.Syntax in
+  let+ result, state = f { st with alloc_kind } in
+  (result, { state with alloc_kind = st.alloc_kind })
+
+let get_alloc_kind () : Common.Alloc_kind.t t =
+  let open Syntax in
+  let+ { alloc_kind; _ } = get_state () in
+  alloc_kind
 
 let error ?trace e : ('a, Error.with_trace, 'f) Result.t =
   let open Syntax in

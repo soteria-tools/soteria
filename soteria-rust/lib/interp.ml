@@ -217,7 +217,8 @@ module Make (StateImpl : State.S) = struct
             let str_ty : Types.ty =
               mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
             in
-            let* ptr, _ = State.alloc_ty ~kind:StaticString str_ty in
+            let@ () = with_alloc_kind ~kind:StaticString in
+            let* ptr, _ = State.alloc_ty str_ty in
             let ptr = (ptr, Len (BV.usizei len)) in
             let* () = State.store ptr str_ty char_arr in
             let+ () = State.store_str_global str ptr in
@@ -325,7 +326,8 @@ module Make (StateImpl : State.S) = struct
         (* HACK: ideally Charon shouldn't have ref constants, those are entirely
            separate allocations :/ *)
         let* v = resolve_constant expr in
-        let* ptr = State.alloc_ty ~kind:AnonConst expr.ty in
+        let@ () = with_alloc_kind ~kind:AnonConst in
+        let* ptr = State.alloc_ty expr.ty in
         let+ () = State.store ptr expr.ty v in
         Ptr ptr
     | CPtr _ ->
@@ -541,10 +543,8 @@ module Make (StateImpl : State.S) = struct
           "Resolved global init call to %a" Crate.pp_name fundef.item_meta.name];
         let global_fn = exec_real_fun fundef glob.generics in
         (* First we allocate the global and store it in the State *)
-        let* ptr =
-          State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
-            decl.ty
-        in
+        let@ () = with_alloc_kind ~kind:(Static glob) in
+        let* ptr = State.alloc_ty ~span:decl.item_meta.span.data decl.ty in
         let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = with_env ~env:() @@ global_fn [] in

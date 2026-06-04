@@ -64,6 +64,10 @@ module type S = sig
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
   val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
+
+  val with_alloc_kind :
+    kind:Alloc_kind.t -> (unit -> ('a, 'env) t) -> ('a, 'env) t
+
   val get_trace : unit -> (Trace.t, 'env) t
 
   val with_extra_call_trace :
@@ -161,9 +165,7 @@ module type S = sig
       rust_val
 
     val nondet_valid : Types.ty -> (rust_val, 'env) monad
-
-    val ref_tys_in :
-      ?include_ptrs:bool -> rust_val -> Types.ty -> (full_ptr * Types.ty) list
+    val ref_tys_in : Types.ty -> rust_val -> (Types.ty * full_ptr) Iter.t
 
     val update_ref_tys_in :
       f:('acc -> full_ptr -> Types.ty -> (full_ptr * 'acc, 'env) monad) ->
@@ -179,21 +181,12 @@ module type S = sig
     val load_discriminant : full_ptr -> Types.ty -> (Types.variant_id, 'env) t
     val store : full_ptr -> Types.ty -> rust_val -> (unit, 'env) t
     val zeros : full_ptr -> Typed.T.sint Typed.t -> (unit, 'env) t
-
-    val alloc_ty :
-      ?kind:Alloc_kind.t ->
-      ?span:Meta.span_data ->
-      Types.ty ->
-      (full_ptr, 'env) t
+    val alloc_ty : ?span:Meta.span_data -> Types.ty -> (full_ptr, 'env) t
 
     val alloc_tys :
-      ?kind:Alloc_kind.t ->
-      ?span:Meta.span_data ->
-      Types.ty list ->
-      (full_ptr list, 'env) t
+      ?span:Meta.span_data -> Types.ty list -> (full_ptr list, 'env) t
 
     val alloc_untyped :
-      ?kind:Alloc_kind.t ->
       ?span:Meta.span_data ->
       zeroed:bool ->
       size:Typed.T.sint Typed.t ->
@@ -375,6 +368,9 @@ module Make (State : State_intf.S) :
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> with_loc ~loc (f () env state)
 
+  let with_alloc_kind ~kind (f : unit -> ('a, 'env) t) : ('a, 'env) t =
+   fun env state -> with_alloc_kind kind (f () env state)
+
   let get_trace () : (Trace.t, 'env) t = lift_symex @@ Rustsymex.get_trace ()
 
   let with_extra_call_trace ?name ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
@@ -483,13 +479,11 @@ module Make (State : State_intf.S) :
     let[@inline] load_discriminant ptr ty = ESM.lift (load_discriminant ptr ty)
     let[@inline] store ptr ty v = ESM.lift (store ptr ty v)
     let[@inline] zeros ptr size = ESM.lift (zeros ptr size)
-    let[@inline] alloc_ty ?kind ?span ty = ESM.lift (alloc_ty ?kind ?span ty)
+    let[@inline] alloc_ty ?span ty = ESM.lift (alloc_ty ?span ty)
+    let[@inline] alloc_tys ?span tys = ESM.lift (alloc_tys ?span tys)
 
-    let[@inline] alloc_tys ?kind ?span tys =
-      ESM.lift (alloc_tys ?kind ?span tys)
-
-    let[@inline] alloc_untyped ?kind ?span ~zeroed ~size ~align () =
-      ESM.lift (alloc_untyped ?kind ?span ~zeroed ~size ~align)
+    let[@inline] alloc_untyped ?span ~zeroed ~size ~align () =
+      ESM.lift (alloc_untyped ?span ~zeroed ~size ~align)
 
     let[@inline] copy_nonoverlapping ~src ~dst ~size =
       ESM.lift (copy_nonoverlapping ~src ~dst ~size)
