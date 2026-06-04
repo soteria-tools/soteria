@@ -6,6 +6,7 @@ module T = Typed.T
 open Rustsymex
 open Charon
 open Common
+open Charon_util
 open Sptr
 
 module Make (Borrows : Tree_borrows.T) = struct
@@ -251,7 +252,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         being reborrowed. *)
     let borrow ?(protect = false) ((ptr : Sptr_base.t), meta) tag
         (ty : Types.ty) ofs =
-      let pointee = Charon_util.get_pointee ty in
+      let pointee = get_pointee ty in
       (* FIXME: this logic is tree borrows related and should be handled there.
          https://github.com/soteria-tools/soteria/issues/301 *)
       let state : Tree_borrows.state =
@@ -265,7 +266,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         match (protect, ty) with
         | false, _ -> None
         | true, TRef _ -> Some Strong
-        | true, TAdt adt when Charon_util.adt_is_box adt -> Some Weak
+        | true, TAdt adt when adt_is_box adt -> Some Weak
         | true, _ -> failwith "Non-ref or box in borrow?"
       in
       let** tag = with_borrow (Borrows.Tree.borrow ~state ?protector tag) in
@@ -491,7 +492,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let** _, exp_align = size_and_align_of_val ty meta in
     [%l.debug
       "Checking pointer alignment of %a: expect %a for %a" Sptr_base.pp ptr
-        Typed.ppa exp_align Common.Charon_util.pp_ty ty];
+        Typed.ppa exp_align pp_ty ty];
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     (* A pointer with no provenance is aligned to it's offset *)
     let align = Typed.(ite (Ptr.is_null_loc loc) exp_align (cast ptr.align)) in
@@ -581,8 +582,8 @@ module Make (Borrows : Tree_borrows.T) = struct
     if skip_check then Result.ok ()
     else (
       [%l.debug
-        "Checking validity of %a for %a" (pp_full_ptr Sptr_base.pp) fptr
-          Charon_util.pp_ty ty];
+        "Checking validity of %a for %a" (pp_full_ptr Sptr_base.pp) fptr pp_ty
+          ty];
       let*- err =
         let++ _ = load ~ignore_borrow:true ~check_refs:false fptr ty in
         ()
