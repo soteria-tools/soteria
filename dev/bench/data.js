@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780517407845,
+  "lastUpdate": 1780591128499,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -885,6 +885,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.702021068893373,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1dfec10bb3c40231f2e40f9a442caa27cb49b393",
+          "message": "Cleaner transmutes (#366)\n\n* Factor out `check_validity`\n\n* Add `State.transmute`\n\n* Tests :)\n\n* transmute fast path\n\n* Revert \"transmute fast path\"\n\nThis reverts commit 9866ff2e7456903c24f844ba76ea66d791c86b2f.\n\n* An `open` never hurts\n\n* Fix bug in transmute",
+          "timestamp": "2026-06-04T16:20:50Z",
+          "tree_id": "3e54b185694f0fae54931a841fa64cd3bc319673",
+          "url": "https://github.com/soteria-tools/soteria/commit/1dfec10bb3c40231f2e40f9a442caa27cb49b393"
+        },
+        "date": 1780591126769,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08090569054,
+            "range": "± 0.002",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.5846825986799999,
+            "range": "± 0.0051",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.9069453598800004,
+            "range": "± 0.0119",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.22219427364,
+            "range": "± 0.0024",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.74640076066,
+            "range": "± 0.0521",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9601054134400004,
+            "range": "± 0.0179",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.841945405118167,
             "unit": "s"
           }
         ]
