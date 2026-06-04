@@ -548,3 +548,11 @@ Check we handle pattern types correctly
   PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
   
   [1]
+
+Test that it's UB to write to a const (regardless of aliasing checks), and that we don't detect const refs as leaks
+  $ soteria-rust exec write_to_const.rs  --ignore-aliasing
+  Compiling... done in <time>
+  => Running write_to_const::main...
+  note: write_to_const::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
