@@ -852,7 +852,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let+ _, align = State.size_and_align_of_val t meta in
     (align :> T.sint Typed.t)
 
-  let transmute ~t_src ~dst ~src = Core.transmute ~from_ty:t_src ~to_ty:dst src
+  let transmute ~t_src ~dst ~src = State.transmute ~from:t_src ~to_:dst src
 
   let type_id ~t =
     (* lazy but works *)

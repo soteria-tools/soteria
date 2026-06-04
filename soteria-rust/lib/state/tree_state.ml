@@ -6,6 +6,7 @@ module T = Typed.T
 open Rustsymex
 open Charon
 open Common
+open Charon_util
 open Sptr
 
 module Make (Borrows : Tree_borrows.T) = struct
@@ -251,7 +252,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         being reborrowed. *)
     let borrow ?(protect = false) ((ptr : Sptr_base.t), meta) tag
         (ty : Types.ty) ofs =
-      let pointee = Charon_util.get_pointee ty in
+      let pointee = get_pointee ty in
       (* FIXME: this logic is tree borrows related and should be handled there.
          https://github.com/soteria-tools/soteria/issues/301 *)
       let state : Tree_borrows.state =
@@ -265,7 +266,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         match (protect, ty) with
         | false, _ -> None
         | true, TRef _ -> Some Strong
-        | true, TAdt adt when Charon_util.adt_is_box adt -> Some Weak
+        | true, TAdt adt when adt_is_box adt -> Some Weak
         | true, _ -> failwith "Non-ref or box in borrow?"
       in
       let** tag = with_borrow (Borrows.Tree.borrow ~state ?protector tag) in
@@ -491,7 +492,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let** _, exp_align = size_and_align_of_val ty meta in
     [%l.debug
       "Checking pointer alignment of %a: expect %a for %a" Sptr_base.pp ptr
-        Typed.ppa exp_align Common.Charon_util.pp_ty ty];
+        Typed.ppa exp_align pp_ty ty];
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     (* A pointer with no provenance is aligned to it's offset *)
     let align = Typed.(ite (Ptr.is_null_loc loc) exp_align (cast ptr.align)) in
@@ -532,12 +533,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let** size, _ = size_and_align_of_val ty meta in
     check_non_dangling_untyped ptr size
 
-  and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
-      (Sptr_base.t rust_val, Error.t, syn list) Result.t =
-    let** () = check_ptr_align fptr ty in
-    let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
-    let** value = apply_parser ?ignore_borrow ptr parser in
-    [%l.debug "Finished reading rust value %a" (Rust_val.pp Sptr_base.pp) value];
+  and check_validity ~check_refs ty value =
     let check_ref =
       if (Config.get ()).recursive_validity <> Allow && check_refs then
         fun ptr ty ->
@@ -549,7 +545,15 @@ module Make (Borrows : Tree_borrows.T) = struct
         let** () = check_ptr_align ptr ty in
         check_non_dangling ptr ty
     in
-    let++ () = Encoder.check_validity ~check_ref ty value in
+    Encoder.check_validity ~check_ref ty value
+
+  and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
+      (Sptr_base.t rust_val, Error.t, syn list) Result.t =
+    let** () = check_ptr_align fptr ty in
+    let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
+    let** value = apply_parser ?ignore_borrow ptr parser in
+    [%l.debug "Finished reading rust value %a" (Rust_val.pp Sptr_base.pp) value];
+    let++ () = check_validity ~check_refs ty value in
     value
 
   and load_discriminant ((ptr, _) as fptr) ty =
@@ -578,8 +582,8 @@ module Make (Borrows : Tree_borrows.T) = struct
     if skip_check then Result.ok ()
     else (
       [%l.debug
-        "Checking validity of %a for %a" (pp_full_ptr Sptr_base.pp) fptr
-          Charon_util.pp_ty ty];
+        "Checking validity of %a for %a" (pp_full_ptr Sptr_base.pp) fptr pp_ty
+          ty];
       let*- err =
         let++ _ = load ~ignore_borrow:true ~check_refs:false fptr ty in
         ()
@@ -636,6 +640,64 @@ module Make (Borrows : Tree_borrows.T) = struct
           let** () = Tree_block.uninit_range ofs size in
           Result.iter_iter parts ~f:(fun (value, offset) ->
               Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
+
+  (** We can't use {!Heap.Decoder} for [transmute], since the transmute happens
+      regardless of the heap's state, so we need to re-instantiate it for tree
+      block instead *)
+  module Tree_block_decoder =
+    Value_codec.Decoder
+      (Sptr_base)
+      (struct
+        module SM = Tree_block.SM
+
+        type fix = Tree_block.syn list
+      end)
+
+  let transmute ~from ~to_ v =
+    (* a transmute is just a write of one type with a read of another type; we
+       provide a function to do it that avoids allocating, checking alignment
+       etc. *)
+    [%l.debug
+      "Transmuting %a: %a -> %a" (pp_rust_val Sptr_base.pp) v pp_ty from pp_ty
+        to_];
+    let@ () = with_loc_err ~trace:"Transmute" () in
+    (* We pick [from] rather than [to_], because we can transmute to a smaller
+       type, but not to a larger one, so it's guaranteed that [size(from) >=
+       size(to_)] *)
+    let**^ size = Layout.size_of from in
+    let** value =
+      with_pointers
+        (let open DecayMap.SM in
+         let open Syntax in
+         let* block = Tree_block.alloc size in
+         Tree_block.SM.Result.run_with_state ~state:(Some block)
+           (let open Tree_block.SM in
+            let open Syntax in
+            let open Tree_block_decoder in
+            (* first, we write *)
+            let**^ parts =
+              DecayMap.SM.lift @@ Encoder.encode ~offset:Usize.(0s) v from
+            in
+            let** () =
+              Result.iter_iter parts ~f:(fun (value, offset) ->
+                  Tree_block.store offset value None None)
+            in
+            (* next, we read *)
+            let handler (ty, ofs) =
+              Tree_block.load ~ignore_borrow:true ofs ty None None
+            in
+            let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
+            ParserMonad.parse ~handler ~get_all
+            @@ decode ~meta:Thin ~offset:Usize.(0s) to_)
+         |> map (function
+           | Ok (value, _block) -> Ok value
+           | Error (e, _block) -> Error e
+           (* HACK: we add this because we can't lift misses for a part of state
+              that doesn't exist (and misses can't happen here anyways) *)
+           | Missing _ -> failwith "impossible : miss"))
+    in
+    let++ () = check_validity ~check_refs:true to_ value in
+    value
 
   module Sptr = struct
     include Sptr_base
