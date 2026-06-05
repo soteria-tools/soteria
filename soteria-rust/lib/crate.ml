@@ -196,6 +196,13 @@ let is_struct (adt_ref : Types.type_decl_ref) =
       match (get_adt_raw id).kind with Struct _ -> true | _ -> false)
   | _ -> false
 
+let is_struct_or_tuple (adt_ref : Types.type_decl_ref) =
+  match adt_ref.id with
+  | TTuple -> true
+  | TAdtId id -> (
+      match (get_adt_raw id).kind with Struct _ -> true | _ -> false)
+  | _ -> false
+
 let is_union (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with
   | TAdtId id -> (

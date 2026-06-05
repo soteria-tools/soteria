@@ -299,18 +299,23 @@ module Make (Borrows : Tree_borrows.T) = struct
     include
       Soteria.Sym_states.With_info.Make (DecayMap.SM) (Meta) (Freeable_block)
 
-    let is_freed : syn -> bool = function
+    let[@inline] is_freed : syn -> bool = function
       | { node = Freed; _ } -> true
       | _ -> false
 
-    let trace_syn : syn -> Trace.t option = function
+    let[@inline] trace_syn : syn -> Trace.t option = function
       | { info = Some { trace; _ }; _ } -> Some trace
       | _ -> None
 
-    let make ?(kind = Alloc_kind.Heap) ?span ?zeroed ~size ~align () :
+    let[@inline] alloc_kind : t option -> Alloc_kind.t option = function
+      | Some { info = Some { kind; _ }; _ } -> Some kind
+      | _ -> None
+
+    let make ?span ?zeroed ~size ~align () :
         (t * Borrows.Tag.t option) DecayMap.SM.t =
       let open DecayMap.SM.Syntax in
       let* tag, block = Block.alloc ?zeroed size in
+      let*^ kind = get_alloc_kind () in
       let+^ trace = get_trace () in
       let trace = Trace.rename 0 "Allocation" trace in
       let trace = Trace.move_to_opt span trace in
@@ -326,7 +331,9 @@ module Make (Borrows : Tree_borrows.T) = struct
         (StateKey)
         (Freeable_block_with_meta)
 
-    let with_ptr (ptr : Sptr_base.t)
+    type access = Ghost | Read | Write
+
+    let with_ptr (access : access) (ptr : Sptr_base.t)
         (f : [< T.sint ] Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
         ('a, 'err, syn list) SM.Result.t =
       let open SM in
@@ -340,9 +347,13 @@ module Make (Borrows : Tree_borrows.T) = struct
           (let open Freeable_block_with_meta in
            let open SM.Syntax in
            let* block = SM.get_state () in
-           match block with
-           | Some { info = Some { kind = Function _; _ }; _ } ->
+           match (alloc_kind block, access) with
+           | Some (Function _), (Read | Write) ->
                SM.Result.error `AccessedFnPointer
+           | Some ((Const _ | AnonConst | StaticString) as k), Write ->
+               let*^ cur_kind = DecayMap.SM.lift @@ get_alloc_kind () in
+               if cur_kind <> k then SM.Result.error `WriteToReadOnly
+               else Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs)
            | _ -> Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs))
       in
       match res with
@@ -435,6 +446,9 @@ module Make (Borrows : Tree_borrows.T) = struct
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st]
 
+  let[@inline] with_alloc_kind kind (f : unit -> 'a t) : 'a t =
+   fun st -> with_alloc_kind kind (f () st)
+
   let[@inline] with_loc_err ?trace:msg ()
       (f : unit -> ('a, Error.t, 'f) SM.Result.t) :
       ('a, Error.with_trace, 'f) SM.Result.t =
@@ -451,11 +465,11 @@ module Make (Borrows : Tree_borrows.T) = struct
       (a, Error.t, syn list) Result.t =
     let* () = log "load" ptr in
     let handler (ty, ofs) =
-      let@ _ofs = Heap.with_ptr ptr in
+      let@ _ofs = Heap.with_ptr Read ptr in
       Block.with_block_read_tb (Tree_block.load ~ignore_borrow ofs ty ptr.tag)
     in
     let get_all (size, ofs) =
-      let@ _ofs = Heap.with_ptr ptr in
+      let@ _ofs = Heap.with_ptr Read ptr in
       Block.with_block (Tree_block.get_init_leaves ofs size)
     in
     let offset = Typed.Ptr.ofs ptr.ptr in
@@ -463,14 +477,14 @@ module Make (Borrows : Tree_borrows.T) = struct
     @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all
     @@ parser ~offset
 
-  let with_ptr ptr f = with_heap @@ Heap.with_ptr ptr f
+  let with_ptr access ptr f = with_heap @@ Heap.with_ptr access ptr f
 
   let uninit ((ptr, _) : Sptr_base.t * 'a) (ty : Types.ty) :
       (unit, 'err, 'fix) Result.t =
     let@ () = with_loc_err ~trace:"Uninitialising memory" () in
     let* () = log "uninit" ptr in
     let**^ size = Layout.size_of ty in
-    let@ ofs = with_ptr ptr in
+    let@ ofs = with_ptr Write ptr in
     Block.with_block @@ Tree_block.uninit_range ofs size
 
   let rec size_and_align_of_val t meta =
@@ -523,7 +537,7 @@ module Make (Borrows : Tree_borrows.T) = struct
           (ptr', Typed.(cast (BV.neg size)))
       in
       let open Block.SM.Syntax in
-      let@ ofs = with_ptr ptr in
+      let@ ofs = with_ptr Ghost ptr in
       let+- _ =
         Block.with_block (Tree_block.check_owned ofs (Typed.cast size))
       in
@@ -609,7 +623,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         if%sat size ==@ Usize.(0s) then Result.ok ()
         else
           let* () = log "tb_load" ptr in
-          let@ ofs = with_ptr ptr in
+          let@ ofs = with_ptr Ghost ptr in
           Block.with_block_read_tb (Tree_block.tb_access ofs size tag)
 
   (** Performs a load at the tree borrow level, by updating the borrow state,
@@ -631,7 +645,7 @@ module Make (Borrows : Tree_borrows.T) = struct
          Encoder.pp_rust_val Typed.ppa)) parts]; *)
       let* () = log "store" ptr in
       let**^ size = Layout.size_of ty in
-      let@ ofs = with_ptr ptr in
+      let@ ofs = with_ptr Write ptr in
       Block.with_block_read_tb (fun tb ->
           let open Tree_block.SM in
           let open Tree_block.SM.Syntax in
@@ -760,13 +774,13 @@ module Make (Borrows : Tree_borrows.T) = struct
       (unit, Error.with_trace, syn list) Result.t =
     let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
     let** tree_to_write =
-      let@ ofs = with_ptr src in
+      let@ ofs = with_ptr Read src in
       Block.with_block (fun tree_block ->
           let open DecayMap.SM.Syntax in
           let+ res, _ = Tree_block.get_raw_tree_owned ofs size tree_block in
           (res, tree_block))
     in
-    let@ ofs = with_ptr dst in
+    let@ ofs = with_ptr Write dst in
     Block.with_block
       (let open Tree_block.SM in
        let open Tree_block.SM.Syntax in
@@ -824,12 +838,12 @@ module Make (Borrows : Tree_borrows.T) = struct
        in
        Tree_block.put_raw_tree ofs tree_to_write)
 
-  let alloc ?kind ?span ?zeroed size align =
+  let alloc ?span ?zeroed size align =
     with_heap
       (let open Heap.SM in
        let open Heap.SM.Syntax in
        let*^ block, tag =
-         Freeable_block_with_meta.make ?kind ?span ?zeroed ~align ~size ()
+         Freeable_block_with_meta.make ?span ?zeroed ~align ~size ()
        in
        let** loc = Heap.alloc ~new_codom:block in
        let ptr = Typed.Ptr.mk loc Usize.(0s) in
@@ -838,15 +852,14 @@ module Make (Borrows : Tree_borrows.T) = struct
        let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
        ok (ptr, Thin))
 
-  let alloc_untyped ?kind ?span ~zeroed ~size ~align =
-    alloc ?kind ?span ~zeroed size align
+  let alloc_untyped ?span ~zeroed ~size ~align = alloc ?span ~zeroed size align
 
-  let alloc_ty ?kind ?span ty =
+  let alloc_ty ?span ty =
     let@ () = with_loc_err ~trace:"Allocation" () in
     let**^ layout = Layout.layout_of ty in
-    alloc ?kind ?span layout.size layout.align
+    alloc ?span layout.size layout.align
 
-  let alloc_tys ?kind ?span tys : ('a, Error.with_trace, syn list) Result.t =
+  let alloc_tys ?span tys : ('a, Error.with_trace, syn list) Result.t =
     let@ () = with_loc_err ~trace:"Allocation" () in
     let**^ layouts = Rustsymex.Result.map_list tys ~f:Layout.layout_of in
     let layouts = List.rev layouts in
@@ -857,7 +870,7 @@ module Make (Borrows : Tree_borrows.T) = struct
            (* make Tree_block *)
            let { size; align; _ } : Layout.t = layout in
            let* block, tag =
-             Freeable_block_with_meta.make ?kind ?span ~align ~size ()
+             Freeable_block_with_meta.make ?span ~align ~size ()
            in
            (* create pointer *)
            let* () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
@@ -893,7 +906,7 @@ module Make (Borrows : Tree_borrows.T) = struct
   let zeros (ptr, _) size =
     let@ () = with_loc_err ~trace:"Memory store (0s)" () in
     let* () = log "zeroes" ptr in
-    let@ ofs = with_ptr ptr in
+    let@ ofs = with_ptr Write ptr in
     Block.with_block (Tree_block.zero_range ofs size)
 
   let store_str_global str ptr =
@@ -921,7 +934,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     match ptr.tag with
     | None -> Result.ok fptr
     | Some tag ->
-        let@ ofs = with_ptr ptr in
+        let@ ofs = with_ptr Ghost ptr in
         Block.borrow ?protect fptr tag ty ofs
 
   let unprotect ((ptr : Sptr_base.t), _) (ty : Types.ty) =
@@ -933,7 +946,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         if freed then Result.ok ()
         else
           let**^ size = Layout.size_of ty in
-          let@ ofs = with_ptr ptr in
+          let@ ofs = with_ptr Ghost ptr in
           [%l.debug "Unprotecting pointer %a" Sptr_base.pp ptr];
           Block.unprotect ofs tag size
 
@@ -965,56 +978,28 @@ module Make (Borrows : Tree_borrows.T) = struct
                    Result.ok (ptr, Thin)))
 
   let leak_check () : (unit, Error.with_trace, syn list) Result.t =
-    (* FIXME: this is an unnecessarily complicated function; what we should do
-       is properly track what allocations come from a const/static (with
-       Alloc_kind), and then simply iterate over all allocations and look for
-       non-const/static allocations. *)
-    let* st = SM.get_state () in
-    let st = of_opt st in
-    let* global_addresses =
-      fold_list (GlobMap.bindings st.globals) ~init:[]
-        ~f:(fun acc (g, ((ptr : Sptr_base.t), _)) ->
-          let loc = Typed.Ptr.loc ptr.ptr in
-          match g with
-          | String _ -> return (loc :: acc)
-          | Global g -> (
-              let glob = Crate.get_global g in
-              let* res = load ~ignore_borrow:true (ptr, Thin) glob.ty in
-              match res with
-              | Ok v ->
-                  let ptrs = Encoder.ref_tys_in ~include_ptrs:true v glob.ty in
-                  let ptrs =
-                    List.map
-                      (fun (((p : Sptr_base.t), _), _) -> Typed.Ptr.loc p.ptr)
-                      ptrs
-                  in
-                  return (loc :: (ptrs @ acc))
-              | _ -> return acc))
-    in
     with_heap
       (let open Heap.SM in
        let open Heap.SM.Syntax in
        let* heap = get_state () in
-       let*^ leaks =
-         Heap.fold
-           (fun leaks (k, (v : Freeable_block_with_meta.t)) ->
+       let leaks =
+         Heap.syntactic_bindings (Heap.of_opt heap)
+         |> Seq.filter_map (fun (k, (v : Freeable_block_with_meta.t)) ->
              (* FIXME: This only works because our addresses are concrete *)
              let open DecayMap.SM in
-             match v with
-             | { node = Alive _; info = Some { kind = Heap; trace; _ }; _ }
-               when not (List.mem k global_addresses) ->
-                 return ((k, trace) :: leaks)
-             | _ -> return leaks)
-           [] heap
+             match (v.node, v.info) with
+             | Alive _, Some { kind = Heap; trace; _ } -> Some (k, trace)
+             | _ -> None)
        in
-       if List.is_empty leaks then Result.ok ()
+       if Seq.is_empty leaks then Result.ok ()
        else
          let pp_leak ft (k, trace) =
            Fmt.pf ft "%a (allocated at %a)" Typed.ppa k Trace.pp trace
          in
-         [%l.info "Found leaks: %a" Fmt.(list ~sep:(any ", ") pp_leak) leaks];
-         let wheres = List.map snd leaks in
-         let* leak_trace = branches (List.map (fun t () -> return t) wheres) in
+         [%l.info "Found leaks: %a" Fmt.(seq ~sep:(any ", ") pp_leak) leaks];
+         let* leak_trace =
+           Seq.map (fun (_, t) () -> return t) leaks |> List.of_seq |> branches
+         in
          let leak_trace =
            Trace.rename ~rev:true 0 "Leaking function" leak_trace
          in
@@ -1057,9 +1042,8 @@ module Make (Borrows : Tree_borrows.T) = struct
           | Synthetic _ -> None
         in
         let** ptr, meta =
-          alloc_untyped ~kind:(Function fn_def) ?span ~zeroed:false
-            ~size:Usize.(0s)
-            ~align
+          with_alloc_kind (Function fn_def) @@ fun () ->
+          alloc_untyped ?span ~zeroed:false ~size:Usize.(0s) ~align
         in
         let ptr = { ptr with tag = None } in
         let loc = Typed.Ptr.loc ptr.ptr in

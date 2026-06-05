@@ -64,6 +64,10 @@ module type S = sig
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
   val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
+
+  val with_alloc_kind :
+    kind:Alloc_kind.t -> (unit -> ('a, 'env) t) -> ('a, 'env) t
+
   val get_trace : unit -> (Trace.t, 'env) t
 
   val with_extra_call_trace :
@@ -163,13 +167,10 @@ module type S = sig
     val nondet_valid : Types.ty -> (rust_val, 'env) monad
 
     val ref_tys_in :
-      ?include_ptrs:bool -> rust_val -> Types.ty -> (full_ptr * Types.ty) list
-
-    val update_ref_tys_in :
-      f:('acc -> full_ptr -> Types.ty -> (full_ptr * 'acc, 'env) monad) ->
+      f:('acc -> Types.ty -> full_ptr -> (full_ptr * 'acc, 'env) monad) ->
       init:'acc ->
-      rust_val ->
       Types.ty ->
+      rust_val ->
       (rust_val * 'acc, 'env) monad
   end
 
@@ -179,21 +180,12 @@ module type S = sig
     val load_discriminant : full_ptr -> Types.ty -> (Types.variant_id, 'env) t
     val store : full_ptr -> Types.ty -> rust_val -> (unit, 'env) t
     val zeros : full_ptr -> Typed.T.sint Typed.t -> (unit, 'env) t
-
-    val alloc_ty :
-      ?kind:Alloc_kind.t ->
-      ?span:Meta.span_data ->
-      Types.ty ->
-      (full_ptr, 'env) t
+    val alloc_ty : ?span:Meta.span_data -> Types.ty -> (full_ptr, 'env) t
 
     val alloc_tys :
-      ?kind:Alloc_kind.t ->
-      ?span:Meta.span_data ->
-      Types.ty list ->
-      (full_ptr list, 'env) t
+      ?span:Meta.span_data -> Types.ty list -> (full_ptr list, 'env) t
 
     val alloc_untyped :
-      ?kind:Alloc_kind.t ->
       ?span:Meta.span_data ->
       zeroed:bool ->
       size:Typed.T.sint Typed.t ->
@@ -375,6 +367,9 @@ module Make (State : State_intf.S) :
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> with_loc ~loc (f () env state)
 
+  let with_alloc_kind ~kind (f : unit -> ('a, 'env) t) : ('a, 'env) t =
+   fun env state -> with_alloc_kind kind (f () env state)
+
   let get_trace () : (Trace.t, 'env) t = lift_symex @@ Rustsymex.get_trace ()
 
   let with_extra_call_trace ?name ~loc ~msg (x : ('a, 'env) t) : ('a, 'env) t =
@@ -451,21 +446,21 @@ module Make (State : State_intf.S) :
     let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
     let[@inline] nondet_valid ty = lift_err (nondet_valid ty)
 
-    (* We painfully lift [Layout.update_ref_tys_in] to make it nicer to use
-       without having to re-define. *)
-    let update_ref_tys_in
-        ~(f : 'acc -> full_ptr -> Types.ty -> (full_ptr * 'acc, 'env) monad)
-        ~(init : 'acc) (v : rust_val) (ty : Types.ty) :
+    (* We painfully lift [Layout.ref_tys_in] to make it nicer to use without
+       having to re-define. *)
+    let ref_tys_in
+        ~(f : 'acc -> Types.ty -> full_ptr -> (full_ptr * 'acc, 'env) monad)
+        ~(init : 'acc) (ty : Types.ty) (v : rust_val) :
         (rust_val * 'acc, 'env) monad =
      fun env state ->
       let open Rustsymex.Syntax in
       (* The inner function operates in Rustsymex.Result.t, carrying (acc, env,
          state) as accumulator *)
-      let f_inner (acc, env, state) ptr ty =
-        let+ (res, new_env), new_state = f acc ptr ty env state in
+      let f_inner (acc, env, state) ty ptr =
+        let+ (res, new_env), new_state = f acc ty ptr env state in
         Compo_res.map (fun (ptr, acc) -> (ptr, (acc, new_env, new_state))) res
       in
-      let+ res = update_ref_tys_in f_inner (init, env, state) v ty in
+      let+ res = ref_tys_in f_inner (init, env, state) ty v in
       match res with
       | Ok (v, (acc, env, state)) -> ((Ok (v, acc), env), state)
       | Error e -> ((Error e, env), state)
@@ -483,13 +478,11 @@ module Make (State : State_intf.S) :
     let[@inline] load_discriminant ptr ty = ESM.lift (load_discriminant ptr ty)
     let[@inline] store ptr ty v = ESM.lift (store ptr ty v)
     let[@inline] zeros ptr size = ESM.lift (zeros ptr size)
-    let[@inline] alloc_ty ?kind ?span ty = ESM.lift (alloc_ty ?kind ?span ty)
+    let[@inline] alloc_ty ?span ty = ESM.lift (alloc_ty ?span ty)
+    let[@inline] alloc_tys ?span tys = ESM.lift (alloc_tys ?span tys)
 
-    let[@inline] alloc_tys ?kind ?span tys =
-      ESM.lift (alloc_tys ?kind ?span tys)
-
-    let[@inline] alloc_untyped ?kind ?span ~zeroed ~size ~align () =
-      ESM.lift (alloc_untyped ?kind ?span ~zeroed ~size ~align)
+    let[@inline] alloc_untyped ?span ~zeroed ~size ~align () =
+      ESM.lift (alloc_untyped ?span ~zeroed ~size ~align)
 
     let[@inline] copy_nonoverlapping ~src ~dst ~size =
       ESM.lift (copy_nonoverlapping ~src ~dst ~size)

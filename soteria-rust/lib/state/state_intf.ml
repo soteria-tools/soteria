@@ -55,22 +55,14 @@ module type S = sig
   val store : full_ptr -> Types.ty -> rust_val -> unit ret
 
   val alloc_untyped :
-    ?kind:Alloc_kind.t ->
     ?span:Meta.span_data ->
     zeroed:bool ->
     size:sint Typed.t ->
     align:nonzero Typed.t ->
     full_ptr ret
 
-  val alloc_ty :
-    ?kind:Alloc_kind.t -> ?span:Meta.span_data -> Types.ty -> full_ptr ret
-
-  val alloc_tys :
-    ?kind:Alloc_kind.t ->
-    ?span:Meta.span_data ->
-    Types.ty list ->
-    full_ptr list ret
-
+  val alloc_ty : ?span:Meta.span_data -> Types.ty -> full_ptr ret
+  val alloc_tys : ?span:Meta.span_data -> Types.ty list -> full_ptr list ret
   val free : full_ptr -> unit ret
 
   val size_and_align_of_val :

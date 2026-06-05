@@ -122,8 +122,8 @@ module Make (StateImpl : State.S) = struct
     |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
         (* Passed (nested) references must be protected and be valid. *)
         let* value, protected' =
-          Encoder.update_ref_tys_in value local.local_ty ~init:acc
-            ~f:(fun acc ptr ptr_ty ->
+          Encoder.ref_tys_in local.local_ty value ~init:acc
+            ~f:(fun acc ptr_ty ptr ->
               let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
               let pointee = Charon_util.get_pointee ptr_ty in
               (ptr', (ptr', pointee) :: acc))
@@ -217,7 +217,8 @@ module Make (StateImpl : State.S) = struct
             let str_ty : Types.ty =
               mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
             in
-            let* ptr, _ = State.alloc_ty ~kind:StaticString str_ty in
+            let@ () = with_alloc_kind ~kind:StaticString in
+            let* ptr, _ = State.alloc_ty str_ty in
             let ptr = (ptr, Len (BV.usizei len)) in
             let* () = State.store ptr str_ty char_arr in
             let+ () = State.store_str_global str ptr in
@@ -325,7 +326,8 @@ module Make (StateImpl : State.S) = struct
         (* HACK: ideally Charon shouldn't have ref constants, those are entirely
            separate allocations :/ *)
         let* v = resolve_constant expr in
-        let* ptr = State.alloc_ty ~kind:AnonConst expr.ty in
+        let@ () = with_alloc_kind ~kind:AnonConst in
+        let* ptr = State.alloc_ty expr.ty in
         let+ () = State.store ptr expr.ty v in
         Ptr ptr
     | CPtr _ ->
@@ -541,10 +543,13 @@ module Make (StateImpl : State.S) = struct
           "Resolved global init call to %a" Crate.pp_name fundef.item_meta.name];
         let global_fn = exec_real_fun fundef glob.generics in
         (* First we allocate the global and store it in the State *)
-        let* ptr =
-          State.alloc_ty ~kind:(Static glob) ~span:decl.item_meta.span.data
-            decl.ty
+        let kind : Alloc_kind.t =
+          match decl.global_kind with
+          | Static | ThreadLocal -> Static glob
+          | NamedConst | AnonConst -> Const glob
         in
+        let@ () = with_alloc_kind ~kind in
+        let* ptr = State.alloc_ty ~span:decl.item_meta.span.data decl.ty in
         let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = with_env ~env:() @@ global_fn [] in
@@ -1042,11 +1047,11 @@ module Make (StateImpl : State.S) = struct
     | Return ->
         let* ptr, ty = get_variable_lazy_and_ty Expressions.LocalId.zero in
         let* value = load_lazy ptr ty in
-        let ptr_tys = Encoder.ref_tys_in value ty in
-        let+ () =
-          iter_list ptr_tys ~f:(fun (ptr, ty) -> State.tb_load ptr ty)
-        in
-        value
+        Encoder.ref_tys_in ty value ~init:() ~f:(fun () ptr_ty ptr ->
+            let pointee = get_pointee ptr_ty in
+            let+ () = State.tb_load ptr pointee in
+            (ptr, ()))
+        |> map fst
     | Switch (discr, switch) -> (
         let* discr = eval_operand discr in
         match switch with

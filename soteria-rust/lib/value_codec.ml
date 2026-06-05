@@ -671,69 +671,31 @@ module Encoder (Sptr : Sptr.S) = struct
     in
     v
 
-  (** Traverses the given type and rust value, and returns all findable
-      references with their type (ignores pointers, except if [include_ptrs] is
-      true). This is needed e.g. when needing to get the pointers along with the
-      size of their pointee, in particular in nested cases. *)
-  let rec ref_tys_in ?(include_ptrs = false) (v : rust_val) (ty : Types.ty) :
-      ('a full_ptr * Types.ty) list =
-    let f = ref_tys_in ~include_ptrs in
-    match (v, ty) with
-    | Ptr ptr, (TAdt { id = TBuiltin TBox; _ } | TRef _) ->
-        [ (ptr, get_pointee ty) ]
-    | Ptr ptr, TRawPtr _ when include_ptrs -> [ (ptr, get_pointee ty) ]
-    | (Int _ | Float _), _ -> []
-    | Tuple vs, TAdt adt -> List.concat_map2 f vs (Crate.as_struct_or_tuple adt)
-    | Tuple vs, (TArray (ty, _) | TSlice ty) ->
-        List.concat_map (fun v -> f v ty) vs
-    | Enum (d, vs), TAdt adt -> (
-        match BV.to_z d with
-        | Some d -> (
-            let variants = Crate.as_enum adt in
-            let v =
-              List.find_opt
-                (fun (v : Types.variant) ->
-                  Z.equal d (z_of_literal v.discriminant))
-                variants
-            in
-            match v with
-            | Some v -> List.concat_map2 f vs (field_tys Types.(v.fields))
-            | None -> [])
-        | None -> [])
-    | Union _, TAdt { id = TAdtId _; _ } ->
-        (* FIXME: figure out if references inside unions get reborrowed. They
-           could, but I suspect they don't because there's no guarantee the
-           reference isn't some other field, e.g. in [union { a: &u8, b: &u16
-           }] *)
-        []
-    | _, TPattern (inner, _) -> f v inner
-    | _ -> []
-
   (** Folds over all the references and boxes in the given value and type,
       applying [fn] to them. This is used to update nested references when
       reborrowing. Calls [fn] with the pointer value and the pointer type (not
       the pointee). *)
-  let rec update_ref_tys_in
+  let rec ref_tys_in
       (fn :
         'acc ->
-        'a full_ptr ->
         Types.ty ->
+        'a full_ptr ->
         ('a full_ptr * 'acc, 'e, 'f) Rustsymex.Result.t) (init : 'acc)
-      (v : rust_val) (ty : Types.ty) :
+      (ty : Types.ty) (v : rust_val) :
       (rust_val * 'acc, 'e, 'f) Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
-    let f = update_ref_tys_in fn in
-    let fs acc vs ty =
+    let f = ref_tys_in fn in
+    let fs acc ty vs =
       let++ vs, acc =
         Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) v ->
-            let++ v, acc = f acc v ty in
+            let++ v, acc = f acc ty v in
             (v :: vs, acc))
       in
       (List.rev vs, acc)
     in
-    let fs2 acc vs tys =
-      let vs = List.combine vs tys in
+    let fs' acc tys vs =
+      let vs = List.combine tys vs in
       let++ vs, acc =
         Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) (v, ty) ->
             let++ v, acc = f acc v ty in
@@ -741,14 +703,14 @@ module Encoder (Sptr : Sptr.S) = struct
       in
       (List.rev vs, acc)
     in
-    match (v, ty) with
-    | Ptr ptr, TRef (_, _, _) ->
-        let++ ptr, acc = fn init ptr ty in
+    match ty with
+    | TRef (_, _, _) | TAdt { id = TBuiltin TBox; _ } ->
+        let++ ptr, acc = fn init ty (as_ptr v) in
         (Ptr ptr, acc)
-    | Tuple _, TAdt adt when adt_is_box adt ->
+    | TAdt adt when adt_is_box adt ->
         (* a box has only one non ZST, the pointer *)
         let ptr = as_ptr @@ List.hd @@ flatten v in
-        let++ ptr, acc = fn init ptr ty in
+        let++ ptr, acc = fn init ty ptr in
         (* recursively look for where the pointer is and replace it *)
         let rec subst_ptr = function
           | Tuple vs -> Tuple (List.map subst_ptr vs)
@@ -756,31 +718,19 @@ module Encoder (Sptr : Sptr.S) = struct
           | v -> v
         in
         (subst_ptr v, acc)
-    | Tuple vs, TAdt adt ->
-        let++ vs, acc = fs2 init vs (Crate.as_struct_or_tuple adt) in
+    | TAdt adt when Crate.is_struct_or_tuple adt ->
+        let++ vs, acc = fs' init (Crate.as_struct_or_tuple adt) (as_tuple v) in
         (Tuple vs, acc)
-    | Tuple vs, (TArray (ty, _) | TSlice ty) ->
-        let++ vs, acc = fs init vs ty in
+    | TArray (ty, _) | TSlice ty ->
+        let++ vs, acc = fs init ty (as_tuple v) in
         (Tuple vs, acc)
-    | Enum (d, vs), TAdt adt -> (
-        let variants = Crate.as_enum adt in
-        let* var =
-          match_on variants ~constr:(fun v ->
-              BV.of_literal v.discriminant ==@ d)
-        in
-        match var with
-        | Some var ->
-            let++ vs, acc = fs2 init vs (field_tys Types.(var.fields)) in
-            (Enum (d, vs), acc)
-        | None -> Result.ok (v, init))
-    | (Union _ as v), TAdt { id = TAdtId _; _ } ->
-        (* FIXME: figure out if references inside unions get reborrowed. They
-           could, but I suspect they don't because there's no guarantee the
-           reference isn't some other field, e.g. in [union { a: &u8, b: &u16
-           }] *)
-        Result.ok (v, init)
-    | v, TPattern (inner, _) -> f init v inner
-    | v, _ -> Result.ok (v, init)
+    | TAdt adt when Crate.is_enum adt ->
+        let d, vs = as_enum v in
+        let* var = variant_for_discr d adt in
+        let++ vs, acc = fs' init (field_tys Types.(var.fields)) vs in
+        (Enum (d, vs), acc)
+    | TPattern (inner, _) -> f init inner v
+    | _ -> Result.ok (v, init)
 
   (** Calculates the size and alignment of a type [t], according to the pointer
       metadata [meta]. Receives an arbitrary state and [load] function, to

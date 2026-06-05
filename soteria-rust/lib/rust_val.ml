@@ -199,6 +199,11 @@ let as_tuple = function
   | v ->
       Fmt.failwith "Unexpected rust_val kind, expected a tuple, got: %a" ppa v
 
+let as_enum = function
+  | Enum (disc, vals) -> (disc, vals)
+  | v ->
+      Fmt.failwith "Unexpected rust_val kind, expected an enum, got: %a" ppa v
+
 let flatten v =
   let rec aux acc = function
     | Tuple vs | Enum (_, vs) -> List.fold_left aux acc vs

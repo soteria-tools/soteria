@@ -548,3 +548,30 @@ Check we handle pattern types correctly
   PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
   
   [1]
+
+Test that it's UB to write to a const (regardless of aliasing checks), and that we don't detect const refs as leaks
+  $ soteria-rust exec write_to_const.rs  --ignore-aliasing
+  Compiling... done in <time>
+  => Running write_to_const::write_to_const...
+  error: write_to_const::write_to_const: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Write to read-only location in write_to_const::write_to_const
+      --> $TESTCASE_ROOT/write_to_const.rs:6:14
+    4 |  fn write_to_const() {
+      |  ------------------- 1: Entry point
+    5 |      let ptr = REF as *const u8 as *mut u8;
+    6 |      unsafe { *ptr = 67 };
+      |               ^^^^^^^^^ Memory store
+  PC 1: empty
+  
+  => Running write_to_const::write_to_str...
+  error: write_to_const::write_to_str: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Write to read-only location in write_to_const::write_to_str
+      --> $TESTCASE_ROOT/write_to_const.rs:12:14
+   10 |  fn write_to_str() {
+      |  ----------------- 1: Entry point
+   11 |      let ptr = "hello" as *const str as *mut u8;
+   12 |      unsafe { *ptr = 67 };
+      |               ^^^^^^^^^ Memory store
+  PC 1: empty
+  
+  [1]
