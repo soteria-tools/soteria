@@ -299,11 +299,13 @@ module Make (Borrows : Tree_borrows.T) = struct
     include
       Soteria.Sym_states.With_info.Make (DecayMap.SM) (Meta) (Freeable_block)
 
-    let[@inline] is_freed : syn -> bool = function
-      | { node = Freed; _ } -> true
+    type 'a raw = ('a Soteria.Sym_states.Freeable.freeable, Meta.t) with_info
+
+    let[@inline] is_leakable : 'a. 'a raw -> bool = function
+      | { node = Alive _; info = Some { kind = Heap; _ } } -> true
       | _ -> false
 
-    let[@inline] trace_syn : syn -> Trace.t option = function
+    let[@inline] trace : 'a. 'a raw -> Trace.t option = function
       | { info = Some { trace; _ }; _ } -> Some trace
       | _ -> None
 
