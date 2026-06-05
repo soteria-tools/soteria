@@ -530,7 +530,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       let**^ size = Layout.size_of ty in
       let ptr = Typed.Ptr.ptr_of ptr in
       let tag = Typed.Ptr.tag_of ptr in
-      let@ ofs = with_ptr ptr in
+      let@ ofs = with_ptr Write ptr in
       Block.with_block_read_tb (fun tb ->
           let open Tree_block.SM in
           let open Tree_block.SM.Syntax in
@@ -553,9 +553,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     (* a transmute is just a write of one type with a read of another type; we
        provide a function to do it that avoids allocating, checking alignment
        etc. *)
-    [%l.debug
-      "Transmuting %a: %a -> %a" (pp_rust_val Sptr_base.pp) v pp_ty from pp_ty
-        to_];
+    [%l.debug "Transmuting %a: %a -> %a" Typed.ppa v pp_ty from pp_ty to_];
     let@ () = with_loc_err ~trace:"Transmute" () in
     (* We pick [from] rather than [to_], because we can transmute to a smaller
        type, but not to a larger one, so it's guaranteed that [size(from) >=
@@ -572,7 +570,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             let open Tree_block_decoder in
             (* first, we write *)
             let**^ parts =
-              DecayMap.SM.lift @@ Encoder.encode ~offset:Usize.(0s) v from
+              DecayMap.SM.lift @@ Value_codec.encode ~offset:Usize.(0s) v from
             in
             let** () =
               Result.iter_iter parts ~f:(fun (value, offset) ->
@@ -584,7 +582,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             in
             let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
             ParserMonad.parse ~handler ~get_all
-            @@ decode ~meta:Thin ~offset:Usize.(0s) to_)
+            @@ decode ~meta:None ~offset:Usize.(0s) to_)
          |> map (function
            | Ok (value, _block) -> Ok value
            | Error (e, _block) -> Error e

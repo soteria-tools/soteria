@@ -400,9 +400,9 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
         let hi = BV.of_constant_expr stop_expr in
         if signed then lo <=$@ v &&@ (v <=$@ hi) else lo <=@ v &&@ (v <=@ hi)
     | NotNull ->
-        let ptr = Typed.cast_fptr v in
-        let ptr, _ = Typed.Ptr.split ptr in
-        Typed.not (Typed.Ptr.is_null ptr.ptr)
+        let ptr = Typed.cast_ptr_f v in
+        let ptr = Typed.Ptr.ptr_of ptr in
+        Typed.not (Typed.Ptr.is_null' ptr)
     | OrPattern pats ->
         List.fold_left
           (fun acc p -> acc ||@ pattern_valid_cond inner_ty v p)
@@ -562,7 +562,7 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
       float_to_bv_bits (Typed.cast v)
   | (TRawPtr _ | TRef _ | TFnPtr _), TBitVector _ ->
       return (Typed.Ptr.mk_ptr_f (Sptr.of_address (Typed.cast v)) None)
-  | TPattern (inner_ty, _), v -> transmute_one ~to_ty:inner_ty v
+  | TPattern (inner_ty, _), _ -> transmute_one ~to_ty:inner_ty v
   (* TODO: ????? *)
   (* | TVar (Free type_var_id), (PolyVal tid as v) ->
       if Types.TypeVarId.equal_id type_var_id tid then return v
