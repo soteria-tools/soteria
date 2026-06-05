@@ -1,8 +1,9 @@
 open Rust_val
 
-type fn = PanicCleanup
+type fn = PanicCleanup | PanicImpl
 
-let fn_pats = [ ("__rust_panic_cleanup", PanicCleanup) ]
+let fn_pats =
+  [ ("__rust_panic_cleanup", PanicCleanup); ("panic_impl", PanicImpl) ]
 
 module M (StateM : State.StateM.S) = struct
   open StateM
@@ -11,5 +12,11 @@ module M (StateM : State.StateM.S) = struct
       caller does not crash before we handle the panic. *)
   let panic_cleanup _ = ok (Ptr (Sptr.null (), VTable (Sptr.null ())))
 
-  let[@inline] fn_to_stub = function PanicCleanup -> panic_cleanup
+  (** This shoyld be a call that gets resolved to the `#[panic_handler]`
+      function. For now, we just panic. *)
+  let panic_impl _ = error (`Panic None)
+
+  let[@inline] fn_to_stub = function
+    | PanicCleanup -> panic_cleanup
+    | PanicImpl -> panic_impl
 end

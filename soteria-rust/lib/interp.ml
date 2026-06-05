@@ -200,29 +200,9 @@ module Make (StateImpl : State.S) = struct
     | CLiteral (VChar c) -> ok (Int (BV.u32i (Uchar.to_int c)))
     | CLiteral (VFloat { float_value; float_ty }) ->
         ok (Float (Typed.Float.mk float_ty float_value))
-    | CLiteral (VStr str) -> (
-        let* ptr_opt = State.load_str_global str in
-        match ptr_opt with
-        | Some v -> ok (Ptr v)
-        | None ->
-            (* We "cheat" and model strings as an array of chars, with &str a
-               slice *)
-            let len = String.length str in
-            let chars =
-              String.to_bytes str
-              |> Bytes.fold_left (fun l c -> Int (BV.u8i (Char.code c)) :: l) []
-              |> List.rev
-            in
-            let char_arr = Tuple chars in
-            let str_ty : Types.ty =
-              mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
-            in
-            let@ () = with_alloc_kind ~kind:StaticString in
-            let* ptr, _ = State.alloc_ty str_ty in
-            let ptr = (ptr, Len (BV.usizei len)) in
-            let* () = State.store ptr str_ty char_arr in
-            let+ () = State.store_str_global str ptr in
-            Ptr ptr)
+    | CLiteral (VStr str) ->
+        let+ ptr = Core.string_to_ptr str in
+        Ptr ptr
     | CFnDef _ -> ok (Tuple [])
     | CPtrNoProvenance v -> ok (Ptr (Sptr.of_address (BV.usize v), Thin))
     | CArray cs ->

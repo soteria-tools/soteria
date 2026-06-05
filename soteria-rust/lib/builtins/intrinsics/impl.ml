@@ -177,8 +177,50 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     ok (Int (aux bytes))
 
   let caller_location () : full_ptr ret =
-    (* TODO: we should really do something better here *)
-    ok (Sptr.null (), Thin)
+    (*
+     * #[lang = "panic_location"]
+     * pub struct Location<'a> {
+     *     filename: NonNull<str>,
+     *     line: u32,
+     *     col: u32,
+     *     _filename: PhantomData<&'a str>,
+     * }
+     *)
+    let location_adt = Crate.get_adt_lang_item "panic_location" in
+    let generics : Types.generic_args =
+      TypesUtils.generic_args_of_params () location_adt.generics
+    in
+    let tref : Types.type_decl_ref =
+      { id = TAdtId location_adt.def_id; generics }
+    in
+    let location_ty : Types.ty = TAdt tref in
+    let* trace = get_trace () in
+    let filename, col, line =
+      match trace.loc with
+      | None -> ("unknown", 0, 0)
+      | Some { file = { name = Local file; _ }; beg_loc; _ } ->
+          (Error.file_to_user_string file, beg_loc.col, beg_loc.line)
+      | Some { file = { name = Virtual _ | NotReal _; _ }; beg_loc; _ } ->
+          ("virtual", beg_loc.col, beg_loc.line)
+    in
+    let* ptr = Core.string_to_ptr filename in
+    let location =
+      mk_struct ~ty:tref
+        [
+          (* filename: *)
+          Tuple [ Ptr ptr ];
+          (* line: *)
+          Int (BV.u32i line);
+          (* col: *)
+          Int (BV.u32i col);
+          (* _filename: *)
+          Tuple [];
+        ]
+    in
+    let@ () = with_alloc_kind ~kind:AnonConst in
+    let* ptr = State.alloc_ty location_ty in
+    let+ () = State.store ptr location_ty location in
+    ptr
 
   let carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry =
     let t = TypesUtils.ty_as_literal t in
@@ -862,26 +904,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let type_name ~t =
     let str = Fmt.to_to_string pp_ty t in
-    let* ptr_res = State.load_str_global str in
-    match ptr_res with
-    | Some ptr -> ok ptr
-    | None ->
-        let len = String.length str in
-        let chars =
-          String.to_bytes str
-          |> Bytes.fold_left (fun l c -> Int (BV.u8i (Char.code c)) :: l) []
-          |> List.rev
-        in
-        let char_arr = Tuple chars in
-        let str_ty : Types.ty =
-          mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
-        in
-        let@ () = with_alloc_kind ~kind:StaticString in
-        let* ptr, _ = State.alloc_ty str_ty in
-        let ptr = (ptr, Len (BV.usizei len)) in
-        let* () = State.store ptr str_ty char_arr in
-        let+ () = State.store_str_global str ptr in
-        ptr
+    Core.string_to_ptr str
 
   let unchecked_op op ~t ~x ~y : rust_val ret =
     let t = TypesUtils.ty_as_literal t in

@@ -132,6 +132,17 @@ let get_adt (adt_ref : Types.type_decl_ref) =
       Fmt.failwith "get_adt: unexpected non-ADT type decl id: %a"
         Types.pp_type_id adt_ref.id
 
+let get_adt_lang_item lang_item =
+  let exception Found of Types.type_decl in
+  let crate = get_crate () in
+  try
+    crate.type_decls
+    |> Types.TypeDeclId.Map.iter (fun id (adt : Types.type_decl) ->
+        if Option.equal String.equal adt.item_meta.lang_item (Some lang_item)
+        then raise (Found adt));
+    raise (MissingDecl ("Missing ADT with lang item: " ^ lang_item))
+  with Found adt -> adt
+
 let get_fun id =
   let crate = get_crate () in
   match UllbcAst.FunDeclId.Map.find_opt id crate.fun_decls with

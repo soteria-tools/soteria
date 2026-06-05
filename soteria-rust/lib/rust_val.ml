@@ -241,3 +241,8 @@ let mk_enum ~ty variant fields =
   assert (List.compare_lengths variant.fields fields = 0);
   let discr = BV.of_literal variant.discriminant in
   Enum (discr, fields)
+
+let mk_struct ~ty fields =
+  let struct_fields = Crate.as_struct ty in
+  assert (List.compare_lengths fields struct_fields = 0);
+  Tuple fields

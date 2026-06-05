@@ -575,3 +575,28 @@ Test that it's UB to write to a const (regardless of aliasing checks), and that 
   PC 1: empty
   
   [1]
+
+Ensure we implement the caller_location intrinsic correctly; this used to cause a null pointer deref, rather than a proper panic from the handler.
+  $ soteria-rust exec unreachable.rs
+  Compiling... done in <time>
+  => Running unreachable::main...
+  error: unreachable::main: found issues in <time>, errors in 1 branch (out of 1)
+  error: Panic in unreachable::main
+      --> $RUSTLIB/library/core/src/panicking.rs:80:14
+   80 |      unsafe { panic_impl(&pi) }
+      |               ^^^^^^^^^^^^^^^
+      |               |
+      |               Triggering operation
+      |               4: Call trace
+      .  
+  240 |      panic_fmt(format_args!("internal error: entered unreachable code: {}", *x));
+      |      --------------------------------------------------------------------------- 3: Call trace
+      --> $TESTCASE_ROOT/unreachable.rs:2:5
+    1 |  fn main() {
+      |  --------- 1: Entry point
+    2 |      unreachable!("This should not be a null pointer deref!");
+      |      -------------------------------------------------------- 2: Call trace
+  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7fffffffffffffee) /\
+        (0b000 == extract[0-2](V|1|))
+  
+  [1]

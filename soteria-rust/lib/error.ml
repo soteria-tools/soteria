@@ -181,39 +181,45 @@ let decorate (where : Trace.t) (e : t) : with_trace =
       (e, List.rev @@ (elem :: where.stack))
   | None -> (e, List.rev where.stack)
 
+let replace_subpath_opt sub_str replacement path =
+  match String.index_of ~sub_str path with
+  | Some idx ->
+      let idx = idx + String.length sub_str in
+      let rel_path = String.sub path idx (String.length path - idx) in
+      Some (replacement ^ rel_path)
+  | None -> None
+
+(** Converts a file path to a user-friendly string by replacing known internal
+    subpaths. Returns [None] if no substitution is needed. *)
+let file_to_user_string_opt (file : string) =
+  let ( / ) = Filename.concat in
+  match replace_subpath_opt "rustc" "$RUSTLIB" file with
+  | Some f -> Some f
+  | None ->
+      replace_subpath_opt ("soteria-rust" / "plugins") "$SOTERIA-RUST" file
+
+(** Same as {!file_to_user_string_opt}, but returns the original file if no
+    substitution is needed. *)
+let file_to_user_string (file : string) =
+  Option.value ~default:file (file_to_user_string_opt file)
+
+let file_to_path (file : string) =
+  let ( / ) = Filename.concat in
+  if String.starts_with ~prefix:"/rustc/" file then
+    let toolchain = Lazy.force Frontend_runtime.Cmd.toolchain_path in
+    let prefix_len = String.length "/rustc/" in
+    let file = String.sub file prefix_len (String.length file - prefix_len) in
+    toolchain / "lib" / "rustlib" / "src" / "rust" / file
+  else file
+
 module Diagnostic = struct
   let to_loc (pos : Charon.Meta.loc) = (pos.line - 1, pos.col - 1)
-
-  let replace_subpath_opt sub_str replacement path =
-    match String.index_of ~sub_str path with
-    | Some idx ->
-        let idx = idx + String.length sub_str in
-        let rel_path = String.sub path idx (String.length path - idx) in
-        Some (replacement ^ rel_path)
-    | None -> None
 
   let as_ranges (span : Charon.Meta.span_data) =
     match span.file.name with
     | Local file ->
-        let ( / ) = Filename.concat in
-        let filename =
-          match replace_subpath_opt "rustc" "$RUSTLIB" file with
-          | Some f -> Some f
-          | None ->
-              replace_subpath_opt
-                ("soteria-rust" / "plugins")
-                "$SOTERIA-RUST" file
-        in
-        let file =
-          if String.starts_with ~prefix:"/rustc/" file then
-            let toolchain = Lazy.force Frontend_runtime.Cmd.toolchain_path in
-            let prefix_len = String.length "/rustc/" in
-            let file =
-              String.sub file prefix_len (String.length file - prefix_len)
-            in
-            toolchain / "lib" / "rustlib" / "src" / "rust" / file
-          else file
-        in
+        let filename = file_to_user_string_opt file in
+        let file = file_to_path file in
         [
           Soteria.Terminal.Diagnostic.mk_range_file ?filename
             ?content:span.file.contents file (to_loc span.beg_loc)
