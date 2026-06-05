@@ -7,34 +7,45 @@ module T : sig
   include module type of T
 
   type sptr_f = [ `FullPtr ]
+  type sptr_t = [ `ThinPtr ]
   type adt = [ `Adt ]
-  type ptr_meta = [ sptr | sint ]
+  type ptr_meta = [ sptr_t | sint ]
 
   type any =
-    [ sint_ovf | sfloat | sbool | sptr | sloc | any sseq | sptr_f | adt ]
+    [ sint_ovf
+    | sfloat
+    | sbool
+    | sptr
+    | sloc
+    | any sseq
+    | sptr_f
+    | sptr_t
+    | adt ]
 
   val pp_sptr_f : Format.formatter -> sptr_f -> unit
+  val pp_sptr_t : Format.formatter -> sptr_t -> unit
   val pp_adt : Format.formatter -> adt -> unit
   val pp_any : Format.formatter -> any -> unit
 end
 
 (* types *)
-
+(*
 type ptr = {
   ptr : T.sptr t;
   size : T.sint t;
   align : T.nonzero t;
   tag : Ptr_tag.t option;
-}
+} *)
 
-type full_ptr = ptr * T.ptr_meta t option
+type full_ptr = T.sptr_t t * T.ptr_meta t option
 
 val t_ptr : unit -> [> T.sptr ] ty
 val t_loc : unit -> [> T.sloc ] ty
 val t_float : Types.float_type -> T.sfloat ty
 val t_usize : unit -> [> T.sint ] ty
 val t_lit : Types.literal_type -> [> T.sint | T.sfloat ] ty
-val t_fptr : unit -> [> T.sptr_f ] ty
+val t_ptr_f : unit -> [> T.sptr_f ] ty
+val t_ptr_t : unit -> [> T.sptr_t ] ty
 
 (* casts *)
 
@@ -44,7 +55,8 @@ val cast_i : Values.u_int_ty -> [< T.any ] t -> [> T.sint ] t
 val cast_f : Types.float_type -> [< T.any ] t -> T.sfloat t
 val cast_lit : Types.literal_type -> [< T.any ] t -> [> T.sint ] t
 val cast_ptr : [< T.any ] t -> [< T.sptr ] t
-val cast_fptr : [< T.any ] t -> [< T.sptr_f ] t
+val cast_ptr_f : [< T.any ] t -> [< T.sptr_f ] t
+val cast_ptr_t : [< T.any ] t -> [< T.sptr_t ] t
 val cast_adt : Types.type_decl_ref -> [< T.any ] t -> [> T.adt ] t
 
 (* helpers *)
@@ -97,11 +109,37 @@ end
 module Ptr : sig
   include module type of Ptr
 
+  (* redefined to avoid the size parameter *)
   val loc_of_int : int -> [> T.sloc ] t
   val null : unit -> [> T.sptr ] t
   val null_loc : unit -> [> T.sloc ] t
-  val mk_ptr_f : ptr -> [< T.ptr_meta ] t option -> [> T.sptr_f ] t
+
+  (* lifted to sptr_t and accessors *)
+  val mk_ptr_t :
+    ptr:[< T.sptr ] t ->
+    size:[< T.sint ] t ->
+    align:[< T.nonzero ] t ->
+    tag:Ptr_tag.t option ->
+    [> T.sptr_t ] t
+
+  val is_null' : [< T.sptr_t ] t -> [> T.sbool ] t
+  val is_at_null_loc' : [< T.sptr_t ] t -> [> T.sbool ] t
+  val decompose' : [< T.sptr_t ] t -> [< T.sloc ] t * [< T.sint ] t
+  val loc' : [< T.sptr_t ] t -> [< T.sloc ] t
+  val ofs' : [< T.sptr_t ] t -> [< T.sint ] t
+  val add_ofs' : [< T.sptr_t ] t -> [< T.sint ] t -> [> T.sptr_t ] t
+  val ptr_inner : [< T.sptr_t ] t -> [< T.sptr ] t
+  val with_inner : [< T.sptr_t ] t -> [< T.sptr ] t -> [> T.sptr_t ] t
+  val align_of : [< T.sptr_t ] t -> [< T.nonzero ] t
+  val size_of : [< T.sptr_t ] t -> [< T.sint ] t
+  val tag_of : [< T.sptr_t ] t -> Ptr_tag.t option
+  val with_tag : [< T.sptr_t ] t -> Ptr_tag.t option -> [> T.sptr_t ] t
+
+  (* full pointers *)
+  val mk_ptr_f : [< T.sptr_t ] t -> [< T.ptr_meta ] t option -> [> T.sptr_f ] t
   val split : [< T.sptr_f ] t -> full_ptr
+  val meta_of : [< T.sptr_f ] t -> [> T.ptr_meta ] t option
+  val ptr_of : [< T.sptr_f ] t -> [> T.sptr_t ] t
   val cast_meta : [< T.any ] t -> [> T.ptr_meta ] t option
   val meta_kind_of : [< T.ptr_meta ] t -> [ `VTable | `Len ] option
 end

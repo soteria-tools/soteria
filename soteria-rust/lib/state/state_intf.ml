@@ -3,7 +3,6 @@ open Typed
 open T
 open Charon
 open Common
-open Sptr
 
 module type S = sig
   (* state *)
@@ -12,7 +11,7 @@ module type S = sig
   type 'a ret := ('a, Error.with_trace, syn list) SM.Result.t
 
   module Sptr : sig
-    include Sptr.S
+    include module type of Sptr
 
     (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
         [off], interpreting [off] as a [signed] integer. [ty] defaults to u8.
@@ -78,7 +77,7 @@ module type S = sig
   val transmute : from:Types.ty -> to_:Types.ty -> rust_val -> rust_val ret
   val uninit : full_ptr -> Types.ty -> unit ret
   val zeros : full_ptr -> sint Typed.t -> unit ret
-  val with_pointers_sym : 'a DecayMap.SM.t -> 'a SM.t
+  val with_pointers_sym : 'a Sptr.DecayMap.SM.t -> 'a SM.t
   val store_str_global : string -> full_ptr -> unit ret
   val store_global : Types.global_decl_id -> full_ptr -> unit ret
   val load_str_global : string -> full_ptr option ret

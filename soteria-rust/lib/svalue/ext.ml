@@ -4,6 +4,7 @@ open Charon
 
 type ext_ty =
   | Adt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+  | ThinPtr
   | FullPtr
 [@@deriving eq, ord, show]
 
@@ -17,12 +18,12 @@ and svty = ext_ty Soteria.Bv_values.Svalue.ty
 and ptr = { ptr : sv; tag : Ptr_tag.t option; size : sv; align : sv }
 
 (* values *)
-and meta = Thin | Len of sv | VTable of sv
-and full_ptr = ptr * meta
+and full_ptr = ptr * sv option
 
 and ext_t =
-  | Ptr of full_ptr
-      (** pointer, parametric to enable Ruxt, with optional meta *)
+  | Ptr of full_ptr  (** pointer, with optional meta *)
+  | ThinPtr of ptr
+      (** thin pointer, without metadata but with extra info on the pointer *)
   | Enum of sv * sv list  (** discriminant * values *)
   | Tuple of sv list  (** contains ordered values *)
   | Union of (sv * sv) list
@@ -37,12 +38,14 @@ module Rust_ext :
 struct
   type ty = ext_ty =
     | Adt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+    | ThinPtr
     | FullPtr
   [@@deriving eq, ord, show]
 
   type t = ext_t =
-    | Ptr of full_ptr
-        (** pointer, parametric to enable Ruxt, with optional meta *)
+    | Ptr of full_ptr  (** pointer, with optional meta *)
+    | ThinPtr of ptr
+        (** thin pointer, without metadata but with extra info on the pointer *)
     | Enum of sv * sv list  (** discriminant * values *)
     | Tuple of sv list  (** contains ordered values *)
     | Union of (sv * sv) list
@@ -52,17 +55,18 @@ struct
             index, unique identifier). *)
   [@@deriving eq, ord]
 
-  let pp_meta pp fmt = function
-    | Thin -> Fmt.pf fmt "-"
-    | Len v | VTable v -> pp fmt v
-
-  let pp_full_ptr pp fmt = function
-    | p, Thin -> Fmt.pf fmt "(%a)" pp p.ptr
-    | p, meta -> Fmt.pf fmt "(%a, %a)" pp p.ptr (pp_meta pp) meta
+  let pp_full_ptr pp fmt (p, meta) =
+    match meta with
+    | None -> Fmt.pf fmt "(%a)" pp p.ptr
+    | Some meta -> Fmt.pf fmt "(%a, %a)" pp p.ptr pp meta
 
   let pp pp ft v =
     match v with
     | Ptr ptr -> Fmt.pf ft "Ptr%a" (pp_full_ptr pp) ptr
+    | ThinPtr ptr ->
+        Fmt.pf ft "%a[%a]" pp ptr.ptr
+          Fmt.(option ~none:(any "*") Ptr_tag.pp)
+          ptr.tag
     | Enum (disc, vals) ->
         Fmt.pf ft "Enum(%a: %a)" pp disc (Fmt.list ~sep:(Fmt.any ", ") pp) vals
     | Tuple vals -> Fmt.pf ft "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp) vals
@@ -78,10 +82,11 @@ struct
 
   (* TODO: derivable *)
   let iter_vars iter_vars = function
-    | Ptr (ptr, Thin) -> iter_vars_ptr iter_vars ptr
-    | Ptr (ptr, VTable meta) | Ptr (ptr, Len meta) ->
+    | Ptr (ptr, None) -> iter_vars_ptr iter_vars ptr
+    | Ptr (ptr, Some meta) ->
         iter_vars_ptr iter_vars ptr;
         iter_vars meta
+    | ThinPtr ptr -> iter_vars_ptr iter_vars ptr
     | Enum (disc, vals) ->
         iter_vars disc;
         List.iter iter_vars vals
@@ -96,9 +101,10 @@ struct
 
   (* TODO: so derivable *)
   let hash = function
-    | Ptr (ptr, Thin) -> Hashtbl.hash (ptr.tag, 0, 0)
-    | Ptr (ptr, Len meta) -> Hashtbl.hash (ptr.tag, 1, meta.tag)
-    | Ptr (ptr, VTable meta) -> Hashtbl.hash (ptr.tag, 2, meta.tag)
+    | Ptr (ptr, None) -> Hashtbl.hash (ptr.tag, 0, 0)
+    | Ptr (ptr, Some meta) -> Hashtbl.hash (ptr.tag, 1, meta.tag)
+    | ThinPtr { ptr; tag; size; align } ->
+        Hashtbl.hash (ptr.tag, size.tag, align.tag, tag)
     | Enum (disc, vals) ->
         Hashtbl.hash (disc, List.map (fun (v : sv) -> v.tag) vals)
     | Tuple vals -> Hashtbl.hash (List.map (fun (v : sv) -> v.tag) vals)
@@ -129,17 +135,16 @@ struct
 
   (* TODO: derivable *)
   and apply_subst apply ~missing_var s = function
-    | Ptr (v, Thin) ->
+    | Ptr (v, None) ->
         let v, s = apply_subst_ptr apply ~missing_var s v in
-        (Ptr (v, Thin), s)
-    | Ptr (v, VTable meta) ->
-        let v, s = apply_subst_ptr apply ~missing_var s v in
-        let meta, s = apply ~missing_var s meta in
-        (Ptr (v, VTable meta), s)
-    | Ptr (v, Len meta) ->
+        (Ptr (v, None), s)
+    | Ptr (v, Some meta) ->
         let v, s = apply_subst_ptr apply ~missing_var s v in
         let meta, s = apply ~missing_var s meta in
-        (Ptr (v, Len meta), s)
+        (Ptr (v, Some meta), s)
+    | ThinPtr ptr ->
+        let ptr, s = apply_subst_ptr apply ~missing_var s ptr in
+        (ThinPtr ptr, s)
     | Enum (discr, vs) ->
         let discr, s = apply ~missing_var s discr in
         let vs, s = apply_list apply ~missing_var s vs in
