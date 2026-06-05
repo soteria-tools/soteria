@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780671260005,
+  "lastUpdate": 1780672880090,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1080,6 +1080,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 11.035852757981047,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e3a7be359f5d4a4c864a6f557d5eb807ce8ad847",
+          "message": "Bump Charon and Obol (#369)\n\n* Bump Charon and Obol\n\n* promote tests\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\nCo-authored-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-06-05T14:48:17Z",
+          "tree_id": "c2081b54a1517295396b53c26fa426f3527f3835",
+          "url": "https://github.com/soteria-tools/soteria/commit/e3a7be359f5d4a4c864a6f557d5eb807ce8ad847"
+        },
+        "date": 1780672874478,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08128274204,
+            "range": "± 0.0018",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.5898526938800001,
+            "range": "± 0.0054",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.88703479482,
+            "range": "± 0.0138",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.224247551,
+            "range": "± 0.0036",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.674862675339999,
+            "range": "± 0.0537",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.96047198156,
+            "range": "± 0.0151",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.828531790990382,
             "unit": "s"
           }
         ]
