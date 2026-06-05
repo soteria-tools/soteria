@@ -10,26 +10,24 @@ open Common
 module M (StateM : State.StateM.S) = struct
   open StateM
 
-  type rust_val = Sptr.t Rust_val.t
   type 'a ret = ('a, unit) StateM.t
-  type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-  type full_ptr = StateM.Sptr.t Rust_val.full_ptr
+  type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   module type S = sig
-    val _eprint : args:rust_val -> unit ret
-    val _print : args:rust_val -> unit ret
+    val _eprint : args:Typed.([< T.any ] t) -> unit ret
+    val _print : args:Typed.([< T.any ] t) -> unit ret
 
     val alloc_impl :
-      self:full_ptr ->
-      layout:rust_val ->
-      zeroed:[< Typed.T.sbool ] Typed.t ->
-      rust_val ret
+      self:Typed.([< T.sptr_f ] t) ->
+      layout:Typed.([< T.any ] t) ->
+      zeroed:Typed.([< T.sbool ] t) ->
+      Typed.([> T.any ] t) ret
 
     val assert_failed_inner :
-      kind:rust_val ->
-      left:full_ptr ->
-      right:full_ptr ->
-      args:rust_val ->
+      kind:Typed.([< T.any ] t) ->
+      left:Typed.([< T.sptr_f ] t) ->
+      right:Typed.([< T.sptr_f ] t) ->
+      args:Typed.([< T.any ] t) ->
       unit ret
 
     (** {@markdown[
@@ -37,7 +35,7 @@ module M (StateM : State.StateM.S) = struct
            panic!() and assert!(). In particular, this is the only entry point that supports
            arbitrary payloads, not just format strings.
         ]} *)
-    val begin_panic : m:Types.ty -> msg:rust_val -> unit ret
+    val begin_panic : m:Types.ty -> msg:Typed.([< T.any ] t) -> unit ret
 
     (** {@markdown[
           Returns `true` if this number is neither infinite nor NaN.
@@ -60,7 +58,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f128_is_finite :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this value is positive infinity or negative infinity, and
@@ -84,7 +82,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f128_is_infinite :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this value is NaN.
@@ -101,8 +99,7 @@ module M (StateM : State.StateM.S) = struct
            # }
            ```
         ]} *)
-    val f128_is_nan :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+    val f128_is_nan : arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if the number is neither zero, infinite, [subnormal], or NaN.
@@ -130,7 +127,7 @@ module M (StateM : State.StateM.S) = struct
            [subnormal]: https://en.wikipedia.org/wiki/Denormal_number
         ]} *)
     val f128_is_normal :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if `self` has a negative sign, including `-0.0`, NaNs with
@@ -154,7 +151,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f128_is_sign_negative :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if `self` has a positive sign, including `+0.0`, NaNs with
@@ -178,7 +175,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f128_is_sign_positive :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if the number is [subnormal].
@@ -206,7 +203,7 @@ module M (StateM : State.StateM.S) = struct
            [subnormal]: https://en.wikipedia.org/wiki/Denormal_number
         ]} *)
     val f128_is_subnormal :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this number is neither infinite nor NaN.
@@ -229,7 +226,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f16_is_finite :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this value is positive infinity or negative infinity, and
@@ -253,7 +250,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f16_is_infinite :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this value is NaN.
@@ -270,8 +267,7 @@ module M (StateM : State.StateM.S) = struct
            # }
            ```
         ]} *)
-    val f16_is_nan :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+    val f16_is_nan : arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if the number is neither zero, infinite, [subnormal], or NaN.
@@ -298,7 +294,7 @@ module M (StateM : State.StateM.S) = struct
            [subnormal]: https://en.wikipedia.org/wiki/Denormal_number
         ]} *)
     val f16_is_normal :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if `self` has a negative sign, including `-0.0`, NaNs with
@@ -324,7 +320,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f16_is_sign_negative :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if `self` has a positive sign, including `+0.0`, NaNs with
@@ -350,7 +346,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f16_is_sign_positive :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if the number is [subnormal].
@@ -377,7 +373,7 @@ module M (StateM : State.StateM.S) = struct
            [subnormal]: https://en.wikipedia.org/wiki/Denormal_number
         ]} *)
     val f16_is_subnormal :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this number is neither infinite nor NaN.
@@ -396,7 +392,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f32_is_finite :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this value is positive infinity or negative infinity, and
@@ -416,7 +412,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f32_is_infinite :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this value is NaN.
@@ -429,8 +425,7 @@ module M (StateM : State.StateM.S) = struct
            assert!(!f.is_nan());
            ```
         ]} *)
-    val f32_is_nan :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+    val f32_is_nan : arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if the number is neither zero, infinite,
@@ -454,7 +449,7 @@ module M (StateM : State.StateM.S) = struct
            [subnormal]: https://en.wikipedia.org/wiki/Denormal_number
         ]} *)
     val f32_is_normal :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if `self` has a negative sign, including `-0.0`, NaNs with
@@ -476,7 +471,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f32_is_sign_negative :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if `self` has a positive sign, including `+0.0`, NaNs with
@@ -498,7 +493,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f32_is_sign_positive :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if the number is [subnormal].
@@ -521,7 +516,7 @@ module M (StateM : State.StateM.S) = struct
            [subnormal]: https://en.wikipedia.org/wiki/Denormal_number
         ]} *)
     val f32_is_subnormal :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this number is neither infinite nor NaN.
@@ -540,7 +535,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f64_is_finite :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this value is positive infinity or negative infinity, and
@@ -560,7 +555,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f64_is_infinite :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if this value is NaN.
@@ -573,8 +568,7 @@ module M (StateM : State.StateM.S) = struct
            assert!(!f.is_nan());
            ```
         ]} *)
-    val f64_is_nan :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+    val f64_is_nan : arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if the number is neither zero, infinite,
@@ -598,7 +592,7 @@ module M (StateM : State.StateM.S) = struct
            [subnormal]: https://en.wikipedia.org/wiki/Denormal_number
         ]} *)
     val f64_is_normal :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if `self` has a negative sign, including `-0.0`, NaNs with
@@ -620,7 +614,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f64_is_sign_negative :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if `self` has a positive sign, including `+0.0`, NaNs with
@@ -642,7 +636,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val f64_is_sign_positive :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns `true` if the number is [subnormal].
@@ -665,7 +659,7 @@ module M (StateM : State.StateM.S) = struct
            [subnormal]: https://en.wikipedia.org/wiki/Denormal_number
         ]} *)
     val f64_is_subnormal :
-      arg:[< Typed.T.sfloat ] Typed.t -> Typed.T.sbool Typed.t ret
+      arg:Typed.([< T.sfloat ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Signals a memory allocation error.
@@ -694,15 +688,15 @@ module M (StateM : State.StateM.S) = struct
            [The panic handler]: https://doc.rust-lang.org/reference/runtime.html#the-panic_handler-attribute
            [no_std]: https://doc.rust-lang.org/reference/names/preludes.html#the-no_std-attribute
         ]} *)
-    val handle_alloc_error : layout:rust_val -> unit ret
+    val handle_alloc_error : layout:Typed.([< T.any ] t) -> unit ret
 
-    val handle_error : e:rust_val -> unit ret
+    val handle_error : e:Typed.([< T.any ] t) -> unit ret
     val option_unwrap_failed : unit -> unit ret
 
     (** {@markdown[
           The underlying implementation of core's `panic!` macro when no formatting is used.
         ]} *)
-    val panic : expr:full_ptr -> unit ret
+    val panic : expr:Typed.([< T.sptr_f ] t) -> unit ret
 
     (** {@markdown[
           The entry point for panicking with a formatted message.
@@ -712,7 +706,7 @@ module M (StateM : State.StateM.S) = struct
            on (e.g.) the inlining of other functions as possible), by moving
            the actual formatting into this shared place.
         ]} *)
-    val panic_fmt : fmt:rust_val -> unit ret
+    val panic_fmt : fmt:Typed.([< T.any ] t) -> unit ret
 
     (** {@markdown[
           Like `panic_fmt`, but for non-unwinding panics.
@@ -720,18 +714,21 @@ module M (StateM : State.StateM.S) = struct
            Has to be a separate function so that it can carry the `rustc_nounwind` attribute.
         ]} *)
     val panic_nounwind_fmt :
-      fmt:rust_val -> force_no_backtrace:[< Typed.T.sbool ] Typed.t -> unit ret
+      fmt:Typed.([< T.any ] t) ->
+      force_no_backtrace:Typed.([< T.sbool ] t) ->
+      unit ret
 
     val print_to :
       t:Types.ty ->
-      args:rust_val ->
-      global_s:full_ptr ->
-      label:full_ptr ->
+      args:Typed.([< T.any ] t) ->
+      global_s:Typed.([< T.sptr_f ] t) ->
+      label:Typed.([< T.sptr_f ] t) ->
       unit ret
 
     val print_to_buffer_if_capture_used :
-      args:rust_val -> Typed.T.sbool Typed.t ret
+      args:Typed.([< T.any ] t) -> Typed.([> T.sbool ] t) ret
 
-    val result_unwrap_failed : msg:full_ptr -> error:full_ptr -> unit ret
+    val result_unwrap_failed :
+      msg:Typed.([< T.sptr_f ] t) -> error:Typed.([< T.sptr_f ] t) -> unit ret
   end
 end

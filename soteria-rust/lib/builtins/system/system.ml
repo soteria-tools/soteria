@@ -5,10 +5,9 @@
 
 open Common
 open Svalue
-open Rust_val
 
 type fn =
-  | StdEnvVar
+  | StdSysEnvUnixGetenv
   | StdSysRandomHashmapRandomKeys
   | StdSysThreadLocalGuardAppleEnableTlvAtexit
   | StdSysTimeUnixInstantNow
@@ -16,7 +15,7 @@ type fn =
 
 let fn_pats : (string * fn) list =
   [
-    ("std::env::_var", StdEnvVar);
+    ("std::sys::env::_::getenv", StdSysEnvUnixGetenv);
     ("std::sys::random::hashmap_random_keys", StdSysRandomHashmapRandomKeys);
     ( "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
       StdSysThreadLocalGuardAppleEnableTlvAtexit );
@@ -31,23 +30,8 @@ module M (StateM : State.StateM.S) = struct
   open StateM
   open Syntax
 
-  type rust_val = Sptr.t Rust_val.t
   type 'a ret = ('a, unit) StateM.t
-  type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-  type full_ptr = StateM.Sptr.t Rust_val.full_ptr
-
-  let[@inline] as_ptr (v : rust_val) =
-    match v with
-    | Ptr ptr -> ptr
-    | Int v ->
-        let v = Typed.cast_i Usize v in
-        let ptr = Sptr.of_address v in
-        (ptr, Thin)
-    | _ -> failwith "expected pointer"
-
-  let as_base ty (v : rust_val) = Rust_val.as_base ty v
-  let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
-  let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
+  type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   include Impl.M (StateM)
 
@@ -56,9 +40,9 @@ module M (StateM : State.StateM.S) = struct
     match[@warning "-redundant-case"]
       (stub, generics.types, generics.const_generics, args)
     with
-    | StdEnvVar, [], [], [ key ] ->
-        let key = as_ptr key in
-        _var ~fun_sig:_fun_sig ~key
+    | StdSysEnvUnixGetenv, [], [], [ k ] ->
+        let k = Typed.cast_ptr_f k in
+        getenv ~fun_sig:_fun_sig ~k
     | StdSysRandomHashmapRandomKeys, [], [], [] ->
         hashmap_random_keys ~fun_sig:_fun_sig
     | StdSysThreadLocalGuardAppleEnableTlvAtexit, _, _, _ ->
@@ -74,6 +58,6 @@ module M (StateM : State.StateM.S) = struct
           tys
           Fmt.(list ~sep:comma Crate.pp_constant_expr)
           cs
-          Fmt.(list ~sep:comma pp_rust_val)
+          Fmt.(list ~sep:comma Typed.ppa)
           args
 end

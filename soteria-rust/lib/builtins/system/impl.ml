@@ -1,6 +1,5 @@
 open Charon
 open Svalue
-open Rust_val
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
@@ -17,10 +16,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let _tlv_atexit ~fun_exec ~args =
     let* dtor, arg =
       match args with
-      | [ Ptr dtor_ptr; arg_ptr ] -> ok (dtor_ptr, arg_ptr)
+      | [ dtor_ptr; arg_ptr ] -> ok (Typed.cast_ptr_f dtor_ptr, arg_ptr)
       | _ ->
           Fmt.kstr not_impl "tlv_atexit: unexpected arguments: %a"
-            Fmt.(list pp_rust_val)
+            Fmt.(list Typed.ppa)
             args
     in
     let+ () =
@@ -29,14 +28,14 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
           let* _ = fun_exec fn [ arg ] in
           ok ())
     in
-    Tuple []
+    Typed.Adt.mk_tuple []
 
   (** {@rust[
-        fn _var(key: &OsStr) -> Result<String, VarError>
+        fn getenv(k: &OsStr) -> Option<OsString>
       ]}
       HACK: we assume that hitting the environment never finds the variable
       we're looking for. Under-approximating behaviour. *)
-  let _var ~(fun_sig : Types.fun_sig) ~key:_ =
+  let getenv ~(fun_sig : Types.fun_sig) ~k:_ =
     let var_error_ty =
       match fun_sig.output with
       | TAdt { id = TAdtId id; _ } -> (
@@ -63,18 +62,24 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
        VarError { NotPresent, NotUnicode(OsString) }
 
        So the variant of NotPresent is 0 *)
-    let var_error = Rust_val.mk_enum ~ty:var_error_ty "NotPresent" [] in
-    let res = Rust_val.mk_enum ~ty:fun_sig.output "Err" [ var_error ] in
+    let var_error =
+      Typed.Adt.Checked.mk_enum ~ty:var_error_ty "NotPresent" []
+    in
+    let res =
+      Typed.Adt.Checked.mk_enum ~ty:fun_sig.output "Err" [ var_error ]
+    in
     StateM.ok res
 
   (** HACK: We under-approximate and always return 1. *)
   let available_parallelism ~(fun_sig : Types.fun_sig) =
     (* We return 1, to under-approximate the behaviour. *)
-    let one = Int (Typed.BV.usize Z.one) in
+    let one = Typed.BV.usize Z.one in
     (* `NonZero(1)` *)
-    let nonzero_one = Tuple [ Tuple [ one ] ] in
+    let nonzero_one = Typed.Adt.mk_tuple [ one ] in
     (* `Ok(Nonzero(1))` *)
-    let res = Rust_val.mk_enum ~ty:fun_sig.output "Ok" [ nonzero_one ] in
+    let res =
+      Typed.Adt.Checked.mk_enum ~ty:fun_sig.output "Ok" [ nonzero_one ]
+    in
     StateM.ok res
 
   let now () =
@@ -92,7 +97,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let now = Unix.time () in
     let sec = Int.of_float now in
     let nsec = Int.of_float ((now -. Float.of_int sec) *. 1_000_000_000.) in
-    let sec = Int (Typed.BitVec.u64i sec) in
-    let nsec = Int (Typed.BitVec.u32i nsec) in
-    ok (Tuple [ Tuple [ sec; Tuple [ nsec ] ] ])
+    let sec = Typed.BitVec.u64i sec in
+    let nsec = Typed.BitVec.u32i nsec in
+    ok Typed.Adt.(mk_tuple [ mk_tuple [ sec; mk_tuple [ nsec ] ] ])
 end

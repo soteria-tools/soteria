@@ -1,5 +1,4 @@
 open Svalue
-open Rust_val
 
 type fn = PanicCleanup | PanicImpl
 

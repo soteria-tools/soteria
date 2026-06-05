@@ -7,10 +7,8 @@ open Common
 
 module M (StateM : State.StateM.S) = struct
   module type Impl = sig
-    type rust_val := StateM.Sptr.t Rust_val.t
     type 'a ret := ('a, unit) StateM.t
-    type fun_exec := Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-    type full_ptr := StateM.Sptr.t Rust_val.full_ptr
+    type fun_exec := Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
     (** {@markdown[
           Aborts the execution of the process.
@@ -46,7 +44,10 @@ module M (StateM : State.StateM.S) = struct
            [`u32::overflowing_add`]
         ]} *)
     val add_with_overflow :
-      t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+      t:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Lowers in MIR to `Rvalue::Aggregate` with `AggregateKind::RawPtr`.
@@ -59,9 +60,9 @@ module M (StateM : State.StateM.S) = struct
       p:Types.ty ->
       d:Types.ty ->
       m:Types.ty ->
-      data:rust_val ->
-      meta:rust_val ->
-      rust_val ret
+      data:Typed.([< T.any ] t) ->
+      meta:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           The minimum alignment of a type.
@@ -78,7 +79,7 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`core::mem::align_of`].
         ]} *)
-    val align_of : t:Types.ty -> Typed.T.sint Typed.t ret
+    val align_of : t:Types.ty -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           The required alignment of the referenced value.
@@ -89,7 +90,8 @@ module M (StateM : State.StateM.S) = struct
 
            See [`crate::mem::align_of_val_raw`] for safety conditions.
         ]} *)
-    val align_of_val : t:Types.ty -> ptr:full_ptr -> Typed.T.sint Typed.t ret
+    val align_of_val :
+      t:Types.ty -> ptr:Typed.([< T.sptr_f ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Calculates the offset from a pointer, potentially wrapping.
@@ -108,9 +110,9 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val arith_offset :
       t:Types.ty ->
-      dst:full_ptr ->
-      offset:[< Typed.T.sint ] Typed.t ->
-      full_ptr ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      offset:Typed.([< T.sint ] t) ->
+      Typed.([> T.sptr_f ] t) ret
 
     (** {@markdown[
           A guard for unsafe functions that cannot ever be executed if `T` is uninhabited:
@@ -152,7 +154,7 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`core::hint::assert_unchecked`].
         ]} *)
-    val assume : b:[< Typed.T.sbool ] Typed.t -> unit ret
+    val assume : b:Typed.([< T.sbool ] t) -> unit ret
 
     (** {@markdown[
           Bitwise and with the current value, returning the previous value.
@@ -166,9 +168,9 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       u:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Stores a value if the current value is the same as the `old` value.
@@ -182,10 +184,10 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       ord_succ:Types.constant_expr ->
       ord_fail:Types.constant_expr ->
-      dst:full_ptr ->
-      old:rust_val ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      old:Typed.([< T.any ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Stores a value if the current value is the same as the `old` value.
@@ -199,10 +201,10 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       ord_succ:Types.constant_expr ->
       ord_fail:Types.constant_expr ->
-      dst:full_ptr ->
-      old:rust_val ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      old:Typed.([< T.any ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           An atomic fence.
@@ -220,7 +222,10 @@ module M (StateM : State.StateM.S) = struct
            [`atomic`] types via the `load` method. For example, [`AtomicBool::load`].
         ]} *)
     val atomic_load :
-      t:Types.ty -> ord:Types.constant_expr -> src:full_ptr -> rust_val ret
+      t:Types.ty ->
+      ord:Types.constant_expr ->
+      src:Typed.([< T.sptr_f ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Maximum with the current value using a signed comparison.
@@ -232,9 +237,9 @@ module M (StateM : State.StateM.S) = struct
     val atomic_max :
       t:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Minimum with the current value using a signed comparison.
@@ -246,9 +251,9 @@ module M (StateM : State.StateM.S) = struct
     val atomic_min :
       t:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Bitwise nand with the current value, returning the previous value.
@@ -262,9 +267,9 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       u:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Bitwise or with the current value, returning the previous value.
@@ -278,9 +283,9 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       u:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           An atomic fence for synchronization within a single thread.
@@ -300,8 +305,8 @@ module M (StateM : State.StateM.S) = struct
     val atomic_store :
       t:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      val_:rust_val ->
+      dst:Typed.([< T.sptr_f ] t) ->
+      val_:Typed.([< T.any ] t) ->
       unit ret
 
     (** {@markdown[
@@ -314,9 +319,9 @@ module M (StateM : State.StateM.S) = struct
     val atomic_umax :
       t:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Minimum with the current value using an unsigned comparison.
@@ -328,9 +333,9 @@ module M (StateM : State.StateM.S) = struct
     val atomic_umin :
       t:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Adds to the current value, returning the previous value.
@@ -344,9 +349,9 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       u:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Stores the value at the specified memory location, returning the old value.
@@ -358,9 +363,9 @@ module M (StateM : State.StateM.S) = struct
     val atomic_xchg :
       t:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Bitwise xor with the current value, returning the previous value.
@@ -374,9 +379,9 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       u:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Subtract from the current value, returning the previous value.
@@ -390,9 +395,9 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       u:Types.ty ->
       ord:Types.constant_expr ->
-      dst:full_ptr ->
-      src:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Generates the LLVM body for the automatic differentiation of `f` using Enzyme,
@@ -435,10 +440,10 @@ module M (StateM : State.StateM.S) = struct
       g:Types.ty ->
       t:Types.ty ->
       r:Types.ty ->
-      f:rust_val ->
-      df:rust_val ->
-      args:rust_val ->
-      rust_val ret
+      f:Typed.([< T.any ] t) ->
+      df:Typed.([< T.any ] t) ->
+      args:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Reverses the bits in an integer type `T`.
@@ -452,14 +457,16 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `reverse_bits` method. For example,
            [`u32::reverse_bits`]
         ]} *)
-    val bitreverse : t:Types.ty -> x:rust_val -> rust_val ret
+    val bitreverse :
+      t:Types.ty -> x:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           See documentation of [`std::hint::black_box`] for details.
 
            [`std::hint::black_box`]: crate::hint::black_box
         ]} *)
-    val black_box : t:Types.ty -> dummy:rust_val -> rust_val ret
+    val black_box :
+      t:Types.ty -> dummy:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Executes a breakpoint trap, for inspection by a debugger.
@@ -480,7 +487,7 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `swap_bytes` method. For example,
            [`u32::swap_bytes`]
         ]} *)
-    val bswap : t:Types.ty -> x:rust_val -> rust_val ret
+    val bswap : t:Types.ty -> x:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Gets a reference to a static `Location` indicating where it was called.
@@ -492,7 +499,7 @@ module M (StateM : State.StateM.S) = struct
 
            Consider using [`core::panic::Location::caller`] instead.
         ]} *)
-    val caller_location : unit -> full_ptr ret
+    val caller_location : unit -> Typed.([> T.sptr_f ] t) ret
 
     (** {@markdown[
           Performs full-width multiplication and addition with a carry:
@@ -513,11 +520,11 @@ module M (StateM : State.StateM.S) = struct
     val carrying_mul_add :
       t:Types.ty ->
       u:Types.ty ->
-      multiplier:rust_val ->
-      multiplicand:rust_val ->
-      addend:rust_val ->
-      carry:rust_val ->
-      rust_val ret
+      multiplier:Typed.([< T.any ] t) ->
+      multiplicand:Typed.([< T.any ] t) ->
+      addend:Typed.([< T.any ] t) ->
+      carry:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Carryless multiply.
@@ -525,7 +532,11 @@ module M (StateM : State.StateM.S) = struct
            Safe versions of this intrinsic are available on the integer primitives
            via the `carryless_mul` method. For example, [`u32::carryless_mul`].
         ]} *)
-    val carryless_mul : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val carryless_mul :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Rust's "try catch" construct for unwinding. Invokes the function pointer `try_fn` with the
@@ -549,10 +560,10 @@ module M (StateM : State.StateM.S) = struct
     val catch_unwind :
       fun_exec:fun_exec ->
       t_data:Types.ty ->
-      try_fn:full_ptr ->
-      data:full_ptr ->
-      catch_fn:full_ptr ->
-      Typed.T.sbool Typed.t ret
+      try_fn:Typed.([< T.sptr_f ] t) ->
+      data:Typed.([< T.sptr_f ] t) ->
+      catch_fn:Typed.([< T.sptr_f ] t) ->
+      Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns the smallest integer greater than or equal to an `f128`.
@@ -560,7 +571,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::ceil`](../../std/primitive.f128.html#method.ceil)
         ]} *)
-    val ceilf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val ceilf128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the smallest integer greater than or equal to an `f16`.
@@ -568,7 +579,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::ceil`](../../std/primitive.f16.html#method.ceil)
         ]} *)
-    val ceilf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val ceilf16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the smallest integer greater than or equal to an `f32`.
@@ -576,7 +587,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::ceil`](../../std/primitive.f32.html#method.ceil)
         ]} *)
-    val ceilf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val ceilf32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the smallest integer greater than or equal to an `f64`.
@@ -584,7 +595,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::ceil`](../../std/primitive.f64.html#method.ceil)
         ]} *)
-    val ceilf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val ceilf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Hints to the compiler that current code path is cold.
@@ -615,10 +626,10 @@ module M (StateM : State.StateM.S) = struct
            [valid]: crate::ptr#safety
         ]} *)
     val compare_bytes :
-      left:full_ptr ->
-      right:full_ptr ->
-      bytes:[< Typed.T.sint ] Typed.t ->
-      Typed.T.sint Typed.t ret
+      left:Typed.([< T.sptr_f ] t) ->
+      right:Typed.([< T.sptr_f ] t) ->
+      bytes:Typed.([< T.sint ] t) ->
+      Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Deallocates a memory which allocated by `intrinsics::const_allocate` at compile time.
@@ -633,9 +644,9 @@ module M (StateM : State.StateM.S) = struct
            - If the `ptr` is pointing to a local variable, this intrinsic doesn't deallocate it.
         ]} *)
     val const_deallocate :
-      ptr:full_ptr ->
-      size:[< Typed.T.sint ] Typed.t ->
-      align:[< Typed.T.sint ] Typed.t ->
+      ptr:Typed.([< T.sptr_f ] t) ->
+      size:Typed.([< T.sint ] t) ->
+      align:Typed.([< T.sint ] t) ->
       unit ret
 
     (** {@markdown[
@@ -697,17 +708,18 @@ module M (StateM : State.StateM.S) = struct
       f:Types.ty ->
       g:Types.ty ->
       ret:Types.ty ->
-      arg:rust_val ->
-      called_in_const:rust_val ->
-      called_at_rt:rust_val ->
-      rust_val ret
+      arg:Typed.([< T.any ] t) ->
+      called_in_const:Typed.([< T.any ] t) ->
+      called_at_rt:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Convert the allocation this pointer points to into immutable global memory.
            The pointer must point to the beginning of a heap allocation.
            This operation only makes sense during compile time. At runtime, it does nothing.
         ]} *)
-    val const_make_global : ptr:full_ptr -> full_ptr ret
+    val const_make_global :
+      ptr:Typed.([< T.sptr_f ] t) -> Typed.([> T.sptr_f ] t) ret
 
     (** {@markdown[
           Check if the post-condition `cond` has been met.
@@ -722,9 +734,9 @@ module M (StateM : State.StateM.S) = struct
     val contract_check_ensures :
       c:Types.ty ->
       t_ret:Types.ty ->
-      cond:rust_val ->
-      ret:rust_val ->
-      rust_val ret
+      cond:Typed.([< T.any ] t) ->
+      ret:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Check if the pre-condition `cond` has been met.
@@ -734,16 +746,17 @@ module M (StateM : State.StateM.S) = struct
 
            Note that this function is a no-op during constant evaluation.
         ]} *)
-    val contract_check_requires : c:Types.ty -> cond:rust_val -> unit ret
+    val contract_check_requires :
+      c:Types.ty -> cond:Typed.([< T.any ] t) -> unit ret
 
     (** {@markdown[
           This is an accidentally-stable alias to [`ptr::copy`]; use that instead.
         ]} *)
     val copy :
       t:Types.ty ->
-      src:full_ptr ->
-      dst:full_ptr ->
-      count:[< Typed.T.sint ] Typed.t ->
+      src:Typed.([< T.sptr_f ] t) ->
+      dst:Typed.([< T.sptr_f ] t) ->
+      count:Typed.([< T.sint ] t) ->
       unit ret
 
     (** {@markdown[
@@ -751,9 +764,9 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val copy_nonoverlapping :
       t:Types.ty ->
-      src:full_ptr ->
-      dst:full_ptr ->
-      count:[< Typed.T.sint ] Typed.t ->
+      src:Typed.([< T.sptr_f ] t) ->
+      dst:Typed.([< T.sptr_f ] t) ->
+      count:Typed.([< T.sint ] t) ->
       unit ret
 
     (** {@markdown[
@@ -763,9 +776,9 @@ module M (StateM : State.StateM.S) = struct
            [`f128::copysign`](../../std/primitive.f128.html#method.copysign)
         ]} *)
     val copysignf128 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Copies the sign from `y` to `x` for `f16` values.
@@ -774,9 +787,9 @@ module M (StateM : State.StateM.S) = struct
            [`f16::copysign`](../../std/primitive.f16.html#method.copysign)
         ]} *)
     val copysignf16 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Copies the sign from `y` to `x` for `f32` values.
@@ -785,9 +798,9 @@ module M (StateM : State.StateM.S) = struct
            [`f32::copysign`](../../std/primitive.f32.html#method.copysign)
         ]} *)
     val copysignf32 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Copies the sign from `y` to `x` for `f64` values.
@@ -796,9 +809,9 @@ module M (StateM : State.StateM.S) = struct
            [`f64::copysign`](../../std/primitive.f64.html#method.copysign)
         ]} *)
     val copysignf64 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the cosine of an `f128`.
@@ -806,7 +819,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::cos`](../../std/primitive.f128.html#method.cos)
         ]} *)
-    val cosf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val cosf128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the cosine of an `f16`.
@@ -814,7 +827,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::cos`](../../std/primitive.f16.html#method.cos)
         ]} *)
-    val cosf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val cosf16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the cosine of an `f32`.
@@ -822,7 +835,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::cos`](../../std/primitive.f32.html#method.cos)
         ]} *)
-    val cosf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val cosf32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the cosine of an `f64`.
@@ -830,7 +843,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::cos`](../../std/primitive.f64.html#method.cos)
         ]} *)
-    val cosf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val cosf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the number of leading unset bits (zeroes) in an integer type `T`.
@@ -870,7 +883,7 @@ module M (StateM : State.StateM.S) = struct
            assert_eq!(num_leading, 16);
            ```
         ]} *)
-    val ctlz : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
+    val ctlz : t:Types.ty -> x:Typed.([< T.any ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Like `ctlz`, but extra-unsafe as it returns `undef` when
@@ -891,7 +904,8 @@ module M (StateM : State.StateM.S) = struct
            assert_eq!(num_leading, 3);
            ```
         ]} *)
-    val ctlz_nonzero : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
+    val ctlz_nonzero :
+      t:Types.ty -> x:Typed.([< T.any ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Returns the number of bits set in an integer type `T`
@@ -905,7 +919,8 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `count_ones` method. For example,
            [`u32::count_ones`]
         ]} *)
-    val ctpop : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
+    val ctpop :
+      t:Types.ty -> x:Typed.([< T.any ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Returns the number of trailing unset bits (zeroes) in an integer type `T`.
@@ -945,7 +960,7 @@ module M (StateM : State.StateM.S) = struct
            assert_eq!(num_trailing, 16);
            ```
         ]} *)
-    val cttz : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
+    val cttz : t:Types.ty -> x:Typed.([< T.any ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Like `cttz`, but extra-unsafe as it returns `undef` when
@@ -966,7 +981,8 @@ module M (StateM : State.StateM.S) = struct
            assert_eq!(num_trailing, 3);
            ```
         ]} *)
-    val cttz_nonzero : t:Types.ty -> x:rust_val -> Typed.T.sint Typed.t ret
+    val cttz_nonzero :
+      t:Types.ty -> x:Typed.([< T.any ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Returns the value of the discriminant for the variant in 'v';
@@ -979,7 +995,8 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`core::mem::discriminant`].
         ]} *)
-    val discriminant_value : t:Types.ty -> v:full_ptr -> rust_val ret
+    val discriminant_value :
+      t:Types.ty -> v:Typed.([< T.sptr_f ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Combine two values which have no bits in common.
@@ -993,7 +1010,11 @@ module M (StateM : State.StateM.S) = struct
 
            Otherwise it's immediate UB.
         ]} *)
-    val disjoint_bitor : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val disjoint_bitor :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Performs an exact division, resulting in undefined behavior where
@@ -1001,7 +1022,11 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val exact_div : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+    val exact_div :
+      t:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns 2 raised to the power of an `f128`.
@@ -1009,7 +1034,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::exp2`](../../std/primitive.f128.html#method.exp2)
         ]} *)
-    val exp2f128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val exp2f128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns 2 raised to the power of an `f16`.
@@ -1017,7 +1042,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::exp2`](../../std/primitive.f16.html#method.exp2)
         ]} *)
-    val exp2f16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val exp2f16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns 2 raised to the power of an `f32`.
@@ -1025,7 +1050,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::exp2`](../../std/primitive.f32.html#method.exp2)
         ]} *)
-    val exp2f32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val exp2f32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns 2 raised to the power of an `f64`.
@@ -1033,7 +1058,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::exp2`](../../std/primitive.f64.html#method.exp2)
         ]} *)
-    val exp2f64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val exp2f64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the exponential of an `f128`.
@@ -1041,7 +1066,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::exp`](../../std/primitive.f128.html#method.exp)
         ]} *)
-    val expf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val expf128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the exponential of an `f16`.
@@ -1049,7 +1074,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::exp`](../../std/primitive.f16.html#method.exp)
         ]} *)
-    val expf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val expf16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the exponential of an `f32`.
@@ -1057,7 +1082,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::exp`](../../std/primitive.f32.html#method.exp)
         ]} *)
-    val expf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val expf32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the exponential of an `f64`.
@@ -1065,7 +1090,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::exp`](../../std/primitive.f64.html#method.exp)
         ]} *)
-    val expf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val expf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the absolute value of a floating-point value.
@@ -1073,14 +1098,18 @@ module M (StateM : State.StateM.S) = struct
            The stabilized versions of this intrinsic are available on the float
            primitives via the `abs` method. For example, [`f32::abs`].
         ]} *)
-    val fabs : t:Types.ty -> x:rust_val -> rust_val ret
+    val fabs : t:Types.ty -> x:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Float addition that allows optimizations based on algebraic rules.
 
            Stabilized as [`f16::algebraic_add`], [`f32::algebraic_add`], [`f64::algebraic_add`] and [`f128::algebraic_add`].
         ]} *)
-    val fadd_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val fadd_algebraic :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Float addition that allows optimizations based on algebraic rules.
@@ -1088,14 +1117,22 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val fadd_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val fadd_fast :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Float division that allows optimizations based on algebraic rules.
 
            Stabilized as [`f16::algebraic_div`], [`f32::algebraic_div`], [`f64::algebraic_div`] and [`f128::algebraic_div`].
         ]} *)
-    val fdiv_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val fdiv_algebraic :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Float division that allows optimizations based on algebraic rules.
@@ -1103,7 +1140,11 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val fdiv_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val fdiv_fast :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           The offset of a field queried by its field representing type.
@@ -1116,7 +1157,7 @@ module M (StateM : State.StateM.S) = struct
            There should be no need to call this intrinsic manually, as its value is used to define
            [`Field::OFFSET`](crate::field::Field::OFFSET), which is publicly accessible.
         ]} *)
-    val field_offset : f:Types.ty -> Typed.T.sint Typed.t ret
+    val field_offset : f:Types.ty -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Gets the actual field `TypeId` of the [`FieldRepresentingType`]'s `TypeId`.
@@ -1126,7 +1167,7 @@ module M (StateM : State.StateM.S) = struct
            [`FieldRepresentingType`]: crate::field::FieldRepresentingType
         ]} *)
     val field_representing_type_actual_type_id :
-      frt_type_id:rust_val -> rust_val ret
+      frt_type_id:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Converts with LLVM’s fptoui/fptosi, which may return undef for values out of range
@@ -1135,7 +1176,10 @@ module M (StateM : State.StateM.S) = struct
            Stabilized as [`f32::to_int_unchecked`] and [`f64::to_int_unchecked`].
         ]} *)
     val float_to_int_unchecked :
-      float:Types.ty -> int:Types.ty -> value:rust_val -> rust_val ret
+      float:Types.ty ->
+      int:Types.ty ->
+      value:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns the largest integer less than or equal to an `f128`.
@@ -1143,7 +1187,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::floor`](../../std/primitive.f128.html#method.floor)
         ]} *)
-    val floorf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val floorf128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the largest integer less than or equal to an `f16`.
@@ -1151,7 +1195,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::floor`](../../std/primitive.f16.html#method.floor)
         ]} *)
-    val floorf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val floorf16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the largest integer less than or equal to an `f32`.
@@ -1159,7 +1203,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::floor`](../../std/primitive.f32.html#method.floor)
         ]} *)
-    val floorf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val floorf32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the largest integer less than or equal to an `f64`.
@@ -1167,7 +1211,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::floor`](../../std/primitive.f64.html#method.floor)
         ]} *)
-    val floorf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val floorf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns `a * b + c` for `f128` values.
@@ -1176,10 +1220,10 @@ module M (StateM : State.StateM.S) = struct
            [`f128::mul_add`](../../std/primitive.f128.html#method.mul_add)
         ]} *)
     val fmaf128 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      b:[< Typed.T.sfloat ] Typed.t ->
-      c:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      b:Typed.([< T.sfloat ] t) ->
+      c:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns `a * b + c` for `f16` values.
@@ -1188,10 +1232,10 @@ module M (StateM : State.StateM.S) = struct
            [`f16::mul_add`](../../std/primitive.f16.html#method.mul_add)
         ]} *)
     val fmaf16 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      b:[< Typed.T.sfloat ] Typed.t ->
-      c:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      b:Typed.([< T.sfloat ] t) ->
+      c:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns `a * b + c` for `f32` values.
@@ -1200,10 +1244,10 @@ module M (StateM : State.StateM.S) = struct
            [`f32::mul_add`](../../std/primitive.f32.html#method.mul_add)
         ]} *)
     val fmaf32 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      b:[< Typed.T.sfloat ] Typed.t ->
-      c:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      b:Typed.([< T.sfloat ] t) ->
+      c:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns `a * b + c` for `f64` values.
@@ -1212,17 +1256,21 @@ module M (StateM : State.StateM.S) = struct
            [`f64::mul_add`](../../std/primitive.f64.html#method.mul_add)
         ]} *)
     val fmaf64 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      b:[< Typed.T.sfloat ] Typed.t ->
-      c:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      b:Typed.([< T.sfloat ] t) ->
+      c:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Float multiplication that allows optimizations based on algebraic rules.
 
            Stabilized as [`f16::algebraic_mul`], [`f32::algebraic_mul`], [`f64::algebraic_mul`] and [`f128::algebraic_mul`].
         ]} *)
-    val fmul_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val fmul_algebraic :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Float multiplication that allows optimizations based on algebraic rules.
@@ -1230,7 +1278,11 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val fmul_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val fmul_fast :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns `a * b + c` for `f128` values, non-deterministically executing
@@ -1245,10 +1297,10 @@ module M (StateM : State.StateM.S) = struct
            example.
         ]} *)
     val fmuladdf128 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      b:[< Typed.T.sfloat ] Typed.t ->
-      c:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      b:Typed.([< T.sfloat ] t) ->
+      c:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns `a * b + c` for `f16` values, non-deterministically executing
@@ -1263,10 +1315,10 @@ module M (StateM : State.StateM.S) = struct
            example.
         ]} *)
     val fmuladdf16 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      b:[< Typed.T.sfloat ] Typed.t ->
-      c:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      b:Typed.([< T.sfloat ] t) ->
+      c:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns `a * b + c` for `f32` values, non-deterministically executing
@@ -1281,10 +1333,10 @@ module M (StateM : State.StateM.S) = struct
            example.
         ]} *)
     val fmuladdf32 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      b:[< Typed.T.sfloat ] Typed.t ->
-      c:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      b:Typed.([< T.sfloat ] t) ->
+      c:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns `a * b + c` for `f64` values, non-deterministically executing
@@ -1299,10 +1351,10 @@ module M (StateM : State.StateM.S) = struct
            example.
         ]} *)
     val fmuladdf64 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      b:[< Typed.T.sfloat ] Typed.t ->
-      c:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      b:Typed.([< T.sfloat ] t) ->
+      c:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Moves a value out of scope without running drop glue.
@@ -1315,14 +1367,18 @@ module M (StateM : State.StateM.S) = struct
            Therefore, implementations must not require the user to uphold
            any safety invariants.
         ]} *)
-    val forget : t:Types.ty -> arg:rust_val -> unit ret
+    val forget : t:Types.ty -> arg:Typed.([< T.any ] t) -> unit ret
 
     (** {@markdown[
           Float remainder that allows optimizations based on algebraic rules.
 
            Stabilized as [`f16::algebraic_rem`], [`f32::algebraic_rem`], [`f64::algebraic_rem`] and [`f128::algebraic_rem`].
         ]} *)
-    val frem_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val frem_algebraic :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Float remainder that allows optimizations based on algebraic rules.
@@ -1330,14 +1386,22 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val frem_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val frem_fast :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Float subtraction that allows optimizations based on algebraic rules.
 
            Stabilized as [`f16::algebraic_sub`], [`f32::algebraic_sub`], [`f64::algebraic_sub`] and [`f128::algebraic_sub`].
         ]} *)
-    val fsub_algebraic : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val fsub_algebraic :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Float subtraction that allows optimizations based on algebraic rules.
@@ -1345,7 +1409,11 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val fsub_fast : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val fsub_fast :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns whether the argument's value is statically known at
@@ -1416,7 +1484,7 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val is_val_statically_known :
-      t:Types.ty -> arg:rust_val -> Typed.T.sbool Typed.t ret
+      t:Types.ty -> arg:Typed.([< T.any ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Returns the base 10 logarithm of an `f128`.
@@ -1424,7 +1492,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::log10`](../../std/primitive.f128.html#method.log10)
         ]} *)
-    val log10f128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val log10f128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the base 10 logarithm of an `f16`.
@@ -1432,7 +1500,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::log10`](../../std/primitive.f16.html#method.log10)
         ]} *)
-    val log10f16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val log10f16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the base 10 logarithm of an `f32`.
@@ -1440,7 +1508,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::log10`](../../std/primitive.f32.html#method.log10)
         ]} *)
-    val log10f32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val log10f32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the base 10 logarithm of an `f64`.
@@ -1448,7 +1516,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::log10`](../../std/primitive.f64.html#method.log10)
         ]} *)
-    val log10f64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val log10f64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the base 2 logarithm of an `f128`.
@@ -1456,7 +1524,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::log2`](../../std/primitive.f128.html#method.log2)
         ]} *)
-    val log2f128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val log2f128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the base 2 logarithm of an `f16`.
@@ -1464,7 +1532,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::log2`](../../std/primitive.f16.html#method.log2)
         ]} *)
-    val log2f16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val log2f16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the base 2 logarithm of an `f32`.
@@ -1472,7 +1540,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::log2`](../../std/primitive.f32.html#method.log2)
         ]} *)
-    val log2f32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val log2f32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the base 2 logarithm of an `f64`.
@@ -1480,7 +1548,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::log2`](../../std/primitive.f64.html#method.log2)
         ]} *)
-    val log2f64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val log2f64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the natural logarithm of an `f128`.
@@ -1488,7 +1556,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::ln`](../../std/primitive.f128.html#method.ln)
         ]} *)
-    val logf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val logf128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the natural logarithm of an `f16`.
@@ -1496,7 +1564,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::ln`](../../std/primitive.f16.html#method.ln)
         ]} *)
-    val logf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val logf16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the natural logarithm of an `f32`.
@@ -1504,7 +1572,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::ln`](../../std/primitive.f32.html#method.ln)
         ]} *)
-    val logf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val logf32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the natural logarithm of an `f64`.
@@ -1512,7 +1580,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::ln`](../../std/primitive.f64.html#method.ln)
         ]} *)
-    val logf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val logf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the maximum of two `f128` values, ignoring NaN.
@@ -1531,9 +1599,9 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`f128::max`].
         ]} *)
     val maximum_number_nsz_f128 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the maximum of two `f16` values, ignoring NaN.
@@ -1552,9 +1620,9 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`f16::max`].
         ]} *)
     val maximum_number_nsz_f16 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the maximum of two `f32` values, ignoring NaN.
@@ -1573,9 +1641,9 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`f32::max`].
         ]} *)
     val maximum_number_nsz_f32 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the maximum of two `f64` values, ignoring NaN.
@@ -1594,9 +1662,9 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`f64::max`].
         ]} *)
     val maximum_number_nsz_f64 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the maximum of two `f128` values, propagating NaN.
@@ -1611,9 +1679,9 @@ module M (StateM : State.StateM.S) = struct
            any safety invariants.
         ]} *)
     val maximumf128 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the maximum of two `f16` values, propagating NaN.
@@ -1628,9 +1696,9 @@ module M (StateM : State.StateM.S) = struct
            any safety invariants.
         ]} *)
     val maximumf16 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the maximum of two `f32` values, propagating NaN.
@@ -1645,9 +1713,9 @@ module M (StateM : State.StateM.S) = struct
            any safety invariants.
         ]} *)
     val maximumf32 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the maximum of two `f64` values, propagating NaN.
@@ -1662,9 +1730,9 @@ module M (StateM : State.StateM.S) = struct
            any safety invariants.
         ]} *)
     val maximumf64 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the minimum of two `f128` values, ignoring NaN.
@@ -1683,9 +1751,9 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`f128::min`].
         ]} *)
     val minimum_number_nsz_f128 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the minimum of two `f16` values, ignoring NaN.
@@ -1704,9 +1772,9 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`f16::min`].
         ]} *)
     val minimum_number_nsz_f16 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the minimum of two `f32` values, ignoring NaN.
@@ -1725,9 +1793,9 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`f32::min`].
         ]} *)
     val minimum_number_nsz_f32 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the minimum of two `f64` values, ignoring NaN.
@@ -1746,9 +1814,9 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`f64::min`].
         ]} *)
     val minimum_number_nsz_f64 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the minimum of two `f128` values, propagating NaN.
@@ -1763,9 +1831,9 @@ module M (StateM : State.StateM.S) = struct
            any safety invariants.
         ]} *)
     val minimumf128 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the minimum of two `f16` values, propagating NaN.
@@ -1780,9 +1848,9 @@ module M (StateM : State.StateM.S) = struct
            any safety invariants.
         ]} *)
     val minimumf16 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the minimum of two `f32` values, propagating NaN.
@@ -1797,9 +1865,9 @@ module M (StateM : State.StateM.S) = struct
            any safety invariants.
         ]} *)
     val minimumf32 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the minimum of two `f64` values, propagating NaN.
@@ -1814,9 +1882,9 @@ module M (StateM : State.StateM.S) = struct
            any safety invariants.
         ]} *)
     val minimumf64 :
-      x:[< Typed.T.sfloat ] Typed.t ->
-      y:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) ->
+      y:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Performs checked integer multiplication
@@ -1831,7 +1899,10 @@ module M (StateM : State.StateM.S) = struct
            [`u32::overflowing_mul`]
         ]} *)
     val mul_with_overflow :
-      t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+      t:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns `true` if the actual type given as `T` requires drop
@@ -1848,7 +1919,7 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`mem::needs_drop`](crate::mem::needs_drop).
         ]} *)
-    val needs_drop : t:Types.ty -> Typed.T.sbool Typed.t ret
+    val needs_drop : t:Types.ty -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Emits a `nontemporal` store, which gives a hint to the CPU that the data should not be held
@@ -1859,7 +1930,10 @@ module M (StateM : State.StateM.S) = struct
            in ways that are not allowed for regular writes).
         ]} *)
     val nontemporal_store :
-      t:Types.ty -> ptr:full_ptr -> val_:rust_val -> unit ret
+      t:Types.ty ->
+      ptr:Typed.([< T.sptr_f ] t) ->
+      val_:Typed.([< T.any ] t) ->
+      unit ret
 
     (** {@markdown[
           Generates the LLVM body of a wrapper function to offload a kernel `f`.
@@ -1901,12 +1975,12 @@ module M (StateM : State.StateM.S) = struct
       t_f:Types.ty ->
       t:Types.ty ->
       r:Types.ty ->
-      f:rust_val ->
-      workgroup_dim:rust_val ->
-      thread_dim:rust_val ->
-      dyn_cache:[< Typed.T.sint ] Typed.t ->
-      args:rust_val ->
-      rust_val ret
+      f:Typed.([< T.any ] t) ->
+      workgroup_dim:Typed.([< T.any ] t) ->
+      thread_dim:Typed.([< T.any ] t) ->
+      dyn_cache:Typed.([< T.sint ] t) ->
+      args:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Calculates the offset from a pointer.
@@ -1929,9 +2003,9 @@ module M (StateM : State.StateM.S) = struct
     val offset :
       ptr:Types.ty ->
       delta:Types.ty ->
-      dst:rust_val ->
-      offset:rust_val ->
-      rust_val ret
+      dst:Typed.([< T.any ] t) ->
+      offset:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           The offset of a field inside a type.
@@ -1949,9 +2023,9 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val offset_of :
       t:Types.ty ->
-      variant:[< Typed.T.sint ] Typed.t ->
-      field:[< Typed.T.sint ] Typed.t ->
-      Typed.T.sint Typed.t ret
+      variant:Typed.([< T.sint ] t) ->
+      field:Typed.([< T.sint ] t) ->
+      Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Returns whether we should perform some overflow-checking at runtime. This eventually evaluates to
@@ -1973,7 +2047,7 @@ module M (StateM : State.StateM.S) = struct
            configuration can differ across crates, but we need this function to always return the same
            value in consteval in order to avoid unsoundness.
         ]} *)
-    val overflow_checks : unit -> Typed.T.sbool Typed.t ret
+    val overflow_checks : unit -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Raises an `f128` to an `f128` power.
@@ -1982,9 +2056,9 @@ module M (StateM : State.StateM.S) = struct
            [`f128::powf`](../../std/primitive.f128.html#method.powf)
         ]} *)
     val powf128 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      x:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      x:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Raises an `f16` to an `f16` power.
@@ -1993,9 +2067,9 @@ module M (StateM : State.StateM.S) = struct
            [`f16::powf`](../../std/primitive.f16.html#method.powf)
         ]} *)
     val powf16 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      x:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      x:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Raises an `f32` to an `f32` power.
@@ -2004,9 +2078,9 @@ module M (StateM : State.StateM.S) = struct
            [`f32::powf`](../../std/primitive.f32.html#method.powf)
         ]} *)
     val powf32 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      x:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      x:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Raises an `f64` to an `f64` power.
@@ -2015,9 +2089,9 @@ module M (StateM : State.StateM.S) = struct
            [`f64::powf`](../../std/primitive.f64.html#method.powf)
         ]} *)
     val powf64 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      x:[< Typed.T.sfloat ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      x:Typed.([< T.sfloat ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Raises an `f128` to an integer power.
@@ -2026,9 +2100,9 @@ module M (StateM : State.StateM.S) = struct
            [`f128::powi`](../../std/primitive.f128.html#method.powi)
         ]} *)
     val powif128 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      x:[< Typed.T.sint ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      x:Typed.([< T.sint ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Raises an `f16` to an integer power.
@@ -2037,9 +2111,9 @@ module M (StateM : State.StateM.S) = struct
            [`f16::powi`](../../std/primitive.f16.html#method.powi)
         ]} *)
     val powif16 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      x:[< Typed.T.sint ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      x:Typed.([< T.sint ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Raises an `f32` to an integer power.
@@ -2048,9 +2122,9 @@ module M (StateM : State.StateM.S) = struct
            [`f32::powi`](../../std/primitive.f32.html#method.powi)
         ]} *)
     val powif32 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      x:[< Typed.T.sint ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      x:Typed.([< T.sint ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Raises an `f64` to an integer power.
@@ -2059,9 +2133,9 @@ module M (StateM : State.StateM.S) = struct
            [`f64::powi`](../../std/primitive.f64.html#method.powi)
         ]} *)
     val powif64 :
-      a:[< Typed.T.sfloat ] Typed.t ->
-      x:[< Typed.T.sint ] Typed.t ->
-      Typed.T.sfloat Typed.t ret
+      a:Typed.([< T.sfloat ] t) ->
+      x:Typed.([< T.sint ] t) ->
+      Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -2075,7 +2149,10 @@ module M (StateM : State.StateM.S) = struct
            This intrinsic does not have a stable counterpart.
         ]} *)
     val prefetch_read_data :
-      t:Types.ty -> locality:Types.constant_expr -> data:full_ptr -> unit ret
+      t:Types.ty ->
+      locality:Types.constant_expr ->
+      data:Typed.([< T.sptr_f ] t) ->
+      unit ret
 
     (** {@markdown[
           The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -2089,7 +2166,10 @@ module M (StateM : State.StateM.S) = struct
            This intrinsic does not have a stable counterpart.
         ]} *)
     val prefetch_read_instruction :
-      t:Types.ty -> locality:Types.constant_expr -> data:full_ptr -> unit ret
+      t:Types.ty ->
+      locality:Types.constant_expr ->
+      data:Typed.([< T.sptr_f ] t) ->
+      unit ret
 
     (** {@markdown[
           The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -2103,7 +2183,10 @@ module M (StateM : State.StateM.S) = struct
            This intrinsic does not have a stable counterpart.
         ]} *)
     val prefetch_write_data :
-      t:Types.ty -> locality:Types.constant_expr -> data:full_ptr -> unit ret
+      t:Types.ty ->
+      locality:Types.constant_expr ->
+      data:Typed.([< T.sptr_f ] t) ->
+      unit ret
 
     (** {@markdown[
           The `prefetch` intrinsic is a hint to the code generator to insert a prefetch instruction
@@ -2117,7 +2200,10 @@ module M (StateM : State.StateM.S) = struct
            This intrinsic does not have a stable counterpart.
         ]} *)
     val prefetch_write_instruction :
-      t:Types.ty -> locality:Types.constant_expr -> data:full_ptr -> unit ret
+      t:Types.ty ->
+      locality:Types.constant_expr ->
+      data:Typed.([< T.sptr_f ] t) ->
+      unit ret
 
     (** {@markdown[
           See documentation of `<*const T>::guaranteed_eq` for details.
@@ -2126,7 +2212,10 @@ module M (StateM : State.StateM.S) = struct
            Returns `0` if the pointers are guaranteed inequal.
         ]} *)
     val ptr_guaranteed_cmp :
-      t:Types.ty -> ptr:full_ptr -> other:full_ptr -> Typed.T.sint Typed.t ret
+      t:Types.ty ->
+      ptr:Typed.([< T.sptr_f ] t) ->
+      other:Typed.([< T.sptr_f ] t) ->
+      Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Masks out bits of the pointer according to a mask.
@@ -2140,28 +2229,38 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val ptr_mask :
       t:Types.ty ->
-      ptr:full_ptr ->
-      mask:[< Typed.T.sint ] Typed.t ->
-      full_ptr ret
+      ptr:Typed.([< T.sptr_f ] t) ->
+      mask:Typed.([< T.sint ] t) ->
+      Typed.([> T.sptr_f ] t) ret
 
     (** {@markdown[
           Lowers in MIR to `Rvalue::UnaryOp` with `UnOp::PtrMetadata`.
 
            This is used to implement functions like `ptr::metadata`.
         ]} *)
-    val ptr_metadata : p:Types.ty -> m:Types.ty -> ptr:full_ptr -> rust_val ret
+    val ptr_metadata :
+      p:Types.ty ->
+      m:Types.ty ->
+      ptr:Typed.([< T.sptr_f ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           See documentation of `<*const T>::offset_from` for details.
         ]} *)
     val ptr_offset_from :
-      t:Types.ty -> ptr:full_ptr -> base:full_ptr -> Typed.T.sint Typed.t ret
+      t:Types.ty ->
+      ptr:Typed.([< T.sptr_f ] t) ->
+      base:Typed.([< T.sptr_f ] t) ->
+      Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           See documentation of `<*const T>::offset_from_unsigned` for details.
         ]} *)
     val ptr_offset_from_unsigned :
-      t:Types.ty -> ptr:full_ptr -> base:full_ptr -> Typed.T.sint Typed.t ret
+      t:Types.ty ->
+      ptr:Typed.([< T.sptr_f ] t) ->
+      base:Typed.([< T.sptr_f ] t) ->
+      Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Determines whether the raw bytes of the two values are equal.
@@ -2189,7 +2288,10 @@ module M (StateM : State.StateM.S) = struct
            which is UB if any of their inputs are `undef`.)
         ]} *)
     val raw_eq :
-      t:Types.ty -> a:full_ptr -> b:full_ptr -> Typed.T.sbool Typed.t ret
+      t:Types.ty ->
+      a:Typed.([< T.sptr_f ] t) ->
+      b:Typed.([< T.sptr_f ] t) ->
+      Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           This is an implementation detail of [`crate::ptr::read`] and should
@@ -2199,7 +2301,8 @@ module M (StateM : State.StateM.S) = struct
            projections (`read_via_copy(ptr)`, not `read_via_copy( *ptr)`) so that it
            trivially obeys runtime-MIR rules about derefs in operands.
         ]} *)
-    val read_via_copy : t:Types.ty -> ptr:full_ptr -> rust_val ret
+    val read_via_copy :
+      t:Types.ty -> ptr:Typed.([< T.sptr_f ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns the return address of the caller function (after inlining) in a best-effort manner or a null pointer if it is not supported on the current backend.
@@ -2210,7 +2313,7 @@ module M (StateM : State.StateM.S) = struct
            Note that unlike most intrinsics, this is safe to call. This is because it only finds the return address of the immediate caller, which is guaranteed to be possible.
            Other forms of the corresponding gcc or llvm intrinsic (which can have wildly unpredictable results or even crash at runtime) are not exposed.
         ]} *)
-    val return_address : unit -> full_ptr ret
+    val return_address : unit -> Typed.([> T.sptr_f ] t) ret
 
     (** {@markdown[
           Performs rotate left.
@@ -2226,9 +2329,9 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val rotate_left :
       t:Types.ty ->
-      x:rust_val ->
-      shift:[< Typed.T.sint ] Typed.t ->
-      rust_val ret
+      x:Typed.([< T.any ] t) ->
+      shift:Typed.([< T.sint ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Performs rotate right.
@@ -2244,9 +2347,9 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val rotate_right :
       t:Types.ty ->
-      x:rust_val ->
-      shift:[< Typed.T.sint ] Typed.t ->
-      rust_val ret
+      x:Typed.([< T.any ] t) ->
+      shift:Typed.([< T.sint ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns the nearest integer to an `f128`. Rounds half-way cases to the number with an even
@@ -2256,7 +2359,7 @@ module M (StateM : State.StateM.S) = struct
            [`f128::round_ties_even`](../../std/primitive.f128.html#method.round_ties_even)
         ]} *)
     val round_ties_even_f128 :
-      x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the nearest integer to an `f16`. Rounds half-way cases to the number with an even
@@ -2266,7 +2369,7 @@ module M (StateM : State.StateM.S) = struct
            [`f16::round_ties_even`](../../std/primitive.f16.html#method.round_ties_even)
         ]} *)
     val round_ties_even_f16 :
-      x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the nearest integer to an `f32`. Rounds half-way cases to the number with an even
@@ -2276,7 +2379,7 @@ module M (StateM : State.StateM.S) = struct
            [`f32::round_ties_even`](../../std/primitive.f32.html#method.round_ties_even)
         ]} *)
     val round_ties_even_f32 :
-      x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the nearest integer to an `f64`. Rounds half-way cases to the number with an even
@@ -2286,7 +2389,7 @@ module M (StateM : State.StateM.S) = struct
            [`f64::round_ties_even`](../../std/primitive.f64.html#method.round_ties_even)
         ]} *)
     val round_ties_even_f64 :
-      x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+      x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the nearest integer to an `f128`. Rounds half-way cases away from zero.
@@ -2294,7 +2397,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::round`](../../std/primitive.f128.html#method.round)
         ]} *)
-    val roundf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val roundf128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the nearest integer to an `f16`. Rounds half-way cases away from zero.
@@ -2302,7 +2405,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::round`](../../std/primitive.f16.html#method.round)
         ]} *)
-    val roundf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val roundf16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the nearest integer to an `f32`. Rounds half-way cases away from zero.
@@ -2310,7 +2413,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::round`](../../std/primitive.f32.html#method.round)
         ]} *)
-    val roundf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val roundf32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the nearest integer to an `f64`. Rounds half-way cases away from zero.
@@ -2318,7 +2421,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::round`](../../std/primitive.f64.html#method.round)
         ]} *)
-    val roundf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val roundf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Magic intrinsic that derives its meaning from attributes
@@ -2331,7 +2434,8 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic should not be used outside of the compiler.
         ]} *)
-    val rustc_peek : t:Types.ty -> arg:rust_val -> rust_val ret
+    val rustc_peek :
+      t:Types.ty -> arg:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Computes `a + b`, saturating at numeric bounds.
@@ -2345,7 +2449,11 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `saturating_add` method. For example,
            [`u32::saturating_add`]
         ]} *)
-    val saturating_add : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val saturating_add :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Computes `a - b`, saturating at numeric bounds.
@@ -2359,7 +2467,11 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `saturating_sub` method. For example,
            [`u32::saturating_sub`]
         ]} *)
-    val saturating_sub : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val saturating_sub :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns either `true_val` or `false_val` depending on condition `b` with a
@@ -2379,10 +2491,10 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val select_unpredictable :
       t:Types.ty ->
-      b:[< Typed.T.sbool ] Typed.t ->
-      true_val:rust_val ->
-      false_val:rust_val ->
-      rust_val ret
+      b:Typed.([< T.sbool ] t) ->
+      true_val:Typed.([< T.any ] t) ->
+      false_val:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns the sine of an `f128`.
@@ -2390,7 +2502,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::sin`](../../std/primitive.f128.html#method.sin)
         ]} *)
-    val sinf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val sinf128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the sine of an `f16`.
@@ -2398,7 +2510,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::sin`](../../std/primitive.f16.html#method.sin)
         ]} *)
-    val sinf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val sinf16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the sine of an `f32`.
@@ -2406,7 +2518,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::sin`](../../std/primitive.f32.html#method.sin)
         ]} *)
-    val sinf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val sinf32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the sine of an `f64`.
@@ -2414,7 +2526,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::sin`](../../std/primitive.f64.html#method.sin)
         ]} *)
-    val sinf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val sinf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           The size of a type in bytes.
@@ -2434,14 +2546,14 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`core::mem::size_of`].
         ]} *)
-    val size_of : t:Types.ty -> Typed.T.sint Typed.t ret
+    val size_of : t:Types.ty -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Gets the size of the type represented by this `TypeId`.
 
            The more user-friendly version of this intrinsic is [`core::any::TypeId::size`].
         ]} *)
-    val size_of_type_id : id:rust_val -> rust_val ret
+    val size_of_type_id : id:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           The size of the referenced value in bytes.
@@ -2452,7 +2564,8 @@ module M (StateM : State.StateM.S) = struct
 
            See [`crate::mem::size_of_val_raw`] for safety conditions.
         ]} *)
-    val size_of_val : t:Types.ty -> ptr:full_ptr -> Typed.T.sint Typed.t ret
+    val size_of_val :
+      t:Types.ty -> ptr:Typed.([< T.sptr_f ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Projects to the `index`-th element of `slice_ptr`, as the same kind of pointer
@@ -2475,9 +2588,9 @@ module M (StateM : State.StateM.S) = struct
       itemptr:Types.ty ->
       sliceptr:Types.ty ->
       t:Types.ty ->
-      slice_ptr:rust_val ->
-      index:[< Typed.T.sint ] Typed.t ->
-      rust_val ret
+      slice_ptr:Typed.([< T.any ] t) ->
+      index:Typed.([< T.sint ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns the square root of an `f128`
@@ -2485,7 +2598,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::sqrt`](../../std/primitive.f128.html#method.sqrt)
         ]} *)
-    val sqrtf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val sqrtf128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the square root of an `f16`
@@ -2493,7 +2606,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::sqrt`](../../std/primitive.f16.html#method.sqrt)
         ]} *)
-    val sqrtf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val sqrtf16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the square root of an `f32`
@@ -2501,7 +2614,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::sqrt`](../../std/primitive.f32.html#method.sqrt)
         ]} *)
-    val sqrtf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val sqrtf32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the square root of an `f64`
@@ -2509,7 +2622,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::sqrt`](../../std/primitive.f64.html#method.sqrt)
         ]} *)
-    val sqrtf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val sqrtf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Performs checked integer subtraction
@@ -2524,7 +2637,10 @@ module M (StateM : State.StateM.S) = struct
            [`u32::overflowing_sub`]
         ]} *)
     val sub_with_overflow :
-      t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+      t:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Does a three-way comparison between the two arguments,
@@ -2536,7 +2652,10 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is [`Ord::cmp`].
         ]} *)
     val three_way_compare :
-      t:Types.ty -> lhs:rust_val -> rhss:rust_val -> rust_val ret
+      t:Types.ty ->
+      lhs:Typed.([< T.any ] t) ->
+      rhss:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Reinterprets the bits of a value of one type as another type.
@@ -2823,7 +2942,10 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val transmute :
-      t_src:Types.ty -> dst:Types.ty -> src:rust_val -> rust_val ret
+      t_src:Types.ty ->
+      dst:Types.ty ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Like [`transmute`], but even less checked at compile-time: rather than
@@ -2837,7 +2959,10 @@ module M (StateM : State.StateM.S) = struct
            may eventually be exposed through some more-constrained API.
         ]} *)
     val transmute_unchecked :
-      t_src:Types.ty -> dst:Types.ty -> src:rust_val -> rust_val ret
+      t_src:Types.ty ->
+      dst:Types.ty ->
+      src:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns the integer part of an `f128`.
@@ -2845,7 +2970,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f128::trunc`](../../std/primitive.f128.html#method.trunc)
         ]} *)
-    val truncf128 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val truncf128 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the integer part of an `f16`.
@@ -2853,7 +2978,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f16::trunc`](../../std/primitive.f16.html#method.trunc)
         ]} *)
-    val truncf16 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val truncf16 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the integer part of an `f32`.
@@ -2861,7 +2986,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f32::trunc`](../../std/primitive.f32.html#method.trunc)
         ]} *)
-    val truncf32 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
+    val truncf32 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Returns the integer part of an `f64`.
@@ -2869,21 +2994,7 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is
            [`f64::trunc`](../../std/primitive.f64.html#method.trunc)
         ]} *)
-    val truncf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
-
-    (** {@markdown[
-          Gets an identifier which is globally unique to the specified type. This
-           function will return the same value for a type regardless of whichever
-           crate it is invoked in.
-
-           Note that, unlike most intrinsics, this can only be called at compile-time
-           as backends do not have an implementation for it. The only caller (its
-           stable counterpart) wraps this intrinsic call in a `const` block so that
-           backends only see an evaluated constant.
-
-           The stabilized version of this intrinsic is [`core::any::TypeId::of`].
-        ]} *)
-    val type_id : t:Types.ty -> rust_val ret
+    val truncf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
           Tests (at compile-time) if two [`crate::any::TypeId`] instances identify the
@@ -2892,7 +3003,10 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is the [PartialEq] impl for [`core::any::TypeId`].
         ]} *)
-    val type_id_eq : a:rust_val -> b:rust_val -> Typed.T.sbool Typed.t ret
+    val type_id_eq :
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Gets the [`FieldRepresentingType`]'s `TypeId` at the given index of the type represented by this `TypeId`.
@@ -2902,10 +3016,10 @@ module M (StateM : State.StateM.S) = struct
            [`FieldRepresentingType`]: crate::field::FieldRepresentingType
         ]} *)
     val type_id_field_representing_type :
-      id:rust_val ->
-      variant_index:[< Typed.T.sint ] Typed.t ->
-      field_index:[< Typed.T.sint ] Typed.t ->
-      rust_val ret
+      id:Typed.([< T.any ] t) ->
+      variant_index:Typed.([< T.sint ] t) ->
+      field_index:Typed.([< T.sint ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Gets the number of fields at the given `variant_index` represented by this `TypeId`.
@@ -2913,23 +3027,26 @@ module M (StateM : State.StateM.S) = struct
            The more user-friendly version of this intrinsic is [`core::any::TypeId::fields`].
         ]} *)
     val type_id_fields :
-      id:rust_val ->
-      variant_index:[< Typed.T.sint ] Typed.t ->
-      Typed.T.sint Typed.t ret
+      id:Typed.([< T.any ] t) ->
+      variant_index:Typed.([< T.sint ] t) ->
+      Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Gets the number of variants of the type represented by this `TypeId`.
 
            The more user-friendly version of this intrinsic is [`core::any::TypeId::variants`].
         ]} *)
-    val type_id_variants : id:rust_val -> Typed.T.sint Typed.t ret
+    val type_id_variants : id:Typed.([< T.any ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Check if a type represented by a `TypeId` implements a trait represented by a `TypeId`.
            It can only be called at compile time, the backends do
            not implement it. If it implements the trait the dyn metadata gets returned for vtable access.
         ]} *)
-    val type_id_vtable : id:rust_val -> trait:rust_val -> rust_val ret
+    val type_id_vtable :
+      id:Typed.([< T.any ] t) ->
+      trait:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Gets a static string slice containing the name of a type.
@@ -2941,14 +3058,14 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`core::any::type_name`].
         ]} *)
-    val type_name : t:Types.ty -> full_ptr ret
+    val type_name : t:Types.ty -> Typed.([> T.sptr_f ] t) ret
 
     (** {@markdown[
           Compute the type information of a concrete type.
            It can only be called at compile time, the backends do
            not implement it.
         ]} *)
-    val type_of : id:rust_val -> rust_val ret
+    val type_of : id:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Non-overlapping *typed* swap of a single value.
@@ -2973,7 +3090,10 @@ module M (StateM : State.StateM.S) = struct
            [valid]: crate::ptr#safety
         ]} *)
     val typed_swap_nonoverlapping :
-      t:Types.ty -> x:full_ptr -> y:full_ptr -> unit ret
+      t:Types.ty ->
+      x:Typed.([< T.sptr_f ] t) ->
+      y:Typed.([< T.sptr_f ] t) ->
+      unit ret
 
     (** {@markdown[
           Returns whether we should perform some UB-checking at runtime. This eventually evaluates to
@@ -2996,7 +3116,7 @@ module M (StateM : State.StateM.S) = struct
            configuration can differ across crates, but we need this function to always return the same
            value in consteval in order to avoid unsoundness.
         ]} *)
-    val ub_checks : unit -> Typed.T.sbool Typed.t ret
+    val ub_checks : unit -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
           Performs a volatile load from the `src` pointer
@@ -3004,7 +3124,8 @@ module M (StateM : State.StateM.S) = struct
 
            This intrinsic does not have a stable counterpart.
         ]} *)
-    val unaligned_volatile_load : t:Types.ty -> src:full_ptr -> rust_val ret
+    val unaligned_volatile_load :
+      t:Types.ty -> src:Typed.([< T.sptr_f ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Performs a volatile store to the `dst` pointer.
@@ -3013,7 +3134,10 @@ module M (StateM : State.StateM.S) = struct
            This intrinsic does not have a stable counterpart.
         ]} *)
     val unaligned_volatile_store :
-      t:Types.ty -> dst:full_ptr -> val_:rust_val -> unit ret
+      t:Types.ty ->
+      dst:Typed.([< T.sptr_f ] t) ->
+      val_:Typed.([< T.any ] t) ->
+      unit ret
 
     (** {@markdown[
           Returns the result of an unchecked addition, resulting in
@@ -3022,7 +3146,11 @@ module M (StateM : State.StateM.S) = struct
            The stable counterpart of this intrinsic is `unchecked_add` on the various
            integer types, such as [`u16::unchecked_add`] and [`i64::unchecked_add`].
         ]} *)
-    val unchecked_add : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+    val unchecked_add :
+      t:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Performs an unchecked division, resulting in undefined behavior
@@ -3032,7 +3160,11 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `checked_div` method. For example,
            [`u32::checked_div`]
         ]} *)
-    val unchecked_div : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+    val unchecked_div :
+      t:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Funnel Shift left.
@@ -3050,10 +3182,10 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val unchecked_funnel_shl :
       t:Types.ty ->
-      a:rust_val ->
-      b:rust_val ->
-      shift:[< Typed.T.sint ] Typed.t ->
-      rust_val ret
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      shift:Typed.([< T.sint ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Funnel Shift right.
@@ -3072,10 +3204,10 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val unchecked_funnel_shr :
       t:Types.ty ->
-      a:rust_val ->
-      b:rust_val ->
-      shift:[< Typed.T.sint ] Typed.t ->
-      rust_val ret
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      shift:Typed.([< T.sint ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns the result of an unchecked multiplication, resulting in
@@ -3084,7 +3216,11 @@ module M (StateM : State.StateM.S) = struct
            The stable counterpart of this intrinsic is `unchecked_mul` on the various
            integer types, such as [`u16::unchecked_mul`] and [`i64::unchecked_mul`].
         ]} *)
-    val unchecked_mul : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+    val unchecked_mul :
+      t:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns the remainder of an unchecked division, resulting in
@@ -3094,7 +3230,11 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `checked_rem` method. For example,
            [`u32::checked_rem`]
         ]} *)
-    val unchecked_rem : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+    val unchecked_rem :
+      t:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Performs an unchecked left shift, resulting in undefined behavior when
@@ -3105,7 +3245,11 @@ module M (StateM : State.StateM.S) = struct
            [`u32::checked_shl`]
         ]} *)
     val unchecked_shl :
-      t:Types.ty -> u:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+      t:Types.ty ->
+      u:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Performs an unchecked right shift, resulting in undefined behavior when
@@ -3116,7 +3260,11 @@ module M (StateM : State.StateM.S) = struct
            [`u32::checked_shr`]
         ]} *)
     val unchecked_shr :
-      t:Types.ty -> u:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+      t:Types.ty ->
+      u:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns the result of an unchecked subtraction, resulting in
@@ -3125,7 +3273,11 @@ module M (StateM : State.StateM.S) = struct
            The stable counterpart of this intrinsic is `unchecked_sub` on the various
            integer types, such as [`u16::unchecked_sub`] and [`i64::unchecked_sub`].
         ]} *)
-    val unchecked_sub : t:Types.ty -> x:rust_val -> y:rust_val -> rust_val ret
+    val unchecked_sub :
+      t:Types.ty ->
+      x:Typed.([< T.any ] t) ->
+      y:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Informs the optimizer that this point in the code is not reachable,
@@ -3154,7 +3306,8 @@ module M (StateM : State.StateM.S) = struct
            Calling this function with an incompatible type, an invalid value, or when there
            are no more variable arguments, is unsound.
         ]} *)
-    val va_arg : t:Types.ty -> ap:full_ptr -> rust_val ret
+    val va_arg :
+      t:Types.ty -> ap:Typed.([< T.sptr_f ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Duplicates a variable argument list. The returned list is initially at the same position as
@@ -3166,7 +3319,7 @@ module M (StateM : State.StateM.S) = struct
            This intrinsic exists only as a hook for Miri and constant evaluation, and is used to detect UB
            when a variable argument list is used incorrectly.
         ]} *)
-    val va_copy : src:full_ptr -> rust_val ret
+    val va_copy : src:Typed.([< T.sptr_f ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Destroy the variable argument list `ap` after initialization with `va_start` (part of the
@@ -3182,7 +3335,7 @@ module M (StateM : State.StateM.S) = struct
 
            `ap` must not be used to access variable arguments after this call.
         ]} *)
-    val va_end : ap:full_ptr -> unit ret
+    val va_end : ap:Typed.([< T.sptr_f ] t) -> unit ret
 
     (** {@markdown[
           Returns the number of variants of the type `T` cast to a `usize`;
@@ -3195,7 +3348,7 @@ module M (StateM : State.StateM.S) = struct
 
            The to-be-stabilized version of this intrinsic is [`crate::mem::variant_count`].
         ]} *)
-    val variant_count : t:Types.ty -> Typed.T.sint Typed.t ret
+    val variant_count : t:Types.ty -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Equivalent to the appropriate `llvm.memmove.p0i8.0i8.*` intrinsic, with
@@ -3208,9 +3361,9 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val volatile_copy_memory :
       t:Types.ty ->
-      dst:full_ptr ->
-      src:full_ptr ->
-      count:[< Typed.T.sint ] Typed.t ->
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.sptr_f ] t) ->
+      count:Typed.([< T.sint ] t) ->
       unit ret
 
     (** {@markdown[
@@ -3228,9 +3381,9 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val volatile_copy_nonoverlapping_memory :
       t:Types.ty ->
-      dst:full_ptr ->
-      src:full_ptr ->
-      count:[< Typed.T.sint ] Typed.t ->
+      dst:Typed.([< T.sptr_f ] t) ->
+      src:Typed.([< T.sptr_f ] t) ->
+      count:Typed.([< T.sint ] t) ->
       unit ret
 
     (** {@markdown[
@@ -3238,7 +3391,8 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`core::ptr::read_volatile`].
         ]} *)
-    val volatile_load : t:Types.ty -> src:full_ptr -> rust_val ret
+    val volatile_load :
+      t:Types.ty -> src:Typed.([< T.sptr_f ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Equivalent to the appropriate `llvm.memset.p0i8.*` intrinsic, with a
@@ -3254,9 +3408,9 @@ module M (StateM : State.StateM.S) = struct
         ]} *)
     val volatile_set_memory :
       t:Types.ty ->
-      dst:full_ptr ->
-      val_:[< Typed.T.sint ] Typed.t ->
-      count:[< Typed.T.sint ] Typed.t ->
+      dst:Typed.([< T.sptr_f ] t) ->
+      val_:Typed.([< T.sint ] t) ->
+      count:Typed.([< T.sint ] t) ->
       unit ret
 
     (** {@markdown[
@@ -3264,7 +3418,11 @@ module M (StateM : State.StateM.S) = struct
 
            The stabilized version of this intrinsic is [`core::ptr::write_volatile`].
         ]} *)
-    val volatile_store : t:Types.ty -> dst:full_ptr -> val_:rust_val -> unit ret
+    val volatile_store :
+      t:Types.ty ->
+      dst:Typed.([< T.sptr_f ] t) ->
+      val_:Typed.([< T.any ] t) ->
+      unit ret
 
     (** {@markdown[
           The intrinsic will return the alignment stored in that vtable.
@@ -3273,7 +3431,7 @@ module M (StateM : State.StateM.S) = struct
 
            `ptr` must point to a vtable.
         ]} *)
-    val vtable_align : ptr:full_ptr -> Typed.T.sint Typed.t ret
+    val vtable_align : ptr:Typed.([< T.sptr_f ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           The intrinsic will return the size stored in that vtable.
@@ -3282,7 +3440,7 @@ module M (StateM : State.StateM.S) = struct
 
            `ptr` must point to a vtable.
         ]} *)
-    val vtable_size : ptr:full_ptr -> Typed.T.sint Typed.t ret
+    val vtable_size : ptr:Typed.([< T.sptr_f ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Returns (a + b) mod 2<sup>N</sup>, where N is the width of T in bits.
@@ -3296,7 +3454,11 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `wrapping_add` method. For example,
            [`u32::wrapping_add`]
         ]} *)
-    val wrapping_add : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val wrapping_add :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns (a * b) mod 2<sup>N</sup>, where N is the width of T in bits.
@@ -3310,7 +3472,11 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `wrapping_mul` method. For example,
            [`u32::wrapping_mul`]
         ]} *)
-    val wrapping_mul : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val wrapping_mul :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns (a - b) mod 2<sup>N</sup>, where N is the width of T in bits.
@@ -3324,16 +3490,20 @@ module M (StateM : State.StateM.S) = struct
            primitives via the `wrapping_sub` method. For example,
            [`u32::wrapping_sub`]
         ]} *)
-    val wrapping_sub : t:Types.ty -> a:rust_val -> b:rust_val -> rust_val ret
+    val wrapping_sub :
+      t:Types.ty ->
+      a:Typed.([< T.any ] t) ->
+      b:Typed.([< T.any ] t) ->
+      Typed.([> T.any ] t) ret
 
     (** {@markdown[
           This is an accidentally-stable alias to [`ptr::write_bytes`]; use that instead.
         ]} *)
     val write_bytes :
       t:Types.ty ->
-      dst:full_ptr ->
-      val_:[< Typed.T.sint ] Typed.t ->
-      count:[< Typed.T.sint ] Typed.t ->
+      dst:Typed.([< T.sptr_f ] t) ->
+      val_:Typed.([< T.sint ] t) ->
+      count:Typed.([< T.sint ] t) ->
       unit ret
 
     (** {@markdown[
@@ -3345,17 +3515,23 @@ module M (StateM : State.StateM.S) = struct
            that it trivially obeys runtime-MIR rules about derefs in operands.
         ]} *)
     val write_via_move :
-      t:Types.ty -> ptr:full_ptr -> value:rust_val -> unit ret
+      t:Types.ty ->
+      ptr:Typed.([< T.sptr_f ] t) ->
+      value:Typed.([< T.any ] t) ->
+      unit ret
   end
 
   module type S = sig
     include Impl
 
-    type rust_val := StateM.Sptr.t Rust_val.t
     type 'a ret := ('a, unit) StateM.t
-    type fun_exec := Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+    type fun_exec := Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
     val eval_fun :
-      string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret
+      string ->
+      fun_exec ->
+      Types.generic_args ->
+      Typed.([< T.any ] t) list ->
+      Typed.([> T.any ] t) ret
   end
 end

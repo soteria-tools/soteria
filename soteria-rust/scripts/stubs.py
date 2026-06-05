@@ -203,20 +203,6 @@ USER_IMPL_END = "(* END USER IMPLEMENTATION *)"
 
 GENERATED_WARNING = "(** This file was generated with [scripts/stubs.py] -- do not edit it manually, instead modify the script and re-run it. *)"
 
-OCAML_HELPERS = """\
-let[@inline] as_ptr (v : rust_val) =
-  match v with
-  | Ptr ptr -> ptr
-  | Int v ->
-      let v = Typed.cast_i Usize v in
-      let ptr = Sptr.of_address v in
-      (ptr, Thin)
-  | _ -> failwith "expected pointer"
-
-let as_base ty (v : rust_val) = Rust_val.as_base ty v
-let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
-let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v"""
-
 
 def charon_type_of(unique_ty: UniqueType) -> Type:
     if "Deduplicated" in unique_ty:
@@ -297,52 +283,48 @@ def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
 
 input_type: dict[InterpTypeBase, str] = {
     "unit": "unit",
-    "int": "[< Typed.T.sint ] Typed.t",
-    "float": "[< Typed.T.sfloat ] Typed.t",
-    "bool": "[< Typed.T.sbool ] Typed.t",
-    "ptr": "full_ptr",
-    "unknown": "rust_val",
+    "int": "Typed.([< T.sint ] t)",
+    "float": "Typed.([< T.sfloat ] t)",
+    "bool": "Typed.([< T.sbool ] t)",
+    "ptr": "Typed.([< T.sptr_f ] t)",
+    "unknown": "Typed.([< T.any ] t)",
     "fun_exec": "fun_exec",
     "meta_ty": "Types.ty",
     "meta_tys": "Types.ty list",
     "meta_const": "Types.constant_expr",
     "meta_sig": "Types.fun_sig",
-    "meta_args": "rust_val list",
+    "meta_args": "Typed.(T.any t) list",
 }
 
 
 output_type: dict[InterpTypeBase, str] = {
     **input_type,
-    "int": "Typed.T.sint Typed.t",
-    "float": "Typed.T.sfloat Typed.t",
-    "bool": "Typed.T.sbool Typed.t",
+    "int": "Typed.([> T.sint] t)",
+    "float": "Typed.([> T.sfloat] t)",
+    "bool": "Typed.([> T.sbool] t)",
+    "ptr": "Typed.([> T.sptr_f] t)",
+    "unknown": "Typed.([> T.any] t)",
 }
 
 
 def input_type_cast(arg: str, ty: InterpType) -> str:
     if ty[0] == "int":
         int_ty = cast(str, ty[1]).replace("I", "U")
-        return f"let {arg} = as_base_i {int_ty} {arg} in "
+        return f"let {arg} = Typed.cast_i {int_ty} {arg} in "
     if ty[0] == "float":
-        return f"let {arg} = as_base_f {ty[1]} {arg} in "
+        return f"let {arg} = Typed.cast_f {ty[1]} {arg} in "
     if ty[0] == "ptr":
-        return f"let {arg} = as_ptr {arg} in "
+        return f"let {arg} = Typed.cast_ptr_f {arg} in "
     if ty[0] == "bool":
-        return f"let {arg} = Typed.BitVec.to_bool (as_base TBool {arg}) in "
+        return f"let {arg} = Typed.BitVec.to_bool (Typed.cast_lit TBool {arg}) in "
     return ""
 
 
 def output_type_cast(ty: InterpType) -> tuple[str, str]:
-    if ty[0] == "int":
-        return ("let+ ret = ", " in Int ret")
-    if ty[0] == "float":
-        return ("let+ ret = ", " in Float ret")
     if ty[0] == "bool":
-        return "let+ ret = ", " in Int (Typed.BitVec.of_bool ret)"
-    if ty[0] == "ptr":
-        return "let+ ret = ", " in Ptr ret"
+        return "let+ ret = ", " in Typed.BitVec.of_bool ret"
     if ty[0] == "unit":
-        return "let+ () = ", " in Tuple []"
+        return "let+ () = ", " in Typed.Adt.mk_tuple []"
     return "", ""
 
 
@@ -716,10 +698,9 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     intrinsics_info.sort(key=lambda x: x["ocaml_name"])
 
     type_utils = """
-        type rust_val := StateM.Sptr.t Rust_val.t
         type 'a ret := ('a, unit) StateM.t
         type fun_exec :=
-            Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+            Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
     """
 
     interface_entries = ""
@@ -757,14 +738,13 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         module M (StateM : State.StateM.S) = struct
           module type Impl = sig
             {type_utils}
-            type full_ptr := StateM.Sptr.t Rust_val.full_ptr
             {interface_entries}
         end
 
         module type S = sig
             include Impl
             {type_utils}
-            val eval_fun : string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret
+            val eval_fun : string -> fun_exec -> Types.generic_args -> Typed.([< T.any ] t) list -> Typed.([> T.any ] t) ret
         end
     end
     """
@@ -784,16 +764,11 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         {GENERATED_WARNING}
 
         open Svalue
-        open Rust_val
         open Common
 
         module M (StateM : State.StateM.S): Intf.M(StateM).S = struct
             open StateM
             open Syntax
-
-            type rust_val = Sptr.t Rust_val.t
-
-            {OCAML_HELPERS}
 
             include Impl.M (StateM)
 
@@ -806,7 +781,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
                         name
                         Fmt.(list ~sep:comma Charon_util.pp_ty) tys
                         Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
-                        Fmt.(list ~sep:comma pp_rust_val) args
+                        Fmt.(list ~sep:comma Typed.ppa) args
         end
     """
 
@@ -1162,10 +1137,8 @@ def generate_custom_stubs() -> None:
             module M (StateM : State.StateM.S) = struct
               open StateM
 
-              type rust_val = Sptr.t Rust_val.t
               type 'a ret = ('a, unit) StateM.t
-              type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-              type full_ptr = StateM.Sptr.t Rust_val.full_ptr
+              type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
               module type S = sig {intf_entries_str} end
             end
@@ -1180,7 +1153,6 @@ def generate_custom_stubs() -> None:
 
             open Common
             open Svalue
-            open Rust_val
 
             type fn = {fn_variants_str}
             let fn_pats : (string * fn) list = [ {fn_map_entries} ]
@@ -1189,12 +1161,8 @@ def generate_custom_stubs() -> None:
                 open StateM
                 open Syntax
 
-                type rust_val = Sptr.t Rust_val.t
                 type 'a ret = ('a, unit) StateM.t
-                type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-                type full_ptr = StateM.Sptr.t Rust_val.full_ptr
-
-                {OCAML_HELPERS}
+                type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
                 include Impl.M(StateM)
 
@@ -1206,7 +1174,7 @@ def generate_custom_stubs() -> None:
                             "Custom stub found but called with the wrong arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
                             Fmt.(list ~sep:comma Charon_util.pp_ty) tys
                             Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
-                            Fmt.(list ~sep:comma pp_rust_val)args
+                            Fmt.(list ~sep:comma Typed.ppa) args
             end
         """
         write_ocaml_file(entry_file, entry_generated)

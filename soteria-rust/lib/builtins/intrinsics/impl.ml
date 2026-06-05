@@ -5,7 +5,6 @@ open Typed
 open Typed.Syntax
 open Typed.Infix
 open Common.Charon_util
-open Rust_val
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   include Stubs.M (StateM)

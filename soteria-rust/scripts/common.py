@@ -178,10 +178,9 @@ def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
 
 
 def get_toolchain() -> str:
-    toolchain_path = (
-        subprocess.check_output("obol toolchain-path", shell=True).decode().strip()
+    return (
+        subprocess.check_output("charon toolchain-version", shell=True).decode().strip()
     )
-    return "-".join(os.path.basename(toolchain_path).split("-")[0:4])
 
 
 def get_sysroot(toolchain: str) -> str:

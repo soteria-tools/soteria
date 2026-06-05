@@ -23,7 +23,7 @@
       "extra_args": ["sig"]
     },
     "std::sys::time::unix::Instant::now",
-    { "pattern": "std::env::_var", "extra_args": ["sig"] }
+    { "pattern": "std::sys::env::_::getenv", "extra_args": ["sig"] }
   ],
   "Optim": {
     "features": ["f16", "f128", "const_index"],

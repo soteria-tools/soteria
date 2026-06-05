@@ -5,7 +5,6 @@
 
 open Common
 open Svalue
-open Rust_val
 
 type fn = CorePtrDropInPlace | StdPanickingCatchUnwindCleanup
 
@@ -19,23 +18,8 @@ module M (StateM : State.StateM.S) = struct
   open StateM
   open Syntax
 
-  type rust_val = Sptr.t Rust_val.t
   type 'a ret = ('a, unit) StateM.t
-  type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-  type full_ptr = StateM.Sptr.t Rust_val.full_ptr
-
-  let[@inline] as_ptr (v : rust_val) =
-    match v with
-    | Ptr ptr -> ptr
-    | Int v ->
-        let v = Typed.cast_i Usize v in
-        let ptr = Sptr.of_address v in
-        (ptr, Thin)
-    | _ -> failwith "expected pointer"
-
-  let as_base ty (v : rust_val) = Rust_val.as_base ty v
-  let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
-  let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
+  type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   include Impl.M (StateM)
 
@@ -45,11 +29,11 @@ module M (StateM : State.StateM.S) = struct
       (stub, generics.types, generics.const_generics, args)
     with
     | CorePtrDropInPlace, [ t ], [], [ to_drop ] ->
-        let to_drop = as_ptr to_drop in
+        let to_drop = Typed.cast_ptr_f to_drop in
         let+ () = drop_in_place ~t ~to_drop in
-        Tuple []
+        Typed.Adt.mk_tuple []
     | StdPanickingCatchUnwindCleanup, [], [], [ payload ] ->
-        let payload = as_ptr payload in
+        let payload = Typed.cast_ptr_f payload in
         cleanup ~payload
     | _, tys, cs, args ->
         Fmt.kstr not_impl
@@ -59,6 +43,6 @@ module M (StateM : State.StateM.S) = struct
           tys
           Fmt.(list ~sep:comma Crate.pp_constant_expr)
           cs
-          Fmt.(list ~sep:comma pp_rust_val)
+          Fmt.(list ~sep:comma Typed.ppa)
           args
 end

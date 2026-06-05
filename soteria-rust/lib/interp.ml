@@ -3,7 +3,6 @@ open Charon
 open Common
 open Charon_util
 open Svalue
-open Rust_val
 open Typed.Syntax
 open Typed.Infix
 module T = Typed.T

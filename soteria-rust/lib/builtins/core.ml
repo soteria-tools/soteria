@@ -6,7 +6,6 @@ open Svalue
 open Typed
 open Typed.Syntax
 open Typed.Infix
-open Rust_val
 open Syntaxes.FunctionWrap
 
 module M (StateM : State.StateM.S) = struct

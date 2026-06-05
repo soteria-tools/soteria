@@ -10,14 +10,12 @@ open Common
 module M (StateM : State.StateM.S) = struct
   open StateM
 
-  type rust_val = Sptr.t Rust_val.t
   type 'a ret = ('a, unit) StateM.t
-  type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-  type full_ptr = StateM.Sptr.t Rust_val.full_ptr
+  type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   module type S = sig
-    val _tlv_atexit : fun_exec:fun_exec -> args:rust_val list -> rust_val ret
-    val _var : fun_sig:Types.fun_sig -> key:full_ptr -> rust_val ret
+    val _tlv_atexit :
+      fun_exec:fun_exec -> args:Typed.(T.any t) list -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Returns an estimate of the default amount of parallelism a program should use.
@@ -105,9 +103,15 @@ module M (StateM : State.StateM.S) = struct
            }
            ```
         ]} *)
-    val available_parallelism : fun_sig:Types.fun_sig -> rust_val ret
+    val available_parallelism :
+      fun_sig:Types.fun_sig -> Typed.([> T.any ] t) ret
 
-    val hashmap_random_keys : fun_sig:Types.fun_sig -> rust_val ret
-    val now : unit -> rust_val ret
+    val getenv :
+      fun_sig:Types.fun_sig ->
+      k:Typed.([< T.sptr_f ] t) ->
+      Typed.([> T.any ] t) ret
+
+    val hashmap_random_keys : fun_sig:Types.fun_sig -> Typed.([> T.any ] t) ret
+    val now : unit -> Typed.([> T.any ] t) ret
   end
 end

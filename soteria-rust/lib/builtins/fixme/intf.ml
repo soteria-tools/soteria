@@ -10,13 +10,11 @@ open Common
 module M (StateM : State.StateM.S) = struct
   open StateM
 
-  type rust_val = Sptr.t Rust_val.t
   type 'a ret = ('a, unit) StateM.t
-  type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-  type full_ptr = StateM.Sptr.t Rust_val.full_ptr
+  type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   module type S = sig
-    val cleanup : payload:full_ptr -> rust_val ret
+    val cleanup : payload:Typed.([< T.sptr_f ] t) -> Typed.([> T.any ] t) ret
 
     (** {@markdown[
           Executes the destructor (if any) of the pointed-to value.
@@ -102,6 +100,7 @@ module M (StateM : State.StateM.S) = struct
            assert!(weak.upgrade().is_none());
            ```
         ]} *)
-    val drop_in_place : t:Types.ty -> to_drop:full_ptr -> unit ret
+    val drop_in_place :
+      t:Types.ty -> to_drop:Typed.([< T.sptr_f ] t) -> unit ret
   end
 end
