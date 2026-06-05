@@ -209,4 +209,26 @@ module M (StateM : State.StateM.S) = struct
           let unquoted = String.sub str 1 (String.length str - 2) in
           try Scanf.unescaped unquoted with _ -> unquoted
         else str)
+
+  let string_to_ptr str =
+    let* ptr_res = State.load_str_global str in
+    match ptr_res with
+    | Some ptr -> ok ptr
+    | None ->
+        let len = String.length str in
+        let chars =
+          String.to_bytes str
+          |> Bytes.fold_left (fun l c -> Int (BV.u8i (Char.code c)) :: l) []
+          |> List.rev
+        in
+        let char_arr = Tuple chars in
+        let str_ty : Types.ty =
+          Common.Charon_util.mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
+        in
+        let@ () = with_alloc_kind ~kind:StaticString in
+        let* ptr, _ = State.alloc_ty str_ty in
+        let ptr = (ptr, Len (BV.usizei len)) in
+        let* () = State.store ptr str_ty char_arr in
+        let+ () = State.store_str_global str ptr in
+        ptr
 end
