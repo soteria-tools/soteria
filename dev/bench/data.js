@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780591128499,
+  "lastUpdate": 1780669541734,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -950,6 +950,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.841945405118167,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "733547f5834001b62d7cb42e62867a7ad92e2fb6",
+          "message": "Detect writes to read-only memory (#368)\n\n* Add wrong test\n\n* Simplify leak checks\n\n* Remove/merge ref_tys_in and update_ref_tys_in\n\n* Properly detect writes to const memory\n\n* promote tests + minor optim",
+          "timestamp": "2026-06-05T14:01:48Z",
+          "tree_id": "a66bd123e6c4323c55f84e3ce3cfdf0f42c7ac96",
+          "url": "https://github.com/soteria-tools/soteria/commit/733547f5834001b62d7cb42e62867a7ad92e2fb6"
+        },
+        "date": 1780669536535,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08077915584000002,
+            "range": "± 0.0017",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.58791915352,
+            "range": "± 0.006",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.8917436256000002,
+            "range": "± 0.0169",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.22184303344000003,
+            "range": "± 0.0024",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.739409996659998,
+            "range": "± 0.0595",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.96702352272,
+            "range": "± 0.0273",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.559385573957115,
             "unit": "s"
           }
         ]
