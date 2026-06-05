@@ -215,6 +215,10 @@ measurement trap, or a benchmark that isolates a subsystem well, add it to
 `references/` rather than keeping it in your head.
 
 - `references/ocaml-profiling.md` — concrete CPU / allocation / Z3-boundary
-  profiling for Soteria's OCaml + subprocess architecture.
+  profiling for Soteria's OCaml + subprocess architecture, plus the settled
+  flambda / `[@inline]` findings.
+- `references/tree-borrows.md` — Tree Borrows (`soteria-rust/lib/tree_borrows/`)
+  specific findings: what `Raw.access`/`compact`/`borrow` actually cost, the
+  realized optimizations and their benches, and the hard constraints.
 - `references/measurement-pitfalls.md` — what makes these benchmarks lie and
   how to get a number you can trust.
