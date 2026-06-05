@@ -189,7 +189,10 @@ module Make (StateImpl : State.S) = struct
                     method_id tref fn.generics
                 with
                 | Some fn -> ok (Real fn)
-                | None -> not_impl "Could not resolve trait method")))
+                | None ->
+                    Fmt.kstr not_impl "Could not resolve trait method %a#%a"
+                      Crate.pp_trait_impl_ref timplref Types.pp_trait_method_id
+                      method_id)))
     | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
 
   let rec resolve_constant (const : Types.constant_expr) =
@@ -317,6 +320,9 @@ module Make (StateImpl : State.S) = struct
           const
     | CVTableRef _ ->
         Fmt.kstr not_impl "TODO: CVTableRef constant %a" Crate.pp_constant_expr
+          const
+    | CTypeId _ ->
+        Fmt.kstr not_impl "TODO: CTypeId constant %a" Crate.pp_constant_expr
           const
 
   (** Resolves a place to a pointer *)
