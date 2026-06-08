@@ -11,6 +11,7 @@ module Foldable = Foldable
 module Graph = Graph
 module Hashset = Hashset
 module Hashtbl = Hashtbl
+module Iarray = Iarray
 module Int = Int
 module Iter = Iter_soteria
 module List = List
