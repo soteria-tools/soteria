@@ -79,27 +79,24 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       | _, _ -> Lazy
 
     let rec split_rval (v : Typed.([< T.any ] t)) at =
-      match Typed.get_ty v with
+      match%ty v with
       | TExtension FullPtr -> (
-          let v : Typed.([< T.sptr_f ] t) = Typed.cast v in
           let ptr, meta = Typed.Ptr.split v in
           let* v = Sptr.decay ptr in
           match meta with
           | None -> split_rval v at
           | Some meta -> (
-              match Typed.get_ty meta with
-              | TBitVector _ -> split_rval (BV.concat v (Typed.cast meta)) at
-              | TPointer _ ->
-                  let* v2 = Sptr.decay (Typed.cast meta) in
+              match%ty meta with
+              | TBitVector _ -> split_rval (BV.concat v meta) at
+              | TExtension ThinPtr ->
+                  let* v2 = Sptr.decay meta in
                   split_rval (BV.concat v v2) at
               | _ -> failwith "unexpected meta type"))
       | TFloat _ ->
-          let v : Typed.([< T.sfloat ] t) = Typed.cast v in
           let* v = Value_codec.float_to_bv_bits v in
           split_rval v at
       | TBitVector size ->
           (* get our starting size and unsigned integer *)
-          let v : Typed.([< T.sint ] t) = Typed.cast v in
           let size = size / 8 in
           let+ at =
             match BV.to_z at with
@@ -424,10 +421,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     let** leaves = collect_leaves ~uninit:`Error t in
     let* leaves : Typed.([< T.sint ] t) list =
       DecayMap.SM.map_list leaves ~f:(fun (v, _) ->
-          match Typed.get_ty v with
-          | TBitVector _ -> return (Typed.cast v)
-          | TExtension FullPtr -> Sptr.decay (Typed.cast v)
-          | TFloat _ -> Value_codec.float_to_bv_bits (Typed.cast v)
+          match%ty v with
+          | TBitVector _ -> return v
+          | TExtension FullPtr -> Sptr.decay (Typed.Ptr.ptr_of v)
+          | TFloat _ -> Value_codec.float_to_bv_bits v
           | _ ->
               Fmt.kstr not_impl "Unexpected rust_val in lazy decoding: %a"
                 Typed.ppa v)

@@ -120,9 +120,9 @@ module M (StateM : State.StateM.S) = struct
     ok (Typed.Adt.mk_tuple [ wrapped; BV.of_bool overflowed ])
 
   let meta_as_int meta =
-    match Typed.get_ty meta with
-    | TBitVector _ -> ok (Typed.cast meta)
-    | TExtension ThinPtr -> Sptr.decay (Typed.cast meta)
+    match%ty meta with
+    | TBitVector _ -> ok meta
+    | TExtension ThinPtr -> Sptr.decay meta
     | _ -> failwith "invalid metadata type"
 
   let opt_meta_as_int = function

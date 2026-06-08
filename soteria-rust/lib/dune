@@ -20,6 +20,7 @@
    ppx_deriving.std
    ppx_subliner
    soteria.ppx
+   soteria-rust.ppx
    ppx_deriving_hash
    ppx_mixins))
  (instrumentation

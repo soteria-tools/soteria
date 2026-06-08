@@ -547,33 +547,34 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
     (literal or pointer). *)
 let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
     [> Typed.T.any ] Typed.t DecayMap.SM.t =
-  match (to_ty, Typed.get_ty v) with
-  | TLiteral (TInt _ | TUInt _ | TBool | TChar), TBitVector _
-  | TLiteral (TFloat _), TFloat _
-  | (TRawPtr _ | TRef _ | TFnPtr _), TExtension FullPtr ->
-      return (Typed.cast v)
-  | TLiteral (TFloat _), TBitVector _ -> return (BV.to_float_raw (Typed.cast v))
-  | TLiteral (TInt _ | TUInt _ | TBool | TChar), TExtension FullPtr ->
-      let ptr, _ = Typed.Ptr.split @@ Typed.cast v in
+  match%ty (v, to_ty) with
+  (* Same-kind transmutes are the identity. *)
+  | TBitVector _, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
+      return (Typed.as_any v)
+  | TFloat _, TLiteral (TFloat _) -> return (Typed.as_any v)
+  | TExtension FullPtr, (TRawPtr _ | TRef _ | TFnPtr _) ->
+      return (Typed.as_any v)
+  | TBitVector _, TLiteral (TFloat _) -> return (BV.to_float_raw v)
+  | TExtension FullPtr, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
+      let ptr, _ = Typed.Ptr.split v in
       Sptr.decay ptr
-  | TLiteral (TInt _ | TUInt _ | TBool | TChar), TFloat _ ->
-      float_to_bv_bits (Typed.cast v)
-  | (TRawPtr _ | TRef _ | TFnPtr _), TBitVector _ ->
-      return (Typed.Ptr.mk_ptr_f (Sptr.of_address (Typed.cast v)) None)
-  | TPattern (inner_ty, _), _ -> transmute_one ~to_ty:inner_ty v
+  | TFloat _, TLiteral (TInt _ | TUInt _ | TBool | TChar) -> float_to_bv_bits v
+  | TBitVector _, (TRawPtr _ | TRef _ | TFnPtr _) ->
+      return (Typed.Ptr.mk_ptr_f (Sptr.of_address v) None)
+  | _, TPattern (inner_ty, _) -> transmute_one ~to_ty:inner_ty v
   (* TODO: ????? *)
-  (* | TVar (Free type_var_id), (PolyVal tid as v) ->
+  (* | (PolyVal tid as v), TVar (Free type_var_id) ->
       if Types.TypeVarId.equal_id type_var_id tid then return v
       else
         Fmt.kstr not_impl "transmute_one: mismatched type variables %a -> %a"
           Types.pp_type_var_id type_var_id Types.pp_type_var_id tid *)
-  | TVar (Bound _), _ ->
+  | _, TVar (Bound _) ->
       failwith "transmute_one: bound type variable encountered?"
-  | TVar _, _ ->
+  | _, TVar _ ->
       Fmt.kstr not_impl
         "losing concrete value in %a -> %a; somewhere we lost track of generics"
         Typed.ppa v pp_ty to_ty
-  | _ ->
+  | _, _ ->
       Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" Typed.ppa v pp_ty
         to_ty
 
