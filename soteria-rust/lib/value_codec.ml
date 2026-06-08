@@ -499,7 +499,7 @@ let check_validity ~check_ref ty value st =
 let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
     (v : Typed.([< T.cval ] t)) =
   match (from_ty, to_ty) with
-  | _, _ when Types.equal_literal_type from_ty to_ty -> v
+  | _, _ when Types.equal_literal_type from_ty to_ty -> Typed.cast v
   | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
       let sv = Typed.cast_f fty v in
       let signed = Layout.is_signed lit_ty in
@@ -675,15 +675,77 @@ let rec ref_tys_in ?(include_ptrs = false) (_ : Typed.([< T.any ] t))
     applying [fn] to them. This is used to update nested references when
     reborrowing. Calls [fn] with the pointer value and the pointer type (not the
     pointee). *)
-let rec update_ref_tys_in
+let rec ref_tys_in
     (fn :
       'acc ->
-      Typed.([< T.sptr_f ] t) ->
       Types.ty ->
+      Typed.([< T.sptr_f ] t) ->
       (Typed.([> T.sptr_f ] t) * 'acc, 'e, 'f) Rustsymex.Result.t) (init : 'acc)
-    (v : Typed.([< T.any ] t)) (ty : Types.ty) :
+    (ty : Types.ty) (v : Typed.([< T.any ] t)) :
     (Typed.([> T.any ] t) * 'acc, 'e, 'f) Rustsymex.Result.t =
-  failwith "this is simplified in a future PR"
+  let open Rustsymex in
+  let open Syntax in
+  let f = ref_tys_in fn in
+  let fs acc ty vs =
+    let++ vs, acc =
+      Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) v ->
+          let++ v, acc = f acc ty v in
+          (v :: vs, acc))
+    in
+    (List.rev vs, acc)
+  in
+  let fs' acc tys vs =
+    let vs = List.combine tys vs in
+    let++ vs, acc =
+      Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) (v, ty) ->
+          let++ v, acc = f acc v ty in
+          (v :: vs, acc))
+    in
+    (List.rev vs, acc)
+  in
+  match ty with
+  | TRef (_, _, _) | TAdt { id = TBuiltin TBox; _ } ->
+      let v = Typed.cast_ptr_f v in
+      let++ res, acc = fn init ty v in
+      (Typed.cast res, acc)
+  | TAdt adt when adt_is_box adt ->
+      (* a box has only one non ZST, the pointer *)
+      let ptr, allocator, marker =
+        match Typed.Adt.as_tuple @@ Typed.cast_any_adt v with
+        | [ unique; allocator ] -> (
+            match Typed.Adt.as_tuple @@ Typed.cast_any_adt unique with
+            | [ nonnull; marker ] -> (
+                match Typed.Adt.as_tuple @@ Typed.cast_any_adt nonnull with
+                | [ ptr ] -> (Typed.cast_ptr_f ptr, allocator, marker)
+                | _ -> failwith "wrong nonull shape")
+            | _ -> failwith "wrong unique shape")
+        | _ -> failwith "wrong box shape"
+      in
+      let++ ptr, acc = fn init ty ptr in
+      let res =
+        Typed.Adt.(
+          mk_tuple
+            [ mk_tuple [ mk_tuple [ Typed.cast ptr ]; marker ]; allocator ])
+      in
+      (res, acc)
+  | TAdt adt when Crate.is_struct_or_tuple adt ->
+      let v = Typed.cast_adt adt v in
+      let++ vs, acc =
+        fs' init (Crate.as_struct_or_tuple adt) (Typed.Adt.as_tuple v)
+      in
+      (Typed.Adt.mk_tuple vs, acc)
+  | TArray (ty, _) | TSlice ty ->
+      let v = Typed.cast_any_adt v in
+      let++ vs, acc = fs init ty (Typed.Adt.as_tuple v) in
+      (Typed.Adt.mk_tuple vs, acc)
+  | TAdt adt when Crate.is_enum adt ->
+      let v = Typed.cast_adt adt v in
+      let d, vs = Typed.Adt.as_enum v in
+      let* var = variant_for_discr d adt in
+      let++ vs, acc = fs' init (field_tys Types.(var.fields)) vs in
+      (Typed.Adt.mk_enum d vs, acc)
+  | TPattern (inner, _) -> f init inner v
+  | _ -> Result.ok (v, init)
 
 (** Calculates the size and alignment of a type [t], according to the pointer
     metadata [meta]. Receives an arbitrary state and [load] function, to

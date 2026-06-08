@@ -446,6 +446,69 @@ let rec is_unsafe_cell : Types.ty -> bool = function
   | TArray (ty, _) | TSlice ty -> is_unsafe_cell ty
   | _ -> false
 
+(** Whether this type is uninhabited; this is under-approximate, and should be
+    avoided; use {!layout_of} and check the [uninhabited] flag instead, if
+    possible. *)
+let rec is_uninhabited : Types.ty -> bool = function
+  | TLiteral _
+  | TRef (_, _, _)
+  | TRawPtr (_, _)
+  | TFnPtr _ | TFnDef _
+  | TAdt { id = TBuiltin _; _ } ->
+      false
+  | TNever -> true
+  | TAdt { id = TTuple; generics = { types; _ } } ->
+      List.exists is_uninhabited types
+  | TAdt ({ id = TAdtId _; _ } as adt) as ty -> (
+      match (Crate.get_adt adt).kind with
+      | Struct tys -> List.exists is_uninhabited (field_tys tys)
+      | Union tys -> false
+      | Enum vs ->
+          List.for_all
+            (fun (v : Types.variant) ->
+              List.exists is_uninhabited (field_tys v.fields))
+            vs
+      | Opaque | Alias _ | TDeclError _ ->
+          Fmt.failwith "can't determine the uninhabitedness of %a" pp_ty ty)
+  | TArray (ty, _) | TPattern (ty, _) | TSlice ty -> is_uninhabited ty
+  | (TVar _ | TTraitType (_, _, _) | TDynTrait _ | TPtrMetadata _ | TError _) as
+    ty ->
+      Fmt.failwith "can't determine the uninhabitedness of %a" pp_ty ty
+
+(** Whether this type is a ZST; this is under-approximate, and should be
+    avoided; use {!layout_of} and symbolically compare [size] with [0] instead
+*)
+let rec is_zst : Types.ty -> bool = function
+  | TLiteral _
+  | TRef (_, _, _)
+  | TRawPtr (_, _)
+  | TFnPtr _
+  | TAdt { id = TBuiltin _; _ } ->
+      false
+  | TNever | TFnDef _ -> true
+  | TArray (ty, _) | TPattern (ty, _) | TSlice ty -> is_zst ty
+  | TAdt { id = TTuple; generics = { types; _ } } -> List.for_all is_zst types
+  | TAdt ({ id = TAdtId _; _ } as adt) as ty -> (
+      match (Crate.get_adt adt).kind with
+      | Struct tys | Union tys -> List.for_all is_zst (field_tys tys)
+      | Enum [] -> true
+      | Enum vs ->
+          let rec aux saw_inhabited = function
+            | [] -> true
+            | (v : Types.variant) :: rest ->
+                let fs = field_tys v.fields in
+                if List.exists is_uninhabited fs then aux saw_inhabited rest
+                else if List.for_all is_zst fs then
+                  (not saw_inhabited) && aux true rest
+                else false
+          in
+          aux false vs
+      | Opaque | Alias _ | TDeclError _ ->
+          Fmt.failwith "can't determine the ZST-ness of %a" pp_ty ty)
+  | (TVar _ | TTraitType (_, _, _) | TDynTrait _ | TPtrMetadata _ | TError _) as
+    ty ->
+      Fmt.failwith "can't determine the ZST-ness of %a" pp_ty ty
+
 (** [is_abi_compatible ty1 ty2] is true if a function expecting an argument of
     type [ty1] can be called with an argument of type [ty2].
 

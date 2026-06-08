@@ -31,7 +31,7 @@ module M (StateM : State.StateM.S) = struct
   (* NonNull<u8> is a struct { pointer: *const u8 is !null }. Extract the inner
      ptr. *)
   let ptr_of_nonnull nonull =
-    match Typed.Adt.as_tuple nonull with
+    match Typed.Adt.as_tuple @@ Typed.cast nonull with
     | [ v ] -> Typed.cast_ptr_f v
     | _ -> Fmt.failwith "alloc: invalid NonNull argument: %a" Typed.ppa nonull
 

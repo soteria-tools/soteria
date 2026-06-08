@@ -13,3 +13,8 @@
 - Typed.Ptr.wrap (ptr -> ptr)? or just porting all the offset etc. functions? maybe [Sptr.Full.<fn> = lift <fn>]
 - Possibly a [Typed.Adt.as_tuple{1,2,3}] that casts to an N-tuple, to avoid ugly list pattern matching?
 - We should probably have a special case that pre-creates and pre-hashes regularly used constants, like [unit], or the [cmp] variants. Not sure about the latter because that requires having the [TypeDecl] to type it properly, so it needs a crate :(
+- Add [Typed.Adt.nth_field idx v]/[Typed.Adt.with_field idx f v] to avoid the [as_tuples]
+- Maybe make `nondet_valid` (and others?) receive a `'a ty` argument, to avoid needing to cast on each use
+- A utility to unwrap the pointer out of a box
+- A utility like `as_checked_ref` that returns a pointer option, with `Some` for references and boxes (i.e. a simpler version of ref_tys_in)
+- Maybe `type +'a ret =  ...` fixes all our problems?? do i just need to specify the invariance of all types....

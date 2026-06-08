@@ -167,6 +167,7 @@ module Adt : sig
   val as_union : [< T.adt ] t -> ([> T.any ] t * [> T.sint ] t) list
 
   val as_tuple : [< T.adt ] t -> [> T.any ] t list
+  val as_enum : [< T.adt ] t -> [> T.sint ] t * [> T.any ] t list
 
   (**  *)
   val discriminant_of : [< T.adt ] t -> [< T.sint ] t

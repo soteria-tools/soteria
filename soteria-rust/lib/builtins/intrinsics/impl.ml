@@ -284,7 +284,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let cos_ fp x =
     let* () = floating_inaccuracy_warn () in
-    let* res = Encoder.nondet_valid (TLiteral (TFloat fp)) in
+    let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res : [> T.sfloat ] Typed.t = Typed.cast res in
     let* to_assume =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
@@ -308,7 +308,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let sin_ fp x =
     let* () = floating_inaccuracy_warn () in
-    let* res = Encoder.nondet_valid (TLiteral (TFloat fp)) in
+    let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res : [> T.sfloat ] Typed.t = Typed.cast res in
     let* to_assume =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
@@ -332,7 +332,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let pow_ fp _x _y =
     let* () = floating_inaccuracy_warn () in
-    let+ res = Encoder.nondet_valid (TLiteral (TFloat fp)) in
+    let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     Typed.cast res
 
   let powf16 ~a ~x = pow_ F16 a x
@@ -345,7 +345,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     if%sat y ==@ U32.(0s) then ok (Typed.Float.mk fp "1.0")
     else if%sat y ==@ U32.(1s) then ok (Typed.cast x)
     else
-      let+ res = Encoder.nondet_valid (TLiteral (TFloat fp)) in
+      let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
       Typed.cast res
 
   let powif16 ~a ~x = powi_ F16 a x
@@ -362,7 +362,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       ||@ Typed.Float.is_nan x
     then ok (Typed.cast x :> [> Typed.T.sfloat ] Typed.t)
     else
-      let+ res = Encoder.nondet_valid (TLiteral (TFloat fp)) in
+      let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
       Typed.cast res
 
   let sqrtf16 ~x = sqrt_ F16 x
@@ -379,7 +379,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.mk fp "0.0")
     then ok (Typed.Float.mk fp "0.0")
     else
-      let* res = Encoder.nondet_valid (TLiteral (TFloat fp)) in
+      let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
       let res : [> T.sfloat ] Typed.t = Typed.cast res in
       let+^ () = Rustsymex.assume [ res >.@ Typed.Float.mk fp "0.0" ] in
       res
@@ -404,7 +404,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     else if%sat Typed.Float.is_infinite x then ok (Typed.Float.mk fp "inf")
     else if%sat x ==.@ exp then ok (Typed.Float.mk fp "1.0")
     else
-      let* res = Encoder.nondet_valid (TLiteral (TFloat fp)) in
+      let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
       let res : [> T.sfloat ] Typed.t = Typed.cast res in
       let* to_assume =
         if%sat x <.@ exp then ok [ res <.@ Typed.Float.mk fp "1.0" ]

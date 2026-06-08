@@ -39,6 +39,7 @@
     written in [<category>/impl.ml]. *)
 
 open Charon
+open Svalue
 module NameMatcherMap = Charon.NameMatcher.NameMatcherMap
 module SMap = Map.Make (String)
 

@@ -77,8 +77,8 @@ module type S = sig
 
   val size_and_align_of_val :
     Types.ty ->
-    T.ptr_meta Typed.t option ->
-    (T.sint Typed.t * T.nonzero Typed.t) ret
+    [< T.ptr_meta ] Typed.t option ->
+    ([> T.sint ] Typed.t * [> T.nonzero ] Typed.t) ret
 
   val fake_read : Typed.([< T.sptr_f ] t) -> Types.ty -> unit ret
 
@@ -117,7 +117,7 @@ module type S = sig
   val lookup_fn : Typed.([< T.sptr_f ] t) -> Fun_kind.t ret
 
   val lookup_const_generic :
-    Types.const_generic_var_id -> Types.ty -> [< T.any ] Typed.t ret
+    Types.const_generic_var_id -> Types.ty -> [> T.any ] Typed.t ret
 
   val register_thread_exit : (unit -> unit ret) -> unit ret
   val run_thread_exits : unit -> unit ret

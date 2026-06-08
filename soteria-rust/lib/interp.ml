@@ -18,10 +18,12 @@ module Make (StateImpl : State.S) = struct
   open StateM
   open Syntax
 
-  type 'a t = ('a, Sptr.t Store.t) StateM.t
-  type 'err fun_exec = rust_val list -> (rust_val, unit) StateM.t
+  type 'a t = ('a, Store.t) StateM.t
+  type 'err fun_exec = Typed.(T.any t) list -> (Typed.(T.any t), unit) StateM.t
 
-  type lazy_ptr = Store of Expressions.local_id | Heap of full_ptr
+  type lazy_ptr =
+    | Store of Expressions.local_id
+    | Heap of Typed.T.sptr_f Typed.t
   [@@deriving show { with_path = false }]
 
   let get_variable_ptr var_id =
@@ -30,7 +32,7 @@ module Make (StateImpl : State.S) = struct
     match binding.kind with
     | Stackptr ptr ->
         [%l.debug
-          "Variable %a has pointer %a" Expressions.pp_var_id var_id pp_full_ptr
+          "Variable %a has pointer %a" Expressions.pp_var_id var_id Typed.ppa
             ptr];
         ok ptr
     | Uninit ->
@@ -38,7 +40,7 @@ module Make (StateImpl : State.S) = struct
         let+ () = map_env (Store.declare_ptr var_id ptr) in
         [%l.debug
           "Variable %a was uninitialized, allocated pointer %a"
-            Expressions.pp_var_id var_id pp_full_ptr ptr];
+            Expressions.pp_var_id var_id Typed.ppa ptr];
         ptr
     | Value v ->
         let* ptr = State.alloc_ty binding.ty in
@@ -46,7 +48,7 @@ module Make (StateImpl : State.S) = struct
         let+ () = map_env (Store.declare_ptr var_id ptr) in
         [%l.debug
           "Variable %a had value, allocated pointer %a" Expressions.pp_var_id
-            var_id pp_full_ptr ptr];
+            var_id Typed.ppa ptr];
         ptr
     | Dead -> error `DeadVariable
 
@@ -66,7 +68,7 @@ module Make (StateImpl : State.S) = struct
     | Uninit | Value _ -> ok (Store var_id, binding.ty)
     | Dead -> error `DeadVariable
 
-  let load_lazy lazy_ptr ty : rust_val t =
+  let load_lazy lazy_ptr ty : Typed.([> T.any ] t) t =
     Soteria.Stats.As_ctx.incr StatKeys.load_accesses;
     match lazy_ptr with
     | Store var_id -> (
@@ -122,7 +124,7 @@ module Make (StateImpl : State.S) = struct
     |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
         (* Passed (nested) references must be protected and be valid. *)
         let* value, protected' =
-          Encoder.ref_tys_in local.local_ty value ~init:acc
+          Value_codec.ref_tys_in local.local_ty value ~init:acc
             ~f:(fun acc ptr_ty ptr ->
               let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
               let pointee = Charon_util.get_pointee ptr_ty in
@@ -146,7 +148,8 @@ module Make (StateImpl : State.S) = struct
         match (binding.kind, protected_address) with
         | (Dead | Uninit | Value _), _ -> ok ()
         | Stackptr ptr, None -> State.free ptr
-        | Stackptr ((ptr, _) as fptr), Some protect ->
+        | Stackptr fptr, Some protect ->
+            let ptr = Typed.Ptr.ptr_of fptr in
             if%sat Sptr.have_same_provenance ptr protect then ok ()
             else State.free fptr)
 
@@ -195,31 +198,31 @@ module Make (StateImpl : State.S) = struct
                       method_id)))
     | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
 
-  let rec resolve_constant (const : Types.constant_expr) =
+  let rec resolve_constant (const : Types.constant_expr) :
+      Typed.([> T.any ] t) t =
     let* const = Poly.subst_constant_expr const in
     match const.kind with
-    | CLiteral (VScalar scalar) -> ok (Int (BV.of_scalar scalar))
-    | CLiteral (VBool b) -> ok (Int (BV.of_bool (Typed.of_bool b)))
-    | CLiteral (VChar c) -> ok (Int (BV.u32i (Uchar.to_int c)))
+    | CLiteral (VScalar scalar) -> ok (BV.of_scalar scalar)
+    | CLiteral (VBool b) -> ok (BV.of_bool (Typed.of_bool b))
+    | CLiteral (VChar c) -> ok (BV.u32i (Uchar.to_int c))
     | CLiteral (VFloat { float_value; float_ty }) ->
-        ok (Float (Typed.Float.mk float_ty float_value))
-    | CLiteral (VStr str) ->
-        let+ ptr = Core.string_to_ptr str in
-        Ptr ptr
-    | CFnDef _ -> ok (Tuple [])
-    | CPtrNoProvenance v -> ok (Ptr (Sptr.of_address (BV.usize v), Thin))
+        ok (Typed.Float.mk float_ty float_value)
+    | CLiteral (VStr str) -> Core.string_to_ptr str
+    | CFnDef _ -> ok (Typed.Adt.mk_tuple [])
+    | CPtrNoProvenance v ->
+        ok (Typed.Ptr.mk_ptr_f (Sptr.of_address (BV.usize v)) None)
     | CArray cs ->
         let+ vals = map_list cs ~f:resolve_constant in
-        Tuple vals
+        Typed.Adt.mk_tuple vals
     | CAdt (None, fields) ->
         let+ vals = map_list fields ~f:resolve_constant in
-        Tuple vals
+        Typed.Adt.mk_tuple vals
     | CAdt (Some var, fields) ->
         let variants = Crate.as_enum @@ ty_as_adt const.ty in
         let variant = Types.VariantId.nth variants var in
         let discr = BV.of_literal variant.discriminant in
         let+ vals = map_list fields ~f:resolve_constant in
-        Enum (discr, vals)
+        Typed.Adt.mk_enum discr vals
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't
        too bad *)
@@ -278,7 +281,8 @@ module Make (StateImpl : State.S) = struct
         (* Map the smaller blocks to actual rust values, ie. pointers or
            integers *)
         let ptr_size = Crate.pointer_size () in
-        let ptr_of_provenance : Types.provenance -> full_ptr t = function
+        let ptr_of_provenance : Types.provenance -> Typed.(T.sptr_f t) t =
+          function
           | ProvGlobal g -> resolve_global g
           | ProvFunction f -> State.declare_fn (Real f)
           | ProvUnknown -> not_impl "Unknown provenance in RawMemory"
@@ -286,22 +290,21 @@ module Make (StateImpl : State.S) = struct
         let+ blocks =
           map_list blocks ~f:(fun block ->
               match block with
-              | `Byte (b, ofs) -> ok (Int b, BV.usizei ofs)
+              | `Byte (b, ofs) -> ok (b, BV.usizei ofs)
               | `Ptr (p, from_, size, ofs) ->
-                  let* ptr, _ = ptr_of_provenance p in
+                  let* ptr = ptr_of_provenance p in
+                  let ptr = Typed.Ptr.ptr_of ptr in
                   if from_ = 0 && size = ptr_size then
-                    ok (Ptr (ptr, Thin), BV.usizei ofs)
+                    ok (Typed.Ptr.mk_ptr_f ptr None, BV.usizei ofs)
                   else
                     let+ ptr_int = Sptr.decay ptr in
                     let ptr_frag =
                       BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
                     in
-                    (Int ptr_frag, BV.usizei ofs))
+                    (ptr_frag, BV.usizei ofs))
         in
-        Union blocks
-    | CGlobal glob ->
-        let+ ptr = resolve_global glob in
-        Ptr ptr
+        Typed.Adt.mk_union blocks
+    | CGlobal glob -> map Typed.cast @@ resolve_global glob
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
@@ -312,7 +315,7 @@ module Make (StateImpl : State.S) = struct
         let@ () = with_alloc_kind ~kind:AnonConst in
         let* ptr = State.alloc_ty expr.ty in
         let+ () = State.store ptr expr.ty v in
-        Ptr ptr
+        Typed.cast ptr
     | CPtr _ ->
         Fmt.kstr not_impl "TODO: CPtr constant %a" Crate.pp_constant_expr const
     | CFnPtr _ ->
@@ -326,7 +329,7 @@ module Make (StateImpl : State.S) = struct
           const
 
   (** Resolves a place to a pointer *)
-  and resolve_place (place : Expressions.place) : full_ptr t =
+  and resolve_place (place : Expressions.place) : Typed.([> T.sptr_f ] t) t =
     match place.kind with
     (* Just a local *)
     | PlaceLocal v -> get_variable_ptr v
@@ -335,42 +338,37 @@ module Make (StateImpl : State.S) = struct
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
         let* ptr = resolve_place base in
-        [%l.debug "Dereferencing ptr %a of %a" pp_full_ptr ptr pp_ty base.ty];
-        let* v = State.load ptr base.ty in
-        match v with
-        | Ptr fptr -> (
-            [%l.debug
-              "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
-                pp_full_ptr fptr];
-            let pointee = get_pointee base.ty in
-            match base.ty with
-            | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
-                let+ () = Sptr.check_aligned fptr pointee in
-                fptr
-            | _ -> ok fptr)
-        | Int off ->
-            let off = Typed.cast_i Usize off in
-            let ptr = Sptr.of_address off in
-            ok (ptr, Thin)
-        | _ -> not_impl "Unexpected value when dereferencing place")
+        [%l.debug "Dereferencing ptr %a of %a" Typed.ppa ptr pp_ty base.ty];
+        let* deref = State.load ptr base.ty in
+        let deref = Typed.cast_ptr_f deref in
+        [%l.debug
+          "Dereferenced pointer %a to pointer %a" Typed.ppa ptr Typed.ppa deref];
+        let pointee = get_pointee base.ty in
+        match base.ty with
+        (* TODO: add box case *)
+        | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
+            let+ () = Sptr.check_aligned deref pointee in
+            deref
+        | _ -> ok deref)
     (* The metadata of a pointer type is just the second part of the pointer *)
     | PlaceProjection (base, PtrMetadata) ->
-        let* ((ptr, _) as fptr) = resolve_place base in
-        let* () = State.fake_read fptr base.ty in
+        let* ptr = resolve_place base in
+        let* () = State.fake_read ptr base.ty in
+        let ptr = Typed.Ptr.ptr_of ptr in
         [%l.debug
-          "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty base.ty];
+          "Projecting metadata of pointer %a for %a" Typed.ppa ptr pp_ty base.ty];
         let+ ptr' =
           Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
             Usize.(1s)
             ptr
         in
-        (ptr', Thin)
+        Typed.Ptr.mk_ptr_f ptr' None
     | PlaceProjection (base, Field (kind, field)) ->
-        let* ((ptr, meta) as fptr) = resolve_place base in
-        let* () = Sptr.check_aligned fptr base.ty in
+        let* ptr = resolve_place base in
+        let* () = Sptr.check_aligned ptr base.ty in
         [%l.debug
           "Projecting field %a (kind %a) for %a" Types.pp_field_id field
-            Expressions.pp_field_proj_kind kind Sptr.pp ptr];
+            Expressions.pp_field_proj_kind kind Typed.ppa ptr];
         let field = Types.FieldId.to_int field in
         let* layout = Layout.layout_of base.ty in
         let fields =
@@ -380,24 +378,25 @@ module Make (StateImpl : State.S) = struct
           | ProjAdt (_, None) | ProjTuple _ -> layout.fields
         in
         let off = Layout.Fields_shape.offset_of field fields in
+        let ptr, meta = Typed.Ptr.split ptr in
         let* ptr' = Sptr.offset ~signed:false off ptr in
         [%l.debug
           "Projecting ADT %a, field %d, with pointer %a to pointer %a"
             Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr'];
-        if Layout.is_dst place.ty then ok (ptr', meta) else ok (ptr', Thin)
+        let meta = if Layout.is_dst place.ty then meta else None in
+        ok (Typed.Ptr.mk_ptr_f ptr' meta)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
-        let* ptr, meta = resolve_place base in
+        let* ptr = resolve_place base in
+        let ptr, meta = Typed.Ptr.split ptr in
         let* len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | Thin, TArray (_, len) ->
-              let+ len = resolve_constant len in
-              as_base_i Usize len
-          | Len len, TSlice _ -> ok len
+          | None, TArray (_, len) -> resolve_constant len
+          | Some len, TSlice _ -> ok (Typed.cast len)
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* idx = eval_operand idx in
-        let idx = as_base_i Usize idx in
+        let len = Typed.cast_i Usize len and idx = Typed.cast_i Usize idx in
         let idx = if from_end then len -!@ idx else idx in
         let* () =
           assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
@@ -405,23 +404,25 @@ module Make (StateImpl : State.S) = struct
         let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty idx ptr in
         [%l.debug
           "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
-            Sptr.pp ptr'];
-        (ptr', Thin)
+            Typed.ppa ptr'];
+        Typed.Ptr.mk_ptr_f ptr' None
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
-        let* ptr, meta = resolve_place base in
+        let* ptr = resolve_place base in
+        let ptr, meta = Typed.Ptr.split ptr in
         let* ty, len =
           match (meta, base.ty) with
           (* Array with static size *)
-          | Thin, TArray (ty, len) ->
+          | None, TArray (ty, len) ->
               let+ len = resolve_constant len in
-              (ty, as_base_i Usize len)
-          | Len len, TSlice ty -> ok (ty, Typed.cast len)
+              (ty, len)
+          | Some len, TSlice ty -> ok (ty, Typed.cast len)
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* from = eval_operand from in
         let* to_ = eval_operand to_ in
-        let from = as_base_i Usize from in
-        let to_ = as_base_i Usize to_ in
+        let from = Typed.cast_i Usize from in
+        let to_ = Typed.cast_i Usize to_ in
+        let len = Typed.cast_i Usize len in
         let to_ = if from_end then len -!@ to_ else to_ in
         let* () =
           assert_
@@ -431,11 +432,11 @@ module Make (StateImpl : State.S) = struct
         let+ ptr' = Sptr.offset ~signed:false ~ty from ptr in
         let slice_len = to_ -!@ from in
         [%l.debug
-          "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp ptr
+          "Projected %a, slice %a..%a%s, to pointer %a, len %a" Typed.ppa ptr
             Typed.ppa from Typed.ppa to_
             (if from_end then "(from end)" else "")
-            Sptr.pp ptr' Typed.ppa slice_len];
-        (ptr', Len slice_len)
+            Typed.ppa ptr' Typed.ppa slice_len];
+        Typed.Ptr.mk_ptr_f ptr' (Some slice_len)
 
   and resolve_place_lazy (place : Expressions.place) : lazy_ptr t =
     match place.kind with
@@ -508,7 +509,7 @@ module Make (StateImpl : State.S) = struct
        been cast. *)
     | FnOpDynamic op ->
         let* fn_ptr = eval_operand op in
-        let fn_ptr = as_ptr fn_ptr in
+        let fn_ptr = Typed.cast_ptr_f fn_ptr in
         let* fn = State.lookup_fn fn_ptr in
         let* () =
           match fn with Real fn -> validate_call fn | Synthetic _ -> ok ()
@@ -520,7 +521,7 @@ module Make (StateImpl : State.S) = struct
     let decl = Crate.get_global glob.id in
     let* v_opt = State.load_global glob.id in
     match v_opt with
-    | Some v -> ok v
+    | Some v -> ok (Typed.cast v)
     | None ->
         (* Same as with strings -- here we need to somehow cache where we store
            the globals *)
@@ -542,8 +543,8 @@ module Make (StateImpl : State.S) = struct
         let+ () = State.store ptr decl.ty v in
         [%l.info
           "Initialized global %a at %a to %a" Crate.pp_name decl.item_meta.name
-            pp_full_ptr ptr pp_rust_val v];
-        ptr
+            Typed.ppa ptr Typed.ppa v];
+        Typed.cast ptr
 
   and eval_operand (op : Expressions.operand) =
     match op with
@@ -573,143 +574,160 @@ module Make (StateImpl : State.S) = struct
             State.fake_read ptr place.ty
           else ok ()
         in
-        let+ ptr' = State.borrow ptr expr_ty in
-        Ptr ptr'
+        State.borrow ptr expr_ty
     (* Raw pointer *)
-    | RawPtr (place, _kind, _metadata) ->
-        let+ ptr = resolve_place place in
-        Ptr ptr
+    | RawPtr (place, _kind, _metadata) -> map Typed.cast @@ resolve_place place
     | UnaryOp (op, e) -> (
         let* v = eval_operand e in
         let ty = type_of_operand e in
         match op with
         | Not -> (
             let ty = TypesUtils.ty_as_literal ty in
-            let v = as_base ty v in
+            let v = Typed.cast_lit ty v in
             match ty with
-            | TBool -> ok (Int (BV.not_bool v))
-            | TInt _ | TUInt _ -> ok (Int (BV.not v))
+            | TBool -> ok (BV.not_bool v)
+            | TInt _ | TUInt _ -> ok (BV.not v)
             | _ -> not_impl "Invalid type for Not")
         | Neg _ -> (
             match type_of_operand e with
             | TLiteral ((TInt _ | TUInt _) as ty) ->
-                let v = as_base ty v in
+                let v = Typed.cast_lit ty v in
                 let res, overflowed = ~-?v in
                 let+ () = assert_not overflowed `Overflow in
-                Int res
+                res
             | TLiteral (TFloat fty) ->
-                let v = as_base_f fty v in
-                ok (Float (Typed.Float.neg v))
+                let v = Typed.cast_f fty v in
+                ok (Typed.Float.neg v)
             | _ -> not_impl "Invalid type for Neg")
         | Cast (CastRawPtr (from_ty, to_ty)) -> (
             match (from_ty, to_ty) with
             | (TRef _ | TRawPtr _ | TFnPtr _), TLiteral to_ty ->
                 (* expose provenance *)
-                let v, _ = as_ptr v in
+                let v = Typed.cast_ptr_f v in
+                let v = Typed.Ptr.ptr_of v in
                 let+ v' = Sptr.expose v in
-                Encoder.cast_literal ~from_ty:(TUInt Usize) ~to_ty v'
+                Value_codec.cast_literal ~from_ty:(TUInt Usize) ~to_ty v'
             | TLiteral _, (TRef _ | TRawPtr _ | TFnPtr _) ->
                 (* with provenance *)
-                let v = as_base_i Usize v in
-                let+ ptr = State.with_exposed v in
-                Ptr ptr
+                let v = Typed.cast_i Usize v in
+                State.with_exposed v
             | TLiteral _, TPattern (TRawPtr _, NotNull) ->
                 (* with provenance, not null *)
-                let v = as_base_i Usize v in
-                let* ((ptr, _) as fptr) = State.with_exposed v in
-                if%sat Sptr.is_null ptr then
+                let v = Typed.cast_i Usize v in
+                let* fptr = State.with_exposed v in
+                if%sat Typed.Ptr.is_null' @@ Typed.Ptr.ptr_of fptr then
                   error (`UBTransmute "null pointer for !null pattern")
-                else ok (Ptr fptr)
-            | _, (TRef (_, to_ty, _) | TRawPtr (to_ty, _)) -> (
-                match (v, Layout.is_dst to_ty) with
-                | Ptr (ptr, _), false -> ok (Ptr (ptr, Thin))
-                | Ptr (_, Thin), true ->
-                    not_impl "Cannot cast to fat pointer without meta"
-                | Ptr _, true -> ok v
-                | _ -> not_impl "Invalid value for CastRawPtr")
+                else ok (Typed.cast fptr)
+            | _, (TRef (_, to_ty, _) | TRawPtr (to_ty, _)) ->
+                if Layout.is_dst to_ty then ok v
+                else
+                  let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f v) in
+                  ok (Typed.Ptr.mk_ptr_f ptr None)
             | _ ->
                 Fmt.kstr not_impl "Invalid types for CastRawPtr: %a -> %a" pp_ty
                   from_ty pp_ty to_ty)
         | Cast (CastTransmute (from, to_)) -> State.transmute ~from ~to_ v
         | Cast (CastScalar (from_ty, to_ty)) ->
-            let+ v =
-              match v with
-              | Int i -> ok (i :> T.cval Typed.t)
-              | Float f -> ok (f :> T.cval Typed.t)
-              | _ -> not_impl "Invalid value for CastScalar"
+            let v =
+              match from_ty with
+              | TFloat f -> (Typed.cast_f f v :> Typed.(T.cval t))
+              | _ -> Typed.cast_lit from_ty v
             in
-            Encoder.cast_literal ~from_ty ~to_ty v
-        | Cast (CastUnsize (from_ty, to_ty, meta)) ->
-            let update_meta prev =
+            ok (Value_codec.cast_literal ~from_ty ~to_ty v)
+        | Cast (CastUnsize (from_ty, to_ty, meta)) -> (
+            let get_new_metadata prev : Typed.(T.ptr_meta t) t =
               match meta with
               | MetaLength length ->
                   let+ len = resolve_constant length in
-                  Len (as_base_i Usize len)
+                  Typed.cast_i Usize len
               | MetaVTable (_, const) ->
                   (* the global adds one level of indirection *)
                   let* ptr = resolve_constant const in
-                  let ptr = as_ptr ptr in
+                  let ptr = Typed.cast_ptr_f ptr in
                   let+ vtable = State.load ptr unit_ptr in
-                  let vtable, _ = as_ptr vtable in
-                  VTable vtable
-              | MetaVTableUpcast fields -> (
-                  match prev with
-                  | Thin -> failwith "Unsizing VTable with no meta?"
-                  | Len _ -> error `UBDanglingPointer
-                  | VTable vt ->
-                      let+ vt' =
-                        fold_list fields ~init:vt ~f:(fun vt field ->
-                            let idx = Types.FieldId.to_int field in
-                            let* vt_addr =
-                              Sptr.offset ~ty:unit_ptr ~signed:false
-                                (BV.usizei idx) vt
-                            in
-                            let+ vt = State.load (vt_addr, Thin) unit_ptr in
-                            fst (as_ptr vt))
-                      in
-                      VTable vt')
+                  let vtable = Typed.cast_ptr_f vtable in
+                  Typed.Ptr.ptr_of vtable
+              | MetaVTableUpcast fields ->
+                  let prev =
+                    Option.get ~msg:"Unsizing VTable with no meta?" prev
+                  in
+                  let vt = Typed.cast_ptr_t prev in
+                  let+ vt =
+                    fold_list fields ~init:vt ~f:(fun vt field ->
+                        let idx = Types.FieldId.to_int field in
+                        let* vt_addr =
+                          Sptr.offset ~ty:unit_ptr ~signed:false (BV.usizei idx)
+                            vt
+                        in
+                        let vt_addr = Typed.Ptr.mk_ptr_f vt_addr None in
+                        let+ vt = State.load vt_addr unit_ptr in
+                        Typed.Ptr.ptr_of @@ Typed.cast_ptr_f vt)
+                  in
+                  (vt :> Typed.(T.ptr_meta t))
               | MetaUnknown ->
                   Fmt.kstr not_impl "Unknown metadata for %a -> %a" pp_ty
                     from_ty pp_ty to_ty
             in
-            let rec with_ptr_meta : rust_val -> rust_val t = function
-              | Ptr (v, prev) ->
-                  let+ meta = update_meta prev in
-                  Ptr (v, meta)
-              | Tuple (_ :: _ as fs) as v -> (
-                  let rec split_at_non_empty fs left =
-                    match fs with
-                    | [] -> None
-                    | f :: rest when Rust_val.is_empty f ->
-                        split_at_non_empty rest (f :: left)
-                    | f :: rest -> Some (List.rev left, f, rest)
+            let rec unsize_path_rev acc : Types.ty -> int list option = function
+              | TRawPtr _ | TRef _ -> Some acc
+              | TPattern (ty, _) -> unsize_path_rev acc ty
+              | TAdt adt when Crate.is_struct_or_tuple adt -> (
+                  let tys = Crate.as_struct_or_tuple adt in
+                  let last_non_zst =
+                    List.find_mapi
+                      (fun idx ty ->
+                        if Layout.is_zst ty then None else Some (idx, ty))
+                      (List.rev tys)
                   in
-                  let opt_nonempty = split_at_non_empty (List.rev fs) [] in
-                  match opt_nonempty with
-                  | Some (left, nonempty, right) -> (
-                      let+ nonempty = with_ptr_meta nonempty in
-                      let fs = List.rev (left @ [ nonempty ] @ right) in
-                      match v with Tuple _ -> Tuple fs | _ -> assert false)
-                  | None -> not_impl "Couldn't set pointer meta in CastUnsize")
-              | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
+                  match last_non_zst with
+                  | Some (idx, ty) -> unsize_path_rev (idx :: acc) ty
+                  | None -> None)
+              | ty -> None
             in
-            with_ptr_meta v
+            let rec split_around before l n =
+              match (l, n) with
+              | x :: rest, 0 -> (List.rev before, x, rest)
+              | x :: rest, n -> split_around (x :: before) rest (n - 1)
+              | [], _ -> failwith "Index out of bounds in split_around"
+            in
+            let rec with_ptr_meta v = function
+              | [] ->
+                  let v = Typed.cast_ptr_f v in
+                  let v, prev = Typed.Ptr.split v in
+                  let+ meta = get_new_metadata prev in
+                  Typed.Ptr.mk_ptr_f v (Some meta)
+              | idx :: rest ->
+                  let v = Typed.cast_any_adt v in
+                  let fs = Typed.Adt.as_tuple v in
+                  let before, target, after = split_around [] fs idx in
+                  let+ target = with_ptr_meta target rest in
+                  let fs = before @ (target :: after) in
+                  Typed.Adt.mk_tuple fs
+            in
+            match unsize_path_rev [] from_ty with
+            | Some path ->
+                let path = List.rev path in
+                with_ptr_meta v path
+            | None ->
+                Fmt.kstr not_impl "don't know how to unsize through %a" pp_ty ty
+            )
         | Cast (CastConcretize (_from, _to)) ->
             not_impl "Unsupported: dyn (concretize)"
         | Cast (CastFnPtr (_from, _to)) -> (
-            match (type_of_operand e, v) with
-            | TFnDef fn_ptr, _ ->
+            match type_of_operand e with
+            | TFnDef fn_ptr ->
                 let* fn = resolve_fn_ptr fn_ptr.binder_value in
-                let+ ptr = State.declare_fn fn in
-                Ptr ptr
-            | _, (Ptr _ as ptr) -> ok ptr
+                State.declare_fn fn
+            | TFnPtr _ -> ok v
             | _ -> not_impl "Invalid argument to CastFnPtr"))
     | BinaryOp (op, e1, e2) -> (
         let* v1 = eval_operand e1 in
         let* v2 = eval_operand e2 in
-        match (v1, v2) with
-        | Int v1, Int v2 -> (
-            let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
+        match (type_of_operand e1, type_of_operand e2) with
+        | ( TLiteral ((TInt _ | TUInt _ | TChar | TBool) as ty),
+            TLiteral ((TInt _ | TUInt _ | TChar | TBool) as ty_r) ) -> (
+            let v1 = Typed.cast_lit ty v1 in
+            let v2 = Typed.cast_lit ty_r v2 in
             match op with
             | Ge | Gt | Lt | Le ->
                 let signed = Layout.is_signed ty in
@@ -721,17 +739,12 @@ module Make (StateImpl : State.S) = struct
                   | Le -> BV.leq
                   | _ -> assert false
                 in
-                let v = op ~signed v1 v2 |> BV.of_bool in
-                ok (Int v)
+                ok (op ~signed v1 v2 |> BV.of_bool)
             | Eq | Ne ->
-                let v1 = Typed.cast_lit ty v1 in
-                let v2 = Typed.cast_lit ty v2 in
                 let+ res = Core.equality_check v1 v2 in
-                let res = if op = Eq then res else BV.not_bool res in
-                Int res
+                if op = Eq then Typed.cast res else BV.not_bool res
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
-                let+ res = Core.eval_lit_binop op ty v1 v2 in
-                Int (Typed.cast res)
+                Core.eval_lit_binop op ty v1 v2
             | AddChecked | SubChecked | MulChecked ->
                 Core.eval_checked_lit_binop op ty v1 v2
             | Cmp ->
@@ -743,66 +756,62 @@ module Make (StateImpl : State.S) = struct
                 let v1 = Typed.cast_lit ty v1 in
                 let v2 = Typed.cast_lit ty v2 in
                 match op with
-                | BitOr -> ok (Int (v1 |@ v2))
-                | BitAnd -> ok (Int (v1 &@ v2))
-                | BitXor -> ok (Int (v1 ^@ v2))
+                | BitOr -> ok (v1 |@ v2)
+                | BitAnd -> ok (v1 &@ v2)
+                | BitXor -> ok (v1 ^@ v2)
                 | _ -> assert false)
             | Offset -> not_impl "impossible: offset on integers")
-        | ((Ptr _ | Int _) as p1), ((Ptr _ | Int _) as p2) -> (
+        | (TRawPtr _ | TRef _), (TRawPtr _ | TRef _) ->
+            let p1 = Typed.cast_ptr_f v1 and p2 = Typed.cast_ptr_f v2 in
+            Core.eval_ptr_binop op p1 p2
+        | ( (TRawPtr (pointee, _) | TRef (_, pointee, _)),
+            TLiteral ((TInt Isize | TUInt Usize) as lit) ) ->
+            assert (op = Offset);
+            let p1 = Typed.cast_ptr_f v1 in
+            let p, meta = Typed.Ptr.split p1 in
+            let off = Typed.cast_i Usize v2 in
+            let signed = Layout.is_signed lit in
+            let+ p' = Sptr.offset ~signed ~ty:pointee off p in
+            Typed.Ptr.mk_ptr_f p' meta
+        | TLiteral (TFloat fp), TLiteral (TFloat _) -> (
+            let v1 = Typed.cast_f fp v1 and v2 = Typed.cast_f fp v2 in
             match op with
-            | Offset ->
-                let p, meta = as_ptr p1 in
-                let off = as_base_i Usize p2 in
-                let ty = get_pointee (type_of_operand e1) in
-                let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
-                let signed = Layout.is_signed off_ty in
-                let+ p' = Sptr.offset ~signed ~ty off p in
-                Ptr (p', meta)
-            | _ ->
-                let+ res = Core.eval_ptr_binop op p1 p2 in
-                Int res)
-        | Float v1, Float v2 -> (
-            match op with
-            | Eq -> ok (Int (BV.of_bool (v1 ==.@ v2)))
-            | Ne -> ok (Int (BV.of_bool (Typed.not (v1 ==.@ v2))))
-            | Ge -> ok (Int (BV.of_bool (v1 >=.@ v2)))
-            | Gt -> ok (Int (BV.of_bool (v1 >.@ v2)))
-            | Lt -> ok (Int (BV.of_bool (v1 <.@ v2)))
-            | Le -> ok (Int (BV.of_bool (v1 <=.@ v2)))
-            | Add _ -> ok (Float (v1 +.@ v2))
-            | Sub _ -> ok (Float (v1 -.@ v2))
-            | Mul _ -> ok (Float (v1 *.@ v2))
-            | Div _ -> ok (Float (v1 /.@ v2))
-            | Rem _ -> ok (Float (Typed.Float.rem v1 v2))
+            | Eq -> ok (BV.of_bool (v1 ==.@ v2))
+            | Ne -> ok (BV.of_bool (Typed.not (v1 ==.@ v2)))
+            | Ge -> ok (BV.of_bool (v1 >=.@ v2))
+            | Gt -> ok (BV.of_bool (v1 >.@ v2))
+            | Lt -> ok (BV.of_bool (v1 <.@ v2))
+            | Le -> ok (BV.of_bool (v1 <=.@ v2))
+            | Add _ -> ok (v1 +.@ v2)
+            | Sub _ -> ok (v1 -.@ v2)
+            | Mul _ -> ok (v1 *.@ v2)
+            | Div _ -> ok (v1 /.@ v2)
+            | Rem _ -> ok (Typed.Float.rem v1 v2)
             | _ ->
                 Fmt.kstr not_impl "Unsupported float binary operator (%a)"
                   Expressions.pp_binop op)
-        | v1, v2 ->
+        | ty1, ty2 ->
             Fmt.kstr not_impl
-              "Unsupported values for binary operator (%a): %a / %a"
-              Expressions.pp_binop op pp_rust_val v1 pp_rust_val v2)
+              "Unsupported types for binary operator (%a %a %a): %a / %a" pp_ty
+              ty1 Expressions.pp_binop op pp_ty ty2 Typed.ppa v1 Typed.ppa v2)
     | NullaryOp (op, ty) -> (
         match op with
         | UbChecks ->
             (* See https://doc.rust-lang.org/std/intrinsics/fn.ub_checks.html
                Our execution already checks for UB, so we should return false,
                to indicate runtime UB checks aren't needed. *)
-            ok (Int (BV.of_bool Typed.v_false))
+            ok (BV.of_bool Typed.v_false)
         | OverflowChecks ->
             (* See
                https://doc.rust-lang.org/nightly/std/intrinsics/fn.overflow_checks.html
                Our execution already checks for overflows, so we don't need them
                at runtime. *)
-            ok (Int (BV.of_bool Typed.v_false))
+            ok (BV.of_bool Typed.v_false)
         | ContractChecks ->
             (* For now we don't do contracts. *)
-            ok (Int (BV.of_bool Typed.v_false))
-        | SizeOf ->
-            let+ size = Layout.size_of ty in
-            Int size
-        | AlignOf ->
-            let+ align = Layout.align_of ty in
-            Int (align :> T.sint Typed.t)
+            ok (BV.of_bool Typed.v_false)
+        | SizeOf -> Layout.size_of ty
+        | AlignOf -> Layout.align_of ty
         | OffsetOf (ty, variant, field) ->
             let variant = Option.value variant ~default:Types.VariantId.zero in
             let field = Types.FieldId.to_int field in
@@ -811,8 +820,7 @@ module Make (StateImpl : State.S) = struct
             let fields =
               Layout.Fields_shape.shape_for_variant variant layout.fields
             in
-            let inner_off = Layout.Fields_shape.offset_of field fields in
-            Int inner_off)
+            Typed.cast @@ Layout.Fields_shape.offset_of field fields)
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with
@@ -820,17 +828,17 @@ module Make (StateImpl : State.S) = struct
             let variants = Crate.as_enum adt in
             let+ variant_id = State.load_discriminant loc place.ty in
             let variant = Types.VariantId.nth variants variant_id in
-            Int (BV.of_literal variant.discriminant)
+            BV.of_literal variant.discriminant
         (* If a type doesn't have variants, return 0.
            https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
-        | _ -> ok (Int U8.(0s)))
+        | _ -> ok U8.(0s))
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
         let variants = Crate.as_enum adt in
         let variant = Types.VariantId.nth variants v_id in
         let discr = BV.of_literal variant.discriminant in
         let+ vals = eval_operand_list vals in
-        Enum (discr, vals)
+        Typed.Adt.mk_enum discr vals
     (* Union aggregate *)
     | Aggregate (AggregatedAdt (ty, None, Some field), ops) ->
         let op =
@@ -843,65 +851,58 @@ module Make (StateImpl : State.S) = struct
         let field = Types.FieldId.to_int field in
         let* layout = Layout.layout_of (TAdt ty) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
-        let+ op_blocks = Encoder.encode ~offset value (type_of_operand op) in
+        let+ op_blocks =
+          Value_codec.encode ~offset value (type_of_operand op)
+        in
         let op_blocks = Iter.to_list op_blocks in
-        Union op_blocks
+        Typed.Adt.mk_union op_blocks
     (* Struct aggregate *)
     | Aggregate (AggregatedAdt (adt, None, None), operands) ->
         let+ values = eval_operand_list operands in
-        Tuple values
+        Typed.Adt.mk_tuple values
     (* Invalid aggregate (not sure, but seems like it) *)
-    | Aggregate ((AggregatedAdt _ as v), _) ->
-        Fmt.failwith "Invalid ADT aggregate kind: %a"
-          Expressions.pp_aggregate_kind v
+    | Aggregate (AggregatedAdt (_, Some _, Some _), _) ->
+        failwith "Invalid ADT aggregate kind"
     (* Array aggregate *)
     | Aggregate (AggregatedArray (_ty, _size), operands) ->
         let+ values = eval_operand_list operands in
-        Tuple values
+        Typed.Adt.mk_tuple values
     (* Raw pointer construction *)
     | Aggregate (AggregatedRawPtr (_, _), operands) ->
-        let* values = eval_operand_list operands in
-        let ptr, meta =
-          match values with
-          | [ ptr; meta ] -> (ptr, meta)
+        let* ptr, meta, meta_ty =
+          match operands with
+          | [ ptr_op; meta_op ] ->
+              let* ptr = eval_operand ptr_op in
+              let* meta = eval_operand meta_op in
+              ok (ptr, meta, type_of_operand meta_op)
           | _ -> failwith "Non-2 arguments in AggregatedRawPtr?"
         in
-        let* ptr =
-          match ptr with
-          | Ptr (ptr, _) -> ok ptr
-          | Int v ->
-              let v = Typed.cast_i Usize v in
-              ok (Sptr.of_address v)
-          | _ ->
-              Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
-                pp_rust_val ptr
-        in
-        (* we flatten the meta, to simplify processing stuff like
-           [std::ptr::DynMetadata] *)
+        let ptr = Typed.cast_ptr_f ptr in
+        let ptr = Typed.Ptr.ptr_of ptr in
         let+ meta =
-          match Rust_val.flatten meta with
-          | [] -> ok Thin
-          | [ Int meta ] -> ok (Len (Typed.cast_i Usize meta))
-          | [ Ptr (ptr, Thin) ] -> ok (VTable ptr)
+          match meta_ty with
+          | TAdt { id = TTuple; generics = { types = []; _ } } -> ok None
+          | TLiteral (TInt Isize | TUInt Usize) ->
+              ok (Some (Typed.cast_i Usize meta))
+          | TRawPtr _ | TRef _ -> ok (Some Typed.(Ptr.ptr_of @@ cast_ptr_f ptr))
           | elms ->
-              Fmt.kstr not_impl "Unexpected meta in AggregatedRawPtr: %a"
-                Fmt.(list ~sep:comma pp_rust_val)
-                elms
+              Fmt.kstr not_impl "unexpected meta type in AggregatedRawPtr: %a"
+                pp_ty meta_ty
         in
-        Ptr (ptr, meta)
+        Typed.Ptr.mk_ptr_f ptr meta
     (* Array repetition *)
     | Repeat (value, _, len) ->
         let+ value = eval_operand value in
         let len = int_of_constant_expr len in
         (* FIXME: this is horrible for large arrays! *)
         let els = List.init len (fun _ -> value) in
-        Tuple els
+        Typed.Adt.mk_tuple els
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) -> (
-        let* _, meta = resolve_place place in
-        match (meta, size_opt) with
+        let* ptr = resolve_place place in
+        match (Typed.Ptr.meta_of ptr, size_opt) with
         | _, Some size -> resolve_constant size
-        | Len len, None -> ok (Int len)
+        | Some len, None -> ok (Typed.cast_i Usize len)
         | _ -> not_impl "Unexpected len rvalue")
 
   and exec_stmt (stmt : UllbcAst.statement) : unit t =
@@ -912,7 +913,7 @@ module Make (StateImpl : State.S) = struct
     | Assign (place, rval) ->
         let* ptr = resolve_place_lazy place in
         let* v = eval_rvalue rval place.ty in
-        [%l.info "Assigning %a <- %a" pp_lazy_ptr ptr pp_rust_val v];
+        [%l.info "Assigning %a <- %a" pp_lazy_ptr ptr Typed.ppa v];
         store_lazy ptr place.ty v
     | StorageLive local ->
         let* store = get_env () in
@@ -934,7 +935,7 @@ module Make (StateImpl : State.S) = struct
         | Dead -> ok ())
     | Assert ({ cond; expected; check_kind = _ }, on_failure) ->
         let* cond = eval_operand cond in
-        let cond_int = as_base TBool cond in
+        let cond_int = Typed.cast_lit TBool cond in
         let cond_bool = BV.to_bool cond_int in
         let cond_bool = if expected then cond_bool else Typed.not cond_bool in
         let err =
@@ -951,14 +952,11 @@ module Make (StateImpl : State.S) = struct
         let* src = eval_operand src in
         let* dst = eval_operand dst in
         let* count = eval_operand count in
-        let src = as_ptr_or ~make:Sptr.of_address src in
-        let dst = as_ptr_or ~make:Sptr.of_address dst in
-        let count = as_base_i Usize count in
-        let* () =
-          with_env ~env:()
-          @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
-        in
-        ok ()
+        let src = Typed.cast_ptr_f src in
+        let dst = Typed.cast_ptr_f dst in
+        let count = Typed.cast_i Usize count in
+        with_env ~env:()
+        @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
     | PlaceMention place ->
         let+ _ = resolve_place place in
         ()
@@ -988,7 +986,7 @@ module Make (StateImpl : State.S) = struct
         in
         [%l.info
           "Executing function with arguments [%a]"
-            Fmt.(list ~sep:(any ", ") pp_rust_val)
+            Fmt.(list ~sep:(any ", ") Typed.ppa)
             args];
         let fun_exec =
           with_extra_call_trace ?name ~loc:terminator.span.data
@@ -1000,7 +998,7 @@ module Make (StateImpl : State.S) = struct
           ~f:(fun v ->
             let* ptr = resolve_place_lazy dest in
             [%l.info
-              "Returned %a <- %a from %a" Crate.pp_place dest pp_rust_val v
+              "Returned %a <- %a from %a" Crate.pp_place dest Typed.ppa v
                 Crate.pp_fn_operand func];
             let* () = store_lazy ptr dest.ty v in
             let block = UllbcAst.BlockId.nth body.body target in
@@ -1016,7 +1014,7 @@ module Make (StateImpl : State.S) = struct
     | Return ->
         let* ptr, ty = get_variable_lazy_and_ty Expressions.LocalId.zero in
         let* value = load_lazy ptr ty in
-        Encoder.ref_tys_in ty value ~init:() ~f:(fun () ptr_ty ptr ->
+        Value_codec.ref_tys_in ty value ~init:() ~f:(fun () ptr_ty ptr ->
             let pointee = get_pointee ptr_ty in
             let+ () = State.tb_load ptr pointee in
             (ptr, ()))
@@ -1027,20 +1025,15 @@ module Make (StateImpl : State.S) = struct
         | If (if_block, else_block) ->
             [%l.info
               "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
-                UllbcAst.pp_block_id else_block pp_rust_val discr];
-            let bool_discr =
-              match discr with
-              | Int discr -> BV.to_bool (Typed.cast_lit TBool discr)
-              | Ptr (ptr, _) -> Typed.not (Sptr.is_null ptr)
-              | _ -> failwith "Expected base value for if discriminant"
-            in
+                UllbcAst.pp_block_id else_block Typed.ppa discr];
+            let bool_discr = BV.to_bool (Typed.cast_lit TBool discr) in
             if%sat[@lname "if case"] [@rname "else case"] bool_discr then
               let block = UllbcAst.BlockId.nth body.body if_block in
               exec_block ~body block
             else
               let block = UllbcAst.BlockId.nth body.body else_block in
               exec_block ~body block
-        | SwitchInt (_, options, default) ->
+        | SwitchInt (lit, options, default) ->
             [%l.info
               "Switch options %a (else %a) for %a"
                 Fmt.(
@@ -1049,22 +1042,9 @@ module Make (StateImpl : State.S) = struct
                 (List.map
                    (fun (v, b) -> (Print.literal_to_string v, b))
                    options)
-                UllbcAst.pp_block_id default pp_rust_val discr];
-            let compare_discr =
-              match discr with
-              | Int discr -> fun (v, _) -> discr ==@ BV.of_literal v
-              | Ptr (ptr, _) ->
-                  fun (v, _) ->
-                    if Z.equal Z.zero (z_of_literal v) then Sptr.is_null ptr
-                    else failwith "Can't compare pointer with non-0 scalar"
-              | _ ->
-                  fun (v, _) ->
-                    Fmt.failwith
-                      "Didn't know how to compare discriminant %a with scalar \
-                       %s"
-                      pp_rust_val discr
-                      (Print.literal_to_string v)
-            in
+                UllbcAst.pp_block_id default Typed.ppa discr];
+            let discr = Typed.cast_lit lit discr in
+            let compare_discr = fun (v, _) -> discr ==@ BV.of_literal v in
             let*^ block = match_on options ~constr:compare_discr in
             let block = Option.fold ~none:default ~some:snd block in
             let block = UllbcAst.BlockId.nth body.body block in
@@ -1076,7 +1056,7 @@ module Make (StateImpl : State.S) = struct
         let fun_exec =
           with_extra_call_trace ~loc:terminator.span.data ~msg:"Drop"
           @@ with_env ~env:()
-          @@ exec_fun drop_fn [ Ptr place_ptr ]
+          @@ exec_fun drop_fn [ (place_ptr :> Typed.(T.any t)) ]
         in
         unwind_with fun_exec
           ~f:(fun _ ->
@@ -1125,9 +1105,9 @@ module Make (StateImpl : State.S) = struct
                    locals, and figure out why we need this in the first
                    place. *)
                 let protected_address =
-                  match (fundef.signature.output, value) with
-                  | (TRef (RStatic, _, _) | TRawPtr _), Ptr (addr, _) ->
-                      Some addr
+                  match fundef.signature.output with
+                  | TRef (RStatic, _, _) | TRawPtr _ ->
+                      Some (Typed.Ptr.ptr_of (Typed.cast_ptr_f value))
                   | _ -> None
                 in
                 let+ () = dealloc_stack ?protected_address protected in
@@ -1158,7 +1138,7 @@ module Make (StateImpl : State.S) = struct
 
   and exec_fun (fn : Fun_kind.t) args =
     match fn with
-    | Synthetic GenericDropInPlace -> ok (Tuple [])
+    | Synthetic GenericDropInPlace -> ok (Typed.Adt.mk_tuple [])
     | Real fundef ->
         let fn = Crate.get_fun fundef.id in
         exec_real_fun fn fundef.generics args
