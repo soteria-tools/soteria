@@ -265,8 +265,8 @@ module type S = sig
 
     val size_and_align_of_val :
       Types.ty ->
-      Typed.([< T.ptr_meta ] t) ->
-      (Typed.T.sint Typed.t * Typed.T.nonzero Typed.t, 'env) t
+      Typed.([< T.ptr_meta ] t) option ->
+      (Typed.([> T.sint ] t) * Typed.([> T.nonzero ] t), 'env) t
   end
 
   module Syntax : sig

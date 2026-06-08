@@ -37,8 +37,6 @@ type ptr = {
   tag : Ptr_tag.t option;
 } *)
 
-type full_ptr = T.sptr_t t * T.ptr_meta t option
-
 val t_ptr : unit -> [> T.sptr ] ty
 val t_loc : unit -> [> T.sloc ] ty
 val t_float : Types.float_type -> T.sfloat ty
@@ -58,6 +56,7 @@ val cast_ptr : [< T.any ] t -> [< T.sptr ] t
 val cast_ptr_f : [< T.any ] t -> [< T.sptr_f ] t
 val cast_ptr_t : [< T.any ] t -> [< T.sptr_t ] t
 val cast_adt : Types.type_decl_ref -> [< T.any ] t -> [> T.adt ] t
+val cast_any_adt : [< T.any ] t -> [> T.adt ] t
 
 (* helpers *)
 
@@ -137,7 +136,7 @@ module Ptr : sig
 
   (* full pointers *)
   val mk_ptr_f : [< T.sptr_t ] t -> [< T.ptr_meta ] t option -> [> T.sptr_f ] t
-  val split : [< T.sptr_f ] t -> full_ptr
+  val split : [< T.sptr_f ] t -> [< T.sptr_t ] t * [< T.ptr_meta ] t option
   val meta_of : [< T.sptr_f ] t -> [> T.ptr_meta ] t option
   val ptr_of : [< T.sptr_f ] t -> [> T.sptr_t ] t
   val cast_meta : [< T.any ] t -> [> T.ptr_meta ] t option
@@ -165,10 +164,19 @@ module Adt : sig
 
   (** Gets the blocks of this adt as a union; returns [None] if the ADT is not a
       union. *)
-  val as_union : [< T.adt ] t -> ([< T.any ] t * [< T.sint ] t) list option
+  val as_union : [< T.adt ] t -> ([> T.any ] t * [> T.sint ] t) list
+
+  val as_tuple : [< T.adt ] t -> [> T.any ] t list
 
   (**  *)
   val discriminant_of : [< T.adt ] t -> [< T.sint ] t
+
+  module Checked : sig
+    val mk_enum :
+      ty:Types.type_decl_ref -> string -> [< T.any ] t list -> [> T.adt ] t
+
+    val mk_struct : ty:Types.type_decl_ref -> [< T.any ] t list -> [> T.adt ] t
+  end
 end
 
 module Syntax : sig

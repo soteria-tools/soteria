@@ -304,9 +304,7 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         let adt = ty_as_adt ty in
         let value = Typed.cast_adt adt value in
         if Crate.is_union adt then
-          let blocks =
-            Option.get ~msg:"not a union?" @@ Typed.Adt.as_union value
-          in
+          let blocks = Typed.Adt.as_union value in
           ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
         else chain (iter_fields layout ty)
     | Array _ -> chain (iter_fields layout ty)
