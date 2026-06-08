@@ -4,6 +4,8 @@ from cliopts import ArgError, CliOpts, SuiteName
 from common import *
 from test_exclusions import KANI_EXCLUSIONS, MIRI_EXCLUSIONS
 
+# `T` and `TypeVar` come from `from common import *`.
+
 DynFlagFn = Optional[Callable[[Path], list[str]]]
 
 
@@ -21,8 +23,6 @@ KANI_PATH = get_env_path_or(
 MIRI_PATH = get_env_path_or(
     "MIRI_SUITE_PATH", (PWD / ".." / ".." / ".." / "miri" / "tests")
 )
-
-T = TypeVar("T")
 
 
 def determine_failure_expect(filepath: str) -> bool:
@@ -313,7 +313,7 @@ def custom(opts: CliOpts) -> TestConfig:
     }
 
 
-TEST_SUITES: dict[SuiteName, Callable[[CliOpts], TestConfig]] = {  # type: ignore
+TEST_SUITES: dict[SuiteName, Callable[[CliOpts], TestConfig]] = {
     "kani": kani,
     "miri": miri,
     "custom": custom,

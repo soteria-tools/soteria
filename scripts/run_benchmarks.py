@@ -41,6 +41,8 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
+from soteria_utils import GRAY, RESET
+
 SCRIPTS_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPTS_DIR.parent
 
@@ -52,7 +54,7 @@ HYPERFINE_RUNS = 10
 
 
 def log(msg: str) -> None:
-    print(f"[benchmarks] {msg}", flush=True)
+    print(f"{GRAY}[benchmarks]{RESET} {msg}", flush=True)
 
 
 def run(cmd: list[str], cwd: Optional[Path] = None, check: bool = False) -> int:

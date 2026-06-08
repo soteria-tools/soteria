@@ -20,6 +20,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from soteria_utils import success
+
 # github-action-benchmark writes `window.BENCHMARK_DATA = {…}` with no trailing
 # semicolon (ASI handles it). Accept either form, and use re.search so we don't
 # require a strict bound at position 0 either.
@@ -111,7 +113,7 @@ def main() -> None:
         )
 
     args.output.write_text("\n".join(lines).strip() + "\n")
-    print(f"[compare] wrote {args.output} ({len(current)} benchmark(s))")
+    success(f"wrote {args.output} ({len(current)} benchmark(s))")
 
 
 if __name__ == "__main__":

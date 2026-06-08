@@ -5,6 +5,7 @@ import sys
 from typing import Iterable, Optional, Protocol, assert_never
 
 from common import *
+from test_exclusions import KNOWN_ISSUES
 
 
 def file_str(file_name: str, tool: ToolName):
