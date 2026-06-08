@@ -47,7 +47,7 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       x:Typed.([< T.any ] t) ->
       y:Typed.([< T.any ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Lowers in MIR to `Rvalue::Aggregate` with `AggregateKind::RawPtr`.
@@ -187,7 +187,7 @@ module M (StateM : State.StateM.S) = struct
       dst:Typed.([< T.sptr_f ] t) ->
       old:Typed.([< T.any ] t) ->
       src:Typed.([< T.any ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Stores a value if the current value is the same as the `old` value.
@@ -204,7 +204,7 @@ module M (StateM : State.StateM.S) = struct
       dst:Typed.([< T.sptr_f ] t) ->
       old:Typed.([< T.any ] t) ->
       src:Typed.([< T.any ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           An atomic fence.
@@ -524,7 +524,7 @@ module M (StateM : State.StateM.S) = struct
       multiplicand:Typed.([< T.any ] t) ->
       addend:Typed.([< T.any ] t) ->
       carry:Typed.([< T.any ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Carryless multiply.
@@ -734,7 +734,7 @@ module M (StateM : State.StateM.S) = struct
     val contract_check_ensures :
       c:Types.ty ->
       t_ret:Types.ty ->
-      cond:Typed.([< T.any ] t) ->
+      cond:Typed.([< T.adt ] t) ->
       ret:Typed.([< T.any ] t) ->
       Typed.([> T.any ] t) ret
 
@@ -1167,7 +1167,7 @@ module M (StateM : State.StateM.S) = struct
            [`FieldRepresentingType`]: crate::field::FieldRepresentingType
         ]} *)
     val field_representing_type_actual_type_id :
-      frt_type_id:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
+      frt_type_id:Typed.([< T.adt ] t) -> Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Converts with LLVM’s fptoui/fptosi, which may return undef for values out of range
@@ -1902,7 +1902,7 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       x:Typed.([< T.any ] t) ->
       y:Typed.([< T.any ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Returns `true` if the actual type given as `T` requires drop
@@ -1976,8 +1976,8 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       r:Types.ty ->
       f:Typed.([< T.any ] t) ->
-      workgroup_dim:Typed.([< T.any ] t) ->
-      thread_dim:Typed.([< T.any ] t) ->
+      workgroup_dim:Typed.([< T.adt ] t) ->
+      thread_dim:Typed.([< T.adt ] t) ->
       dyn_cache:Typed.([< T.sint ] t) ->
       args:Typed.([< T.any ] t) ->
       Typed.([> T.any ] t) ret
@@ -2553,7 +2553,7 @@ module M (StateM : State.StateM.S) = struct
 
            The more user-friendly version of this intrinsic is [`core::any::TypeId::size`].
         ]} *)
-    val size_of_type_id : id:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
+    val size_of_type_id : id:Typed.([< T.adt ] t) -> Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           The size of the referenced value in bytes.
@@ -2640,7 +2640,7 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       x:Typed.([< T.any ] t) ->
       y:Typed.([< T.any ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Does a three-way comparison between the two arguments,
@@ -2655,7 +2655,7 @@ module M (StateM : State.StateM.S) = struct
       t:Types.ty ->
       lhs:Typed.([< T.any ] t) ->
       rhss:Typed.([< T.any ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Reinterprets the bits of a value of one type as another type.
@@ -3004,8 +3004,8 @@ module M (StateM : State.StateM.S) = struct
            The stabilized version of this intrinsic is the [PartialEq] impl for [`core::any::TypeId`].
         ]} *)
     val type_id_eq :
-      a:Typed.([< T.any ] t) ->
-      b:Typed.([< T.any ] t) ->
+      a:Typed.([< T.adt ] t) ->
+      b:Typed.([< T.adt ] t) ->
       Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
@@ -3016,10 +3016,10 @@ module M (StateM : State.StateM.S) = struct
            [`FieldRepresentingType`]: crate::field::FieldRepresentingType
         ]} *)
     val type_id_field_representing_type :
-      id:Typed.([< T.any ] t) ->
+      id:Typed.([< T.adt ] t) ->
       variant_index:Typed.([< T.sint ] t) ->
       field_index:Typed.([< T.sint ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Gets the number of fields at the given `variant_index` represented by this `TypeId`.
@@ -3027,7 +3027,7 @@ module M (StateM : State.StateM.S) = struct
            The more user-friendly version of this intrinsic is [`core::any::TypeId::fields`].
         ]} *)
     val type_id_fields :
-      id:Typed.([< T.any ] t) ->
+      id:Typed.([< T.adt ] t) ->
       variant_index:Typed.([< T.sint ] t) ->
       Typed.([> T.sint ] t) ret
 
@@ -3036,7 +3036,7 @@ module M (StateM : State.StateM.S) = struct
 
            The more user-friendly version of this intrinsic is [`core::any::TypeId::variants`].
         ]} *)
-    val type_id_variants : id:Typed.([< T.any ] t) -> Typed.([> T.sint ] t) ret
+    val type_id_variants : id:Typed.([< T.adt ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
           Check if a type represented by a `TypeId` implements a trait represented by a `TypeId`.
@@ -3044,9 +3044,9 @@ module M (StateM : State.StateM.S) = struct
            not implement it. If it implements the trait the dyn metadata gets returned for vtable access.
         ]} *)
     val type_id_vtable :
-      id:Typed.([< T.any ] t) ->
-      trait:Typed.([< T.any ] t) ->
-      Typed.([> T.any ] t) ret
+      id:Typed.([< T.adt ] t) ->
+      trait:Typed.([< T.adt ] t) ->
+      Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Gets a static string slice containing the name of a type.
@@ -3065,7 +3065,7 @@ module M (StateM : State.StateM.S) = struct
            It can only be called at compile time, the backends do
            not implement it.
         ]} *)
-    val type_of : id:Typed.([< T.any ] t) -> Typed.([> T.any ] t) ret
+    val type_of : id:Typed.([< T.adt ] t) -> Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Non-overlapping *typed* swap of a single value.
@@ -3319,7 +3319,7 @@ module M (StateM : State.StateM.S) = struct
            This intrinsic exists only as a hook for Miri and constant evaluation, and is used to detect UB
            when a variable argument list is used incorrectly.
         ]} *)
-    val va_copy : src:Typed.([< T.sptr_f ] t) -> Typed.([> T.any ] t) ret
+    val va_copy : src:Typed.([< T.sptr_f ] t) -> Typed.([> T.adt ] t) ret
 
     (** {@markdown[
           Destroy the variable argument list `ap` after initialization with `va_start` (part of the

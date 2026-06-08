@@ -14,20 +14,20 @@ module M (StateM : State.StateM.S) = struct
   type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   module type S = sig
-    val _eprint : args:Typed.([< T.any ] t) -> unit ret
-    val _print : args:Typed.([< T.any ] t) -> unit ret
+    val _eprint : args:Typed.([< T.adt ] t) -> unit ret
+    val _print : args:Typed.([< T.adt ] t) -> unit ret
 
     val alloc_impl :
       self:Typed.([< T.sptr_f ] t) ->
-      layout:Typed.([< T.any ] t) ->
+      layout:Typed.([< T.adt ] t) ->
       zeroed:Typed.([< T.sbool ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
     val assert_failed_inner :
-      kind:Typed.([< T.any ] t) ->
+      kind:Typed.([< T.adt ] t) ->
       left:Typed.([< T.sptr_f ] t) ->
       right:Typed.([< T.sptr_f ] t) ->
-      args:Typed.([< T.any ] t) ->
+      args:Typed.([< T.adt ] t) ->
       unit ret
 
     (** {@markdown[
@@ -688,9 +688,9 @@ module M (StateM : State.StateM.S) = struct
            [The panic handler]: https://doc.rust-lang.org/reference/runtime.html#the-panic_handler-attribute
            [no_std]: https://doc.rust-lang.org/reference/names/preludes.html#the-no_std-attribute
         ]} *)
-    val handle_alloc_error : layout:Typed.([< T.any ] t) -> unit ret
+    val handle_alloc_error : layout:Typed.([< T.adt ] t) -> unit ret
 
-    val handle_error : e:Typed.([< T.any ] t) -> unit ret
+    val handle_error : e:Typed.([< T.adt ] t) -> unit ret
     val option_unwrap_failed : unit -> unit ret
 
     (** {@markdown[
@@ -706,7 +706,7 @@ module M (StateM : State.StateM.S) = struct
            on (e.g.) the inlining of other functions as possible), by moving
            the actual formatting into this shared place.
         ]} *)
-    val panic_fmt : fmt:Typed.([< T.any ] t) -> unit ret
+    val panic_fmt : fmt:Typed.([< T.adt ] t) -> unit ret
 
     (** {@markdown[
           Like `panic_fmt`, but for non-unwinding panics.
@@ -714,19 +714,19 @@ module M (StateM : State.StateM.S) = struct
            Has to be a separate function so that it can carry the `rustc_nounwind` attribute.
         ]} *)
     val panic_nounwind_fmt :
-      fmt:Typed.([< T.any ] t) ->
+      fmt:Typed.([< T.adt ] t) ->
       force_no_backtrace:Typed.([< T.sbool ] t) ->
       unit ret
 
     val print_to :
       t:Types.ty ->
-      args:Typed.([< T.any ] t) ->
+      args:Typed.([< T.adt ] t) ->
       global_s:Typed.([< T.sptr_f ] t) ->
       label:Typed.([< T.sptr_f ] t) ->
       unit ret
 
     val print_to_buffer_if_capture_used :
-      args:Typed.([< T.any ] t) -> Typed.([> T.sbool ] t) ret
+      args:Typed.([< T.adt ] t) -> Typed.([> T.sbool ] t) ret
 
     val result_unwrap_failed :
       msg:Typed.([< T.sptr_f ] t) -> error:Typed.([< T.sptr_f ] t) -> unit ret

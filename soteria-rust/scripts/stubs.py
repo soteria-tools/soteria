@@ -184,6 +184,7 @@ InterpTypeBase = Literal[
     "bool",
     "float",
     "ptr",
+    "adt",
     "unknown",
     "fun_exec",
     "meta_ty",
@@ -242,8 +243,12 @@ def type_of(unique_ty: UniqueType) -> InterpType:
     if "Adt" in ty:
         if ty["Adt"]["id"] == "Tuple" and len(ty["Adt"]["generics"]["types"]) == 0:
             return "unit", None
+        return "adt", None
 
-    ignored = ["TypeVar", "Adt", "TraitType", "Array"]
+    if "Array" in ty:
+        return "adt", None
+
+    ignored = ["TypeVar", "TraitType"]
     if any(kind in ty for kind in ignored):
         return "unknown", None
 
@@ -287,6 +292,7 @@ input_type: dict[InterpTypeBase, str] = {
     "float": "Typed.([< T.sfloat ] t)",
     "bool": "Typed.([< T.sbool ] t)",
     "ptr": "Typed.([< T.sptr_f ] t)",
+    "adt": "Typed.([< T.adt ] t)",
     "unknown": "Typed.([< T.any ] t)",
     "fun_exec": "fun_exec",
     "meta_ty": "Types.ty",
@@ -303,6 +309,7 @@ output_type: dict[InterpTypeBase, str] = {
     "float": "Typed.([> T.sfloat] t)",
     "bool": "Typed.([> T.sbool] t)",
     "ptr": "Typed.([> T.sptr_f] t)",
+    "adt": "Typed.([> T.adt ] t)",
     "unknown": "Typed.([> T.any] t)",
 }
 
@@ -317,6 +324,8 @@ def input_type_cast(arg: str, ty: InterpType) -> str:
         return f"let {arg} = Typed.cast_ptr_f {arg} in "
     if ty[0] == "bool":
         return f"let {arg} = Typed.BitVec.to_bool (Typed.cast_lit TBool {arg}) in "
+    if ty[0] == "adt":
+        return f"let {arg} = Typed.cast_any_adt {arg} in "
     return ""
 
 

@@ -104,14 +104,14 @@ module M (StateM : State.StateM.S) = struct
            ```
         ]} *)
     val available_parallelism :
-      fun_sig:Types.fun_sig -> Typed.([> T.any ] t) ret
+      fun_sig:Types.fun_sig -> Typed.([> T.adt ] t) ret
 
     val getenv :
       fun_sig:Types.fun_sig ->
       k:Typed.([< T.sptr_f ] t) ->
-      Typed.([> T.any ] t) ret
+      Typed.([> T.adt ] t) ret
 
-    val hashmap_random_keys : fun_sig:Types.fun_sig -> Typed.([> T.any ] t) ret
-    val now : unit -> Typed.([> T.any ] t) ret
+    val hashmap_random_keys : fun_sig:Types.fun_sig -> Typed.([> T.adt ] t) ret
+    val now : unit -> Typed.([> T.adt ] t) ret
   end
 end
