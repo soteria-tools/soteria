@@ -6,7 +6,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open Syntax
 
   let hashmap_random_keys ~(fun_sig : Types.fun_sig) =
-    Encoder.nondet_valid fun_sig.output
+    map Typed.cast @@ Encoder.nondet_valid fun_sig.output
 
   (** Used on macOS to register thread local destructors; receives a function
       pointer and an argument. Should call the destructor with the argument at
@@ -36,6 +36,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
       HACK: we assume that hitting the environment never finds the variable
       we're looking for. Under-approximating behaviour. *)
   let getenv ~(fun_sig : Types.fun_sig) ~k:_ =
+    let out = Common.Charon_util.ty_as_adt fun_sig.output in
     let var_error_ty =
       match fun_sig.output with
       | TAdt { id = TAdtId id; _ } -> (
@@ -47,7 +48,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
               (PeInstantiated
                  { binder_value = { types = [ _string; var_error_ty ]; _ }; _ })
             ->
-              var_error_ty
+              Common.Charon_util.ty_as_adt var_error_ty
           | _ ->
               Fmt.failwith
                 "std::env::_var: unexpected type Result<_, VarError> (%a)"
@@ -65,9 +66,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let var_error =
       Typed.Adt.Checked.mk_enum ~ty:var_error_ty "NotPresent" []
     in
-    let res =
-      Typed.Adt.Checked.mk_enum ~ty:fun_sig.output "Err" [ var_error ]
-    in
+    let res = Typed.Adt.Checked.mk_enum ~ty:out "Err" [ var_error ] in
     StateM.ok res
 
   (** HACK: We under-approximate and always return 1. *)
@@ -77,10 +76,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     (* `NonZero(1)` *)
     let nonzero_one = Typed.Adt.mk_tuple [ one ] in
     (* `Ok(Nonzero(1))` *)
-    let res =
-      Typed.Adt.Checked.mk_enum ~ty:fun_sig.output "Ok" [ nonzero_one ]
-    in
-    StateM.ok res
+    let out = Common.Charon_util.ty_as_adt fun_sig.output in
+    ok (Typed.Adt.Checked.mk_enum ~ty:out "Ok" [ nonzero_one ])
 
   let now () =
     (* We need to return a Instant where

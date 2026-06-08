@@ -12,19 +12,16 @@ module M (StateM : State.StateM.S) = struct
 
   let exit args =
     match args with
-    | [ Int code ] ->
+    | [ code ] ->
+        let code = Typed.cast_i U32 code in
         if%sat code ==@ U32.(0s) then error `OkExit else error (`Exit code)
     | _ -> failwith "exit: invalid arguments"
 
-  let sysconf args =
-    match args with
-    | [ Int _ ] ->
-        (* https://man7.org/linux/man-pages/man3/sysconf.3.html
-         * It is basically ok to always return the i64 `-1` saying "I don't know"
-         *)
-        let ret = Typed.BitVec.u64i (-1) in
-        ok (Int ret)
-    | _ -> failwith "sysconf: invalid arguments"
+  let sysconf _args =
+    (* https://man7.org/linux/man-pages/man3/sysconf.3.html
+     * It is basically ok to always return the i64 `-1` saying "I don't know"
+     *)
+    ok (Typed.BitVec.u64i (-1))
 
   let[@inline] fn_to_stub = function Exit -> exit | Sysconf -> sysconf
 end

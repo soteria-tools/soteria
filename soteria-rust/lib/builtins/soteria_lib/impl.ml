@@ -8,23 +8,23 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let soteria_assert ~args =
     let to_assert, msg =
       match args with
-      | [ Int t; Ptr msg ] -> (Typed.cast_lit TBool t, msg)
+      | [ t; msg ] -> (Typed.cast_lit TBool t, Typed.cast_ptr_f msg)
       | _ -> failwith "to_assert with non-one arguments"
     in
-    if%sat Typed.not (Typed.BitVec.to_bool to_assert) then
+    if%sat Typed.(not (BV.to_bool to_assert)) then
       let* str = Core.parse_string msg in
       error (`FailedAssert str)
-    else ok unit_
+    else ok (Typed.Adt.mk_tuple [])
 
   let soteria_assume ~args =
     let to_assume =
       match args with
-      | [ Int t ] -> Typed.cast_lit TBool t
+      | [ t ] -> Typed.cast_lit TBool t
       | _ -> failwith "assume with non-one arguments"
     in
     [%l.debug "Assuming: %a\n" Typed.ppa to_assume];
     let+ () = assume [ Typed.BitVec.to_bool to_assume ] in
-    unit_
+    Typed.Adt.mk_tuple []
 
   let nondet_bytes ~types ~args:_ =
     let output =
@@ -35,10 +35,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     Encoder.nondet_valid output
 
   let soteria_panic ~args =
-    let* msg =
-      match args with [ Ptr msg ] -> Core.parse_string msg | _ -> ok None
-    in
-    error (`Panic msg)
+    match args with
+    | [ msg ] ->
+        let msg = Typed.cast_ptr_f msg in
+        let* msg = Core.parse_string msg in
+        error (`Panic msg)
+    | _ -> error (`Panic None)
 
   let kani_assert = soteria_assert
   let kani_assume = soteria_assume

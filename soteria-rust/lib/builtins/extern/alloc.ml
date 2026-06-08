@@ -30,69 +30,72 @@ module M (StateM : State.StateM.S) = struct
 
   (* NonNull<u8> is a struct { pointer: *const u8 is !null }. Extract the inner
      ptr. *)
-  let ptr_of_nonnull = function
-    | Tuple [ Ptr ptr ] -> ptr
-    | v -> Fmt.failwith "alloc: invalid NonNull argument: %a" pp_rust_val v
+  let ptr_of_nonnull nonull =
+    match Typed.Adt.as_tuple nonull with
+    | [ v ] -> Typed.cast_ptr_f v
+    | _ -> Fmt.failwith "alloc: invalid NonNull argument: %a" Typed.ppa nonull
 
-  let align_of_enum = function
-    | Tuple [ Enum (disc, []) ] -> disc
-    | Int align -> align
-    | v -> Fmt.failwith "alloc: invalid align argument: %a" pp_rust_val v
+  let align_of_enum align : [> T.nonzero ] Typed.t =
+    match Typed.Adt.as_tuple @@ Typed.cast align with
+    | [ align_enum ] ->
+        let as_enum = Typed.cast_any_adt align_enum in
+        let discr = Typed.Adt.discriminant_of as_enum in
+        Typed.cast @@ Typed.cast_i Usize discr
+    | v -> Fmt.failwith "alloc: invalid align argument: %a" Typed.ppa align
 
   let alloc ?(zeroed = false) args =
     let size, align =
       match args with
-      | [ Int size; align ] -> (size, align_of_enum align)
+      | [ size; align ] -> (Typed.cast_i Usize size, align_of_enum align)
       | _ -> failwith "alloc: invalid arguments"
     in
-    let align = Typed.cast_i Usize align in
-    let size = Typed.cast_i Usize size in
     let max_size = Layout.max_value_z (TInt Isize) in
     let max_size = Typed.BitVec.usize max_size in
     let* () =
       assert_ (Usize.(1s) <=@ align &&@ (size <=@ max_size)) `InvalidAlloc
     in
     let align = Typed.cast align in
-    let+ ptr = State.alloc_untyped ~zeroed ~size ~align () in
-    Ptr ptr
+    State.alloc_untyped ~zeroed ~size ~align ()
 
   let dealloc args =
-    let ((ptr_in, _) as ptr), size, align =
+    let ptr, size, align =
       match args with
-      | [ ptr_val; Int size; align ] ->
-          (ptr_of_nonnull ptr_val, size, align_of_enum align)
+      | [ ptr_val; size; align ] ->
+          (ptr_of_nonnull ptr_val, Typed.cast_i Usize size, align_of_enum align)
       | _ -> failwith "dealloc: invalid arguments"
     in
+    let ptr_in = Typed.Ptr.ptr_of ptr in
     let alloc_size, alloc_align = Sptr.allocation_info ptr_in in
     let* () =
       assert_ (alloc_align ==?@ align &&@ (alloc_size ==?@ size)) `InvalidFree
     in
     let+ () = State.free ptr in
-    Tuple []
+    Typed.Adt.mk_tuple []
 
   let realloc args =
     let ptr, old_size, align, size =
       match args with
-      | [ ptr; Int old_size; align; Int size ] ->
-          (ptr_of_nonnull ptr, old_size, align_of_enum align, size)
+      | [ ptr; old_size; align; size ] ->
+          ( ptr_of_nonnull ptr,
+            Typed.cast_i Usize old_size,
+            align_of_enum align,
+            Typed.cast_i Usize size )
       | _ -> failwith "realloc: invalid arguments"
     in
-    let ptr_in, _ = ptr in
+    let ptr_in = Typed.Ptr.ptr_of ptr in
     let prev_size, prev_align = Sptr.allocation_info ptr_in in
     let* () =
       assert_
         (prev_align ==?@ align &&@ (prev_size ==?@ old_size))
         `InvalidAlloc
     in
-    let align = Typed.cast align in
-    let size = Typed.cast_i Usize size in
     let* new_ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
     let copy_size = BV.min ~signed:false size prev_size in
     let* () = State.copy_nonoverlapping ~src:ptr ~dst:new_ptr ~size:copy_size in
     let+ () = State.free ptr in
-    Ptr new_ptr
+    Typed.cast new_ptr
 
-  let no_alloc_shim_is_unstable _ = ok (Tuple [])
+  let no_alloc_shim_is_unstable _ = ok (Typed.Adt.mk_tuple [])
   let error_handler _ = error `InvalidAlloc
 
   let[@inline] fn_to_stub = function

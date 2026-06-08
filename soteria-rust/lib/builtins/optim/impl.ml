@@ -17,25 +17,39 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   (* ---- alloc ---- *)
 
+  (** {@rust[
+        const fn alloc_impl(&self, layout: Layout, zeroed: bool)
+          -> Result<NonNull<[u8]>, AllocError> { ... }
+      ]} *)
   let alloc_impl ~self:_ ~layout ~zeroed =
     let zeroed = (zeroed :> Typed.T.sbool Typed.t) in
-    let zero = Usize.(0s) in
     let size, align =
-      match layout with
-      | Tuple [ Int size; Tuple [ Enum (align, []) ] ] ->
-          (Typed.cast_i Usize size, Typed.cast_i Usize align)
-      | _ -> Fmt.failwith "alloc_impl: invalid layout: %a" pp_rust_val layout
+      let layout = Typed.cast_any_adt layout in
+      match Typed.Adt.as_tuple layout with
+      | [ size; align ] -> (
+          let size = Typed.cast_i Usize size in
+          let align = Typed.cast_any_adt align in
+          match Typed.Adt.as_tuple align with
+          | [ align_enum ] ->
+              let align_enum = Typed.cast_any_adt align_enum in
+              let align = Typed.Adt.discriminant_of align_enum in
+              (size, Typed.cast_i Usize align)
+          | _ -> Fmt.failwith "alloc_impl: invalid layout: %a" Typed.ppa layout)
+      | _ -> Fmt.failwith "alloc_impl: invalid layout: %a" Typed.ppa layout
     in
-    let mk_res ptr len = Enum (zero, [ Tuple [ Ptr (ptr, Len len) ] ]) in
-    if%sat size ==@ zero then
+    let mk_res ptr len =
+      let ptr = Typed.Ptr.mk_ptr_f ptr (Some len) in
+      let nonnull = Typed.Adt.mk_tuple [ ptr ] in
+      Typed.Adt.mk_enum Usize.(0s) [ nonnull ]
+    in
+    if%sat size ==@ Usize.(0s) then
       let dangling = Sptr.of_address align in
-      ok (mk_res dangling zero)
+      ok (mk_res dangling Usize.(0s))
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
-      let+ ptr = Alloc.alloc ~zeroed [ Int size; Int align ] in
-      let ptr =
-        match ptr with Ptr (p, _) -> p | _ -> failwith "Expected Ptr"
-      in
+      let align = Typed.Adt.mk_tuple [ Typed.Adt.mk_enum align [] ] in
+      let+ ptr = Alloc.alloc ~zeroed [ size; align ] in
+      let ptr = Typed.Ptr.ptr_of ptr in
       mk_res ptr size
 
   let handle_alloc_error ~layout:_ = do_panic ()
@@ -115,7 +129,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let panic_nounwind_fmt ~fmt:_ ~force_no_backtrace:_ = do_panic ()
 
   let begin_panic ~m:_ ~msg =
-    match msg with Ptr msg -> do_panic ~msg () | _ -> do_panic ()
+    match Typed.get_ty msg with
+    | TExtension FullPtr -> do_panic ~msg:(Typed.cast msg) ()
+    | _ -> do_panic ()
 
   (* ---- I/O (no-ops) ---- *)
 
