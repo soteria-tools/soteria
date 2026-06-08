@@ -17,6 +17,8 @@ be easy to write, easy to read, highly customisable and efficient.
   during symbolic execution.
 - The {{!page-sym_state_ppx}sym_state PPX tutorial} explains how to derive
   symbolic state boilerplate.
+- The {{!page-abstr_ppx}abstr PPX tutorial} explains how to derive symbolic
+  abstraction boilerplate.
 
 {2 Library}
 

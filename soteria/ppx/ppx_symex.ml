@@ -43,3 +43,6 @@ let () =
 
 (* Register [@@deriving sym_state] *)
 let () = Sym_state.register ()
+
+(* Register [@@deriving abstr] *)
+let () = Abstr.register ()

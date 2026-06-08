@@ -1,0 +1,170 @@
+{1 Abstr PPX tutorial}
+
+This page explains how to use the [abstr] deriver to generate the boilerplate
+required by {e symbolic abstractions} — modules implementing the
+{{!Soteria.Data.Abstr.M.S_with_syn}[S_with_syn]} signature (and, optionally,
+{{!Soteria.Data.Abstr.M.Sem_eq}[Sem_eq]} and
+{{!Soteria.Data.Abstr.M.Simplifiable}[Simplifiable]}).
+
+{2 What it solves}
+
+A symbolic abstraction is a record holding symbolic values, paired with a
+{e syntactic} counterpart [syn] (where each symbolic value is replaced by an
+{{!Soteria.Symex.Value.Expr}[Expr.t]}). Implementing one means writing, field by
+field, the same handful of functions:
+
+- [fresh] — allocate a fresh value;
+- [to_syn] / [subst] — convert between the semantic ([t]) and syntactic ([syn])
+  representations;
+- [learn_eq] — learn the equalities relating a [syn] to a [t] in the consumer
+  monad;
+- [exprs_syn] — collect every expression of a [syn];
+- optionally [sem_eq] (semantic equality) and [simplify].
+
+The [abstr] deriver generates all of these from the record declaration.
+
+The code blocks below are illustrative and marked [skip]: the deriver rewrites the
+[type t] declaration through a whole-file preprocessing pass, which runs in normal
+builds but not in this page's [mdx] toplevel evaluation, so the blocks cannot be
+checked inline. The executable, checked examples live in the cram tests under
+[soteria/tests/ppx/abstr/].
+
+{2 Basic usage}
+
+Write [t] as a record whose fields are either other abstractions ([<Module>.t])
+or raw symbolic values ([_ Typed.t]), and derive:
+
+{@ocaml skip[
+  type t = {
+    f : V.t;
+    g : H.t;
+  }
+  [@@deriving abstr]
+]}
+
+{2 What gets generated}
+
+The deriver {b rewrites} the [t] declaration into an intermediate parametric
+record [abstr_raw], of which both [t] and [syn] are instances. This gives [t] and
+[syn] a single, shared set of field labels:
+
+{@ocaml skip[
+  type ('f, 'g) abstr_raw = { f : 'f; g : 'g }
+
+  type t = (V.t, H.t) abstr_raw
+  type syn = (V.syn, H.syn) abstr_raw
+
+  val pp : Format.formatter -> t -> unit
+  val show : t -> string
+  val pp_syn : Format.formatter -> syn -> unit
+  val show_syn : syn -> string
+
+  val fresh : unit -> t Symex.t
+  val to_syn : t -> syn
+  val subst : (Symex.Value.Expr.t -> 'a Symex.Value.t) -> syn -> t
+  val learn_eq : syn -> t -> (unit, 'a) Symex.Consumer.t
+  val exprs_syn : syn -> Symex.Value.Expr.t list
+]}
+
+Each non-concrete field becomes a type parameter of [abstr_raw]; [t] instantiates
+the parameters with the semantic types and [syn] with the syntactic ones.
+
+{2 Field kinds}
+
+Every record field is classified, and the generated bodies depend on its kind.
+
+{3 Abstraction fields ([<Module>.t])}
+
+A field of type [M.t], where [M] itself implements [S_with_syn], is handled by
+delegating to [M]'s functions: [M.fresh ()], [M.to_syn], [M.subst], [M.learn_eq],
+[M.exprs_syn] (and [M.sem_eq] / [M.simplify] when those are derived). In [syn]
+the field has type [M.syn].
+
+{3 Symbolic value fields ([_ Typed.t])}
+
+A field of type [<phantom> Typed.t] is a raw symbolic value. In [syn] its type
+becomes [Typed.Expr.t], and the generated code uses [Typed.Expr.of_value] /
+[Typed.Expr.subst], collects it as a singleton in [exprs_syn], uses
+[Consumer.learn_eq] for [learn_eq], and [Typed.sem_eq_untyped] for [sem_eq].
+
+[fresh] is {e best effort}: a field [sXXX Typed.t] is allocated with
+[Symex.nondet Typed.t_XXX] (the leading ['s'] of the phantom is dropped and
+prefixed with [t_], e.g. [sint Typed.t] uses [Typed.t_int]). If the resulting
+witness does not type-check (some witnesses take arguments), provide a [@fresh]
+override (see below).
+
+{3 Concrete fields ([@concrete])}
+
+A field annotated [@concrete] is treated as a plain, non-symbolic value:
+
+- [to_syn] / [subst] / [simplify] leave it unchanged (its type is identical in
+  [t] and [syn]);
+- [exprs_syn] contributes nothing;
+- [learn_eq] requires the two values to already be equal (using [( = )]),
+  failing with [Consumer.lfail (Typed.of_bool false)] otherwise;
+- [sem_eq] uses [Typed.of_bool (a = b)];
+- [fresh] cannot produce a value, so the {b whole} [fresh] function raises
+  (unless the field has a [@fresh] override).
+
+{@ocaml skip[
+  type t = {
+    address : sint Typed.t;
+    exposed : bool; [@concrete]
+  }
+  [@@deriving abstr { sem_eq = true }]
+]}
+
+Any other field type must be annotated [@concrete] (otherwise the deriver errors).
+
+{2 Deriver arguments}
+
+The deriver accepts an optional record payload. All keys are optional:
+
+{@ocaml skip[
+  [@@deriving abstr { sem_eq = true; simplify = true; value = Typed; symex = Rustsymex }]
+]}
+
+- [sem_eq] (default [false]) — also generate [sem_eq : t -> t -> Symex.Value.(sbool t)].
+- [simplify] (default [false]) — also generate [simplify : t -> t Symex.t].
+- [value] (default [Typed]) — the symbolic value module, providing [Expr],
+  [t_XXX] witnesses, [of_bool], [sem_eq_untyped] (all from the
+  {{!Soteria.Symex.Value.S}value signature}) and [Bool.and_].
+- [symex] (default [Rustsymex]) — the monad module, providing [Consumer],
+  [nondet], [return], [Syntax] and [simplify].
+
+Generated code refers to these modules by qualified path, so it does not depend
+on any [open]. The deriver may also be written [soteria.abstr].
+
+{2 Field attributes}
+
+Each field may carry attributes. They may be written bare, [abstr.]-prefixed or
+[soteria.abstr.]-prefixed (e.g. [@concrete], [@abstr.concrete],
+[@soteria.abstr.concrete]).
+
+- [@concrete] — mark the field concrete (see above).
+- [@fresh <e>], [@to_syn <e>], [@subst <e>], [@learn_eq <e>], [@exprs_syn <e>],
+  [@sem_eq <e>], [@simplify <e>] — override the corresponding function for that
+  field. The expression [<e>] {b replaces the function identifier} and is applied
+  to the same arguments as the default. For example, [@fresh H.fresh' ~arg]
+  generates [(H.fresh' ~arg) ()], and [@subst my_subst] generates
+  [my_subst sub field].
+- [@pp <e>] — printer for a concrete field, used by the generated [pp]/[show].
+  Without it, a few built-in types ([bool], [int], [string], [char], [float]) are
+  printed with the standard-library printer, and any other type prints as
+  [<opaque>].
+
+{@ocaml skip[
+  type t = {
+    a : V.t; [@fresh V.fresh] [@subst V.subst]
+    b : sint Typed.t; [@exprs_syn fun _ -> []]
+  }
+  [@@deriving abstr]
+]}
+
+{2 Requirements and limitations}
+
+- Only a record type named [t] is supported.
+- [fresh] for [_ Typed.t] fields is best effort; provide a [@fresh] override when
+  the derived witness is not directly usable.
+- A concrete field whose type is not a recognised built-in prints as [<opaque>]
+  unless given a [@pp] override.

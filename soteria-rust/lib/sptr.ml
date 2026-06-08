@@ -55,28 +55,8 @@ module DecayMap = struct
   end
 
   module Entry = struct
-    type t = { address : sint Typed.t; exposed : bool }
-    [@@deriving show { with_path = false }]
-
-    type syn = { address : Expr.t; exposed : bool }
-    [@@deriving show { with_path = false }]
-
-    let fresh () = failwith "No fresh for DecayMap.SM.Entry"
-
-    let to_syn ({ address; exposed } : t) =
-      { address = Expr.of_value address; exposed }
-
-    let sem_eq (s1 : t) (s2 : t) =
-      Typed.of_bool (s1.exposed = s2.exposed) &&@ (s1.address ==@ s2.address)
-
-    let learn_eq (s : syn) (st : t) =
-      if s.exposed <> st.exposed then Consumer.lfail Typed.v_false
-      else Consumer.learn_eq s.address st.address
-
-    let exprs_syn ({ address; exposed = _ } : syn) : Expr.t list = [ address ]
-
-    let subst s ({ address; exposed } : syn) : t =
-      { address = Expr.subst s address; exposed }
+    type t = { address : sint Typed.t; exposed : bool [@concrete] }
+    [@@deriving abstr { sem_eq = true }]
   end
 
   module EntryExcl = Soteria.Sym_states.Agree.Make (Rustsymex) (Entry)

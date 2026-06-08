@@ -1,0 +1,2 @@
+- only works on records
+- Which equal is used for concrete? Use `equal` except on base types, then use `=`.

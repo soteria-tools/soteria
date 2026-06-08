@@ -33,5 +33,13 @@
   ./logs/prelude.ml
   ./logs/simple.ml
   ./logs/err_function_payload.ml
-  ./logs/err_labelled.ml)
+  ./logs/err_labelled.ml
+  ./abstr/prelude.ml
+  ./abstr/simple.ml
+  ./abstr/concrete.ml
+  ./abstr/overrides.ml
+  ./abstr/sem_eq_simplify.ml
+  ./abstr/err_non_t.ml
+  ./abstr/err_non_record.ml
+  ./abstr/err_unknown_field.ml)
  (applies_to :whole_subtree))
