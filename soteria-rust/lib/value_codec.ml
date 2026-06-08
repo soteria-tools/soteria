@@ -237,7 +237,7 @@ struct
              https://github.com/rust-lang/unsafe-code-guidelines/issues/518 And
              a proper implementation is here:
              https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
-          let+ blocks = get_all (Typed.cast layout.size, offset) in
+          let+ blocks = get_all (Typed.cast_nonzero layout.size, offset) in
           Typed.Adt.mk_union blocks
     | Primitive, TFnDef _ -> ok (Typed.Adt.mk_zst ())
     | Primitive, TVar (Free id) ->
@@ -499,7 +499,8 @@ let check_validity ~check_ref ty value st =
 let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
     (v : Typed.([< T.cval ] t)) =
   match (from_ty, to_ty) with
-  | _, _ when Types.equal_literal_type from_ty to_ty -> Typed.cast v
+  | _, _ when Types.equal_literal_type from_ty to_ty ->
+      Typed.((v : [< T.cval ] t :> [> T.cval ] t))
   | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
       let sv = Typed.cast_f fty v in
       let signed = Layout.is_signed lit_ty in
@@ -540,7 +541,7 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
   (* here we use structural equality rather than float equality; this is
      intended. *)
   let+ () = assume [ bv_f ==@ f ] in
-  Typed.cast bv
+  Typed.((bv : T.sint t :> [> T.sint ] t))
 
 (** Transmutes a singular typed value, without splitting. This is under the
     assumption that [size_of to_ty = size_of v], and both are primitives
@@ -597,10 +598,10 @@ let rec nondet_raw :
   function
   | TLiteral (TFloat fp) ->
       let+ f = nondet (Typed.t_float fp) in
-      Ok (Typed.cast f)
+      Ok (f : Typed.(T.sfloat t) :> Typed.([> T.any ] t))
   | TLiteral lit ->
       let+ i = nondet (Typed.t_lit lit) in
-      Ok (Typed.cast i)
+      Ok (i : Typed.(T.sint t) :> Typed.([> T.any ] t))
   | (TRef (_, pointee, _) | TRawPtr (pointee, _))
     when not (Layout.is_dst pointee) ->
       let** { size; align; _ } = Layout.layout_of pointee in
@@ -620,7 +621,6 @@ let rec nondet_raw :
       | Enum [] -> vanish ()
       | Enum (v :: _ as variants) ->
           let* discr = nondet (Typed.t_lit (lit_ty_of_lit v.discriminant)) in
-          let discr : Typed.(T.sint t) = Typed.cast discr in
           let* variant =
             match_on variants ~constr:(fun v ->
                 BV.of_literal v.discriminant ==@ discr)
@@ -779,7 +779,7 @@ let rec size_and_align_of_val ~load_vtable ~t ~meta =
         let++ align = load_vtable `Align meta in
         let size = Typed.cast_i Usize size in
         let align = Typed.cast_i Usize align in
-        (size, Typed.cast align)
+        (size, Typed.cast_nonzero align)
     | TAdt { id = TTuple | TAdtId _; _ } ->
         let field_tys =
           match t with

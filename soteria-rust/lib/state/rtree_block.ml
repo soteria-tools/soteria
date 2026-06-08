@@ -84,7 +84,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           let ptr, meta = Typed.Ptr.split v in
           let* v = Sptr.decay ptr in
           match meta with
-          | None -> split_rval v at
+          | None -> split_rval (Typed.as_any v) at
           | Some meta -> (
               match%ty meta with
               | TBitVector _ -> split_rval (BV.concat v meta) at
@@ -125,7 +125,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       | Leaf ((Uninit | Zeros | Any | Unowned), _) ->
           return TB.Split_tree.(Leaf node, Leaf node)
       | Leaf (Init value, tb) ->
-          let+ vl, vr = split_rval (Typed.cast value) at in
+          let+ vl, vr = split_rval value at in
           let ll = Leaf (Init vl, tb) in
           let lr = Leaf (Init vr, tb) in
           TB.Split_tree.(Leaf ll, Leaf lr)
@@ -478,7 +478,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
 
   let check_owned (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) =
-    let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
+    let _, bound = Range.of_low_and_size ofs (size :> Typed.(T.sint t)) in
     with_bound_check bound (fun t -> ok ((), t))
 
   (* Memory operations *)
@@ -538,7 +538,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   let get_init_leaves (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) :
       (Typed.(T.any t * T.sint t) list, 'err, 'fix) SM.Result.t =
-    let ((_, bound) as range) = Range.of_low_and_size ofs (Typed.cast size) in
+    let ((_, bound) as range) =
+      Range.of_low_and_size ofs (size :> Typed.(T.sint t))
+    in
     with_bound_check bound (fun t ->
         let open DecayMap.SM.Syntax in
         let replace_node node = ok node in

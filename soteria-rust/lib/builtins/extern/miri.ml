@@ -39,7 +39,7 @@ module M (StateM : State.StateM.S) = struct
     | [ ptr; align ] ->
         let ptr = Typed.cast_ptr_f ptr in
         let ptr = Typed.Ptr.ptr_of ptr in
-        let align = Typed.cast @@ Typed.cast_i Usize align in
+        let align = Typed.cast_nonzero @@ Typed.cast_i Usize align in
         let* addr = Sptr.decay ptr in
         let+ () = assume [ (addr %@ align ==@ Usize.(0s)) ] in
         Typed.Adt.mk_tuple []

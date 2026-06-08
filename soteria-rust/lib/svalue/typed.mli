@@ -41,7 +41,7 @@ val t_ptr : unit -> [> T.sptr ] ty
 val t_loc : unit -> [> T.sloc ] ty
 val t_float : Types.float_type -> T.sfloat ty
 val t_usize : unit -> [> T.sint ] ty
-val t_lit : Types.literal_type -> [> T.sint | T.sfloat ] ty
+val t_lit : Types.literal_type -> [> T.sint ] ty
 val t_ptr_f : unit -> [> T.sptr_f ] ty
 val t_ptr_t : unit -> [> T.sptr_t ] ty
 

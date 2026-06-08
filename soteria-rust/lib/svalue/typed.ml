@@ -58,10 +58,7 @@ let t_usize () = t_int (8 * size_of_uint_ty Usize)
 
 let t_lit : Types.literal_type -> [> T.sint | T.sfloat ] ty = function
   | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
-  | TFloat F16 -> t_f16
-  | TFloat F32 -> t_f32
-  | TFloat F64 -> t_f64
-  | TFloat F128 -> t_f128
+  | TFloat _ -> failwith "t_lit: unexpected float literal type"
 
 let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
   t_float (float_precision ty)

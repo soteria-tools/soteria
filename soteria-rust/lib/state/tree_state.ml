@@ -414,16 +414,14 @@ module Make (Borrows : Tree_borrows.T) = struct
     let check (ptr : Typed.([< T.sptr_t ] t)) size =
       let open Block.SM.Syntax in
       let@ ofs = with_ptr Ghost ptr in
-      let+- _ =
-        Block.with_block (Tree_block.check_owned ofs (Typed.cast size))
-      in
+      let+- _ = Block.with_block @@ Tree_block.check_owned ofs size in
       `UBDanglingPointer
     in
     if%sat size ==@ Usize.(0s) then Result.ok ()
-    else if%sat size >$@ Usize.(0s) then check ptr size
+    else if%sat size >$@ Usize.(0s) then check ptr (Typed.cast_nonzero size)
     else
       let**^ ptr' = Sptr.raw_offset ptr size in
-      check ptr' Typed.(cast (BV.neg size))
+      check ptr' Typed.(cast_nonzero @@ BV.no_ovf_unsafe (BV.neg size))
 
   and check_non_dangling (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     let ptr, meta = Typed.Ptr.split ptr in
@@ -458,7 +456,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let** value = apply_parser ?ignore_borrow ptr parser in
     [%l.debug "Finished reading rust value %a" Typed.ppa value];
     let++ () = check_validity ~check_refs ty value in
-    (value : Typed.T.any Typed.t :> Typed.([> T.any ] t))
+    Typed.as_any value
 
   and load_discriminant (ptr : Typed.([< T.sptr_f ] t)) ty =
     let** () = check_ptr_align ptr ty in
@@ -841,7 +839,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ () = with_loc_err ~trace:"Borrow" () in
     let ptr_inner = Typed.Ptr.ptr_of ptr in
     match Typed.Ptr.tag_of ptr_inner with
-    | None -> Result.ok (Typed.cast ptr)
+    | None -> Typed.(Result.ok (ptr : [< T.sptr_f ] t :> [> T.sptr_f ] t))
     | Some tag ->
         let@ ofs = with_ptr Ghost ptr_inner in
         Block.borrow ?protect ptr tag ty ofs

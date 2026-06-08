@@ -891,7 +891,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let saturating_sub ~t ~a ~b = saturating (Sub OUB) ~t ~a ~b
 
   let select_unpredictable ~t:_ ~b ~true_val ~false_val =
-    if%sat Typed.cast b then ok @@ Typed.as_any true_val
+    if%sat (b :> Typed.(T.sbool t)) then ok @@ Typed.as_any true_val
     else ok @@ Typed.as_any false_val
 
   let size_of ~t = Layout.size_of t
