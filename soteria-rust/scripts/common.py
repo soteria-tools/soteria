@@ -3,74 +3,21 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Literal, Optional, TypeVar, cast
+# `cast` is re-exported for the scripts that rely on `from common import *`.
+from typing import Literal, Optional, TypeVar, cast  # noqa: F401
 
-# ------ Pretty printing ------
+# Make the shared utilities importable regardless of where this script is run
+# from: walk up to the repository root and add its `scripts/` directory to the
+# path, then re-export everything (colours, message levels, rainbow, pprint,
+# pptable, subprocess_run, ...) so `from common import *` keeps providing them.
+_dir = Path(__file__).resolve().parent
+while not (_dir / "scripts" / "soteria_utils.py").exists():
+    if _dir.parent == _dir:
+        raise RuntimeError("could not locate scripts/soteria_utils.py")
+    _dir = _dir.parent
+sys.path.insert(0, str(_dir / "scripts"))
 
-PURPLE = "\033[0;35m"
-RED = "\033[0;31m"
-ORANGE = "\033[38;5;208m"
-YELLOW = "\033[38;5;220m"
-GREEN = "\033[0;32m"
-CYAN = "\033[0;36m"
-BLUE = "\033[0;34m"
-MAGENTA = "\033[0;95m"
-GRAY = "\033[0;90m"
-BOLD = "\033[1m"
-RESET = "\033[0m"
-
-# if piping output, remove colors:
-NO_COLOR = not sys.stdout.isatty()
-if NO_COLOR:
-    PURPLE = RED = ORANGE = YELLOW = GREEN = CYAN = BLUE = GRAY = BOLD = RESET = ""
-
-
-rainbow_ = 0
-
-
-def inc_rainbow():
-    global rainbow_
-    rainbow_ += 1
-
-
-def rainbow():
-    if NO_COLOR:
-        return ""
-    return [
-        "\033[38;5;197m",
-        "\033[38;5;208m",
-        "\033[38;5;220m",
-        "\033[38;5;70m",
-        "\033[38;5;74m",
-        "\033[38;5;33m",
-        "\033[38;5;127m",
-    ][rainbow_ % 7]
-
-
-def pprint(*args, inc: bool = True, end="\n", **kwargs):
-    if NO_COLOR:
-        print("| ", end="")
-    else:
-        clr = rainbow()
-        print(f"{clr}|{RESET} ", end="")
-    print(*args, **kwargs, end=end + RESET)
-    if inc:
-        inc_rainbow()
-
-
-# displays a list of rows -- each cell is text and an optional color
-def pptable(rows: list[list[tuple[str, Optional[str]]]]):
-    cols = len(rows[0])
-    col_len = [max(len(row[i][0]) for row in rows) for i in range(cols)]
-    pad = "  "
-    for row in rows:
-        pprint(
-            pad.join(
-                (clr or "") + cell + RESET + " " * (col_len[i] - len(cell))
-                for i, (cell, clr) in enumerate(row)
-            ),
-        )
-
+from soteria_utils import *  # noqa: E402,F401,F403
 
 # ------ Shared types and definitions ------
 
@@ -163,13 +110,6 @@ class Outcome(enum.Enum):
 T = TypeVar("T")
 
 
-def get_env_path_or(key: str, fallback: Path) -> Path:
-    e = os.environ.get(key)
-    if e:
-        return Path(e).resolve()
-    return fallback.resolve()
-
-
 def dict_get_suffix(d: dict[str, T], key: str) -> Optional[T]:
     for k in d:
         if key.endswith(k):
@@ -219,53 +159,3 @@ def build_soteria():
     except subprocess.CalledProcessError:
         print(f"{RED}Soteria couldn't build")
         exit(1)
-
-
-def subprocess_run(
-    *popenargs, input=None, capture_output=False, timeout=None, check=False, **kwargs
-):
-    """
-    Patched version of subprocess.run, that uses a SIGTERM rather than a SIGKILL
-    to terminate on timeout.
-    """
-    from subprocess import (
-        PIPE,
-        CalledProcessError,
-        CompletedProcess,
-        Popen,
-        TimeoutExpired,
-    )
-
-    if input is not None:
-        if kwargs.get("stdin") is not None:
-            raise ValueError("stdin and input arguments may not both be used.")
-        kwargs["stdin"] = PIPE
-
-    if capture_output:
-        if kwargs.get("stdout") is not None or kwargs.get("stderr") is not None:
-            raise ValueError(
-                "stdout and stderr arguments may not be used " "with capture_output."
-            )
-        kwargs["stdout"] = PIPE
-        kwargs["stderr"] = PIPE
-
-    with Popen(*popenargs, **kwargs) as process:
-        try:
-            stdout, stderr = process.communicate(input, timeout=timeout)
-        except TimeoutExpired as _:
-            process.terminate()
-            # NOTE!!! HERE WE WINDOWS SHOULD BE HANDLED DIFFERENTLY
-            # POSIX _communicate already populated the output so
-            # far into the TimeoutExpired exception.
-            process.wait()
-            raise
-        except:  # Including KeyboardInterrupt, communicate handled that.
-            process.terminate()
-            # We don't call process.wait() as .__exit__ does that for us.
-            raise
-        retcode = cast(int, process.poll())
-        if check and retcode:
-            raise CalledProcessError(
-                retcode, process.args, output=stdout, stderr=stderr
-            )
-    return CompletedProcess(process.args, retcode, stdout, stderr)

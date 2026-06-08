@@ -357,7 +357,7 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
 
     log = log.open("a")
 
-    results: dict[tuple[Path, SuiteName], Benchmark] = {}  # type: ignore
+    results: dict[tuple[Path, SuiteName], Benchmark] = {}
     interrupts = 0
 
     def run_benchmark(opts: CliOpts):
@@ -498,7 +498,7 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
     survival_for("miri")
 
     # Make the table for console output
-    pretty_table = [
+    pretty_table: list[list[tuple[str, Optional[str]]]] = [
         [
             ("Tool", BOLD),
             ("Kani", BOLD),

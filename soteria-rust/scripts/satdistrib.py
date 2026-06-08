@@ -20,9 +20,10 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-import math
 from statistics import mean, median, pstdev
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # ty: ignore[unresolved-import]  # optional plotting dep
+
+from common import error, warning
 
 CHECK_SAT_RE = re.compile(
     r"^\s*\(check-sat\).*->\s*(sat|unsat)(?:\s*\(\s*([\d.]+)ms\s*\))?", re.IGNORECASE
@@ -49,9 +50,8 @@ def parse_times_from_file(path: str):
                     times.append(t)
                 except ValueError:
                     # fallback: treat unparsable as 0 and continue
-                    print(
-                        f"Warning: couldn't parse time on line {lineno}: {raw.strip()}",
-                        file=sys.stderr,
+                    warning(
+                        f"couldn't parse time on line {lineno}: {raw.strip()}"
                     )
                     times.append(0.0)
     return times
@@ -187,7 +187,7 @@ def main():
 
     times = parse_times_from_file(args.logfile)
     if not times:
-        print("No (check-sat) entries found in file.", file=sys.stderr)
+        error("No (check-sat) entries found in file.")
         sys.exit(1)
 
     print_stats(times)
@@ -197,7 +197,7 @@ def main():
             times, bins=bins, logx=args.logx, save_path=args.save, show=not args.no_show
         )
     except Exception as e:
-        print("Error while plotting:", e, file=sys.stderr)
+        error(f"Error while plotting: {e}")
         sys.exit(2)
 
 

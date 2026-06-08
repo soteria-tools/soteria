@@ -79,7 +79,7 @@ def parse_flags() -> CliOpts:
         raise ArgError("missing command")
     arg = sys.argv.pop(0)
     if arg in SUITE_NAMES:
-        opts["cmd"] = ("exec", (arg,))
+        opts["cmd"] = ("exec", (cast(SuiteName, arg),))
     elif arg == "all":
         opts["cmd"] = ("all", ())
     elif arg == "eval":
@@ -88,7 +88,7 @@ def parse_flags() -> CliOpts:
         suite = sys.argv.pop(0)
         if suite not in SUITE_NAMES:
             raise ArgError("invalid test suite name, expected kani or miri")
-        opts["cmd"] = ("eval", (suite, 5))
+        opts["cmd"] = ("eval", (cast(SuiteName, suite), 5))
     elif arg == "eval-diff":
         if len(sys.argv) < 2:
             raise ArgError("missing paths to two evaluation CSV files")

@@ -1,28 +1,24 @@
 """Utility functions for Soteria C scripts."""
 
+import subprocess
 import sys
-import os
 from abc import ABC, abstractmethod
+from collections import Counter
 from pathlib import Path
 from typing import Any
-from collections import Counter
 
-PURPLE = "\033[0;35m"
-RED = "\033[0;31m"
-ORANGE = "\033[38;5;208m"
-YELLOW = "\033[38;5;220m"
-GREEN = "\033[0;32m"
-CYAN = "\033[0;36m"
-BLUE = "\033[0;34m"
-MAGENTA = "\033[0;95m"
-GRAY = "\033[0;90m"
-BOLD = "\033[1m"
-RESET = "\033[0m"
+# Make the shared utilities importable regardless of where this script is run
+# from: walk up to the repository root and add its `scripts/` directory to the
+# path, then re-export everything (colours, message levels, ...) so
+# `from utils import *` keeps providing them.
+_dir = Path(__file__).resolve().parent
+while not (_dir / "scripts" / "soteria_utils.py").exists():
+    if _dir.parent == _dir:
+        raise RuntimeError("could not locate scripts/soteria_utils.py")
+    _dir = _dir.parent
+sys.path.insert(0, str(_dir / "scripts"))
 
-# if piping output, remove colors:
-NO_COLOR = not sys.stdout.isatty()
-if NO_COLOR:
-    PURPLE = RED = ORANGE = YELLOW = GREEN = CYAN = BLUE = GRAY = BOLD = RESET = ""
+from soteria_utils import *  # noqa: E402,F401,F403
 
 
 class PrintersMixin(ABC):
@@ -34,20 +30,20 @@ class PrintersMixin(ABC):
         print(f"{self.print_prefix()}{message}")
 
     def print_info(self, message: str):
-        self.print_message(f"{CYAN}{message}{RESET}")
+        self.print_message(fmt_info(message))
 
     def print_warning(self, message: str):
-        self.print_message(f"{YELLOW}{message}{RESET}")
+        self.print_message(fmt_warning(message))
 
     def print_error(self, message: str):
-        self.print_message(f"{RED}{message}{RESET}")
+        self.print_message(fmt_error(message))
 
     def print_success(self, message: str):
-        self.print_message(f"{GREEN}{message}{RESET}")
+        self.print_message(fmt_success(message))
 
     def run_command(self, cmd: str):
         self.print_message(f"{MAGENTA}Running: {cmd}{RESET}")
-        os.system(cmd)
+        subprocess.run(cmd, shell=True)
 
 
 class GlobalPrinter(PrintersMixin):
@@ -159,10 +155,3 @@ def merge_stats(stats1: dict[str, Any], stats2: dict[str, Any]) -> dict[str, Any
             result[key] = stats2[key]
 
     return result
-
-
-def ask_and_remove(path: Path):
-    if path.exists():
-        response = input(f"Are you sure you want to remove '{path}'? (y/N): ")
-        if response.lower() in ["y", "yes"]:
-            os.system(f"rm -rf {str(path)}")
