@@ -31,16 +31,16 @@ module M (StateM : State.StateM.S) = struct
   (* NonNull<u8> is a struct { pointer: *const u8 is !null }. Extract the inner
      ptr. *)
   let ptr_of_nonnull nonull =
-    match Typed.Adt.as_tuple @@ Typed.cast nonull with
+    match Typed.Adt.as_tuple @@ Typed.cast_any_adt nonull with
     | [ v ] -> Typed.cast_ptr_f v
     | _ -> Fmt.failwith "alloc: invalid NonNull argument: %a" Typed.ppa nonull
 
   let align_of_enum align : [> T.nonzero ] Typed.t =
-    match Typed.Adt.as_tuple @@ Typed.cast align with
+    match Typed.Adt.as_tuple @@ Typed.cast_any_adt align with
     | [ align_enum ] ->
         let as_enum = Typed.cast_any_adt align_enum in
         let discr = Typed.Adt.discriminant_of as_enum in
-        Typed.cast @@ Typed.cast_i Usize discr
+        Typed.cast_nonzero @@ Typed.cast_i Usize discr
     | v -> Fmt.failwith "alloc: invalid align argument: %a" Typed.ppa align
 
   let alloc ?(zeroed = false) args =
@@ -54,7 +54,6 @@ module M (StateM : State.StateM.S) = struct
     let* () =
       assert_ (Usize.(1s) <=@ align &&@ (size <=@ max_size)) `InvalidAlloc
     in
-    let align = Typed.cast align in
     State.alloc_untyped ~zeroed ~size ~align ()
 
   let dealloc args =
@@ -93,7 +92,7 @@ module M (StateM : State.StateM.S) = struct
     let copy_size = BV.min ~signed:false size prev_size in
     let* () = State.copy_nonoverlapping ~src:ptr ~dst:new_ptr ~size:copy_size in
     let+ () = State.free ptr in
-    Typed.cast new_ptr
+    Typed.as_any new_ptr
 
   let no_alloc_shim_is_unstable _ = ok (Typed.Adt.mk_tuple [])
   let error_handler _ = error `InvalidAlloc

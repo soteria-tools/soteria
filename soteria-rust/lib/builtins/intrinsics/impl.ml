@@ -38,7 +38,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     Typed.Ptr.mk_ptr_f dst' meta
 
   let offset ~ptr ~delta ~dst ~offset =
-    let dst, meta = Typed.Ptr.split @@ Typed.cast dst in
+    let dst, meta = Typed.Ptr.split @@ Typed.cast_ptr_f dst in
     let offset = Typed.cast_i Usize offset in
     let signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
     let+ dst' = Sptr.offset ~signed ~ty:ptr offset dst in
@@ -106,14 +106,14 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         let* new_ = Sptr.offset ~check:false ~signed:false src old_v in
         let new_ = Typed.Ptr.mk_ptr_f new_ None in
         let+ () = State.store dst t new_ in
-        Typed.cast old
+        Typed.as_any old
     | TLiteral lit, TLiteral lit' when Types.equal_literal_type lit lit' ->
         let src = Typed.cast_lit lit src in
         let old_v = Typed.cast_lit lit old in
         (* Wrapping add. *)
         let* new_ = Core.eval_lit_binop (Add OWrap) lit old_v src in
         let+ () = State.store dst t new_ in
-        Typed.cast old
+        Typed.as_any old
     | _ ->
         failwith
           "atomic_xadd: invalid types, expects to follow the rules of \
@@ -140,7 +140,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       ok (Typed.Adt.mk_tuple [ curr; BV.of_bool Typed.v_true ])
     else ok (Typed.Adt.mk_tuple [ curr; BV.of_bool Typed.v_false ])
 
-  let black_box ~t:_ ~dummy = ok @@ Typed.cast dummy
+  let black_box ~t:_ ~dummy = ok @@ Typed.as_any dummy
   let breakpoint () : unit ret = error `Breakpoint
 
   let bitreverse ~t ~x =
@@ -153,7 +153,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
-    ok @@ Typed.cast (aux bits)
+    ok @@ Typed.as_any (aux bits)
 
   let bswap ~t ~x =
     let lit = TypesUtils.ty_as_literal t in
@@ -167,7 +167,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
-    ok @@ Typed.cast (aux bytes)
+    ok @@ Typed.as_any (aux bytes)
 
   let caller_location () =
     (*
@@ -213,7 +213,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let@ () = with_alloc_kind ~kind:AnonConst in
     let* ptr = State.alloc_ty location_ty in
     let+ () = State.store ptr location_ty location in
-    Typed.cast ptr
+    (ptr : Typed.T.sptr_f Typed.t :> Typed.([> T.sptr_f ] t))
 
   let carrying_mul_add ~t ~u ~multiplier ~multiplicand ~addend ~carry =
     let t = TypesUtils.ty_as_literal t in
@@ -243,7 +243,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let catch_unwind ~(fun_exec : fun_exec) ~t_data:_ ~try_fn:try_fn_ptr ~data
       ~catch_fn:catch_fn_ptr =
-    let data = Typed.cast data in
+    let data = Typed.as_any data in
     let* trace = get_trace () in
     let[@inline] exec_fun msg fn args =
       with_extra_call_trace ~loc:(Trace.loc_or_default trace) ~msg
@@ -285,7 +285,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let cos_ fp x =
     let* () = floating_inaccuracy_warn () in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-    let res : [> T.sfloat ] Typed.t = Typed.cast res in
+    let res = Typed.cast_float res in
     let* to_assume =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
         ok [ Typed.Float.is_nan res ]
@@ -309,7 +309,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let sin_ fp x =
     let* () = floating_inaccuracy_warn () in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-    let res : [> T.sfloat ] Typed.t = Typed.cast res in
+    let res = Typed.cast_float res in
     let* to_assume =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
         ok [ Typed.Float.is_nan res ]
@@ -333,7 +333,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let pow_ fp _x _y =
     let* () = floating_inaccuracy_warn () in
     let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-    Typed.cast res
+    Typed.cast_float res
 
   let powf16 ~a ~x = pow_ F16 a x
   let powf32 ~a ~x = pow_ F32 a x
@@ -343,10 +343,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let powi_ fp x y =
     let* () = floating_inaccuracy_warn () in
     if%sat y ==@ U32.(0s) then ok (Typed.Float.mk fp "1.0")
-    else if%sat y ==@ U32.(1s) then ok (Typed.cast x)
+    else if%sat y ==@ U32.(1s) then ok (Typed.cast_float x)
     else
       let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-      Typed.cast res
+      Typed.cast_float res
 
   let powif16 ~a ~x = powi_ F16 a x
   let powif32 ~a ~x = powi_ F32 a x
@@ -360,10 +360,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       Typed.Float.is_infinite x
       ||@ (x ==.@ Typed.Float.mk fp "0.0")
       ||@ Typed.Float.is_nan x
-    then ok (Typed.cast x :> [> Typed.T.sfloat ] Typed.t)
+    then ok (Typed.cast_float x)
     else
       let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-      Typed.cast res
+      Typed.cast_float res
 
   let sqrtf16 ~x = sqrt_ F16 x
   let sqrtf32 ~x = sqrt_ F32 x
@@ -375,12 +375,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     if%sat
       Typed.Float.is_nan x
       ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.mk fp "0.0"))
-    then ok (Typed.cast x)
+    then ok (Typed.cast_float x)
     else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.mk fp "0.0")
     then ok (Typed.Float.mk fp "0.0")
     else
       let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-      let res : [> T.sfloat ] Typed.t = Typed.cast res in
+      let res = Typed.cast_float res in
       let+^ () = Rustsymex.assume [ res >.@ Typed.Float.mk fp "0.0" ] in
       res
 
@@ -405,7 +405,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     else if%sat x ==.@ exp then ok (Typed.Float.mk fp "1.0")
     else
       let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-      let res : [> T.sfloat ] Typed.t = Typed.cast res in
+      let res = Typed.cast_float res in
       let* to_assume =
         if%sat x <.@ exp then ok [ res <.@ Typed.Float.mk fp "1.0" ]
         else ok [ res >.@ Typed.Float.mk fp "1.0" ]
@@ -509,8 +509,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     else
       let size, overflowed = ty_size *?@ count in
       let* () = assert_not overflowed `Overflow in
-      let* () = Sptr.check_non_dangling_untyped src size in
-      let* () = Sptr.check_non_dangling_untyped dst size in
+      let* () = Sptr.check_non_dangling_untyped (Typed.Ptr.ptr_of src) size in
+      let* () = Sptr.check_non_dangling_untyped (Typed.Ptr.ptr_of dst) size in
       (* Here we can cheat a little: for copy_nonoverlapping we need to check
          for overlap, but otherwise the copy is the exact same; since the State
          makes a copy of the src tree before storing into dst, the semantics are
@@ -555,14 +555,16 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let ctpop ~t ~x =
     let concrete _bits x = BV.u32i @@ Z.popcount x in
     let symbolic bits x =
-      Iter.fold
-        (fun acc off ->
-          let bit = BV.extract off off x in
-          let bit32 = BV.extend ~signed:false 31 bit in
-          acc +!@ bit32)
-        U32.(0s)
-        Iter.(0 -- (bits - 1))
-      |> Typed.cast
+      let n =
+        Iter.fold
+          (fun acc off ->
+            let bit = BV.extract off off x in
+            let bit32 = BV.extend ~signed:false 31 bit in
+            acc +!@ bit32)
+          U32.(0s)
+          Iter.(0 -- (bits - 1))
+      in
+      (n : Typed.T.sint Typed.t :> Typed.([> T.sint ] t))
     in
     binary_int_operation ~concrete ~symbolic ~t ~x
 
@@ -661,10 +663,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let ( %@ ) = BV.rem ~signed:(Layout.is_signed lit) in
     let+ () =
       assert_
-        (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero))
+        (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast_nonzero y ==@ zero))
         (`StdErr "core::intrinsics::exact_div on non divisible")
     in
-    Typed.cast res
+    Typed.as_any res
 
   let fabs ~t ~x =
     let t = TypesUtils.ty_as_literal t in
@@ -774,7 +776,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* () =
       assert_not (size ==@ zero) (`Panic (Some "ptr_offset_from with ZST"))
     in
-    let size = Typed.cast size in
+    let size = Typed.cast_nonzero size in
     let ptr_in = Typed.Ptr.ptr_of ptr in
     let base_in = Typed.Ptr.ptr_of base in
     let* off = Sptr.distance ptr_in base_in in
@@ -782,8 +784,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* () =
       if%sat off ==@ zero then ok ()
       else
-        let* () = Sptr.check_non_dangling_untyped base off in
-        Sptr.check_non_dangling_untyped ptr (cast ~-off)
+        let* () = Sptr.check_non_dangling_untyped base_in off in
+        Sptr.check_non_dangling_untyped ptr_in (cast ~-off)
     in
     (* UB conditions:
      * 1. must be at the same address, OR derived from the same allocation
@@ -798,12 +800,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     (* we cast to ignore the overflow for MIN/-1, since the size can't be -1 *)
     if unsigned then
       let+ () =
-        assert_
-          (Typed.cast (off >=$@ zero))
+        assert_ (off >=$@ zero)
           (`StdErr "core::intrinsics::offset_from_unsigned negative offset")
       in
-      Typed.cast (off /$@ size)
-    else ok (Typed.cast (off /$@ size))
+      BV.no_ovf_unsafe (off /$@ size)
+    else ok (BV.no_ovf_unsafe (off /$@ size))
 
   let ptr_offset_from ~t ~ptr ~base =
     ptr_offset_from_ ~unsigned:false ~t ~ptr ~base
@@ -833,7 +834,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           let l = Typed.cast_i U8 l and r = Typed.cast_i U8 r in
           l ==@ r &&@ aux rest
     in
-    ok @@ Typed.cast (aux byte_pairs)
+    ok (aux byte_pairs : Typed.T.sbool Typed.t :> Typed.([> T.sbool ] t))
 
   let rotate_ ~(side : [ `Left | `Right ]) ~t ~x ~shift =
     let t = TypesUtils.ty_as_literal t in
@@ -856,7 +857,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           if bits <= 32 then BV.extract 0 (bits - 1) shift
           else BV.extend ~signed:false (bits - 32) shift
         in
-        let shift = Typed.cast @@ BV.rem ~signed:false shift bits' in
+        let shift = BV.no_ovf_unsafe @@ BV.rem ~signed:false shift bits' in
         let res =
           if side = `Left then x <<@ shift |@ (x >>@ bits' -!@ shift)
           else x >>@ shift |@ (x <<@ bits' -!@ shift)
@@ -890,8 +891,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let saturating_sub ~t ~a ~b = saturating (Sub OUB) ~t ~a ~b
 
   let select_unpredictable ~t:_ ~b ~true_val ~false_val =
-    if%sat Typed.cast b then ok @@ Typed.cast true_val
-    else ok @@ Typed.cast false_val
+    if%sat Typed.cast b then ok @@ Typed.as_any true_val
+    else ok @@ Typed.as_any false_val
 
   let size_of ~t = Layout.size_of t
 
@@ -953,7 +954,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let ity = TypesUtils.ty_as_literal t in
     let a = Typed.cast_lit ity a and b = Typed.cast_lit ity b in
     let+ res = Core.eval_lit_binop op ity a b in
-    Typed.cast res
+    Typed.as_any res
 
   let wrapping_add ~t ~a ~b = wrapping_op (Add OWrap) ~t ~a ~b
   let wrapping_mul ~t ~a ~b = wrapping_op (Mul OWrap) ~t ~a ~b
@@ -966,24 +967,23 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let size, overflowed = size *?@ count in
     let* () = assert_not overflowed `Overflow in
     if%sat size ==@ zero then ok ()
+    else (* if v == 0, then we can replace this mess by initialising a Zeros
+            subtree *)
+      if%sure
+      val_ ==@ U8.(0s)
+    then State.zeros dst size
     else
-      (* if v == 0, then we can replace this mess by initialising a Zeros
-         subtree *)
-      let val_ : [> T.sint ] Typed.t = Typed.cast val_ in
-      if%sure val_ ==@ U8.(0s) then State.zeros dst size
-      else
-        match BV.to_z size with
-        | Some bytes ->
-            let ptr = Typed.Ptr.ptr_of dst in
-            iter_iter
-              Iter.(0 -- (Z.to_int bytes - 1))
-              ~f:(fun i ->
-                let off = BV.usizei i in
-                let* ptr = Sptr.offset ~signed:false off ptr in
-                let ptr = Typed.Ptr.mk_ptr_f ptr None in
-                State.store ptr (TLiteral (TUInt U8)) val_)
-        | None ->
-            not_impl "write_bytes: don't know how to handle symbolic sizes"
+      match BV.to_z size with
+      | Some bytes ->
+          let ptr = Typed.Ptr.ptr_of dst in
+          iter_iter
+            Iter.(0 -- (Z.to_int bytes - 1))
+            ~f:(fun i ->
+              let off = BV.usizei i in
+              let* ptr = Sptr.offset ~signed:false off ptr in
+              let ptr = Typed.Ptr.mk_ptr_f ptr None in
+              State.store ptr (TLiteral (TUInt U8)) val_)
+      | None -> not_impl "write_bytes: don't know how to handle symbolic sizes"
 
   let volatile_load ~t ~src = State.load src t
   let volatile_set_memory = write_bytes

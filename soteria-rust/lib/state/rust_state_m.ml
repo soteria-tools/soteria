@@ -129,7 +129,7 @@ module type S = sig
       Typed.([< T.sptr_f ] t) -> Types.ty -> (unit, 'env) monad
 
     val check_non_dangling_untyped :
-      Typed.([< T.sptr_f ] t) -> Typed.(T.sint t) -> (unit, 'env) monad
+      Typed.([< T.sptr_t ] t) -> Typed.(T.sint t) -> (unit, 'env) monad
 
     val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
     val decay : t -> (Typed.T.sint Typed.t, 'env) monad

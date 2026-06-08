@@ -58,6 +58,14 @@ val cast_ptr_t : [< T.any ] t -> [< T.sptr_t ] t
 val cast_adt : Types.type_decl_ref -> [< T.any ] t -> [> T.adt ] t
 val cast_any_adt : [< T.any ] t -> [> T.adt ] t
 
+(** Reinterprets an integer as known to be non-zero. The caller is responsible
+    for ensuring the value is indeed non-zero (e.g. an alignment). *)
+val cast_nonzero : [< T.sint ] t -> [> T.nonzero ] t
+
+(** Widens any value to the open [[> T.any]] type. Unlike {!cast}, this is a
+    checked coercion: it cannot change the underlying value's kind. *)
+val as_any : [< T.any ] t -> [> T.any ] t
+
 (* helpers *)
 
 (** [fields_of v] returns the fields of [v], if [v] is

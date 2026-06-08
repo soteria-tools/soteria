@@ -160,7 +160,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
         (* We calculate the max array size for a 32bit architecture, like Miri
            does. *)
         let isize_bits = 32 - 1 in
-        BV.usize Z.(one lsl isize_bits) /@ Typed.cast sub_size
+        BV.usize Z.(one lsl isize_bits) /@ Typed.cast_nonzero sub_size
       in
       let len = BV.of_constant_expr size in
       let** sub_layout = layout_of subty in
@@ -397,11 +397,11 @@ let normalise (ty : Types.ty) =
 
 let size_of ty =
   let++ { size; _ } = layout_of ty in
-  (Typed.cast size :> Typed.([> T.sint ] t))
+  (size : Typed.T.sint Typed.t :> Typed.([> T.sint ] t))
 
 let align_of ty =
   let++ { align; _ } = layout_of ty in
-  (Typed.cast align :> Typed.([> T.nonzero ] t))
+  (align : Typed.T.nonzero Typed.t :> Typed.([> T.nonzero ] t))
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero

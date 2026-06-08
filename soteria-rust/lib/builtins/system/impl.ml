@@ -6,7 +6,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open Syntax
 
   let hashmap_random_keys ~(fun_sig : Types.fun_sig) =
-    map Typed.cast @@ Value_codec.nondet_valid fun_sig.output
+    map Typed.cast_any_adt @@ Value_codec.nondet_valid fun_sig.output
 
   (** Used on macOS to register thread local destructors; receives a function
       pointer and an argument. Should call the destructor with the argument at

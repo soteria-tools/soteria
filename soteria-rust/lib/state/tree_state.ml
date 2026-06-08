@@ -358,9 +358,10 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   let with_ptr access ptr f = with_heap @@ Heap.with_ptr access ptr f
 
-  let uninit ((ptr, _) : Sptr.t * 'a) (ty : Types.ty) :
+  let uninit (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) :
       (unit, 'err, 'fix) Result.t =
     let@ () = with_loc_err ~trace:"Uninitialising memory" () in
+    let ptr = Typed.Ptr.ptr_of ptr in
     let* () = log "uninit" ptr in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr Write ptr in
@@ -376,7 +377,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       let** ptr' = Sptr.raw_offset ptr (ofs *!!@ field_size) in
       let ptr' = Typed.Ptr.mk_ptr_f ptr' None in
       let+ res, _ = load ~ignore_borrow:true ~check_refs:false ptr' usize st in
-      res
+      Compo_res.map Typed.cast res
     in
     lift @@ Value_codec.size_and_align_of_val ~load_vtable ~t ~meta
 
@@ -410,20 +411,19 @@ module Make (Borrows : Tree_borrows.T) = struct
     else Result.ok ()
 
   and check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
-    if%sat size ==@ Usize.(0s) then Result.ok ()
-    else
-      let** ptr, size =
-        if%sat size >$@ Usize.(0s) then Result.ok (ptr, size)
-        else
-          let++^ ptr' = Sptr.raw_offset ptr size in
-          (ptr', Typed.(cast (BV.neg size)))
-      in
+    let check (ptr : Typed.([< T.sptr_t ] t)) size =
       let open Block.SM.Syntax in
       let@ ofs = with_ptr Ghost ptr in
       let+- _ =
         Block.with_block (Tree_block.check_owned ofs (Typed.cast size))
       in
       `UBDanglingPointer
+    in
+    if%sat size ==@ Usize.(0s) then Result.ok ()
+    else if%sat size >$@ Usize.(0s) then check ptr size
+    else
+      let**^ ptr' = Sptr.raw_offset ptr size in
+      check ptr' Typed.(cast (BV.neg size))
 
   and check_non_dangling (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     let ptr, meta = Typed.Ptr.split ptr in
@@ -444,15 +444,21 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     Value_codec.check_validity ~check_ref ty value
 
-  and load ?ignore_borrow ?(check_refs = true) (ptr : Typed.([< T.sptr_f ] t))
-      ty : (Typed.([> T.any ] t), Error.t, syn list) Result.t =
+  and load :
+      'a.
+      ?ignore_borrow:bool ->
+      ?check_refs:bool ->
+      ([< T.sptr_f ] as 'a) Typed.t ->
+      Types.ty ->
+      (Typed.([> T.any ] t), Error.t, syn list) Result.t =
+   fun ?ignore_borrow ?(check_refs = true) ptr ty ->
     let** () = check_ptr_align ptr ty in
     let ptr, meta = Typed.Ptr.split ptr in
     let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
     let** value = apply_parser ?ignore_borrow ptr parser in
     [%l.debug "Finished reading rust value %a" Typed.ppa value];
     let++ () = check_validity ~check_refs ty value in
-    value
+    (value : Typed.T.any Typed.t :> Typed.([> T.any ] t))
 
   and load_discriminant (ptr : Typed.([< T.sptr_f ] t)) ty =
     let** () = check_ptr_align ptr ty in
@@ -510,15 +516,17 @@ module Make (Borrows : Tree_borrows.T) = struct
   (** Performs a load at the tree borrow level, by updating the borrow state,
       without attempting to validate the values or checking uninitialised memory
       accesses; all of these are ignored. *)
-  let tb_load (ptr : Typed.([< T.sptr_t ] t)) ty =
+  let tb_load (ptr : Typed.([< T.sptr_f ] t)) ty =
     let@ () = with_loc_err ~trace:"Tree Borrow access" () in
     let**^ size = Layout.size_of ty in
-    tb_load_untyped ptr size
+    tb_load_untyped (Typed.Ptr.ptr_of ptr) size
 
   let store (ptr : Typed.([< T.sptr_f ] t)) ty sval :
       (unit, Error.with_trace, syn list) Result.t =
     let@ () = with_loc_err ~trace:"Memory store" () in
-    let**^ parts = Value_codec.encode ~offset:Usize.(0s) sval ty in
+    let**^ parts =
+      Value_codec.encode ~offset:Usize.(0s) (sval :> Typed.T.any Typed.t) ty
+    in
     if Iter.is_empty parts then Result.ok ()
     else
       let** () = check_ptr_align ptr ty in
@@ -570,7 +578,11 @@ module Make (Borrows : Tree_borrows.T) = struct
             let open Tree_block_decoder in
             (* first, we write *)
             let**^ parts =
-              DecayMap.SM.lift @@ Value_codec.encode ~offset:Usize.(0s) v from
+              DecayMap.SM.lift
+              @@ Value_codec.encode
+                   ~offset:Usize.(0s)
+                   (v :> Typed.T.any Typed.t)
+                   from
             in
             let** () =
               Result.iter_iter parts ~f:(fun (value, offset) ->
@@ -591,7 +603,7 @@ module Make (Borrows : Tree_borrows.T) = struct
            | Missing _ -> failwith "impossible : miss"))
     in
     let++ () = check_validity ~check_refs:true to_ value in
-    value
+    (value : Typed.T.any Typed.t :> Typed.([> T.any ] t))
 
   module Sptr = struct
     include Sptr
@@ -636,7 +648,9 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   let size_and_align_of_val ty meta =
     let@ () = with_loc_err ~trace:"Size and alignment check" () in
-    size_and_align_of_val ty meta
+    let++ size, align = size_and_align_of_val ty meta in
+    ( (size : Typed.T.sint Typed.t :> Typed.([> T.sint ] t)),
+      (align : Typed.T.nonzero Typed.t :> Typed.([> T.nonzero ] t)) )
 
   let load ?ignore_borrow ptr ty =
     let@ () = with_loc_err ~trace:"Memory load" () in
@@ -650,17 +664,18 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ () = with_loc_err ~trace:"Fake read" () in
     fake_read ptr ty
 
-  let copy_nonoverlapping ~src:(src, _) ~dst:(dst, _) ~size :
+  let copy_nonoverlapping ~(src : Typed.([< T.sptr_f ] t))
+      ~(dst : Typed.([< T.sptr_f ] t)) ~size :
       (unit, Error.with_trace, syn list) Result.t =
     let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
     let** tree_to_write =
-      let@ ofs = with_ptr Read src in
+      let@ ofs = with_ptr Read (Typed.Ptr.ptr_of src) in
       Block.with_block (fun tree_block ->
           let open DecayMap.SM.Syntax in
           let+ res, _ = Tree_block.get_raw_tree_owned ofs size tree_block in
           (res, tree_block))
     in
-    let@ ofs = with_ptr Write dst in
+    let@ ofs = with_ptr Write (Typed.Ptr.ptr_of dst) in
     Block.with_block
       (let open Tree_block.SM in
        let open Tree_block.SM.Syntax in
@@ -787,37 +802,46 @@ module Make (Borrows : Tree_borrows.T) = struct
     with_heap
       (Heap.wrap loc (Freeable_block_with_meta.wrap (Freeable_block.free ())))
 
-  let zeros (ptr, _) size =
+  let zeros (ptr : Typed.([< T.sptr_f ] t)) size =
     let@ () = with_loc_err ~trace:"Memory store (0s)" () in
+    let ptr = Typed.Ptr.ptr_of ptr in
     let* () = log "zeroes" ptr in
     let@ ofs = with_ptr Write ptr in
     Block.with_block (Tree_block.zero_range ofs size)
 
-  let store_str_global str ptr =
+  let store_str_global str (ptr : Typed.([< T.sptr_f ] t)) =
     let@ globals = with_globals_sym in
-    let globals = GlobMap.add (String str) ptr globals in
+    let globals =
+      GlobMap.add (String str) (ptr :> Typed.T.sptr_f Typed.t) globals
+    in
     Rustsymex.Result.ok ((), globals)
 
-  let store_global g ptr =
+  let store_global g (ptr : Typed.([< T.sptr_f ] t)) =
     let@ globals = with_globals_sym in
-    let globals = GlobMap.add (Global g) ptr globals in
+    let globals =
+      GlobMap.add (Global g) (ptr :> Typed.T.sptr_f Typed.t) globals
+    in
     Rustsymex.Result.ok ((), globals)
 
   let load_str_global str =
     let@ globals = with_globals_sym in
     let ptr = GlobMap.find_opt (String str) globals in
-    Rustsymex.Result.ok (ptr, globals)
+    Rustsymex.Result.ok
+      ( (ptr : Typed.T.sptr_f Typed.t option :> Typed.([> T.sptr_f ] t) option),
+        globals )
 
   let load_global g =
     let@ globals = with_globals_sym in
     let ptr = GlobMap.find_opt (Global g) globals in
-    Rustsymex.Result.ok (ptr, globals)
+    Rustsymex.Result.ok
+      ( (ptr : Typed.T.sptr_f Typed.t option :> Typed.([> T.sptr_f ] t) option),
+        globals )
 
   let borrow ?protect (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     let@ () = with_loc_err ~trace:"Borrow" () in
     let ptr_inner = Typed.Ptr.ptr_of ptr in
     match Typed.Ptr.tag_of ptr_inner with
-    | None -> Result.ok ptr
+    | None -> Result.ok (Typed.cast ptr)
     | Some tag ->
         let@ ofs = with_ptr Ghost ptr_inner in
         Block.borrow ?protect ptr tag ty ofs
@@ -951,10 +975,13 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ () = with_loc_err ~trace:"Accessing const generic" () in
     let@ const_generics = with_const_generics_sym in
     match Types.ConstGenericVarId.Map.find_opt id const_generics with
-    | Some v -> Result.ok (v, const_generics)
+    | Some v ->
+        Result.ok
+          ((v : Typed.T.any Typed.t :> Typed.([> T.any ] t)), const_generics)
     | None ->
         let++ v = Value_codec.nondet_valid ty in
-        (v, Types.ConstGenericVarId.Map.add id v const_generics)
+        ( (v : Typed.T.any Typed.t :> Typed.([> T.any ] t)),
+          Types.ConstGenericVarId.Map.add id v const_generics )
 
   let register_thread_exit callback =
     (* HACK: we cannot expect thread exit callbacks to miss with syn, because

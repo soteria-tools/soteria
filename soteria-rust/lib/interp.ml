@@ -304,7 +304,9 @@ module Make (StateImpl : State.S) = struct
                     (ptr_frag, BV.usizei ofs))
         in
         Typed.Adt.mk_union blocks
-    | CGlobal glob -> map Typed.cast @@ resolve_global glob
+    | CGlobal glob ->
+        let+ p = resolve_global glob in
+        Typed.as_any p
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
@@ -315,7 +317,7 @@ module Make (StateImpl : State.S) = struct
         let@ () = with_alloc_kind ~kind:AnonConst in
         let* ptr = State.alloc_ty expr.ty in
         let+ () = State.store ptr expr.ty v in
-        Typed.cast ptr
+        Typed.as_any ptr
     | CPtr _ ->
         Fmt.kstr not_impl "TODO: CPtr constant %a" Crate.pp_constant_expr const
     | CFnPtr _ ->
@@ -392,7 +394,7 @@ module Make (StateImpl : State.S) = struct
           match (meta, base.ty) with
           (* Array with static size *)
           | None, TArray (_, len) -> resolve_constant len
-          | Some len, TSlice _ -> ok (Typed.cast len)
+          | Some len, TSlice _ -> ok (Typed.as_any len)
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* idx = eval_operand idx in
@@ -415,7 +417,7 @@ module Make (StateImpl : State.S) = struct
           | None, TArray (ty, len) ->
               let+ len = resolve_constant len in
               (ty, len)
-          | Some len, TSlice ty -> ok (ty, Typed.cast len)
+          | Some len, TSlice ty -> ok (ty, Typed.as_any len)
           | _ -> Fmt.failwith "Index projection: unexpected arguments"
         in
         let* from = eval_operand from in
@@ -517,11 +519,12 @@ module Make (StateImpl : State.S) = struct
         perform_call fn
 
   (** Resolves a global into a *pointer* Rust value to where that global is *)
-  and resolve_global (glob : Types.global_decl_ref) =
+  and resolve_global (glob : Types.global_decl_ref) : Typed.([> T.sptr_f ] t) t
+      =
     let decl = Crate.get_global glob.id in
     let* v_opt = State.load_global glob.id in
     match v_opt with
-    | Some v -> ok (Typed.cast v)
+    | Some v -> ok v
     | None ->
         (* Same as with strings -- here we need to somehow cache where we store
            the globals *)
@@ -544,7 +547,7 @@ module Make (StateImpl : State.S) = struct
         [%l.info
           "Initialized global %a at %a to %a" Crate.pp_name decl.item_meta.name
             Typed.ppa ptr Typed.ppa v];
-        Typed.cast ptr
+        (ptr : Typed.T.sptr_f Typed.t :> Typed.([> T.sptr_f ] t))
 
   and eval_operand (op : Expressions.operand) =
     match op with
@@ -576,7 +579,9 @@ module Make (StateImpl : State.S) = struct
         in
         State.borrow ptr expr_ty
     (* Raw pointer *)
-    | RawPtr (place, _kind, _metadata) -> map Typed.cast @@ resolve_place place
+    | RawPtr (place, _kind, _metadata) ->
+        let+ p = resolve_place place in
+        Typed.as_any p
     | UnaryOp (op, e) -> (
         let* v = eval_operand e in
         let ty = type_of_operand e in
@@ -617,7 +622,7 @@ module Make (StateImpl : State.S) = struct
                 let* fptr = State.with_exposed v in
                 if%sat Typed.Ptr.is_null' @@ Typed.Ptr.ptr_of fptr then
                   error (`UBTransmute "null pointer for !null pattern")
-                else ok (Typed.cast fptr)
+                else ok (Typed.as_any fptr)
             | _, (TRef (_, to_ty, _) | TRawPtr (to_ty, _)) ->
                 if Layout.is_dst to_ty then ok v
                 else
@@ -742,7 +747,8 @@ module Make (StateImpl : State.S) = struct
                 ok (op ~signed v1 v2 |> BV.of_bool)
             | Eq | Ne ->
                 let+ res = Core.equality_check v1 v2 in
-                if op = Eq then Typed.cast res else BV.not_bool res
+                if op = Eq then Typed.as_any res
+                else Typed.as_any (BV.not_bool res)
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
                 Core.eval_lit_binop op ty v1 v2
             | AddChecked | SubChecked | MulChecked ->
@@ -820,7 +826,7 @@ module Make (StateImpl : State.S) = struct
             let fields =
               Layout.Fields_shape.shape_for_variant variant layout.fields
             in
-            Typed.cast @@ Layout.Fields_shape.offset_of field fields)
+            Typed.as_any @@ Layout.Fields_shape.offset_of field fields)
     | Discriminant place -> (
         let* loc = resolve_place place in
         match place.ty with

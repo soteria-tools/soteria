@@ -130,7 +130,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   let begin_panic ~m:_ ~msg =
     match Typed.get_ty msg with
-    | TExtension FullPtr -> do_panic ~msg:(Typed.cast msg) ()
+    | TExtension FullPtr -> do_panic ~msg:(Typed.cast_ptr_f msg) ()
     | _ -> do_panic ()
 
   (* ---- I/O (no-ops) ---- *)

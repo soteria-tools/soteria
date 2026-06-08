@@ -69,6 +69,9 @@ let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
 
+let as_any x = (x : [< T.any ] t :> [> T.any ] t)
+let cast_nonzero (x : [< T.sint ] t) : [> T.nonzero ] t = cast x
+
 let cast_lit ty (v : 'a t) : [> T.sint ] t =
   let size = 8 * size_of_literal_ty ty in
   cast (cast_checked ~ty:(t_int size) v)
