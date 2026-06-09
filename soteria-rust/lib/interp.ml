@@ -499,10 +499,7 @@ module Make (StateImpl : State.S) = struct
         match Store.try_load sp store with
         | Some (Value v) ->
             Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
-            (* a value read from the store skips the heap decoder, so we still
-               check its validity here, as [State.load] would *)
-            let+ () = State.check_validity ~check_refs:true ty v in
-            v
+            ok v
         | Some Uninit ->
             Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
             let* layout = Layout.layout_of ty in
