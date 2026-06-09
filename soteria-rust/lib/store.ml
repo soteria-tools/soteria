@@ -11,6 +11,7 @@ module Place = struct
     | Local of Expressions.local_id
     | Field of t * Expressions.field_proj_kind * Types.field_id
     | Index of t * int (* Store places only support concrete offsets *)
+    | Metadata of t (* The metadata "field" of a (possibly fat) pointer *)
 
   (** A simple place that lives on the store and doesn't need to be decayed to
       the heap for reading or writing. Almost identical to {!Expressions.place},
@@ -23,12 +24,13 @@ module Place = struct
     | Field (base, _, field) ->
         Fmt.pf ft "%a.%a" pp base Types.pp_field_id field
     | Index (base, idx) -> Fmt.pf ft "%a[%d]" pp base idx
+    | Metadata base -> Fmt.pf ft "%a.metadata" pp base
 
   (** Local root of the place *)
   let rec root p =
     match p.kind with
     | Local v -> v
-    | Field (base, _, _) | Index (base, _) -> root base
+    | Field (base, _, _) | Index (base, _) | Metadata base -> root base
 
   (** The root value [v] with the value at [sp] replaced by [f] applied to it;
       [None] if not navigable. *)
@@ -40,6 +42,8 @@ module Place = struct
           ~f:(Rust_val.update_field (Types.FieldId.to_int field) ~f)
           v
     | Index (base, idx) -> update_val base ~f:(Rust_val.update_field idx ~f) v
+    (* metadata isn't navigable for in-place writes; spill to the heap *)
+    | Metadata _ -> None
 
   let is_local p = match p.kind with Local _ -> true | _ -> false
 end
@@ -138,6 +142,20 @@ let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
       |> bind_value @@ function
          | Tuple vs -> Option.map (fun v -> Value v) (List.nth_opt vs idx)
          | _ -> None)
+  | Metadata base -> (
+      (* only extract metadata from a concrete pointer value; for anything else
+         (uninit, dead, spilled, ...) we fall back to the heap, which validates
+         the pointer before reading its metadata *)
+      match try_load base store with
+      | Some (Value (Ptr (_, meta))) ->
+          let v =
+            match meta with
+            | Thin -> Rust_val.unit_
+            | Len len -> Int len
+            | VTable vt -> Ptr (vt, Thin)
+          in
+          Some (Value v)
+      | _ -> None)
 
 let try_store (place : Place.t) store value =
   let open Syntaxes.Option in

@@ -338,15 +338,9 @@ module Make (StateImpl : State.S) = struct
     (* The metadata of a pointer type is just the second part of the pointer *)
     | PlaceProjection (base, PtrMetadata) ->
         let* ((ptr, _) as fptr) = resolve_place base in
-        let* () = State.fake_read fptr base.ty in
         [%l.debug
           "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty base.ty];
-        let+ ptr' =
-          Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
-            Usize.(1s)
-            ptr
-        in
-        (ptr', Thin)
+        project_metadata fptr ~base_ty:base.ty
     | PlaceProjection (base, Field (kind, field)) ->
         let* fptr = resolve_place base in
         [%l.debug
@@ -428,6 +422,17 @@ module Make (StateImpl : State.S) = struct
     let+ ptr' = Sptr.offset ~signed:false ~ty:result_ty idx ptr in
     (ptr', Thin)
 
+  (* Offsets [fptr] to its metadata; shared with [spill_store_place]. The whole
+     pointer is read to validate it, as the metadata alone may be a ZST. *)
+  and project_metadata ((ptr, _) as fptr) ~base_ty : full_ptr t =
+    let* () = State.fake_read fptr base_ty in
+    let+ ptr' =
+      Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
+        Usize.(1s)
+        ptr
+    in
+    (ptr', Thin)
+
   (** Builds the store place for [place], if it is a chain of projections
       (fields and constant indices) rooted at a local; [None] otherwise, in
       which case the place must be resolved to a heap pointer. *)
@@ -440,6 +445,9 @@ module Make (StateImpl : State.S) = struct
     | PlaceProjection (base, Field (kind, field)) ->
         let++ base = build_store_place base in
         Store.Place.{ kind = Field (base, kind, field); ty = place.ty }
+    | PlaceProjection (base, PtrMetadata) ->
+        let++ base = build_store_place base in
+        Store.Place.{ kind = Metadata base; ty = place.ty }
     | PlaceProjection (base, ProjIndex (idx, from_end)) -> (
         let** base_sp = build_store_place base in
         match base.ty with
@@ -471,6 +479,9 @@ module Make (StateImpl : State.S) = struct
     | Index (base, idx) ->
         let* fptr = spill_store_place base in
         project_index fptr ~idx:(BV.usizei idx) ~result_ty:ty
+    | Metadata base ->
+        let* fptr = spill_store_place base in
+        project_metadata fptr ~base_ty:base.ty
 
   and resolve_place_lazy (place : Expressions.place) : lazy_ptr t =
     let* sp = build_store_place place in

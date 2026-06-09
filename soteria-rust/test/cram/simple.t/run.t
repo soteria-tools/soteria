@@ -647,3 +647,13 @@ Test that indexing arrays with a constant index does not allocate; the value is 
   note: store_struct::main: done in <time>, ran 1 branch
   PC 1: empty
   
+
+
+Test that reading the metadata of a store-hosted pointer does not allocate; the pointer stays in the store.
+  $ check_allocs ptr_metadata.rs 0
+  Compiling... done in <time>
+  => Running ptr_metadata::main...
+  note: ptr_metadata::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+
