@@ -266,6 +266,20 @@ module type S = sig
         ('a, 'env) t
     end
   end
+
+  module OptionM : sig
+    type ('a, 'env) t = ('a option, 'env) monad
+
+    val ok : 'a -> ('a, 'env) t
+    val none : unit -> ('a, 'env) t
+    val bind : ('a -> ('b, 'env) t) -> ('a, 'env) t -> ('b, 'env) t
+    val map : ('a -> 'b) -> ('a, 'env) t -> ('b, 'env) t
+
+    module Syntax : sig
+      val ( let** ) : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
+      val ( let++ ) : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
+    end
+  end
 end
 
 module Make (State : State_intf.S) :
@@ -556,6 +570,20 @@ module Make (State : State_intf.S) :
         Rustsymex.if_sure ?left_branch_name ?right_branch_name guard
           ~then_:(fun () -> then_ () env state)
           ~else_:(fun () -> else_ () env state)
+    end
+  end
+
+  module OptionM = struct
+    type nonrec ('a, 'env) t = ('a option, 'env) t
+
+    let bind f x = bind (function Some v -> f v | None -> ok None) x
+    let map f x = map (Option.map f) x
+    let none () = ok None
+    let ok x = ok (Some x)
+
+    module Syntax = struct
+      let ( let** ) x f = bind f x
+      let ( let++ ) x f = map f x
     end
   end
 end

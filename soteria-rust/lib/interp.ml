@@ -21,9 +21,10 @@ module Make (StateImpl : State.S) = struct
   type 'a t = ('a, Sptr.t Store.t) StateM.t
   type 'err fun_exec = rust_val list -> (rust_val, unit) StateM.t
 
-  type lazy_ptr = Store of Expressions.local_id | Heap of full_ptr
+  type lazy_ptr = Store of Store.Place.t | Heap of full_ptr
   [@@deriving show { with_path = false }]
 
+  (** Spills a local variable onto the heap *)
   let get_variable_ptr var_id =
     let* store = get_env () in
     let binding = Store.find var_id store in
@@ -33,29 +34,32 @@ module Make (StateImpl : State.S) = struct
           "Variable %a has pointer %a" Expressions.pp_var_id var_id pp_full_ptr
             ptr];
         ok ptr
-    | Uninit ->
-        let* ptr = State.alloc_ty binding.ty in
-        let+ () = map_env (Store.declare_ptr var_id ptr) in
-        [%l.debug
-          "Variable %a was uninitialized, allocated pointer %a"
-            Expressions.pp_var_id var_id pp_full_ptr ptr];
-        ptr
-    | Value v ->
-        let* ptr = State.alloc_ty binding.ty in
-        let* () = State.store ptr binding.ty v in
-        let+ () = map_env (Store.declare_ptr var_id ptr) in
-        [%l.debug
-          "Variable %a had value, allocated pointer %a" Expressions.pp_var_id
-            var_id pp_full_ptr ptr];
-        ptr
     | Dead -> error `DeadVariable
+    | Uninit | Value _ ->
+        let* layout = Layout.layout_of binding.ty in
+        if%sat layout.size ==@ Usize.(0s) then
+          (* a ZST has no address; hand out a dangling pointer (à la
+             [NonNull::dangling]) and keep its value in the store *)
+          ok (Sptr.of_address (layout.align :> T.sint Typed.t), Thin)
+        else
+          let* ptr = State.alloc_ty binding.ty in
+          let* () =
+            match binding.kind with
+            | Value v -> State.store ptr binding.ty v
+            | _ -> ok ()
+          in
+          let+ () = map_env (Store.declare_ptr var_id ptr) in
+          [%l.debug
+            "Variable %a spilled to pointer %a" Expressions.pp_var_id var_id
+              pp_full_ptr ptr];
+          ptr
 
   let get_variable_lazy var_id =
     let* store = get_env () in
     let binding = Store.find var_id store in
     match binding.kind with
     | Stackptr ptr -> ok (Heap ptr)
-    | Uninit | Value _ -> ok (Store var_id)
+    | Uninit | Value _ -> ok (Store { kind = Local var_id; ty = binding.ty })
     | Dead -> error `DeadVariable
 
   let get_variable_lazy_and_ty var_id =
@@ -63,39 +67,9 @@ module Make (StateImpl : State.S) = struct
     let binding = Store.find var_id store in
     match binding.kind with
     | Stackptr ptr -> ok (Heap ptr, binding.ty)
-    | Uninit | Value _ -> ok (Store var_id, binding.ty)
+    | Uninit | Value _ ->
+        ok (Store { kind = Local var_id; ty = binding.ty }, binding.ty)
     | Dead -> error `DeadVariable
-
-  let load_lazy lazy_ptr ty : rust_val t =
-    Soteria.Stats.As_ctx.incr StatKeys.load_accesses;
-    match lazy_ptr with
-    | Store var_id -> (
-        let* store = get_env () in
-        let binding = Store.find var_id store in
-        match binding.kind with
-        | Value v ->
-            Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
-            ok v
-        | Uninit ->
-            Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
-            let* layout = Layout.layout_of ty in
-            if%sat layout.size ==@ Usize.(0s) then
-              let* ptr = get_variable_ptr var_id in
-              State.load ptr ty
-            else error `UninitializedMemoryAccess
-        | Dead -> error `DeadVariable
-        | Stackptr ptr -> State.load ptr ty)
-    | Heap ptr -> State.load ptr ty
-
-  let store_lazy lazy_ptr ty v : unit t =
-    match lazy_ptr with
-    | Store var_id -> map_env (Store.declare_value var_id v)
-    | Heap ptr -> State.store ptr ty v
-
-  let uninit_lazy lazy_ptr ty : unit t =
-    match lazy_ptr with
-    | Store var_id -> map_env (Store.declare_uninit var_id)
-    | Heap ptr -> State.uninit ptr ty
 
   (** [alloc_stack locals args] Allocates stack space for the locals in
       [locals], and initializes the arguments with [args]. Returns a list of
@@ -334,14 +308,14 @@ module Make (StateImpl : State.S) = struct
     | PlaceGlobal g -> resolve_global g
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
-        let* ptr = resolve_place base in
-        [%l.debug "Dereferencing ptr %a of %a" pp_full_ptr ptr pp_ty base.ty];
-        let* v = State.load ptr base.ty in
-        match v with
+        (* read the pointer value of [base] without spilling it to the heap *)
+        let* lazy_ptr = resolve_place_lazy base in
+        let* ptr = load_lazy lazy_ptr base.ty in
+        [%l.debug "Dereferencing %a of %a" pp_rust_val ptr pp_ty base.ty];
+        match ptr with
         | Ptr fptr -> (
             [%l.debug
-              "Dereferenced pointer %a to pointer %a" pp_full_ptr ptr
-                pp_full_ptr fptr];
+              "Dereferenced %a to pointer %a" pp_rust_val ptr pp_full_ptr fptr];
             let pointee = get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
@@ -366,47 +340,21 @@ module Make (StateImpl : State.S) = struct
         in
         (ptr', Thin)
     | PlaceProjection (base, Field (kind, field)) ->
-        let* ((ptr, meta) as fptr) = resolve_place base in
-        let* () = Sptr.check_aligned fptr base.ty in
+        let* fptr = resolve_place base in
         [%l.debug
           "Projecting field %a (kind %a) for %a" Types.pp_field_id field
-            Expressions.pp_field_proj_kind kind Sptr.pp ptr];
-        let field = Types.FieldId.to_int field in
-        let* layout = Layout.layout_of base.ty in
-        let fields =
-          match kind with
-          | ProjAdt (_, Some variant) ->
-              Layout.Fields_shape.shape_for_variant variant layout.fields
-          | ProjAdt (_, None) | ProjTuple _ -> layout.fields
-        in
-        let off = Layout.Fields_shape.offset_of field fields in
-        let* ptr' = Sptr.offset ~signed:false off ptr in
-        [%l.debug
-          "Projecting ADT %a, field %d, with pointer %a to pointer %a"
-            Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr'];
-        if Layout.is_dst place.ty then ok (ptr', meta) else ok (ptr', Thin)
+            Expressions.pp_field_proj_kind kind Sptr.pp (fst fptr)];
+        project_field fptr ~base_ty:base.ty ~kind ~field ~result_ty:place.ty
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
-        let* len =
-          match (meta, base.ty) with
-          (* Array with static size *)
-          | Thin, TArray (_, len) ->
-              let+ len = resolve_constant len in
-              as_base_i Usize len
-          | Len len, TSlice _ -> ok len
-          | _ -> Fmt.failwith "Index projection: unexpected arguments"
-        in
+        let* len = index_len ~meta ~base_ty:base.ty in
         let* idx = eval_operand idx in
         let idx = as_base_i Usize idx in
         let idx = if from_end then len -!@ idx else idx in
         let* () =
           assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty idx ptr in
-        [%l.debug
-          "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
-            Sptr.pp ptr'];
-        (ptr', Thin)
+        project_index (ptr, meta) ~idx ~result_ty:place.ty
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr, meta = resolve_place base in
         let* ty, len =
@@ -437,15 +385,156 @@ module Make (StateImpl : State.S) = struct
             Sptr.pp ptr' Typed.ppa slice_len];
         (ptr', Len slice_len)
 
-  and resolve_place_lazy (place : Expressions.place) : lazy_ptr t =
+  (* The length of an array or slice being indexed; used to bound-check. *)
+  and index_len ~meta ~base_ty =
+    match (meta, base_ty) with
+    | Thin, Types.TArray (_, len) ->
+        let+ len = resolve_constant len in
+        as_base_i Usize len
+    | Len len, TSlice _ -> ok len
+    | _ -> Fmt.failwith "Index projection: unexpected arguments"
+
+  and check_index_bounds ~idx ~meta ~base_ty =
+    let* len = index_len ~meta ~base_ty in
+    let* () = assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds in
+    ok ()
+
+  (* Offsets [fptr] to its [field]; shared with [resolve_store_place]. *)
+  and project_field ((ptr, meta) as fptr) ~base_ty ~kind ~field ~result_ty :
+      full_ptr t =
+    let* () = Sptr.check_aligned fptr base_ty in
+    let field = Types.FieldId.to_int field in
+    let* layout = Layout.layout_of base_ty in
+    let fields =
+      match (kind : Expressions.field_proj_kind) with
+      | ProjAdt (_, Some variant) ->
+          Layout.Fields_shape.shape_for_variant variant layout.fields
+      | ProjAdt (_, None) | ProjTuple _ -> layout.fields
+    in
+    let off = Layout.Fields_shape.offset_of field fields in
+    let* ptr' = Sptr.offset ~signed:false off ptr in
+    if Layout.is_dst result_ty then ok (ptr', meta) else ok (ptr', Thin)
+
+  (* Offsets [fptr] to its element [idx]; shared with [resolve_store_place]. *)
+  and project_index (ptr, _meta) ~idx ~result_ty : full_ptr t =
+    let+ ptr' = Sptr.offset ~signed:false ~ty:result_ty idx ptr in
+    (ptr', Thin)
+
+  (** Builds the store place for [place], if it is a chain of projections
+      (fields and constant indices) rooted at a local; [None] otherwise, in
+      which case the place must be resolved to a heap pointer. *)
+  and build_store_place (place : Expressions.place) :
+      (Store.Place.t, _) StateM.OptionM.t =
+    let open StateM.OptionM in
+    let open Syntax in
     match place.kind with
-    | PlaceLocal v ->
+    | PlaceLocal v -> ok Store.Place.{ kind = Local v; ty = place.ty }
+    | PlaceProjection (base, Field (kind, field)) ->
+        let++ base = build_store_place base in
+        Store.Place.{ kind = Field (base, kind, field); ty = place.ty }
+    | PlaceProjection (base, ProjIndex (idx, from_end)) -> (
+        let** base_sp = build_store_place base in
+        match base.ty with
+        | TArray _ -> (
+            let* idx = eval_operand idx in
+            let idx = as_base_i Usize idx in
+            let* len = index_len ~meta:Thin ~base_ty:base.ty in
+            let idx = if from_end then len -!@ idx else idx in
+            (* only a concrete index can be navigated within a value; a symbolic
+               index decays to a heap location *)
+            match BV.to_z idx with
+            | Some z ->
+                let* () = check_index_bounds ~idx ~meta:Thin ~base_ty:base.ty in
+                ok
+                  Store.Place.
+                    { kind = Index (base_sp, Z.to_int z); ty = place.ty }
+            | None -> none ())
+        | _ -> none ())
+    | _ -> none ()
+
+  (** Resolves a store place to a heap pointer, e.g. to fall back when its value
+      cannot be navigated in place (it was spilled, or it is a union). *)
+  and spill_store_place ({ kind; ty } : Store.Place.t) : full_ptr t =
+    match kind with
+    | Local v -> get_variable_ptr v
+    | Field (base, kind, field) ->
+        let* fptr = spill_store_place base in
+        project_field fptr ~base_ty:base.ty ~kind ~field ~result_ty:ty
+    | Index (base, idx) ->
+        let* fptr = spill_store_place base in
+        project_index fptr ~idx:(BV.usizei idx) ~result_ty:ty
+
+  and resolve_place_lazy (place : Expressions.place) : lazy_ptr t =
+    let* sp = build_store_place place in
+    match sp with
+    | Some sp ->
         (* we compute the layout here in case of a layout error *)
         let* _ = Layout.layout_of place.ty in
-        get_variable_lazy v
-    | _ ->
+        ok (Store sp)
+    | None ->
         let+ ptr = resolve_place place in
         Heap ptr
+
+  and fake_read_lazy lazy_ptr ty : unit t =
+    match lazy_ptr with
+    | Store sp -> (
+        let* store = get_env () in
+        match Store.try_load sp store with
+        | Some (Value _) -> ok ()
+        | Some Uninit ->
+            let* layout = Layout.layout_of ty in
+            if%sat layout.size ==@ Usize.(0s) then ok ()
+            else error `UninitializedMemoryAccess
+        | Some Dead -> error `DeadVariable
+        | _ ->
+            let* ptr = spill_store_place sp in
+            State.fake_read ptr ty)
+    | Heap ptr -> State.fake_read ptr ty
+
+  and load_lazy lazy_ptr ty : rust_val t =
+    Soteria.Stats.As_ctx.incr StatKeys.load_accesses;
+    match lazy_ptr with
+    | Store sp -> (
+        let* store = get_env () in
+        match Store.try_load sp store with
+        | Some (Value v) ->
+            Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
+            ok v
+        | Some Uninit ->
+            Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
+            let* layout = Layout.layout_of ty in
+            if%sat layout.size ==@ Usize.(0s) then State.zst_value ty
+            else error `UninitializedMemoryAccess
+        | Some Dead -> error `DeadVariable
+        | _ ->
+            let* ptr = spill_store_place sp in
+            State.load ptr ty)
+    | Heap ptr -> State.load ptr ty
+
+  and store_lazy lazy_ptr ty v : unit t =
+    match lazy_ptr with
+    (* assigning a whole local overwrites its value directly, even if it was
+       uninitialized, rather than spilling it to the heap *)
+    | Store sp -> (
+        let* store = get_env () in
+        match Store.try_store sp store v with
+        | Some new_store -> set_env new_store
+        | None ->
+            let* ptr = spill_store_place sp in
+            State.store ptr ty v)
+    | Heap ptr -> State.store ptr ty v
+
+  and uninit_lazy lazy_ptr ty : unit t =
+    match lazy_ptr with
+    | Store { kind = Local var_id; _ } -> map_env (Store.declare_uninit var_id)
+    | Store sp -> (
+        let* store = get_env () in
+        match Store.try_uninit sp store with
+        | Some new_store -> set_env new_store
+        | None ->
+            let* ptr = spill_store_place sp in
+            State.uninit ptr ty)
+    | Heap ptr -> State.uninit ptr ty
 
   (** Resolve a function operand, returning a callable symbolic function to
       execute it. It also returns the types expected of the function, which is
@@ -924,6 +1013,11 @@ module Make (StateImpl : State.S) = struct
   and exec_stmt (stmt : UllbcAst.statement) : unit t =
     [%l.info "Statement: %a" Crate.pp_statement stmt];
     let@ () = with_loc ~loc:stmt.span.data in
+    let* state = get_state () in
+    [%l.debug
+      "State before statement:\n%a"
+        (Fmt.Dump.option @@ StateImpl.pp_pretty ~ignore_freed:false)
+        state];
     match stmt.kind with
     | Nop -> ok ()
     | Assign (place, rval) ->
