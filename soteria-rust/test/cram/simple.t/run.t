@@ -619,3 +619,19 @@ Boolean BitOr must not be assumed true; both operands can be false (issue #376).
   PC 1: (0x00 == V|1|) /\ (0x00 == V|2|) /\ (0x00 == V|1|) /\ (0x00 == V|2|)
   
   [1]
+
+Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.
+  $ soteria-rust exec zst_ref.rs
+  Compiling... done in <time>
+  => Running zst_ref::main...
+  note: zst_ref::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+
+Test that indexing arrays with a constant index does not allocate; the value is updated in place in the store.
+  $ soteria-rust exec store_struct.rs
+  Compiling... done in <time>
+  => Running store_struct::main...
+  note: store_struct::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
