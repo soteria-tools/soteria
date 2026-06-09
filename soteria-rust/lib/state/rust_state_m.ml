@@ -59,6 +59,7 @@ module type S = sig
 
   val get_state : unit -> (st, 'env) t
   val get_env : unit -> ('env, 'env) t
+  val set_env : 'env -> (unit, 'env) t
   val map_env : ('env -> 'env) -> (unit, 'env) t
   val with_env : env:'env1 -> ('a, 'env1) t -> ('a, 'env) t
   val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
@@ -229,6 +230,8 @@ module type S = sig
       Types.ty ->
       Sptr.t Rust_val.meta ->
       (Typed.T.sint Typed.t * Typed.T.nonzero Typed.t, 'env) t
+
+    val zst_value : Types.ty -> (rust_val, 'env) t
   end
 
   module Syntax : sig
@@ -347,6 +350,11 @@ module Make (State : State_intf.S) :
   let map_env f =
     let open ESM.Syntax in
     let+ () = ESM.map_state f in
+    Compo_res.Ok ()
+
+  let set_env e =
+    let open ESM.Syntax in
+    let+ () = ESM.set_state e in
     Compo_res.Ok ()
 
   let with_env ~(env : 'env1) (f : ('a, 'env1) t) : ('a, 'env) t =
@@ -519,6 +527,8 @@ module Make (State : State_intf.S) :
 
     let[@inline] size_and_align_of_val ty meta =
       ESM.lift (size_and_align_of_val ty meta)
+
+    let[@inline] zst_value ty = ESM.lift (zst_value ty)
   end
 
   module Syntax = struct

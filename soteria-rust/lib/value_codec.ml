@@ -295,6 +295,13 @@ struct
         let discr = BV.of_literal variant.discriminant in
         Enum (discr, fields)
     | Enum _, _ -> failwith "decode: expected enum type for enum layout"
+
+  (** Returns the unique value of the type [zst]. Only safe to call if [zst] is
+      zero-sized. *)
+  let zst_value ty =
+    let error = fun _ -> failwith "Decoding a ZST that is not a ZST" in
+    ParserMonad.parse ~handler:error ~get_all:error
+      (decode ~meta:Thin ~offset:Usize.(0s) ty)
 end
 
 module Encoder (Sptr : Sptr.S) = struct
