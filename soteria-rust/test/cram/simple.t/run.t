@@ -621,7 +621,7 @@ Boolean BitOr must not be assumed true; both operands can be false (issue #376).
   [1]
 
 Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.
-  $ soteria-rust exec zst_ref.rs
+  $ check_allocs zst_ref.rs 0
   Compiling... done in <time>
   => Running zst_ref::main...
   note: zst_ref::main: done in <time>, ran 1 branch
@@ -629,7 +629,7 @@ Test that taking a reference to a ZST doesn't allocate it on the heap; the refer
   
 
 Test that indexing arrays with a constant index does not allocate; the value is updated in place in the store.
-  $ soteria-rust exec store_struct.rs
+  $ check_allocs store_struct.rs 0
   Compiling... done in <time>
   => Running store_struct::main...
   note: store_struct::main: done in <time>, ran 1 branch

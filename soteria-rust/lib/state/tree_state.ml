@@ -9,6 +9,15 @@ open Common
 open Charon_util
 open Sptr
 
+module Stat_keys = struct
+  let allocs = "soteria-rust.allocs"
+
+  let () =
+    let open Soteria.Stats in
+    let open Soteria.Logs.Printers in
+    register_int_printer ~name:"Allocations" allocs (fun _ -> Fmt.int)
+end
+
 module Make (Borrows : Tree_borrows.T) = struct
   module Borrows = Borrows (DecayMap.SM)
 
@@ -845,6 +854,7 @@ module Make (Borrows : Tree_borrows.T) = struct
        Tree_block.put_raw_tree ofs tree_to_write)
 
   let alloc ?span ?zeroed size align =
+    Soteria.Stats.As_ctx.incr Stat_keys.allocs;
     with_heap
       (let open Heap.SM in
        let open Heap.SM.Syntax in
