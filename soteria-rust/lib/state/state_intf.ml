@@ -96,4 +96,8 @@ module type S = sig
   val register_thread_exit : (unit -> unit ret) -> unit ret
   val run_thread_exits : unit -> unit ret
   val zst_value : Types.ty -> rust_val ret
+
+  (** Checks that [value] is a valid inhabitant of [ty], raising the relevant
+      error otherwise. This is the check [load] performs after decoding. *)
+  val check_validity : check_refs:bool -> Types.ty -> rust_val -> unit ret
 end

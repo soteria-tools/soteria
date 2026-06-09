@@ -549,7 +549,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let** size, _ = size_and_align_of_val ty meta in
     check_non_dangling_untyped ptr size
 
-  and check_validity ~check_refs ty value =
+  and check_validity ?(check_refs = true) ty value =
     let check_ref =
       if (Config.get ()).recursive_validity <> Allow && check_refs then
         fun ptr ty ->
@@ -771,6 +771,10 @@ module Make (Borrows : Tree_borrows.T) = struct
   let fake_read ptr ty =
     let@ () = with_loc_err ~trace:"Fake read" () in
     fake_read ptr ty
+
+  let check_validity ~check_refs ty value =
+    let@ () = with_loc_err ~trace:"Checking validity" () in
+    check_validity ~check_refs ty value
 
   let copy_nonoverlapping ~src:(src, _) ~dst:(dst, _) ~size :
       (unit, Error.with_trace, syn list) Result.t =

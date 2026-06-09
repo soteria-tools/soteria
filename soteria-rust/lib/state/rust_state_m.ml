@@ -232,6 +232,9 @@ module type S = sig
       (Typed.T.sint Typed.t * Typed.T.nonzero Typed.t, 'env) t
 
     val zst_value : Types.ty -> (rust_val, 'env) t
+
+    val check_validity :
+      check_refs:bool -> Types.ty -> rust_val -> (unit, 'env) t
   end
 
   module Syntax : sig
@@ -543,6 +546,9 @@ module Make (State : State_intf.S) :
       ESM.lift (size_and_align_of_val ty meta)
 
     let[@inline] zst_value ty = ESM.lift (zst_value ty)
+
+    let[@inline] check_validity ~check_refs ty v =
+      ESM.lift (check_validity ~check_refs ty v)
   end
 
   module Syntax = struct
