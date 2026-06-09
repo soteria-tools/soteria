@@ -620,6 +620,18 @@ Boolean BitOr must not be assumed true; both operands can be false (issue #376).
   
   [1]
 
+Test that our check_allocs test works appropriately by checking a case where we expect an allocation.
+  $ check_allocs box.rs 0
+  Compiling... done in <time>
+  => Running box::main...
+  note: box::main: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0b00 == extract[0-1](V|1|))
+  
+  check_allocs: expected '0', got '2'
+  [1]
+
+
 Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.
   $ check_allocs zst_ref.rs 0
   Compiling... done in <time>
