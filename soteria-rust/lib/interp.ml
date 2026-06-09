@@ -319,6 +319,14 @@ module Make (StateImpl : State.S) = struct
             let pointee = get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
+                (* dereferencing a reference/box to an uninhabited type is UB;
+                   the heap decoder catches this on load, but a value read from
+                   the store is never decoded *)
+                let* layout = Layout.layout_of pointee in
+                let* () =
+                  if layout.uninhabited then error (`RefToUninhabited pointee)
+                  else ok ()
+                in
                 let+ () = Sptr.check_aligned fptr pointee in
                 fptr
             | _ -> ok fptr)
@@ -510,6 +518,40 @@ module Make (StateImpl : State.S) = struct
             let* ptr = spill_store_place sp in
             State.load ptr ty)
     | Heap ptr -> State.load ptr ty
+
+  and load_discr_lazy (place : Expressions.place) =
+    let of_variant (variant : Types.variant) =
+      Int (BV.of_literal variant.discriminant)
+    in
+    let from_heap ~(variants : Types.variant list) ptr : (rust_val, _) StateM.t
+        =
+      let+ variant_id = State.load_discriminant ptr place.ty in
+      let variant = Types.VariantId.nth variants variant_id in
+      of_variant variant
+    in
+    match place.ty with
+    | TAdt adt when Crate.is_enum adt -> (
+        let variants = Crate.as_enum adt in
+        let* lazy_ptr = resolve_place_lazy place in
+        match lazy_ptr with
+        | Heap ptr -> from_heap ~variants ptr
+        | Store sp -> (
+            let* store = get_env () in
+            match Store.try_load_discriminant sp store with
+            | Some (DVariant discr) -> ok (Int discr)
+            | Some DUninit ->
+                let* layout = Layout.layout_of sp.ty in
+                if%sat layout.size ==@ Usize.(0s) then
+                  (* There must be a unique variant *)
+                  ok (of_variant (List.hd variants))
+                else error `UninitializedMemoryAccess
+            | Some DDead -> error `DeadVariable
+            | _ ->
+                let* ptr = spill_store_place sp in
+                from_heap ~variants ptr))
+    (* If a type doesn't have variants, return 0.
+       https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
+    | _ -> ok (Int U8.(0s))
 
   and store_lazy lazy_ptr ty v : unit t =
     match lazy_ptr with
@@ -919,17 +961,7 @@ module Make (StateImpl : State.S) = struct
             in
             let inner_off = Layout.Fields_shape.offset_of field fields in
             Int inner_off)
-    | Discriminant place -> (
-        let* loc = resolve_place place in
-        match place.ty with
-        | TAdt adt when Crate.is_enum adt ->
-            let variants = Crate.as_enum adt in
-            let+ variant_id = State.load_discriminant loc place.ty in
-            let variant = Types.VariantId.nth variants variant_id in
-            Int (BV.of_literal variant.discriminant)
-        (* If a type doesn't have variants, return 0.
-           https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
-        | _ -> ok (Int U8.(0s)))
+    | Discriminant place -> load_discr_lazy place
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
         let variants = Crate.as_enum adt in

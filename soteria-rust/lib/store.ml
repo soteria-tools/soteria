@@ -155,3 +155,14 @@ let try_uninit (place : Place.t) store =
   match place.kind with
   | Local v -> Some (declare_uninit v store)
   | _ -> None
+
+type discr_ret = DVariant of Typed.(T.sint t) | DUninit | DDead
+
+let try_load_discriminant (place : Place.t) store =
+  let open Syntaxes.Option in
+  let* binding = try_load place store in
+  match binding with
+  | Value (Enum (discriminant, _)) -> Some (DVariant discriminant)
+  | Uninit -> Some DUninit
+  | Dead -> Some DDead
+  | _ -> None
