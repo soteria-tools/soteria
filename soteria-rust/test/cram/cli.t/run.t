@@ -148,6 +148,10 @@
              Path to the obol binary. Defaults to "obol", i.e. looked up in
              PATH.
   
+         --offline (absent SOTERIA_OFFLINE env)
+             Whether to compile without accessing the network, which can be
+             useful for reproducibility. This will pass --offline to Cargo..
+  
          --plugins=VAL (absent SOTERIA_RUST_PLUGINS env)
              The directory in which plugins are and should be compiled;
              defaults to the current dune-managed site.
@@ -266,6 +270,9 @@
   
          SOTERIA_OBOL_PATH
              See option --obol-path.
+  
+         SOTERIA_OFFLINE
+             See option --offline.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.
@@ -414,6 +421,10 @@
              Path to the obol binary. Defaults to "obol", i.e. looked up in
              PATH.
   
+         --offline (absent SOTERIA_OFFLINE env)
+             Whether to compile without accessing the network, which can be
+             useful for reproducibility. This will pass --offline to Cargo..
+  
          --plugins=VAL (absent SOTERIA_RUST_PLUGINS env)
              The directory in which plugins are and should be compiled;
              defaults to the current dune-managed site.
@@ -529,6 +540,9 @@
   
          SOTERIA_OBOL_PATH
              See option --obol-path.
+  
+         SOTERIA_OFFLINE
+             See option --offline.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.

@@ -197,7 +197,11 @@ module Cmd = struct
     in
     rustc @ sysroot
 
-  let cargo_flags () = (Config.get ()).cargo_flags
+  let cargo_flags () =
+    let config = Config.get () in
+    let offline = if config.offline then [ "--offline" ] else [] in
+    offline @ config.cargo_flags
+
   let is_crate_type_flag = String.starts_with ~prefix:"--crate-type"
   let is_edition_flag = String.starts_with ~prefix:"--edition"
 
