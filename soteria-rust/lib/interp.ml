@@ -347,7 +347,7 @@ module Make (StateImpl : State.S) = struct
         project_field fptr ~base_ty:base.ty ~kind ~field ~result_ty:place.ty
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
-        let* len = index_len ~meta ~base_ty:base.ty in
+        let* len, _ = index_len ~meta ~base_ty:base.ty in
         let* idx = eval_operand idx in
         let idx = as_base_i Usize idx in
         let idx = if from_end then len -!@ idx else idx in
@@ -357,15 +357,7 @@ module Make (StateImpl : State.S) = struct
         project_index (ptr, meta) ~idx ~result_ty:place.ty
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr, meta = resolve_place base in
-        let* ty, len =
-          match (meta, base.ty) with
-          (* Array with static size *)
-          | Thin, TArray (ty, len) ->
-              let+ len = resolve_constant len in
-              (ty, as_base_i Usize len)
-          | Len len, TSlice ty -> ok (ty, Typed.cast len)
-          | _ -> Fmt.failwith "Index projection: unexpected arguments"
-        in
+        let* len, ty = index_len ~meta ~base_ty:base.ty in
         let* from = eval_operand from in
         let* to_ = eval_operand to_ in
         let from = as_base_i Usize from in
@@ -388,16 +380,11 @@ module Make (StateImpl : State.S) = struct
   (* The length of an array or slice being indexed; used to bound-check. *)
   and index_len ~meta ~base_ty =
     match (meta, base_ty) with
-    | Thin, Types.TArray (_, len) ->
+    | Thin, Types.TArray (ty, len) ->
         let+ len = resolve_constant len in
-        as_base_i Usize len
-    | Len len, TSlice _ -> ok len
+        (as_base_i Usize len, ty)
+    | Len len, TSlice ty -> ok (len, ty)
     | _ -> Fmt.failwith "Index projection: unexpected arguments"
-
-  and check_index_bounds ~idx ~meta ~base_ty =
-    let* len = index_len ~meta ~base_ty in
-    let* () = assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds in
-    ok ()
 
   (* Offsets [fptr] to its [field]; shared with [resolve_store_place]. *)
   and project_field ((ptr, meta) as fptr) ~base_ty ~kind ~field ~result_ty :
@@ -449,24 +436,20 @@ module Make (StateImpl : State.S) = struct
     | PlaceProjection (base, PtrMetadata) ->
         let++ base = build_store_place base in
         Store.Place.{ kind = Metadata base; ty = place.ty }
-    | PlaceProjection (base, ProjIndex (idx, from_end)) -> (
+    | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let** base_sp = build_store_place base in
-        match base.ty with
-        | TArray _ -> (
-            let* idx = eval_operand idx in
-            let idx = as_base_i Usize idx in
-            let* len = index_len ~meta:Thin ~base_ty:base.ty in
-            let idx = if from_end then len -!@ idx else idx in
-            (* only a concrete index can be navigated within a value; a symbolic
-               index decays to a heap location *)
-            match BV.to_z idx with
-            | Some z ->
-                let* () = check_index_bounds ~idx ~meta:Thin ~base_ty:base.ty in
-                ok
-                  Store.Place.
-                    { kind = Index (base_sp, Z.to_int z); ty = place.ty }
-            | None -> none ())
-        | _ -> none ())
+        let*^ () = Option.of_bool (TypesUtils.ty_is_array base.ty) in
+        let* idx = eval_operand idx in
+        let idx = as_base_i Usize idx in
+        let* len, _ = index_len ~meta:Thin ~base_ty:base.ty in
+        let idx = if from_end then len -!@ idx else idx in
+        (* only a concrete index can be navigated within a value; a symbolic
+           index decays to a heap location *)
+        let*^ z = BV.to_z idx in
+        let* () =
+          assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
+        in
+        ok Store.Place.{ kind = Index (base_sp, Z.to_int z); ty = place.ty }
     | _ -> none ()
 
   (** Resolves a store place to a heap pointer, e.g. to fall back when its value
@@ -580,7 +563,6 @@ module Make (StateImpl : State.S) = struct
 
   and uninit_lazy lazy_ptr ty : unit t =
     match lazy_ptr with
-    | Store { kind = Local var_id; _ } -> map_env (Store.declare_uninit var_id)
     | Store sp -> (
         let* store = get_env () in
         match Store.try_uninit sp store with

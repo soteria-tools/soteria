@@ -277,6 +277,7 @@ module type S = sig
     module Syntax : sig
       val ( let** ) : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
       val ( let++ ) : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
+      val ( let*^ ) : 'a option -> ('a -> ('b, 'env) t) -> ('b, 'env) t
     end
   end
 end
@@ -582,6 +583,7 @@ module Make (State : State_intf.S) :
     module Syntax = struct
       let ( let** ) x f = bind f x
       let ( let++ ) x f = map f x
+      let ( let*^ ) x f = match x with Some v -> f v | None -> none ()
     end
   end
 end
