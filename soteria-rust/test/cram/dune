@@ -4,10 +4,20 @@
    (HIDE_UNSTABLE 1)
    (SOTERIA_RUST_CLEANUP 1)
    (SHOW_PCS 1)
+   (SOTERIA_OFFLINE 1)
    (TERM dumb))))
 
-(cram
+(rule
+ (alias plugins-warmup)
  (deps ../../bin/soteria_rust.exe)
+ (action
+  (setenv SOTERIA_OFFLINE 0
+   (run ../../bin/soteria_rust.exe build-plugins))))
+
+(cram
+ (deps
+  ../../bin/soteria_rust.exe
+  (alias plugins-warmup))
  (shell bash)
  (setup_scripts cleanup.sh)
  (applies_to :whole_subtree))

@@ -93,7 +93,10 @@ type t = {
       (** The sysroot to use for compilation. If not provided, the default
           sysroot is used. *)
   offline : bool;
-      [@docs Sections.frontend] [@make.default false] [@names [ "offline" ]]
+      [@docs Sections.frontend]
+      [@make.default false]
+      [@names [ "offline" ]]
+      [@env "SOTERIA_OFFLINE"]
       (** Whether to compile without accessing the network, which can be useful
           for reproducibility. This will pass --offline to Cargo.. *)
   test : string option; [@docs Sections.frontend] [@names [ "test" ]]

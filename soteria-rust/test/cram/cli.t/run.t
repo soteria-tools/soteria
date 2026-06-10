@@ -148,7 +148,7 @@
              Path to the obol binary. Defaults to "obol", i.e. looked up in
              PATH.
   
-         --offline
+         --offline (absent SOTERIA_OFFLINE env)
              Whether to compile without accessing the network, which can be
              useful for reproducibility. This will pass --offline to Cargo..
   
@@ -270,6 +270,9 @@
   
          SOTERIA_OBOL_PATH
              See option --obol-path.
+  
+         SOTERIA_OFFLINE
+             See option --offline.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.
@@ -418,7 +421,7 @@
              Path to the obol binary. Defaults to "obol", i.e. looked up in
              PATH.
   
-         --offline
+         --offline (absent SOTERIA_OFFLINE env)
              Whether to compile without accessing the network, which can be
              useful for reproducibility. This will pass --offline to Cargo..
   
@@ -537,6 +540,9 @@
   
          SOTERIA_OBOL_PATH
              See option --obol-path.
+  
+         SOTERIA_OFFLINE
+             See option --offline.
   
          SOTERIA_OUTPUT_STATS
              See option --output-stats.
