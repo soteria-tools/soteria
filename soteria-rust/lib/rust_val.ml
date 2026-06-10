@@ -247,18 +247,10 @@ let mk_struct ~ty fields =
   assert (List.compare_lengths fields struct_fields = 0);
   Tuple fields
 
-(** [v] with its [i]th field replaced by [f] applied to the old value; [None] if
-    [v] is not a navigable aggregate or [i] is out of range. *)
+(** [v] with its [i]th field replaced by [f] applied to the old value. Errors if
+    [i] is out of bound or [v] is not a [Tuple] or [Enum]. *)
 let update_field i ~f v =
-  let update vs =
-    match List.nth_opt vs i with
-    | Some old ->
-        Option.map
-          (fun field -> List.mapi (fun j x -> if j = i then field else x) vs)
-          (f old)
-    | None -> None
-  in
   match v with
-  | Tuple vs -> Option.map (fun vs -> Tuple vs) (update vs)
-  | Enum (d, vs) -> Option.map (fun vs -> Enum (d, vs)) (update vs)
-  | _ -> None
+  | Tuple vs -> Tuple (List.update_at f i vs)
+  | Enum (d, vs) -> Enum (d, List.update_at f i vs)
+  | _ -> failwith "update_field with a non-aggregate value"

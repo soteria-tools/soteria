@@ -450,6 +450,9 @@ module Make (StateImpl : State.S) = struct
     let open Syntax in
     match place.kind with
     | PlaceLocal v -> ok Store.Place.{ kind = Local v; ty = place.ty }
+    | PlaceProjection (_, Field (ProjAdt (adt, None), _))
+      when Crate.is_union' adt ->
+        none ()
     | PlaceProjection (base, Field (kind, field)) ->
         let++ base = build_store_place base in
         Store.Place.{ kind = Field (base, kind, field); ty = place.ty }

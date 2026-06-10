@@ -36,7 +36,7 @@ module Place = struct
       [None] if not navigable. *)
   let rec update_val { kind; _ } ~f v =
     match kind with
-    | Local _ -> f v
+    | Local _ -> Some (f v)
     | Field (base, _, field) ->
         update_val base
           ~f:(Rust_val.update_field (Types.FieldId.to_int field) ~f)
@@ -45,7 +45,7 @@ module Place = struct
     (* metadata isn't navigable for in-place writes; spill to the heap *)
     | Metadata _ -> None
 
-  let is_local p = match p.kind with Local _ -> true | _ -> false
+  let is_local = function { kind = Local _; _ } -> true | _ -> false
 end
 
 open Place
@@ -68,25 +68,8 @@ module Binding = struct
   [@@deriving show { with_path = false }]
 
   type 'a t = { kind : 'a kind; ty : Types.ty }
-  [@@deriving show { with_path = false }]
 
-  let as_value = function { kind = Value v; _ } -> Some v | _ -> None
-
-  let bind_value (f : 'a Rust_val.t -> 'a kind option) (x : 'a kind option) :
-      'a kind option =
-    match x with
-    | Some (Value v) -> f v
-    | Some Uninit -> Some Uninit
-    | Some Dead -> Some Dead
-    | Some (Stackptr _) | None -> None
-end
-
-open Binding
-
-type 'a t = 'a Binding.t Map.t
-
-let pp ft store =
-  let pp_binding ft { kind; ty } =
+  let pp ft { kind; ty } =
     match kind with
     | Stackptr ptr ->
         Fmt.pf ft "Stackptr(%a) : %a"
@@ -96,11 +79,25 @@ let pp ft store =
         Fmt.pf ft "Value(%a) : %a" (Rust_val.pp Fmt.nop) v Types.pp_ty ty
     | Uninit -> Fmt.pf ft "Uninit : %a" Types.pp_ty ty
     | Dead -> Fmt.pf ft "Dead : %a" Types.pp_ty ty
-  in
-  Map.iter
-    (fun sym binding ->
-      Fmt.pf ft "%a -> %a@." Expressions.pp_local_id sym pp_binding binding)
-    store
+
+  let as_value = function { kind = Value v; _ } -> Some v | _ -> None
+
+  let bind_value (f : 'a Rust_val.t -> 'a kind) :
+      'a kind option -> 'a kind option = function
+    | Some (Value v) -> Some (f v)
+    | (Some Uninit | Some Dead) as v -> v
+    | Some (Stackptr _) | None -> None
+end
+
+open Binding
+
+type 'a t = 'a Binding.t Map.t
+
+let pp ft s =
+  Fmt.(
+    iter_bindings ~sep:(any "@.") Map.iter
+      (pair ~sep:(any " -> ") Expressions.pp_local_id Binding.pp))
+    ft s
 
 let reserve sym ty =
   let binding = { kind = Dead; ty } in
@@ -115,18 +112,13 @@ let declare_value sym value t = declare sym (Value value) t
 let declare_ptr sym ptr t = declare sym (Stackptr ptr) t
 let declare_uninit sym t = declare sym Uninit t
 let dealloc sym t = declare sym Dead t
-
-let get_ty sym t =
-  match Map.find_opt sym t with
-  | None -> failwith "Store: Getting type of unknown symbol?"
-  | Some { ty; _ } -> ty
-
+let get_ty sym t = (Map.find sym t).ty
 let find local (store : 'a t) = Map.find local store
 let empty = Map.empty
 let bindings (store : 'a t) = Map.bindings store
 
-(** Returns [Some v] if a place can be loaded directly from the store, and
-    [None] if it has to be spilled into the heap. *)
+(** [try_load p s] tries loading [p] from the [s], returning [Some v] if it
+    succeded, and [None] if it has to be spilled into the heap. *)
 let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
   match place.kind with
   | Local v -> Some (find v store).kind
@@ -134,35 +126,27 @@ let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
       let field_idx = Types.FieldId.to_int field in
       try_load base store
       |> bind_value @@ function
-         | Tuple vs | Enum (_, vs) ->
-             Option.map (fun v -> Value v) (List.nth_opt vs field_idx)
-         | _ -> None)
+         | Tuple vs | Enum (_, vs) -> Value (List.nth vs field_idx)
+         | _ -> failwith "tried loading field of non-aggregate")
   | Index (base, idx) -> (
       try_load base store
       |> bind_value @@ function
-         | Tuple vs -> Option.map (fun v -> Value v) (List.nth_opt vs idx)
-         | _ -> None)
+         | Tuple vs -> Value (List.nth vs idx)
+         | _ -> failwith "tried loading index of non-tuple")
   | Metadata base -> (
-      (* only extract metadata from a concrete pointer value; for anything else
-         (uninit, dead, spilled, ...) we fall back to the heap, which validates
-         the pointer before reading its metadata *)
-      match try_load base store with
-      | Some (Value (Ptr (_, meta))) ->
-          let v =
-            match meta with
-            | Thin -> Rust_val.unit_
-            | Len len -> Int len
-            | VTable vt -> Ptr (vt, Thin)
-          in
-          Some (Value v)
-      | _ -> None)
+      try_load base store
+      |> bind_value @@ function
+         | Ptr (_, Thin) -> Value Rust_val.unit_
+         | Ptr (_, Len len) -> Value (Int len)
+         | Ptr (_, VTable vt) -> Value (Ptr (vt, Thin))
+         | _ -> failwith "tried loading metadata of non-pointer")
 
 let try_store (place : Place.t) store value =
   let open Syntaxes.Option in
   let root = Place.root place in
   let+ new_val =
     match (find root store).kind with
-    | Value c -> Place.update_val place ~f:(fun _ -> Some value) c
+    | Value c -> Place.update_val place ~f:(fun _ -> value) c
     | Uninit when Place.is_local place -> Some value
     | _ -> None
   in

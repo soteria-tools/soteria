@@ -210,6 +210,9 @@ let is_union (adt_ref : Types.type_decl_ref) =
       match (get_adt_raw id).kind with Union _ -> true | _ -> false)
   | _ -> false
 
+let is_union' (adt_id : Types.type_decl_id) =
+  match (get_adt_raw adt_id).kind with Union _ -> true | _ -> false
+
 let as_enum adt_ref =
   match (get_adt adt_ref).kind with
   | Enum variants -> variants
