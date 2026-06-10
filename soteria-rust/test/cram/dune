@@ -11,7 +11,9 @@
  (alias plugins-warmup)
  (deps ../../bin/soteria_rust.exe)
  (action
-  (setenv SOTERIA_OFFLINE 0
+  (setenv
+   SOTERIA_OFFLINE
+   0
    (run ../../bin/soteria_rust.exe build-plugins))))
 
 (cram
