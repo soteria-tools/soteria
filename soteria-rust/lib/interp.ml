@@ -52,21 +52,13 @@ module Make (StateImpl : State.S) = struct
                 pp_full_ptr ptr];
             ptr)
 
-  let get_variable_lazy var_id =
-    let* store = get_env () in
-    let binding = Store.find var_id store in
-    match binding.kind with
-    | Stackptr ptr -> ok (Heap ptr)
-    | Uninit | Value _ -> ok (Store { kind = Local var_id; ty = binding.ty })
-    | Dead -> error `DeadVariable
-
   let get_variable_lazy_and_ty var_id =
     let* store = get_env () in
     let binding = Store.find var_id store in
     match binding.kind with
     | Stackptr ptr -> ok (Heap ptr, binding.ty)
     | Uninit | Value _ ->
-        ok (Store { kind = Local var_id; ty = binding.ty }, binding.ty)
+        ok (Store (Store.Place.local var_id binding.ty), binding.ty)
     | Dead -> error `DeadVariable
 
   (** [alloc_stack locals args] Allocates stack space for the locals in
@@ -336,15 +328,35 @@ module Make (StateImpl : State.S) = struct
     (* The metadata of a pointer type is just the second part of the pointer *)
     | PlaceProjection (base, PtrMetadata) ->
         let* ((ptr, _) as fptr) = resolve_place base in
+        let* () = State.fake_read fptr base.ty in
         [%l.debug
           "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty base.ty];
-        project_metadata fptr ~base_ty:base.ty
+        let+ ptr' =
+          Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
+            Usize.(1s)
+            ptr
+        in
+        (ptr', Thin)
     | PlaceProjection (base, Field (kind, field)) ->
-        let* fptr = resolve_place base in
+        let* ((ptr, meta) as fptr) = resolve_place base in
+        let* () = Sptr.check_aligned fptr base.ty in
         [%l.debug
           "Projecting field %a (kind %a) for %a" Types.pp_field_id field
-            Expressions.pp_field_proj_kind kind Sptr.pp (fst fptr)];
-        project_field fptr ~base_ty:base.ty ~kind ~field ~result_ty:place.ty
+            Expressions.pp_field_proj_kind kind Sptr.pp ptr];
+        let field = Types.FieldId.to_int field in
+        let* layout = Layout.layout_of base.ty in
+        let fields =
+          match kind with
+          | ProjAdt (_, Some variant) ->
+              Layout.Fields_shape.shape_for_variant variant layout.fields
+          | ProjAdt (_, None) | ProjTuple _ -> layout.fields
+        in
+        let off = Layout.Fields_shape.offset_of field fields in
+        let* ptr' = Sptr.offset ~signed:false off ptr in
+        [%l.debug
+          "Projecting ADT %a, field %d, with pointer %a to pointer %a"
+            Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr'];
+        if Layout.is_dst place.ty then ok (ptr', meta) else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
         let* len, _ = index_len ~meta ~base_ty:base.ty in
@@ -354,7 +366,11 @@ module Make (StateImpl : State.S) = struct
         let* () =
           assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
-        project_index (ptr, meta) ~idx ~result_ty:place.ty
+        let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty idx ptr in
+        [%l.debug
+          "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
+            Sptr.pp ptr'];
+        (ptr', Thin)
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr, meta = resolve_place base in
         let* len, ty = index_len ~meta ~base_ty:base.ty in
@@ -386,59 +402,33 @@ module Make (StateImpl : State.S) = struct
     | Len len, TSlice ty -> ok (len, ty)
     | _ -> Fmt.failwith "Index projection: unexpected arguments"
 
-  (* Offsets [fptr] to its [field]; shared with [resolve_store_place]. *)
-  and project_field ((ptr, meta) as fptr) ~base_ty ~kind ~field ~result_ty :
-      full_ptr t =
-    let* () = Sptr.check_aligned fptr base_ty in
-    let field = Types.FieldId.to_int field in
-    let* layout = Layout.layout_of base_ty in
-    let fields =
-      match (kind : Expressions.field_proj_kind) with
-      | ProjAdt (_, Some variant) ->
-          Layout.Fields_shape.shape_for_variant variant layout.fields
-      | ProjAdt (_, None) | ProjTuple _ -> layout.fields
-    in
-    let off = Layout.Fields_shape.offset_of field fields in
-    let* ptr' = Sptr.offset ~signed:false off ptr in
-    if Layout.is_dst result_ty then ok (ptr', meta) else ok (ptr', Thin)
-
-  (* Offsets [fptr] to its element [idx]; shared with [resolve_store_place]. *)
-  and project_index (ptr, _meta) ~idx ~result_ty : full_ptr t =
-    let+ ptr' = Sptr.offset ~signed:false ~ty:result_ty idx ptr in
-    (ptr', Thin)
-
-  (* Offsets [fptr] to its metadata; shared with [spill_store_place]. The whole
-     pointer is read to validate it, as the metadata alone may be a ZST. *)
-  and project_metadata ((ptr, _) as fptr) ~base_ty : full_ptr t =
-    let* () = State.fake_read fptr base_ty in
-    let+ ptr' =
-      Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
-        Usize.(1s)
-        ptr
-    in
-    (ptr', Thin)
-
-  (** Builds the store place for [place], if it is a chain of projections
-      (fields and constant indices) rooted at a local; [None] otherwise, in
-      which case the place must be resolved to a heap pointer. *)
-  and build_store_place (place : Expressions.place) :
+  (** Tries converting a Charon (possibly dynamic) place into a store (known
+      statically) place. Returns [None] if the place is not supported on the
+      store, and must be resolved to a heap pointer. We do this inside the
+      interpreter rather than in {!Store} so we can evaluate operands, improving
+      the hit-rate of the store. *)
+  and build_store_place (origin : Expressions.place) :
       (Store.Place.t, _) StateM.OptionM.t =
     let open StateM.OptionM in
     let open Syntax in
-    match place.kind with
-    | PlaceLocal v -> ok Store.Place.{ kind = Local v; ty = place.ty }
-    | PlaceProjection (_, Field (ProjAdt (adt, None), _))
-      when Crate.is_union' adt ->
-        none ()
+    match origin.kind with
+    | PlaceLocal v -> ok Store.Place.{ kind = Local v; origin }
     | PlaceProjection (base, Field (kind, field)) ->
+        (* we never go through unions, as they apply transmutations that require
+           a heap access to be calculated. *)
+        let*^ () =
+          Option.of_bool
+            (match kind with
+            | ProjAdt (adt, None) -> not (Crate.is_union' adt)
+            | _ -> true)
+        in
         let++ base = build_store_place base in
-        Store.Place.{ kind = Field (base, kind, field); ty = place.ty }
+        Store.Place.{ kind = Field (base, kind, field); origin }
     | PlaceProjection (base, PtrMetadata) ->
         let++ base = build_store_place base in
-        Store.Place.{ kind = Metadata base; ty = place.ty }
+        Store.Place.{ kind = Metadata base; origin }
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let** base_sp = build_store_place base in
-        let*^ () = Option.of_bool (TypesUtils.ty_is_array base.ty) in
         let* idx = eval_operand idx in
         let idx = as_base_i Usize idx in
         let* len, _ = index_len ~meta:Thin ~base_ty:base.ty in
@@ -449,23 +439,8 @@ module Make (StateImpl : State.S) = struct
         let* () =
           assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
-        ok Store.Place.{ kind = Index (base_sp, Z.to_int z); ty = place.ty }
+        ok Store.Place.{ kind = Index (base_sp, Z.to_int z); origin }
     | _ -> none ()
-
-  (** Resolves a store place to a heap pointer, e.g. to fall back when its value
-      cannot be navigated in place (it was spilled, or it is a union). *)
-  and spill_store_place ({ kind; ty } : Store.Place.t) : full_ptr t =
-    match kind with
-    | Local v -> get_variable_ptr v
-    | Field (base, kind, field) ->
-        let* fptr = spill_store_place base in
-        project_field fptr ~base_ty:base.ty ~kind ~field ~result_ty:ty
-    | Index (base, idx) ->
-        let* fptr = spill_store_place base in
-        project_index fptr ~idx:(BV.usizei idx) ~result_ty:ty
-    | Metadata base ->
-        let* fptr = spill_store_place base in
-        project_metadata fptr ~base_ty:base.ty
 
   and resolve_place_lazy (place : Expressions.place) : lazy_ptr t =
     let* sp = build_store_place place in
@@ -490,7 +465,7 @@ module Make (StateImpl : State.S) = struct
             else error `UninitializedMemoryAccess
         | Some Dead -> error `DeadVariable
         | _ ->
-            let* ptr = spill_store_place sp in
+            let* ptr = resolve_place sp.origin in
             State.fake_read ptr ty)
     | Heap ptr -> State.fake_read ptr ty
 
@@ -511,7 +486,7 @@ module Make (StateImpl : State.S) = struct
             | None -> error `UninitializedMemoryAccess)
         | Some Dead -> error `DeadVariable
         | _ ->
-            let* ptr = spill_store_place sp in
+            let* ptr = resolve_place sp.origin in
             State.load ptr ty)
     | Heap ptr -> State.load ptr ty
 
@@ -536,13 +511,13 @@ module Make (StateImpl : State.S) = struct
             match Store.try_load_discriminant sp store with
             | Some (DVariant discr) -> ok (Int discr)
             | Some DUninit -> (
-                let* dangling = Sptr.dangling_if_zst sp.ty in
+                let* dangling = Sptr.dangling_if_zst sp.origin.ty in
                 match dangling with
                 | Some d -> from_heap ~variants (d, Thin)
                 | None -> error `UninitializedMemoryAccess)
             | Some DDead -> error `DeadVariable
             | _ ->
-                let* ptr = spill_store_place sp in
+                let* ptr = resolve_place sp.origin in
                 from_heap ~variants ptr))
     (* If a type doesn't have variants, return 0.
        https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
@@ -557,7 +532,7 @@ module Make (StateImpl : State.S) = struct
         match Store.try_store sp store v with
         | Some new_store -> set_env new_store
         | None ->
-            let* ptr = spill_store_place sp in
+            let* ptr = resolve_place sp.origin in
             State.store ptr ty v)
     | Heap ptr -> State.store ptr ty v
 
@@ -568,7 +543,7 @@ module Make (StateImpl : State.S) = struct
         match Store.try_uninit sp store with
         | Some new_store -> set_env new_store
         | None ->
-            let* ptr = spill_store_place sp in
+            let* ptr = resolve_place sp.origin in
             State.uninit ptr ty)
     | Heap ptr -> State.uninit ptr ty
 

@@ -1,4 +1,5 @@
 open Charon
+open Common.Charon_util
 
 module Map = Stdlib.Map.Make (struct
   type t = Expressions.LocalId.id
@@ -16,7 +17,7 @@ module Place = struct
   (** A simple place that lives on the store and doesn't need to be decayed to
       the heap for reading or writing. Almost identical to {!Expressions.place},
       but with only field and concrete index access. *)
-  and t = { kind : kind; ty : Types.ty }
+  and t = { kind : kind; origin : Expressions.place }
 
   let rec pp ft { kind; _ } =
     match kind with
@@ -46,6 +47,9 @@ module Place = struct
     | Metadata _ -> None
 
   let is_local = function { kind = Local _; _ } -> true | _ -> false
+
+  let local local_id ty =
+    { kind = Local local_id; origin = { kind = PlaceLocal local_id; ty } }
 end
 
 open Place
