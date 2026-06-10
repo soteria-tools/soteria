@@ -95,5 +95,4 @@ module type S = sig
 
   val register_thread_exit : (unit -> unit ret) -> unit ret
   val run_thread_exits : unit -> unit ret
-  val zst_value : Types.ty -> rust_val ret
 end

@@ -1110,8 +1110,4 @@ module Make (Borrows : Tree_borrows.T) = struct
     match st.thread_destructor with
     | None -> Result.ok ()
     | Some destructor -> SM.Result.map_missing (fun () -> []) (destructor ())
-
-  let zst_value ty =
-    let@ () = with_loc_err ~trace:"zst_value" () in
-    with_heap @@ Heap.Decoder.zst_value ty
 end

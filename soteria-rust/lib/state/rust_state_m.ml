@@ -230,8 +230,6 @@ module type S = sig
       Types.ty ->
       Sptr.t Rust_val.meta ->
       (Typed.T.sint Typed.t * Typed.T.nonzero Typed.t, 'env) t
-
-    val zst_value : Types.ty -> (rust_val, 'env) t
   end
 
   module Syntax : sig
@@ -541,8 +539,6 @@ module Make (State : State_intf.S) :
 
     let[@inline] size_and_align_of_val ty meta =
       ESM.lift (size_and_align_of_val ty meta)
-
-    let[@inline] zst_value ty = ESM.lift (zst_value ty)
   end
 
   module Syntax = struct
