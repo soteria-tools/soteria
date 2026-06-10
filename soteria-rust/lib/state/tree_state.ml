@@ -92,6 +92,14 @@ module Make (Borrows : Tree_borrows.T) = struct
       let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
       { null_ptr with ptr }
 
+    let dangling_if_zst ty =
+      let open Rustsymex in
+      let open Syntax in
+      let** layout = Layout.layout_of ty in
+      if%sat layout.size ==@ Usize.(0s) then
+        Result.ok (Some (of_address layout.align))
+      else Result.ok None
+
     let is_null { ptr; _ } = Typed.Ptr.is_null ptr
     let has_provenance { ptr; _ } = Typed.not (Typed.Ptr.is_at_null_loc ptr)
 

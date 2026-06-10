@@ -38,7 +38,7 @@ module Make (StateImpl : State.S) = struct
     | Uninit | Value _ -> (
         let* zst_dangling = Sptr.dangling_if_zst binding.ty in
         match zst_dangling with
-        | Some ptr -> ok ptr
+        | Some ptr -> ok (ptr, Thin)
         | None ->
             let* ptr = State.alloc_ty binding.ty in
             let* () =
@@ -524,7 +524,7 @@ module Make (StateImpl : State.S) = struct
             Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
             let* dangling = Sptr.dangling_if_zst ty in
             match dangling with
-            | Some d -> State.load d ty
+            | Some d -> State.load (d, Thin) ty
             | None -> error `UninitializedMemoryAccess)
         | Some Dead -> error `DeadVariable
         | _ ->
@@ -555,7 +555,7 @@ module Make (StateImpl : State.S) = struct
             | Some DUninit -> (
                 let* dangling = Sptr.dangling_if_zst sp.ty in
                 match dangling with
-                | Some d -> from_heap ~variants d
+                | Some d -> from_heap ~variants (d, Thin)
                 | None -> error `UninitializedMemoryAccess)
             | Some DDead -> error `DeadVariable
             | _ ->

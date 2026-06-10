@@ -160,6 +160,10 @@ module type S = sig
   (** Converts an address into a pointer, without provenance. *)
   val of_address : [< sint ] Typed.t -> t
 
+  (** Creates a dangling pointer to the given type, if that type is a ZST;
+      returns [None] otherwise. *)
+  val dangling_if_zst : Types.ty -> (t option, [> Error.t ], 'f) Result.t
+
   (** The null pointer, which always decays to 0, and has no provenance.
       Equivalent to [of_address 0]. *)
   val null : unit -> t

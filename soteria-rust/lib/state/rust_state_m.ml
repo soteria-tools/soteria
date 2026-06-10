@@ -133,7 +133,7 @@ module type S = sig
     val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
     val decay : t -> (Typed.T.sint Typed.t, 'env) monad
     val expose : t -> (Typed.T.sint Typed.t, 'env) monad
-    val dangling_if_zst : Types.ty -> (t Rust_val.full_ptr option, 'env) monad
+    val dangling_if_zst : Types.ty -> (t option, 'env) monad
   end
 
   type full_ptr = Sptr.t Rust_val.full_ptr
@@ -414,34 +414,6 @@ module Make (State : State_intf.S) :
     | Error e -> Error (e, state)
     | Missing f -> Missing f
 
-  module Syntax = struct
-    let ( let* ) x f = bind f x
-    let ( let+ ) x f = map f x
-    let ( let*^ ) x f = bind f (lift_symex x)
-    let ( let+^ ) x f = map f (lift_symex x)
-
-    module Symex_syntax = struct
-      let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
-       fun env state ->
-        Rustsymex.branch_on ?left_branch_name ?right_branch_name guard
-          ~then_:(fun () -> then_ () env state)
-          ~else_:(fun () -> else_ () env state)
-
-      let branch_on_take_one ?left_branch_name ?right_branch_name guard ~then_
-          ~else_ =
-       fun env state ->
-        Rustsymex.branch_on_take_one ?left_branch_name ?right_branch_name guard
-          ~then_:(fun () -> then_ () env state)
-          ~else_:(fun () -> else_ () env state)
-
-      let if_sure ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
-       fun env state ->
-        Rustsymex.if_sure ?left_branch_name ?right_branch_name guard
-          ~then_:(fun () -> then_ () env state)
-          ~else_:(fun () -> else_ () env state)
-    end
-  end
-
   module Poly = struct
     let[@inline] push_generics ~params ~args
         (x : Types.generic_args -> ('a, 'env) t) : ('a, 'env) t =
@@ -457,17 +429,6 @@ module Make (State : State_intf.S) :
       lift_symex (Poly.subst_generic_args generic_args)
 
     let[@inline] subst_constant_expr c = lift_symex (Poly.subst_constant_expr c)
-  end
-
-  module Layout = struct
-    include Layout
-
-    let[@inline] layout_of ty = lift_err (layout_of ty)
-    let[@inline] size_of ty = lift_err (size_of ty)
-    let[@inline] align_of ty = lift_err (align_of ty)
-
-    let[@inline] is_abi_compatible ty1 ty2 =
-      lift_err (is_abi_compatible ty1 ty2)
   end
 
   module Sptr = struct
@@ -487,20 +448,18 @@ module Make (State : State_intf.S) :
     let[@inline] distance ptr1 ptr2 = with_pointers_sym (distance ptr1 ptr2)
     let[@inline] decay ptr = with_pointers_sym (decay ptr)
     let[@inline] expose ptr = with_pointers_sym (expose ptr)
+    let[@inline] dangling_if_zst ty = lift_err (dangling_if_zst ty)
+  end
 
-    (** If [ty] is a ZST, returns [Some ptr] where [ptr] is a valid pointer to
-        such a ty; otherwise, return [None] *)
-    let dangling_if_zst ty =
-      let open Syntax in
-      let open Typed.Syntax in
-      let open Typed.Infix in
-      let* layout = Layout.layout_of ty in
-      if%sat layout.size ==@ Usize.(0s) then
-        let ptr =
-          (of_address (layout.align :> Typed.T.sint Typed.t), Rust_val.Thin)
-        in
-        ok (Some ptr)
-      else ok None
+  module Layout = struct
+    include Layout
+
+    let[@inline] layout_of ty = lift_err (layout_of ty)
+    let[@inline] size_of ty = lift_err (size_of ty)
+    let[@inline] align_of ty = lift_err (align_of ty)
+
+    let[@inline] is_abi_compatible ty1 ty2 =
+      lift_err (is_abi_compatible ty1 ty2)
   end
 
   module Encoder = struct
@@ -582,6 +541,34 @@ module Make (State : State_intf.S) :
 
     let[@inline] size_and_align_of_val ty meta =
       ESM.lift (size_and_align_of_val ty meta)
+  end
+
+  module Syntax = struct
+    let ( let* ) x f = bind f x
+    let ( let+ ) x f = map f x
+    let ( let*^ ) x f = bind f (lift_symex x)
+    let ( let+^ ) x f = map f (lift_symex x)
+
+    module Symex_syntax = struct
+      let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
+       fun env state ->
+        Rustsymex.branch_on ?left_branch_name ?right_branch_name guard
+          ~then_:(fun () -> then_ () env state)
+          ~else_:(fun () -> else_ () env state)
+
+      let branch_on_take_one ?left_branch_name ?right_branch_name guard ~then_
+          ~else_ =
+       fun env state ->
+        Rustsymex.branch_on_take_one ?left_branch_name ?right_branch_name guard
+          ~then_:(fun () -> then_ () env state)
+          ~else_:(fun () -> else_ () env state)
+
+      let if_sure ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
+       fun env state ->
+        Rustsymex.if_sure ?left_branch_name ?right_branch_name guard
+          ~then_:(fun () -> then_ () env state)
+          ~else_:(fun () -> else_ () env state)
+    end
   end
 
   module OptionM = struct
