@@ -24,14 +24,6 @@ module Make (StateImpl : State.S) = struct
   type lazy_ptr = Store of Store.Place.t | Heap of full_ptr
   [@@deriving show { with_path = false }]
 
-  (* Must always be called with a zst. If layout is specified, it must be the
-     layout of the [ty] *)
-  let zst_dangling ?layout ty =
-    let+ layout =
-      match layout with Some layout -> ok layout | None -> Layout.layout_of ty
-    in
-    (Sptr.of_address (layout.align :> T.sint Typed.t), Thin)
-
   (** Spills a local variable onto the heap *)
   let get_variable_ptr var_id =
     let* store = get_env () in
@@ -43,24 +35,22 @@ module Make (StateImpl : State.S) = struct
             ptr];
         ok ptr
     | Dead -> error `DeadVariable
-    | Uninit | Value _ ->
-        let* layout = Layout.layout_of binding.ty in
-        if%sat layout.size ==@ Usize.(0s) then
-          (* a ZST has no address; hand out a dangling pointer (à la
-             [NonNull::dangling]) and keep its value in the store *)
-          zst_dangling ~layout binding.ty
-        else
-          let* ptr = State.alloc_ty binding.ty in
-          let* () =
-            match binding.kind with
-            | Value v -> State.store ptr binding.ty v
-            | _ -> ok ()
-          in
-          let+ () = map_env (Store.declare_ptr var_id ptr) in
-          [%l.debug
-            "Variable %a spilled to pointer %a" Expressions.pp_var_id var_id
-              pp_full_ptr ptr];
-          ptr
+    | Uninit | Value _ -> (
+        let* zst_dangling = Sptr.dangling_if_zst binding.ty in
+        match zst_dangling with
+        | Some ptr -> ok ptr
+        | None ->
+            let* ptr = State.alloc_ty binding.ty in
+            let* () =
+              match binding.kind with
+              | Value v -> State.store ptr binding.ty v
+              | _ -> ok ()
+            in
+            let+ () = map_env (Store.declare_ptr var_id ptr) in
+            [%l.debug
+              "Variable %a spilled to pointer %a" Expressions.pp_var_id var_id
+                pp_full_ptr ptr];
+            ptr)
 
   let get_variable_lazy var_id =
     let* store = get_env () in
@@ -530,13 +520,12 @@ module Make (StateImpl : State.S) = struct
         | Some (Value v) ->
             Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
             ok v
-        | Some Uninit ->
+        | Some Uninit -> (
             Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
-            let* layout = Layout.layout_of ty in
-            if%sat layout.size ==@ Usize.(0s) then
-              let* dangling = zst_dangling ~layout ty in
-              State.load dangling ty
-            else error `UninitializedMemoryAccess
+            let* dangling = Sptr.dangling_if_zst ty in
+            match dangling with
+            | Some d -> State.load d ty
+            | None -> error `UninitializedMemoryAccess)
         | Some Dead -> error `DeadVariable
         | _ ->
             let* ptr = spill_store_place sp in
@@ -563,12 +552,11 @@ module Make (StateImpl : State.S) = struct
             let* store = get_env () in
             match Store.try_load_discriminant sp store with
             | Some (DVariant discr) -> ok (Int discr)
-            | Some DUninit ->
-                let* layout = Layout.layout_of sp.ty in
-                if%sat layout.size ==@ Usize.(0s) then
-                  let* dangling = zst_dangling ~layout sp.ty in
-                  from_heap ~variants dangling
-                else error `UninitializedMemoryAccess
+            | Some DUninit -> (
+                let* dangling = Sptr.dangling_if_zst sp.ty in
+                match dangling with
+                | Some d -> from_heap ~variants d
+                | None -> error `UninitializedMemoryAccess)
             | Some DDead -> error `DeadVariable
             | _ ->
                 let* ptr = spill_store_place sp in
