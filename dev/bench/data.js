@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1780954367903,
+  "lastUpdate": 1781098563036,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1340,6 +1340,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.93679752299795,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "78c565539991f75e6ed0acd102fd9759cd8df402",
+          "message": "Add `--offline` to Soteria Rust (#375)\n\n* Add `--offline` to Soteria Rust\n\n* Run soteria rust tests offline\n\n* whatever",
+          "timestamp": "2026-06-10T13:19:20Z",
+          "tree_id": "36a8fd21d383d6e753b4e4dc9bcdfa347f8af9fd",
+          "url": "https://github.com/soteria-tools/soteria/commit/78c565539991f75e6ed0acd102fd9759cd8df402"
+        },
+        "date": 1781098560888,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08060060308000001,
+            "range": "± 0.0014",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.59463587988,
+            "range": "± 0.0052",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.9188985373199998,
+            "range": "± 0.0168",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.22326083574000002,
+            "range": "± 0.0026",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 6.715940859220001,
+            "range": "± 0.0344",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.91708219942,
+            "range": "± 0.0187",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.746439278998878,
             "unit": "s"
           }
         ]
