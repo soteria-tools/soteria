@@ -241,9 +241,6 @@ module Interval : S = struct
   let get n v st =
     match Var.Map.find_opt v st with Some r -> r | None -> Data.mk n
 
-  let st_equal = Var.Map.reflexive_equal Data.equal
-  let merge_states = Var.Map.idempotent_inter (fun _ -> Data.union)
-
   let pp ft st =
     Fmt.(iter_bindings Var.Map.iter (pair ~sep:(any " -> ") Var.pp Data.pp))
       ft st
@@ -439,20 +436,19 @@ module Interval : S = struct
   let rec simplify (v : Svalue.t) st =
     match (v.node.kind, lazy (as_range v)) with
     | Binop (Or, v1, v2), _ ->
-        let v1', _learnt1, vars1, st1 = add_constraint v1 st in
-        let v2', _learnt2, vars2, st2 = add_constraint v2 st in
-        let st' = merge_states st1 st2 in
-        let vars = Var.Set.union vars1 vars2 in
+        (* [v1 || v2] is valid under [st] iff [¬v1 && ¬v2] is infeasible there.
+           Unlike the join of ranges (which over-approximates a union and would
+           let us wrongly conclude e.g. [x != 0 || y != 0] is always true),
+           intersecting ranges is exact, so [add_constraint] only reports
+           infeasibility (a [false] learnt fact) when it genuinely holds. *)
+        let _, learnt1, _, st1 = add_constraint (Svalue.Bool.not v1) st in
+        let _, learnt2, _, _ = add_constraint (Svalue.Bool.not v2) st1 in
         log (fun m ->
-            m "checking %a / %a / %a /@.1. %a@.2. %a"
-              Fmt.(list Var.pp)
-              (Var.Set.to_list vars) Svalue.pp v1 Svalue.pp v2 pp st pp st');
-        (* If the state is unchanged, then the conjunction covers all possible
-           states and this is always true. (I think.) *)
+            m "checking %a || %a:@.¬1. %a@.¬2. %a" Svalue.pp v1 Svalue.pp v2
+              Svalue.pp learnt1 Svalue.pp learnt2);
         if
-          Svalue.equal v1' Svalue.Bool.v_true
-          && Svalue.equal v2' Svalue.Bool.v_true
-          && st_equal st st'
+          Svalue.equal learnt1 Svalue.Bool.v_false
+          || Svalue.equal learnt2 Svalue.Bool.v_false
         then Svalue.Bool.v_true
         else v
     | ( Binop

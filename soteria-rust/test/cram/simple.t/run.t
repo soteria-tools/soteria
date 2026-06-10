@@ -600,3 +600,22 @@ Ensure we implement the caller_location intrinsic correctly; this used to cause 
         (0b000 == extract[0-2](V|1|))
   
   [1]
+
+Boolean BitOr must not be assumed true; both operands can be false (issue #376).
+  $ soteria-rust exec bool_or.rs
+  Compiling... done in <time>
+  => Running bool_or::main...
+  error: bool_or::main: found issues in <time>, errors in 1 branch (out of 2)
+  error: Panic: assertion failed: output in bool_or::main
+      --> $TESTCASE_ROOT/bool_or.rs:5:5
+    1 |  fn main() {
+      |  --------- 1: Entry point
+      .  
+    5 |      assert!(output);
+      |      ^^^^^^^^^^^^^^^
+      |      |
+      |      Triggering operation
+      |      2: Call trace
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|2|) /\ (0x00 == V|1|) /\ (0x00 == V|2|)
+  
+  [1]
