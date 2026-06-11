@@ -8,12 +8,12 @@ env:
   OCAML_VERSION: 5.4.1
   # [versionsync: OBOL_REPO=soteria-tools/obol]
   OBOL_REPO: soteria-tools/obol
-  # [versionsync: OBOL_COMMIT_HASH=8c5a8dc57bdeed33d1b9b84c73406be35ee23a51]
-  OBOL_COMMIT_HASH: 8c5a8dc57bdeed33d1b9b84c73406be35ee23a51
+  # [versionsync: OBOL_COMMIT_HASH=42f11d00b19ba8bda50fd6fd43d860ef4dd4946d]
+  OBOL_COMMIT_HASH: 42f11d00b19ba8bda50fd6fd43d860ef4dd4946d
   # [versionsync: CHARON_REPO=soteria-tools/charon]
   CHARON_REPO: soteria-tools/charon
-  # [versionsync: CHARON_COMMIT_HASH=985e04c69e6743983b3a2dfedb2ea8b0af0598f9]
-  CHARON_COMMIT_HASH: 985e04c69e6743983b3a2dfedb2ea8b0af0598f9
+  # [versionsync: CHARON_COMMIT_HASH=4986f2907dbe5899b0756ab623b5ef661ed2c58c]
+  CHARON_COMMIT_HASH: 4986f2907dbe5899b0756ab623b5ef661ed2c58c
 
 jobs:
   build:
@@ -45,7 +45,16 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-${{ hashFiles('*.opam') }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-
-      - run: opam update
+
+      - name: Update opam
+        run: |
+          rm -rf _opam/.opam-switch/sources/charon _opam/.opam-switch/sources/name_matcher_parser
+          set -o pipefail
+          opam update 2>&1 | tee opam-update.log
+          if grep -qiE "Could not synchronize|fetching sources failed|Could not retrieve some package sources" opam-update.log; then
+            echo "::error::opam update could not fetch a pinned source; aborting to avoid building stale deps"
+            exit 1
+          fi
       # OCaml build
       - name: setup dependencies
         run: make ocaml-deps

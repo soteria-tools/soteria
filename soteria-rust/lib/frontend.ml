@@ -120,6 +120,10 @@ let default () =
          "--format=postcard";
          "--no-typecheck";
          "--no-normalize";
+         (* Use the normal distributed sysroot; Charon otherwise defaults to a
+            full-MIR Miri sysroot, whose std is incompatible with our
+            separately-compiled [soteria] support crate. *)
+         "--sysroot=default";
        ]
       @ opaque_names
       @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
