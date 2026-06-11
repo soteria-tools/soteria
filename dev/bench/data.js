@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781212524191,
+  "lastUpdate": 1781213814453,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1535,6 +1535,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.627857301034965,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e7abf7f8b9252008b6319c20aeacf993d6a38b18",
+          "message": "Bump Charon and Obol (#381)\n\n* Bump Charon and Obol\n\n* Fix ref/ptr constants\n\n* Claude says this will fix CI ?",
+          "timestamp": "2026-06-11T21:02:55Z",
+          "tree_id": "8db24576753f920a414a6d1e776c16a072d4ab74",
+          "url": "https://github.com/soteria-tools/soteria/commit/e7abf7f8b9252008b6319c20aeacf993d6a38b18"
+        },
+        "date": 1781213812563,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.07995715846000002,
+            "range": "± 0.0011",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.58789027674,
+            "range": "± 0.0042",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.8942043001799997,
+            "range": "± 0.0163",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.22305163802,
+            "range": "± 0.0027",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 7.256610628019999,
+            "range": "± 0.057",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9109202170799997,
+            "range": "± 0.0273",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.896290545002557,
             "unit": "s"
           }
         ]
