@@ -55,11 +55,11 @@ module DecayMap = struct
   end
 
   module Entry = struct
-    type t = { address : sint Typed.t; exposed : bool }
+    type 'addr raw = { address : 'addr; exposed : bool }
     [@@deriving show { with_path = false }]
 
-    type syn = { address : Expr.t; exposed : bool }
-    [@@deriving show { with_path = false }]
+    type t = sint Typed.t raw [@@deriving show { with_path = false }]
+    type syn = Expr.t raw [@@deriving show { with_path = false }]
 
     let fresh () = failwith "No fresh for DecayMap.SM.Entry"
 
@@ -101,6 +101,7 @@ module DecayMap = struct
       =
     if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
     else
+      let* state = get_state () in
       wrap loc
         (let open EntryExcl.SM in
          let open Syntax in
@@ -113,12 +114,22 @@ module DecayMap = struct
          | None ->
              let* address = nondet (Typed.t_usize ()) in
              let isize_max = Layout.max_value_z (TInt Isize) in
+             (* Distinct allocations live at distinct addresses. We
+                under-approximate this by only requiring the base addresses to
+                differ. *)
+             let disctinct =
+               syntactic_bindings (of_opt state)
+               |> Seq.map (fun (_, Entry.{ address; _ }) -> address)
+               |> Seq.cons address
+               |> Typed.distinct_seq
+             in
              let* () =
                assume
                  [
                    (address %@ align ==@ Usize.(0s));
                    align <=@ address;
                    address <@ Typed.BitVec.usize isize_max -!@ size;
+                   disctinct;
                  ]
              in
              let* () = set_state (Some { address; exposed = expose }) in
