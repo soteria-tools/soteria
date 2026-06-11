@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781106061357,
+  "lastUpdate": 1781212524191,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1470,6 +1470,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.76795479300199,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "b9ec0a9365609f12ac592e940abcfb90c3dcabfd",
+          "message": "Rust: Disjoint exposed addresses (#380)\n\n* update Claude.md\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Exposed addresses are disjoint\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-06-11T20:56:37Z",
+          "tree_id": "cc488741b4789f8ea9a43b9a32ee210bc32a60f1",
+          "url": "https://github.com/soteria-tools/soteria/commit/b9ec0a9365609f12ac592e940abcfb90c3dcabfd"
+        },
+        "date": 1781212522380,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08163023076000002,
+            "range": "± 0.0018",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.59285841858,
+            "range": "± 0.0071",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.8922528627,
+            "range": "± 0.0098",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.22460559352000004,
+            "range": "± 0.0022",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 7.334873698020002,
+            "range": "± 0.0232",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9085731389800002,
+            "range": "± 0.0188",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.627857301034965,
             "unit": "s"
           }
         ]
