@@ -1,4 +1,4 @@
-type synth_fn = GenericDropInPlace
+type synth_fn = GenericDropInPlace | ZeroIfNull
 [@@deriving ord, show { with_path = false }]
 
 type t =

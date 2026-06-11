@@ -257,8 +257,7 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running thread_local::static_ref_cell...
   warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::list::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
@@ -273,8 +272,7 @@ This test must be run separtely on linux and macos as it yields different error 
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running thread_local::static_ref_cell...
   warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::linux_like::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)

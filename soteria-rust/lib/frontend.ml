@@ -115,6 +115,7 @@ let default () =
          "--mir=elaborated";
          "--reconstruct-fallible-operations";
          "--reconstruct-asserts";
+         "--reconstruct-null-checks";
          "--desugar-drops";
          "--precise-drops";
          "--format=postcard";
