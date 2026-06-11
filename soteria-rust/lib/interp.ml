@@ -321,11 +321,16 @@ module Make (StateImpl : State.S) = struct
     | CRef (expr, meta) | CPtr (_, expr, meta) ->
         (* HACK: ideally Charon shouldn't have ref constants, those are entirely
            separate allocations :/ *)
+        let* meta =
+          match meta with
+          | None -> ok Thin
+          | Some meta -> resolve_unsizing_metadata ~prev:Thin meta
+        in
         let* v = resolve_constant expr in
         let@ () = with_alloc_kind ~kind:AnonConst in
-        let* ptr = State.alloc_ty expr.ty in
-        let+ () = State.store ptr expr.ty v in
-        Ptr ptr
+        let* ((ptr, _) as fptr) = State.alloc_ty expr.ty in
+        let+ () = State.store fptr expr.ty v in
+        Ptr (ptr, meta)
     | CCall (ptr, args) ->
         let* args = map_list args ~f:resolve_constant in
         let* fn = resolve_fn_ptr ptr in
@@ -466,6 +471,32 @@ module Make (StateImpl : State.S) = struct
     | _ ->
         let+ ptr = resolve_place place in
         Heap ptr
+
+  and resolve_unsizing_metadata ~prev (meta : Types.unsizing_metadata) =
+    match meta with
+    | MetaLength length ->
+        let+ len = resolve_constant length in
+        Len (as_base_i Usize len)
+    | MetaVTable (_, const) ->
+        let+ ptr = resolve_constant const in
+        let vtable, _ = as_ptr ptr in
+        VTable vtable
+    | MetaVTableUpcast fields -> (
+        match prev with
+        | Thin -> failwith "Unsizing VTable with no meta?"
+        | Len _ -> error `UBDanglingPointer
+        | VTable vt ->
+            let+ vt' =
+              fold_list fields ~init:vt ~f:(fun vt field ->
+                  let idx = Types.FieldId.to_int field in
+                  let* vt_addr =
+                    Sptr.offset ~ty:unit_ptr ~signed:false (BV.usizei idx) vt
+                  in
+                  let+ vt = State.load (vt_addr, Thin) unit_ptr in
+                  fst (as_ptr vt))
+            in
+            VTable vt')
+    | MetaUnknown -> not_impl "Unknown unsizing metadata"
 
   (** Resolve a function operand, returning a callable symbolic function to
       execute it. It also returns the types expected of the function, which is
@@ -654,39 +685,9 @@ module Make (StateImpl : State.S) = struct
             in
             Encoder.cast_literal ~from_ty ~to_ty v
         | Cast (CastUnsize (from_ty, to_ty, meta)) ->
-            let update_meta prev =
-              match meta with
-              | MetaLength length ->
-                  let+ len = resolve_constant length in
-                  Len (as_base_i Usize len)
-              | MetaVTable (_, const) ->
-                  (* the global adds one level of indirection *)
-                  let+ ptr = resolve_constant const in
-                  let vtable, _ = as_ptr ptr in
-                  VTable vtable
-              | MetaVTableUpcast fields -> (
-                  match prev with
-                  | Thin -> failwith "Unsizing VTable with no meta?"
-                  | Len _ -> error `UBDanglingPointer
-                  | VTable vt ->
-                      let+ vt' =
-                        fold_list fields ~init:vt ~f:(fun vt field ->
-                            let idx = Types.FieldId.to_int field in
-                            let* vt_addr =
-                              Sptr.offset ~ty:unit_ptr ~signed:false
-                                (BV.usizei idx) vt
-                            in
-                            let+ vt = State.load (vt_addr, Thin) unit_ptr in
-                            fst (as_ptr vt))
-                      in
-                      VTable vt')
-              | MetaUnknown ->
-                  Fmt.kstr not_impl "Unknown metadata for %a -> %a" pp_ty
-                    from_ty pp_ty to_ty
-            in
             let rec with_ptr_meta : rust_val -> rust_val t = function
               | Ptr (v, prev) ->
-                  let+ meta = update_meta prev in
+                  let+ meta = resolve_unsizing_metadata ~prev meta in
                   Ptr (v, meta)
               | Tuple (_ :: _ as fs) as v -> (
                   let rec split_at_non_empty fs left =
