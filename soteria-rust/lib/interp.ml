@@ -290,7 +290,8 @@ module Make (StateImpl : State.S) = struct
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
         (* read the pointer value of [base] without spilling it to the heap *)
-        let* ptr = load_lazy base in
+        let* loc = resolve_place_lazy base in
+        let* ptr = load_lazy loc base.ty in
         [%l.debug "Dereferencing %a of %a" pp_rust_val ptr pp_ty base.ty];
         match ptr with
         | Ptr fptr -> (
@@ -435,17 +436,16 @@ module Make (StateImpl : State.S) = struct
         let+ ptr = resolve_place place in
         Heap ptr
 
-  (** Given a place, attempts performing a fallible operation [store] using the
-      store. If the lazy pointer actually points to the heap, or if the
-      operation fails (returns [None]), uses [heap] instead. *)
+  (** Given a lazy pointer, attempts performing a fallible operation [store]
+      using the store. If the lazy pointer actually points to the heap, or if
+      the operation fails (returns [None]), uses [heap] instead. *)
   and try_lazy :
       'a.
       store:(Store.Place.t -> _ Store.t -> 'a option t) ->
       heap:(full_ptr -> 'a t) ->
-      Expressions.place ->
+      lazy_ptr ->
       'a t =
-   fun ~store ~heap place ->
-    let* loc = resolve_place_lazy place in
+   fun ~store ~heap loc ->
     match loc with
     | Heap ptr -> heap ptr
     | Store sp -> (
@@ -455,10 +455,10 @@ module Make (StateImpl : State.S) = struct
         | Some res -> ok res
         | None -> bind heap @@ resolve_place sp.origin)
 
-  and load_lazy place : rust_val t =
+  and load_lazy loc ty : rust_val t =
     Soteria.Stats.As_ctx.incr StatKeys.load_accesses;
-    try_lazy place
-      ~heap:(fun ptr -> State.load ptr place.ty)
+    try_lazy loc
+      ~heap:(fun ptr -> State.load ptr ty)
       ~store:(fun sp store ->
         match Store.try_load sp store with
         | Some (Value v) ->
@@ -466,17 +466,17 @@ module Make (StateImpl : State.S) = struct
             ok (Some v)
         | Some Uninit -> (
             Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
-            let* dangling = Sptr.dangling_if_zst place.ty in
+            let* dangling = Sptr.dangling_if_zst ty in
             match dangling with
-            | Some d -> OptionM.lift @@ State.load (d, Thin) place.ty
+            | Some d -> OptionM.lift @@ State.load (d, Thin) ty
             | None -> error `UninitializedMemoryAccess)
         | _ -> ok None)
 
-  and store_lazy (place : Expressions.place) v : unit t =
+  and store_lazy loc ty v : unit t =
     let open OptionM.Syntax in
-    [%l.info "Assigning %a <- %a" Crate.pp_place place pp_rust_val v];
-    try_lazy place
-      ~heap:(fun ptr -> State.store ptr place.ty v)
+    [%l.info "Assigning %a <- %a" pp_lazy_ptr loc pp_rust_val v];
+    try_lazy loc
+      ~heap:(fun ptr -> State.store ptr ty v)
       ~store:(fun sp store ->
         let* store = get_env () in
         let*^ new_store = Store.try_store sp store v in
@@ -589,7 +589,9 @@ module Make (StateImpl : State.S) = struct
            https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
         let* layout = Layout.layout_of place.ty in
         if layout.uninhabited then error (`RefToUninhabited place.ty)
-        else load_lazy place
+        else
+          let* loc = resolve_place_lazy place in
+          load_lazy loc place.ty
 
   and eval_operand_list = map_list ~f:eval_operand
 
@@ -866,7 +868,8 @@ module Make (StateImpl : State.S) = struct
         if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
           let open OptionM in
           let open Syntax in
-          try_lazy place
+          let* loc = resolve_place_lazy place in
+          try_lazy loc
             ~heap:(fun ptr -> State.load_discriminant ptr place.ty)
             ~store:(fun sp store ->
               let*^ v = Store.try_load sp store in
@@ -968,8 +971,9 @@ module Make (StateImpl : State.S) = struct
     match stmt.kind with
     | Nop -> ok ()
     | Assign (place, rval) ->
+        let* loc = resolve_place_lazy place in
         let* v = eval_rvalue rval place.ty in
-        store_lazy place v
+        store_lazy loc place.ty v
     | StorageLive local ->
         let* store = get_env () in
         let binding = Store.find local store in
@@ -1057,7 +1061,8 @@ module Make (StateImpl : State.S) = struct
             [%l.info
               "Returned %a <- %a from %a" Crate.pp_place dest pp_rust_val v
                 Crate.pp_fn_operand func];
-            let* () = store_lazy dest v in
+            let* loc = resolve_place_lazy dest in
+            let* () = store_lazy loc dest.ty v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
@@ -1070,7 +1075,8 @@ module Make (StateImpl : State.S) = struct
         exec_block ~body block
     | Return ->
         let ret_place = Charon_util.return_place body in
-        let* value = load_lazy ret_place in
+        let* loc = resolve_place_lazy ret_place in
+        let* value = load_lazy loc ret_place.ty in
         Encoder.ref_tys_in ret_place.ty value ~init:() ~f:(fun () ptr_ty ptr ->
             let pointee = get_pointee ptr_ty in
             let+ () = State.tb_load ptr pointee in
