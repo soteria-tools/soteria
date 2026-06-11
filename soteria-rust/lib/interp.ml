@@ -798,10 +798,9 @@ module Make (StateImpl : State.S) = struct
                 | BitAnd -> ok (Int (v1 &@ v2))
                 | BitXor -> ok (Int (v1 ^@ v2))
                 | _ -> assert false))
-        | ((Ptr _ | Int _) as p1), ((Ptr _ | Int _) as p2) -> (
+        | (Ptr (p, meta) as ptr1), ((Ptr _ | Int _) as p2) -> (
             match op with
             | Offset ->
-                let p, meta = as_ptr p1 in
                 let off = as_base_i Usize p2 in
                 let ty = get_pointee (type_of_operand e1) in
                 let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
@@ -809,7 +808,7 @@ module Make (StateImpl : State.S) = struct
                 let+ p' = Sptr.offset ~signed ~ty off p in
                 Ptr (p', meta)
             | _ ->
-                let+ res = Core.eval_ptr_binop op p1 p2 in
+                let+ res = Core.eval_ptr_binop op ptr1 p2 in
                 Int res)
         | Float v1, Float v2 -> (
             match op with

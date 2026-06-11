@@ -133,6 +133,13 @@ let get_adt_lang_item lang_item =
     raise (MissingDecl ("Missing ADT with lang item: " ^ lang_item))
   with Found adt -> adt
 
+let adt_has_lang_item lang_item (adt_ref : Types.type_decl_ref) =
+  match adt_ref.id with
+  | TAdtId id ->
+      Option.equal String.equal (get_adt_raw id).item_meta.lang_item
+        (Some lang_item)
+  | TBuiltin _ | TTuple -> false
+
 let get_fun id =
   let crate = get_crate () in
   match UllbcAst.FunDeclId.Map.find_opt id crate.fun_decls with
