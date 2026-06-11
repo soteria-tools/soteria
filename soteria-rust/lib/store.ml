@@ -162,7 +162,7 @@ let try_uninit (place : Place.t) store =
   | Local v -> Some (declare_uninit v store)
   | _ -> None
 
-type discr_ret = DVariant of Typed.(T.sint t) | DUninit | DDead
+type discr_ret = DVariant of Typed.(T.sint t) | DUninit
 
 let try_load_discriminant (place : Place.t) store =
   let open Syntaxes.Option in
@@ -170,5 +170,4 @@ let try_load_discriminant (place : Place.t) store =
   match binding with
   | Value (Enum (discriminant, _)) -> Some (DVariant discriminant)
   | Uninit -> Some DUninit
-  | Dead -> Some DDead
   | _ -> None

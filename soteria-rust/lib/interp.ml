@@ -359,7 +359,7 @@ module Make (StateImpl : State.S) = struct
         if Layout.is_dst place.ty then ok (ptr', meta) else ok (ptr', Thin)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, meta = resolve_place base in
-        let* len, _ = index_len ~meta ~base_ty:base.ty in
+        let* len, _ = len_of_indexable ~meta ~pointee:base.ty in
         let* idx = eval_operand idx in
         let idx = as_base_i Usize idx in
         let idx = if from_end then len -!@ idx else idx in
@@ -373,7 +373,7 @@ module Make (StateImpl : State.S) = struct
         (ptr', Thin)
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr, meta = resolve_place base in
-        let* len, ty = index_len ~meta ~base_ty:base.ty in
+        let* len, ty = len_of_indexable ~meta ~pointee:base.ty in
         let* from = eval_operand from in
         let* to_ = eval_operand to_ in
         let from = as_base_i Usize from in
@@ -394,9 +394,9 @@ module Make (StateImpl : State.S) = struct
         (ptr', Len slice_len)
 
   (* The length of an array or slice being indexed; used to bound-check. *)
-  and index_len ~meta ~base_ty =
-    match (meta, base_ty) with
-    | Thin, Types.TArray (ty, len) ->
+  and len_of_indexable ~meta ~pointee =
+    match (meta, (pointee : Types.ty)) with
+    | Thin, TArray (ty, len) ->
         let+ len = resolve_constant len in
         (as_base_i Usize len, ty)
     | Len len, TSlice ty -> ok (len, ty)
@@ -431,7 +431,7 @@ module Make (StateImpl : State.S) = struct
         let** base_sp = build_store_place base in
         let* idx = eval_operand idx in
         let idx = as_base_i Usize idx in
-        let* len, _ = index_len ~meta:Thin ~base_ty:base.ty in
+        let* len, _ = len_of_indexable ~meta:Thin ~pointee:base.ty in
         let idx = if from_end then len -!@ idx else idx in
         (* only a concrete index can be navigated within a value; a symbolic
            index decays to a heap location *)
@@ -463,7 +463,6 @@ module Make (StateImpl : State.S) = struct
             let* layout = Layout.layout_of ty in
             if%sat layout.size ==@ Usize.(0s) then ok ()
             else error `UninitializedMemoryAccess
-        | Some Dead -> error `DeadVariable
         | _ ->
             let* ptr = resolve_place sp.origin in
             State.fake_read ptr ty)
@@ -484,7 +483,6 @@ module Make (StateImpl : State.S) = struct
             match dangling with
             | Some d -> State.load (d, Thin) ty
             | None -> error `UninitializedMemoryAccess)
-        | Some Dead -> error `DeadVariable
         | _ ->
             let* ptr = resolve_place sp.origin in
             State.load ptr ty)
@@ -515,7 +513,6 @@ module Make (StateImpl : State.S) = struct
                 match dangling with
                 | Some d -> from_heap ~variants (d, Thin)
                 | None -> error `UninitializedMemoryAccess)
-            | Some DDead -> error `DeadVariable
             | _ ->
                 let* ptr = resolve_place sp.origin in
                 from_heap ~variants ptr))
