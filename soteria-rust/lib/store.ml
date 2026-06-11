@@ -78,11 +78,10 @@ module Binding = struct
     | Stackptr ptr ->
         Fmt.pf ft "Stackptr(%a) : %a"
           (Rust_val.pp_full_ptr Fmt.nop)
-          ptr Types.pp_ty ty
-    | Value v ->
-        Fmt.pf ft "Value(%a) : %a" (Rust_val.pp Fmt.nop) v Types.pp_ty ty
-    | Uninit -> Fmt.pf ft "Uninit : %a" Types.pp_ty ty
-    | Dead -> Fmt.pf ft "Dead : %a" Types.pp_ty ty
+          ptr pp_ty ty
+    | Value v -> Fmt.pf ft "Value(%a) : %a" (Rust_val.pp Fmt.nop) v pp_ty ty
+    | Uninit -> Fmt.pf ft "Uninit : %a" pp_ty ty
+    | Dead -> Fmt.pf ft "Dead : %a" pp_ty ty
 
   let as_value = function { kind = Value v; _ } -> Some v | _ -> None
 
@@ -140,9 +139,12 @@ let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
   | Metadata base -> (
       try_load base store
       |> bind_value @@ function
+         (* the metadata projection output: [()] for thin pointer, [usize] for
+            slices, and [ptr::DynMetadata] for VTables *)
          | Ptr (_, Thin) -> Value Rust_val.unit_
          | Ptr (_, Len len) -> Value (Int len)
-         | Ptr (_, VTable vt) -> Value (Ptr (vt, Thin))
+         | Ptr (_, VTable vt) ->
+             Value (Tuple [ Tuple [ Ptr (vt, Thin) ]; Tuple [] ])
          | _ -> failwith "tried loading metadata of non-pointer")
 
 let try_store (place : Place.t) store value =

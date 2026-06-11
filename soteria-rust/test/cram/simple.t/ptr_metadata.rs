@@ -9,4 +9,11 @@ fn main() {
     // The metadata of a thin pointer is the unit value.
     let thin: *const u32 = core::ptr::null();
     let () = core::ptr::metadata(thin);
+
+    // Check we can get the metadata of a trait object pointer.
+    trait Trait {}
+    struct Struct;
+    impl Trait for Struct {}
+    let trait_object: *const dyn Trait = &Struct;
+    let _vt = core::ptr::metadata(trait_object);
 }

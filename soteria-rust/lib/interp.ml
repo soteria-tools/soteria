@@ -474,6 +474,7 @@ module Make (StateImpl : State.S) = struct
 
   and store_lazy (place : Expressions.place) v : unit t =
     let open OptionM.Syntax in
+    [%l.info "Assigning %a <- %a" Crate.pp_place place pp_rust_val v];
     try_lazy place
       ~heap:(fun ptr -> State.store ptr place.ty v)
       ~store:(fun sp store ->
