@@ -52,15 +52,6 @@ module Make (StateImpl : State.S) = struct
                 pp_full_ptr ptr];
             ptr)
 
-  let get_variable_lazy_and_ty var_id =
-    let* store = get_env () in
-    let binding = Store.find var_id store in
-    match binding.kind with
-    | Stackptr ptr -> ok (Heap ptr, binding.ty)
-    | Uninit | Value _ ->
-        ok (Store (Store.Place.local var_id binding.ty), binding.ty)
-    | Dead -> error `DeadVariable
-
   (** [alloc_stack locals args] Allocates stack space for the locals in
       [locals], and initializes the arguments with [args]. Returns a list of
       protected pointers that need to be unprotected at the end of the function.
@@ -881,11 +872,11 @@ module Make (StateImpl : State.S) = struct
             Int inner_off)
     | Discriminant place ->
         if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
+          let open OptionM in
+          let open Syntax in
           try_lazy place
             ~heap:(fun ptr -> State.load_discriminant ptr place.ty)
             ~store:(fun sp store ->
-              let open OptionM in
-              let open Syntax in
               let*^ v = Store.try_load sp store in
               match v with
               | Value (Enum (discr, _)) -> ok (Int discr)
@@ -893,8 +884,7 @@ module Make (StateImpl : State.S) = struct
                   let* dangling = Sptr.dangling_if_zst sp.origin.ty in
                   match dangling with
                   | Some d ->
-                      let+ discr = State.load_discriminant (d, Thin) place.ty in
-                      Some discr
+                      OptionM.lift @@ State.load_discriminant (d, Thin) place.ty
                   | None -> error `UninitializedMemoryAccess)
               | _ -> none ())
         (* If a type doesn't have variants, return 0.
