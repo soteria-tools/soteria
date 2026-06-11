@@ -35,3 +35,6 @@ let get ?(msg = "Option.get None") = function
 
 (** Convert a boolean to an option. *)
 let of_bool = function true -> Some () | false -> None
+
+(** [true] if the option is [Some x] and [f x] is true, otherwise [false]. *)
+let is_some_and f = function Some x -> f x | None -> false

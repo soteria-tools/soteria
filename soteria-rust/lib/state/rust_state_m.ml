@@ -179,7 +179,7 @@ module type S = sig
   module State : sig
     val empty : st
     val load : ?ignore_borrow:bool -> full_ptr -> Types.ty -> (rust_val, 'env) t
-    val load_discriminant : full_ptr -> Types.ty -> (Types.variant_id, 'env) t
+    val load_discriminant : full_ptr -> Types.ty -> (rust_val, 'env) t
     val store : full_ptr -> Types.ty -> rust_val -> (unit, 'env) t
     val zeros : full_ptr -> Typed.T.sint Typed.t -> (unit, 'env) t
     val alloc_ty : ?span:Meta.span_data -> Types.ty -> (full_ptr, 'env) t
@@ -273,6 +273,7 @@ module type S = sig
     val none : unit -> ('a, 'env) t
     val bind : ('a -> ('b, 'env) t) -> ('a, 'env) t -> ('b, 'env) t
     val map : ('a -> 'b) -> ('a, 'env) t -> ('b, 'env) t
+    val lift : ('a, 'env) monad -> ('a, 'env) t
 
     module Syntax : sig
       val ( let** ) : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
@@ -575,6 +576,7 @@ module Make (State : State_intf.S) :
   module OptionM = struct
     type nonrec ('a, 'env) t = ('a option, 'env) t
 
+    let lift x = map Option.some x
     let bind f x = bind (function Some v -> f v | None -> ok None) x
     let map f x = map (Option.map f) x
     let none () = ok None

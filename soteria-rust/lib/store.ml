@@ -155,19 +155,3 @@ let try_store (place : Place.t) store value =
     | _ -> None
   in
   declare_value root new_val store
-
-let try_uninit (place : Place.t) store =
-  (* Can only uninitialise a whole variable *)
-  match place.kind with
-  | Local v -> Some (declare_uninit v store)
-  | _ -> None
-
-type discr_ret = DVariant of Typed.(T.sint t) | DUninit
-
-let try_load_discriminant (place : Place.t) store =
-  let open Syntaxes.Option in
-  let* binding = try_load place store in
-  match binding with
-  | Value (Enum (discriminant, _)) -> Some (DVariant discriminant)
-  | Uninit -> Some DUninit
-  | _ -> None

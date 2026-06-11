@@ -299,8 +299,7 @@ module Make (StateImpl : State.S) = struct
     (* Dereference a pointer *)
     | PlaceProjection (base, Deref) -> (
         (* read the pointer value of [base] without spilling it to the heap *)
-        let* lazy_ptr = resolve_place_lazy base in
-        let* ptr = load_lazy lazy_ptr base.ty in
+        let* ptr = load_lazy base in
         [%l.debug "Dereferencing %a of %a" pp_rust_val ptr pp_ty base.ty];
         match ptr with
         | Ptr fptr -> (
@@ -447,102 +446,57 @@ module Make (StateImpl : State.S) = struct
     match sp with
     | Some sp ->
         (* we compute the layout here in case of a layout error *)
-        let* _ = Layout.layout_of place.ty in
-        ok (Store sp)
+        let+ _ = Layout.layout_of place.ty in
+        Store sp
     | None ->
         let+ ptr = resolve_place place in
         Heap ptr
 
-  and fake_read_lazy lazy_ptr ty : unit t =
-    match lazy_ptr with
+  (** Given a place, attempts performing a fallible operation [store] using the
+      store. If the lazy pointer actually points to the heap, or if the
+      operation fails (returns [None]), uses [heap] instead. *)
+  and try_lazy :
+      'a.
+      store:(Store.Place.t -> _ Store.t -> 'a option t) ->
+      heap:(full_ptr -> 'a t) ->
+      Expressions.place ->
+      'a t =
+   fun ~store ~heap place ->
+    let* loc = resolve_place_lazy place in
+    match loc with
+    | Heap ptr -> heap ptr
     | Store sp -> (
-        let* store = get_env () in
-        match Store.try_load sp store with
-        | Some (Value _) -> ok ()
-        | Some Uninit ->
-            let* layout = Layout.layout_of ty in
-            if%sat layout.size ==@ Usize.(0s) then ok ()
-            else error `UninitializedMemoryAccess
-        | _ ->
-            let* ptr = resolve_place sp.origin in
-            State.fake_read ptr ty)
-    | Heap ptr -> State.fake_read ptr ty
+        let* s = get_env () in
+        let* res_opt = store sp s in
+        match res_opt with
+        | Some res -> ok res
+        | None -> bind heap @@ resolve_place sp.origin)
 
-  and load_lazy lazy_ptr ty : rust_val t =
+  and load_lazy place : rust_val t =
     Soteria.Stats.As_ctx.incr StatKeys.load_accesses;
-    match lazy_ptr with
-    | Store sp -> (
-        let* store = get_env () in
+    try_lazy place
+      ~heap:(fun ptr -> State.load ptr place.ty)
+      ~store:(fun sp store ->
         match Store.try_load sp store with
         | Some (Value v) ->
             Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
-            ok v
+            ok (Some v)
         | Some Uninit -> (
             Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
-            let* dangling = Sptr.dangling_if_zst ty in
+            let* dangling = Sptr.dangling_if_zst place.ty in
             match dangling with
-            | Some d -> State.load (d, Thin) ty
+            | Some d -> OptionM.lift @@ State.load (d, Thin) place.ty
             | None -> error `UninitializedMemoryAccess)
-        | _ ->
-            let* ptr = resolve_place sp.origin in
-            State.load ptr ty)
-    | Heap ptr -> State.load ptr ty
+        | _ -> ok None)
 
-  and load_discr_lazy (place : Expressions.place) =
-    let of_variant (variant : Types.variant) =
-      Int (BV.of_literal variant.discriminant)
-    in
-    let from_heap ~(variants : Types.variant list) ptr : (rust_val, _) StateM.t
-        =
-      let+ variant_id = State.load_discriminant ptr place.ty in
-      let variant = Types.VariantId.nth variants variant_id in
-      of_variant variant
-    in
-    match place.ty with
-    | TAdt adt when Crate.is_enum adt -> (
-        let variants = Crate.as_enum adt in
-        let* lazy_ptr = resolve_place_lazy place in
-        match lazy_ptr with
-        | Heap ptr -> from_heap ~variants ptr
-        | Store sp -> (
-            let* store = get_env () in
-            match Store.try_load_discriminant sp store with
-            | Some (DVariant discr) -> ok (Int discr)
-            | Some DUninit -> (
-                let* dangling = Sptr.dangling_if_zst sp.origin.ty in
-                match dangling with
-                | Some d -> from_heap ~variants (d, Thin)
-                | None -> error `UninitializedMemoryAccess)
-            | _ ->
-                let* ptr = resolve_place sp.origin in
-                from_heap ~variants ptr))
-    (* If a type doesn't have variants, return 0.
-       https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
-    | _ -> ok (Int U8.(0s))
-
-  and store_lazy lazy_ptr ty v : unit t =
-    match lazy_ptr with
-    (* assigning a whole local overwrites its value directly, even if it was
-       uninitialized, rather than spilling it to the heap *)
-    | Store sp -> (
+  and store_lazy (place : Expressions.place) v : unit t =
+    let open OptionM.Syntax in
+    try_lazy place
+      ~heap:(fun ptr -> State.store ptr place.ty v)
+      ~store:(fun sp store ->
         let* store = get_env () in
-        match Store.try_store sp store v with
-        | Some new_store -> set_env new_store
-        | None ->
-            let* ptr = resolve_place sp.origin in
-            State.store ptr ty v)
-    | Heap ptr -> State.store ptr ty v
-
-  and uninit_lazy lazy_ptr ty : unit t =
-    match lazy_ptr with
-    | Store sp -> (
-        let* store = get_env () in
-        match Store.try_uninit sp store with
-        | Some new_store -> set_env new_store
-        | None ->
-            let* ptr = resolve_place sp.origin in
-            State.uninit ptr ty)
-    | Heap ptr -> State.uninit ptr ty
+        let*^ new_store = Store.try_store sp store v in
+        OptionM.lift @@ set_env new_store)
 
   (** Resolve a function operand, returning a callable symbolic function to
       execute it. It also returns the types expected of the function, which is
@@ -651,9 +605,7 @@ module Make (StateImpl : State.S) = struct
            https://github.com/rust-lang/unsafe-code-guidelines/issues/416 *)
         let* layout = Layout.layout_of place.ty in
         if layout.uninhabited then error (`RefToUninhabited place.ty)
-        else
-          let* ptr = resolve_place_lazy place in
-          load_lazy ptr place.ty
+        else load_lazy place
 
   and eval_operand_list = map_list ~f:eval_operand
 
@@ -927,7 +879,27 @@ module Make (StateImpl : State.S) = struct
             in
             let inner_off = Layout.Fields_shape.offset_of field fields in
             Int inner_off)
-    | Discriminant place -> load_discr_lazy place
+    | Discriminant place ->
+        if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
+          try_lazy place
+            ~heap:(fun ptr -> State.load_discriminant ptr place.ty)
+            ~store:(fun sp store ->
+              let open OptionM in
+              let open Syntax in
+              let*^ v = Store.try_load sp store in
+              match v with
+              | Value (Enum (discr, _)) -> ok (Int discr)
+              | Uninit -> (
+                  let* dangling = Sptr.dangling_if_zst sp.origin.ty in
+                  match dangling with
+                  | Some d ->
+                      let+ discr = State.load_discriminant (d, Thin) place.ty in
+                      Some discr
+                  | None -> error `UninitializedMemoryAccess)
+              | _ -> none ())
+        (* If a type doesn't have variants, return 0.
+           https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
+          else ok (Int U8.(0s))
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
         let variants = Crate.as_enum adt in
@@ -1011,18 +983,11 @@ module Make (StateImpl : State.S) = struct
   and exec_stmt (stmt : UllbcAst.statement) : unit t =
     [%l.info "Statement: %a" Crate.pp_statement stmt];
     let@ () = with_loc ~loc:stmt.span.data in
-    let* state = get_state () in
-    [%l.debug
-      "State before statement:\n%a"
-        (Fmt.Dump.option @@ StateImpl.pp_pretty ~ignore_freed:false)
-        state];
     match stmt.kind with
     | Nop -> ok ()
     | Assign (place, rval) ->
-        let* ptr = resolve_place_lazy place in
         let* v = eval_rvalue rval place.ty in
-        [%l.info "Assigning %a <- %a" pp_lazy_ptr ptr pp_rust_val v];
-        store_lazy ptr place.ty v
+        store_lazy place v
     | StorageLive local ->
         let* store = get_env () in
         let binding = Store.find local store in
@@ -1107,11 +1072,10 @@ module Make (StateImpl : State.S) = struct
         in
         unwind_with fun_exec
           ~f:(fun v ->
-            let* ptr = resolve_place_lazy dest in
             [%l.info
               "Returned %a <- %a from %a" Crate.pp_place dest pp_rust_val v
                 Crate.pp_fn_operand func];
-            let* () = store_lazy ptr dest.ty v in
+            let* () = store_lazy dest v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
@@ -1123,9 +1087,9 @@ module Make (StateImpl : State.S) = struct
         let block = UllbcAst.BlockId.nth body.body b in
         exec_block ~body block
     | Return ->
-        let* ptr, ty = get_variable_lazy_and_ty Expressions.LocalId.zero in
-        let* value = load_lazy ptr ty in
-        Encoder.ref_tys_in ty value ~init:() ~f:(fun () ptr_ty ptr ->
+        let ret_place = Charon_util.return_place body in
+        let* value = load_lazy ret_place in
+        Encoder.ref_tys_in ret_place.ty value ~init:() ~f:(fun () ptr_ty ptr ->
             let pointee = get_pointee ptr_ty in
             let+ () = State.tb_load ptr pointee in
             (ptr, ()))

@@ -592,7 +592,11 @@ module Make (Borrows : Tree_borrows.T) = struct
   and load_discriminant ((ptr, _) as fptr) ty =
     let** () = check_ptr_align fptr ty in
     let parser ~offset = Heap.Decoder.variant_of_enum ty ~offset in
-    apply_parser ptr parser
+    let++ variant_id = apply_parser ptr parser in
+    let adt = Charon_util.ty_as_adt ty in
+    let variants = Crate.as_enum adt in
+    let variant = Types.VariantId.nth variants variant_id in
+    Int (Typed.BV.of_literal variant.discriminant)
 
   (** Performs a side-effect free ghost read -- this does not modify the state
       or the tree-borrow state. Returns [Some error] if an error occurred, and

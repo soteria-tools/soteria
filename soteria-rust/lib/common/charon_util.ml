@@ -226,10 +226,18 @@ let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
   | F64 -> F64
   | F128 -> F128
 
-let ty_as_adt (ty : Types.ty) : Types.type_decl_ref =
-  match ty with
+let ty_as_adt : Types.ty -> Types.type_decl_ref = function
   | TAdt tref -> tref
   | _ -> invalid_arg "ty_as_adt: not an ADT type"
+
+let ty_as_adt_opt : Types.ty -> Types.type_decl_ref option = function
+  | TAdt tref -> Some tref
+  | _ -> None
+
+let return_place (body : 'a GAst.gexpr_body) : Expressions.place =
+  let ret_id = Expressions.LocalId.zero in
+  let local = Expressions.LocalId.nth body.locals.locals ret_id in
+  { kind = PlaceLocal ret_id; ty = local.local_ty }
 
 (** Whether the given type is monomorphic, i.e. contains no type variables.
     {b This is a conservative estimate}: [struct Foo<T> {}] is considered

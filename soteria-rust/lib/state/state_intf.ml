@@ -51,7 +51,7 @@ module type S = sig
   val empty : t option
   val load : ?ignore_borrow:bool -> full_ptr -> Types.ty -> rust_val ret
   val tb_load : full_ptr -> Types.ty -> unit ret
-  val load_discriminant : full_ptr -> Types.ty -> Types.variant_id ret
+  val load_discriminant : full_ptr -> Types.ty -> rust_val ret
   val store : full_ptr -> Types.ty -> rust_val -> unit ret
 
   val alloc_untyped :
