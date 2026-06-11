@@ -649,3 +649,10 @@ Test that reading the metadata of a store-hosted pointer does not allocate; the 
   note: ptr_metadata::main: done in <time>, ran 1 branch
   PC 1: empty
   
+Test we can use ptr::metadata to get the metadata of a trait object; this used to crash
+  $ soteria-rust exec ptr_dyn_metadata.rs
+  Compiling... done in <time>
+  => Running ptr_dyn_metadata::main...
+  note: ptr_dyn_metadata::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
