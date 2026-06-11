@@ -232,13 +232,26 @@ module Make (StateImpl : State.S) = struct
             let* glob_ptr = resolve_global global in
             let glob = Crate.get_global global.id in
             State.load glob_ptr glob.ty
-        | Clause _ -> not_impl "TODO: TraitConst(Clause)"
-        | ParentClause _ -> not_impl "TODO: TraitConst(ParentClause)"
-        | ItemClause _ -> not_impl "TODO: TraitConst(ItemClause)"
-        | Self -> not_impl "TODO: TraitConst(Self)"
-        | BuiltinOrAuto _ -> not_impl "TODO: TraitConst(BuiltinOrAuto)"
-        | Dyn -> not_impl "TODO: TraitConst(Dyn)"
-        | UnknownTrait _ -> not_impl "TODO: TraitConst(UnknownTrait)")
+        | _ -> (
+            (* We can't resolve a concrete impl (e.g. the trait is only known
+               via a clause or an auto trait); fall back to the default value
+               declared in the trait, if any. *)
+            let trait_decl =
+              Crate.get_trait_decl tref.trait_decl_ref.binder_value
+            in
+            let assoc =
+              Types.AssocConstId.Map.find const_id trait_decl.consts
+            in
+            match assoc.default with
+            | Some global ->
+                let* glob_ptr = resolve_global global in
+                let glob = Crate.get_global global.id in
+                State.load glob_ptr glob.ty
+            | None ->
+                Fmt.kstr not_impl "unsupported trait const: %s in %a for %a"
+                  assoc.name Crate.pp_trait_ref tref
+                  (Crate.pp_region_binder Crate.pp_trait_decl_ref)
+                  tref.trait_decl_ref))
     | CRawMemory bytes ->
         (* This whole function is a bit complicated, due to the fact we don't supprt
            pointer chunks, meaning we need to do a best-effort reconstruction of the
@@ -300,12 +313,12 @@ module Make (StateImpl : State.S) = struct
         in
         Union blocks
     | CGlobal glob ->
-        let+ ptr = resolve_global glob in
-        Ptr ptr
+        let* ptr = resolve_global glob in
+        State.load ptr const.ty
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
-    | CRef (expr, meta) ->
+    | CRef (expr, meta) | CPtr (_, expr, meta) ->
         (* HACK: ideally Charon shouldn't have ref constants, those are entirely
            separate allocations :/ *)
         let* v = resolve_constant expr in
@@ -313,11 +326,18 @@ module Make (StateImpl : State.S) = struct
         let* ptr = State.alloc_ty expr.ty in
         let+ () = State.store ptr expr.ty v in
         Ptr ptr
-    | CPtr _ ->
-        Fmt.kstr not_impl "TODO: CPtr constant %a" Crate.pp_constant_expr const
-    | CFnPtr _ ->
-        Fmt.kstr not_impl "TODO: CFnPtr constant %a" Crate.pp_constant_expr
-          const
+    | CCall (ptr, args) ->
+        let* args = map_list args ~f:resolve_constant in
+        let* fn = resolve_fn_ptr ptr in
+        let* trace = get_trace () in
+        let loc = Option.get trace.loc in
+        with_extra_call_trace ~loc ~msg:"Resolving constant"
+        @@ with_env ~env:()
+        @@ exec_fun fn args
+    | CFnPtr fn_ptr ->
+        let* fn = resolve_fn_ptr fn_ptr in
+        let+ ptr = State.declare_fn fn in
+        Ptr ptr
     | CVTableRef _ ->
         Fmt.kstr not_impl "TODO: CVTableRef constant %a" Crate.pp_constant_expr
           const
@@ -515,19 +535,13 @@ module Make (StateImpl : State.S) = struct
         in
         perform_call fn
 
-  (** Resolves a global into a *pointer* Rust value to where that global is *)
+  (** Resolves a global into a *pointer* to where that global is *)
   and resolve_global (glob : Types.global_decl_ref) =
     let decl = Crate.get_global glob.id in
     let* v_opt = State.load_global glob.id in
     match v_opt with
     | Some v -> ok v
     | None ->
-        (* Same as with strings -- here we need to somehow cache where we store
-           the globals *)
-        let fundef = Crate.get_fun decl.init in
-        [%l.info
-          "Resolved global init call to %a" Crate.pp_name fundef.item_meta.name];
-        let global_fn = exec_real_fun fundef glob.generics in
         (* First we allocate the global and store it in the State *)
         let kind : Alloc_kind.t =
           match decl.global_kind with
@@ -538,7 +552,7 @@ module Make (StateImpl : State.S) = struct
         let* ptr = State.alloc_ty ~span:decl.item_meta.span.data decl.ty in
         let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)
-        let* v = with_env ~env:() @@ global_fn [] in
+        let* v = resolve_constant decl.value in
         let+ () = State.store ptr decl.ty v in
         [%l.info
           "Initialized global %a at %a to %a" Crate.pp_name decl.item_meta.name
@@ -647,10 +661,8 @@ module Make (StateImpl : State.S) = struct
                   Len (as_base_i Usize len)
               | MetaVTable (_, const) ->
                   (* the global adds one level of indirection *)
-                  let* ptr = resolve_constant const in
-                  let ptr = as_ptr ptr in
-                  let+ vtable = State.load ptr unit_ptr in
-                  let vtable, _ = as_ptr vtable in
+                  let+ ptr = resolve_constant const in
+                  let vtable, _ = as_ptr ptr in
                   VTable vtable
               | MetaVTableUpcast fields -> (
                   match prev with
