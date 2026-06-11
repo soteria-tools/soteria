@@ -563,20 +563,23 @@ module Make (Borrows : Tree_borrows.T) = struct
       `UBDanglingPointer
 
   and check_non_dangling ((_, meta) as ptr) (ty : Types.ty) =
-    let** size, _ = size_and_align_of_val ty meta in
-    check_non_dangling_untyped ptr size
+    let**^ layout = Layout.layout_of ty in
+    if layout.uninhabited then Result.error (`RefToUninhabited ty)
+    else
+      let** size, _ = size_and_align_of_val ty meta in
+      check_non_dangling_untyped ptr size
 
   and check_validity ~check_refs ty value =
+    let default_check ptr ty =
+      let** () = check_ptr_align ptr ty in
+      check_non_dangling ptr ty
+    in
     let check_ref =
       if (Config.get ()).recursive_validity <> Allow && check_refs then
         fun ptr ty ->
-        (* we still need to check it's non-dangling! *)
-        let** () = check_ptr_align ptr ty in
-        let** () = check_non_dangling ptr ty in
+        let** () = default_check ptr ty in
         fake_read ptr ty
-      else fun ptr ty ->
-        let** () = check_ptr_align ptr ty in
-        check_non_dangling ptr ty
+      else default_check
     in
     Encoder.check_validity ~check_ref ty value
 

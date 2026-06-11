@@ -299,14 +299,6 @@ module Make (StateImpl : State.S) = struct
             let pointee = get_pointee base.ty in
             match base.ty with
             | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
-                (* dereferencing a reference/box to an uninhabited type is UB;
-                   the heap decoder catches this on load, but a value read from
-                   the store is never decoded *)
-                let* layout = Layout.layout_of pointee in
-                let* () =
-                  if layout.uninhabited then error (`RefToUninhabited pointee)
-                  else ok ()
-                in
                 let+ () = Sptr.check_aligned fptr pointee in
                 fptr
             | _ -> ok fptr)
