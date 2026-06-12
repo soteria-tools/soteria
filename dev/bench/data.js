@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781213814453,
+  "lastUpdate": 1781258118486,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1600,6 +1600,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.896290545002557,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2c470d26bee3bbcdbfb0d8dedd6fcf672e7f3595",
+          "message": "Optimise struct and array access in the store (#374)\n\n* various helpers\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* store optimisation\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Add tests\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Use validity checks\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* add tests that no allocation is happening\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Revert \"Use validity checks\"\n\nThis reverts commit aac1368a79def33f8144424f25dbc4a5f1f43869.\n\n* lazily load discriminants from the store\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* more tests, we're getting quicker!!\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* optimise metadata projections\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Add `List.update_at`\n\n* Remove zst_value, much cleaner!\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* avoid `option`s when not needed\n\n* Fix box allocations test\n\n* zst_dangling in Sptr, and make it \"dangling_if_zst\"\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* cleanup dangling_if_zst PR to fit in the codebase\n\n* simplify a bit\n\n* remember origin of store pointers; simplifies code\n\n* Remove `Dead` cases, delegate to `resolve_place`\n\n* Simplify things a bunch\n\n* clean a bit\n\n* Fix checking for uninhabited pointees\n\n* final touch ups\n\n* Fix metadata projection in the store\n\n* Fix metadata optimisation in the store\n\n* extract resolve_place_lazy out of try_lazy 💔\n\n* tests\n\n* rerun tests\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\nCo-authored-by: N1ark <opale.sjostedt@gmail.com>",
+          "timestamp": "2026-06-12T09:37:50Z",
+          "tree_id": "58370e6133de14e0a6dcb86546a2ddbfe695bd90",
+          "url": "https://github.com/soteria-tools/soteria/commit/2c470d26bee3bbcdbfb0d8dedd6fcf672e7f3595"
+        },
+        "date": 1781258116166,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08054683978,
+            "range": "± 0.0007",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.35357013536000004,
+            "range": "± 0.0034",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6543821505800005,
+            "range": "± 0.0203",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.10754288544000004,
+            "range": "± 0.0011",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 4.34522024094,
+            "range": "± 0.0249",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9016778897000002,
+            "range": "± 0.0184",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 10.001670294906944,
             "unit": "s"
           }
         ]
