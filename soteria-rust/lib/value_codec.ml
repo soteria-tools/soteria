@@ -205,7 +205,8 @@ struct
              pointer anyway, and special case null-checking. Allows for
              optimising away decays happening for e.g. Option<NonNull<T>>. *)
           let* tag =
-            if size_of_literal_ty tag_ty = Crate.pointer_size () then
+            if match tag_ty with TInt Isize | TUInt Usize -> true | _ -> false
+            then
               let+ v = query (unit_ptr, offset +!!@ tag_ofs) in
               `Ptr (fst (as_ptr v))
             else
@@ -222,19 +223,16 @@ struct
               Typed.ppa offset
           in
           let cond_for from_ to_ =
+            let is_single = Typed.equal from_ to_ in
             let int_cond tag =
-              if Typed.equal from_ to_ then tag ==@ from_
+              if is_single then tag ==@ from_
               else from_ <=@ tag &&@ (tag <=@ to_)
             in
             match tag with
             | `Int tag -> ok (int_cond tag)
-            | `Ptr ptr ->
-                if Typed.equal from_ to_ && Typed.BV.sure_is_zero from_ then
-                  (* fast path *)
-                  ok (Sptr.is_null ptr)
-                else
-                  let+ tag = lift (Sptr.decay ptr) in
-                  int_cond tag
+            | `Ptr ptr when is_single && Typed.BV.sure_is_zero from_ ->
+                ok (Sptr.is_null ptr)
+            | `Ptr ptr -> map int_cond @@ lift (Sptr.decay ptr)
           in
           let rec aux = function
             | [] -> exec fallback

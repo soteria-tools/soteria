@@ -114,9 +114,7 @@ module BitVec = struct
 
   let max ~signed l r = ite (gt ~signed l r) l r
   let min ~signed l r = ite (lt ~signed l r) l r
-
-  let sure_is_zero v =
-    match to_z v with Some z -> Z.equal z Z.zero | None -> false
+  let sure_is_zero v = Option.is_some_and Z.(equal zero) (to_z v)
 end
 
 module BV = BitVec
