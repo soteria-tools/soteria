@@ -68,6 +68,7 @@ let rec dst_kind : Types.ty -> meta_kind = function
       match List.last_opt (Crate.as_struct adt) with
       | None -> NoneKind
       | Some last -> dst_kind Types.(last.field_ty))
+  | TVar (Bound _) -> L.failwith "Unsubstituted type in dst_kind"
   | _ -> NoneKind
 
 (** If this is a DST type with a slice tail, return the type of the slice's
@@ -88,7 +89,8 @@ let index_ty : Types.ty -> Types.ty = function
   | TSlice ty | TArray (ty, _) -> ty
   | ty -> L.failwith "slice_ty: unexpected type: %a" pp_ty ty
 
-(** If this is a dynamically sized type (requiring a fat pointer) *)
+(** If this is a dynamically sized type (requiring a fat pointer). Requires the
+    input type to be normalised. *)
 let is_dst ty = dst_kind ty <> NoneKind
 
 (** The [Pointee::Metadata] associated type of a pointer to [pointee]: [()] for
@@ -228,7 +230,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
   | TError _ -> not_impl_layout "error" ty
   | TTraitType (tref, assoc_ty_id, args) ->
-      let** resolved = resolve_trait_ty tref assoc_ty_id args in
+      let* resolved = resolve_trait_ty tref assoc_ty_id args in
       layout_of resolved
 
 and translate_discriminator : Types.discriminator -> Fields_shape.discriminator
@@ -407,22 +409,19 @@ and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
       let impl = Crate.get_trait_impl timplref in
       let trait_assoc_ty = Types.AssocTypeId.Map.find assoc_ty_id impl.types in
       (* HACK: we skip the binder here! *)
-      ok trait_assoc_ty.binder_value.value
+      return trait_assoc_ty.binder_value.value
   | BuiltinOrAuto (BuiltinPointee, _, _) ->
       let pointee = List.hd tref.trait_decl_ref.binder_value.generics.types in
-      ok (pointee_metadata pointee)
+      return (pointee_metadata pointee)
   | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id, args))
 
 (** Normalise a type, by substituting any generics with the current generic
     environment, and resolving the trait type if needed. *)
 let normalise (ty : Types.ty) =
-  let** ty =
-    match ty with
-    | TTraitType (tref, name, args) -> resolve_trait_ty tref name args
-    | _ -> ok ty
-  in
-  let+ ty = Poly.subst_ty ty in
-  Ok ty
+  let* ty = Poly.subst_ty ty in
+  match ty with
+  | TTraitType (tref, name, args) -> resolve_trait_ty tref name args
+  | _ -> return ty
 
 let[@inline] size_of ty =
   let++ { size; _ } = layout_of ty in
