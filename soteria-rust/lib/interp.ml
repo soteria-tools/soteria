@@ -281,7 +281,10 @@ module Make (StateImpl : State.S) = struct
         let* meta =
           match meta with
           | None -> ok Thin
-          | Some meta -> resolve_unsizing_metadata ~prev:Thin meta
+          | Some meta ->
+              resolve_unsizing_metadata
+                ~help:(fun () -> "happened when resolving a constant")
+                ~prev:Thin meta
         in
         let* v = resolve_constant expr in
         let@ () = with_alloc_kind ~kind:AnonConst in
@@ -514,7 +517,7 @@ module Make (StateImpl : State.S) = struct
         let*^ new_store = Store.try_store sp store v in
         OptionM.lift @@ set_env new_store)
 
-  and resolve_unsizing_metadata ~prev (meta : Types.unsizing_metadata) =
+  and resolve_unsizing_metadata ?help ~prev (meta : Types.unsizing_metadata) =
     match meta with
     | MetaLength length ->
         let+ len = resolve_constant length in
@@ -538,7 +541,11 @@ module Make (StateImpl : State.S) = struct
                   fst (as_ptr vt))
             in
             VTable vt')
-    | MetaUnknown -> not_impl "Unknown unsizing metadata"
+    | MetaUnknown -> (
+        match help with
+        | None -> not_impl "unknown unsizing metadata"
+        | Some help ->
+            Fmt.kstr not_impl "unknown unsizing metadata: %s" (help ()))
 
   (** Resolve a function operand, returning a callable symbolic function to
       execute it. It also returns the types expected of the function, which is
@@ -711,11 +718,11 @@ module Make (StateImpl : State.S) = struct
                 match (v, Layout.is_dst to_ty) with
                 | Ptr (ptr, _), false -> ok (Ptr (ptr, Thin))
                 | Ptr (_, Thin), true ->
-                    not_impl "Cannot cast to fat pointer without meta"
+                    failwith "cannot cast to fat pointer without meta"
                 | Ptr _, true -> ok v
-                | _ -> not_impl "Invalid value for CastRawPtr")
+                | _ -> failwith "invalid value for CastRawPtr")
             | _ ->
-                Fmt.kstr not_impl "Invalid types for CastRawPtr: %a -> %a" pp_ty
+                Fmt.failwith "unexpected types for CastRawPtr: %a -> %a" pp_ty
                   from_ty pp_ty to_ty)
         | Cast (CastTransmute (from, to_)) -> State.transmute ~from ~to_ v
         | Cast (CastScalar (from_ty, to_ty)) ->
@@ -729,7 +736,13 @@ module Make (StateImpl : State.S) = struct
         | Cast (CastUnsize (from_ty, to_ty, meta)) ->
             let rec with_ptr_meta : rust_val -> rust_val t = function
               | Ptr (v, prev) ->
-                  let+ meta = resolve_unsizing_metadata ~prev meta in
+                  let+ meta =
+                    resolve_unsizing_metadata
+                      ~help:(fun () ->
+                        Fmt.str "don't know how to unsize %a -> %a" pp_ty
+                          from_ty pp_ty to_ty)
+                      ~prev meta
+                  in
                   Ptr (v, meta)
               | Tuple (_ :: _ as fs) as v -> (
                   let rec split_at_non_empty fs left =
@@ -745,8 +758,8 @@ module Make (StateImpl : State.S) = struct
                       let+ nonempty = with_ptr_meta nonempty in
                       let fs = List.rev (left @ [ nonempty ] @ right) in
                       match v with Tuple _ -> Tuple fs | _ -> assert false)
-                  | None -> not_impl "Couldn't set pointer meta in CastUnsize")
-              | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
+                  | None -> failwith "Couldn't set pointer meta in CastUnsize")
+              | _ -> failwith "Couldn't set pointer meta in CastUnsize"
             in
             with_ptr_meta v
         | Cast (CastConcretize (_from, _to)) ->
@@ -758,7 +771,7 @@ module Make (StateImpl : State.S) = struct
                 let+ ptr = State.declare_fn fn in
                 Ptr ptr
             | _, (Ptr _ as ptr) -> ok ptr
-            | _ -> not_impl "Invalid argument to CastFnPtr"))
+            | _ -> failwith "Invalid argument to CastFnPtr"))
     | BinaryOp (op, e1, e2) -> (
         let* v1 = eval_operand e1 in
         let* v2 = eval_operand e2 in
@@ -846,11 +859,10 @@ module Make (StateImpl : State.S) = struct
             | Div _ -> ok (Float (v1 /.@ v2))
             | Rem _ -> ok (Float (Typed.Float.rem v1 v2))
             | _ ->
-                Fmt.kstr not_impl "Unsupported float binary operator (%a)"
+                Fmt.failwith "unexpected float binary operator (%a)"
                   Expressions.pp_binop op)
         | v1, v2 ->
-            Fmt.kstr not_impl
-              "Unsupported values for binary operator (%a): %a / %a"
+            Fmt.failwith "Unexpected values for binary operator (%a): %a / %a"
               Expressions.pp_binop op pp_rust_val v1 pp_rust_val v2)
     | NullaryOp (op, ty) -> (
         match op with
@@ -954,8 +966,8 @@ module Make (StateImpl : State.S) = struct
               let v = Typed.cast_i Usize v in
               ok (Sptr.of_address v)
           | _ ->
-              Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
-                pp_rust_val ptr
+              Fmt.failwith "Unexpected ptr in AggregatedRawPtr: %a" pp_rust_val
+                ptr
         in
         (* we flatten the meta, to simplify processing stuff like
            [std::ptr::DynMetadata] *)
@@ -965,7 +977,7 @@ module Make (StateImpl : State.S) = struct
           | [ Int meta ] -> ok (Len (Typed.cast_i Usize meta))
           | [ Ptr (ptr, Thin) ] -> ok (VTable ptr)
           | elms ->
-              Fmt.kstr not_impl "Unexpected meta in AggregatedRawPtr: %a"
+              Fmt.failwith "Unexpected meta in AggregatedRawPtr: %a"
                 Fmt.(list ~sep:comma pp_rust_val)
                 elms
         in
@@ -983,7 +995,7 @@ module Make (StateImpl : State.S) = struct
         match (meta, size_opt) with
         | _, Some size -> resolve_constant size
         | Len len, None -> ok (Int len)
-        | _ -> not_impl "Unexpected len rvalue")
+        | _ -> failwith "Unexpected len rvalue")
 
   and exec_stmt (stmt : UllbcAst.statement) : unit t =
     [%l.info "Statement: %a" Crate.pp_statement stmt];
