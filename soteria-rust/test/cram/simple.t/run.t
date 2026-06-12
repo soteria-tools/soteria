@@ -664,3 +664,31 @@ Test we can use ptr::metadata to get the metadata of a trait object; this used t
   note: ptr_dyn_metadata::main: done in <time>, ran 1 branch
   PC 1: empty
   
+
+  $ check_decays nonnull.rs 0
+  Compiling... done in <time>
+  => Running nonnull::main...
+  note: nonnull::main: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ (0x0000000000000008 <=u V|1|) /\
+        (V|1| <=u 0x7ffffffffffffff6) /\ (0x0000000000000008 <=u V|2|) /\
+        (V|2| <=u 0x7ffffffffffffff6) /\ (0b000 == extract[0-2](V|1|)) /\
+        (0b000 == extract[0-2](V|2|))
+  
+  => Running nonnull::null_is_none...
+  note: nonnull::null_is_none: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running nonnull::niche_ok...
+  note: nonnull::niche_ok: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0b000 == extract[0-2](V|1|))
+  
+  => Running nonnull::niche_err...
+  note: nonnull::niche_err: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running nonnull::transmuted_discriminant...
+  note: nonnull::transmuted_discriminant: done in <time>, ran 2 branches
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  PC 2: (0x0000000000000001 <=u V|1|)
+  
