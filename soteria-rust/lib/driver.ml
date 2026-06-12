@@ -28,8 +28,7 @@ let with_exn_and_config mode config f =
       Fmt.pr "@.%s@.%a@.@." msg Unimplemented.pp
         (Unimplemented.make
            ~tip:
-             ( "If you changed compilation flags from previous runs, you may \
-                have to rebuild the plugins",
+             ( "You can try cleaning plugins and rebuilding them",
                Some "soteria-rust build-plugins [compilation flags]" )
            ~issue:388
            ("Compilation failed while " ^ info));
