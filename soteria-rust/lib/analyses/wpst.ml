@@ -59,13 +59,15 @@ let print_outcomes entry_name f =
             ( "an unsupported feature was reached",
               fun ft -> Unimplemented.pp ft @@ Unimplemented.of_string reason )
         | e ->
+            let backtrace = Printexc.get_backtrace () in
             ( "an unexpected exception was raised",
               fun ft ->
                 Fmt.pf ft
-                  "%a@.Trace: %s@.Please open an issue with the above \
-                   information (and ideally a reproducer) at %t"
+                  "%a@.@.%tPlease open an issue with the above information \
+                   (and ideally a reproducer) at %t"
                   Fmt.exn e
-                  (Printexc.get_backtrace ())
+                  (if String.length backtrace = 0 then ignore
+                   else fun ft -> Fmt.pf ft "Trace: %s@.@." backtrace)
                   Unimplemented.pp_repo_issues )
       in
       Fmt.kstr
