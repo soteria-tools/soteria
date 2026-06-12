@@ -146,15 +146,11 @@ Check permissive provenance allows int to ptr casts
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
 Distinct allocations get distinct base addresses, so they can never alias
-  $ soteria-rust exec distinct_allocs.rs
+  $ soteria-rust exec distinct_allocs.rs --stats stats.json && check_stat stats.json decayed_pointers 0
   Compiling... done in <time>
   => Running distinct_allocs::distinct_allocs_dont_alias...
   note: distinct_allocs::distinct_allocs_dont_alias: done in <time>, ran 1 branch
-  PC 1: Distinct(V|1-2|) /\ (0x0000000000000000 != (V|1| - V|2|)) /\
-        Distinct(V|1-3|) /\ (0x0000000000000000 != (V|2| - V|3|)) /\
-        (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd) /\
-        (0x0000000000000001 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffffd) /\
-        (0x0000000000000001 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffd)
+  PC 1: empty
   
 Check corner cases with permissive provenance, around transmutes
   $ soteria-rust exec provenance_transmute.rs --provenance permissive

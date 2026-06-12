@@ -94,6 +94,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       else Result.ok None
 
     let is_null { ptr; _ } = Typed.Ptr.is_null ptr
+    let ofs { ptr; _ } = Typed.Ptr.ofs ptr
     let has_provenance { ptr; _ } = Typed.not (Typed.Ptr.is_at_null_loc ptr)
 
     let have_same_provenance { ptr = ptr1; _ } { ptr = ptr2; _ } =

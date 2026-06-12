@@ -140,12 +140,24 @@ module M (StateM : State.StateM.S) = struct
         let+ res = eval_ptr_binop Eq l r in
         BV.not_bool (cast res)
     | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
-        let* meta_eq = eval_meta_eq meta_l meta_r in
         (* Pointer comparison just uses the address! See
            https://doc.rust-lang.org/std/ptr/index.html#provenance *)
-        let+ distance = Sptr.distance l r in
-        let ptr_eq = distance ==@ Usize.(0s) in
-        BV.of_bool (meta_eq &&@ ptr_eq)
+        (* We optimise when the pointers surely have (or surely don't have) the
+           same provenance, to avoid spuriously decaying them. *)
+        let same_provenance = Sptr.have_same_provenance l r in
+        if%sure same_provenance then
+          (* Same allocation: comparing the offsets is enough. *)
+          let+ meta_eq = eval_meta_eq meta_l meta_r in
+          BV.of_bool (meta_eq &&@ (Sptr.ofs l ==@ Sptr.ofs r))
+        else if%sure not same_provenance then
+          (* Distinct allocations live at distinct addresses, so the pointers
+             cannot be equal. *)
+          ok (BV.of_bool v_false)
+        else
+          let* meta_eq = eval_meta_eq meta_l meta_r in
+          let+ distance = Sptr.distance l r in
+          let ptr_eq = distance ==@ Usize.(0s) in
+          BV.of_bool (meta_eq &&@ ptr_eq)
     | Eq, Ptr (p, _), Int v | Eq, Int v, Ptr (p, _) ->
         let v = cast_i Usize v in
         if%sat v ==@ Usize.(0s) then ok (BV.of_bool (Sptr.is_null p))
