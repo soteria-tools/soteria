@@ -193,14 +193,60 @@ module Cmd = struct
   let rustc_as_env () = [ "RUSTC=" ^ rustc () ]
   let split_on_space s = String.split_on_char ' ' s |> List.filter (( <> ) "")
 
+  (** The compilation target triple: the one provided by the user, or the host
+      of the frontend's toolchain. *)
+  let target =
+    lazy
+      (match (Config.get ()).target with
+      | Some t -> t
+      | None -> (
+          let env = rustc_as_env () in
+          let info = Exe.exec_exn ~env (cargo ()) [ "-vV" ] in
+          match List.find_opt (String.starts_with ~prefix:"host") info with
+          | Some s -> String.sub s 6 (String.length s - 6)
+          | None -> frontend_err "Couldn't find target host"))
+
+  (** The sysroot to use for compilation. If the user provided one, use it
+      ([--sysroot default] is special-cased to mean rustc's default sysroot);
+      otherwise set up (building if needed) a Miri sysroot for the frontend's
+      toolchain, so that std function bodies are available for analysis. *)
+  let sysroot =
+    lazy
+      (match (Config.get ()).sysroot with
+      | Some "default" -> None
+      | Some _ as path -> path
+      | None ->
+          let env = [ "RUSTUP_TOOLCHAIN=" ^ Lazy.force toolchain_version ] in
+          let out =
+            Exe.exec_exn ~env (cargo ())
+              [
+                "miri";
+                "setup";
+                "--target";
+                Lazy.force target;
+                "--print-sysroot";
+              ]
+          in
+          let sysroot =
+            List.rev out
+            |> List.find_map (fun s ->
+                let s = String.trim s in
+                if s <> "" then Some s else None)
+          in
+          if Option.is_none sysroot then
+            frontend_err "Couldn't set up a Miri sysroot";
+          sysroot)
+
   let current_rustc_flags () =
-    let rustc = (Config.get ()).rustc_flags in
+    let config = Config.get () in
     let sysroot =
-      match (Config.get ()).sysroot with
-      | Some path -> [ "--sysroot"; path ]
-      | None -> []
+      match (Lazy.force sysroot, config.frontend) with
+      | Some path, _ -> [ "--sysroot"; path ]
+      (* charon tries building its own sysroot if we don't tell it not to *)
+      | None, Charon -> [ "--sysroot"; "default" ]
+      | None, Obol -> []
     in
-    rustc @ sysroot
+    sysroot @ config.rustc_flags
 
   let cargo_flags () =
     let config = Config.get () in

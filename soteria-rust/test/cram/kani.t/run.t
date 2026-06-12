@@ -144,53 +144,52 @@ Test kani::vec::any_vec
   => Running any_vec::len_capacity_invariant...
   note: any_vec::len_capacity_invariant: done in <time>, ran 17 branches
   PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
-  PC 2: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        (V|1| == 0x0000000000000010) /\ (V|1| == 0x0000000000000010)
-  PC 3: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-        (V|1| == 0x000000000000000f) /\ (V|1| == 0x000000000000000f)
-  PC 4: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-        (V|1| == 0x000000000000000e) /\ (V|1| == 0x000000000000000e)
-  PC 5: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-        (V|1| == 0x000000000000000d) /\ (V|1| == 0x000000000000000d)
-  PC 6: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-        (V|1| == 0x000000000000000c) /\ (V|1| == 0x000000000000000c)
-  PC 7: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-        (V|1| == 0x000000000000000b) /\ (V|1| == 0x000000000000000b)
-  PC 8: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-        (V|1| == 0x000000000000000a) /\ (V|1| == 0x000000000000000a)
-  PC 9: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-        ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-        (V|1| == 0x0000000000000009) /\ (V|1| == 0x0000000000000009)
-  PC 10: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-         (V|1| == 0x0000000000000008) /\ (V|1| == 0x0000000000000008)
-  PC 11: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-         (V|1| == 0x0000000000000007) /\ (V|1| == 0x0000000000000007)
-  PC 12: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-         (V|1| == 0x0000000000000006) /\ (V|1| == 0x0000000000000006)
-  PC 13: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-         (V|1| == 0x0000000000000005) /\ (V|1| == 0x0000000000000005)
-  PC 14: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-         (V|1| == 0x0000000000000004) /\ (V|1| == 0x0000000000000004)
-  PC 15: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-         (V|1| == 0x0000000000000003) /\ (V|1| == 0x0000000000000003)
-  PC 16: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-         (V|1| == 0x0000000000000002) /\ (V|1| == 0x0000000000000002)
-  PC 17: ((0x0000000000000010 - V|1|) <=u 0x3fffffffffffffff) /\
-         ((0x0000000000000010 - V|1|) <u 0x2000000000000000) /\
-         (0x0000000000000001 == V|1|) /\ (0x0000000000000001 == V|1|)
+  PC 2: (V|1| == 0x0000000000000010) /\ (V|1| == 0x0000000000000010)
+  PC 3: (V|1| == 0x000000000000000f) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffc2) /\ (V|1| == 0x000000000000000f) /\
+        (0b00 == extract[0-1](V|18|))
+  PC 4: (V|1| == 0x000000000000000e) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffc6) /\ (V|1| == 0x000000000000000e) /\
+        (0b00 == extract[0-1](V|18|))
+  PC 5: (V|1| == 0x000000000000000d) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffca) /\ (V|1| == 0x000000000000000d) /\
+        (0b00 == extract[0-1](V|18|))
+  PC 6: (V|1| == 0x000000000000000c) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffce) /\ (V|1| == 0x000000000000000c) /\
+        (0b00 == extract[0-1](V|18|))
+  PC 7: (V|1| == 0x000000000000000b) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffd2) /\ (V|1| == 0x000000000000000b) /\
+        (0b00 == extract[0-1](V|18|))
+  PC 8: (V|1| == 0x000000000000000a) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffd6) /\ (V|1| == 0x000000000000000a) /\
+        (0b00 == extract[0-1](V|18|))
+  PC 9: (V|1| == 0x0000000000000009) /\ (0x0000000000000004 <=u V|18|) /\
+        (V|18| <=u 0x7fffffffffffffda) /\ (V|1| == 0x0000000000000009) /\
+        (0b00 == extract[0-1](V|18|))
+  PC 10: (V|1| == 0x0000000000000008) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffde) /\ (V|1| == 0x0000000000000008) /\
+         (0b00 == extract[0-1](V|18|))
+  PC 11: (V|1| == 0x0000000000000007) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffe2) /\ (V|1| == 0x0000000000000007) /\
+         (0b00 == extract[0-1](V|18|))
+  PC 12: (V|1| == 0x0000000000000006) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffe6) /\ (V|1| == 0x0000000000000006) /\
+         (0b00 == extract[0-1](V|18|))
+  PC 13: (V|1| == 0x0000000000000005) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffea) /\ (V|1| == 0x0000000000000005) /\
+         (0b00 == extract[0-1](V|18|))
+  PC 14: (V|1| == 0x0000000000000004) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7fffffffffffffee) /\ (V|1| == 0x0000000000000004) /\
+         (0b00 == extract[0-1](V|18|))
+  PC 15: (V|1| == 0x0000000000000003) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7ffffffffffffff2) /\ (V|1| == 0x0000000000000003) /\
+         (0b00 == extract[0-1](V|18|))
+  PC 16: (V|1| == 0x0000000000000002) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7ffffffffffffff6) /\ (V|1| == 0x0000000000000002) /\
+         (0b00 == extract[0-1](V|18|))
+  PC 17: (0x0000000000000001 == V|1|) /\ (0x0000000000000004 <=u V|18|) /\
+         (V|18| <=u 0x7ffffffffffffffa) /\ (0x0000000000000001 == V|1|) /\
+         (0b00 == extract[0-1](V|18|))
   
 Test our simple Kani demo works
   $ soteria-rust exec demo.rs --kani
@@ -214,29 +213,23 @@ Test our simple Kani demo works
   => Running demo::memory_leak...
   error: demo::memory_leak: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak in demo::memory_leak
-      --> $RUSTLIB/library/alloc/src/alloc.rs:101:9
-  101 |            __rust_alloc(layout.size(), layout.alignment())
-      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      |            |
-      |            Triggering operation
-      |            5: Allocation
-      .    
-  331 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
-  332 | /          core::intrinsics::const_eval_select(
-  333 | |              (layout, zeroed),
-  334 | |              Global::alloc_impl_const,
-  335 | |              Global::alloc_impl_runtime,
-  336 | |          )
-      | \----------' 4: Call trace
-  337 |        }
+      --> $RUSTLIB/library/alloc/src/alloc.rs:449:9
+  449 |          self.alloc_impl(layout, false)
+      |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |          |
+      |          Triggering operation
+      |          5: Allocation
       --> $RUSTLIB/library/alloc/src/boxed.rs:286:19
-  286 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
-      |                      -------------------------------------------------- 3: Call trace
+  248 |      match Global.allocate(layout) {
+      |            ----------------------- 4: Call trace
+      .  
+  286 |          let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
+      |                    -------------------------------------------------- 3: Call trace
       --> $TESTCASE_ROOT/demo.rs:33:21
-   32 |    fn memory_leak() {
-      |    ---------------- 1: Leaking function
-   33 |        let allocated = Box::new(11);
-      |                        ------------ 2: Call trace
+   32 |  fn memory_leak() {
+      |  ---------------- 1: Leaking function
+   33 |      let allocated = Box::new(11);
+      |                      ------------ 2: Call trace
   PC 1: empty
   
   => Running demo::uninit_access...

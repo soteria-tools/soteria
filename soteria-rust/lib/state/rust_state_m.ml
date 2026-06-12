@@ -161,6 +161,7 @@ module type S = sig
     val is_1zst : Types.ty -> ([> sbool ] v, 'env) monad
     val is_abi_compatible : Types.ty -> Types.ty -> ([> sbool ] v, 'env) monad
     val unsize_path : Types.ty -> (int list option, 'env) monad
+    val normalise : Types.ty -> (Types.ty, 'env) monad
   end
 
   module Value_codec : sig
@@ -486,6 +487,7 @@ module Make (State : State_intf.S) :
       lift_err (is_abi_compatible ty1 ty2)
 
     let[@inline] unsize_path ty = lift_err (unsize_path ty)
+    let[@inline] normalise ty = lift_symex (normalise ty)
   end
 
   module Value_codec = struct
