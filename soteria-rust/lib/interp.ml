@@ -187,13 +187,26 @@ module Make (StateImpl : State.S) = struct
             let* glob_ptr = resolve_global global in
             let glob = Crate.get_global global.id in
             State.load glob_ptr glob.ty
-        | Clause _ -> not_impl "TODO: TraitConst(Clause)"
-        | ParentClause _ -> not_impl "TODO: TraitConst(ParentClause)"
-        | ItemClause _ -> not_impl "TODO: TraitConst(ItemClause)"
-        | Self -> not_impl "TODO: TraitConst(Self)"
-        | BuiltinOrAuto _ -> not_impl "TODO: TraitConst(BuiltinOrAuto)"
-        | Dyn -> not_impl "TODO: TraitConst(Dyn)"
-        | UnknownTrait _ -> not_impl "TODO: TraitConst(UnknownTrait)")
+        | _ -> (
+            (* We can't resolve a concrete impl (e.g. the trait is only known
+               via a clause or an auto trait); fall back to the default value
+               declared in the trait, if any. *)
+            let trait_decl =
+              Crate.get_trait_decl tref.trait_decl_ref.binder_value
+            in
+            let assoc =
+              Types.AssocConstId.Map.find const_id trait_decl.consts
+            in
+            match assoc.default with
+            | Some global ->
+                let* glob_ptr = resolve_global global in
+                let glob = Crate.get_global global.id in
+                State.load glob_ptr glob.ty
+            | None ->
+                Fmt.kstr not_impl "unsupported trait const: %s in %a for %a"
+                  assoc.name Crate.pp_trait_ref tref
+                  (Crate.pp_region_binder Crate.pp_trait_decl_ref)
+                  tref.trait_decl_ref))
     | CRawMemory bytes ->
         (* This whole function is a bit complicated, due to the fact we don't supprt
            pointer chunks, meaning we need to do a best-effort reconstruction of the
@@ -255,24 +268,36 @@ module Make (StateImpl : State.S) = struct
         in
         Union blocks
     | CGlobal glob ->
-        let+ ptr = resolve_global glob in
-        Ptr ptr
+        let* ptr = resolve_global glob in
+        State.load ptr const.ty
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
     | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
-    | CRef (expr, meta) ->
+    | CRef (expr, meta) | CPtr (_, expr, meta) ->
         (* HACK: ideally Charon shouldn't have ref constants, those are entirely
            separate allocations :/ *)
+        let* meta =
+          match meta with
+          | None -> ok Thin
+          | Some meta -> resolve_unsizing_metadata ~prev:Thin meta
+        in
         let* v = resolve_constant expr in
         let@ () = with_alloc_kind ~kind:AnonConst in
-        let* ptr = State.alloc_ty expr.ty in
-        let+ () = State.store ptr expr.ty v in
+        let* ((ptr, _) as fptr) = State.alloc_ty expr.ty in
+        let+ () = State.store fptr expr.ty v in
+        Ptr (ptr, meta)
+    | CCall (ptr, args) ->
+        let* args = map_list args ~f:resolve_constant in
+        let* fn = resolve_fn_ptr ptr in
+        let* trace = get_trace () in
+        let loc = Option.get trace.loc in
+        with_extra_call_trace ~loc ~msg:"Resolving constant"
+        @@ with_env ~env:()
+        @@ exec_fun fn args
+    | CFnPtr fn_ptr ->
+        let* fn = resolve_fn_ptr fn_ptr in
+        let+ ptr = State.declare_fn fn in
         Ptr ptr
-    | CPtr _ ->
-        Fmt.kstr not_impl "TODO: CPtr constant %a" Crate.pp_constant_expr const
-    | CFnPtr _ ->
-        Fmt.kstr not_impl "TODO: CFnPtr constant %a" Crate.pp_constant_expr
-          const
     | CVTableRef _ ->
         Fmt.kstr not_impl "TODO: CVTableRef constant %a" Crate.pp_constant_expr
           const
@@ -482,6 +507,32 @@ module Make (StateImpl : State.S) = struct
         let*^ new_store = Store.try_store sp store v in
         OptionM.lift @@ set_env new_store)
 
+  and resolve_unsizing_metadata ~prev (meta : Types.unsizing_metadata) =
+    match meta with
+    | MetaLength length ->
+        let+ len = resolve_constant length in
+        Len (as_base_i Usize len)
+    | MetaVTable (_, const) ->
+        let+ ptr = resolve_constant const in
+        let vtable, _ = as_ptr ptr in
+        VTable vtable
+    | MetaVTableUpcast fields -> (
+        match prev with
+        | Thin -> failwith "Unsizing VTable with no meta?"
+        | Len _ -> error `UBDanglingPointer
+        | VTable vt ->
+            let+ vt' =
+              fold_list fields ~init:vt ~f:(fun vt field ->
+                  let idx = Types.FieldId.to_int field in
+                  let* vt_addr =
+                    Sptr.offset ~ty:unit_ptr ~signed:false (BV.usizei idx) vt
+                  in
+                  let+ vt = State.load (vt_addr, Thin) unit_ptr in
+                  fst (as_ptr vt))
+            in
+            VTable vt')
+    | MetaUnknown -> not_impl "Unknown unsizing metadata"
+
   (** Resolve a function operand, returning a callable symbolic function to
       execute it. It also returns the types expected of the function, which is
       needed to load the first argument of a dyn method call.
@@ -550,19 +601,13 @@ module Make (StateImpl : State.S) = struct
         in
         perform_call fn
 
-  (** Resolves a global into a *pointer* Rust value to where that global is *)
+  (** Resolves a global into a *pointer* to where that global is *)
   and resolve_global (glob : Types.global_decl_ref) =
     let decl = Crate.get_global glob.id in
     let* v_opt = State.load_global glob.id in
     match v_opt with
     | Some v -> ok v
     | None ->
-        (* Same as with strings -- here we need to somehow cache where we store
-           the globals *)
-        let fundef = Crate.get_fun decl.init in
-        [%l.info
-          "Resolved global init call to %a" Crate.pp_name fundef.item_meta.name];
-        let global_fn = exec_real_fun fundef glob.generics in
         (* First we allocate the global and store it in the State *)
         let kind : Alloc_kind.t =
           match decl.global_kind with
@@ -573,7 +618,7 @@ module Make (StateImpl : State.S) = struct
         let* ptr = State.alloc_ty ~span:decl.item_meta.span.data decl.ty in
         let* () = State.store_global glob.id ptr in
         (* And only after we compute it; this enables recursive globals *)
-        let* v = with_env ~env:() @@ global_fn [] in
+        let* v = resolve_constant decl.value in
         let+ () = State.store ptr decl.ty v in
         [%l.info
           "Initialized global %a at %a to %a" Crate.pp_name decl.item_meta.name
@@ -675,41 +720,9 @@ module Make (StateImpl : State.S) = struct
             in
             Encoder.cast_literal ~from_ty ~to_ty v
         | Cast (CastUnsize (from_ty, to_ty, meta)) ->
-            let update_meta prev =
-              match meta with
-              | MetaLength length ->
-                  let+ len = resolve_constant length in
-                  Len (as_base_i Usize len)
-              | MetaVTable (_, const) ->
-                  (* the global adds one level of indirection *)
-                  let* ptr = resolve_constant const in
-                  let ptr = as_ptr ptr in
-                  let+ vtable = State.load ptr unit_ptr in
-                  let vtable, _ = as_ptr vtable in
-                  VTable vtable
-              | MetaVTableUpcast fields -> (
-                  match prev with
-                  | Thin -> failwith "Unsizing VTable with no meta?"
-                  | Len _ -> error `UBDanglingPointer
-                  | VTable vt ->
-                      let+ vt' =
-                        fold_list fields ~init:vt ~f:(fun vt field ->
-                            let idx = Types.FieldId.to_int field in
-                            let* vt_addr =
-                              Sptr.offset ~ty:unit_ptr ~signed:false
-                                (BV.usizei idx) vt
-                            in
-                            let+ vt = State.load (vt_addr, Thin) unit_ptr in
-                            fst (as_ptr vt))
-                      in
-                      VTable vt')
-              | MetaUnknown ->
-                  Fmt.kstr not_impl "Unknown metadata for %a -> %a" pp_ty
-                    from_ty pp_ty to_ty
-            in
             let rec with_ptr_meta : rust_val -> rust_val t = function
               | Ptr (v, prev) ->
-                  let+ meta = update_meta prev in
+                  let+ meta = resolve_unsizing_metadata ~prev meta in
                   Ptr (v, meta)
               | Tuple (_ :: _ as fs) as v -> (
                   let rec split_at_non_empty fs left =

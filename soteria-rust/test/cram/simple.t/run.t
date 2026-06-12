@@ -86,7 +86,8 @@ Test that we properly handle the niche optimisation
   Compiling... done in <time>
   => Running niche_optim::main...
   note: niche_optim::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+  PC 1: Distinct(V|1-2|) /\ Distinct(V|1-3|) /\
+        (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
         (0x0000000000000004 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffff6) /\
         (0x0000000000000004 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffa) /\
         (0b00 == extract[0-1](V|1|)) /\ (0b00 == extract[0-1](V|2|)) /\
@@ -149,6 +150,20 @@ Check permissive provenance allows int to ptr casts
   note: provenance::with_exposed: done in <time>, ran 1 branch
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
+
+
+Distinct allocations get distinct base addresses, so they can never alias
+  $ soteria-rust exec distinct_allocs.rs
+  Compiling... done in <time>
+  => Running distinct_allocs::distinct_allocs_dont_alias...
+  note: distinct_allocs::distinct_allocs_dont_alias: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ (0x0000000000000000 != (V|1| - V|2|)) /\
+        Distinct(V|1-3|) /\ (0x0000000000000000 != (V|2| - V|3|)) /\
+        (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd) /\
+        (0x0000000000000001 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffffd) /\
+        (0x0000000000000001 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffd)
+  
+
 
 Check corner cases with permissive provenance, around transmutes
   $ soteria-rust exec provenance_transmute.rs --provenance permissive

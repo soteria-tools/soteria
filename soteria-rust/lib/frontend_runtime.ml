@@ -222,30 +222,11 @@ module Cmd = struct
       else rustc
     in
     let rustc = rustc @ user_specified @ features in
+    let entries = List.concat_map entry_as_flag entry_points in
     let cmd, args =
       match (Config.get ()).frontend with
-      | Obol ->
-          let entries = List.concat_map entry_as_flag entry_points in
-          ((Config.get ()).obol_path, obol @ entries)
-      | Charon ->
-          (* FIXME: PR Charon to change this! *)
-          let attribs, non_attribs =
-            List.partition
-              (function Attrib _ -> true | _ -> false)
-              entry_points
-          in
-          let attribs =
-            match attribs with
-            | [] -> []
-            | [ h ] -> [ h ]
-            | _ :: _ ->
-                [%l.warn
-                  "Charon currently only support one entry attribute; more \
-                   than one was specified, only the last one will be used"];
-                [ List.last attribs ]
-          in
-          let entries = List.concat_map entry_as_flag (attribs @ non_attribs) in
-          ((Config.get ()).charon_path, charon @ entries)
+      | Obol -> ((Config.get ()).obol_path, obol @ entries)
+      | Charon -> ((Config.get ()).charon_path, charon @ entries)
     in
     let target_flag =
       Option.fold ~none:[]

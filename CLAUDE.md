@@ -35,6 +35,21 @@ To run a specific cram test:
 dune test soteria-c/test/cram/<test_name>.t
 ```
 
+To run the tools manually (so plugin/runtime sites resolve correctly), invoke
+them through dune rather than the raw `.exe`:
+
+```bash
+dune exec -- soteria-rust exec <file.rs>
+dune exec -- soteria-c <args>
+```
+
+When viewing `--help`, set `TERM=dumb` so the output isn't garbled with terminal
+escape codes:
+
+```bash
+TERM=dumb dune exec -- soteria-rust --help
+```
+
 To run with slow/very-slow tests:
 
 ```bash

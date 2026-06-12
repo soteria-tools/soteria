@@ -433,7 +433,6 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
     try:
         run_benchmark(opts_for_soteria(opts, force_obol=True))
         run_benchmark(opts_for_kani(opts, timeout=None))
-        run_benchmark(opts_for_miri(opts))
     except Exception as e:
         print(e)
 
