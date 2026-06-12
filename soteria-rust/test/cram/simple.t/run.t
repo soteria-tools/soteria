@@ -4,24 +4,18 @@ Test memory leaks
   => Running leak::main...
   error: leak::main: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak in leak::main
-      --> $RUSTLIB/library/alloc/src/alloc.rs:101:9
-  101 |            __rust_alloc(layout.size(), layout.alignment())
-      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      |            |
-      |            Triggering operation
-      |            5: Allocation
-      .    
-  331 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
-  332 | /          core::intrinsics::const_eval_select(
-  333 | |              (layout, zeroed),
-  334 | |              Global::alloc_impl_const,
-  335 | |              Global::alloc_impl_runtime,
-  336 | |          )
-      | \----------' 4: Call trace
-  337 |        }
+      --> $RUSTLIB/library/alloc/src/alloc.rs:449:9
+  449 |          self.alloc_impl(layout, false)
+      |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |          |
+      |          Triggering operation
+      |          5: Allocation
       --> $RUSTLIB/library/alloc/src/boxed.rs:286:19
-  286 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
-      |                      -------------------------------------------------- 3: Call trace
+  248 |      match Global.allocate(layout) {
+      |            ----------------------- 4: Call trace
+      .  
+  286 |          let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
+      |                    -------------------------------------------------- 3: Call trace
       --> $TESTCASE_ROOT/leak.rs:2:22
     1 |    fn main() {
       |    --------- 1: Leaking function
@@ -246,24 +240,19 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   PC 1: empty
   
   => Running thread_local::static_ref_cell...
-  warning: thread_local::static_ref_cell (<time>): an unsupported feature was reached
-  Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
-  
-  tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
-  
-  This is tracked at https://github.com/soteria-tools/soteria/issues/322
+  note: thread_local::static_ref_cell: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ (0x0000000000000010 <=u V|1|) /\
+        (V|1| <=u 0x7fffffffffffffbe) /\ (0x0000000000000008 <=u V|2|) /\
+        (V|2| <=u 0x7fffffffffffffd6) /\ (0x0 == extract[0-3](V|1|)) /\
+        (0b000 == extract[0-2](V|2|))
   
   => Running thread_local::pub_static_from_const_expr...
-  warning: thread_local::pub_static_from_const_expr (<time>): an unsupported feature was reached
-  Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
+  note: thread_local::pub_static_from_const_expr: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ (0x0000000000000010 <=u V|1|) /\
+        (V|1| <=u 0x7fffffffffffffbe) /\ (0x0000000000000008 <=u V|2|) /\
+        (V|2| <=u 0x7fffffffffffffd6) /\ (0x0 == extract[0-3](V|1|)) /\
+        (0b000 == extract[0-2](V|2|))
   
-  tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
-  
-  This is tracked at https://github.com/soteria-tools/soteria/issues/322
-  
-  [2]
 
 This test must be run separtely on linux and macos as it yields different error messages.
   $ soteria-rust exec thread_local.rs --target x86_64-unknown-linux-gnu
@@ -273,24 +262,24 @@ This test must be run separtely on linux and macos as it yields different error 
   PC 1: empty
   
   => Running thread_local::static_ref_cell...
-  warning: thread_local::static_ref_cell (<time>): an unsupported feature was reached
-  Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
-  
-  tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
-  
-  This is tracked at https://github.com/soteria-tools/soteria/issues/322
+  warning: An atomic intrinsic was encountered; it will be executed as sequential code
+  note: thread_local::static_ref_cell: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ Distinct(V|1-3|) /\
+        (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffe) /\
+        (0x0000000000000010 <=u V|2|) /\ (V|2| <=u 0x7fffffffffffffbe) /\
+        (0x0000000000000008 <=u V|3|) /\ (V|3| <=u 0x7fffffffffffffd6) /\
+        (0x0 == extract[0-3](V|1|)) /\ (0x0 == extract[0-3](V|2|)) /\
+        (0b000 == extract[0-2](V|3|))
   
   => Running thread_local::pub_static_from_const_expr...
-  warning: thread_local::pub_static_from_const_expr (<time>): an unsupported feature was reached
-  Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
+  note: thread_local::pub_static_from_const_expr: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ Distinct(V|1-3|) /\
+        (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffe) /\
+        (0x0000000000000010 <=u V|2|) /\ (V|2| <=u 0x7fffffffffffffbe) /\
+        (0x0000000000000008 <=u V|3|) /\ (V|3| <=u 0x7fffffffffffffd6) /\
+        (0x0 == extract[0-3](V|1|)) /\ (0x0 == extract[0-3](V|2|)) /\
+        (0b000 == extract[0-2](V|3|))
   
-  tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
-  
-  This is tracked at https://github.com/soteria-tools/soteria/issues/322
-  
-  [2]
 
 Test cloning ZSTs works; in particular, this generates a function with an empty body that just returns, so if we don't handle the ZST case we get an uninit access.
   $ soteria-rust exec clone_zst.rs
@@ -473,41 +462,57 @@ Print the callgraph
   digraph callgraph {
     node [shape=box fontname="monospace"];
     n0 [label="Range<A>>::next" tooltip="std::iter::range::<impl std::iter::Iterator for std::ops::Range<A>>::next::<i32>"];
-    n13 [label="io::_print" tooltip="std::io::_print"];
-    n7 [label="callgraph::limit" tooltip="callgraph::limit"];
-    n2 [label="callgraph::choose" tooltip="callgraph::choose"];
-    n12 [label="callgraph::main" tooltip="callgraph::main"];
-    n6 [label="callgraph::run" tooltip="callgraph::run"];
-    n16 [label="Step>::forward_unchecked" tooltip="<i32 as std::iter::Step>::forward_unchecked"];
-    n3 [label="callgraph::twice" tooltip="callgraph::twice"];
-    n14 [label="Argument::<'_>::new_display" tooltip="core::fmt::rt::Argument::<'_>::new_display::<'_, i32>"];
-    n4 [label="callgraph::dec" tooltip="callgraph::dec"];
-    n8 [label="callgraph::score" tooltip="callgraph::score"];
-    n17 [label="PartialOrd for i32>::lt" tooltip="std::cmp::impls::<impl std::cmp::PartialOrd for i32>::lt"];
-    n10 [label="callgraph::ping" tooltip="callgraph::ping"];
-    n9 [label="IntoIterator>::into_iter" tooltip="<I as std::iter::IntoIterator>::into_iter::<Range::<i32>>"];
-    n15 [label="Arguments::<'a>::new" tooltip="std::fmt::Arguments::<'a>::new::<'_, 12usize, 1usize>"];
-    n11 [label="callgraph::pong" tooltip="callgraph::pong"];
-    n5 [label="callgraph::inc" tooltip="callgraph::inc"];
+    n21 [label="io::_print" tooltip="std::io::_print"];
+    n14 [label="callgraph::limit" tooltip="callgraph::limit"];
+    n8 [label="NonNull::<T>::as_ptr" tooltip="std::ptr::NonNull::<T>::as_ptr::<i32>"];
+    n24 [label="NonNull::<T>::from_ref" tooltip="std::ptr::NonNull::<T>::from_ref::<i32>"];
+    n9 [label="callgraph::choose" tooltip="callgraph::choose"];
+    n20 [label="callgraph::main" tooltip="callgraph::main"];
+    n13 [label="callgraph::run" tooltip="callgraph::run"];
+    n10 [label="callgraph::twice" tooltip="callgraph::twice"];
+    n5 [label="Option::<T>::unwrap_unchecked" tooltip="std::option::Option::<T>::unwrap_unchecked::<i32>"];
+    n4 [label="Step>::forward_unchecked" tooltip="<i32 as std::iter::Step>::forward_unchecked"];
+    n2 [label="num::<impl i32>::overflowing_add_unsigned" tooltip="core::num::<impl i32>::overflowing_add_unsigned"];
+    n22 [label="Argument::<'_>::new_display" tooltip="core::fmt::rt::Argument::<'_>::new_display::<'_, i32>"];
+    n11 [label="callgraph::dec" tooltip="callgraph::dec"];
+    n15 [label="callgraph::score" tooltip="callgraph::score"];
+    n6 [label="num::<impl i32>::checked_add_unsigned" tooltip="core::num::<impl i32>::checked_add_unsigned"];
+    n3 [label="num::<impl i32>::overflowing_add" tooltip="core::num::<impl i32>::overflowing_add"];
+    n25 [label="PartialOrd for i32>::lt" tooltip="std::cmp::impls::<impl std::cmp::PartialOrd for i32>::lt"];
+    n18 [label="callgraph::ping" tooltip="callgraph::ping"];
+    n17 [label="intrinsics::unlikely" tooltip="std::intrinsics::unlikely"];
+    n7 [label="NonNull::<T>::cast" tooltip="std::ptr::NonNull::<T>::cast::<i32, ()>"];
+    n16 [label="IntoIterator>::into_iter" tooltip="<I as std::iter::IntoIterator>::into_iter::<Range::<i32>>"];
+    n23 [label="Arguments::<'a>::new" tooltip="std::fmt::Arguments::<'a>::new::<'_, 12usize, 1usize>"];
+    n19 [label="callgraph::pong" tooltip="callgraph::pong"];
+    n12 [label="callgraph::inc" tooltip="callgraph::inc"];
     n1 [label="RangeIteratorImpl>::spec_next" tooltip="<std::ops::Range<T> as std::iter::range::RangeIteratorImpl>::spec_next::<i32>"];
     n0 -> n1;
     n2 -> n3;
-    n2 -> n4;
-    n2 -> n5;
-    n6 -> n0;
-    n6 -> n7;
-    n6 -> n8;
-    n6 -> n9;
-    n10 -> n11;
-    n12 -> n13;
-    n12 -> n6;
-    n12 -> n14;
-    n12 -> n15;
-    n8 -> n2;
-    n8 -> n10;
-    n11 -> n10;
-    n1 -> n16;
-    n1 -> n17;
+    n4 -> n5;
+    n4 -> n6;
+    n7 -> n8;
+    n9 -> n10;
+    n9 -> n11;
+    n9 -> n12;
+    n13 -> n0;
+    n13 -> n14;
+    n13 -> n15;
+    n13 -> n16;
+    n6 -> n2;
+    n6 -> n17;
+    n18 -> n19;
+    n20 -> n21;
+    n20 -> n13;
+    n20 -> n22;
+    n20 -> n23;
+    n22 -> n24;
+    n22 -> n7;
+    n15 -> n9;
+    n15 -> n18;
+    n19 -> n18;
+    n1 -> n4;
+    n1 -> n25;
   }
 
 Check we trust addresses for pointer alignment
@@ -636,14 +641,14 @@ Boolean BitOr must not be assumed true; both operands can be false (issue #376).
   [1]
 
 Test that allocating a box only requires two heap allocation (thanks to the store optimisation): one for the contents of the box, and one for the box that we pass to the drop glue.
-FIXME: now that named consts are globals, there is in fact a third allocation: the one for <i32 as SizedTypeProperties>::LAYOUT. We should extend the store optimisation to handle globals; in particular we have a guarantee they can't be written to, so it's likely the optimisation will perform really well.
+FIXME: because of the sysroot, there's a bunch of extra allocations from added function calls... i'm not sure we can avoid them all.
   $ soteria-rust exec box.rs --stats stats.json && check_stat stats.json allocs 2
   Compiling... done in <time>
   => Running box::main...
   note: box::main: done in <time>, ran 1 branch
   PC 1: empty
   
-  check_stat: expected '2', got '3' for allocs
+  check_stat: expected '2', got '7' for allocs
   [1]
 
 Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.

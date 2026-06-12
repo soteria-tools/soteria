@@ -108,9 +108,9 @@ module M (StateM : State.StateM.S) = struct
     | System f -> System.fn_to_stub f fun_sig fun_exec generics
     | Tokio f -> Tokio.fn_to_stub f fun_sig fun_exec generics
 
-  let[@inline] extern_fn_to_stub fun_exec = function
+  let[@inline] extern_fn_to_stub fun_sig fun_exec = function
     | Alloc f -> Alloc.fn_to_stub f
-    | ExtSystem f -> ExtSystem.fn_to_stub fun_exec f
+    | ExtSystem f -> ExtSystem.fn_to_stub fun_sig fun_exec f
     | Libc f -> Libc.fn_to_stub f
     | Miri f -> Miri.fn_to_stub f
     | Std f -> Std.fn_to_stub f
@@ -140,9 +140,9 @@ module M (StateM : State.StateM.S) = struct
     let generics = get_generics f generics in
     Intrinsics.eval_fun name fun_exec generics
 
-  let eval_extern name fun_exec =
+  let eval_extern (f : UllbcAst.fun_decl) name fun_exec =
     match SMap.find_opt name extern_functions with
-    | Some extern_fn -> extern_fn_to_stub fun_exec extern_fn
+    | Some extern_fn -> extern_fn_to_stub f.signature fun_exec extern_fn
     | None ->
         fun _args -> StateM.not_impl "Extern function %s is not handled" name
 end

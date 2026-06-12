@@ -147,6 +147,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       ok (Tuple [ curr; Int (BV.of_bool Typed.v_true) ])
     else ok (Tuple [ curr; Int (BV.of_bool Typed.v_false) ])
 
+  (* In our sequential model the strong compare-exchange behaves exactly like
+     the weak one (the weak variant is only allowed to spuriously fail). *)
+  let atomic_cxchg = atomic_cxchgweak
   let black_box ~t:_ ~dummy = ok dummy
   let breakpoint () : unit ret = error `Breakpoint
 
