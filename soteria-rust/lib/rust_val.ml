@@ -246,3 +246,11 @@ let mk_struct ~ty fields =
   let struct_fields = Crate.as_struct ty in
   assert (List.compare_lengths fields struct_fields = 0);
   Tuple fields
+
+(** [v] with its [i]th field replaced by [f] applied to the old value. Errors if
+    [i] is out of bound or [v] is not a [Tuple] or [Enum]. *)
+let update_field i ~f v =
+  match v with
+  | Tuple vs -> Tuple (List.update_at f i vs)
+  | Enum (d, vs) -> Enum (d, List.update_at f i vs)
+  | _ -> failwith "update_field with a non-aggregate value"

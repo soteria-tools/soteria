@@ -2,6 +2,7 @@ module StatKeys = struct
   let load_accesses = "soteria-rust.loads"
   let loads_from_store = "soteria-rust.loads_from_store"
   let function_calls = "soteria-rust.function_calls"
+  let allocs = "soteria-rust.allocs"
 
   let () =
     let open Soteria.Stats in
@@ -12,7 +13,8 @@ module StatKeys = struct
         Fmt.pf ft "%d (%a through store)" n pp_percent
           (Float.of_int n, Float.of_int store_loads));
     register_int_printer ~name:"Function calls" function_calls (fun _ ->
-        Fmt.int)
+        Fmt.int);
+    register_int_printer ~name:"Allocations" allocs (fun _ -> Fmt.int)
 end
 
 module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver)

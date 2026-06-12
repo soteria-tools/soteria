@@ -32,3 +32,9 @@ let[@inline] or_ x y = match x with Some _ -> x | _ -> y
 let get ?(msg = "Option.get None") = function
   | Some x -> x
   | None -> raise (Invalid_argument ("Option.get None:" ^ msg))
+
+(** Convert a boolean to an option. *)
+let of_bool = function true -> Some () | false -> None
+
+(** [true] if the option is [Some x] and [f x] is true, otherwise [false]. *)
+let is_some_and f = function Some x -> f x | None -> false

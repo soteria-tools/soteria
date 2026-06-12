@@ -626,15 +626,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let discriminant_value ~t ~v =
     let adt = ty_as_adt t in
-    let adt = Crate.get_adt adt in
-    match adt.kind with
-    | Enum variants ->
-        let+ variant_id = State.load_discriminant v t in
-        let variant = Types.VariantId.nth variants variant_id in
-        Int (BV.of_literal variant.discriminant)
-    | _ ->
-        (* FIXME: this size is probably wrong *)
-        ok (Int U8.(0s))
+    if Crate.is_enum adt then State.load_discriminant v t
+    (* FIXME: this size is probably wrong *)
+      else ok (Int U8.(0s))
 
   let disjoint_bitor ~t ~a ~b =
     let ty = TypesUtils.ty_as_literal t in

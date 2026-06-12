@@ -150,8 +150,6 @@ Check permissive provenance allows int to ptr casts
   note: provenance::with_exposed: done in <time>, ran 1 branch
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
-
-
 Distinct allocations get distinct base addresses, so they can never alias
   $ soteria-rust exec distinct_allocs.rs
   Compiling... done in <time>
@@ -163,8 +161,6 @@ Distinct allocations get distinct base addresses, so they can never alias
         (0x0000000000000001 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffffd) /\
         (0x0000000000000001 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffd)
   
-
-
 Check corner cases with permissive provenance, around transmutes
   $ soteria-rust exec provenance_transmute.rs --provenance permissive
   Compiling... done in <time>
@@ -634,3 +630,44 @@ Boolean BitOr must not be assumed true; both operands can be false (issue #376).
   PC 1: (0x00 == V|1|) /\ (0x00 == V|2|) /\ (0x00 == V|1|) /\ (0x00 == V|2|)
   
   [1]
+
+Test that allocating a box only requires two heap allocation (thanks to the store optimisation): one for the contents of the box, and one for the box that we pass to the drop glue.
+FIXME: now that named consts are globals, there is in fact a third allocation: the one for <i32 as SizedTypeProperties>::LAYOUT. We should extend the store optimisation to handle globals; in particular we have a guarantee they can't be written to, so it's likely the optimisation will perform really well.
+  $ check_allocs box.rs 2
+  Compiling... done in <time>
+  => Running box::main...
+  note: box::main: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
+        (0b00 == extract[0-1](V|1|))
+  
+  check_allocs: expected '2', got '3'
+  [1]
+
+Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.
+  $ check_allocs zst_ref.rs 0
+  Compiling... done in <time>
+  => Running zst_ref::main...
+  note: zst_ref::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+Test that indexing arrays with a constant index does not allocate; the value is updated in place in the store.
+  $ check_allocs store_struct.rs 0
+  Compiling... done in <time>
+  => Running store_struct::main...
+  note: store_struct::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+Test that reading the metadata of a store-hosted pointer does not allocate; the pointer stays in the store.
+  $ check_allocs ptr_metadata.rs 0
+  Compiling... done in <time>
+  => Running ptr_metadata::main...
+  note: ptr_metadata::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+Test we can use ptr::metadata to get the metadata of a trait object; this used to crash
+  $ soteria-rust exec ptr_dyn_metadata.rs
+  Compiling... done in <time>
+  => Running ptr_dyn_metadata::main...
+  note: ptr_dyn_metadata::main: done in <time>, ran 1 branch
+  PC 1: empty
+  

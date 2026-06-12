@@ -83,6 +83,16 @@ module Make (Borrows : Tree_borrows.T) = struct
       let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
       { null_ptr with ptr }
 
+    let dangling_if_zst ty =
+      let open Rustsymex in
+      let open Syntax in
+      let** layout = Layout.layout_of ty in
+      if%sat layout.size ==@ Usize.(0s) then
+        (* UX: really any address that is well-aligned is valid, we
+           under-approximate here to make our life easier. *)
+        Result.ok (Some (of_address layout.align))
+      else Result.ok None
+
     let is_null { ptr; _ } = Typed.Ptr.is_null ptr
     let has_provenance { ptr; _ } = Typed.not (Typed.Ptr.is_at_null_loc ptr)
 
@@ -546,20 +556,23 @@ module Make (Borrows : Tree_borrows.T) = struct
       `UBDanglingPointer
 
   and check_non_dangling ((_, meta) as ptr) (ty : Types.ty) =
-    let** size, _ = size_and_align_of_val ty meta in
-    check_non_dangling_untyped ptr size
+    let**^ layout = Layout.layout_of ty in
+    if layout.uninhabited then Result.error (`RefToUninhabited ty)
+    else
+      let** size, _ = size_and_align_of_val ty meta in
+      check_non_dangling_untyped ptr size
 
   and check_validity ~check_refs ty value =
+    let default_check ptr ty =
+      let** () = check_ptr_align ptr ty in
+      check_non_dangling ptr ty
+    in
     let check_ref =
       if (Config.get ()).recursive_validity <> Allow && check_refs then
         fun ptr ty ->
-        (* we still need to check it's non-dangling! *)
-        let** () = check_ptr_align ptr ty in
-        let** () = check_non_dangling ptr ty in
+        let** () = default_check ptr ty in
         fake_read ptr ty
-      else fun ptr ty ->
-        let** () = check_ptr_align ptr ty in
-        check_non_dangling ptr ty
+      else default_check
     in
     Encoder.check_validity ~check_ref ty value
 
@@ -575,7 +588,11 @@ module Make (Borrows : Tree_borrows.T) = struct
   and load_discriminant ((ptr, _) as fptr) ty =
     let** () = check_ptr_align fptr ty in
     let parser ~offset = Heap.Decoder.variant_of_enum ty ~offset in
-    apply_parser ptr parser
+    let++ variant_id = apply_parser ptr parser in
+    let adt = Charon_util.ty_as_adt ty in
+    let variants = Crate.as_enum adt in
+    let variant = Types.VariantId.nth variants variant_id in
+    Int (Typed.BV.of_literal variant.discriminant)
 
   (** Performs a side-effect free ghost read -- this does not modify the state
       or the tree-borrow state. Returns [Some error] if an error occurred, and
@@ -841,6 +858,7 @@ module Make (Borrows : Tree_borrows.T) = struct
        Tree_block.put_raw_tree ofs tree_to_write)
 
   let alloc ?span ?zeroed size align =
+    Soteria.Stats.As_ctx.incr StatKeys.allocs;
     with_heap
       (let open Heap.SM in
        let open Heap.SM.Syntax in

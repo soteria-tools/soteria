@@ -26,9 +26,9 @@ module type S = sig
       t ->
       t ret
 
-    (** Checks this pointer isn't dangling for the given type, i.e. it points to
-        an allocation and doesn't range outside of it. This also checks the
-        allocation is live. *)
+    (** Checks this pointer isn't dangling for the given pointee type, i.e. it
+        points to an allocation and doesn't range outside of it. This also
+        checks the allocation is live, and that the type is inhabited, *)
     val check_non_dangling : t full_ptr -> Types.ty -> unit ret
 
     (** Same as {!check_non_dangling}, but for untyped ranges, where only a size
@@ -51,7 +51,7 @@ module type S = sig
   val empty : t option
   val load : ?ignore_borrow:bool -> full_ptr -> Types.ty -> rust_val ret
   val tb_load : full_ptr -> Types.ty -> unit ret
-  val load_discriminant : full_ptr -> Types.ty -> Types.variant_id ret
+  val load_discriminant : full_ptr -> Types.ty -> rust_val ret
   val store : full_ptr -> Types.ty -> rust_val -> unit ret
 
   val alloc_untyped :

@@ -21,5 +21,5 @@
   ../../bin/soteria_rust.exe
   (alias plugins-warmup))
  (shell bash)
- (setup_scripts cleanup.sh)
+ (setup_scripts cleanup.sh common.sh)
  (applies_to :whole_subtree))
