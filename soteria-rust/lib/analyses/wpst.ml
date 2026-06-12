@@ -73,6 +73,8 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   (* prepare executing the entry points *)
   let exec_fun = Interp.exec_fun_as_whole_prog ~state:State.empty in
 
+  (* Aggregate statistics over all entry points, then dump them once. *)
+  let@ () = Stats.As_ctx.with_dumped () in
   let@ { fuel; fun_decl; expect_error } : Frontend.entry_point =
     (Fun.flip List.map) entry_points
   in
@@ -92,7 +94,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     let@@ () =
       Rustsymex.Result.run_with_stats
         ~flamegraph:(Dump (flamegraph_name entry_name))
-        ~stats:(Dump ()) ~mode:OX ~fuel ~fail_fast:(Config.get ()).fail_fast
+        ~stats:Caller ~mode:OX ~fuel ~fail_fast:(Config.get ()).fail_fast
     in
     exec_fun fun_decl ~args
   in

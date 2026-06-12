@@ -4,4 +4,12 @@
     "switch": "${workspaceFolder:soteria}"
   },
   "makefile.configureOnOpen": false,
+  "files.associations": {
+    "*.t": "cram"
+  },
+  "[perl]": {
+    "editor.formatOnSave": false,
+    "files.trimTrailingWhitespace": false,
+    "files.insertFinalNewline": false
+  }
 }

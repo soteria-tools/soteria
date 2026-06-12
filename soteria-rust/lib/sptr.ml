@@ -112,6 +112,7 @@ module DecayMap = struct
              Result.ok address
          | Some { address; exposed = _ } -> Result.ok address
          | None ->
+             Soteria.Stats.As_ctx.incr Rustsymex.StatKeys.decayed_pointers;
              let* address = nondet (Typed.t_usize ()) in
              let isize_max = Layout.max_value_z (TInt Isize) in
              (* Distinct allocations live at distinct addresses. We

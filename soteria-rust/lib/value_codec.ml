@@ -200,20 +200,45 @@ struct
         Fields_shape.discriminator -> Types.variant_id ParserMonad.t = function
       | Known v -> ok v
       | Branch { offset = tag_ofs; tag_ty; children; fallback } ->
-          let* tag = query (TLiteral tag_ty, offset +!!@ tag_ofs) in
-          let tag = as_base tag_ty tag in
+          (* You know what's cheaper than Pointer->Integer cast?
+             Integer->Pointer cast. If the tag is pointer-sized, we read it as a
+             pointer anyway, and special case null-checking. Allows for
+             optimising away decays happening for e.g. Option<NonNull<T>>. *)
+          let* tag =
+            if match tag_ty with TInt Isize | TUInt Usize -> true | _ -> false
+            then
+              let+ v = query (unit_ptr, offset +!!@ tag_ofs) in
+              `Ptr (fst (as_ptr v))
+            else
+              let+ v = query (TLiteral tag_ty, offset +!!@ tag_ofs) in
+              `Int (as_base tag_ty v)
+          in
+          let pp_tag ft = function
+            | `Int v -> Typed.ppa ft v
+            | `Ptr p -> Sptr.pp ft p
+          in
           let pp_info ft () =
-            Fmt.pf ft ", read %a: %s at offset %a" Typed.ppa tag
+            Fmt.pf ft ", read %a: %s at offset %a" pp_tag tag
               (Print.literal_type_to_string tag_ty)
               Typed.ppa offset
           in
+          let cond_for from_ to_ =
+            let is_single = Typed.equal from_ to_ in
+            let int_cond tag =
+              if is_single then tag ==@ from_
+              else from_ <=@ tag &&@ (tag <=@ to_)
+            in
+            match tag with
+            | `Int tag -> ok (int_cond tag)
+            | `Ptr ptr when is_single && Typed.BV.sure_is_zero from_ ->
+                ok (Sptr.is_null ptr)
+            | `Ptr ptr -> map int_cond @@ lift (Sptr.decay ptr)
+          in
           let rec aux = function
             | [] -> exec fallback
-            | (from_, to_, discr) :: rest when Typed.equal from_ to_ ->
-                if%sat tag ==@ from_ then exec ~pp_info discr else aux rest
             | (from_, to_, discr) :: rest ->
-                if%sat from_ <=@ tag &&@ (tag <=@ to_) then exec ~pp_info discr
-                else aux rest
+                let* cond = cond_for from_ to_ in
+                if%sat cond then exec ~pp_info discr else aux rest
           in
           aux children
       | Invalid ->

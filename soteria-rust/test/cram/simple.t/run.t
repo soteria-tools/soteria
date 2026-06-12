@@ -86,12 +86,7 @@ Test that we properly handle the niche optimisation
   Compiling... done in <time>
   => Running niche_optim::main...
   note: niche_optim::main: done in <time>, ran 1 branch
-  PC 1: Distinct(V|1-2|) /\ Distinct(V|1-3|) /\
-        (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0x0000000000000004 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffff6) /\
-        (0x0000000000000004 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|)) /\ (0b00 == extract[0-1](V|2|)) /\
-        (0b00 == extract[0-1](V|3|))
+  PC 1: empty
   
 Test function calls on function pointers
   $ soteria-rust exec fn_ptr.rs
@@ -462,8 +457,7 @@ Print the callgraph
   Compiling... done in <time>
   => Running callgraph::main...
   note: callgraph::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   digraph callgraph {
     node [shape=box fontname="monospace"];
@@ -607,8 +601,7 @@ Ensure we implement the caller_location intrinsic correctly; this used to cause 
       |  --------- 1: Entry point
     2 |      unreachable!("This should not be a null pointer deref!");
       |      -------------------------------------------------------- 2: Call trace
-  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7fffffffffffffee) /\
-        (0b000 == extract[0-2](V|1|))
+  PC 1: empty
   
   [1]
 
@@ -633,32 +626,32 @@ Boolean BitOr must not be assumed true; both operands can be false (issue #376).
 
 Test that allocating a box only requires two heap allocation (thanks to the store optimisation): one for the contents of the box, and one for the box that we pass to the drop glue.
 FIXME: now that named consts are globals, there is in fact a third allocation: the one for <i32 as SizedTypeProperties>::LAYOUT. We should extend the store optimisation to handle globals; in particular we have a guarantee they can't be written to, so it's likely the optimisation will perform really well.
-  $ check_allocs box.rs 2
+  $ soteria-rust exec box.rs --stats stats.json && check_stat stats.json allocs 2
   Compiling... done in <time>
   => Running box::main...
   note: box::main: done in <time>, ran 1 branch
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
         (0b00 == extract[0-1](V|1|))
   
-  check_allocs: expected '2', got '3'
+  check_stat: expected '2', got '3' for allocs
   [1]
 
 Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.
-  $ check_allocs zst_ref.rs 0
+  $ soteria-rust exec zst_ref.rs --stats stats.json && check_stat stats.json allocs 0
   Compiling... done in <time>
   => Running zst_ref::main...
   note: zst_ref::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test that indexing arrays with a constant index does not allocate; the value is updated in place in the store.
-  $ check_allocs store_struct.rs 0
+  $ soteria-rust exec store_struct.rs --stats stats.json && check_stat stats.json allocs 0
   Compiling... done in <time>
   => Running store_struct::main...
   note: store_struct::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test that reading the metadata of a store-hosted pointer does not allocate; the pointer stays in the store.
-  $ check_allocs ptr_metadata.rs 0
+  $ soteria-rust exec ptr_metadata.rs --stats stats.json && check_stat stats.json allocs 0
   Compiling... done in <time>
   => Running ptr_metadata::main...
   note: ptr_metadata::main: done in <time>, ran 1 branch
@@ -670,4 +663,33 @@ Test we can use ptr::metadata to get the metadata of a trait object; this used t
   => Running ptr_dyn_metadata::main...
   note: ptr_dyn_metadata::main: done in <time>, ran 1 branch
   PC 1: empty
+  
+
+FIXME: the last 3 decayed pointers shall be removed in #386
+  $ soteria-rust exec nonnull.rs --stats stats.json && check_stat stats.json decayed_pointers 3
+  Compiling... done in <time>
+  => Running nonnull::match_niched_enums...
+  note: nonnull::match_niched_enums: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ (0x0000000000000008 <=u V|1|) /\
+        (V|1| <=u 0x7ffffffffffffff6) /\ (0x0000000000000008 <=u V|2|) /\
+        (V|2| <=u 0x7ffffffffffffff6) /\ (0b000 == extract[0-2](V|1|)) /\
+        (0b000 == extract[0-2](V|2|))
+  
+  => Running nonnull::null_is_none...
+  note: nonnull::null_is_none: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running nonnull::niche_ok...
+  note: nonnull::niche_ok: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0b000 == extract[0-2](V|1|))
+  
+  => Running nonnull::niche_err...
+  note: nonnull::niche_err: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running nonnull::transmuted_discriminant...
+  note: nonnull::transmuted_discriminant: done in <time>, ran 2 branches
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  PC 2: (0x0000000000000001 <=u V|1|)
   

@@ -3,6 +3,7 @@ module StatKeys = struct
   let loads_from_store = "soteria-rust.loads_from_store"
   let function_calls = "soteria-rust.function_calls"
   let allocs = "soteria-rust.allocs"
+  let decayed_pointers = "soteria-rust.decayed_pointers"
 
   let () =
     let open Soteria.Stats in
