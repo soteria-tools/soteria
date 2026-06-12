@@ -48,17 +48,25 @@ let print_outcomes entry_name f =
       (entry_name, Outcome.Error)
   | exception e ->
       let time = Unix.gettimeofday () -. time in
-      let error, msg =
+      let error, msg, extra =
         match e with
-        | ExecutionError msg -> ("runtime error", msg)
-        | Soteria.Symex.Gave_up reason -> ("unsupported feature", reason)
+        | ExecutionError msg -> ("runtime error", msg, "")
+        | Soteria.Symex.Gave_up reason ->
+            ( "unsupported feature",
+              reason,
+              "If you think Soteria should handle this, please consider \
+               opening an issue at \
+               https://github.com/soteria-tools/soteria/issues" )
         | e ->
             ( "exception",
-              Fmt.str "%a@\nTrace: %s" Fmt.exn e (Printexc.get_backtrace ()) )
+              Fmt.str "%a@\nTrace: %s" Fmt.exn e (Printexc.get_backtrace ()),
+              "Please open an issue with the above information (and ideally a \
+               reproducer) at https://github.com/soteria-tools/soteria/issues"
+            )
       in
       Fmt.kstr
         (print_diagnostic_simple ~severity:Warning)
-        "%s (%a): %s, %s@.@." entry_name pp_time time error msg;
+        "%s (%a): %s, %s@.%s@.@." entry_name pp_time time error msg extra;
       (entry_name, Outcome.Fatal)
 
 let flamegraph_name = Str.global_replace (Str.regexp_string "::") "-"

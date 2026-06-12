@@ -249,9 +249,17 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   
   => Running thread_local::static_ref_cell...
   warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::list::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
+  To get a sysroot for this version of Soteria Rust, run
+  $ cargo +nightly-2026-06-01 miri setup --print-sysroot
+  https://github.com/soteria-tools/soteria/issues/322
+  If you think Soteria should handle this, please consider opening an issue at https://github.com/soteria-tools/soteria/issues
   
   => Running thread_local::pub_static_from_const_expr...
   warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::list::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
+  To get a sysroot for this version of Soteria Rust, run
+  $ cargo +nightly-2026-06-01 miri setup --print-sysroot
+  https://github.com/soteria-tools/soteria/issues/322
+  If you think Soteria should handle this, please consider opening an issue at https://github.com/soteria-tools/soteria/issues
   
   [2]
 
@@ -265,9 +273,17 @@ This test must be run separtely on linux and macos as it yields different error 
   
   => Running thread_local::static_ref_cell...
   warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::linux_like::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
+  To get a sysroot for this version of Soteria Rust, run
+  $ cargo +nightly-2026-06-01 miri setup --print-sysroot
+  https://github.com/soteria-tools/soteria/issues/322
+  If you think Soteria should handle this, please consider opening an issue at https://github.com/soteria-tools/soteria/issues
   
   => Running thread_local::pub_static_from_const_expr...
   warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::linux_like::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
+  To get a sysroot for this version of Soteria Rust, run
+  $ cargo +nightly-2026-06-01 miri setup --print-sysroot
+  https://github.com/soteria-tools/soteria/issues/322
+  If you think Soteria should handle this, please consider opening an issue at https://github.com/soteria-tools/soteria/issues
   
   [2]
 

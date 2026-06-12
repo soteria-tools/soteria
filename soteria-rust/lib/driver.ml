@@ -25,7 +25,13 @@ let with_exn_and_config mode config f =
   | Frontend.PluginError e -> fatal ~name:"Plugin" e
   | Frontend.FrontendError e -> fatal ~name:"Frontend" ~code:3 e
   | Frontend.CompilationError e ->
-      print_diagnostic_simple ~severity:Error ("Compilation error:\n" ^ e);
+      Fmt.kstr
+        (print_diagnostic_simple ~severity:Error)
+        "Compilation error:@.%s@.@.If you changed compilation flags from \
+         previous runs, you may have to rebuild the plugins; run@.$ \
+         soteria-rust build-plugins <any compilation flags you want to \
+         use>@.See https://github.com/soteria-tools/soteria/issues/388"
+        e;
       Analyses.Outcome.exit Error
   | Exn.Config_error err ->
       fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err
