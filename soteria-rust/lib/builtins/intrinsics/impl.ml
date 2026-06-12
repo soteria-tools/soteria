@@ -475,16 +475,22 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   (** [check_overlap name l r size] ensures the pointers [l] and [r] do not
       overlap for a range of size [size]; otherwise errors, with
-      [`StdErr (name ^ " overlapped")]. *)
+      [`StdErr (name ^ " overlapped")].
+
+      We optimise the path where pointers don't have the same provenance to
+      avoid spuriously decaying pointers. *)
   let check_overlap name l r size =
-    let* l_end = Sptr.offset ~signed:false size l in
-    let* r_end = Sptr.offset ~signed:false size r in
-    let* dist1 = Sptr.distance l r_end in
-    let* dist2 = Sptr.distance r l_end in
-    let zero = Usize.(0s) in
-    assert_not
-      (Sptr.have_same_provenance l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
-      (`StdErr (name ^ " overlapped"))
+    let same_provenance = Sptr.have_same_provenance l r in
+    if%sure not same_provenance then ok ()
+    else
+      let* l_end = Sptr.offset ~signed:false size l in
+      let* r_end = Sptr.offset ~signed:false size r in
+      let* dist1 = Sptr.distance l r_end in
+      let* dist2 = Sptr.distance r l_end in
+      let zero = Usize.(0s) in
+      assert_not
+        (same_provenance &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
+        (`StdErr (name ^ " overlapped"))
 
   let copy_ nonoverlapping ~t ~src:((src, _) as fsrc : full_ptr)
       ~dst:((dst, _) as fdst : full_ptr) ~count : unit ret =

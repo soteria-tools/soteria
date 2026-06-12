@@ -693,3 +693,37 @@ FIXME: the last 3 decayed pointers shall be removed in #386
   PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
   PC 2: (0x0000000000000001 <=u V|1|)
   
+
+  $ soteria-rust exec btreeset_small.rs --stats stats.json && check_stat stats.json decayed_pointers 0
+  Compiling... done in <time>
+  => Running btreeset_small::test_treeset_is_ordered...
+  note: btreeset_small::test_treeset_is_ordered: done in <time>, ran 3 branches
+  PC 1: (V|3| <u V|2|) /\ Distinct(V|1|, V|4|) /\ Distinct(V|1|, V|4|, V|5|) /\
+        Distinct(V|1|, V|4|, V|5|, V|6|) /\ (0x0000000000000004 <=u V|1|) /\
+        (V|1| <=u 0x7ffffffffffffff6) /\ (0x0000000000000008 <=u V|4|) /\
+        (V|4| <=u 0x7fffffffffffffc6) /\ (0x0000000000000004 <=u V|5|) /\
+        (V|5| <=u 0x7ffffffffffffff6) /\ (0x0000000000000004 <=u V|6|) /\
+        (V|6| <=u 0x7ffffffffffffff6) /\ (0b00 == extract[0-1](V|1|)) /\
+        (0b000 == extract[0-2](V|4|)) /\ (0b00 == extract[0-1](V|5|)) /\
+        (0b00 == extract[0-1](V|6|))
+  PC 2: (V|2| <=u V|3|) /\ Distinct(V|1|, V|4|) /\ (V|2| != V|3|) /\
+        Distinct(V|1|, V|4|, V|5|) /\ Distinct(V|1|, V|4|, V|5|, V|6|) /\
+        (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000008 <=u V|4|) /\ (V|4| <=u 0x7fffffffffffffc6) /\
+        (0x0000000000000004 <=u V|5|) /\ (V|5| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000004 <=u V|6|) /\ (V|6| <=u 0x7ffffffffffffff6) /\
+        (0b00 == extract[0-1](V|1|)) /\ (0b000 == extract[0-2](V|4|)) /\
+        (0b00 == extract[0-1](V|5|)) /\ (0b00 == extract[0-1](V|6|))
+  PC 3: (V|2| <=u V|3|) /\ Distinct(V|1|, V|4|) /\ Distinct(V|1|, V|4|,
+       V|5|) /\ Distinct(V|1|, V|4|, V|5|, V|6|) /\
+        (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000008 <=u V|4|) /\ (V|4| <=u 0x7fffffffffffffc6) /\
+        (0x0000000000000004 <=u V|5|) /\ (V|5| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|6|) /\ (V|6| <=u 0x7ffffffffffffffa) /\
+        (0b00 == extract[0-1](V|1|)) /\ (V|2| == V|3|) /\
+        (0b000 == extract[0-2](V|4|)) /\ (0b00 == extract[0-1](V|5|)) /\
+        (0b00 == extract[0-1](V|6|))
+  
+  check_stat: expected '0', got '9' for decayed_pointers
+  [1]
+
