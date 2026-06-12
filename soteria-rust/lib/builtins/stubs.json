@@ -10,10 +10,6 @@
   ],
   "System": [
     {
-      "pattern": "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
-      "extra_args": ["fun_exec"]
-    },
-    {
       "pattern": "std::sys::random::hashmap_random_keys",
       "extra_args": ["sig"]
     },
@@ -23,12 +19,19 @@
       "extra_args": ["sig"]
     },
     "std::sys::time::unix::Instant::now",
-    { "pattern": "std::env::_var", "extra_args": ["sig"] }
+    {
+      "pattern": "std::env::var::inner",
+      "extra_args": ["sig"],
+      "include": "std::env::var"
+    }
   ],
   "Optim": {
     "features": ["f16", "f128", "const_index"],
     "patterns": [
-      "alloc::alloc::Global::alloc_impl",
+      {
+        "pattern": "alloc::alloc::Global::alloc_impl",
+        "aliases": ["std::alloc::Global::alloc_impl"]
+      },
       "core::f16::_::is_finite",
       "core::f16::_::is_infinite",
       "core::f16::_::is_nan",

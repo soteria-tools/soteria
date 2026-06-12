@@ -53,6 +53,7 @@ type fn =
 let fn_pats : (string * fn) list =
   [
     ("alloc::alloc::Global::alloc_impl", AllocAllocGlobalAllocImpl);
+    ("std::alloc::Global::alloc_impl", AllocAllocGlobalAllocImpl);
     ("alloc::alloc::handle_alloc_error", AllocAllocHandleAllocError);
     ("alloc::raw_vec::handle_error", AllocRawVecHandleError);
     ("core::f128::_::is_finite", CoreF128IsFinite);

@@ -2871,20 +2871,6 @@ module M (StateM : State.StateM.S) = struct
     val truncf64 : x:[< Typed.T.sfloat ] Typed.t -> Typed.T.sfloat Typed.t ret
 
     (** {@markdown[
-          Gets an identifier which is globally unique to the specified type. This
-           function will return the same value for a type regardless of whichever
-           crate it is invoked in.
-
-           Note that, unlike most intrinsics, this can only be called at compile-time
-           as backends do not have an implementation for it. The only caller (its
-           stable counterpart) wraps this intrinsic call in a `const` block so that
-           backends only see an evaluated constant.
-
-           The stabilized version of this intrinsic is [`core::any::TypeId::of`].
-        ]} *)
-    val type_id : t:Types.ty -> rust_val ret
-
-    (** {@markdown[
           Tests (at compile-time) if two [`crate::any::TypeId`] instances identify the
            same type. This is necessary because at const-eval time the actual discriminating
            data is opaque and cannot be inspected directly.

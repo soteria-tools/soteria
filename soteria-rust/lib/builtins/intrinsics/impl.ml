@@ -897,11 +897,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let transmute ~t_src ~dst ~src = State.transmute ~from:t_src ~to_:dst src
 
-  let type_id ~t =
-    (* lazy but works *)
-    let hash = Hashtbl.hash t in
-    ok (Int (BV.u128i hash))
-
   let type_name ~t =
     let str = Fmt.to_to_string pp_ty t in
     Core.string_to_ptr str
