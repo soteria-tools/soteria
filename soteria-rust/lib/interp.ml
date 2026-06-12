@@ -1245,9 +1245,9 @@ module Make (StateImpl : State.S) = struct
                   else
                     Fmt.str
                       "%s; try using a sysroot (with --sysroot)\n\
-                       To get a sysroot for this version of Soteria Rust, run\n\
-                       $ cargo +%s miri setup --print-sysroot\n\
-                       https://github.com/soteria-tools/soteria/issues/322"
+                       To get a sysroot for this version of Soteria Rust, run \
+                       `cargo +%s miri setup --print-sysroot` \
+                       (https://github.com/soteria-tools/soteria/issues/322)"
                       base
                       (Lazy.force Frontend_runtime.Cmd.toolchain_version)
               | ErrorBody err ->
