@@ -1073,9 +1073,23 @@ module Make (StateImpl : State.S) = struct
         let* args =
           map_list (List.combine3 args in_tys exp_tys)
             ~f:(fun (arg, from, to_) ->
-              let* arg = eval_operand arg in
-              if Types.equal_ty from to_ then ok arg
-              else State.transmute ~from ~to_ arg)
+              (* An unsized value cannot be passed by value: the ABI passes a
+                 thin pointer to its data instead, and the callee (a vtable
+                 shim) takes the receiver by pointer. This happens for calls to
+                 dyn-compatible methods taking [self] by value, like [<dyn
+                 FnOnce>::call_once]. *)
+              if Layout.is_dst from then
+                let place =
+                  match arg with
+                  | Move place | Copy place -> place
+                  | Constant _ -> failwith "unsized constant argument"
+                in
+                let+ ptr, _ = resolve_place place in
+                Ptr (ptr, Thin)
+              else
+                let* arg = eval_operand arg in
+                if Types.equal_ty from to_ then ok arg
+                else State.transmute ~from ~to_ arg)
         in
         [%l.info
           "Executing function with arguments [%a]"

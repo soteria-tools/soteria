@@ -275,10 +275,7 @@ struct
     let* layout = layout_of ty in
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error (`RefToUninhabited ty)
-    | _, TDynTrait _ ->
-        not_impl ~issue:387
-          "unsized arguments are not yet supported; this includes calls to \
-           `<dyn FnOnce>::call_once`"
+    | _, TDynTrait _ -> failwith "decode: cannot decode an unsized dyn value"
     | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Union [])
         else
