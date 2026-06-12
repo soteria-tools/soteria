@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781258118486,
+  "lastUpdate": 1781281210291,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1665,6 +1665,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 10.001670294906944,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d61524085759458d22a7c94e2bb7a69bec82de00",
+          "message": "Don't decay pointer for null checks in niche optims (#382)\n\n* Don't decay pointer for null checks in niche optims\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* add test that decays indeed don't happen\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Don't format .t files\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* aggregate statistics over all executions\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Opale's comments\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* update tests\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-06-12T16:00:33Z",
+          "tree_id": "534ea3a12a93ce6ecf8ec6bca4ef88c8b4c89e6b",
+          "url": "https://github.com/soteria-tools/soteria/commit/d61524085759458d22a7c94e2bb7a69bec82de00"
+        },
+        "date": 1781281207677,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08090264123999999,
+            "range": "± 0.0015",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.35489642792000003,
+            "range": "± 0.0034",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6598154267200003,
+            "range": "± 0.0149",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.11015558552,
+            "range": "± 0.0033",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 4.3644283474200005,
+            "range": "± 0.0286",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.90822243216,
+            "range": "± 0.0228",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.764614545973018,
             "unit": "s"
           }
         ]
