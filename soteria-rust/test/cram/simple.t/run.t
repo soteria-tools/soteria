@@ -626,32 +626,32 @@ Boolean BitOr must not be assumed true; both operands can be false (issue #376).
 
 Test that allocating a box only requires two heap allocation (thanks to the store optimisation): one for the contents of the box, and one for the box that we pass to the drop glue.
 FIXME: now that named consts are globals, there is in fact a third allocation: the one for <i32 as SizedTypeProperties>::LAYOUT. We should extend the store optimisation to handle globals; in particular we have a guarantee they can't be written to, so it's likely the optimisation will perform really well.
-  $ check_allocs box.rs 2
+  $ soteria-rust exec box.rs --stats stats.json && check_stat stats.json allocs 2
   Compiling... done in <time>
   => Running box::main...
   note: box::main: done in <time>, ran 1 branch
   PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
         (0b00 == extract[0-1](V|1|))
   
-  check_allocs: expected '2', got '3'
+  check_stat: expected '2', got '3' for allocs
   [1]
 
 Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.
-  $ check_allocs zst_ref.rs 0
+  $ soteria-rust exec zst_ref.rs --stats stats.json && check_stat stats.json allocs 0
   Compiling... done in <time>
   => Running zst_ref::main...
   note: zst_ref::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test that indexing arrays with a constant index does not allocate; the value is updated in place in the store.
-  $ check_allocs store_struct.rs 0
+  $ soteria-rust exec store_struct.rs --stats stats.json && check_stat stats.json allocs 0
   Compiling... done in <time>
   => Running store_struct::main...
   note: store_struct::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test that reading the metadata of a store-hosted pointer does not allocate; the pointer stays in the store.
-  $ check_allocs ptr_metadata.rs 0
+  $ soteria-rust exec ptr_metadata.rs --stats stats.json && check_stat stats.json allocs 0
   Compiling... done in <time>
   => Running ptr_metadata::main...
   note: ptr_metadata::main: done in <time>, ran 1 branch
@@ -665,10 +665,11 @@ Test we can use ptr::metadata to get the metadata of a trait object; this used t
   PC 1: empty
   
 
-  $ check_decays nonnull.rs 0
+FIXME: the last 3 decayed pointers shall be removed in #386
+  $ soteria-rust exec nonnull.rs --stats stats.json && check_stat stats.json decayed_pointers 3
   Compiling... done in <time>
-  => Running nonnull::main...
-  note: nonnull::main: done in <time>, ran 1 branch
+  => Running nonnull::match_niched_enums...
+  note: nonnull::match_niched_enums: done in <time>, ran 1 branch
   PC 1: Distinct(V|1-2|) /\ (0x0000000000000008 <=u V|1|) /\
         (V|1| <=u 0x7ffffffffffffff6) /\ (0x0000000000000008 <=u V|2|) /\
         (V|2| <=u 0x7ffffffffffffff6) /\ (0b000 == extract[0-2](V|1|)) /\

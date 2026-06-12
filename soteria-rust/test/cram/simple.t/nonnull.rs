@@ -13,7 +13,8 @@ fn make_nonnull_res() -> RN {
     Ok(NonNull::new(Box::into_raw(b)).unwrap())
 }
 
-fn main() {
+#[soteria::test]
+fn match_niched_enums() {
     match make_nonnull_opt() {
         Some(ptr) => unsafe {
             let b = Box::from_raw(ptr.as_ptr());
