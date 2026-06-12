@@ -22,16 +22,17 @@ let with_exn_and_config mode config f =
     let outcome = f () in
     Analyses.Outcome.exit outcome
   with
-  | Frontend.PluginError e -> fatal ~name:"Plugin" e
   | Frontend.FrontendError e -> fatal ~name:"Frontend" ~code:3 e
-  | Frontend.CompilationError e ->
-      Fmt.kstr
-        (print_diagnostic_simple ~severity:Error)
-        "Compilation error:@.%s@.@.If you changed compilation flags from \
-         previous runs, you may have to rebuild the plugins; run `soteria-rust \
-         build-plugins <compilation flags>`@.See \
-         https://github.com/soteria-tools/soteria/issues/388"
-        e;
+  | Frontend.CompilationError (info, msg) ->
+      print_diagnostic_simple ~severity:Error "Compilation error";
+      Fmt.pr "@.%s@.%a@.@." msg Unimplemented.pp
+        (Unimplemented.make
+           ~tip:
+             ( "If you changed compilation flags from previous runs, you may \
+                have to rebuild the plugins",
+               Some "soteria-rust build-plugins [compilation flags]" )
+           ~issue:388
+           ("Compilation failed while " ^ info));
       Analyses.Outcome.exit Error
   | Exn.Config_error err ->
       fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err

@@ -186,5 +186,9 @@ let with_extra_call_trace ?name ~loc ~msg (f : 'a t) : 'a t =
   let+ result, st = f { st with trace = new_trace } in
   (result, { st with trace = cur_trace })
 
-let not_impl = give_up
-let of_opt_not_impl = some_or_give_up
+let not_impl ?tip ?issue desc =
+  give_up (Unimplemented.to_string (Unimplemented.make ?tip ?issue desc))
+
+let of_opt_not_impl ?tip ?issue msg = function
+  | Some x -> return x
+  | None -> not_impl ?tip ?issue msg

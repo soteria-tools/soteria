@@ -48,25 +48,30 @@ let print_outcomes entry_name f =
       (entry_name, Outcome.Error)
   | exception e ->
       let time = Unix.gettimeofday () -. time in
-      let error, msg, extra =
+      (* We print a short, generic headline through the diagnostic helper (which
+         applies its own styling), and the detailed message manually below it,
+         so the helper doesn't mangle the multi-line, coloured details. *)
+      let headline, pp_details =
         match e with
-        | ExecutionError msg -> ("runtime error", msg, "")
+        | ExecutionError msg ->
+            ("a runtime error was encountered", fun ft -> Fmt.pf ft "%s" msg)
         | Soteria.Symex.Gave_up reason ->
-            ( "unsupported feature",
-              reason,
-              "If you think Soteria should handle this, please consider \
-               opening an issue at \
-               https://github.com/soteria-tools/soteria/issues" )
+            ( "an unsupported feature was reached",
+              fun ft -> Unimplemented.pp ft @@ Unimplemented.of_string reason )
         | e ->
-            ( "exception",
-              Fmt.str "%a@\nTrace: %s" Fmt.exn e (Printexc.get_backtrace ()),
-              "Please open an issue with the above information (and ideally a \
-               reproducer) at https://github.com/soteria-tools/soteria/issues"
-            )
+            ( "an unexpected exception was raised",
+              fun ft ->
+                Fmt.pf ft
+                  "%a@.Trace: %s@.Please open an issue with the above \
+                   information (and ideally a reproducer) at %t"
+                  Fmt.exn e
+                  (Printexc.get_backtrace ())
+                  Unimplemented.pp_repo_issues )
       in
       Fmt.kstr
         (print_diagnostic_simple ~severity:Warning)
-        "%s (%a): %s, %s@.%s@.@." entry_name pp_time time error msg extra;
+        "%s (%a): %s" entry_name pp_time time headline;
+      Fmt.pr "%t@.@." pp_details;
       (entry_name, Outcome.Fatal)
 
 let flamegraph_name = Str.global_replace (Str.regexp_string "::") "-"

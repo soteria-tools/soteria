@@ -307,10 +307,9 @@ module Make (StateImpl : State.S) = struct
         Fmt.kstr not_impl "vtable-reference constants are not yet supported: %a"
           Crate.pp_constant_expr const
     | CTypeId _ ->
-        Fmt.kstr not_impl
-          "TypeId constants are not yet supported: %a \
-           (https://github.com/soteria-tools/soteria/issues/187)"
-          Crate.pp_constant_expr const
+        Fmt.kstr (not_impl ~issue:187)
+          "TypeId constants are not yet supported: %a" Crate.pp_constant_expr
+          const
     | COpaque msg ->
         Fmt.kstr not_impl
           "opaque constant: %s; something went wrong in the frontend" msg
@@ -1232,30 +1231,37 @@ module Make (StateImpl : State.S) = struct
       -> (
         match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args
-        | None ->
-            let msg =
-              match fundef.body with
-              | OpaqueBody -> "compilation skipped it"
-              | TraitMethodWithoutDefaultBody -> "this is a trait method stub"
-              | MissingBody ->
-                  let base =
-                    "the function's body was not found while compiling"
-                  in
-                  if Option.is_some (Config.get ()).sysroot then base
-                  else
-                    Fmt.str
-                      "%s; try using a sysroot (with --sysroot)\n\
-                       To get a sysroot for this version of Soteria Rust, run \
-                       `cargo +%s miri setup --print-sysroot` \
-                       (https://github.com/soteria-tools/soteria/issues/322)"
-                      base
+        | None -> (
+            match fundef.body with
+            | OpaqueBody ->
+                Fmt.kstr not_impl
+                  "can't execute function %a, compilation skipped it"
+                  Crate.pp_name name
+            | TraitMethodWithoutDefaultBody ->
+                Fmt.kstr not_impl
+                  "can't execute function %a, this is a trait method stub"
+                  Crate.pp_name name
+            | MissingBody ->
+                if Option.is_some (Config.get ()).sysroot then
+                  Fmt.kstr not_impl
+                    "can't execute function %a, the function's body was not \
+                     found while compiling"
+                    Crate.pp_name name
+                else
+                  let cmd =
+                    Fmt.str "cargo +%s miri setup --print-sysroot"
                       (Lazy.force Frontend_runtime.Cmd.toolchain_version)
-              | ErrorBody err ->
-                  "the frontend does not support compiling it (" ^ err.msg ^ ")"
-              | _ -> failwith "impossible"
-            in
-            Fmt.kstr not_impl "can't execute function %a, %s" Crate.pp_name name
-              msg)
+                  in
+                  let tip = ("to get a sysroot, run", Some cmd) in
+                  Fmt.kstr (not_impl ~tip ~issue:322)
+                    "can't execute function %a, try using a sysroot (--sysroot)"
+                    Crate.pp_name name
+            | ErrorBody err ->
+                Fmt.kstr not_impl
+                  "can't execute function %a, the frontend does not support \
+                   compiling it (%s)"
+                  Crate.pp_name name err.msg
+            | _ -> failwith "impossible"))
     | TargetDispatchBody _ -> failwith "Target dispatch not supported"
     | StructuredBody _ -> failwith "Impossibe: encountered LLBC?"
 

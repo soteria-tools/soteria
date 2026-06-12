@@ -163,8 +163,11 @@ struct
     let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) : 'a t =
      fun _handler _get_all -> SM.lift (DecayMap.SM.lift m)
 
-    let not_impl msg = lift @@ not_impl msg
-    let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
+    let not_impl ?tip ?issue msg = lift @@ not_impl ?tip ?issue msg
+
+    let of_opt_not_impl ?tip ?issue msg x =
+      lift @@ of_opt_not_impl ?tip ?issue msg x
+
     let layout_of ty = lift_rsymex @@ Layout.layout_of ty
     let normalise ty = lift_rsymex @@ Layout.normalise ty
 
@@ -273,10 +276,9 @@ struct
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error (`RefToUninhabited ty)
     | _, TDynTrait _ ->
-        not_impl
-          "Soteria Rust does not yet support unsized arguments; this includes \
-           calls to `<dyn FnOnce>::call_once` \
-           (https://github.com/soteria-tools/soteria/issues/387)"
+        not_impl ~issue:387
+          "unsized arguments are not yet supported; this includes calls to \
+           `<dyn FnOnce>::call_once`"
     | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Union [])
         else
