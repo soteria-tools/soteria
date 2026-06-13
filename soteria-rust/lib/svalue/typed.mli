@@ -29,13 +29,6 @@ module T : sig
 end
 
 (* types *)
-(*
-type ptr = {
-  ptr : T.sptr t;
-  size : T.sint t;
-  align : T.nonzero t;
-  tag : Ptr_tag.t option;
-} *)
 
 val t_ptr : unit -> [> T.sptr ] ty
 val t_loc : unit -> [> T.sloc ] ty
@@ -67,13 +60,6 @@ val cast_nonzero : [< T.sint ] t -> [> T.nonzero ] t
 val as_any : [< T.any ] t -> [> T.any ] t
 
 (* helpers *)
-
-(** [fields_of v] returns the fields of [v], if [v] is
-    - an ADT, which is either a struct or an enum (i.e. not a union)
-    - a full pointer with {i non-unit} metadata
-
-    Otherwise errors! *)
-val fields_of : [< T.any ] t -> [< T.any ] t list
 
 val float_precision : Values.float_type -> FloatPrecision.t
 
@@ -154,17 +140,15 @@ end
 module Adt : sig
   (** Creates a tuple ADT with the given value blocks. This may be an array,
       struct, or tuple. *)
-  val mk_tuple : [< T.any ] t list -> [> T.adt ] t
-
-  (** Creates a zero-sized ADT, containing no fields. Equivalent to
-      [mk_tuple []]. *)
-  val mk_zst : unit -> [> T.adt ] t
+  val mk_tuple : Types.type_decl_ref -> [< T.any ] t list -> [> T.adt ] t
 
   (** Creates an enum ADT with the given discriminant and values. *)
-  val mk_enum : [< T.sint ] t -> [< T.any ] t list -> [> T.adt ] t
+  val mk_enum :
+    Types.type_decl_ref -> [< T.sint ] t -> [< T.any ] t list -> [> T.adt ] t
 
   (** Creates a union ADT with the given value blocks. *)
-  val mk_union : ([< T.any ] t * [< T.sint ] t) list -> [> T.adt ] t
+  val mk_union :
+    Types.type_decl_ref -> ([< T.any ] t * [< T.sint ] t) list -> [> T.adt ] t
 
   (** Creates an unknown polymorphic value. {b HACK: what does this even mean?}
   *)
@@ -180,11 +164,11 @@ module Adt : sig
   (**  *)
   val discriminant_of : [< T.adt ] t -> [< T.sint ] t
 
+  val field_of : [< T.adt ] t -> int -> [> T.any ] t
+
   module Checked : sig
     val mk_enum :
       ty:Types.type_decl_ref -> string -> [< T.any ] t list -> [> T.adt ] t
-
-    val mk_struct : ty:Types.type_decl_ref -> [< T.any ] t list -> [> T.adt ] t
   end
 end
 

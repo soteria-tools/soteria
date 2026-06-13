@@ -3,9 +3,10 @@
 open Charon
 
 type ext_ty =
-  | Adt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
-  | ThinPtr
-  | FullPtr
+  | TAdt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+  | TThinPtr
+  | TFullPtr
+  | TPolyType
 [@@deriving eq, ord, show]
 
 (* the full values *)
@@ -37,9 +38,10 @@ module Rust_ext :
   Soteria.Bv_values.Svalue.Value_ext with type t = ext_t and type ty = ext_ty =
 struct
   type ty = ext_ty =
-    | Adt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
-    | ThinPtr
-    | FullPtr
+    | TAdt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+    | TThinPtr
+    | TFullPtr
+    | TPolyType
   [@@deriving eq, ord, show]
 
   type t = ext_t =

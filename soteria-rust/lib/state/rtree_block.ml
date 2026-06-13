@@ -80,7 +80,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
 
     let rec split_rval (v : Typed.([< T.any ] t)) at =
       match%ty v with
-      | TExtension FullPtr -> (
+      | TExtension TFullPtr -> (
           let ptr, meta = Typed.Ptr.split v in
           let* v = Sptr.decay ptr in
           match meta with
@@ -88,7 +88,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           | Some meta -> (
               match%ty meta with
               | TBitVector _ -> split_rval (BV.concat v meta) at
-              | TExtension ThinPtr ->
+              | TExtension TThinPtr ->
                   let* v2 = Sptr.decay meta in
                   split_rval (BV.concat v v2) at
               | _ -> failwith "unexpected meta type"))
@@ -423,7 +423,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       DecayMap.SM.map_list leaves ~f:(fun (v, _) ->
           match%ty v with
           | TBitVector _ -> return v
-          | TExtension FullPtr -> Sptr.decay (Typed.Ptr.ptr_of v)
+          | TExtension TFullPtr -> Sptr.decay (Typed.Ptr.ptr_of v)
           | TFloat _ -> Value_codec.float_to_bv_bits v
           | _ ->
               Fmt.kstr not_impl "Unexpected rust_val in lazy decoding: %a"

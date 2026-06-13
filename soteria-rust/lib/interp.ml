@@ -1170,6 +1170,7 @@ module Make (StateImpl : State.S) = struct
   let exec_fun_as_whole_prog ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
     let* value = exec_fun ~args ~state fundef in
+    let value = Typed.Expr.of_value value in
     let* () = State.run_thread_exits () in
     if (Config.get ()).ignore_leaks then ok value
     else

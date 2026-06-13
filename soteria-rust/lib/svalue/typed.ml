@@ -8,12 +8,23 @@ module T = struct
   include T
 
   type sptr_f = [ `FullPtr ]
+  type sptr_t = [ `ThinPtr ]
   type adt = [ `Adt ]
+  type ptr_meta = [ sint | sptr_t ]
 
   type any =
-    [ sint_ovf | sfloat | sbool | sptr | sloc | any sseq | sptr_f | adt ]
+    [ sint_ovf
+    | sfloat
+    | sbool
+    | sptr
+    | sloc
+    | any sseq
+    | sptr_f
+    | sptr_t
+    | adt ]
 
   let pp_sptr_f = Fmt.nop
+  let pp_sptr_t = Fmt.nop
   let pp_adt = Fmt.nop
   let pp_any = Fmt.nop
 end
@@ -48,20 +59,20 @@ type ptr = {
   tag : Ptr_tag.t option;
 }
 
-type meta = Thin | Len of T.sint t | VTable of T.sptr t
-type full_ptr = ptr * meta
-
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
-let t_fptr () : 'a ty = type_type @@ TExtension FullPtr
+let t_ptr_f () : 'a ty = type_type @@ TExtension TFullPtr
+let t_ptr_t () : 'a ty = type_type @@ TExtension TThinPtr
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
 
-let t_lit : Types.literal_type -> [> T.sint | T.sfloat ] ty = function
+let t_lit : Types.literal_type -> [> T.sint ] ty = function
   | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
   | TFloat _ -> failwith "t_lit: unexpected float literal type"
 
 let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
   t_float (float_precision ty)
+
+let t_adt adt : [> T.adt ] ty = type_type @@ TExtension (TAdt adt)
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -79,10 +90,30 @@ let cast_f fty v = cast_checked ~ty:(t_float fty) v
 let cast_float v =
   match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
 
-let meta_as_len meta =
-  match meta with
-  | Len len -> len
-  | Thin | VTable _ -> failwith "meta_as_len: invalid length for slice/str"
+let cast_ptr v =
+  match get_ty v with TPointer _ -> cast v | _ -> cast_error v (t_ptr ())
+
+let cast_ptr_f v =
+  match get_ty v with
+  | TExtension TFullPtr -> cast v
+  | _ -> cast_error v (t_ptr_f ())
+
+let cast_ptr_t v =
+  match get_ty v with
+  | TExtension TThinPtr -> cast v
+  | _ -> cast_error v (t_ptr_t ())
+
+let cast_adt adt v =
+  match get_ty v with
+  | TExtension (TAdt adt') when Types.equal_type_decl_ref adt adt' -> cast v
+  | ty -> cast_error v (t_adt adt)
+
+let cast_any_adt v =
+  match get_ty v with
+  | TExtension (TAdt _) -> cast v
+  | _ ->
+      cast_error v
+        (t_adt { id = TTuple; generics = TypesUtils.empty_generic_args })
 
 module BitVec = struct
   include BitVec
@@ -159,6 +190,53 @@ module Ptr = struct
   let null_loc () = null_loc (8 * size_of_uint_ty Usize)
   let null () = null (8 * size_of_uint_ty Usize)
   let loc_of_int i = loc_of_int (8 * size_of_uint_ty Usize) i
+end
+
+module Adt = struct
+  open Typed_core.Svalue
+
+  let mk_tuple adt vs = type_ (Extension (Tuple vs) <| TExtension (TAdt adt))
+
+  let mk_enum adt discr vs =
+    type_ (Extension (Enum (discr, vs)) <| TExtension (TAdt adt))
+
+  let mk_union adt blocks =
+    type_ (Extension (Union blocks) <| TExtension (TAdt adt))
+
+  let mk_poly ty_id = type_ (Extension (PolyVal ty_id) <| TExtension TPolyType)
+
+  let as_union v =
+    match kind (untyped v) with
+    | Extension (Union blocks) -> List.map (Pair.map type_ type_) blocks
+    | _ -> cast_error v (type_type (get_ty v))
+
+  let as_tuple v =
+    match kind (untyped v) with
+    | Extension (Tuple vs) -> type_list vs
+    | _ -> cast_error v (type_type (get_ty v))
+
+  let as_enum v =
+    match kind (untyped v) with
+    | Extension (Enum (discr, vs)) -> (type_ discr, type_list vs)
+    | _ -> cast_error v (type_type (get_ty v))
+
+  let discriminant_of v =
+    match kind (untyped v) with
+    | Extension (Enum (discr, _)) -> type_ discr
+    | _ -> cast_error v (type_type (get_ty v))
+
+  let field_of v idx =
+    match kind (untyped v) with
+    | Extension (Tuple vs) -> (
+        try List.nth vs idx
+        with Failure _ ->
+          Fmt.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
+    | Extension (Enum (_, vs)) -> (
+        try List.nth vs idx
+        with Failure _ ->
+          Fmt.failwith "Enum field index %d out of bounds for value %a" idx ppa
+            v)
+    | _ -> cast_error v (type_type (get_ty v))
 end
 
 module Syntax = struct

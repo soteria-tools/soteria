@@ -93,6 +93,7 @@ module type S = sig
   val mk_var : Var.t -> 'a ty -> 'a t
   val iter_vars : 'a t -> (Var.t * 'b ty -> unit) -> unit
   val type_ : Svalue.t -> 'a t
+  val type_list : Svalue.t list -> 'a t list
   val type_checked : Svalue.t -> 'a ty -> 'a t option
   val cast : 'a t -> 'b t
   val cast_checked : 'a t -> 'b ty -> 'b t option

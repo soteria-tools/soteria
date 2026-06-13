@@ -82,9 +82,9 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let@ () = print_outcomes entry_name in
   Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
     ("Running " ^ entry_name ^ "...");
-  let args : State.Sptr.t Rust_val.t list =
+  let args : Typed.([> T.any ] t) list =
     if entry_name = "miri_start" then
-      [ Int (Typed.BV.usizei 0); Ptr (State.Sptr.null (), Thin) ]
+      Typed.[ BV.usizei 0; Ptr.mk_ptr_f (Sptr.null ()) None ]
     else []
   in
   let branches =
@@ -110,7 +110,8 @@ let exec_crate (crate : Charon.UllbcAst.crate)
        | Missing _ -> execution_err "Miss encountered in WPST"
        | Error e -> (
            match Soteria.Symex.Or_gave_up.unwrap_exn e with
-           | (`OkExit, _), st -> Ok (Rust_val.unit_, st)
+           | (`OkExit, _), st ->
+               Ok (Typed.Adt.mk_tuple [] |> Typed.Expr.of_value, st)
            | e -> Error e)
   in
   (* inverse ok and errors if we expect a failure *)
@@ -126,7 +127,8 @@ let exec_crate (crate : Charon.UllbcAst.crate)
                    ~loc:fun_decl.item_meta.span.data ()
                in
                Left (Error ((`MetaExpectedError, trace), st), pcs)
-           | Error (_, st), pcs -> Right (Ok (Rust_val.unit_, st), pcs)
+           | Error (_, st), pcs ->
+               Right (Ok (Typed.Adt.mk_tuple [] |> Typed.Expr.of_value, st), pcs)
       in
       if List.is_empty errors then oks else errors
   in

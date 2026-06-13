@@ -122,7 +122,7 @@ module M (StateM : State.StateM.S) = struct
   let meta_as_int meta =
     match%ty meta with
     | TBitVector _ -> ok meta
-    | TExtension ThinPtr -> Sptr.decay meta
+    | TExtension TThinPtr -> Sptr.decay meta
     | _ -> failwith "invalid metadata type"
 
   let opt_meta_as_int = function

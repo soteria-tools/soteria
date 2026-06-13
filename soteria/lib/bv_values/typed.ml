@@ -73,6 +73,7 @@ module Make (V : Value_ext) : S with module Ext = V = struct
   let[@inline] untyped x = x
   let[@inline] untyped_list l = l
   let[@inline] type_ x = x
+  let[@inline] type_list l = l
   let type_checked x ty = if equal_ty x.node.ty ty then Some x else None
   let cast_checked = type_checked
   let cast_float x = if is_float x.node.ty then Some x else None

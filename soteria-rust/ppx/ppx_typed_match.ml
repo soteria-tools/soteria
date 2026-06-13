@@ -60,9 +60,9 @@ let key_of_ty_ctor = function
   | _ -> None
 
 let key_of_ext_ctor = function
-  | "FullPtr" -> Some "sptr_f"
-  | "ThinPtr" -> Some "sptr_t"
-  | "Adt" -> Some "adt"
+  | "TFullPtr" -> Some "sptr_f"
+  | "TThinPtr" -> Some "sptr_t"
+  | "TAdt" -> Some "adt"
   | _ -> None
 
 (* [ [< <tag for key> ] Typed.t ] *)

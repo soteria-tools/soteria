@@ -198,7 +198,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     let* ptr = Core.string_to_ptr filename in
     let location =
-      Typed.Adt.Checked.mk_struct ~ty:tref
+      Typed.Adt.mk_struct tref
         [
           (* filename: *)
           Typed.Adt.mk_tuple [ ptr ];

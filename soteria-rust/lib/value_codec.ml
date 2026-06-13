@@ -239,7 +239,7 @@ struct
              https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
           let+ blocks = get_all (Typed.cast_nonzero layout.size, offset) in
           Typed.Adt.mk_union blocks
-    | Primitive, TFnDef _ -> ok (Typed.Adt.mk_zst ())
+    | Primitive, TFnDef _ -> ok (Typed.Adt.mk_tuple [])
     | Primitive, TVar (Free id) ->
         if%sat layout.size ==@ Usize.(0s) then ok (Typed.Adt.mk_poly id)
         else query (ty, offset)
@@ -278,6 +278,19 @@ struct
     | Enum _, _ -> failwith "decode: expected enum type for enum layout"
 end
 
+(** Given a value of type [Box], returns the container pointer *)
+let ptr_of_box v =
+  let box = Typed.cast_any_adt v in
+  (* Unique<T> *)
+  let unique = Typed.Adt.field_of box 0 in
+  let unique = Typed.cast_any_adt unique in
+  (* NonNull<T> *)
+  let nonnull = Typed.Adt.field_of unique 0 in
+  let nonnull = Typed.cast_any_adt nonnull in
+  (* *mut T *)
+  let ptr = Typed.Adt.field_of nonnull 0 in
+  Typed.cast_ptr_f ptr
+
 (** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an iterator
     over its sub values, along with their offset. Offsets all blocks by [offset]
     if specified *)
@@ -286,8 +299,8 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
   let open Rustsymex in
   let open Syntax in
   let open Result in
-  let chain iter =
-    Typed.fields_of value
+  let chain fields iter =
+    fields
     |> Iter.combine_list iter
     |> Result.fold_iter ~init:Iter.empty ~f:(fun acc ((ty, ofs), v) ->
         let offset = offset +!!@ ofs in
@@ -306,15 +319,25 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         if Crate.is_union adt then
           let blocks = Typed.Adt.as_union value in
           ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
-        else chain (iter_fields layout ty)
-    | Array _ -> chain (iter_fields layout ty)
+        else
+          let fields = Typed.Adt.as_tuple value in
+          chain fields (iter_fields layout ty)
+    | Array { is_ptr = false } ->
+        let value = Typed.cast_any_adt value in
+        let fields = Typed.Adt.as_tuple value in
+        chain fields (iter_fields layout ty)
+    | Array { is_ptr = true } ->
+        let value = Typed.cast_ptr_f value in
+        let ptr, meta = Typed.Ptr.split value in
+        let meta = Option.get meta in
+        chain [ Typed.as_any ptr; Typed.as_any meta ] (iter_fields layout ty)
     | Enum (_, layouts) -> (
         let adt = ty_as_adt ty in
         let value = Typed.cast_adt adt value in
-        let discr = Typed.Adt.discriminant_of value in
+        let discr, fields = Typed.Adt.as_enum value in
         let* variant = variant_for_discr discr adt in
         let variant = variant.id in
-        let++ fields = chain (iter_fields ~variant layout ty) in
+        let++ fields = chain fields (iter_fields ~variant layout ty) in
         match fst layouts.(Types.VariantId.to_int variant) with
         | None -> fields
         | Some (ofs, tag) ->
@@ -437,7 +460,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
          structs *)
   | TAdt adt when adt_is_box adt ->
       let pointee = get_pointee ty in
-      let ptr = Typed.cast_ptr_f @@ List.hd @@ Typed.fields_of v in
+      let ptr = ptr_of_box v in
       ref_box_validity ptr pointee
   (* undefined.validity.wide *)
   | TRawPtr (pointee, _) ->
@@ -447,17 +470,20 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
   | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_adt adt v in
       let discr = Typed.Adt.discriminant_of v in
-      let vs = Typed.fields_of v in
       let* variant = variant_for_discr discr adt in
-      List.combine (field_tys variant.fields) vs
-      |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
+      Iter.of_list (field_tys variant.fields)
+      |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of v i))
+      |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   (* undefined.validity.struct *)
   | TAdt adt when Crate.is_struct adt ->
-      Typed.fields_of v
-      |> List.combine (Crate.as_struct_or_tuple adt)
-      |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
+      let v = Typed.cast_adt adt v in
+      Iter.of_list (Crate.as_struct_or_tuple adt)
+      |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of v i))
+      |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   | TArray (ty, _) | TSlice ty ->
-      Typed.fields_of v |> iter_list ~f:(fun v -> validity ~check_ref ty v f)
+      let v = Typed.cast_any_adt v in
+      let vs = Typed.Adt.as_tuple v in
+      iter_list vs ~f:(fun v -> validity ~check_ref ty v f)
   (* undefined.validity.union *)
   | TAdt adt when Crate.is_union adt -> ok ()
   (* fndefs are ZSTs *)
@@ -553,10 +579,10 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
   | TBitVector _, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
       return (Typed.as_any v)
   | TFloat _, TLiteral (TFloat _) -> return (Typed.as_any v)
-  | TExtension FullPtr, (TRawPtr _ | TRef _ | TFnPtr _) ->
+  | TExtension TFullPtr, (TRawPtr _ | TRef _ | TFnPtr _) ->
       return (Typed.as_any v)
   | TBitVector _, TLiteral (TFloat _) -> return (BV.to_float_raw v)
-  | TExtension FullPtr, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
+  | TExtension TFullPtr, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
       let ptr, _ = Typed.Ptr.split v in
       Sptr.decay ptr
   | TFloat _, TLiteral (TInt _ | TUInt _ | TBool | TChar) -> float_to_bv_bits v
