@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781374140471,
+  "lastUpdate": 1781377384574,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1795,6 +1795,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.723480546032079,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9833e920b5656a75756ba1ed1bb9c6b82a933378",
+          "message": "Use the Obol version from the PR in benchmarks (#395)",
+          "timestamp": "2026-06-13T19:54:51+01:00",
+          "tree_id": "5c92d763853a9cbc3b28cfdb06608d30167a9b2f",
+          "url": "https://github.com/soteria-tools/soteria/commit/9833e920b5656a75756ba1ed1bb9c6b82a933378"
+        },
+        "date": 1781377383335,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08113994682,
+            "range": "± 0.0026",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.35679199295999997,
+            "range": "± 0.0037",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6579404534200002,
+            "range": "± 0.016",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.11075143822,
+            "range": "± 0.0024",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 4.31649033806,
+            "range": "± 0.0182",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.89779752798,
+            "range": "± 0.0195",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.836936132982373,
             "unit": "s"
           }
         ]
