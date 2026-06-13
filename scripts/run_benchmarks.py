@@ -36,6 +36,7 @@ Per-entry fields:
 """
 
 import argparse
+import csv
 import importlib.util
 import json
 import os
@@ -239,16 +240,44 @@ def load_soteria_test():
     return module
 
 
-def bench_conformance() -> list[dict]:
+def write_conformance_outcomes(src_csv: Path, dest_csv: Path) -> None:
+    """Write a sorted `suite,file,outcome` CSV from test.py's benchmark.csv.
+
+    Dropping the per-test times and sorting the rows makes this file diff
+    cleanly: committed to gh-pages, its git history gains a commit only when a
+    test's outcome actually changes, so before/after regressions are obvious.
+    """
+    with src_csv.open(newline="") as f:
+        rows = list(csv.reader(f))
+    # benchmark.csv header: Suite,File,Soteria,(s),Kani,(s),Miri,(s)
+    # We keep the suite, file, and Soteria outcome (the only tool run here).
+    body = sorted((r[0], r[1], r[2]) for r in rows[1:] if len(r) >= 3)
+    with dest_csv.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["suite", "file", "outcome"])
+        writer.writerows(body)
+
+
+def bench_conformance(csv_dest: Optional[Path] = None) -> list[dict]:
     """Run the Kani/Miri conformance suites and return one list of benches.
 
     Requires KANI_SUITE_PATH and MIRI_SUITE_PATH to point at the cloned suites
     (test.py reads them); CI sets these up. test.py writes its CSV/logs to
-    OUTPUT_DIR, which we point at a temp dir to keep the repo clean.
+    OUTPUT_DIR, which we point at a temp dir to keep the repo clean. When
+    `csv_dest` is given, the per-test outcomes are also written there (for
+    committing as a diffable regression record).
     """
     if "OUTPUT_DIR" not in os.environ:
         os.environ["OUTPUT_DIR"] = tempfile.mkdtemp(prefix="soteria-conformance-")
     summary = load_soteria_test().soteria_conformance(CONFORMANCE_TIMEOUT_S)
+
+    if csv_dest is not None:
+        src = Path(os.environ["OUTPUT_DIR"]) / "benchmark.csv"
+        if src.exists():
+            write_conformance_outcomes(src, csv_dest)
+            log(f"wrote conformance outcomes to {csv_dest}")
+        else:
+            log(f"WARNING: no conformance CSV at {src}; skipping {csv_dest}")
 
     results: list[dict] = []
     for suite in CONFORMANCE_SUITES:
@@ -316,6 +345,15 @@ def main() -> None:
             "(requires KANI_SUITE_PATH and MIRI_SUITE_PATH; see test.py)"
         ),
     )
+    parser.add_argument(
+        "--conformance-csv",
+        type=Path,
+        default=None,
+        help=(
+            "Write a sorted suite,file,outcome CSV of the conformance run here, "
+            "for committing as a diffable record of per-test outcome changes"
+        ),
+    )
     parsed = parser.parse_args()
 
     config = json.loads(parsed.config.read_text())
@@ -344,7 +382,7 @@ def main() -> None:
     if parsed.conformance:
         log("=== conformance: Kani/Miri suites ===")
         try:
-            results.extend(bench_conformance())
+            results.extend(bench_conformance(parsed.conformance_csv))
         except Exception as exc:  # noqa: BLE001 - report and continue
             failures += 1
             log(f"FAILED (conformance): {exc}")

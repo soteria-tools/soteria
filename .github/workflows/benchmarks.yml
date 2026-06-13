@@ -157,7 +157,11 @@ jobs:
           echo "MIRI_SUITE_PATH=${GITHUB_WORKSPACE}/conformance/miri/tests" >> $GITHUB_ENV
 
       - name: Run benchmarks
-        run: python3 scripts/run_benchmarks.py --output benchmark-results.json --conformance
+        run: |
+          python3 scripts/run_benchmarks.py \
+            --output benchmark-results.json \
+            --conformance \
+            --conformance-csv conformance-outcomes.csv
 
       # Main pushes publish the new data point to gh-pages so the dashboard's
       # history advances. PR runs deliberately skip the publish — the
@@ -180,9 +184,13 @@ jobs:
           alert-threshold: "150%"
           fail-on-alert: false
 
-      # github-action-benchmark only writes its default index.html when none
-      # exists, so it never overwrites ours. Copy our custom dashboard over the
-      # published one; this only produces a commit when the template changes.
+      # Publish two things to gh-pages alongside github-action-benchmark's data.js:
+      #   - our custom dashboard (the action only writes its default index.html
+      #     when none exists, so it never overwrites ours);
+      #   - the per-test conformance outcomes CSV, whose git history then records
+      #     exactly when a test's outcome changed (the file is sorted and times-
+      #     free, so it only differs on a real regression/improvement).
+      # A commit is produced only when one of these files actually changes.
       - name: Publish custom benchmark dashboard
         if: inputs.pr-number == ''
         run: |
@@ -190,14 +198,19 @@ jobs:
           git fetch origin gh-pages
           git worktree add --detach bench-dashboard origin/gh-pages
           cp scripts/bench-index.html bench-dashboard/dev/bench/index.html
+          files="dev/bench/index.html"
+          if [ -f conformance-outcomes.csv ]; then
+            cp conformance-outcomes.csv bench-dashboard/dev/bench/conformance-outcomes.csv
+            files="$files dev/bench/conformance-outcomes.csv"
+          fi
           cd bench-dashboard
-          if git diff --quiet -- dev/bench/index.html; then
-            echo "Dashboard already up to date."
+          git add $files
+          if git diff --cached --quiet; then
+            echo "Dashboard and conformance outcomes already up to date."
           else
-            git add dev/bench/index.html
             git -c user.name='github-actions[bot]' \
                 -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-                commit -m 'Update benchmark dashboard'
+                commit -m 'Update benchmark dashboard and conformance outcomes'
             git push origin HEAD:gh-pages
           fi
           cd ..
