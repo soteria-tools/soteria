@@ -186,6 +186,12 @@ module type S = sig
   (** The offset of this pointer within its allocation. *)
   val ofs : t -> [> sint ] Typed.t
 
+  (** Returns a symbolic boolean characterising whether the pointer is in bound
+      to its allocation. *)
+  val in_bound : t -> sbool Typed.t
+
+  (** The size of the allocation this pointer points to. *)
+
   (** Whether this pointer has provenance, i.e. points to some allocation. *)
   val has_provenance : t -> sbool Typed.t
 

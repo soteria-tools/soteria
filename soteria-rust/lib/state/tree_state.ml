@@ -49,6 +49,10 @@ module Make (Borrows : Tree_borrows.T) = struct
         tag = L_option.to_syn Borrows.Tag.to_syn tag;
       }
 
+    let in_bound { ptr; size; _ } =
+      let ofs = Typed.Ptr.ofs ptr in
+      Usize.(0s) <=@ ofs &&@ (ofs <@ size)
+
     let learn_eq syn t =
       let open DecayMap.SM.Consumer in
       let open Syntax in

@@ -142,16 +142,18 @@ module M (StateM : State.StateM.S) = struct
     | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
         (* Pointer comparison just uses the address! See
            https://doc.rust-lang.org/std/ptr/index.html#provenance *)
-        (* We optimise when the pointers surely have (or surely don't have) the
-           same provenance, to avoid spuriously decaying them. *)
         let same_provenance = Sptr.have_same_provenance l r in
         if%sure same_provenance then
-          (* Same allocation: comparing the offsets is enough. *)
+          (* Fast path: if two pointer have the same provenance, it's enough to
+             compare their offsets *)
           let+ meta_eq = eval_meta_eq meta_l meta_r in
           BV.of_bool (meta_eq &&@ (Sptr.ofs l ==@ Sptr.ofs r))
-        else if%sure not same_provenance then
-          (* Distinct allocations live at distinct addresses, so the pointers
-             cannot be equal. *)
+        else if%sure
+          (not same_provenance) &&@ Sptr.in_bound l &&@ Sptr.in_bound r
+        then
+          (* Fast path: if two pointer have different provenances AND are in
+             bound of their respective allocations, they cannot be equal (since
+             allocations cannot overlap). *)
           ok (BV.of_bool v_false)
         else
           let* meta_eq = eval_meta_eq meta_l meta_r in

@@ -723,3 +723,14 @@ FIXME: the last 3 decayed pointers shall be removed in #386
   check_stat: expected '0', got '9' for decayed_pointers
   [1]
 
+Pointers are compared by their addresses. Two pointer with equal addresses
+but different provenance should be decayed, compared, and checked to be equal
+successfuly.
+  $ soteria-rust exec ptr_diff_prov.rs
+  Compiling... done in <time>
+  => Running ptr_diff_prov::main...
+  note: ptr_diff_prov::main: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ (0x0000000000000001 <=u V|1|) /\
+        (V|1| <=u 0x7ffffffffffffffd) /\ (0x0000000000000001 <=u V|2|) /\
+        (V|2| <=u 0x7ffffffffffffffd)
+  
