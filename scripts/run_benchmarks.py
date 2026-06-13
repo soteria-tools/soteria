@@ -15,6 +15,12 @@ benchmarks.json (every entry accepts `args` and `no_hyperfine`, see below):
   - "c_biab":   a C project run in bi-abduction, with `mode` set to either
                     "gen-summaries" or "capture-db"
 
+With --conformance, an additional Rust *conformance* benchmark runs the Kani
+and Miri test suites through soteria-rust (via soteria-rust/scripts/test.py) and
+emits, per suite, the passed/failed/unsupported/timed-out test counts and the
+total time. It is not configured in benchmarks.json; CI must clone the suites
+and set KANI_SUITE_PATH / MIRI_SUITE_PATH first.
+
 Per-entry fields:
   - "path"          (required) file or project root, relative to the repo root
   - "name"          (optional) label used in the report; defaults to the path
@@ -30,6 +36,7 @@ Per-entry fields:
 """
 
 import argparse
+import importlib.util
 import json
 import os
 import shlex
@@ -185,6 +192,93 @@ def make_result(entry: dict, kind: str, stats: dict) -> dict:
     return result
 
 
+# --- Rust conformance benchmark ------------------------------------------
+#
+# Unlike the performance benchmarks above, this is a *conformance* benchmark:
+# it runs soteria-rust over the Kani and Miri test suites (which CI clones
+# beforehand) and tracks how many tests pass/fail/are unsupported/time out,
+# plus the total time spent. The running and aggregation live in
+# soteria-rust/scripts/test.py (`soteria_conformance`); here we only shape its
+# per-suite summary into benches. Bench names are prefixed "conformance-<suite>:"
+# so the dashboard can group them into their own section.
+
+CONFORMANCE_SUITES = ("kani", "miri")
+
+# A small tail of slow tests dominates each suite's runtime (see benchmark.csv:
+# kani's median is ~0.1s but a handful of tests run for 5-23s). Cap each test so
+# the benchmark finishes in a few minutes rather than ~10; the cost is a few
+# extra "timed out" outcomes, which is fine since timeouts are tracked anyway.
+CONFORMANCE_TIMEOUT_S = 3
+
+# soteria_conformance() summary key -> dashboard label, for the count benches.
+CONFORMANCE_OUTCOMES = {
+    "passed": "passed",
+    "failed": "failed",
+    "unsupported": "unsupported",
+    "timed_out": "timed out",
+}
+
+
+def load_soteria_test():
+    """Import soteria-rust/scripts/test.py as a module.
+
+    test.py and its siblings (cliopts, common, config, ...) import each other by
+    bare name, so their directory must be on sys.path. We load test.py under a
+    distinct module name to avoid clashing with the stdlib `test` package.
+    """
+    rust_scripts = REPO_ROOT / "soteria-rust" / "scripts"
+    if str(rust_scripts) not in sys.path:
+        sys.path.insert(0, str(rust_scripts))
+    spec = importlib.util.spec_from_file_location(
+        "soteria_rust_test", rust_scripts / "test.py"
+    )
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"could not load {rust_scripts / 'test.py'}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def bench_conformance() -> list[dict]:
+    """Run the Kani/Miri conformance suites and return one list of benches.
+
+    Requires KANI_SUITE_PATH and MIRI_SUITE_PATH to point at the cloned suites
+    (test.py reads them); CI sets these up. test.py writes its CSV/logs to
+    OUTPUT_DIR, which we point at a temp dir to keep the repo clean.
+    """
+    if "OUTPUT_DIR" not in os.environ:
+        os.environ["OUTPUT_DIR"] = tempfile.mkdtemp(prefix="soteria-conformance-")
+    summary = load_soteria_test().soteria_conformance(CONFORMANCE_TIMEOUT_S)
+
+    results: list[dict] = []
+    for suite in CONFORMANCE_SUITES:
+        suite_summary = summary.get(suite, {})
+        for key, label in CONFORMANCE_OUTCOMES.items():
+            results.append(
+                {
+                    "name": f"conformance-{suite}: {label}",
+                    "unit": "tests",
+                    "value": suite_summary.get(key, 0),
+                }
+            )
+        results.append(
+            {
+                "name": f"conformance-{suite}: total time",
+                "unit": "s",
+                "value": round(suite_summary.get("total_time", 0.0), 4),
+            }
+        )
+        log(
+            f"-> conformance-{suite}: "
+            + ", ".join(
+                f"{lbl} {suite_summary.get(k, 0)}"
+                for k, lbl in CONFORMANCE_OUTCOMES.items()
+            )
+            + f", total time {suite_summary.get('total_time', 0.0):.2f}s"
+        )
+    return results
+
+
 # Maps each benchmarks.json section to the function that runs one of its
 # entries; iteration order is the order benchmarks run in.
 SECTIONS: dict[str, Callable[[dict], dict]] = {
@@ -214,6 +308,14 @@ def main() -> None:
         action="store_true",
         help="Continue with remaining benchmarks if one fails",
     )
+    parser.add_argument(
+        "--conformance",
+        action="store_true",
+        help=(
+            "Also run the Rust conformance benchmark over the Kani/Miri suites "
+            "(requires KANI_SUITE_PATH and MIRI_SUITE_PATH; see test.py)"
+        ),
+    )
     parsed = parser.parse_args()
 
     config = json.loads(parsed.config.read_text())
@@ -225,7 +327,7 @@ def main() -> None:
         for entry in config.get(section, [])
     ]
 
-    if not plan:
+    if not plan and not parsed.conformance:
         raise SystemExit(f"no benchmarks configured in {parsed.config}")
 
     failures = 0
@@ -236,6 +338,16 @@ def main() -> None:
         except Exception as exc:  # noqa: BLE001 - we want to report and continue
             failures += 1
             log(f"FAILED ({kind} {entry.get('path')!r}): {exc}")
+            if not parsed.keep_going:
+                raise
+
+    if parsed.conformance:
+        log("=== conformance: Kani/Miri suites ===")
+        try:
+            results.extend(bench_conformance())
+        except Exception as exc:  # noqa: BLE001 - report and continue
+            failures += 1
+            log(f"FAILED (conformance): {exc}")
             if not parsed.keep_going:
                 raise
 

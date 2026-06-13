@@ -66,6 +66,22 @@ jobs:
           ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
           path: benchmark-projects/Collections-C
 
+      # Conformance suites for the Rust conformance benchmark. Pinned to a
+      # specific upstream commit so the metric is stable over time; bump these
+      # by hand when tracking a newer toolchain.
+      - name: Checkout Kani (conformance suite)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
+        with:
+          repository: model-checking/kani
+          ref: 4c0fce8c300e1f049f2b0c6766a5111dfc9ff32e
+          path: conformance/kani
+      - name: Checkout Miri (conformance suite)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
+        with:
+          repository: rust-lang/miri
+          ref: 28b3a0aad5cc0fc7d2fbaf480f50db823f7fe31d
+          path: conformance/miri
+
       # The Obol-pinned rust-toolchain.toml drives rustup inside the container
       # so the .rs files / crates are compiled with the same toolchain CI uses.
       # The Obol repo/commit is read from the checked-out scripts/versions.json
@@ -133,9 +149,15 @@ jobs:
           # Each tool resolves z3 from its own package.
           echo "SOTERIA_Z3_PATH=${C_DIR}/bin/z3" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=${C_DIR}/lib:${RUST_DIR}/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          # Conformance benchmark: soteria-rust/scripts/test.py invokes
+          # `soteria-rust` and `obol` by name, and reads the suite locations
+          # from these env vars.
+          echo "${RUST_DIR}/bin" >> $GITHUB_PATH
+          echo "KANI_SUITE_PATH=${GITHUB_WORKSPACE}/conformance/kani/tests/kani" >> $GITHUB_ENV
+          echo "MIRI_SUITE_PATH=${GITHUB_WORKSPACE}/conformance/miri/tests" >> $GITHUB_ENV
 
       - name: Run benchmarks
-        run: python3 scripts/run_benchmarks.py --output benchmark-results.json
+        run: python3 scripts/run_benchmarks.py --output benchmark-results.json --conformance
 
       # Main pushes publish the new data point to gh-pages so the dashboard's
       # history advances. PR runs deliberately skip the publish — the
@@ -157,6 +179,29 @@ jobs:
           summary-always: true
           alert-threshold: "150%"
           fail-on-alert: false
+
+      # github-action-benchmark only writes its default index.html when none
+      # exists, so it never overwrites ours. Copy our custom dashboard over the
+      # published one; this only produces a commit when the template changes.
+      - name: Publish custom benchmark dashboard
+        if: inputs.pr-number == ''
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages
+          git worktree add --detach bench-dashboard origin/gh-pages
+          cp scripts/bench-index.html bench-dashboard/dev/bench/index.html
+          cd bench-dashboard
+          if git diff --quiet -- dev/bench/index.html; then
+            echo "Dashboard already up to date."
+          else
+            git add dev/bench/index.html
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                commit -m 'Update benchmark dashboard'
+            git push origin HEAD:gh-pages
+          fi
+          cd ..
+          git worktree remove bench-dashboard
 
       # PR-only path: pull just main's data.js, build a comparison table, and
       # surface it via the step summary + an artifact that pr-commands.yml's
