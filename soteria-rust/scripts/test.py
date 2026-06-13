@@ -361,8 +361,6 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
     interrupts = 0
 
     def run_benchmark(opts: CliOpts):
-        if tool is not None and opts["tool"] != tool:
-            return
         if opts["tool"] == "Soteria":
             build()
         for name, callback in TEST_SUITES.items():
@@ -431,8 +429,12 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
 
     pprint(f"{BOLD}Running benchmark{RESET}")
     try:
-        run_benchmark(opts_for_soteria(opts, force_obol=True))
-        run_benchmark(opts_for_kani(opts, timeout=None))
+        if tool is None or tool == "Soteria":
+            run_benchmark(opts_for_soteria(opts, force_obol=True))
+        if tool is None or tool == "Kani":
+            run_benchmark(opts_for_kani(opts, timeout=None))
+        if tool is None or tool == "Miri":
+            run_benchmark(opts_for_miri(opts))
     except Exception as e:
         print(e)
 
