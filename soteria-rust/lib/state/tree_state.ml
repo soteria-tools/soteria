@@ -762,13 +762,10 @@ module Make (Borrows : Tree_borrows.T) = struct
       let@ () = with_loc_err ~trace:"Pointer offset" () in
       let**^ size = Layout.size_of ty in
       let loc, off = Typed.Ptr.decompose ptr in
-      let ( *? ), ( +? ) =
-        if signed then (( *$?@ ), ( +$?@ )) else (( *?@ ), ( +?@ ))
-      in
-      let off_by, off_by_ovf = size *? off_by in
-      let off, off_ovf = off +? off_by in
-      let++ () =
+      let++ off =
         if check then
+          let off_by, off_by_ovf = Typed.BV.mul_checked ~signed size off_by in
+          let off, off_ovf = Typed.BV.add_checked ~signed off off_by in
           let** () =
             assert_or_error
               (off_by
@@ -776,8 +773,14 @@ module Make (Borrows : Tree_borrows.T) = struct
               ||@ (Typed.not off_by_ovf &&@ Typed.not off_ovf))
               `UBDanglingPointer
           in
-          check_non_dangling_untyped (fptr, Thin) off_by
-        else Result.ok ()
+          let++ () = check_non_dangling_untyped (fptr, Thin) off_by in
+          off
+        else
+          (* we use the unchecked, possibly overflowing version of the
+             operators, as wrapping is permitted dhere. *)
+          let off_by = size *!@ off_by in
+          let off = off +!@ off_by in
+          Result.ok off
       in
       let ptr' = Typed.Ptr.mk loc off in
       { fptr with ptr = ptr' }
