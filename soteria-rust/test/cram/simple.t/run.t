@@ -728,9 +728,14 @@ but different provenance should be decayed, compared, and checked to be equal
 successfuly.
   $ soteria-rust exec ptr_diff_prov.rs
   Compiling... done in <time>
-  => Running ptr_diff_prov::main...
-  note: ptr_diff_prov::main: done in <time>, ran 1 branch
+  => Running ptr_diff_prov::diff_prov_same_address...
+  note: ptr_diff_prov::diff_prov_same_address: done in <time>, ran 1 branch
   PC 1: Distinct(V|1-2|) /\ (0x0000000000000001 <=u V|1|) /\
         (V|1| <=u 0x7ffffffffffffffd) /\ (0x0000000000000001 <=u V|2|) /\
         (V|2| <=u 0x7ffffffffffffffd)
+  
+  => Running ptr_diff_prov::one_prov_one_no_prove_same_address...
+  note: ptr_diff_prov::one_prov_one_no_prove_same_address: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0b000 == extract[0-2](V|1|))
   
