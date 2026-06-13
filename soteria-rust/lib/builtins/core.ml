@@ -153,7 +153,10 @@ module M (StateM : State.StateM.S) = struct
         then
           (* Fast path: if two pointer have different provenances AND are in
              bound of their respective allocations, they cannot be equal (since
-             allocations cannot overlap). *)
+             allocations cannot overlap).
+
+             Note: pointers that have no provenance have size 0, so they are
+             always out of bound.*)
           ok (BV.of_bool v_false)
         else
           let* meta_eq = eval_meta_eq meta_l meta_r in

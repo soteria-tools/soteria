@@ -190,8 +190,6 @@ module type S = sig
       to its allocation. *)
   val in_bound : t -> sbool Typed.t
 
-  (** The size of the allocation this pointer points to. *)
-
   (** Whether this pointer has provenance, i.e. points to some allocation. *)
   val has_provenance : t -> sbool Typed.t
 
