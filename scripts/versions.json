@@ -3,7 +3,7 @@
   "CHARON_REPO": "soteria-tools/charon",
   "CHARON_COMMIT_HASH": "4986f2907dbe5899b0756ab623b5ef661ed2c58c",
   "OBOL_REPO": "soteria-tools/obol",
-  "OBOL_COMMIT_HASH": "42f11d00b19ba8bda50fd6fd43d860ef4dd4946d",
+  "OBOL_COMMIT_HASH": "7eef0668b9385042a379efe785b049517a304cc3",
   "OCAMLFORMAT_VERSION": "0.28.1",
   "OCAML_VERSION": "5.4.1",
   "DUNE_VERSION": "3.23.1"
