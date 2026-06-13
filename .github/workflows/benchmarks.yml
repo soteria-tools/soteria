@@ -228,9 +228,11 @@ jobs:
             git fetch --depth=1 origin gh-pages
             # `git show` exits non-zero if the file doesn't exist on gh-pages
             # (first run, dir not yet created); tolerate that and leave the
-            # file empty — the compare script then renders every row as new.
+            # file empty — the compare scripts then render no baseline.
             git --no-pager show origin/gh-pages:dev/bench/data.js \
               > main-bench/data.js 2>/dev/null || true
+            git --no-pager show origin/gh-pages:dev/bench/conformance-outcomes.csv \
+              > main-bench/conformance-outcomes.csv 2>/dev/null || true
           else
             echo "No gh-pages branch yet; comparing against an empty baseline."
           fi
@@ -242,6 +244,18 @@ jobs:
             --current benchmark-results.json \
             --main-data main-bench/data.js \
             --output benchmark-comparison.md
+          # Append the per-test conformance outcome changes (before -> after)
+          # below the timing table so reviewers can see what conformance moved.
+          if [ -f conformance-outcomes.csv ]; then
+            python3 scripts/diff_conformance.py \
+              --before main-bench/conformance-outcomes.csv \
+              --after conformance-outcomes.csv \
+              --output conformance-changes.md
+            {
+              echo
+              cat conformance-changes.md
+            } >> benchmark-comparison.md
+          fi
           {
             echo "## Soteria benchmarks vs \`main\`"
             echo
