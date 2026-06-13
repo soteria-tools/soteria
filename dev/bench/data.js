@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781281210291,
+  "lastUpdate": 1781374140471,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1730,6 +1730,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.764614545973018,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "90e60f51bcff1b9f0b4bbb5951ab69bf19e4be2a",
+          "message": "Fix benchmark's version of Obol in CI (#393)\n\nSync benchmarks.yml obol hash via versionsync",
+          "timestamp": "2026-06-13T17:50:30Z",
+          "tree_id": "8b338d22a6be31ce3ea5eccfe7a36e12cd7fa64a",
+          "url": "https://github.com/soteria-tools/soteria/commit/90e60f51bcff1b9f0b4bbb5951ab69bf19e4be2a"
+        },
+        "date": 1781374139295,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08182354010000001,
+            "range": "± 0.0016",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.35379630298,
+            "range": "± 0.0051",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6529096082600003,
+            "range": "± 0.0104",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.10916740384000001,
+            "range": "± 0.0015",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 4.341446335419999,
+            "range": "± 0.0447",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.8963194847,
+            "range": "± 0.0219",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.723480546032079,
             "unit": "s"
           }
         ]
