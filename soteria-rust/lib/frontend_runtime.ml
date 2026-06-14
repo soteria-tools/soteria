@@ -183,6 +183,11 @@ module Cmd = struct
       (let cmd = frontend_cmd () in
        Exe.exec_exn cmd [ "toolchain-path" ] |> List.hd)
 
+  let toolchain_version =
+    lazy
+      (let cmd = frontend_cmd () in
+       Exe.exec_exn cmd [ "toolchain-version" ] |> List.hd)
+
   let cargo () = Lazy.force toolchain_path / "bin" / "cargo"
   let rustc () = Lazy.force toolchain_path / "bin" / "rustc"
   let rustc_as_env () = [ "RUSTC=" ^ rustc () ]

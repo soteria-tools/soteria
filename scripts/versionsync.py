@@ -30,6 +30,7 @@ from soteria_utils import *
 FILES_TO_SCAN = [
     ".github/workflows/build.yml",
     ".github/workflows/test-packages.yml",
+    ".github/workflows/benchmarks.yml",
     "soteria-rust.opam.template",
     "dune-project",
     ".ocamlformat",

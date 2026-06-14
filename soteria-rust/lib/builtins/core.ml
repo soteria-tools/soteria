@@ -135,17 +135,40 @@ module M (StateM : State.StateM.S) = struct
     | _, _ -> v_false
 
   let rec eval_ptr_binop (bop : Expressions.binop) l r =
+    let null_or_in_bound p = Sptr.is_null p ||@ Sptr.in_bound p in
     match (bop, l, r) with
     | Ne, _, _ ->
         let+ res = eval_ptr_binop Eq l r in
         BV.not_bool (cast res)
     | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
-        let* meta_eq = eval_meta_eq meta_l meta_r in
         (* Pointer comparison just uses the address! See
            https://doc.rust-lang.org/std/ptr/index.html#provenance *)
-        let+ distance = Sptr.distance l r in
-        let ptr_eq = distance ==@ Usize.(0s) in
-        BV.of_bool (meta_eq &&@ ptr_eq)
+        let same_provenance = Sptr.have_same_provenance l r in
+        if%sure same_provenance then
+          (* Fast path: if two pointer have the same provenance, it's enough to
+             compare their offsets *)
+          let+ meta_eq = eval_meta_eq meta_l meta_r in
+          BV.of_bool (meta_eq &&@ (Sptr.ofs l ==@ Sptr.ofs r))
+        else if%sure
+          (not same_provenance) &&@ null_or_in_bound l &&@ null_or_in_bound r
+        then
+          (* Fast path: case where two pointers have different provenances. If
+             they are both in bound, then they can't compare equal since two
+             distinct allocations cannot overlap. Similarly, if one of the is
+             null, and the other one has a valid provance and is in bound, then
+             they can't compare equal either because an allocation cannot be at
+             address 0.
+
+             Note: pointers that have no provenance have size 0, so they are
+             always out of bound, so testing equality of a pointer with valid
+             provenance and a non-0 address with no provenance will bypass this
+             path, as it should. *)
+          ok (BV.of_bool v_false)
+        else
+          let* meta_eq = eval_meta_eq meta_l meta_r in
+          let+ distance = Sptr.distance l r in
+          let ptr_eq = distance ==@ Usize.(0s) in
+          BV.of_bool (meta_eq &&@ ptr_eq)
     | Eq, Ptr (p, _), Int v | Eq, Int v, Ptr (p, _) ->
         let v = cast_i Usize v in
         if%sat v ==@ Usize.(0s) then ok (BV.of_bool (Sptr.is_null p))

@@ -163,8 +163,11 @@ struct
     let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) : 'a t =
      fun _handler _get_all -> SM.lift (DecayMap.SM.lift m)
 
-    let not_impl msg = lift @@ not_impl msg
-    let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
+    let not_impl ?tip ?issue msg = lift @@ not_impl ?tip ?issue msg
+
+    let of_opt_not_impl ?tip ?issue msg x =
+      lift @@ of_opt_not_impl ?tip ?issue msg x
+
     let layout_of ty = lift_rsymex @@ Layout.layout_of ty
     let normalise ty = lift_rsymex @@ Layout.normalise ty
 
@@ -272,7 +275,10 @@ struct
     let* layout = layout_of ty in
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error (`RefToUninhabited ty)
-    | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
+    | _, TDynTrait _ ->
+        not_impl ~issue:387
+          "unsized arguments are not yet supported; this includes calls to \
+           `<dyn FnOnce>::call_once`"
     | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Union [])
         else
@@ -611,8 +617,8 @@ module Encoder (Sptr : Sptr.S) = struct
            generics"
           pp_rust_val v pp_ty to_ty
     | _ ->
-        Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" pp_rust_val v
-          pp_ty to_ty
+        Fmt.kstr not_impl "unsupported transmute of value %a to type %a"
+          pp_rust_val v pp_ty to_ty
 
   (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
       [ty]: the returned value will have the right structure, and any required
@@ -675,12 +681,14 @@ module Encoder (Sptr : Sptr.S) = struct
             in
             let+ bytes = nondet (Typed.t_int (sizei * 8)) in
             Ok (Union [ (Int bytes, Usize.(0s)) ])
-        | ty ->
-            Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
-              Types.pp_type_decl_kind ty)
+        | _ ->
+            Fmt.kstr Rustsymex.not_impl
+              "cannot create a symbolic value of unsupported type %a" pp_ty ty)
     | TPattern (inner, _) -> nondet_raw inner
     | TVar (Free id) -> Result.ok (PolyVal id)
-    | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
+    | ty ->
+        Fmt.kstr Rustsymex.not_impl
+          "cannot create a symbolic value of unsupported type %a" pp_ty ty
 
   (** Much like {!nondet_raw}, but also assumes validity invariants for the
       value, with {!validity}. Note this uses "stateless" validity: references

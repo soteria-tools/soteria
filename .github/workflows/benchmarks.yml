@@ -23,12 +23,6 @@ on:
         type: string
         default: ""
 
-env:
-  # [versionsync: OBOL_REPO=soteria-tools/obol]
-  OBOL_REPO: soteria-tools/obol
-  # [versionsync: OBOL_COMMIT_HASH=70610866c606acc9b4c3a460ac586d81459d1304]
-  OBOL_COMMIT_HASH: 70610866c606acc9b4c3a460ac586d81459d1304
-
 jobs:
   benchmarks:
     name: Run benchmarks
@@ -46,7 +40,7 @@ jobs:
         # curl, git, and gcc — but not the tools below.
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends hyperfine cmake python3
+          apt-get install -y --no-install-recommends hyperfine cmake python3 jq
 
       - name: Trust git in this container
         # Self-hosted runner writes the workspace as the host user; the
@@ -74,8 +68,15 @@ jobs:
 
       # The Obol-pinned rust-toolchain.toml drives rustup inside the container
       # so the .rs files / crates are compiled with the same toolchain CI uses.
+      # The Obol repo/commit is read from the checked-out scripts/versions.json
+      # (the single source of truth) rather than hard-coded here: this workflow
+      # definition runs from the default branch, so a hard-coded value would
+      # ignore a PR that bumps Obol and benchmark with a mismatched frontend.
       - name: Get Rust toolchain
-        run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
+        run: |
+          OBOL_REPO=$(jq -r .OBOL_REPO scripts/versions.json)
+          OBOL_COMMIT_HASH=$(jq -r .OBOL_COMMIT_HASH scripts/versions.json)
+          curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
 
       # Packages produced by the Build workflow (.github/workflows/build.yml).
       # When artifact-run-id is set we pull them from that run (PR case),

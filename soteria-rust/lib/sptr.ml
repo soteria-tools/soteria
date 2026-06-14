@@ -88,8 +88,11 @@ module DecayMap = struct
   module SM = struct
     include SM
 
-    let[@inline] not_impl msg = lift @@ not_impl msg
-    let[@inline] of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
+    let[@inline] not_impl ?tip ?issue msg = lift @@ not_impl ?tip ?issue msg
+
+    let[@inline] of_opt_not_impl ?tip ?issue msg x =
+      lift @@ of_opt_not_impl ?tip ?issue msg x
+
     let[@inline] match_on xs ~constr = lift @@ match_on xs ~constr
     let[@inline] get_where () = lift @@ get_trace ()
   end
@@ -182,6 +185,13 @@ module type S = sig
 
   (** Whether this is the null pointer, meaning it always decays to 0. *)
   val is_null : t -> sbool Typed.t
+
+  (** The offset of this pointer within its allocation. *)
+  val ofs : t -> [> sint ] Typed.t
+
+  (** Returns a symbolic boolean characterising whether the pointer is in bound
+      to its allocation. *)
+  val in_bound : t -> sbool Typed.t
 
   (** Whether this pointer has provenance, i.e. points to some allocation. *)
   val has_provenance : t -> sbool Typed.t
