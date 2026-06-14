@@ -74,7 +74,7 @@ kani,Count/Unstable/Cttz/main.rs,pass
 kani,Cover/simp_satisfied.rs,pass
 kani,Cover/simp_unsatisfiable.rs,pass
 kani,DerefCopy/check_deref_copy.rs,pass
-kani,Drop/drop_after_move_closure_call.rs,unsupported
+kani,Drop/drop_after_move_closure_call.rs,pass
 kani,Drop/drop_after_mutating_refcell.rs,pass
 kani,Drop/drop_boxed_dyn.rs,pass
 kani,Drop/drop_concrete.rs,pass
@@ -85,14 +85,14 @@ kani,Drop/dyn_struct_member.rs,pass
 kani,Drop/forget_no_drop.rs,pass
 kani,Drop/rc_dyn.rs,pass
 kani,DynTrait/any_cast_int.rs,unsupported
-kani,DynTrait/boxed_closure.rs,unsupported
+kani,DynTrait/boxed_closure.rs,pass
 kani,DynTrait/boxed_debug_cast.rs,pass
 kani,DynTrait/boxed_trait.rs,pass
 kani,DynTrait/boxed_trait_fail.rs,pass
 kani,DynTrait/different_crates.rs,pass
 kani,DynTrait/different_crates_fail.rs,pass
 kani,DynTrait/dyn_fn_mut.rs,pass
-kani,DynTrait/dyn_fn_once.rs,unsupported
+kani,DynTrait/dyn_fn_once.rs,pass
 kani,DynTrait/dyn_fn_param.rs,pass
 kani,DynTrait/dyn_fn_param_closure.rs,pass
 kani,DynTrait/dyn_fn_param_closure_capture.rs,pass
@@ -102,7 +102,7 @@ kani,DynTrait/generic_duplicate_names_impl.rs,pass
 kani,DynTrait/main.rs,pass
 kani,DynTrait/nested_boxes.rs,pass
 kani,DynTrait/nested_boxes_fail.rs,pass
-kani,DynTrait/nested_closures.rs,unsupported
+kani,DynTrait/nested_closures.rs,pass
 kani,DynTrait/object_safe_generics.rs,pass
 kani,DynTrait/object_safe_trait.rs,pass
 kani,DynTrait/std_lib_add_duplicate.rs,pass
@@ -831,7 +831,7 @@ miri,pass/cfg_miri.rs,pass
 miri,pass/char.rs,pass
 miri,pass/closure-drop.rs,pass
 miri,pass/closure-field-ty.rs,pass
-miri,pass/closures.rs,unsupported
+miri,pass/closures.rs,pass
 miri,pass/coerce_non_capture_closure_to_fn_ptr.rs,pass
 miri,pass/coercions.rs,pass
 miri,pass/const-addrs.rs,unsupported
