@@ -48,17 +48,32 @@ let print_outcomes entry_name f =
       (entry_name, Outcome.Error)
   | exception e ->
       let time = Unix.gettimeofday () -. time in
-      let error, msg =
+      (* We print a short, generic headline through the diagnostic helper (which
+         applies its own styling), and the detailed message manually below it,
+         so the helper doesn't mangle the multi-line, coloured details. *)
+      let headline, pp_details =
         match e with
-        | ExecutionError msg -> ("runtime error", msg)
-        | Soteria.Symex.Gave_up reason -> ("unsupported feature", reason)
+        | ExecutionError msg ->
+            ("a runtime error was encountered", fun ft -> Fmt.pf ft "%s" msg)
+        | Soteria.Symex.Gave_up reason ->
+            ( "an unsupported feature was reached",
+              fun ft -> Unimplemented.pp ft @@ Unimplemented.of_string reason )
         | e ->
-            ( "exception",
-              Fmt.str "%a@\nTrace: %s" Fmt.exn e (Printexc.get_backtrace ()) )
+            let backtrace = Printexc.get_backtrace () in
+            ( "an unexpected exception was raised",
+              fun ft ->
+                Fmt.pf ft
+                  "%a@.@.%tPlease open an issue with the above information \
+                   (and ideally a reproducer) at %t"
+                  Fmt.exn e
+                  (if String.length backtrace = 0 then ignore
+                   else fun ft -> Fmt.pf ft "Trace: %s@.@." backtrace)
+                  Unimplemented.pp_repo_issues )
       in
       Fmt.kstr
         (print_diagnostic_simple ~severity:Warning)
-        "%s (%a): %s, %s@.@." entry_name pp_time time error msg;
+        "%s (%a): %s" entry_name pp_time time headline;
+      Fmt.pr "%t@.@." pp_details;
       (entry_name, Outcome.Fatal)
 
 let flamegraph_name = Str.global_replace (Str.regexp_string "::") "-"
