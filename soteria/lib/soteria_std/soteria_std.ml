@@ -26,6 +26,7 @@ module Reversible = Reversible
 module Seq = Seq
 module Sigs = Sigs
 module String = String
+module Subprocess = Subprocess
 module Syntaxes = Syntaxes
 module Sys = Sys
 module Unix = Unix_soteria

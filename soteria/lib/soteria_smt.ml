@@ -12,6 +12,7 @@
       fresh atom. *)
 
 include Fast_sexp
+module Subprocess = Soteria_std.Subprocess
 module StrSet = Set.Make (String)
 module StrMap = Map.Make (String)
 
@@ -456,73 +457,11 @@ let get_model s =
    never blocks indefinitely. *)
 let drain_threshold = 1024
 
-(** {2 Live-solver registry and crash cleanup}
-
-    Each solver owns a Z3 subprocess, normally reaped by [stop]/[force_stop]
-    below (and, as a safety net, by a GC finaliser). Neither runs when the host
-    process is interrupted (SIGINT/SIGTERM) or crashes mid-[check-sat]: a Z3
-    busy in a [check-sat] is not reading its stdin, so it does not notice the
-    pipe closing and is left orphaned. We therefore track the live subprocesses
-    and force-kill them all from an [at_exit] handler (which runs on normal exit
-    and on uncaught exceptions) and from a SIGINT/SIGTERM handler (which runs on
-    interruption, where [at_exit] does not fire).
-
-    The registry is a lock-free [Atomic] list so the signal handler can read it
-    without risking a deadlock against a registry update it may have
-    interrupted. *)
-
-let live_solvers : (int * (unit -> unit)) list Atomic.t = Atomic.make []
-let next_solver_id = Atomic.make 0
-let fresh_solver_id () = Atomic.fetch_and_add next_solver_id 1
-
-let rec add_live_solver entry =
-  let cur = Atomic.get live_solvers in
-  if not (Atomic.compare_and_set live_solvers cur (entry :: cur)) then
-    add_live_solver entry
-
-let rec remove_live_solver id =
-  let cur = Atomic.get live_solvers in
-  let next = List.filter (fun (id', _) -> id' <> id) cur in
-  if not (Atomic.compare_and_set live_solvers cur next) then
-    remove_live_solver id
-
-(* Force-kill every still-live solver subprocess. Idempotent and safe to call
-   from a signal handler: each [force_stop] is itself guarded and any exception
-   it raises is swallowed so one failure cannot strand the others. *)
-let force_stop_all_solvers () =
-  let solvers = Atomic.exchange live_solvers [] in
-  List.iter (fun (_, force_stop) -> try force_stop () with _ -> ()) solvers
-
-let () = at_exit force_stop_all_solvers
-
-(* On SIGINT/SIGTERM the [at_exit] handlers do not run, so we install our own
-   handler to reap the subprocesses, then restore the default action and
-   re-raise so the process still terminates with the expected signal status. We
-   only take over a signal that is still at its default disposition, to avoid
-   clobbering a handler an embedding application may have installed. *)
-let () =
-  let handle signum =
-    force_stop_all_solvers ();
-    Sys.set_signal signum Sys.Signal_default;
-    Unix.kill (Unix.getpid ()) signum
-  in
-  let install signum =
-    (* Take over the signal only if it is still at its default disposition. If
-       it is ignored (as SIGINT is for a background job) or already handled by
-       the embedding application, leave that in place. *)
-    match Sys.signal signum (Sys.Signal_handle handle) with
-    | Sys.Signal_default -> ()
-    | prev -> Sys.set_signal signum prev
-  in
-  install Sys.sigint;
-  install Sys.sigterm
-
 let new_solver (cfg : solver_config) : solver =
   let args = Array.of_list (cfg.exe :: cfg.opts) in
-  let proc = Unix.open_process_args_full cfg.exe args [||] in
-  let pid = Unix.process_full_pid proc in
-  let in_chan, out_chan, in_err_chan = proc in
-  let reader = Reader.create in_chan in_err_chan in
+  let sub = Subprocess.open_ cfg.exe args in
+  let stdin = Subprocess.stdin sub in
+  let reader = Reader.create (Subprocess.stdout sub) (Subprocess.stderr sub) in
   let cmd_buf = Buffer.create 4096 in
   (* Number of fire-and-forget commands whose [success] acknowledgement has not
      been read back yet. *)
@@ -531,9 +470,9 @@ let new_solver (cfg : solver_config) : solver =
   let write_command c =
     Buffer.clear cmd_buf;
     write_buf cmd_buf c;
-    Buffer.output_buffer out_chan cmd_buf;
-    output_char out_chan '\n';
-    flush out_chan;
+    Buffer.output_buffer stdin cmd_buf;
+    output_char stdin '\n';
+    flush stdin;
     cfg.log.send (fun () -> Buffer.contents cmd_buf)
   in
   let read_response () =
@@ -574,32 +513,21 @@ let new_solver (cfg : solver_config) : solver =
     write_command c;
     read_response ()
   in
-  let id = fresh_solver_id () in
-  (* [stop]/[force_stop] are idempotent (guarded by [stopped]): each may be
-     called explicitly, by the GC finaliser, and by the crash-cleanup handler,
-     but [Unix.close_process_full] must run at most once. [stopped] is atomic so
-     this holds even if those callers race across domains. *)
-  let stopped = Atomic.make false in
+  (* [stop]/[force_stop] delegate to {!Subprocess}, which makes them idempotent,
+     unregisters the process, and reaps it at exit or on interruption. The
+     graceful [(exit)] and the log hook are this solver's own concern. *)
   let stop_command () =
-    if not (Atomic.exchange stopped true) then (
-      remove_live_solver id;
-      (try
-         output_string out_chan "(exit)\n";
-         flush out_chan
-       with Sys_error _ -> ());
-      (try ignore (Unix.close_process_full proc) with _ -> ());
-      cfg.log.stop ())
+    (try
+       output_string stdin "(exit)\n";
+       flush stdin
+     with Sys_error _ -> ());
+    Subprocess.stop_process sub;
+    cfg.log.stop ()
   in
   let force_stop_command () =
-    if not (Atomic.exchange stopped true) then (
-      remove_live_solver id;
-      (try Unix.kill pid 9 with Unix.Unix_error _ -> ());
-      (try ignore (Unix.close_process_full proc) with _ -> ());
-      cfg.log.stop ())
+    Subprocess.force_stop_process sub;
+    cfg.log.stop ()
   in
-  (* Register the subprocess as soon as it is spawned, so it is reaped even if
-     the initialisation below fails. *)
-  add_live_solver (id, force_stop_command);
   let s =
     {
       ack_command = command_with_ack;
