@@ -120,12 +120,12 @@ module Make (StateImpl : State.S) = struct
               match trait_decl.item_meta.lang_item with
               | Some "destruct" -> ok (`Synth GenericDropInPlace)
               | Some _ | None ->
-                  Fmt.kstr not_impl "trait call %a::%s on generic" Crate.pp_name
+                  not_impl "trait call %a::%s on generic" Crate.pp_name
                     trait_decl.item_meta.name
                     (Crate.get_method_name tref method_id))
           | _ ->
-              Fmt.kstr not_impl "Unexpected tref kind, got: %a"
-                Types.pp_trait_ref_kind tref.kind
+              not_impl "Unexpected tref kind, got: %a" Types.pp_trait_ref_kind
+                tref.kind
         in
         match timplref with
         | `Synth kind -> ok (Synthetic kind)
@@ -145,7 +145,7 @@ module Make (StateImpl : State.S) = struct
                 with
                 | Some fn -> ok (Real fn)
                 | None ->
-                    Fmt.kstr not_impl "Could not resolve trait method %a#%a"
+                    not_impl "Could not resolve trait method %a#%a"
                       Crate.pp_trait_impl_ref timplref Types.pp_trait_method_id
                       method_id)))
     | FunId (FBuiltin _) -> failwith "Can't resolve a builtin function"
@@ -206,8 +206,8 @@ module Make (StateImpl : State.S) = struct
                 let glob = Crate.get_global global.id in
                 State.load glob_ptr glob.ty
             | None ->
-                Fmt.kstr not_impl "unsupported trait const: %s in %a for %a"
-                  assoc.name Crate.pp_trait_ref tref
+                not_impl "unsupported trait const: %s in %a for %a" assoc.name
+                  Crate.pp_trait_ref tref
                   (Crate.pp_region_binder Crate.pp_trait_decl_ref)
                   tref.trait_decl_ref))
     | CRawMemory bytes ->
@@ -304,15 +304,13 @@ module Make (StateImpl : State.S) = struct
         let+ ptr = State.declare_fn fn in
         Ptr ptr
     | CVTableRef _ ->
-        Fmt.kstr not_impl "vtable-reference constants are not yet supported: %a"
+        not_impl "vtable-reference constants are not yet supported: %a"
           Crate.pp_constant_expr const
     | CTypeId _ ->
-        Fmt.kstr (not_impl ~issue:187)
-          "TypeId constants are not yet supported: %a" Crate.pp_constant_expr
-          const
+        (not_impl ~issue:187) "TypeId constants are not yet supported: %a"
+          Crate.pp_constant_expr const
     | COpaque msg ->
-        Fmt.kstr not_impl
-          "opaque constant: %s; something went wrong in the frontend" msg
+        not_impl "opaque constant: %s; something went wrong in the frontend" msg
 
   (** Resolves a place to a pointer *)
   and resolve_place (place : Expressions.place) : full_ptr t =
@@ -543,8 +541,7 @@ module Make (StateImpl : State.S) = struct
     | MetaUnknown -> (
         match help with
         | None -> not_impl "unknown unsizing metadata"
-        | Some help ->
-            Fmt.kstr not_impl "unknown unsizing metadata: %s" (help ()))
+        | Some help -> not_impl "unknown unsizing metadata: %s" (help ()))
 
   (** Resolve a function operand, returning a callable symbolic function to
       execute it. It also returns the types expected of the function, which is
@@ -1248,16 +1245,15 @@ module Make (StateImpl : State.S) = struct
         | None -> (
             match fundef.body with
             | OpaqueBody ->
-                Fmt.kstr not_impl
-                  "can't execute function %a, compilation skipped it"
+                not_impl "can't execute function %a, compilation skipped it"
                   Crate.pp_name name
             | TraitMethodWithoutDefaultBody ->
-                Fmt.kstr not_impl
+                not_impl
                   "can't execute function %a, this is a trait method stub"
                   Crate.pp_name name
             | MissingBody ->
                 if Option.is_some (Config.get ()).sysroot then
-                  Fmt.kstr not_impl
+                  not_impl
                     "can't execute function %a, the function's body was not \
                      found while compiling"
                     Crate.pp_name name
@@ -1267,11 +1263,11 @@ module Make (StateImpl : State.S) = struct
                       (Lazy.force Frontend_runtime.Cmd.toolchain_version)
                   in
                   let tip = ("to get a sysroot, run", Some cmd) in
-                  Fmt.kstr (not_impl ~tip ~issue:322)
+                  (not_impl ~tip ~issue:322)
                     "can't execute function %a, try using a sysroot (--sysroot)"
                     Crate.pp_name name
             | ErrorBody err ->
-                Fmt.kstr not_impl
+                not_impl
                   "can't execute function %a, the frontend does not support \
                    compiling it (%s)"
                   Crate.pp_name name err.msg

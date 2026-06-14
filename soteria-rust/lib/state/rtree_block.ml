@@ -118,9 +118,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
           let mask_l = BV.extract 0 ((at * 8) - 1) v in
           let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
           (Rust_val.Int mask_l, Rust_val.Int mask_r)
-      | _ ->
-          Fmt.kstr not_impl "Split unsupported: %a at %a" pp_rust_val v
-            Typed.ppa at
+      | _ -> not_impl "Split unsupported: %a at %a" pp_rust_val v Typed.ppa at
 
     let split ~at node =
       match node with
@@ -429,8 +427,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
           | Ptr (ptr, Thin) -> Sptr.decay ptr
           | Float f -> Encoder.float_to_bv_bits f
           | _ ->
-              Fmt.kstr not_impl "Unexpected rust_val in lazy decoding: %a"
-                pp_rust_val v)
+              not_impl "Unexpected rust_val in lazy decoding: %a" pp_rust_val v)
     in
     match List.rev leaves with
     | hd :: tl ->

@@ -66,7 +66,7 @@ module M (StateM : State.StateM.S) = struct
     | StdThreadFunctionsAvailableParallelism, [], [], [] ->
         available_parallelism ~fun_sig:_fun_sig
     | _, tys, cs, args ->
-        Fmt.kstr not_impl
+        not_impl
           "Custom stub found but called with the wrong arguments; got:@.Types: \
            %a@.Consts: %a@.Args: %a"
           Fmt.(list ~sep:comma Charon_util.pp_ty)
