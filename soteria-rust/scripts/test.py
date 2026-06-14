@@ -11,6 +11,7 @@ from typing import Sequence, Union, assert_never
 from cliopts import (
     ArgError,
     CliOpts,
+    default_opts,
     opts_for_kani,
     opts_for_miri,
     opts_for_soteria,
@@ -361,8 +362,6 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
     interrupts = 0
 
     def run_benchmark(opts: CliOpts):
-        if tool is not None and opts["tool"] != tool:
-            return
         if opts["tool"] == "Soteria":
             build()
         for name, callback in TEST_SUITES.items():
@@ -431,8 +430,12 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
 
     pprint(f"{BOLD}Running benchmark{RESET}")
     try:
-        run_benchmark(opts_for_soteria(opts, force_obol=True))
-        run_benchmark(opts_for_kani(opts, timeout=None))
+        if tool is None or tool == "Soteria":
+            run_benchmark(opts_for_soteria(opts, force_obol=True))
+        if tool is None or tool == "Kani":
+            run_benchmark(opts_for_kani(opts, timeout=None))
+        if tool is None or tool == "Miri":
+            run_benchmark(opts_for_miri(opts))
     except Exception as e:
         print(e)
 
@@ -550,6 +553,40 @@ def benchmark(tool: Optional[ToolName], suite: Optional[SuiteName], opts: CliOpt
 
     pprint()
     pptable(pretty_table)
+
+    # Per-suite summary for Soteria, returned so callers (e.g. the dashboard's
+    # conformance benchmark) can consume the outcome counts and total time
+    # without re-parsing the CSV. Outcomes here are already simplified.
+    summary: dict[str, dict[str, float]] = {}
+    for suite_name in ["kani", "miri"]:
+        suite_res = [res["Soteria"] for (_, s), res in results.items() if s == suite_name]
+        summary[suite_name] = {
+            "passed": sum(1 for o, _ in suite_res if o.is_pass()),
+            "failed": sum(1 for o, _ in suite_res if o.is_fail()),
+            "unsupported": sum(1 for o, _ in suite_res if o.is_unsupported()),
+            "timed_out": sum(1 for o, _ in suite_res if o.is_timeout()),
+            "total_time": sum(max(t, 0) for _, t in suite_res),
+        }
+    return summary
+
+
+def soteria_conformance(
+    timeout: Optional[int] = None,
+) -> dict[str, dict[str, float]]:
+    """Run the Soteria conformance benchmark over the Kani and Miri suites and
+    return, per suite, {passed, failed, unsupported, timed_out, total_time}.
+
+    `timeout` caps each test's runtime in seconds (None uses the per-suite
+    defaults). A low cap trades a few extra timeouts for a much shorter run,
+    since a small tail of slow tests dominates the total time.
+
+    Used by scripts/run_benchmarks.py to feed the dashboard's conformance
+    benchmark. KANI_SUITE_PATH / MIRI_SUITE_PATH must point at the suites.
+    """
+    opts = default_opts()
+    opts["timeout"] = timeout
+    opts["cmd"] = ("benchmark", ("Soteria", None))
+    return benchmark("Soteria", None, opts)
 
 
 def kani_comparison(opts: CliOpts, path: Path, cached: bool):

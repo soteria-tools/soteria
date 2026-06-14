@@ -62,14 +62,31 @@ macro_rules! access {
         access!($x, 8000);
         access!($x, 2000);
     };
+    ($x:expr, 20000) => {
+        access!($x, 10000);
+        access!($x, 10000);
+    };
+    ($x:expr, 40000) => {
+        access!($x, 20000);
+        access!($x, 20000);
+    };
+    ($x:expr, 80000) => {
+        access!($x, 40000);
+        access!($x, 40000);
+    };
+    ($x:expr, 100000) => {
+        access!($x, 80000);
+        access!($x, 20000);
+    };
 }
 
 fn access(x: &mut u32) {
-    access!(x, 10000);
+    access!(x, 100000);
+    access!(x, 100000);
 }
 
 fn main() {
     let mut x = 0;
     access(&mut x);
-    assert_eq!(x, 10_000);
+    assert_eq!(x, 2_000_000);
 }

@@ -146,18 +146,18 @@ ocaml-deps:
 	$(OPAM) install . --deps-only --with-test --with-doc -y
 	$(OPAM) install sherlodoc -y
 
-# Clears all *.llbc.json, Cargo.lock and target/ subflders in soteria-rust/test/cram/
+# Clears all *.ullbc, Cargo.lock and target/ subflders in soteria-rust/test/cram/
 # We make sure that every file or folder deleted is displayed in the terminal.
 .PHONY: clean-rust-tests
 clean-rust-tests:
 	@echo "$(COLOR_BLUE)==> Cleaning Rust test artifacts in soteria-rust/test/cram/$(COLOR_RESET)"
-	@find soteria-rust/test/cram/ -type f -name '*.llbc.json' -print -delete | sed 's/^/  🗑️ /'
-	@find soteria-rust/test/cram/ -type f -name '*.llbc.json.crate' -print -delete | sed 's/^/  🗑️ /'
+	@find soteria-rust/test/cram/ -type f -name '*.ullbc' -print -delete | sed 's/^/  🗑️ /'
+	@find soteria-rust/test/cram/ -type f -name '*.crate' -print -delete | sed 's/^/  🗑️ /'
 	@find soteria-rust/test/cram/ -type f -name 'Cargo.lock' -print -delete | sed 's/^/  🗑️ /'
 	@find soteria-rust/test/cram/ -type d -name 'target' -print -exec rm -rf {} + | sed 's/^/  🗑️ /'
 	@echo "$(COLOR_GREEN)==> Done$(COLOR_RESET)"
-	
-	
+
+
 
 .PHONY: clean
 clean: clean-rust-tests

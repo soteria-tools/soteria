@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<!--
+  Custom dashboard for benchmark-action/github-action-benchmark, derived from
+  the action's default template. Differences from the default:
+    - benches are grouped into sections (Rust performance, C performance and
+      Rust conformance) by their name prefix, with clear visual separation;
+    - charts are laid out in a two-column grid instead of one long column;
+    - the Rust conformance benches ("conformance-<suite>: <metric>") are drawn
+      as four charts: a multi-line outcomes chart and a total-time chart for
+      each of the Kani and Miri suites.
+  scripts/run_benchmarks.py produces the bench names this relies on; CI copies
+  this file over dev/bench/index.html on gh-pages (see .github/workflows/benchmarks.yml).
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, minimum-scale=1.0, initial-scale=1, user-scalable=yes" />
+    <style>
+      html {
+        font-family: BlinkMacSystemFont,-apple-system,"Segoe UI",Roboto,Oxygen,Ubuntu,Cantarell,"Fira Sans","Droid Sans","Helvetica Neue",Helvetica,Arial,sans-serif;
+        -webkit-font-smoothing: antialiased;
+        background-color: #fff;
+        font-size: 16px;
+      }
+      body {
+        color: #4a4a4a;
+        margin: 8px;
+        font-size: 1em;
+        font-weight: 400;
+      }
+      header {
+        margin-bottom: 8px;
+        display: flex;
+        flex-direction: column;
+      }
+      main {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      a {
+        color: #3273dc;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      a:hover {
+        color: #000;
+      }
+      button {
+        color: #fff;
+        background-color: #3298dc;
+        border-color: transparent;
+        cursor: pointer;
+        text-align: center;
+      }
+      button:hover {
+        background-color: #2793da;
+        flex: none;
+      }
+      .spacer {
+        flex: auto;
+      }
+      .small {
+        font-size: 0.75rem;
+      }
+      footer {
+        margin-top: 16px;
+        display: flex;
+        align-items: center;
+      }
+      .header-label {
+        margin-right: 4px;
+      }
+      /* Each top-level group (Rust / C / conformance) is a clearly separated
+         block with a coloured accent bar so the categories don't blur together. */
+      .benchmark-section {
+        margin: 28px 0;
+        padding: 8px 16px 16px;
+        border: 1px solid #e1e4e8;
+        border-radius: 8px;
+        border-top: 6px solid var(--accent, #888);
+        background-color: #fafbfc;
+      }
+      .section-title {
+        font-size: 1.9rem;
+        font-weight: 700;
+        margin: 8px 0 4px;
+        color: #24292e;
+      }
+      .section-subtitle {
+        margin: 0 0 8px;
+        color: #6a737d;
+        font-size: 0.9rem;
+      }
+      /* Two-column grid of charts. */
+      .benchmark-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+        align-items: start;
+      }
+      @media (max-width: 800px) {
+        .benchmark-grid {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+      .benchmark-card {
+        border: 1px solid #e1e4e8;
+        border-radius: 6px;
+        background-color: #fff;
+        padding: 8px 12px 12px;
+        min-width: 0;
+      }
+      .chart-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 4px 0 8px;
+        word-break: break-word;
+        text-align: center;
+      }
+      .benchmark-chart {
+        width: 100%;
+      }
+    </style>
+    <title>Soteria Benchmarks</title>
+  </head>
+
+  <body>
+    <header id="header">
+      <div class="header-item">
+        <strong class="header-label">Last Update:</strong>
+        <span id="last-update"></span>
+      </div>
+      <div class="header-item">
+        <strong class="header-label">Repository:</strong>
+        <a id="repository-link" rel="noopener"></a>
+      </div>
+    </header>
+    <main id="main"></main>
+    <footer>
+      <button id="dl-button">Download data as JSON</button>
+      <div class="spacer"></div>
+      <div class="small">Powered by <a rel="noopener" href="https://github.com/marketplace/actions/continuous-benchmark">github-action-benchmark</a></div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.2/dist/Chart.min.js"></script>
+    <script src="data.js"></script>
+    <script id="main-script">
+      'use strict';
+      (function() {
+        // The ordered list of sections. A bench is assigned to the first
+        // section whose `match` accepts its name; `conformance` is rendered
+        // specially (see renderConformanceSection).
+        const SECTIONS = [
+          {
+            id: 'rust',
+            title: 'Rust — performance',
+            subtitle: 'soteria-rust analysis time on a fixed set of programs (lower is better).',
+            accent: '#dea584',
+            match: name => name.startsWith('rust-'),
+          },
+          {
+            id: 'c',
+            title: 'C — performance',
+            subtitle: 'soteria-c analysis time on a fixed set of programs (lower is better).',
+            accent: '#6a9fb5',
+            match: name => name === 'c' || name.startsWith('c:') || name.startsWith('c-'),
+          },
+          {
+            id: 'conformance',
+            title: 'Rust — conformance',
+            subtitle: 'soteria-rust over the Kani and Miri test suites: how many tests pass/fail/are unsupported/time out, and the total time taken.',
+            accent: '#8957e5',
+            conformance: true,
+            match: name => name.startsWith('conformance-'),
+          },
+          {
+            id: 'other',
+            title: 'Other',
+            subtitle: '',
+            accent: '#888',
+            match: () => true,
+          },
+        ];
+
+        // Colours for the four conformance outcomes.
+        const OUTCOME_STYLE = {
+          passed: { label: 'passed', color: '#28a745' },
+          failed: { label: 'failed', color: '#d73a49' },
+          unsupported: { label: 'unsupported', color: '#f66a0a' },
+          'timed out': { label: 'timed out', color: '#dbab09' },
+        };
+        const OUTCOME_ORDER = ['passed', 'failed', 'unsupported', 'timed out'];
+        const CONFORMANCE_TIME = 'total time';
+        const CONFORMANCE_SUITES = ['kani', 'miri'];
+
+        function collectBenchesPerTestCase(entries) {
+          const map = new Map();
+          for (const entry of entries) {
+            const { commit, date, tool, benches } = entry;
+            for (const bench of benches) {
+              const result = { commit, date, tool, bench };
+              const arr = map.get(bench.name);
+              if (arr === undefined) {
+                map.set(bench.name, [result]);
+              } else {
+                arr.push(result);
+              }
+            }
+          }
+          return map;
+        }
+
+        function init() {
+          const data = window.BENCHMARK_DATA;
+
+          // Render header
+          document.getElementById('last-update').textContent = new Date(data.lastUpdate).toString();
+          const repoLink = document.getElementById('repository-link');
+          repoLink.href = data.repoUrl;
+          repoLink.textContent = data.repoUrl;
+
+          // Render footer
+          document.getElementById('dl-button').onclick = () => {
+            const dataUrl = 'data:,' + JSON.stringify(data, null, 2);
+            const a = document.createElement('a');
+            a.href = dataUrl;
+            a.download = 'benchmark_data.json';
+            a.click();
+          };
+
+          // Merge the runs of every top-level entry into a single bench map.
+          // In practice there is only one entry ("Soteria benchmarks").
+          const allRuns = [];
+          for (const name of Object.keys(data.entries)) {
+            for (const run of data.entries[name]) {
+              allRuns.push(run);
+            }
+          }
+          return collectBenchesPerTestCase(allRuns);
+        }
+
+        // Assign every bench name to exactly one section, preserving the order
+        // in which names first appear.
+        function groupBySection(benchMap) {
+          const groups = new Map(SECTIONS.map(s => [s.id, []]));
+          for (const name of benchMap.keys()) {
+            const section = SECTIONS.find(s => s.match(name));
+            groups.get(section.id).push(name);
+          }
+          return groups;
+        }
+
+        // Parse "conformance-<suite>: <metric>" into { suite, metric }.
+        function parseConformance(name) {
+          const m = name.match(/^conformance-([^:]+):\s*(.+)$/);
+          if (!m) return null;
+          return { suite: m[1], metric: m[2].trim() };
+        }
+
+        // Strip the "<kind>: " prefix from a performance bench name for display.
+        function displayTitle(name) {
+          const i = name.indexOf(': ');
+          return i >= 0 ? name.slice(i + 2) : name;
+        }
+
+        function commitLabels(series) {
+          return series.map(d => d.commit.id.slice(0, 7));
+        }
+
+        // Build a chart with one or more line datasets sharing the same commit
+        // axis. `ref` is the series used for x-axis labels and commit links.
+        function makeChart(parent, titleText, datasets, unit, ref) {
+          const card = document.createElement('div');
+          card.className = 'benchmark-card';
+
+          const titleElem = document.createElement('h2');
+          titleElem.className = 'chart-title';
+          titleElem.textContent = titleText;
+          card.appendChild(titleElem);
+
+          const canvas = document.createElement('canvas');
+          canvas.className = 'benchmark-chart';
+          card.appendChild(canvas);
+          parent.appendChild(card);
+
+          const options = {
+            legend: { display: datasets.length > 1 },
+            scales: {
+              xAxes: [{ scaleLabel: { display: true, labelString: 'commit' } }],
+              yAxes: [{
+                scaleLabel: { display: true, labelString: unit },
+                ticks: { beginAtZero: true },
+              }],
+            },
+            tooltips: {
+              callbacks: {
+                afterTitle: items => {
+                  const { index } = items[0];
+                  const commit = ref[index].commit;
+                  return '\n' + commit.message + '\n\n' + commit.timestamp + ' committed by @' + commit.committer.username + '\n';
+                },
+                label: item => {
+                  const ds = datasets[item.datasetIndex];
+                  let label = item.value + ' ' + unit;
+                  if (datasets.length > 1) {
+                    label = ds.label + ': ' + label;
+                  }
+                  const range = ds.ranges && ds.ranges[item.index];
+                  if (range) {
+                    label += ' (' + range + ')';
+                  }
+                  return label;
+                },
+              },
+            },
+            onClick: (_mouseEvent, activeElems) => {
+              if (activeElems.length === 0) return;
+              // XXX: Undocumented. How can we know the index?
+              const index = activeElems[0]._index;
+              const url = ref[index].commit.url;
+              window.open(url, '_blank');
+            },
+          };
+
+          new Chart(canvas, {
+            type: 'line',
+            data: { labels: commitLabels(ref), datasets },
+            options,
+          });
+        }
+
+        // One chart per performance bench, in a two-column grid.
+        function renderPerfSection(section, names, benchMap, main) {
+          const grid = sectionShell(section, main);
+          for (const name of names) {
+            const series = benchMap.get(name);
+            const color = section.accent;
+            const dataset = {
+              label: displayTitle(name),
+              data: series.map(d => d.bench.value),
+              ranges: series.map(d => d.bench.range),
+              borderColor: color,
+              backgroundColor: color + '60',
+              fill: false,
+            };
+            const unit = series.length > 0 ? series[0].bench.unit : '';
+            makeChart(grid, displayTitle(name), [dataset], unit, series);
+          }
+        }
+
+        // Four charts: an outcomes chart and a total-time chart per suite.
+        function renderConformanceSection(section, names, benchMap, main) {
+          const grid = sectionShell(section, main);
+
+          // Index this section's benches by suite + metric.
+          const bySuite = new Map();
+          for (const name of names) {
+            const parsed = parseConformance(name);
+            if (!parsed) continue;
+            if (!bySuite.has(parsed.suite)) bySuite.set(parsed.suite, new Map());
+            bySuite.get(parsed.suite).set(parsed.metric, benchMap.get(name));
+          }
+
+          // Keep the known suites first and in order, then any extras.
+          const suites = CONFORMANCE_SUITES.filter(s => bySuite.has(s))
+            .concat([...bySuite.keys()].filter(s => !CONFORMANCE_SUITES.includes(s)));
+
+          for (const suite of suites) {
+            const metrics = bySuite.get(suite);
+            const suiteName = suite.charAt(0).toUpperCase() + suite.slice(1);
+
+            // Outcomes chart: one line per outcome present.
+            const outcomeDatasets = [];
+            let ref = null;
+            for (const metric of OUTCOME_ORDER) {
+              const series = metrics.get(metric);
+              if (!series) continue;
+              if (!ref || series.length > ref.length) ref = series;
+              const style = OUTCOME_STYLE[metric];
+              outcomeDatasets.push({
+                label: style.label,
+                data: series.map(d => d.bench.value),
+                borderColor: style.color,
+                backgroundColor: style.color + '60',
+                fill: false,
+              });
+            }
+            if (outcomeDatasets.length > 0 && ref) {
+              makeChart(grid, suiteName + ' — outcomes', outcomeDatasets, 'tests', ref);
+            }
+
+            // Total-time chart.
+            const timeSeries = metrics.get(CONFORMANCE_TIME);
+            if (timeSeries) {
+              const color = section.accent;
+              makeChart(grid, suiteName + ' — total time', [{
+                label: 'total time',
+                data: timeSeries.map(d => d.bench.value),
+                borderColor: color,
+                backgroundColor: color + '60',
+                fill: false,
+              }], 's', timeSeries);
+            }
+          }
+        }
+
+        // Build the <section> + heading + grid; returns the grid element.
+        function sectionShell(section, main) {
+          const sectionElem = document.createElement('section');
+          sectionElem.className = 'benchmark-section';
+          sectionElem.style.setProperty('--accent', section.accent);
+          main.appendChild(sectionElem);
+
+          const titleElem = document.createElement('h1');
+          titleElem.className = 'section-title';
+          titleElem.textContent = section.title;
+          sectionElem.appendChild(titleElem);
+
+          if (section.subtitle) {
+            const subtitleElem = document.createElement('p');
+            subtitleElem.className = 'section-subtitle';
+            subtitleElem.textContent = section.subtitle;
+            sectionElem.appendChild(subtitleElem);
+          }
+
+          const grid = document.createElement('div');
+          grid.className = 'benchmark-grid';
+          sectionElem.appendChild(grid);
+          return grid;
+        }
+
+        function renderAllCharts(benchMap) {
+          const groups = groupBySection(benchMap);
+          const main = document.getElementById('main');
+          for (const section of SECTIONS) {
+            const names = groups.get(section.id);
+            if (!names || names.length === 0) continue;
+            if (section.conformance) {
+              renderConformanceSection(section, names, benchMap, main);
+            } else {
+              renderPerfSection(section, names, benchMap, main);
+            }
+          }
+        }
+
+        renderAllCharts(init()); // Start
+      })();
+    </script>
+  </body>
+</html>
