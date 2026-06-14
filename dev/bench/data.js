@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781439802686,
+  "lastUpdate": 1781441520212,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -2055,6 +2055,121 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.75002915400546,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4c8b459ddcd9517ed30de85c8d9c5a8e995dad16",
+          "message": "Conformance benchmark in CI (#392)\n\n* tweak scripts\n\n* Add conformance suite to benchmark (Kani/Miri)\n\n* commit the csv results of the conformance test\n\n* Track changes in conformance test in CI\n\n* Fix Obol to have Miri in the toolchain\n\n* Bump benchmarks to take >1s\n\n* mb",
+          "timestamp": "2026-06-14T12:23:53Z",
+          "tree_id": "96056e253d7f9b9bbedf11ae3ad2749db215d43e",
+          "url": "https://github.com/soteria-tools/soteria/commit/4c8b459ddcd9517ed30de85c8d9c5a8e995dad16"
+        },
+        "date": 1781441519087,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.07961236728000001,
+            "range": "± 0.0019",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.1288893502200001,
+            "range": "± 0.0096",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6512541627800001,
+            "range": "± 0.0118",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.39936377542000007,
+            "range": "± 0.0042",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.4016032873200004,
+            "range": "± 0.0279",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9028874734399999,
+            "range": "± 0.0073",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.833253738004714,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 368,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 8,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 118.4122,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 456,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 100,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 42,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 11,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 111.0342,
             "unit": "s"
           }
         ]
