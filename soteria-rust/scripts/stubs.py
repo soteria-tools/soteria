@@ -600,16 +600,13 @@ def get_intrinsics() -> dict[str, FunDecl]:
         file_rs = (PWD / "intrinsics.rs").resolve()
         file_rs.touch(exist_ok=True)
 
-        toolchain = get_toolchain()
-        sysroot = get_sysroot(toolchain)
-
         charon_cmd = f"charon rustc --ullbc \
             --dest-file {file_json} \
             --start-from core::intrinsics \
             --include core::intrinsics \
             --exclude core::intrinsics::const_allocate \
             --exclude core \
-            -- {file_rs} --cfg miri --crate-type=lib --sysroot={sysroot}"
+            -- {file_rs} --cfg miri --crate-type=lib"
 
         proc = subprocess.run(charon_cmd, shell=True, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
@@ -639,8 +636,6 @@ def get_stubs(patterns: list[str], crate_path: Path) -> list[FunDecl]:
     if "--cached" in sys.argv:
         pprint("Using cached stubs")
     else:
-        toolchain = get_toolchain()
-        sysroot = get_sysroot(toolchain)
         charon_cmd = [
             "charon",
             "cargo",
@@ -673,7 +668,6 @@ def get_stubs(patterns: list[str], crate_path: Path) -> list[FunDecl]:
         proc = subprocess.run(
             charon_cmd,
             cwd=crate_path,
-            env={**os.environ, "RUSTFLAGS": f"--sysroot {sysroot}"},
             check=False,
             stderr=subprocess.STDOUT,
         )
@@ -799,7 +793,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
                 match name, generics.types, generics.const_generics, args with
                 {match_arm_entries}
                 | name, tys, cs, args ->
-                    Fmt.kstr not_impl
+                    not_impl
                         "Intrinsic %s not found, or not called with the right arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
                         name
                         Fmt.(list ~sep:comma Charon_util.pp_ty) tys
@@ -1198,7 +1192,7 @@ def generate_custom_stubs() -> None:
                     match[@warning "-redundant-case"] (stub, generics.types, generics.const_generics, args) with
                     {eval_entries}
                     | _, tys, cs, args ->
-                        Fmt.kstr not_impl
+                        not_impl
                             "Custom stub found but called with the wrong arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
                             Fmt.(list ~sep:comma Charon_util.pp_ty) tys
                             Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
