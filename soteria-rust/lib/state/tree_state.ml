@@ -373,13 +373,13 @@ module Make (Borrows : Tree_borrows.T) = struct
                else Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs)
            | _ -> Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs))
       in
-      match res with
-      | Missing _ as miss ->
-          (* FIXME: this is wrong in compositional? *)
+      match (res, Config.get_mode ()) with
+      | (Missing _ as miss), Whole_program ->
+          (* HACK: a miss in WPST means there is a dangling pointer. *)
           if%sat Typed.not (Sptr_base.has_provenance ptr) then
             Result.error `UBDanglingPointer
           else return miss
-      | ok_or_err -> return ok_or_err
+      | ok_or_err, _ -> return ok_or_err
 
     let is_freed loc =
       wrap loc
