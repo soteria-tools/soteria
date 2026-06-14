@@ -706,7 +706,8 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
         let+ bound = pb () in
         Some { bound = Some bound; root = Tree.not_owned (0s, bound) }
     | Some { bound = None; root } ->
-        let+ bound = pb () in
+        let* bound = pb () in
+        let+^ () = assume [ snd root.range <=@ bound ] in
         Some { bound = Some bound; root }
     | Some { bound = Some _; _ } -> vanish ()
 
