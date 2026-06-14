@@ -765,9 +765,11 @@ Test calls to FnOnce trait objects.
   $ soteria-rust exec box_fnonce.rs
   Compiling... done in <time>
   => Running box_fnonce::main...
-  warning: box_fnonce::main (<time>): an unsupported feature was reached
-  Unsized arguments are not yet supported; this includes calls to `<dyn FnOnce>::call_once`
+  note: box_fnonce::main: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ Distinct(V|1-3|) /\
+        (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0x0000000000000004 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffffa) /\
+        (0x0000000000000004 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffa) /\
+        (0b000 == extract[0-2](V|1|)) /\ (0b00 == extract[0-1](V|2|)) /\
+        (0b00 == extract[0-1](V|3|))
   
-  This is tracked at https://github.com/soteria-tools/soteria/issues/387
-  
-  [2]
