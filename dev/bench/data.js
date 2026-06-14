@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781438116259,
+  "lastUpdate": 1781439802686,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1990,6 +1990,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.733944016043097,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "eabd02b4d0b4751fdb17e10bb521e8392df19651",
+          "message": "Improve diagnostics the tool gives (#389)\n\n* Improve diagnostics in a few places\n\n* more message improvements\n\n* fix messages and cram test (hilarious)\n\n* Cuter diagnostics with `Unimplemented`\n\n* minor\n\n* comment\n\nCo-Authored-By: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nCo-authored-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-06-14T11:59:54Z",
+          "tree_id": "b3e7bbced9e3a1bfe9d27f131d9b21a86769ff4e",
+          "url": "https://github.com/soteria-tools/soteria/commit/eabd02b4d0b4751fdb17e10bb521e8392df19651"
+        },
+        "date": 1781439800854,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08154168888,
+            "range": "± 0.0025",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.34614840776,
+            "range": "± 0.0034",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.65025250572,
+            "range": "± 0.0156",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.10807002638,
+            "range": "± 0.0022",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.40230775842,
+            "range": "± 0.039",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.92531900492,
+            "range": "± 0.0282",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.75002915400546,
             "unit": "s"
           }
         ]
