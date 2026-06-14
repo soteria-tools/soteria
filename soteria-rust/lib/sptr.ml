@@ -183,6 +183,13 @@ module type S = sig
   (** Whether this is the null pointer, meaning it always decays to 0. *)
   val is_null : t -> sbool Typed.t
 
+  (** The offset of this pointer within its allocation. *)
+  val ofs : t -> [> sint ] Typed.t
+
+  (** Returns a symbolic boolean characterising whether the pointer is in bound
+      to its allocation. *)
+  val in_bound : t -> sbool Typed.t
+
   (** Whether this pointer has provenance, i.e. points to some allocation. *)
   val has_provenance : t -> sbool Typed.t
 
