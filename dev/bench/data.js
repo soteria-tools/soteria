@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781441520212,
+  "lastUpdate": 1781442988124,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -2170,6 +2170,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 111.0342,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "db31eab773d734f9f464ce49b881e2b114ca58db",
+          "message": "Support calls to `dyn FnOnce` (#390)\n\noh that's it\n\nCo-authored-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-06-14T12:54:36Z",
+          "tree_id": "11b92926ec83e7a619454ebd310381759e03c121",
+          "url": "https://github.com/soteria-tools/soteria/commit/db31eab773d734f9f464ce49b881e2b114ca58db"
+        },
+        "date": 1781442986406,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.08224853862,
+            "range": "± 0.0018",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.08292655208,
+            "range": "± 0.0137",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6296202407600002,
+            "range": "± 0.011",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.39895909322000006,
+            "range": "± 0.0049",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.42469579148,
+            "range": "± 0.0827",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.7225304368400001,
+            "range": "± 0.0039",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.42154613130000007,
+            "range": "± 0.0116",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9659031939799998,
+            "range": "± 0.0794",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.89795180899091,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 372,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 119.0171,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 457,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 100,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 41,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 11,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 111.5719,
             "unit": "s"
           }
         ]
