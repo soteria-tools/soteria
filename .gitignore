@@ -182,6 +182,7 @@ _opam/
 
 # LLBC generated files by Charon, debug file
 *.llbc.json
+*.ullbc
 *.crate
 
 ### macOS ###

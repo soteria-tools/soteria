@@ -195,8 +195,6 @@ def miri(opts: CliOpts) -> TestConfig:
                 "-Zmiri-disable-isolation",
                 # We don't allow disabling overflow checks
                 "-Coverflow-checks=off",
-                # Miri-specific optimisation flags
-                "-Zmiri-provenance-gc=0",
                 "-Zmiri-disable-leak-backtraces",
                 "-Zmiri-track-alloc-accesses",
             ]:
@@ -207,6 +205,7 @@ def miri(opts: CliOpts) -> TestConfig:
                 miri_flag.startswith(prefix)
                 for prefix in [
                     "-Zmir-opt-level",
+                    "-Zmir-enable-passes",
                     "-Zinline-mir",
                     "-Zinline-mir-hint-threshold",
                     "-Zmiri-track-alloc-id",
@@ -214,6 +213,60 @@ def miri(opts: CliOpts) -> TestConfig:
                     "-Zoom=panic",
                     "-Cpanic",
                     "-Cdebug-assertions",
+                    # Target CPU/feature selection (e.g. enabling AVX2 for SIMD
+                    # intrinsic tests); Soteria doesn't gate on these.
+                    "-Ctarget-feature",
+                    "-Ctarget-cpu",
+                ]
+            ):
+                continue
+
+            # Miri runtime flags that tune its interpreter, scheduler, RNG,
+            # floating-point determinism, diagnostics, FFI, GenMC backend or
+            # concurrency model. Soteria has no equivalent (it explores paths
+            # symbolically rather than via Miri's runtime), so these are safely
+            # ignored. See Miri's README for the full list; new ones are added
+            # here as upstream introduces them.
+            if any(
+                miri_flag.startswith(prefix)
+                for prefix in [
+                    # Scheduling / concurrency / RNG
+                    "-Zmiri-deterministic-concurrency",
+                    "-Zmiri-fixed-schedule",
+                    "-Zmiri-preemption-rate",
+                    "-Zmiri-compare-exchange-weak-failure-rate",
+                    "-Zmiri-address-reuse-rate",
+                    "-Zmiri-address-reuse-cross-thread-rate",
+                    "-Zmiri-many-seeds",
+                    "-Zmiri-seed",
+                    "-Zmiri-num-cpus",
+                    "-Zmiri-disable-data-race-detector",
+                    "-Zmiri-disable-weak-memory-emulation",
+                    "-Zmiri-track-weak-memory-loads",
+                    # GenMC backend
+                    "-Zmiri-genmc",
+                    # Floating-point determinism
+                    "-Zmiri-deterministic-floats",
+                    "-Zmiri-no-extra-rounding-error",
+                    "-Zmiri-max-extra-rounding-error",
+                    # Tree Borrows tuning (we always use Tree Borrows)
+                    "-Zmiri-tree-borrows-implicit-writes",
+                    "-Zmiri-tree-borrows-relax-custom-allocator-uniqueness",
+                    # Memory / provenance-GC tuning
+                    "-Zmiri-force-page-size",
+                    "-Zmiri-provenance-gc",
+                    # Isolation, environment, IO, FFI and diagnostics
+                    "-Zmiri-isolation-error",
+                    "-Zmiri-env-forward",
+                    "-Zmiri-env-set",
+                    "-Zmiri-native-lib",
+                    "-Zmiri-report-progress",
+                    "-Zmiri-backtrace",
+                    "-Zmiri-track-pointer-tag",
+                    "-Zmiri-no-short-fd-operations",
+                    "-Zmiri-measureme",
+                    "-Zmiri-user-relevant-crates",
+                    "-Zmiri-force-intrinsic-fallback",
                 ]
             ):
                 continue

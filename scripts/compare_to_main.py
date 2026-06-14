@@ -59,7 +59,10 @@ def parse_baseline(path: Path) -> dict[str, float]:
     }
 
 
-def fmt_time(v: float) -> str:
+def fmt_value(v: float, unit: str = "s") -> str:
+    if unit != "s":
+        # Non-time benches (e.g. conformance test counts) keep their own unit.
+        return f"{v:g} {unit}".rstrip()
     return f"{v * 1000:.1f} ms" if v < 1 else f"{v:.3f} s"
 
 
@@ -103,11 +106,12 @@ def main() -> None:
         name = entry["name"]
         new_val = entry["value"]
         old_val = baseline.get(name)
+        unit = entry.get("unit", "s")
         lines.append(
             "| {} | {} | {} | {} |".format(
                 name,
-                fmt_time(old_val) if old_val is not None else "—",
-                fmt_time(new_val),
+                fmt_value(old_val, unit) if old_val is not None else "—",
+                fmt_value(new_val, unit),
                 fmt_delta(old_val, new_val),
             )
         )

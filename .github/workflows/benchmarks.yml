@@ -66,6 +66,22 @@ jobs:
           ref: 67a094035b3f7159cf3f9af82c55ae63fcb86a34
           path: benchmark-projects/Collections-C
 
+      # Conformance suites for the Rust conformance benchmark. Pinned to a
+      # specific upstream commit so the metric is stable over time; bump these
+      # by hand when tracking a newer toolchain.
+      - name: Checkout Kani (conformance suite)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
+        with:
+          repository: model-checking/kani
+          ref: 4c0fce8c300e1f049f2b0c6766a5111dfc9ff32e
+          path: conformance/kani
+      - name: Checkout Miri (conformance suite)
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
+        with:
+          repository: rust-lang/miri
+          ref: 28b3a0aad5cc0fc7d2fbaf480f50db823f7fe31d
+          path: conformance/miri
+
       # The Obol-pinned rust-toolchain.toml drives rustup inside the container
       # so the .rs files / crates are compiled with the same toolchain CI uses.
       # The Obol repo/commit is read from the checked-out scripts/versions.json
@@ -133,9 +149,19 @@ jobs:
           # Each tool resolves z3 from its own package.
           echo "SOTERIA_Z3_PATH=${C_DIR}/bin/z3" >> $GITHUB_ENV
           echo "LD_LIBRARY_PATH=${C_DIR}/lib:${RUST_DIR}/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          # Conformance benchmark: soteria-rust/scripts/test.py invokes
+          # `soteria-rust` and `obol` by name, and reads the suite locations
+          # from these env vars.
+          echo "${RUST_DIR}/bin" >> $GITHUB_PATH
+          echo "KANI_SUITE_PATH=${GITHUB_WORKSPACE}/conformance/kani/tests/kani" >> $GITHUB_ENV
+          echo "MIRI_SUITE_PATH=${GITHUB_WORKSPACE}/conformance/miri/tests" >> $GITHUB_ENV
 
       - name: Run benchmarks
-        run: python3 scripts/run_benchmarks.py --output benchmark-results.json
+        run: |
+          python3 scripts/run_benchmarks.py \
+            --output benchmark-results.json \
+            --conformance \
+            --conformance-csv conformance-outcomes.csv
 
       # Main pushes publish the new data point to gh-pages so the dashboard's
       # history advances. PR runs deliberately skip the publish — the
@@ -158,6 +184,38 @@ jobs:
           alert-threshold: "150%"
           fail-on-alert: false
 
+      # Publish two things to gh-pages alongside github-action-benchmark's data.js:
+      #   - our custom dashboard (the action only writes its default index.html
+      #     when none exists, so it never overwrites ours);
+      #   - the per-test conformance outcomes CSV, whose git history then records
+      #     exactly when a test's outcome changed (the file is sorted and times-
+      #     free, so it only differs on a real regression/improvement).
+      # A commit is produced only when one of these files actually changes.
+      - name: Publish custom benchmark dashboard
+        if: inputs.pr-number == ''
+        run: |
+          set -euo pipefail
+          git fetch origin gh-pages
+          git worktree add --detach bench-dashboard origin/gh-pages
+          cp scripts/bench-index.html bench-dashboard/dev/bench/index.html
+          files="dev/bench/index.html"
+          if [ -f conformance-outcomes.csv ]; then
+            cp conformance-outcomes.csv bench-dashboard/dev/bench/conformance-outcomes.csv
+            files="$files dev/bench/conformance-outcomes.csv"
+          fi
+          cd bench-dashboard
+          git add $files
+          if git diff --cached --quiet; then
+            echo "Dashboard and conformance outcomes already up to date."
+          else
+            git -c user.name='github-actions[bot]' \
+                -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+                commit -m 'Update benchmark dashboard and conformance outcomes'
+            git push origin HEAD:gh-pages
+          fi
+          cd ..
+          git worktree remove bench-dashboard
+
       # PR-only path: pull just main's data.js, build a comparison table, and
       # surface it via the step summary + an artifact that pr-commands.yml's
       # report job embeds in the PR status comment.
@@ -170,9 +228,11 @@ jobs:
             git fetch --depth=1 origin gh-pages
             # `git show` exits non-zero if the file doesn't exist on gh-pages
             # (first run, dir not yet created); tolerate that and leave the
-            # file empty — the compare script then renders every row as new.
+            # file empty — the compare scripts then render no baseline.
             git --no-pager show origin/gh-pages:dev/bench/data.js \
               > main-bench/data.js 2>/dev/null || true
+            git --no-pager show origin/gh-pages:dev/bench/conformance-outcomes.csv \
+              > main-bench/conformance-outcomes.csv 2>/dev/null || true
           else
             echo "No gh-pages branch yet; comparing against an empty baseline."
           fi
@@ -184,6 +244,18 @@ jobs:
             --current benchmark-results.json \
             --main-data main-bench/data.js \
             --output benchmark-comparison.md
+          # Append the per-test conformance outcome changes (before -> after)
+          # below the timing table so reviewers can see what conformance moved.
+          if [ -f conformance-outcomes.csv ]; then
+            python3 scripts/diff_conformance.py \
+              --before main-bench/conformance-outcomes.csv \
+              --after conformance-outcomes.csv \
+              --output conformance-changes.md
+            {
+              echo
+              cat conformance-changes.md
+            } >> benchmark-comparison.md
+          fi
           {
             echo "## Soteria benchmarks vs \`main\`"
             echo

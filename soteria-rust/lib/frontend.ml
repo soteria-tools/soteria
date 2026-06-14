@@ -276,7 +276,7 @@ let parse_ullbc ~mode ~cmd ~output ~pwd () =
   in
   if (Config.get ()).output_crate then (
     (* save pretty-printed crate to local file *)
-    let crate_file = Printf.sprintf "%s.crate" output in
+    let crate_file = Filename.chop_suffix output ".ullbc" ^ ".crate" in
     let str = Charon.Print.crate_to_string crate in
     let oc = open_out_bin crate_file in
     output_string oc str;
@@ -294,7 +294,7 @@ let with_entry_points ~filter (crate : Charon.UllbcAst.crate) =
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~(mk_cmd : mk_cmd) file_name =
   let parent_folder = Filename.dirname file_name in
-  let output = Printf.sprintf "%s.llbc.json" file_name in
+  let output = Printf.sprintf "%s.ullbc" file_name in
   let cmd = mk_cmd ~input:file_name ~output () in
   parse_ullbc ~mode:Rustc ~cmd ~output ~pwd:parent_folder ()
 
@@ -302,8 +302,8 @@ let parse_ullbc_of_file ~(mk_cmd : mk_cmd) file_name =
 let parse_ullbc_of_crate ~(mk_cmd : mk_cmd) crate_dir =
   let filename =
     match (Config.get ()).test with
-    | Some test -> "test-" ^ test ^ ".llbc.json"
-    | None -> "crate.llbc.json"
+    | Some test -> "test-" ^ test ^ ".ullbc"
+    | None -> "crate.ullbc"
   in
   let output = crate_dir / filename in
   let cmd = mk_cmd ~output () in

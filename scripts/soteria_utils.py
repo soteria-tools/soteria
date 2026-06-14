@@ -300,11 +300,13 @@ def pptable(rows: "list[list[tuple[str, Optional[str]]]]") -> None:
 
 
 def get_env_path_or(key: str, fallback: Path) -> Path:
-    """Resolve an environment variable to a path, or fall back to `fallback`."""
+    """Resolve an environment variable to a path, or fall back to `fallback`.
+    Will create the path if it doesn't exist."""
     e = os.environ.get(key)
-    if e:
-        return Path(e).resolve()
-    return fallback.resolve()
+    path = Path(e).resolve() if e else fallback.resolve()
+    if not path.exists():
+        path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def ask_and_remove(path: Path) -> None:
