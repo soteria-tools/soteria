@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781389022654,
+  "lastUpdate": 1781438116259,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -1925,6 +1925,71 @@ window.BENCHMARK_DATA = {
           {
             "name": "c-capture-db: Collections-C",
             "value": 9.812607476022094,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "98ccb58dbed5d3b27a09c5bca91cad00dcf52b3d",
+          "message": "Don't decay on pointer equality if it can be avoided (#385)\n\n* optimise pointer equality\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* fix the issue\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Opale's comments\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* promote test\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* optimise case where one of the pointers is null\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-06-14T11:36:24Z",
+          "tree_id": "72592fa3762b3209ad849522272f54da3ab2c9a3",
+          "url": "https://github.com/soteria-tools/soteria/commit/98ccb58dbed5d3b27a09c5bca91cad00dcf52b3d"
+        },
+        "date": 1781438114593,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 0.07926494412000003,
+            "range": "± 0.0013",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.35140056044,
+            "range": "± 0.0051",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6473295652800002,
+            "range": "± 0.014",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.10835691917999998,
+            "range": "± 0.0023",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.4369795437599997,
+            "range": "± 0.0458",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.92348178698,
+            "range": "± 0.0204",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.733944016043097,
             "unit": "s"
           }
         ]
