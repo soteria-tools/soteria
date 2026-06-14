@@ -37,10 +37,7 @@ let pp_tip ft (tip, cmd) =
   | Some cmd -> Fmt.pf ft "@.     %a" (pp_style `Bold) cmd
   | None -> ()
 
-(** The actionable block printed below the description: the optional tip and a
-    link to either the relevant issue or the issue tracker. *)
-let pp_extra ft { tip; issue; _ } =
-  Option.iter (fun tip -> Fmt.pf ft "%a@.@." pp_tip tip) tip;
+let pp_issue ft issue =
   match issue with
   | Some n -> Fmt.pf ft "This is tracked at %a" pp_repo_issue n
   | None ->
@@ -51,4 +48,6 @@ let pp_extra ft { tip; issue; _ } =
 
 (** Full rendering: the description followed by the actionable block. Intended
     to be printed directly (e.g. with [Fmt.pr]), not wrapped in a diagnostic. *)
-let pp ft t = Fmt.pf ft "%s@.@.%a" t.desc pp_extra t
+let pp ft { desc; tip; issue } =
+  let open Fmt in
+  pf ft "%s@.@.%a%a" desc (option (pp_tip ++ any "@.@.")) tip pp_issue issue
