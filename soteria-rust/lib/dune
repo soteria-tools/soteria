@@ -13,11 +13,13 @@
   soteria
   str
   patricia-tree
+  yojson
   zarith)
  (flags :standard -open Soteria.Soteria_std -open Soteria.Bv_values)
  (preprocess
   (pps
    ppx_deriving.std
+   ppx_deriving_yojson
    ppx_subliner
    soteria.ppx
    ppx_deriving_hash

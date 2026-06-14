@@ -5,14 +5,11 @@ open Frontend_runtime
 
 exception FrontendError = FrontendError
 
-(** Something wrong internally with plugins *)
-exception PluginError of string
+(** Compilation of the code failed; contains
+    [(error message, where it happened)]. *)
+exception CompilationError of string * string
 
-(** Compilation of the code failed at the rustc level *)
-exception CompilationError of string
-
-let compilation_err msg = raise (CompilationError msg)
-let plugin_err msg = raise (PluginError msg)
+let compilation_err info msg = raise (CompilationError (info, msg))
 
 module Lib = struct
   let target =
@@ -24,7 +21,8 @@ module Lib = struct
           let info = Exe.exec_exn ~env (Cmd.cargo ()) [ "-vV" ] in
           match List.find_opt (String.starts_with ~prefix:"host") info with
           | Some s -> String.sub s 6 (String.length s - 6)
-          | None -> plugin_err "Couldn't find target host"))
+          | None ->
+              compilation_err "executing rustc" "Couldn't find target host"))
 
   let root =
     lazy
@@ -33,7 +31,8 @@ module Lib = struct
        with
       | Some root, _ -> root
       | None, root :: _ -> root
-      | None, [] -> plugin_err "Couldn't find plugin directory")
+      | None, [] ->
+          compilation_err "loading plugins" "Couldn't find plugin directory")
 
   type t = Std | Soteria | Kani
 
@@ -55,7 +54,9 @@ module Lib = struct
     match status with
     | WEXITED (0 | 255) -> ()
     | _ ->
-        Fmt.kstr plugin_err "Couldn't compile lib at %s@.%a" path
+        Fmt.kstr
+          (compilation_err ("compiling plugin " ^ name lib))
+          "Couldn't compile lib at %s@.%a" path
           Fmt.(list string)
           err
 
@@ -255,7 +256,8 @@ let parse_ullbc ~mode ~cmd ~output ~pwd () =
   if not (Config.get ()).no_compile then (
     let _, err, res = Cmd.exec_in ~mode pwd cmd in
     if not (Exe.is_ok res) then
-      if res = WEXITED 2 then compilation_err (String.concat "\n" err)
+      if res = WEXITED 2 then
+        compilation_err "compiling target code" (String.concat "\n" err)
       else
         Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
           Fmt.(list ~sep:(any "\n") string)

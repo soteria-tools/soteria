@@ -88,8 +88,11 @@ module DecayMap = struct
   module SM = struct
     include SM
 
-    let[@inline] not_impl msg = lift @@ not_impl msg
-    let[@inline] of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
+    let[@inline] not_impl ?tip ?issue msg = lift @@ not_impl ?tip ?issue msg
+
+    let[@inline] of_opt_not_impl ?tip ?issue msg x =
+      lift @@ of_opt_not_impl ?tip ?issue msg x
+
     let[@inline] match_on xs ~constr = lift @@ match_on xs ~constr
     let[@inline] get_where () = lift @@ get_trace ()
   end

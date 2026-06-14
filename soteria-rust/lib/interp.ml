@@ -161,6 +161,10 @@ module Make (StateImpl : State.S) = struct
     | CLiteral (VStr str) ->
         let+ ptr = Core.string_to_ptr str in
         Ptr ptr
+    | CLiteral (VByteStr str) ->
+        let str = List.to_seq str |> Seq.map Char.chr |> String.of_seq in
+        let+ ptr = Core.string_to_ptr str in
+        Ptr ptr
     | CFnDef _ -> ok (Tuple [])
     | CPtrNoProvenance v -> ok (Ptr (Sptr.of_address (BV.usize v), Thin))
     | CArray cs ->
@@ -175,7 +179,6 @@ module Make (StateImpl : State.S) = struct
         let discr = BV.of_literal variant.discriminant in
         let+ vals = map_list fields ~f:resolve_constant in
         Enum (discr, vals)
-    | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't
        too bad *)
     | CTraitConst (tref, const_id) -> (
@@ -272,14 +275,16 @@ module Make (StateImpl : State.S) = struct
         State.load ptr const.ty
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> failwith "Unbound const generic expression"
-    | COpaque msg -> Fmt.kstr not_impl "Opaque constant: %s" msg
     | CRef (expr, meta) | CPtr (_, expr, meta) ->
         (* HACK: ideally Charon shouldn't have ref constants, those are entirely
            separate allocations :/ *)
         let* meta =
           match meta with
           | None -> ok Thin
-          | Some meta -> resolve_unsizing_metadata ~prev:Thin meta
+          | Some meta ->
+              resolve_unsizing_metadata
+                ~help:(fun () -> "happened when resolving a constant")
+                ~prev:Thin meta
         in
         let* v = resolve_constant expr in
         let@ () = with_alloc_kind ~kind:AnonConst in
@@ -299,11 +304,15 @@ module Make (StateImpl : State.S) = struct
         let+ ptr = State.declare_fn fn in
         Ptr ptr
     | CVTableRef _ ->
-        Fmt.kstr not_impl "TODO: CVTableRef constant %a" Crate.pp_constant_expr
-          const
+        Fmt.kstr not_impl "vtable-reference constants are not yet supported: %a"
+          Crate.pp_constant_expr const
     | CTypeId _ ->
-        Fmt.kstr not_impl "TODO: CTypeId constant %a" Crate.pp_constant_expr
+        Fmt.kstr (not_impl ~issue:187)
+          "TypeId constants are not yet supported: %a" Crate.pp_constant_expr
           const
+    | COpaque msg ->
+        Fmt.kstr not_impl
+          "opaque constant: %s; something went wrong in the frontend" msg
 
   (** Resolves a place to a pointer *)
   and resolve_place (place : Expressions.place) : full_ptr t =
@@ -507,7 +516,7 @@ module Make (StateImpl : State.S) = struct
         let*^ new_store = Store.try_store sp store v in
         OptionM.lift @@ set_env new_store)
 
-  and resolve_unsizing_metadata ~prev (meta : Types.unsizing_metadata) =
+  and resolve_unsizing_metadata ?help ~prev (meta : Types.unsizing_metadata) =
     match meta with
     | MetaLength length ->
         let+ len = resolve_constant length in
@@ -531,7 +540,11 @@ module Make (StateImpl : State.S) = struct
                   fst (as_ptr vt))
             in
             VTable vt')
-    | MetaUnknown -> not_impl "Unknown unsizing metadata"
+    | MetaUnknown -> (
+        match help with
+        | None -> not_impl "unknown unsizing metadata"
+        | Some help ->
+            Fmt.kstr not_impl "unknown unsizing metadata: %s" (help ()))
 
   (** Resolve a function operand, returning a callable symbolic function to
       execute it. It also returns the types expected of the function, which is
@@ -669,7 +682,7 @@ module Make (StateImpl : State.S) = struct
             match ty with
             | TBool -> ok (Int (BV.not_bool v))
             | TInt _ | TUInt _ -> ok (Int (BV.not v))
-            | _ -> not_impl "Invalid type for Not")
+            | _ -> failwith "Invalid type for Not")
         | Neg _ -> (
             match type_of_operand e with
             | TLiteral ((TInt _ | TUInt _) as ty) ->
@@ -680,7 +693,7 @@ module Make (StateImpl : State.S) = struct
             | TLiteral (TFloat fty) ->
                 let v = as_base_f fty v in
                 ok (Float (Typed.Float.neg v))
-            | _ -> not_impl "Invalid type for Neg")
+            | _ -> failwith "Invalid type for Neg")
         | Cast (CastRawPtr (from_ty, to_ty)) -> (
             match (from_ty, to_ty) with
             | (TRef _ | TRawPtr _ | TFnPtr _), TLiteral to_ty ->
@@ -704,11 +717,11 @@ module Make (StateImpl : State.S) = struct
                 match (v, Layout.is_dst to_ty) with
                 | Ptr (ptr, _), false -> ok (Ptr (ptr, Thin))
                 | Ptr (_, Thin), true ->
-                    not_impl "Cannot cast to fat pointer without meta"
+                    failwith "cannot cast to fat pointer without meta"
                 | Ptr _, true -> ok v
-                | _ -> not_impl "Invalid value for CastRawPtr")
+                | _ -> failwith "invalid value for CastRawPtr")
             | _ ->
-                Fmt.kstr not_impl "Invalid types for CastRawPtr: %a -> %a" pp_ty
+                Fmt.failwith "unexpected types for CastRawPtr: %a -> %a" pp_ty
                   from_ty pp_ty to_ty)
         | Cast (CastTransmute (from, to_)) -> State.transmute ~from ~to_ v
         | Cast (CastScalar (from_ty, to_ty)) ->
@@ -716,13 +729,19 @@ module Make (StateImpl : State.S) = struct
               match v with
               | Int i -> ok (i :> T.cval Typed.t)
               | Float f -> ok (f :> T.cval Typed.t)
-              | _ -> not_impl "Invalid value for CastScalar"
+              | _ -> failwith "Invalid value for CastScalar"
             in
             Encoder.cast_literal ~from_ty ~to_ty v
         | Cast (CastUnsize (from_ty, to_ty, meta)) ->
             let rec with_ptr_meta : rust_val -> rust_val t = function
               | Ptr (v, prev) ->
-                  let+ meta = resolve_unsizing_metadata ~prev meta in
+                  let+ meta =
+                    resolve_unsizing_metadata
+                      ~help:(fun () ->
+                        Fmt.str "don't know how to unsize %a -> %a" pp_ty
+                          from_ty pp_ty to_ty)
+                      ~prev meta
+                  in
                   Ptr (v, meta)
               | Tuple (_ :: _ as fs) as v -> (
                   let rec split_at_non_empty fs left =
@@ -738,8 +757,8 @@ module Make (StateImpl : State.S) = struct
                       let+ nonempty = with_ptr_meta nonempty in
                       let fs = List.rev (left @ [ nonempty ] @ right) in
                       match v with Tuple _ -> Tuple fs | _ -> assert false)
-                  | None -> not_impl "Couldn't set pointer meta in CastUnsize")
-              | _ -> not_impl "Couldn't set pointer meta in CastUnsize"
+                  | None -> failwith "Couldn't set pointer meta in CastUnsize")
+              | _ -> failwith "Couldn't set pointer meta in CastUnsize"
             in
             with_ptr_meta v
         | Cast (CastConcretize (_from, _to)) ->
@@ -751,7 +770,7 @@ module Make (StateImpl : State.S) = struct
                 let+ ptr = State.declare_fn fn in
                 Ptr ptr
             | _, (Ptr _ as ptr) -> ok ptr
-            | _ -> not_impl "Invalid argument to CastFnPtr"))
+            | _ -> failwith "Invalid argument to CastFnPtr"))
     | BinaryOp (op, e1, e2) -> (
         let* v1 = eval_operand e1 in
         let* v2 = eval_operand e2 in
@@ -839,11 +858,10 @@ module Make (StateImpl : State.S) = struct
             | Div _ -> ok (Float (v1 /.@ v2))
             | Rem _ -> ok (Float (Typed.Float.rem v1 v2))
             | _ ->
-                Fmt.kstr not_impl "Unsupported float binary operator (%a)"
+                Fmt.failwith "unexpected float binary operator (%a)"
                   Expressions.pp_binop op)
         | v1, v2 ->
-            Fmt.kstr not_impl
-              "Unsupported values for binary operator (%a): %a / %a"
+            Fmt.failwith "Unexpected values for binary operator (%a): %a / %a"
               Expressions.pp_binop op pp_rust_val v1 pp_rust_val v2)
     | NullaryOp (op, ty) -> (
         match op with
@@ -947,8 +965,8 @@ module Make (StateImpl : State.S) = struct
               let v = Typed.cast_i Usize v in
               ok (Sptr.of_address v)
           | _ ->
-              Fmt.kstr not_impl "Unexpected ptr in AggregatedRawPtr: %a"
-                pp_rust_val ptr
+              Fmt.failwith "Unexpected ptr in AggregatedRawPtr: %a" pp_rust_val
+                ptr
         in
         (* we flatten the meta, to simplify processing stuff like
            [std::ptr::DynMetadata] *)
@@ -958,7 +976,7 @@ module Make (StateImpl : State.S) = struct
           | [ Int meta ] -> ok (Len (Typed.cast_i Usize meta))
           | [ Ptr (ptr, Thin) ] -> ok (VTable ptr)
           | elms ->
-              Fmt.kstr not_impl "Unexpected meta in AggregatedRawPtr: %a"
+              Fmt.failwith "Unexpected meta in AggregatedRawPtr: %a"
                 Fmt.(list ~sep:comma pp_rust_val)
                 elms
         in
@@ -976,7 +994,7 @@ module Make (StateImpl : State.S) = struct
         match (meta, size_opt) with
         | _, Some size -> resolve_constant size
         | Len len, None -> ok (Int len)
-        | _ -> not_impl "Unexpected len rvalue")
+        | _ -> failwith "Unexpected len rvalue")
 
   and exec_stmt (stmt : UllbcAst.statement) : unit t =
     [%l.info "Statement: %a" Crate.pp_statement stmt];
@@ -1036,7 +1054,7 @@ module Make (StateImpl : State.S) = struct
         let+ _ = resolve_place place in
         ()
     | SetDiscriminant (_, _) ->
-        not_impl "Unsupported statement: SetDiscriminant"
+        not_impl "writing enum discriminant directly is not yet supported"
 
   and exec_block ~(body : UllbcAst.expr_body)
       ({ statements; terminator } : UllbcAst.block) =
@@ -1171,7 +1189,7 @@ module Make (StateImpl : State.S) = struct
             error (`Panic name))
     | UnwindResume -> State.pop_error ()
     | TAssert _ -> failwith "Charon desugars assert terminators for us"
-    | InlineAsm _ -> not_impl "inline assembly"
+    | InlineAsm _ -> not_impl "inline assembly is not supported"
 
   and exec_real_fun (fundef : UllbcAst.fun_decl) (generics : Types.generic_args)
       args =
@@ -1213,20 +1231,37 @@ module Make (StateImpl : State.S) = struct
       -> (
         match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args
-        | None ->
-            let msg =
-              match fundef.body with
-              | OpaqueBody -> "compilation skipped it"
-              | TraitMethodWithoutDefaultBody -> "this is a trait method stub"
-              | MissingBody ->
-                  "the function's body was not found while compiling; try \
-                   using a sysroot (with --sysroot)"
-              | ErrorBody err ->
-                  "the frontend does not support compiling it (" ^ err.msg ^ ")"
-              | _ -> failwith "impossible"
-            in
-            Fmt.kstr not_impl "can't execute function %a, %s" Crate.pp_name name
-              msg)
+        | None -> (
+            match fundef.body with
+            | OpaqueBody ->
+                Fmt.kstr not_impl
+                  "can't execute function %a, compilation skipped it"
+                  Crate.pp_name name
+            | TraitMethodWithoutDefaultBody ->
+                Fmt.kstr not_impl
+                  "can't execute function %a, this is a trait method stub"
+                  Crate.pp_name name
+            | MissingBody ->
+                if Option.is_some (Config.get ()).sysroot then
+                  Fmt.kstr not_impl
+                    "can't execute function %a, the function's body was not \
+                     found while compiling"
+                    Crate.pp_name name
+                else
+                  let cmd =
+                    Fmt.str "cargo +%s miri setup --print-sysroot"
+                      (Lazy.force Frontend_runtime.Cmd.toolchain_version)
+                  in
+                  let tip = ("to get a sysroot, run", Some cmd) in
+                  Fmt.kstr (not_impl ~tip ~issue:322)
+                    "can't execute function %a, try using a sysroot (--sysroot)"
+                    Crate.pp_name name
+            | ErrorBody err ->
+                Fmt.kstr not_impl
+                  "can't execute function %a, the frontend does not support \
+                   compiling it (%s)"
+                  Crate.pp_name name err.msg
+            | _ -> failwith "impossible"))
     | TargetDispatchBody _ -> failwith "Target dispatch not supported"
     | StructuredBody _ -> failwith "Impossibe: encountered LLBC?"
 

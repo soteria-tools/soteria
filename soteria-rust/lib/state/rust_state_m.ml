@@ -51,7 +51,10 @@ module type S = sig
   val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
   val miss : syn list list -> ('a, 'env) t
   val vanish : unit -> ('a, 'env) t
-  val not_impl : string -> ('a, 'env) t
+
+  val not_impl :
+    ?tip:string * string option -> ?issue:int -> string -> ('a, 'env) t
+
   val bind : ('a -> ('b, 'env) t) -> ('a, 'env) t -> ('b, 'env) t
   val map : ('a -> 'b) -> ('a, 'env) t -> ('b, 'env) t
 
@@ -62,7 +65,14 @@ module type S = sig
   val set_env : 'env -> (unit, 'env) t
   val map_env : ('env -> 'env) -> (unit, 'env) t
   val with_env : env:'env1 -> ('a, 'env1) t -> ('a, 'env) t
-  val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
+
+  val of_opt_not_impl :
+    ?tip:string * string option ->
+    ?issue:int ->
+    string ->
+    'a option ->
+    ('a, 'env) t
+
   val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
 
@@ -340,8 +350,8 @@ module Make (State : State_intf.S) :
   let assert_not cond err = assert_ (Typed.not cond) err
   let miss f : ('a, 'env) t = ESM.Result.miss f
 
-  let not_impl str : ('a, 'env) t =
-    ESM.lift @@ State.SM.lift @@ Rustsymex.not_impl str
+  let not_impl ?tip ?issue str : ('a, 'env) t =
+    ESM.lift @@ State.SM.lift @@ Rustsymex.not_impl ?tip ?issue str
 
   let get_state () : (st, 'env) t =
     ESM.Result.lift_state @@ State.SM.get_state ()
@@ -384,7 +394,9 @@ module Make (State : State_intf.S) :
   let[@inline] lift_symex (s : 'a Rustsymex.t) : ('a, 'env) t =
     ESM.Result.lift_state @@ State.SM.lift s
 
-  let of_opt_not_impl msg x = lift_symex (of_opt_not_impl msg x)
+  let of_opt_not_impl ?tip ?issue msg x =
+    lift_symex (of_opt_not_impl ?tip ?issue msg x)
+
   let assume x = lift_symex (assume x)
 
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
