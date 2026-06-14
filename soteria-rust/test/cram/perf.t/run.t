@@ -4,6 +4,21 @@
   note: array_init::main: done in <time>, ran 1 branch
   PC 1: empty
   
+
+  $ soteria-rust exec reborrow_chain.rs
+  Compiling... done in <time>
+  => Running reborrow_chain::main...
+  note: reborrow_chain::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+
+  $ soteria-rust exec reborrow_tree.rs
+  Compiling... done in <time>
+  => Running reborrow_tree::main...
+  note: reborrow_tree::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+
   $ soteria-rust exec btreeset_sort.rs
   Compiling... done in <time>
   => Running btreeset_sort::test_treeset_is_ordered...

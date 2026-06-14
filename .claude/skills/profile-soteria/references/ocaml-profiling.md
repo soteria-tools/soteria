@@ -6,6 +6,9 @@ process over pipes, so the three things worth profiling are **OCaml CPU**,
 **OCaml allocations/GC**, and **the Z3 subprocess boundary**. Living
 document — add rows/recipes that worked.
 
+Tree-Borrows-specific findings live in `tree-borrows.md` (kept separate because
+that subsystem accreted a lot of detail).
+
 ## 0. First look — macOS `sample` (zero setup)
 
 ```bash
@@ -23,6 +26,18 @@ Read the aggregated tree for the **syscall vs. compute split**:
 
 This needs no build flags and is the fastest way to decide *which* of the
 next sections to spend time in.
+
+To turn a `sample` tree into an **inclusive % for one symbol**, sum the sample
+counts on every frame for that symbol and divide by the main-thread total:
+
+```bash
+total=$(grep -m1 "main-thread" s.txt | grep -oE "^ *[0-9]+" | tr -d ' ')
+grep -F 'Raw$access_1212' s.txt \
+  | awk '{for(i=1;i<=NF;i++) if($i ~ /^caml/){print $(i-1); break}}' \
+  | paste -sd+ - | bc        # ÷ $total = inclusive %
+```
+
+(Use `grep -F` — symbol names contain `$`, which is a regex anchor otherwise.)
 
 ## 1. OCaml CPU
 
@@ -159,6 +174,54 @@ The reusable conclusion to aim for: **N round-trips/spawns per run at ~M ms
 each**. Then the fix is one of: pool the process, pipeline fire-and-forget
 commands and only block on the answers you need (`check`/`get-model`),
 cache/dedupe encodings, or avoid a redundant `reset`.
+
+## What we already tried: compiler-level levers (flambda, `[@inline]`/`[@cold]`)
+
+Settled finding (2026-06) so nobody re-runs this from scratch: **a flambda
+switch and adding `[@inline]`/`[@cold]` to the monad layer do *not* speed up
+the `soteria-rust` `perf.t` benchmarks.** Measured engine time ("done in", n=6,
+`--profile release`) for base-compiler vs flambda vs flambda+annotations was
+flat to within run-to-run noise (~2%) on `writealot`, `writealotloop`,
+`btreeset_sort`, `ctpop` — if anything flambda was marginally *slower*.
+
+Why: a `sample` of `ctpop` shows the hot regions are the **memory model and
+persistent data structures**, not the monad — `PatriciaTree.filter_map_no_share`
+(persistent-map rebuild that doesn't structurally share), `Tree_borrows`
+(`Concrete.access`/`Raw.access`), `Range_tree.map_leaves`, `Tree_block`/
+`Rtree_block`, plus `caml_runstack` (effects) and `caml_modify`/`caml_call_gc`/
+`caml_alloc_small` (allocation/GC). `Monad.bind`/`Compo_res.bind`/`return`/`lift`
+appear at **1–10 samples (noise)**. The combinators in `monad.ml`/
+`state_monad.ml` are *already* `[@inline]`, so even the stock compiler's local
+inlining covers the hot bind path; there is nothing left for flambda or extra
+annotations to remove. `[@cold]` natively compiles on the 5.4.1 flambda switch
+(no `ppx_cold` needed; survives `-warn-error +53`).
+
+Confirmed at the assembly level (`-inlining-report -S` injected via
+`(ocamlopt_flags (:standard -inlining-report -S))` on the two libs, then read
+the `_build/.../native/*.s` and `*.inlining.org`): `[@inline]` *does* fire —
+`Compo_res.bind`/the StateT `bind` leave **no standalone call symbol** in the
+hot modules. But what `bind` inlines *to* is irreducible: e.g.
+`Rustsymex.bind` compiles to `ldr x3,[x1]; blr x3` (an **indirect call** through
+the runtime-built monadic value) plus a `sub x27,x27,#64` young-heap bump (a
+**closure allocation** for the captured continuation). flambda can't optimize
+either because the iterator/continuation are *data*, not statically-known
+functions — the report literally says "not inlined because there was no useful
+information" 36× in `Rustsymex`. The hot `.s` are dense with this:
+`Symex`/`Rustsymex`/`Raw` carry ~107/73/47 indirect calls and ~155/145/76 inline
+alloc sites each. So the cost is closure-alloc + indirect dispatch per monadic
+step (CPS `Iter.t` + state-passing) and persistent-map rebuilds — none of which
+inlining or flambda can touch.
+
+Takeaway for the next attempt: the lever for `perf.t` is **structural** — cut
+allocation/structural churn in the persistent maps and the Tree Borrows
+state-rebuild, not compiler flags. The realized examples of that lever (the
+`Tree_borrows.Raw.access`/`compact` rewrites) are written up in
+`tree-borrows.md`.
+
+The flambda switch built for this lives at `soteria-flambda`
+(`ocaml-variants.5.4.1+options` + `ocaml-option-flambda`, rust-only deps:
+`opam install ./soteria.opam ./soteria-rust.opam --deps-only`). `dune build`
+all-packages fails there (no cerberus); build/install just `soteria-rust`.
 
 ## Build/test gates to keep green
 

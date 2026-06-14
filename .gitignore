@@ -248,8 +248,8 @@ soteria_logs.html
 *.rlib
 
 ### Claude ###
-.claude/
-!.claude/skills
+.claude/*
+!.claude/skills/
 
 # Created using: https://www.toptal.com/developers/gitignore/api/node,ocaml
 # and modified by hand afterwards
