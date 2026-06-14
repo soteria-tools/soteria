@@ -27,8 +27,7 @@ Test memory leaks
       |    --------- 1: Leaking function
     2 |        std::mem::forget(Box::new(11));
       |                         ------------ 2: Call trace
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   [1]
 
@@ -244,8 +243,7 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running thread_local::static_ref_cell...
   warning: thread_local::static_ref_cell (<time>): an unsupported feature was reached
@@ -272,8 +270,7 @@ This test must be run separtely on linux and macos as it yields different error 
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running thread_local::static_ref_cell...
   warning: thread_local::static_ref_cell (<time>): an unsupported feature was reached
@@ -326,8 +323,7 @@ Test recursive validity check for references; disabled
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -338,8 +334,7 @@ Test recursive validity check for references; disabled
       .  
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -367,8 +362,7 @@ Test recursive validity check for references; enabled
       .  
     7 |      let as_ref: &u32 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Fake read
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -379,8 +373,7 @@ Test recursive validity check for references; enabled
       .  
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -408,8 +401,7 @@ Test recursive validity check for references; warn
     7 |      let as_ref: &u32 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Triggering operation
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -420,8 +412,7 @@ Test recursive validity check for references; warn
       .  
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -650,8 +641,7 @@ FIXME: now that named consts are globals, there is in fact a third allocation: t
   Compiling... done in <time>
   => Running box::main...
   note: box::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   check_stat: expected '2', got '3' for allocs
   [1]
@@ -684,15 +674,11 @@ Test we can use ptr::metadata to get the metadata of a trait object; this used t
   note: ptr_dyn_metadata::main: done in <time>, ran 1 branch
   PC 1: empty
   
-FIXME: the last 3 decayed pointers shall be removed in #386
-  $ soteria-rust exec nonnull.rs --stats stats.json && check_stat stats.json decayed_pointers 3
+  $ soteria-rust exec nonnull.rs --stats stats.json && check_stat stats.json decayed_pointers 0
   Compiling... done in <time>
   => Running nonnull::match_niched_enums...
   note: nonnull::match_niched_enums: done in <time>, ran 1 branch
-  PC 1: Distinct(V|1-2|) /\ (0x0000000000000008 <=u V|1|) /\
-        (V|1| <=u 0x7ffffffffffffff6) /\ (0x0000000000000008 <=u V|2|) /\
-        (V|2| <=u 0x7ffffffffffffff6) /\ (0b000 == extract[0-2](V|1|)) /\
-        (0b000 == extract[0-2](V|2|))
+  PC 1: empty
   
   => Running nonnull::null_is_none...
   note: nonnull::null_is_none: done in <time>, ran 1 branch
@@ -700,8 +686,7 @@ FIXME: the last 3 decayed pointers shall be removed in #386
   
   => Running nonnull::niche_ok...
   note: nonnull::niche_ok: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0b000 == extract[0-2](V|1|))
+  PC 1: empty
   
   => Running nonnull::niche_err...
   note: nonnull::niche_err: done in <time>, ran 1 branch
@@ -716,34 +701,10 @@ FIXME: the last 3 decayed pointers shall be removed in #386
   Compiling... done in <time>
   => Running btreeset_small::test_treeset_is_ordered...
   note: btreeset_small::test_treeset_is_ordered: done in <time>, ran 3 branches
-  PC 1: (V|3| <u V|2|) /\ Distinct(V|1|, V|4|) /\ Distinct(V|1|, V|4|, V|5|) /\
-        Distinct(V|1|, V|4|, V|5|, V|6|) /\ (0x0000000000000004 <=u V|1|) /\
-        (V|1| <=u 0x7ffffffffffffff6) /\ (0x0000000000000008 <=u V|4|) /\
-        (V|4| <=u 0x7fffffffffffffc6) /\ (0x0000000000000004 <=u V|5|) /\
-        (V|5| <=u 0x7ffffffffffffff6) /\ (0x0000000000000004 <=u V|6|) /\
-        (V|6| <=u 0x7ffffffffffffff6) /\ (0b00 == extract[0-1](V|1|)) /\
-        (0b000 == extract[0-2](V|4|)) /\ (0b00 == extract[0-1](V|5|)) /\
-        (0b00 == extract[0-1](V|6|))
-  PC 2: (V|2| <=u V|3|) /\ Distinct(V|1|, V|4|) /\ (V|2| != V|3|) /\
-        Distinct(V|1|, V|4|, V|5|) /\ Distinct(V|1|, V|4|, V|5|, V|6|) /\
-        (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0x0000000000000008 <=u V|4|) /\ (V|4| <=u 0x7fffffffffffffc6) /\
-        (0x0000000000000004 <=u V|5|) /\ (V|5| <=u 0x7ffffffffffffff6) /\
-        (0x0000000000000004 <=u V|6|) /\ (V|6| <=u 0x7ffffffffffffff6) /\
-        (0b00 == extract[0-1](V|1|)) /\ (0b000 == extract[0-2](V|4|)) /\
-        (0b00 == extract[0-1](V|5|)) /\ (0b00 == extract[0-1](V|6|))
-  PC 3: (V|2| <=u V|3|) /\ Distinct(V|1|, V|4|) /\ Distinct(V|1|, V|4|,
-       V|5|) /\ Distinct(V|1|, V|4|, V|5|, V|6|) /\
-        (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0x0000000000000008 <=u V|4|) /\ (V|4| <=u 0x7fffffffffffffc6) /\
-        (0x0000000000000004 <=u V|5|) /\ (V|5| <=u 0x7ffffffffffffffa) /\
-        (0x0000000000000004 <=u V|6|) /\ (V|6| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|)) /\ (V|2| == V|3|) /\
-        (0b000 == extract[0-2](V|4|)) /\ (0b00 == extract[0-1](V|5|)) /\
-        (0b00 == extract[0-1](V|6|))
+  PC 1: (V|2| <u V|1|)
+  PC 2: (V|1| <=u V|2|) /\ (V|1| != V|2|)
+  PC 3: (V|1| <=u V|2|) /\ (V|1| == V|2|)
   
-  check_stat: expected '0', got '9' for decayed_pointers
-  [1]
 
 Pointers are compared by their addresses. Two pointer with equal addresses
 but different provenance should be decayed, compared, and checked to be equal
@@ -766,10 +727,5 @@ Test calls to FnOnce trait objects.
   Compiling... done in <time>
   => Running box_fnonce::main...
   note: box_fnonce::main: done in <time>, ran 1 branch
-  PC 1: Distinct(V|1-2|) /\ Distinct(V|1-3|) /\
-        (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0x0000000000000004 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffffa) /\
-        (0x0000000000000004 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffa) /\
-        (0b000 == extract[0-2](V|1|)) /\ (0b00 == extract[0-1](V|2|)) /\
-        (0b00 == extract[0-1](V|3|))
+  PC 1: empty
   
