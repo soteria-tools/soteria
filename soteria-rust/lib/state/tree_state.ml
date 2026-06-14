@@ -845,7 +845,7 @@ module Make (Borrows : Tree_borrows.T) = struct
                  ~range:t.range ?children:t.children ()
          in
          try DecayMap.SM.Result.ok (aux tb t)
-         with Failure msg -> DecayMap.SM.not_impl msg
+         with Failure msg -> DecayMap.SM.not_impl "%s" msg
        in
        (* Applies all the tree borrow ranges to the tree we're writing,
           overwriting all previous states. *)

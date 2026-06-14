@@ -163,7 +163,8 @@ struct
     let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) : 'a t =
      fun _handler _get_all -> SM.lift (DecayMap.SM.lift m)
 
-    let not_impl ?tip ?issue msg = lift @@ not_impl ?tip ?issue msg
+    let not_impl ?tip ?issue fmt =
+      Fmt.kstr (fun msg -> lift @@ not_impl ?tip ?issue "%s" msg) fmt
 
     let of_opt_not_impl ?tip ?issue msg x =
       lift @@ of_opt_not_impl ?tip ?issue msg x
@@ -373,8 +374,7 @@ module Encoder (Sptr : Sptr.S) = struct
               let offset = ofs +!!@ offset in
               Iter.cons (Int tag, offset) fields)
       | Enum _, _ ->
-          Fmt.kstr not_impl "encode: expected enum value for enum type %a" pp_ty
-            ty
+          not_impl "encode: expected enum value for enum type %a" pp_ty ty
 
   (** Iterates over the validity constraints of this particular value for a
       given type, traversing it recursively. For every requirement, this
@@ -604,18 +604,18 @@ module Encoder (Sptr : Sptr.S) = struct
     | TVar (Free type_var_id), (PolyVal tid as v) ->
         if Types.TypeVarId.equal_id type_var_id tid then return v
         else
-          Fmt.kstr not_impl "transmute_one: mismatched type variables %a -> %a"
+          not_impl "transmute_one: mismatched type variables %a -> %a"
             Types.pp_type_var_id type_var_id Types.pp_type_var_id tid
     | TVar (Bound _), _ ->
         failwith "transmute_one: bound type variable encountered?"
     | TVar _, _ ->
-        Fmt.kstr not_impl
+        not_impl
           "losing concrete value in %a -> %a; somewhere we lost track of \
            generics"
           pp_rust_val v pp_ty to_ty
     | _ ->
-        Fmt.kstr not_impl "unsupported transmute of value %a to type %a"
-          pp_rust_val v pp_ty to_ty
+        not_impl "unsupported transmute of value %a to type %a" pp_rust_val v
+          pp_ty to_ty
 
   (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
       [ty]: the returned value will have the right structure, and any required
@@ -679,12 +679,12 @@ module Encoder (Sptr : Sptr.S) = struct
             let+ bytes = nondet (Typed.t_int (sizei * 8)) in
             Ok (Union [ (Int bytes, Usize.(0s)) ])
         | _ ->
-            Fmt.kstr Rustsymex.not_impl
+            Rustsymex.not_impl
               "cannot create a symbolic value of unsupported type %a" pp_ty ty)
     | TPattern (inner, _) -> nondet_raw inner
     | TVar (Free id) -> Result.ok (PolyVal id)
     | ty ->
-        Fmt.kstr Rustsymex.not_impl
+        Rustsymex.not_impl
           "cannot create a symbolic value of unsupported type %a" pp_ty ty
 
   (** Much like {!nondet_raw}, but also assumes validity invariants for the

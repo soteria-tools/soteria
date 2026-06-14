@@ -140,6 +140,5 @@ module M (StateM : State.StateM.S) = struct
     match SMap.find_opt name extern_functions with
     | Some extern_fn -> extern_fn_to_stub extern_fn
     | None ->
-        fun _args ->
-          Fmt.kstr StateM.not_impl "Extern function %s is not handled" name
+        fun _args -> StateM.not_impl "Extern function %s is not handled" name
 end

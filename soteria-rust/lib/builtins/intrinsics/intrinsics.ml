@@ -833,7 +833,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let+ () = write_via_move ~t ~ptr ~value in
         Tuple []
     | name, tys, cs, args ->
-        Fmt.kstr not_impl
+        not_impl
           "Intrinsic %s not found, or not called with the right arguments; \
            got:@.Types: %a@.Consts: %a@.Args: %a"
           name

@@ -53,7 +53,10 @@ module type S = sig
   val vanish : unit -> ('a, 'env) t
 
   val not_impl :
-    ?tip:string * string option -> ?issue:int -> string -> ('a, 'env) t
+    ?tip:string * string option ->
+    ?issue:int ->
+    ('a, Format.formatter, unit, ('b, 'env) t) format4 ->
+    'a
 
   val bind : ('a -> ('b, 'env) t) -> ('a, 'env) t -> ('b, 'env) t
   val map : ('a -> 'b) -> ('a, 'env) t -> ('b, 'env) t
@@ -350,8 +353,11 @@ module Make (State : State_intf.S) :
   let assert_not cond err = assert_ (Typed.not cond) err
   let miss f : ('a, 'env) t = ESM.Result.miss f
 
-  let not_impl ?tip ?issue str : ('a, 'env) t =
-    ESM.lift @@ State.SM.lift @@ Rustsymex.not_impl ?tip ?issue str
+  let not_impl ?tip ?issue fmt =
+    Fmt.kstr
+      (fun str ->
+        ESM.lift @@ State.SM.lift @@ Rustsymex.not_impl ?tip ?issue "%s" str)
+      fmt
 
   let get_state () : (st, 'env) t =
     ESM.Result.lift_state @@ State.SM.get_state ()

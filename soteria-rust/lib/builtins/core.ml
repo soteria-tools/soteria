@@ -32,8 +32,8 @@ module M (StateM : State.StateM.S) = struct
         else error `UBPointerComparison
     | TBitVector _, TPointer _ -> equality_check v2 v1
     | _ ->
-        Fmt.kstr not_impl "Unexpected types in cval equality: %a and %a"
-          Typed.ppa v1 Typed.ppa v2
+        not_impl "Unexpected types in cval equality: %a and %a" Typed.ppa v1
+          Typed.ppa v2
 
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
@@ -172,9 +172,7 @@ module M (StateM : State.StateM.S) = struct
     | Eq, Ptr (p, _), Int v | Eq, Int v, Ptr (p, _) ->
         let v = cast_i Usize v in
         if%sat v ==@ Usize.(0s) then ok (BV.of_bool (Sptr.is_null p))
-        else
-          Fmt.kstr not_impl "Don't know how to eval %a == %a" Sptr.pp p
-            Typed.ppa v
+        else not_impl "Don't know how to eval %a == %a" Sptr.pp p Typed.ppa v
     | Eq, Int v1, Int v2 -> ok (BV.of_bool (v1 ==@ v2))
     | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) -> (
         let* dist = Sptr.distance l r in
@@ -200,8 +198,7 @@ module M (StateM : State.StateM.S) = struct
               ok (BV.of_bool (bop ml mr))
             else ok (BV.of_bool v))
     | op, l, r ->
-        Fmt.kstr not_impl
-          "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"
+        not_impl "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"
           Expressions.pp_binop op pp_rust_val l pp_rust_val r
 
   let zero_valid ~ty =

@@ -88,7 +88,8 @@ module DecayMap = struct
   module SM = struct
     include SM
 
-    let[@inline] not_impl ?tip ?issue msg = lift @@ not_impl ?tip ?issue msg
+    let[@inline] not_impl ?tip ?issue fmt =
+      Fmt.kstr (fun msg -> lift @@ Rustsymex.not_impl ?tip ?issue "%s" msg) fmt
 
     let[@inline] of_opt_not_impl ?tip ?issue msg x =
       lift @@ of_opt_not_impl ?tip ?issue msg x
