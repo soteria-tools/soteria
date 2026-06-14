@@ -743,5 +743,12 @@ Test the atomic read-modify-write intrinsics (fetch_and/or/xor/nand/sub/min/max)
   
   => Running atomics::pointer...
   note: atomics::pointer: done in <time>, ran 1 branch
+
+Test a pointer constant into a larger, over-aligned allocation (à la hashbrown's
+Group::static_empty); the allocation must keep its full size and alignment.
+  $ soteria-rust exec oversized_const_alloc.rs
+  Compiling... done in <time>
+  => Running oversized_const_alloc::main...
+  note: oversized_const_alloc::main: done in <time>, ran 1 branch
   PC 1: empty
   
