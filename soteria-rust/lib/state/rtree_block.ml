@@ -388,11 +388,14 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
             let value = BV.zero (size * 8) in
             Ok ((Rust_val.Int value, offset) :: vs)
         | Init value -> ok ((value, offset) :: vs)
-        | Any ->
-            if Soteria.Symex.Approx.As_ctx.is_ux () then (
-              [%l.info "Reading from Any memory, vanishing."];
-              vanish ())
-            else error `UninitializedMemoryAccess
+        | Any -> (
+            match uninit with
+            | `Ignore -> ok vs
+            | `Error ->
+                if Soteria.Symex.Approx.As_ctx.is_ux () then (
+                  [%l.info "Reading from Any memory, vanishing."];
+                  vanish ())
+                else error `UninitializedMemoryAccess)
         | Unowned -> miss (mk_fix_any offset (Range.size range) ()))
 
   let decode_mem_val ~ty = function
@@ -409,7 +412,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     | Any ->
         (* We don't know if this read is valid, as memory could be
            uninitialised. We have to approximate and vanish. *)
-        not_impl "Reading from Any memory, vanishing."
+        if Soteria.Symex.Approx.As_ctx.is_ux () then (
+          [%l.info "Reading from Any memory, vanishing."];
+          vanish ())
+        else error `UninitializedMemoryAccess
     | Unowned ->
         let+ fix = MemVal.mk_fix_typed ty () in
         Missing [ fix ]
