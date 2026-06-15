@@ -1,0 +1,5 @@
+(executable
+ (name logs_bench)
+ (libraries soteria unix)
+ (preprocess
+  (pps ppx_symex)))
