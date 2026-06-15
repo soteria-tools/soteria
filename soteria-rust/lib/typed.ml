@@ -103,13 +103,13 @@ module BitVec = struct
     | VChar c -> u32i (Uchar.to_int c)
     | VBool b -> of_bool (Bool.of_bool b)
     | l ->
-        Fmt.failwith "Cannot convert non-scalar literal %s to bitvector"
+        L.failwith "Cannot convert non-scalar literal %s to bitvector"
           (Print.literal_to_string l)
 
   let of_constant_expr : Types.constant_expr -> [> T.sint ] t = function
     | { kind = CLiteral lit; _ } -> of_literal lit
     | c ->
-        Fmt.failwith "Cannot convert non-value const expr %a to bitvector"
+        L.failwith "Cannot convert non-value const expr %a to bitvector"
           Types.pp_constant_expr c
 
   let max ~signed l r = ite (gt ~signed l r) l r

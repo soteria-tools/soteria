@@ -118,12 +118,19 @@ module L = struct
           write_string msg)
         fmt
 
-  let trace msgf = log ~level:Level.Trace msgf
-  let debug msgf = log ~level:Level.Debug msgf
-  let info msgf = log ~level:Level.Info msgf
-  let warn msgf = log ~level:Level.Warn msgf
-  let error msgf = log ~level:Level.Error msgf
-  let smt msgf = log ~level:Level.Smt msgf
+  let trace msgf = log ~level:Trace msgf
+  let debug msgf = log ~level:Debug msgf
+  let info msgf = log ~level:Info msgf
+  let warn msgf = log ~level:Warn msgf
+  let error msgf = log ~level:Error msgf
+  let smt msgf = log ~level:Smt msgf
+
+  let failwith msgf =
+    msgf
+    |> Fmt.kstr @@ fun msg ->
+       let trace = Printexc.(raw_backtrace_to_string @@ get_callstack 52) in
+       log ~level:Error (fun m -> m "INTERNAL ERROR: %s@.%s" msg trace);
+       failwith msg
 end
 
 module Import = struct

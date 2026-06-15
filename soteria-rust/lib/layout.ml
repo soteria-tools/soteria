@@ -146,7 +146,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       | [ (_triple, layout) ], _
         when (not (Config.get ()).polymorphic) || ty_is_monomorphic ty ->
           translate_layout ty layout
-      | _ :: _ :: _, _ -> failwith "multiple layouts for the same ADT"
+      | _ :: _ :: _, _ -> L.failwith "multiple layouts for the same ADT"
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
       | _, Union fields -> compute_union_layout ty (field_tys fields)
       | _, Enum variants -> compute_enum_layout ty variants
@@ -194,7 +194,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
        * let align = Typed.cast (Usize.(1s) <<@ align_shift) in *)
       let align = Usize.(1s) in
       ok (mk ~size ~align ())
-  | TVar (Bound _) -> failwith "escaping bound type variable found in layout_of"
+  | TVar (Bound _) ->
+      L.failwith "escaping bound type variable found in layout_of"
   (* Others (unhandled for now) *)
   | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
   | TError _ -> not_impl_layout "error" ty
@@ -234,7 +235,7 @@ and translate_layout ty (layout : Types.layout) =
               match v.tagger with
               | [] -> None
               | [ (ofs, value) ] -> Some (BV.usizei ofs, BV.of_scalar value)
-              | _ :: _ :: _ -> failwith "unsupported: >1 tagger values"
+              | _ :: _ :: _ -> L.failwith "unsupported: >1 tagger values"
             in
             (tagger, Arbitrary (Types.VariantId.of_int i, ofs)))
       layout.variant_layouts
@@ -249,7 +250,7 @@ and translate_layout ty (layout : Types.layout) =
     | Some (Known v), _ -> snd (Types.VariantId.nth variant_layouts v)
     (* we didn't translate a discriminator; we hope it's a struct-like! *)
     | None, [ (_, v) ] -> v
-    | None, _ -> failwith "no discriminator and >1 variant layouts?"
+    | None, _ -> L.failwith "no discriminator and >1 variant layouts?"
   in
   let layout = mk ~size ~align ~uninhabited ~fields () in
   [%l.trace "Translated layout for %a:@.%a" pp_ty ty pp layout];
@@ -408,7 +409,7 @@ let min_value_z : Types.literal_type -> Z.t = function
   | TInt I32 -> Z.neg (Z.shift_left Z.one 31)
   | TInt I16 -> Z.neg (Z.shift_left Z.one 15)
   | TInt I8 -> Z.neg (Z.shift_left Z.one 7)
-  | _ -> failwith "Invalid integer type for min_value_z"
+  | _ -> L.failwith "Invalid integer type for min_value_z"
 
 let max_value_z : Types.literal_type -> Z.t = function
   | TUInt U128 -> Z.pred (Z.shift_left Z.one 128)
@@ -423,7 +424,7 @@ let max_value_z : Types.literal_type -> Z.t = function
   | TInt I16 -> Z.pred (Z.shift_left Z.one 15)
   | TInt I8 -> Z.pred (Z.shift_left Z.one 7)
   | TInt Isize -> Z.pred (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
-  | _ -> failwith "Invalid integer type for max_value_z"
+  | _ -> L.failwith "Invalid integer type for max_value_z"
 
 let rec is_unsafe_cell : Types.ty -> bool = function
   | TAdt { id = TTuple; generics = { types; _ } } ->

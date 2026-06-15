@@ -82,7 +82,7 @@ module MemVal = struct
     | (Uninit Totally | Zeros | Any) as v -> return (Leaf v, Leaf v)
     | Init i -> Fmt.kstr not_impl "Splitting %a" pp_init i
     | Uninit Partially | Lazy ->
-        failwith "Should never split an intermediate node"
+        L.failwith "Should never split an intermediate node"
 
   let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
     match t with

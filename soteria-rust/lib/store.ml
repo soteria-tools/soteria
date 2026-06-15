@@ -108,7 +108,7 @@ let reserve sym ty =
 
 let[@inline] declare sym kind =
   Map.update sym (function
-    | None -> failwith "Store: Assigning unknown symbol?"
+    | None -> L.failwith "Store: Assigning unknown symbol?"
     | Some { kind = _; ty } -> Some { kind; ty })
 
 let declare_value sym value t = declare sym (Value value) t
@@ -130,12 +130,12 @@ let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
       try_load base store
       |> bind_value @@ function
          | Tuple vs | Enum (_, vs) -> Value (List.nth vs field_idx)
-         | _ -> failwith "tried loading field of non-aggregate")
+         | _ -> L.failwith "tried loading field of non-aggregate")
   | Index (base, idx) -> (
       try_load base store
       |> bind_value @@ function
          | Tuple vs -> Value (List.nth vs idx)
-         | _ -> failwith "tried loading index of non-tuple")
+         | _ -> L.failwith "tried loading index of non-tuple")
   | Metadata base -> (
       try_load base store
       |> bind_value @@ fun v ->
@@ -154,7 +154,7 @@ let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
                  (ty_as_adt_opt place.origin.ty)
              then Value (Tuple [ Tuple [ Ptr (vt, Thin) ]; Tuple [] ])
              else Value (Ptr (vt, Thin))
-         | _ -> failwith "tried loading metadata of non-pointer")
+         | _ -> L.failwith "tried loading metadata of non-pointer")
 
 let try_store (place : Place.t) store value =
   let open Syntaxes.Option in

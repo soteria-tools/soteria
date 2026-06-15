@@ -157,7 +157,7 @@ let rec store (ptr : [< T.sptr ] Typed.t) ty v =
             let ptr = Typed.Ptr.add_ofs ptr (BV.usizei ofs) in
             let** () = deinit ptr (BV.usizei size) in
             aux rest_ofs members values
-        | _ -> failwith "Struct field mismatch"
+        | _ -> L.failwith "Struct field mismatch"
       in
       aux layout.members_ofs members values
 
@@ -267,7 +267,7 @@ let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
                 mem_ty value st
             in
             aux rest_ofs rest_mems rest_values st
-        | _ -> failwith "Struct field mismatch"
+        | _ -> L.failwith "Struct field mismatch"
       in
       aux layout.members_ofs members values st
 

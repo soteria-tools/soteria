@@ -129,7 +129,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
           let ll = Leaf (Init vl, tb) in
           let lr = Leaf (Init vr, tb) in
           TB.Split_tree.(Leaf ll, Leaf lr)
-      | Lazy -> failwith "Should never split an intermediate node"
+      | Lazy -> L.failwith "Should never split an intermediate node"
 
     type syn =
       | SInit of Sptr.syn Rust_val.syn
@@ -165,7 +165,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       | Leaf (Unowned, Some tb) ->
           Some
             (Borrows.State.to_syn tb |> List.map lift_tb_st_fix |> List.to_seq)
-      | Leaf (Unowned, None) -> failwith "Impossible: unowned with no TB state"
+      | Leaf (Unowned, None) ->
+          L.failwith "Impossible: unowned with no TB state"
       | Leaf (leaf, tb) ->
           let leaf_ser =
             match leaf with
@@ -239,7 +240,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
             let+? fixes = Borrows.State.consume s tb in
             List.map lift_tb_st_fix fixes
         | STree_borrow _ ->
-            failwith
+            L.failwith
               "TB structure syn in tree block, should have been caught before"
         (* unrelated to tree borrows *)
         | SInit _ | SZeros | SUninit | SAny -> ok tb
@@ -312,7 +313,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
           let+ r = produce s r in
           TB.make_tree_raw ~node:t.node ~range:t.range ~children:(l, r) ()
       | STree_borrow _, _ ->
-          failwith
+          L.failwith
             "TB structure syn in tree block, should have been caught before"
 
     let rec assert_exclusively_owned (t : tree) =
@@ -335,9 +336,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     let map_leaves_tb f =
       map_leaves @@ function
       | TB.NotOwned Totally ->
-          failwith "impossible: iterating over non-owned node"
+          L.failwith "impossible: iterating over non-owned node"
       | NotOwned Partially | Owned Lazy ->
-          failwith "impossible: iterating over intermediate node"
+          L.failwith "impossible: iterating over intermediate node"
       | Owned (Leaf (v, tb)) ->
           let++ tb' = lift_tb_miss @@ f tb in
           TB.Owned (Leaf (v, tb'))
@@ -347,9 +348,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       |> Iter.filter_map @@ fun (leaf : _ tree) ->
          match leaf.node with
          | NotOwned Totally ->
-             failwith "impossible: iterating over non-owned node"
+             L.failwith "impossible: iterating over non-owned node"
          | NotOwned Partially | Owned Lazy ->
-             failwith "impossible: iterating over intermediate node"
+             L.failwith "impossible: iterating over intermediate node"
          | Owned (Leaf (v, tb)) -> Some (leaf.range, v, tb)
   end
 
@@ -434,7 +435,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let bv = List.fold_left BV.concat hd tl in
         let+ res = Encoder.transmute_one ~to_ty:ty (Int bv) in
         Ok res
-    | _ -> failwith "Impossible"
+    | _ -> L.failwith "Impossible"
 
   let decode_tree ~ty (t : Tree.t) =
     match t.node with

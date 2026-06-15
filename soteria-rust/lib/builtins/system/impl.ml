@@ -49,11 +49,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
             ->
               var_error_ty
           | _ ->
-              Fmt.failwith
+              L.failwith
                 "std::env::_var: unexpected type Result<_, VarError> (%a)"
                 Types.pp_ty fun_sig.output)
       | _ ->
-          Fmt.failwith "std::env::_var: unexpected return type %a"
+          L.failwith "std::env::_var: unexpected return type %a"
             Charon.Types.pp_ty fun_sig.output
     in
     (* We need to return the rust value `Err(VarError::NotPresent)`. `Err` is

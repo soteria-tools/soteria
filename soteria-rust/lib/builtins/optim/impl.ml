@@ -24,7 +24,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
       match layout with
       | Tuple [ Int size; Tuple [ Enum (align, []) ] ] ->
           (Typed.cast_i Usize size, Typed.cast_i Usize align)
-      | _ -> Fmt.failwith "alloc_impl: invalid layout: %a" pp_rust_val layout
+      | _ -> L.failwith "alloc_impl: invalid layout: %a" pp_rust_val layout
     in
     let mk_res ptr len = Enum (zero, [ Tuple [ Ptr (ptr, Len len) ] ]) in
     if%sat size ==@ zero then
@@ -34,7 +34,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
       let* zeroed = if%sat zeroed then ok true else ok false in
       let+ ptr = Alloc.alloc ~zeroed [ Int size; Int align ] in
       let ptr =
-        match ptr with Ptr (p, _) -> p | _ -> failwith "Expected Ptr"
+        match ptr with Ptr (p, _) -> p | _ -> L.failwith "Expected Ptr"
       in
       mk_res ptr size
 

@@ -1,3 +1,4 @@
+open Logs.Import
 open Symex
 open Soteria_std
 open Svalue.Infix
@@ -319,7 +320,7 @@ module Interval : S = struct
           | Binop (Add _, { node = { kind = BitVec c2; _ }; _ }, _)
           | Binop (Add _, _, { node = { kind = BitVec c2; _ }; _ }) ->
               c2
-          | _ -> failwith "unreachable"
+          | _ -> L.failwith "unreachable"
         in
         (* We need to be careful and use [to_bv] to ensure we don't end up with
            ranges with negative number (BAD!) *)
@@ -357,7 +358,7 @@ module Interval : S = struct
           | Binop (Add _, { node = { kind = BitVec c1; _ }; _ }, _)
           | Binop (Add _, _, { node = { kind = BitVec c1; _ }; _ }) ->
               c1
-          | _ -> failwith "unreachable"
+          | _ -> L.failwith "unreachable"
         in
         let c2 = if bop = Lt false then Z.pred c2 else c2 in
         if c1 <= c2 then Some (v, size, (Neg, (c2 - c1 + one, ~-size one)))

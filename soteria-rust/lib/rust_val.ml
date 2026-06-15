@@ -154,7 +154,7 @@ struct
           vs1 vs2
     | PolyVal _, PolyVal _ ->
         lift @@ Symex.give_up "Learning equality of polymorphic values"
-    | _ -> Fmt.failwith "Mismatching rust_val kinds: %a vs %a" ppa_syn syn ppa t
+    | _ -> L.failwith "Mismatching rust_val kinds: %a vs %a" ppa_syn syn ppa t
 end
 
 (** [is_empty v] is true if the value is "empty"; ie. it doesn't contain any
@@ -171,38 +171,34 @@ let rec is_empty = function
 let as_ptr = function
   | Ptr ptr -> ptr
   | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a pointer, got: %a" ppa v
+      L.failwith "Unexpected rust_val kind, expected a pointer, got: %a" ppa v
 
 let as_ptr_or ~make = function
   | Ptr ptr -> ptr
   | Int v -> (make @@ Typed.cast_i Usize v, Thin)
   | v ->
-      Fmt.failwith
-        "Unexpected rust_val kind, expected a pointer or base, got: %a" ppa v
+      L.failwith "Unexpected rust_val kind, expected a pointer or base, got: %a"
+        ppa v
 
 let as_base_f ty = function
   | Float v -> Typed.cast_f ty v
   | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a" ppa
-        v
+      L.failwith "Unexpected rust_val kind, expected a base value got: %a" ppa v
 
 let as_base ty = function
   | Int v -> Typed.cast_lit ty v
   | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a base value got: %a" ppa
-        v
+      L.failwith "Unexpected rust_val kind, expected a base value got: %a" ppa v
 
 let as_base_i ty = as_base (TUInt ty)
 
 let as_tuple = function
   | Tuple vals -> vals
-  | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected a tuple, got: %a" ppa v
+  | v -> L.failwith "Unexpected rust_val kind, expected a tuple, got: %a" ppa v
 
 let as_enum = function
   | Enum (disc, vals) -> (disc, vals)
-  | v ->
-      Fmt.failwith "Unexpected rust_val kind, expected an enum, got: %a" ppa v
+  | v -> L.failwith "Unexpected rust_val kind, expected an enum, got: %a" ppa v
 
 let flatten v =
   let rec aux acc = function
@@ -253,4 +249,4 @@ let update_field i ~f v =
   match v with
   | Tuple vs -> Tuple (List.update_at f i vs)
   | Enum (d, vs) -> Enum (d, List.update_at f i vs)
-  | _ -> failwith "update_field with a non-aggregate value"
+  | _ -> L.failwith "update_field with a non-aggregate value"

@@ -1,3 +1,4 @@
+open Logs.Import
 open Soteria_std.Compo_res
 open Data
 module S = Pmap_intf.M
@@ -155,7 +156,7 @@ struct
     type syn = t [@@deriving show { with_path = false }]
 
     let to_syn t = t
-    let fresh () = failwith "Fresh not implemented for concrete keys"
+    let fresh () = L.failwith "Fresh not implemented for concrete keys"
     let subst _ x = x
     let exprs_syn _ = []
 

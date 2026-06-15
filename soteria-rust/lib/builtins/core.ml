@@ -94,7 +94,7 @@ module M (StateM : State.StateM.S) = struct
       | Rem _ -> BV.rem ~signed l (cast r)
       | Shl _ -> BV.shl l r
       | Shr _ -> if signed then BV.ashr l r else BV.lshr l r
-      | _ -> failwith "Invalid binop in binop_fn"
+      | _ -> L.failwith "Invalid binop in binop_fn"
     in
     (* SAFETY: Overflows were either already checked for, or it was expected to
        properly wrap. *)
@@ -114,7 +114,7 @@ module M (StateM : State.StateM.S) = struct
       | MulChecked, false -> l *?@ r
       | MulChecked, true -> l *$?@ r
       | _ ->
-          Fmt.failwith "Invalid checked op: (%a, %b)" Expressions.pp_binop op
+          L.failwith "Invalid checked op: (%a, %b)" Expressions.pp_binop op
             signed
     in
     ok (Tuple [ Int wrapped; Int (BV.of_bool overflowed) ])

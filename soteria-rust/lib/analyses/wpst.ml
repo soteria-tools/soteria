@@ -104,7 +104,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     else []
   in
   let branches =
-    let@ () = L.entry_point_section fun_decl.item_meta.name in
+    let@ () = Crate.L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in
     let@@ () =
       Rustsymex.Result.run_with_stats

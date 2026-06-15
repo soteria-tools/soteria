@@ -64,7 +64,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let exprs_syn { ptr; align; size; tag } =
       L_option.exprs_syn Borrows.Tag.exprs_syn tag @ [ ptr; align; size ]
 
-    let fresh () = failwith "Fresh unimplemented for sptr (for now)"
+    let fresh () = L.failwith "Fresh unimplemented for sptr (for now)"
 
     let subst subst_val p =
       let se = Typed.Expr.subst subst_val in
@@ -282,7 +282,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         | false, _ -> None
         | true, TRef _ -> Some Strong
         | true, TAdt adt when adt_is_box adt -> Some Weak
-        | true, _ -> failwith "Non-ref or box in borrow?"
+        | true, _ -> L.failwith "Non-ref or box in borrow?"
       in
       let** tag = with_borrow (Borrows.Tree.borrow ~state ?protector tag) in
       let ptr' = { ptr with tag = Some tag } in
@@ -637,7 +637,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         ()
       in
       match (Config.get ()).recursive_validity with
-      | Allow -> failwith "Unreachable, handled above"
+      | Allow -> L.failwith "Unreachable, handled above"
       | Deny -> Result.error (`InvalidRef err)
       | Warn ->
           let*^ trace = get_trace () in
@@ -746,7 +746,7 @@ module Make (Borrows : Tree_borrows.T) = struct
            | Error (e, _block) -> Error e
            (* HACK: we add this because we can't lift misses for a part of state
               that doesn't exist (and misses can't happen here anyways) *)
-           | Missing _ -> failwith "impossible : miss"))
+           | Missing _ -> L.failwith "impossible : miss"))
     in
     let++ () = check_validity ~check_refs:true to_ value in
     value
@@ -858,7 +858,7 @@ module Make (Borrows : Tree_borrows.T) = struct
        let put_tb tb t =
          let rec aux tb (t : Tree.t) =
            match t.node with
-           | NotOwned _ -> failwith "impossible: checked before"
+           | NotOwned _ -> L.failwith "impossible: checked before"
            | Owned Lazy ->
                let l, r = Option.get t.children in
                Tree.make ~node:t.node ~range:t.range
@@ -1078,7 +1078,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       let@ errors = with_errors_sym in
       match errors with
       | e :: rest -> Rustsymex.Result.ok (e, rest)
-      | _ -> failwith "pop_error with no errors?"
+      | _ -> L.failwith "pop_error with no errors?"
     in
     Result.error error
 
@@ -1146,7 +1146,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ thread_destructor = with_thread_destructor_sym in
     let callback () =
       SM.Result.map_missing
-        (fun _ -> failwith "TODO: Miss in thread exit")
+        (fun _ -> L.failwith "TODO: Miss in thread exit")
         (callback ())
     in
     let destructor =

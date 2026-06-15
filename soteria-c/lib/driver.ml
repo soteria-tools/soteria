@@ -98,7 +98,7 @@ module Frontend = struct
           with
           | Some path, _ | None, [ path ] -> path
           | None, [] -> "."
-          | None, _ :: _ :: _ -> failwith "Multiple auto-include paths found"
+          | None, _ :: _ :: _ -> L.failwith "Multiple auto-include paths found"
         in
         let filename = Filename.concat auto_include_path "soteria-c.h" in
         if Sys.file_exists filename then "-include " ^ filename ^ " "
@@ -140,8 +140,7 @@ module Frontend = struct
     match result with
     | Exception.Result f -> f
     | Exception.Exception err ->
-        Fmt.failwith "Failed to initialize frontend: %s"
-          (Pp_errors.to_string err)
+        L.failwith "Failed to initialize frontend: %s" (Pp_errors.to_string err)
 
   let frontend = lazy (init ())
 
