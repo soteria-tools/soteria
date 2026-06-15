@@ -618,15 +618,27 @@ def get_intrinsics() -> dict[str, FunDecl]:
 
     ullbc = json.loads(file_json.read_text())
     traverse_types(ullbc)
-    intrinsics: dict[str, FunDecl] = {
-        "::".join(i["Ident"][0] for i in fun["item_meta"]["name"][2:]): fun
-        for fun in ullbc["translated"]["fun_decls"]
-        if fun is not None
-        and fun["item_meta"]["name"][0]["Ident"][0] == "core"
-        and fun["item_meta"]["name"][1]["Ident"][0] == "intrinsics"
-        # for now, we ignore intrinsics in submodules (mir, simd, fallbacks)
-        and len(fun["item_meta"]["name"]) == 3
-    }
+
+    def intrinsic_key(name: list[PathElem]) -> Optional[str]:
+        if any("Ident" not in elem for elem in name):
+            return None
+        name_parts = [cast(IdentPathElem, elem)["Ident"][0] for elem in name]
+        if (
+            len(name_parts) < 3
+            or name_parts[0] != "core"
+            or name_parts[1] != "intrinsics"
+        ):
+            return None
+        return "::".join(name_parts[2:])
+
+    intrinsics: dict[str, FunDecl] = {}
+    for fun in ullbc["translated"]["fun_decls"]:
+        if fun is None:
+            continue
+        name = fun["item_meta"]["name"]
+        key = intrinsic_key(name)
+        if key is not None:
+            intrinsics[key] = fun
     pprint(f"Found {BOLD}{len(intrinsics)}{RESET} intrinsics")
     return intrinsics
 

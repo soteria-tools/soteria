@@ -752,3 +752,11 @@ Group::static_empty); the allocation must keep its full size and alignment.
   note: oversized_const_alloc::main: done in <time>, ran 1 branch
   PC 1: empty
   
+Test the SIMD intrinsics used by hashbrown's NEON control group.
+  $ soteria-rust exec simd.rs --target aarch64-apple-darwin
+  Compiling... done in <time>
+  => Running simd::main...
+  note: simd::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  

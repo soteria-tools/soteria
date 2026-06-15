@@ -653,6 +653,114 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "select_unpredictable", [ t ], [], [ b; true_val; false_val ] ->
         let b = Typed.BitVec.to_bool (as_base TBool b) in
         select_unpredictable ~t ~b ~true_val ~false_val
+    | "simd_add", [ t ], [], [ x; y ] -> simd_add ~t ~x ~y
+    | "simd_and", [ t ], [], [ x; y ] -> simd_and ~t ~x ~y
+    | "simd_arith_offset", [ t; u ], [], [ ptr; offset ] ->
+        simd_arith_offset ~t ~u ~ptr ~offset
+    | "simd_as", [ t; u ], [], [ x ] -> simd_as ~t ~u ~x
+    | "simd_bitmask", [ t; u ], [], [ x ] -> simd_bitmask ~t ~u ~x
+    | "simd_bitreverse", [ t ], [], [ x ] -> simd_bitreverse ~t ~x
+    | "simd_bswap", [ t ], [], [ x ] -> simd_bswap ~t ~x
+    | "simd_carryless_mul", [ t ], [], [ a; b ] -> simd_carryless_mul ~t ~a ~b
+    | "simd_cast", [ t; u ], [], [ x ] -> simd_cast ~t ~u ~x
+    | "simd_cast_ptr", [ t; u ], [], [ ptr ] -> simd_cast_ptr ~t ~u ~ptr
+    | "simd_ceil", [ t ], [], [ x ] -> simd_ceil ~t ~x
+    | "simd_ctlz", [ t ], [], [ x ] -> simd_ctlz ~t ~x
+    | "simd_ctpop", [ t ], [], [ x ] -> simd_ctpop ~t ~x
+    | "simd_cttz", [ t ], [], [ x ] -> simd_cttz ~t ~x
+    | "simd_div", [ t ], [], [ lhs; rhs ] -> simd_div ~t ~lhs ~rhs
+    | "simd_eq", [ t; u ], [], [ x; y ] -> simd_eq ~t ~u ~x ~y
+    | "simd_expose_provenance", [ t; u ], [], [ ptr ] ->
+        simd_expose_provenance ~t ~u ~ptr
+    | "simd_extract", [ t; u ], [], [ x; idx ] ->
+        let idx = as_base_i U32 idx in
+        simd_extract ~t ~u ~x ~idx
+    | "simd_extract_dyn", [ t; u ], [], [ x; idx ] ->
+        let idx = as_base_i U32 idx in
+        simd_extract_dyn ~t ~u ~x ~idx
+    | "simd_fabs", [ t ], [], [ x ] -> simd_fabs ~t ~x
+    | "simd_fcos", [ t ], [], [ a ] -> simd_fcos ~t ~a
+    | "simd_fexp", [ t ], [], [ a ] -> simd_fexp ~t ~a
+    | "simd_fexp2", [ t ], [], [ a ] -> simd_fexp2 ~t ~a
+    | "simd_flog", [ t ], [], [ a ] -> simd_flog ~t ~a
+    | "simd_flog10", [ t ], [], [ a ] -> simd_flog10 ~t ~a
+    | "simd_flog2", [ t ], [], [ a ] -> simd_flog2 ~t ~a
+    | "simd_floor", [ t ], [], [ x ] -> simd_floor ~t ~x
+    | "simd_fma", [ t ], [], [ x; y; z ] -> simd_fma ~t ~x ~y ~z
+    | "simd_fsin", [ t ], [], [ a ] -> simd_fsin ~t ~a
+    | "simd_fsqrt", [ t ], [], [ x ] -> simd_fsqrt ~t ~x
+    | "simd_funnel_shl", [ t ], [], [ a; b; shift ] ->
+        simd_funnel_shl ~t ~a ~b ~shift
+    | "simd_funnel_shr", [ t ], [], [ a; b; shift ] ->
+        simd_funnel_shr ~t ~a ~b ~shift
+    | "simd_gather", [ t; u; v ], [], [ val_; ptr; mask ] ->
+        simd_gather ~t ~u ~v ~val_ ~ptr ~mask
+    | "simd_ge", [ t; u ], [], [ x; y ] -> simd_ge ~t ~u ~x ~y
+    | "simd_gt", [ t; u ], [], [ x; y ] -> simd_gt ~t ~u ~x ~y
+    | "simd_insert", [ t; u ], [], [ x; idx; val_ ] ->
+        let idx = as_base_i U32 idx in
+        simd_insert ~t ~u ~x ~idx ~val_
+    | "simd_insert_dyn", [ t; u ], [], [ x; idx; val_ ] ->
+        let idx = as_base_i U32 idx in
+        simd_insert_dyn ~t ~u ~x ~idx ~val_
+    | "simd_le", [ t; u ], [], [ x; y ] -> simd_le ~t ~u ~x ~y
+    | "simd_lt", [ t; u ], [], [ x; y ] -> simd_lt ~t ~u ~x ~y
+    | "simd_masked_load", [ v; u; t ], [ align ], [ mask; ptr; val_ ] ->
+        simd_masked_load ~v ~u ~t ~align ~mask ~ptr ~val_
+    | "simd_masked_store", [ v; u; t ], [ align ], [ mask; ptr; val_ ] ->
+        let+ () = simd_masked_store ~v ~u ~t ~align ~mask ~ptr ~val_ in
+        Tuple []
+    | "simd_maximum_number_nsz", [ t ], [], [ x; y ] ->
+        simd_maximum_number_nsz ~t ~x ~y
+    | "simd_minimum_number_nsz", [ t ], [], [ x; y ] ->
+        simd_minimum_number_nsz ~t ~x ~y
+    | "simd_mul", [ t ], [], [ x; y ] -> simd_mul ~t ~x ~y
+    | "simd_ne", [ t; u ], [], [ x; y ] -> simd_ne ~t ~u ~x ~y
+    | "simd_neg", [ t ], [], [ x ] -> simd_neg ~t ~x
+    | "simd_or", [ t ], [], [ x; y ] -> simd_or ~t ~x ~y
+    | "simd_reduce_add_ordered", [ t; u ], [], [ x; y ] ->
+        simd_reduce_add_ordered ~t ~u ~x ~y
+    | "simd_reduce_add_unordered", [ t; u ], [], [ x ] ->
+        simd_reduce_add_unordered ~t ~u ~x
+    | "simd_reduce_all", [ t ], [], [ x ] ->
+        let+ ret = simd_reduce_all ~t ~x in
+        Int (Typed.BitVec.of_bool ret)
+    | "simd_reduce_and", [ t; u ], [], [ x ] -> simd_reduce_and ~t ~u ~x
+    | "simd_reduce_any", [ t ], [], [ x ] ->
+        let+ ret = simd_reduce_any ~t ~x in
+        Int (Typed.BitVec.of_bool ret)
+    | "simd_reduce_max", [ t; u ], [], [ x ] -> simd_reduce_max ~t ~u ~x
+    | "simd_reduce_min", [ t; u ], [], [ x ] -> simd_reduce_min ~t ~u ~x
+    | "simd_reduce_mul_ordered", [ t; u ], [], [ x; y ] ->
+        simd_reduce_mul_ordered ~t ~u ~x ~y
+    | "simd_reduce_mul_unordered", [ t; u ], [], [ x ] ->
+        simd_reduce_mul_unordered ~t ~u ~x
+    | "simd_reduce_or", [ t; u ], [], [ x ] -> simd_reduce_or ~t ~u ~x
+    | "simd_reduce_xor", [ t; u ], [], [ x ] -> simd_reduce_xor ~t ~u ~x
+    | "simd_relaxed_fma", [ t ], [], [ x; y; z ] -> simd_relaxed_fma ~t ~x ~y ~z
+    | "simd_rem", [ t ], [], [ lhs; rhs ] -> simd_rem ~t ~lhs ~rhs
+    | "simd_round", [ t ], [], [ x ] -> simd_round ~t ~x
+    | "simd_round_ties_even", [ t ], [], [ x ] -> simd_round_ties_even ~t ~x
+    | "simd_saturating_add", [ t ], [], [ x; y ] -> simd_saturating_add ~t ~x ~y
+    | "simd_saturating_sub", [ t ], [], [ lhs; rhs ] ->
+        simd_saturating_sub ~t ~lhs ~rhs
+    | "simd_scatter", [ t; u; v ], [], [ val_; ptr; mask ] ->
+        let+ () = simd_scatter ~t ~u ~v ~val_ ~ptr ~mask in
+        Tuple []
+    | "simd_select", [ m; t ], [], [ mask; if_true; if_false ] ->
+        simd_select ~m ~t ~mask ~if_true ~if_false
+    | "simd_select_bitmask", [ t_m; t ], [], [ m; yes; no ] ->
+        simd_select_bitmask ~t_m ~t ~m ~yes ~no
+    | "simd_shl", [ t ], [], [ lhs; rhs ] -> simd_shl ~t ~lhs ~rhs
+    | "simd_shr", [ t ], [], [ lhs; rhs ] -> simd_shr ~t ~lhs ~rhs
+    | "simd_shuffle", [ t; u; v ], [], [ x; y; idx ] ->
+        simd_shuffle ~t ~u ~v ~x ~y ~idx
+    | "simd_splat", [ t; u ], [], [ value ] -> simd_splat ~t ~u ~value
+    | "simd_sub", [ t ], [], [ lhs; rhs ] -> simd_sub ~t ~lhs ~rhs
+    | "simd_trunc", [ t ], [], [ x ] -> simd_trunc ~t ~x
+    | "simd_with_exposed_provenance", [ t; u ], [], [ addr ] ->
+        simd_with_exposed_provenance ~t ~u ~addr
+    | "simd_xor", [ t ], [], [ x; y ] -> simd_xor ~t ~x ~y
     | "sinf128", [], [], [ x ] ->
         let x = as_base_f F128 x in
         let+ ret = sinf128 ~x in
@@ -698,6 +806,16 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let+ ret = sqrtf64 ~x in
         Float ret
     | "sub_with_overflow", [ t ], [], [ x; y ] -> sub_with_overflow ~t ~x ~y
+    | "sve_tuple_create2", [ svec; svectup ], [], [ x0; x1 ] ->
+        sve_tuple_create2 ~svec ~svectup ~x0 ~x1
+    | "sve_tuple_create3", [ svec; svectup ], [], [ x0; x1; x2 ] ->
+        sve_tuple_create3 ~svec ~svectup ~x0 ~x1 ~x2
+    | "sve_tuple_create4", [ svec; svectup ], [], [ x0; x1; x2; x3 ] ->
+        sve_tuple_create4 ~svec ~svectup ~x0 ~x1 ~x2 ~x3
+    | "sve_tuple_get", [ svectup; svec ], [ idx ], [ tuple ] ->
+        sve_tuple_get ~svectup ~svec ~idx ~tuple
+    | "sve_tuple_set", [ svectup; svec ], [ idx ], [ tuple; x ] ->
+        sve_tuple_set ~svectup ~svec ~idx ~tuple ~x
     | "three_way_compare", [ t ], [], [ lhs; rhss ] ->
         three_way_compare ~t ~lhs ~rhss
     | "transmute", [ t_src; dst ], [], [ src ] -> transmute ~t_src ~dst ~src
