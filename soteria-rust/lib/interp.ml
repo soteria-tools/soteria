@@ -1214,7 +1214,7 @@ module Make (StateImpl : State.S) = struct
     match fundef.body with
     | IntrinsicBody (name, _arg_names) ->
         Std_funs.eval_intrinsic fundef name generics exec_fun args
-    | ExternBody name -> Std_funs.eval_extern name args
+    | ExternBody name -> Std_funs.eval_extern fundef name exec_fun args
     | UnstructuredBody body -> (
         match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args

@@ -93,39 +93,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let+ () = State.store dst t src in
     old
 
-  let atomic_xadd ~t ~(u : Types.ty) ~ord:_ ~(dst : full_ptr) ~(src : rust_val)
-      =
-    atomic_warn ();
-    let* old = State.load dst t in
-    match (t, u) with
-    (* - `T` must be an integer or pointer *)
-    (* - `U` must be the same as `T`if it is an integer, or `usize` if it is a pointer. *)
-    | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
-        (* The operation adds `src` without multiplying by the size of the
-           data. *)
-        let src = as_base_i Usize src in
-        let old_v =
-          match as_ptr old with
-          | old, Thin -> old
-          | _ -> L.failwith "atomic_xadd: pointer with metadata other than Thin"
-        in
-        (* Wrapping add: no overflow check *)
-        let* new_ = Sptr.offset ~check:false ~signed:false src old_v in
-        let new_ = Ptr (new_, Thin) in
-        let* () = State.store dst t new_ in
-        ok old
-    | TLiteral lit, TLiteral lit' when Types.equal_literal_type lit lit' ->
-        let src = as_base lit src in
-        let old_v = as_base lit old in
-        (* Wrapping add. *)
-        let* new_ = Core.eval_lit_binop (Add OWrap) lit old_v src in
-        let+ () = State.store dst t (Int new_) in
-        old
-    | _ ->
-        L.failwith
-          "atomic_xadd: invalid types, expects to follow the rules of \
-           atomic_xadd"
-
   let atomic_cxchgweak ~t ~ord_succ:_ ~ord_fail:_ ~dst ~old ~src =
     atomic_warn ();
     let* curr = State.load dst t in
@@ -146,6 +113,95 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       let* () = State.store dst t src in
       ok (Tuple [ curr; Int (BV.of_bool Typed.v_true) ])
     else ok (Tuple [ curr; Int (BV.of_bool Typed.v_false) ])
+
+  (* In our sequential model the strong compare-exchange behaves exactly like
+     the weak one (the weak variant is only allowed to spuriously fail). *)
+  let atomic_cxchg = atomic_cxchgweak
+
+  (* Atomic read-modify-write for the intrinsics whose [T] may be an integer or
+     a pointer (these take a [u] type parameter, [usize] for pointers). [int_op]
+     computes the new integer value; [ptr_op] the new pointer from [src] (a
+     [usize]) and the old pointer. (Executed sequentially -- see
+     {!atomic_warn}.) *)
+  let atomic_rmw ~(t : Types.ty) ~(u : Types.ty) ~dst ~src ~int_op ~ptr_op =
+    atomic_warn ();
+    let* old = State.load dst t in
+    match (t, u) with
+    | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
+        let old_ptr, meta = as_ptr old in
+        let* new_ptr = ptr_op (as_base_i Usize src) old_ptr in
+        let+ () = State.store dst t (Ptr (new_ptr, meta)) in
+        old
+    | TLiteral lit, _ ->
+        let* res = int_op lit (as_base lit old) (as_base lit src) in
+        let+ () = State.store dst t (Int res) in
+        old
+    | _ -> not_impl "atomic read-modify-write on unexpected type %a" pp_ty t
+
+  (* The pointer case of a bitwise atomic: apply [op] to the pointer's address,
+     dropping provenance -- like {!ptr_mask}. *)
+  let atomic_addr_op op src old =
+    let+ addr = Sptr.decay old in
+    Sptr.of_address (op addr src)
+
+  let atomic_and ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun _ a b -> ok (a &@ b))
+      ~ptr_op:(atomic_addr_op ( &@ ))
+
+  let atomic_or ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun _ a b -> ok (a |@ b))
+      ~ptr_op:(atomic_addr_op ( |@ ))
+
+  let atomic_xor ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun _ a b -> ok (a ^@ b))
+      ~ptr_op:(atomic_addr_op ( ^@ ))
+
+  let atomic_nand ~t ~u ~ord:_ ~dst ~src =
+    let nand a b = BV.not (a &@ b) in
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun _ a b -> ok (nand a b))
+      ~ptr_op:(atomic_addr_op nand)
+
+  let atomic_xadd ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun lit a b -> Core.eval_lit_binop (Add OWrap) lit a b)
+      ~ptr_op:(fun src old -> Sptr.offset ~check:false ~signed:false src old)
+
+  let atomic_xsub ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun lit a b -> Core.eval_lit_binop (Sub OWrap) lit a b)
+        (* subtract [src] bytes by offsetting by [-src] *)
+      ~ptr_op:(fun src old -> Sptr.offset ~check:false ~signed:false ~-!src old)
+
+  (* Atomic read-modify-write on an integer (the min/max intrinsics, which only
+     apply to integers). *)
+  let atomic_int_rmw ~(t : Types.ty) ~dst ~src f =
+    atomic_warn ();
+    match t with
+    | TLiteral lit ->
+        let* old = State.load dst t in
+        let+ () =
+          State.store dst t (Int (f (as_base lit old) (as_base lit src)))
+        in
+        old
+    | _ -> not_impl "atomic read-modify-write on non-integer type %a" pp_ty t
+
+  (* [atomic_{min,max}] are guaranteed (signed) integers, [atomic_u{min,max}]
+     unsigned integers. *)
+  let atomic_max ~t ~ord:_ ~dst ~src =
+    atomic_int_rmw ~t ~dst ~src (BV.max ~signed:true)
+
+  let atomic_min ~t ~ord:_ ~dst ~src =
+    atomic_int_rmw ~t ~dst ~src (BV.min ~signed:true)
+
+  let atomic_umax ~t ~ord:_ ~dst ~src =
+    atomic_int_rmw ~t ~dst ~src (BV.max ~signed:false)
+
+  let atomic_umin ~t ~ord:_ ~dst ~src =
+    atomic_int_rmw ~t ~dst ~src (BV.min ~signed:false)
 
   let black_box ~t:_ ~dummy = ok dummy
   let breakpoint () : unit ret = error `Breakpoint
@@ -896,11 +952,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     (align :> T.sint Typed.t)
 
   let transmute ~t_src ~dst ~src = State.transmute ~from:t_src ~to_:dst src
-
-  let type_id ~t =
-    (* lazy but works *)
-    let hash = Hashtbl.hash t in
-    ok (Int (BV.u128i hash))
 
   let type_name ~t =
     let str = Fmt.to_to_string pp_ty t in

@@ -56,6 +56,7 @@ type fn =
 (** Extern functions we must implement manually *)
 type extern_fn =
   | Alloc of Extern.Alloc.fn
+  | ExtSystem of Extern.System.fn
   | Libc of Extern.Libc.fn
   | Miri of Extern.Miri.fn
   | Std of Extern.Std.fn
@@ -65,6 +66,7 @@ let extern_functions =
   @ (Extern.Libc.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Libc f)
   @ (Extern.Miri.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Miri f)
   @ (Extern.Std.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Std f)
+  @ (Extern.System.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> ExtSystem f)
   |> SMap.of_list
 
 let std_fun_pair_list =
@@ -87,6 +89,7 @@ module M (StateM : State.StateM.S) = struct
 
   (* externs *)
   module Alloc = Extern.Alloc.M (StateM)
+  module ExtSystem = Extern.System.M (StateM)
   module Libc = Extern.Libc.M (StateM)
   module Miri = Extern.Miri.M (StateM)
   module Std = Extern.Std.M (StateM)
@@ -105,8 +108,9 @@ module M (StateM : State.StateM.S) = struct
     | System f -> System.fn_to_stub f fun_sig fun_exec generics
     | Tokio f -> Tokio.fn_to_stub f fun_sig fun_exec generics
 
-  let[@inline] extern_fn_to_stub = function
+  let[@inline] extern_fn_to_stub fun_sig fun_exec = function
     | Alloc f -> Alloc.fn_to_stub f
+    | ExtSystem f -> ExtSystem.fn_to_stub fun_sig fun_exec f
     | Libc f -> Libc.fn_to_stub f
     | Miri f -> Miri.fn_to_stub f
     | Std f -> Std.fn_to_stub f
@@ -136,9 +140,9 @@ module M (StateM : State.StateM.S) = struct
     let generics = get_generics f generics in
     Intrinsics.eval_fun name fun_exec generics
 
-  let eval_extern name =
+  let eval_extern (f : UllbcAst.fun_decl) name fun_exec =
     match SMap.find_opt name extern_functions with
-    | Some extern_fn -> extern_fn_to_stub extern_fn
+    | Some extern_fn -> extern_fn_to_stub f.signature fun_exec extern_fn
     | None ->
         fun _args -> StateM.not_impl "Extern function %s is not handled" name
 end

@@ -719,7 +719,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let x = as_base_f F64 x in
         let+ ret = truncf64 ~x in
         Float ret
-    | "type_id", [ t ], [], [] -> type_id ~t
     | "type_id_eq", [], [], [ a; b ] ->
         let+ ret = type_id_eq ~a ~b in
         Int (Typed.BitVec.of_bool ret)

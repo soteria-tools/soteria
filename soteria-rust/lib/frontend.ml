@@ -83,6 +83,10 @@ module Lib = struct
     let config : Cmd.t = f (path, target) in
     let lib_imports =
       [
+        "--extern";
+        name lib
+        ^ "="
+        ^ (path / "target" / target / "debug" / ("lib" ^ name lib ^ ".rlib"));
         "-L" ^ (path / "target" / target / "debug" / "deps");
         "-L" ^ (path / "target" / "debug" / "deps");
       ]
@@ -146,12 +150,6 @@ let default () =
         "crate-attr=feature(register_tool)";
         "-Z";
         "crate-attr=register_tool(soteriatool)";
-        "--extern";
-        "soteria";
-        (* include the std *)
-        (* "--extern";
-        "noprelude:std="
-        ^ (std_lib_path / "target" / target / "debug" / "libstd.rlib"); *)
       ]
     ()
 
@@ -160,7 +158,7 @@ let kani () =
   Cmd.make ~features:[ "kani" ]
     ~entry_points:[ Attrib "kanitool::proof" ]
     ~expect_error:[ Attrib "kanitool::should_panic" ]
-    ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)"; "--extern"; "kani" ]
+    ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)" ]
     ()
 
 let miri () =

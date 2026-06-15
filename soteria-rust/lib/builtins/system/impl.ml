@@ -8,34 +8,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let hashmap_random_keys ~(fun_sig : Types.fun_sig) =
     Encoder.nondet_valid fun_sig.output
 
-  (** Used on macOS to register thread local destructors; receives a function
-      pointer and an argument. Should call the destructor with the argument at
-      the end of the thread.
-
-      [_tlv_atexit(dtor: unsafe extern "C" fn( *mut u8), arg: *mut u8)] *)
-  let _tlv_atexit ~fun_exec ~args =
-    let* dtor, arg =
-      match args with
-      | [ Ptr dtor_ptr; arg_ptr ] -> ok (dtor_ptr, arg_ptr)
-      | _ ->
-          not_impl "tlv_atexit: unexpected arguments: %a"
-            Fmt.(list pp_rust_val)
-            args
-    in
-    let+ () =
-      State.register_thread_exit (fun () ->
-          let* fn = State.lookup_fn dtor in
-          let* _ = fun_exec fn [ arg ] in
-          ok ())
-    in
-    Tuple []
-
   (** {@rust[
         fn _var(key: &OsStr) -> Result<String, VarError>
       ]}
       HACK: we assume that hitting the environment never finds the variable
       we're looking for. Under-approximating behaviour. *)
-  let _var ~(fun_sig : Types.fun_sig) ~key:_ =
+  let inner ~(fun_sig : Types.fun_sig) ~key:_ =
     let var_error_ty =
       match fun_sig.output with
       | TAdt { id = TAdtId id; _ } -> (

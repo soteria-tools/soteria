@@ -729,3 +729,19 @@ Test calls to FnOnce trait objects.
   note: box_fnonce::main: done in <time>, ran 1 branch
   PC 1: empty
   
+Test the atomic read-modify-write intrinsics (fetch_and/or/xor/nand/sub/min/max), on both integers and pointers.
+  $ soteria-rust exec atomics.rs
+  Compiling... done in <time>
+  => Running atomics::bitwise...
+  warning: An atomic intrinsic was encountered; it will be executed as sequential code
+  note: atomics::bitwise: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running atomics::min_max_sub...
+  note: atomics::min_max_sub: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running atomics::pointer...
+  note: atomics::pointer: done in <time>, ran 1 branch
+  PC 1: empty
+  

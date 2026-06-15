@@ -78,6 +78,21 @@ let rec dst_slice_ty : Types.ty -> Types.ty option = function
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let is_dst ty = dst_kind ty <> NoneKind
 
+(** The [Pointee::Metadata] associated type of a pointer to [pointee]: [()] for
+    sized types, [usize] for slices and [str], and [DynMetadata<Dyn>] for trait
+    objects. *)
+let pointee_metadata (pointee : Types.ty) : Types.ty =
+  match dst_kind pointee with
+  | NoneKind -> TypesUtils.mk_unit_ty
+  | LenKind -> TLiteral (TUInt Usize)
+  | VTableKind ->
+      let adt = Crate.get_adt_lang_item "dyn_metadata" in
+      TAdt
+        {
+          id = TAdtId adt.def_id;
+          generics = TypesUtils.mk_generic_args_from_types [ pointee ];
+        }
+
 let[@inline] size_to_fit ~size ~align =
   Typed.ite
     (size %@ align ==@ Usize.(0s))
@@ -380,6 +395,9 @@ and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
       let trait_assoc_ty = Types.AssocTypeId.Map.find assoc_ty_id impl.types in
       (* HACK: we skip the binder here! *)
       ok trait_assoc_ty.binder_value.value
+  | BuiltinOrAuto (BuiltinPointee, _, _) ->
+      let pointee = List.hd tref.trait_decl_ref.binder_value.generics.types in
+      ok (pointee_metadata pointee)
   | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id, args))
 
 (** Normalise a type, by substituting any generics with the current generic

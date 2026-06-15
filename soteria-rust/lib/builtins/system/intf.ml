@@ -15,9 +15,6 @@ module M (StateM : State.StateM.S) = struct
   type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
   module type S = sig
-    val _tlv_atexit : fun_exec:fun_exec -> args:rust_val list -> rust_val ret
-    val _var : fun_sig:Types.fun_sig -> key:full_ptr -> rust_val ret
-
     (** {@markdown[
           Returns an estimate of the default amount of parallelism a program should use.
 
@@ -107,6 +104,7 @@ module M (StateM : State.StateM.S) = struct
     val available_parallelism : fun_sig:Types.fun_sig -> rust_val ret
 
     val hashmap_random_keys : fun_sig:Types.fun_sig -> rust_val ret
+    val inner : fun_sig:Types.fun_sig -> key:full_ptr -> rust_val ret
     val now : unit -> rust_val ret
   end
 end

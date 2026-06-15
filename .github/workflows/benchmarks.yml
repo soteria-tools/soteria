@@ -94,6 +94,12 @@ jobs:
           OBOL_COMMIT_HASH=$(jq -r .OBOL_COMMIT_HASH scripts/versions.json)
           curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
 
+      # Force rustup to install the pinned toolchain (with its components) now,
+      # in its own step. Otherwise the first `soteria-rust` invocation triggers
+      # a lazy install.
+      - name: Pre-install Rust toolchain
+        run: rustup show active-toolchain || rustup toolchain install
+
       # Packages produced by the Build workflow (.github/workflows/build.yml).
       # When artifact-run-id is set we pull them from that run (PR case),
       # otherwise from the current run (push-to-main case).

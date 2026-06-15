@@ -382,7 +382,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let truncf16 ~x:_ = not_impl "Unsupported intrinsic: truncf16"
   let truncf32 ~x:_ = not_impl "Unsupported intrinsic: truncf32"
   let truncf64 ~x:_ = not_impl "Unsupported intrinsic: truncf64"
-  let type_id ~t:_ = not_impl "Unsupported intrinsic: type_id"
   let type_id_eq ~a:_ ~b:_ = not_impl "Unsupported intrinsic: type_id_eq"
 
   let type_id_field_representing_type ~id:_ ~variant_index:_ ~field_index:_ =

@@ -7,18 +7,15 @@ open Common
 open Rust_val
 
 type fn =
-  | StdEnvVar
+  | StdEnvVarInner
   | StdSysRandomHashmapRandomKeys
-  | StdSysThreadLocalGuardAppleEnableTlvAtexit
   | StdSysTimeUnixInstantNow
   | StdThreadFunctionsAvailableParallelism
 
 let fn_pats : (string * fn) list =
   [
-    ("std::env::_var", StdEnvVar);
+    ("std::env::var::inner", StdEnvVarInner);
     ("std::sys::random::hashmap_random_keys", StdSysRandomHashmapRandomKeys);
-    ( "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
-      StdSysThreadLocalGuardAppleEnableTlvAtexit );
     ("std::sys::time::unix::Instant::now", StdSysTimeUnixInstantNow);
     ( "std::thread::functions::available_parallelism",
       StdThreadFunctionsAvailableParallelism );
@@ -55,13 +52,11 @@ module M (StateM : State.StateM.S) = struct
     match[@warning "-redundant-case"]
       (stub, generics.types, generics.const_generics, args)
     with
-    | StdEnvVar, [], [], [ key ] ->
+    | StdEnvVarInner, [], [], [ key ] ->
         let key = as_ptr key in
-        _var ~fun_sig:_fun_sig ~key
+        inner ~fun_sig:_fun_sig ~key
     | StdSysRandomHashmapRandomKeys, [], [], [] ->
         hashmap_random_keys ~fun_sig:_fun_sig
-    | StdSysThreadLocalGuardAppleEnableTlvAtexit, _, _, _ ->
-        _tlv_atexit ~fun_exec:_fun_exec ~args
     | StdSysTimeUnixInstantNow, [], [], [] -> now ()
     | StdThreadFunctionsAvailableParallelism, [], [], [] ->
         available_parallelism ~fun_sig:_fun_sig
