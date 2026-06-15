@@ -76,6 +76,19 @@ module L : sig
   *)
   val with_section : ?is_branch:bool -> string -> (unit -> 'a) -> 'a
 
+  module Level = Level
+
+  (** [should_log level] is [true] when messages at [level] are currently
+      enabled by the configuration. Used by the [%l.*] PPX to guard logging
+      without allocating a message closure. *)
+  val should_log : Level.t -> bool
+
+  (** [force_log ~level fmt ...] formats and writes a message at [level],
+      {b without} checking whether [level] is enabled. Callers must guard with
+      {!should_log}; the [%l.*] PPX does this automatically. *)
+  val force_log :
+    level:Level.t -> ('a, Format.formatter, unit, unit) format4 -> 'a
+
   (** Logs a message at a given level.
 
       For instance, one can log the string "The number is 42" at level [Info]

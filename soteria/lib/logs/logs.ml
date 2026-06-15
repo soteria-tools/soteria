@@ -103,21 +103,24 @@ module L = struct
     start_section ~is_branch str;
     Fun.protect ~finally:end_section f
 
-  let log ~level msgf =
-    if Config.should_log level then
-      msgf @@ fun fmt ->
-      Format.kasprintf
-        (fun msg ->
-          let msg =
-            (* TODO: Write a different logger for each kind, instead of pattern
-               matching in each function *)
-            match (Config.get ()).kind with
-            | Html -> Html.message level msg
-            | Stderr -> Printf.sprintf "%s %s" (format_level level) msg
-          in
-          write_string msg)
-        fmt
+  module Level = Level
 
+  let should_log = Config.should_log
+
+  let force_log ~level fmt =
+    Format.kasprintf
+      (fun msg ->
+        let msg =
+          (* TODO: Write a different logger for each kind, instead of pattern
+             matching in each function *)
+          match (Config.get ()).kind with
+          | Html -> Html.message level msg
+          | Stderr -> Printf.sprintf "%s %s" (format_level level) msg
+        in
+        write_string msg)
+      fmt
+
+  let log ~level msgf = if should_log level then msgf (force_log ~level)
   let trace msgf = log ~level:Trace msgf
   let debug msgf = log ~level:Debug msgf
   let info msgf = log ~level:Info msgf
@@ -128,8 +131,9 @@ module L = struct
   let failwith msgf =
     msgf
     |> Fmt.kstr @@ fun msg ->
-       let trace = Printexc.(raw_backtrace_to_string @@ get_callstack 52) in
-       log ~level:Error (fun m -> m "INTERNAL ERROR: %s@.%s" msg trace);
+       (if should_log Error then
+          let trace = Printexc.(raw_backtrace_to_string @@ get_callstack 52) in
+          force_log ~level:Error "INTERNAL ERROR: %s@.%s" msg trace);
        failwith msg
 end
 

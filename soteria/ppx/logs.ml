@@ -12,13 +12,13 @@ module Extension_name = struct
     | Smt -> "l.smt"
 end
 
-let associated_fn ~loc = function
-  | Extension_name.Debug -> [%expr L.debug]
-  | Info -> [%expr L.info]
-  | Warn -> [%expr L.warn]
-  | Error -> [%expr L.error]
-  | Trace -> [%expr L.trace]
-  | Smt -> [%expr L.smt]
+let associated_level ~loc = function
+  | Extension_name.Debug -> [%expr L.Level.Debug]
+  | Info -> [%expr L.Level.Info]
+  | Warn -> [%expr L.Level.Warn]
+  | Error -> [%expr L.Level.Error]
+  | Trace -> [%expr L.Level.Trace]
+  | Smt -> [%expr L.Level.Smt]
 
 let split_apply expr =
   let rec aux acc expr =
@@ -51,12 +51,13 @@ let validate_payload ~ext fmt args =
 
 let expand ~ext expr =
   let loc = { expr.pexp_loc with loc_ghost = true } in
-  let fn = associated_fn ~loc ext in
+  let level = associated_level ~loc ext in
   let fmt, args = split_apply expr in
   let () = validate_payload ~ext fmt args in
-  (* we use "m__" as the name of the argument to the function passed to [fn] to
-     avoid potential name clashes with variables in the original expression *)
-  let m_call =
-    Ast_builder.Default.pexp_apply ~loc [%expr m__] ((Nolabel, fmt) :: args)
+  (* Guard the log on [should_log] so that, when the level is disabled, no
+     message is formatted and no closure is allocated. *)
+  let log_call =
+    Ast_builder.Default.pexp_apply ~loc [%expr L.force_log]
+      ((Labelled "level", level) :: (Nolabel, fmt) :: args)
   in
-  [%expr [%e fn] (fun m__ -> [%e m_call])]
+  [%expr if L.should_log [%e level] then [%e log_call]]

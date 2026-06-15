@@ -1,9 +1,10 @@
 module L = struct
-  let sink fmt = Format.ifprintf Format.std_formatter fmt
-  let debug f = f sink
-  let info f = f sink
-  let warn f = f sink
-  let error f = f sink
-  let trace f = f sink
-  let smt f = f sink
+  module Level = struct
+    type t = Smt | Trace | Debug | Info | Warn | Error
+  end
+
+  let should_log (_ : Level.t) = false
+
+  let force_log ~level:(_ : Level.t) fmt =
+    Format.ifprintf Format.std_formatter fmt
 end

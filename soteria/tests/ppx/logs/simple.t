@@ -2,10 +2,13 @@
   open Prelude
   
   let () =
-    L.debug (fun m__ -> m__ "debug %d" 1);
-    L.info (fun m__ -> m__ "info %s" "x");
-    L.warn (fun m__ -> m__ "warn %a" Fmt.int 2);
-    L.error (fun m__ -> m__ "error");
-    L.trace (fun m__ -> m__ "trace");
-    L.smt (fun m__ -> m__ "smt")
+    if L.should_log L.Level.Debug then
+      L.force_log ~level:L.Level.Debug "debug %d" 1;
+    if L.should_log L.Level.Info then
+      L.force_log ~level:L.Level.Info "info %s" "x";
+    if L.should_log L.Level.Warn then
+      L.force_log ~level:L.Level.Warn "warn %a" Fmt.int 2;
+    if L.should_log L.Level.Error then L.force_log ~level:L.Level.Error "error";
+    if L.should_log L.Level.Trace then L.force_log ~level:L.Level.Trace "trace";
+    if L.should_log L.Level.Smt then L.force_log ~level:L.Level.Smt "smt"
   Success ✅
