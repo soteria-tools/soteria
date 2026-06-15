@@ -636,7 +636,7 @@ Boolean BitOr must not be assumed true; both operands can be false (issue #376).
   [1]
 
 Test that allocating a box only requires two heap allocation (thanks to the store optimisation): one for the contents of the box, and one for the box that we pass to the drop glue.
-FIXME: because of the sysroot, there's a bunch of extra allocations from added function calls... i'm not sure we can avoid them all.
+FIXME: now that named consts are globals, there is in fact a third allocation: the one for <i32 as SizedTypeProperties>::LAYOUT. We should extend the store optimisation to handle globals; in particular we have a guarantee they can't be written to, so it's likely the optimisation will perform really well.
   $ soteria-rust exec box.rs --stats stats.json && check_stat stats.json allocs 2
   Compiling... done in <time>
   => Running box::main...
