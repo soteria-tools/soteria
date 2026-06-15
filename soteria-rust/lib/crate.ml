@@ -121,8 +121,8 @@ let get_adt (adt_ref : Types.type_decl_ref) =
       let subst = subst_at_binder_zero subst in
       st_substitute_visitor#visit_type_decl subst adt
   | TBuiltin _ | TTuple ->
-      Fmt.failwith "get_adt: unexpected non-ADT type decl id: %a"
-        Types.pp_type_id adt_ref.id
+      L.failwith "get_adt: unexpected non-ADT type decl id: %a" Types.pp_type_id
+        adt_ref.id
 
 let get_adt_lang_item lang_item =
   let exception Found of Types.type_decl in
@@ -225,21 +225,30 @@ let is_union' (adt_id : Types.type_decl_id) =
 let as_enum adt_ref =
   match (get_adt adt_ref).kind with
   | Enum variants -> variants
-  | _ -> failwith "as_enum expected an enum"
+  | _ -> L.failwith "as_enum expected an enum"
 
 let as_struct adt_ref =
   match (get_adt adt_ref).kind with
   | Struct fields -> fields
-  | _ -> failwith "as_struct expected a struct"
+  | _ -> L.failwith "as_struct expected a struct"
 
 let as_struct_or_tuple (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with
   | TTuple -> adt_ref.generics.types
   | TAdtId _ ->
       as_struct adt_ref |> List.map (fun (f : Types.field) -> f.field_ty)
-  | _ -> failwith "as_struct_or_tuple expected a struct or tuple"
+  | _ -> L.failwith "as_struct_or_tuple expected a struct or tuple"
 
 let as_union adt_ref =
   match (get_adt adt_ref).kind with
   | Union fields -> fields
-  | _ -> failwith "as_union expected a union"
+  | _ -> L.failwith "as_union expected a union"
+
+module L = struct
+  include L
+
+  let entry_point_section name =
+    Fmt.kstr
+      (with_section ~is_branch:false)
+      "Executing entry point: %a" pp_name name
+end

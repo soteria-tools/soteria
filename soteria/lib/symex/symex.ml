@@ -725,7 +725,7 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
               Symex_state.save ();
               (with_section @@ fun () -> x () f);
               loop r
-          | [] -> failwith "unreachable"
+          | [] -> L.failwith "unreachable"
         in
         Symex_state.save ();
         (with_section @@ fun () -> a () f);

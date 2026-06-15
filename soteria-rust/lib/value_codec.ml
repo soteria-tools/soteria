@@ -34,9 +34,9 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
             match BV.to_z len with
             | Some len -> Iter.repeatz len sub_ty
             | None ->
-                failwith
+                L.failwith
                   "iter_fields: unsupported symbolic length for slice/str")
-        | _ -> failwith "iter_fields: invalid length for slice/str")
+        | _ -> L.failwith "iter_fields: invalid length for slice/str")
     | TAdt adt -> (
         let type_decl = Crate.get_adt adt in
         match (type_decl.kind, variant) with
@@ -47,16 +47,16 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
             let variant = Types.VariantId.nth variants variant in
             let field_tys = field_tys variant.fields in
             Iter.of_list field_tys
-        | _ -> failwith "invalid iter_fields type_decl")
+        | _ -> L.failwith "invalid iter_fields type_decl")
     | TRef (_, pointee, _) | TRawPtr (pointee, _) -> (
         match Layout.dst_kind pointee with
-        | NoneKind -> failwith "invalid iter_fields: no metadata"
+        | NoneKind -> L.failwith "invalid iter_fields: no metadata"
         | LenKind -> Iter.of_list [ unit_ptr; TLiteral (TInt Isize) ]
         | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
     | TPattern (inner, _) -> to_fields ?variant fields inner
     | TLiteral _ | TNever | TVar _ | TTraitType _ | TDynTrait _ | TFnPtr _
     | TFnDef _ | TPtrMetadata _ | TError _ ->
-        Fmt.failwith "invalid iter_fields: %a" pp_ty ty
+        L.failwith "invalid iter_fields: %a" pp_ty ty
   in
   let aux ?variant fields ty =
     to_fields ?variant fields ty
@@ -83,7 +83,7 @@ let size_of =
   (* We can't know the size of a union/tuple/enum, because of e.g. niches, or
      padding *)
   | Union _ | Enum _ | Tuple _ ->
-      failwith "Impossible to get size of Enum/Tuple rust_val"
+      L.failwith "Impossible to get size of Enum/Tuple rust_val"
 
 module Decoder
     (Sptr : Sptr.S)
@@ -257,7 +257,7 @@ struct
     match layout.fields with
     | Arbitrary (vid, _) -> ok vid
     | Enum (discriminator, _) -> exec discriminator
-    | Array _ | Primitive -> failwith "Unexpected layout for enum"
+    | Array _ | Primitive -> L.failwith "Unexpected layout for enum"
 
   (** [decode ~meta ~offset ty] Parses a rust value of type [ty] at the given
       offset, using the provided metadata for DSTs, and returns the associated
@@ -276,7 +276,7 @@ struct
     let* layout = layout_of ty in
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error (`RefToUninhabited ty)
-    | _, TDynTrait _ -> failwith "decode: cannot decode an unsized dyn value"
+    | _, TDynTrait _ -> L.failwith "decode: cannot decode an unsized dyn value"
     | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Union [])
         else
@@ -302,7 +302,7 @@ struct
         | LenKind, [ Ptr (base, Thin); Int len ] -> Ptr (base, Len len)
         | VTableKind, [ Ptr (base, Thin); Ptr (vtable, Thin) ] ->
             Ptr (base, VTable vtable)
-        | _ -> failwith "decode: invalid metadata for pointer type")
+        | _ -> L.failwith "decode: invalid metadata for pointer type")
     | Array { is_ptr = false; _ }, _ ->
         iter (iter_fields ~meta layout ty) offset
     | Arbitrary (variant, _), _ -> (
@@ -323,7 +323,7 @@ struct
         let variant = Types.VariantId.nth variants variant in
         let discr = BV.of_literal variant.discriminant in
         Enum (discr, fields)
-    | Enum _, _ -> failwith "decode: expected enum type for enum layout"
+    | Enum _, _ -> L.failwith "decode: expected enum type for enum layout"
 end
 
 module Encoder (Sptr : Sptr.S) = struct
@@ -345,9 +345,9 @@ module Encoder (Sptr : Sptr.S) = struct
         | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
         | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
         | Ptr (_, Thin) | Int _ | Float _ | PolyVal _ ->
-            Fmt.failwith "Cannot split primitive: %a for %a" pp_rust_val value
+            L.failwith "Cannot split primitive: %a for %a" pp_rust_val value
               pp_ty ty
-        | Union _ -> failwith "Cannot encode union directly")
+        | Union _ -> L.failwith "Cannot encode union directly")
       |> Iter.combine_list iter
       |> Result.fold_iter ~init:Iter.empty ~f:(fun acc ((ty, ofs), v) ->
           let offset = offset +!!@ ofs in
@@ -507,7 +507,7 @@ module Encoder (Sptr : Sptr.S) = struct
           (pattern_valid_cond inner_ty v pat)
           (`UBTransmute "Value violates pattern type constraint")
     (* we fail loudly to avoid missing cases *)
-    | _ -> Fmt.failwith "validity: unhandled %a / %a" pp_rust_val v pp_ty ty
+    | _ -> L.failwith "validity: unhandled %a / %a" pp_rust_val v pp_ty ty
 
   (** Applies a validity check for a value, given a [check_ref] state monad
       operation. This assumes [check_ref] is effect-free: the returned state is
@@ -551,7 +551,7 @@ module Encoder (Sptr : Sptr.S) = struct
         let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
         Float sv'
     | TFloat _, _ | _, TFloat _ ->
-        Fmt.failwith "Unhandled float transmute: %a -> %a" pp_literal_ty from_ty
+        L.failwith "Unhandled float transmute: %a -> %a" pp_literal_ty from_ty
           pp_literal_ty to_ty
     (* here we know we're only handling scalars: bool, char, or int/uint, so we
        can just resize the value as needed! *)
@@ -607,7 +607,7 @@ module Encoder (Sptr : Sptr.S) = struct
           not_impl "transmute_one: mismatched type variables %a -> %a"
             Types.pp_type_var_id type_var_id Types.pp_type_var_id tid
     | TVar (Bound _), _ ->
-        failwith "transmute_one: bound type variable encountered?"
+        L.failwith "transmute_one: bound type variable encountered?"
     | TVar _, _ ->
         not_impl
           "losing concrete value in %a -> %a; somewhere we lost track of \
@@ -777,7 +777,7 @@ module Encoder (Sptr : Sptr.S) = struct
     else
       match (t, meta) with
       | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), (Thin | VTable _) ->
-          failwith "size_and_align_of_val: Invalid metadata for slice type"
+          L.failwith "size_and_align_of_val: Invalid metadata for slice type"
       | (TSlice _ | TAdt { id = TBuiltin TStr; _ }), Len meta ->
           let sub_ty = Layout.dst_slice_ty t in
           let* sub_ty =
@@ -789,7 +789,7 @@ module Encoder (Sptr : Sptr.S) = struct
           let++ () = assert_or_error (Typed.not ovf_mul) `Overflow in
           (size, layout.align)
       | TDynTrait _, (Thin | Len _) ->
-          failwith "size_and_align_of_val: Invalid metadata for dyn type"
+          L.failwith "size_and_align_of_val: Invalid metadata for dyn type"
       | TDynTrait _, VTable vtable ->
           let** size = load_vtable `Size vtable in
           let++ align = load_vtable `Align vtable in
@@ -800,14 +800,14 @@ module Encoder (Sptr : Sptr.S) = struct
           let field_tys =
             match t with
             | TAdt adt -> Crate.as_struct_or_tuple adt
-            | _ -> failwith "impossible"
+            | _ -> L.failwith "impossible"
           in
           let last_field_ty = List.last field_tys in
           let** layout = Layout.layout_of t in
           let last_field_ofs =
             match layout.fields with
             | Arbitrary (_, offsets) -> offsets.(Array.length offsets - 1)
-            | _ -> failwith "size_and_align_of_val: Unexpected layout for ADT"
+            | _ -> L.failwith "size_and_align_of_val: Unexpected layout for ADT"
           in
           let++ unsized_size, unsized_align =
             size_and_align_of_val ~load_vtable ~t:last_field_ty ~meta

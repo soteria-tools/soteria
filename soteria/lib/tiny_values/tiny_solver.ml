@@ -308,7 +308,7 @@ struct
         if Dynarray.length t.types == next_i then Dynarray.add_last t.types ty
         else if Dynarray.length t.types > next_i then
           Dynarray.set t.types next_i ty
-        else failwith "Broke var-counter/declared-types invariant"
+        else L.failwith "Broke var-counter/declared-types invariant"
       in
       next
 

@@ -62,8 +62,8 @@ module Fields_shape = struct
     | Array { stride; _ } -> Fmt.pf ft "Array(%a)" Typed.ppa stride
 
   let offset_of f = function
-    | Primitive -> failwith "This layout has no fields"
-    | Enum _ -> failwith "Can't get fields of enum; use `shape_for_variant`"
+    | Primitive -> L.failwith "This layout has no fields"
+    | Enum _ -> L.failwith "Can't get fields of enum; use `shape_for_variant`"
     | Arbitrary (_, arr) -> arr.(f)
     | Array { stride; _ } -> BV.usizei f *!!@ stride
 
@@ -71,7 +71,7 @@ module Fields_shape = struct
     | Enum (_, shapes) -> snd shapes.(Types.VariantId.to_int variant)
     | Arbitrary (v, _) as fs when Types.VariantId.equal_id v variant -> fs
     | s ->
-        Fmt.failwith "Shape %a has no variant %a" pp s Types.VariantId.pp_id
+        L.failwith "Shape %a has no variant %a" pp s Types.VariantId.pp_id
           variant
 
   let rec iter_vars_discriminator (d : discriminator) f : unit =

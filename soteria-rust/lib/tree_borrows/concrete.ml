@@ -14,7 +14,7 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
     type syn = t [@@deriving show { with_path = false }]
 
     let to_syn x = x
-    let fresh () = failwith "fresh tags not supported in concrete TB"
+    let fresh () = L.failwith "fresh tags not supported in concrete TB"
     let subst _ x = x
 
     let learn_eq syn tag =

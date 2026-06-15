@@ -73,7 +73,7 @@ let cmd_of_yojson json =
   let () =
     match c_files with
     | [ c ] when c = file -> ()
-    | _ -> Fmt.failwith "Multiple -c arguments in compilation database?"
+    | _ -> L.failwith "Multiple -c arguments in compilation database?"
   in
   { directory; file; command; original = json }
 

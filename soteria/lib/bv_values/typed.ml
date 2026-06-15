@@ -1,3 +1,4 @@
+open Logs.Import
 open Hc
 include Svalue
 
@@ -78,12 +79,12 @@ module BitVec = struct
   include BitVec
 
   let mk_nz n z =
-    if Z.equal z Z.zero then failwith "Zero value in mk_nonzero" else mk n z
+    if Z.equal z Z.zero then L.failwith "Zero value in mk_nonzero" else mk n z
 
   let mki_masked n i = mk_masked n (Z.of_int i)
 
   let mki_nz n i =
-    if i = 0 then failwith "Zero value in mki_nonzero" else mki_masked n i
+    if i = 0 then L.failwith "Zero value in mki_nonzero" else mki_masked n i
 
   let no_ovf_unsafe x = x
 end

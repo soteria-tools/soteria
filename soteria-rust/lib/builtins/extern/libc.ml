@@ -14,7 +14,7 @@ module M (StateM : State.StateM.S) = struct
     match args with
     | [ Int code ] ->
         if%sat code ==@ U32.(0s) then error `OkExit else error (`Exit code)
-    | _ -> failwith "exit: invalid arguments"
+    | _ -> L.failwith "exit: invalid arguments"
 
   let sysconf args =
     match args with
@@ -24,7 +24,7 @@ module M (StateM : State.StateM.S) = struct
          *)
         let ret = Typed.BitVec.u64 Z.minus_one in
         ok (Int ret)
-    | _ -> failwith "sysconf: invalid arguments"
+    | _ -> L.failwith "sysconf: invalid arguments"
 
   let[@inline] fn_to_stub = function Exit -> exit | Sysconf -> sysconf
 end

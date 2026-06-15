@@ -107,7 +107,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         let old_v =
           match as_ptr old with
           | old, Thin -> old
-          | _ -> failwith "atomic_xadd: pointer with metadata other than Thin"
+          | _ -> L.failwith "atomic_xadd: pointer with metadata other than Thin"
         in
         (* Wrapping add: no overflow check *)
         let* new_ = Sptr.offset ~check:false ~signed:false src old_v in
@@ -122,7 +122,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         let+ () = State.store dst t (Int new_) in
         old
     | _ ->
-        failwith
+        L.failwith
           "atomic_xadd: invalid types, expects to follow the rules of \
            atomic_xadd"
 
@@ -140,7 +140,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           let old = as_base lit old in
           let curr = as_base lit curr in
           ok (old ==@ curr)
-      | _ -> failwith "atomic_cxchgweak: invalid type, expects ptr or integer"
+      | _ -> L.failwith "atomic_cxchgweak: invalid type, expects ptr or integer"
     in
     if%sat are_equal then
       let* () = State.store dst t src in
@@ -156,7 +156,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let v = as_base lit x in
     let bits = List.init nbits (fun i -> BV.extract i i v) in
     let rec aux = function
-      | [] -> failwith "impossible: no bits"
+      | [] -> L.failwith "impossible: no bits"
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
@@ -170,7 +170,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       List.init nbytes (fun i -> BV.extract (i * 8) (((i + 1) * 8) - 1) v)
     in
     let rec aux = function
-      | [] -> failwith "impossible: no bytes"
+      | [] -> L.failwith "impossible: no bytes"
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
@@ -662,7 +662,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let fabs ~t ~x =
     let t = TypesUtils.ty_as_literal t in
     let f =
-      match t with TFloat f -> f | _ -> failwith "fabs with non-float?"
+      match t with TFloat f -> f | _ -> L.failwith "fabs with non-float?"
     in
     let x = as_base_f f x in
     ok (Float (Typed.Float.abs x))
@@ -678,7 +678,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       | Mul _ -> (( *.@ ), "core::intrinsics::fmul_fast")
       | Div _ -> (( /.@ ), "core::intrinsics::fdiv_fast")
       | Rem _ -> (Typed.Float.rem, "core::intrinsics::frem_fast")
-      | _ -> failwith "fast_float: invalid binop"
+      | _ -> L.failwith "fast_float: invalid binop"
     in
     let is_finite f =
       Typed.((not (Float.is_nan f)) &&@ not (Float.is_infinite f))
@@ -816,12 +816,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let byte_pairs =
       match (l, r) with
       | Tuple l, Tuple r -> List.combine l r
-      | _ -> failwith "Unexpected read array"
+      | _ -> L.failwith "Unexpected read array"
     in
     let rec aux = function
       | [] -> Typed.v_true
       | (Int l, Int r) :: rest -> l ==@ r &&@ aux rest
-      | _ :: _ -> failwith "Unexpected read array"
+      | _ :: _ -> L.failwith "Unexpected read array"
     in
     ok (aux byte_pairs)
 
@@ -874,7 +874,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           let ovf = BV.sub_overflows ~signed a b in
           let if_ovf = if signed then Typed.ite (a <$@ b) min max else min in
           Typed.ite ovf if_ovf (a -!!@ b)
-      | _ -> failwith "Unreachable: not add or sub?"
+      | _ -> L.failwith "Unreachable: not add or sub?"
     in
     ok (Int res)
 

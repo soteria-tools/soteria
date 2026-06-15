@@ -1,8 +1,9 @@
+open Logs.Import
 open Soteria_std
 open Soteria_smt
 
 let pointers_not_supported () =
-  failwith "Encoding of pointers is not supported in Bv_values"
+  L.failwith "Encoding of pointers is not supported in Bv_values"
 
 type t = Svalue.t
 type ty = Svalue.ty
@@ -104,7 +105,7 @@ let rec encode_value (v : Svalue.t) =
   | Ptr _ -> pointers_not_supported ()
   | Seq vs -> (
       match vs with
-      | [] -> failwith "need type to encode empty lists"
+      | [] -> L.failwith "need type to encode empty lists"
       | _ :: _ ->
           List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat)
   | Ite (c, t, e) ->

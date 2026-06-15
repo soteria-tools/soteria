@@ -32,18 +32,18 @@ module M (StateM : State.StateM.S) = struct
      ptr. *)
   let ptr_of_nonnull = function
     | Tuple [ Ptr ptr ] -> ptr
-    | v -> Fmt.failwith "alloc: invalid NonNull argument: %a" pp_rust_val v
+    | v -> L.failwith "alloc: invalid NonNull argument: %a" pp_rust_val v
 
   let align_of_enum = function
     | Tuple [ Enum (disc, []) ] -> disc
     | Int align -> align
-    | v -> Fmt.failwith "alloc: invalid align argument: %a" pp_rust_val v
+    | v -> L.failwith "alloc: invalid align argument: %a" pp_rust_val v
 
   let alloc ?(zeroed = false) args =
     let size, align =
       match args with
       | [ Int size; align ] -> (size, align_of_enum align)
-      | _ -> failwith "alloc: invalid arguments"
+      | _ -> L.failwith "alloc: invalid arguments"
     in
     let align = Typed.cast_i Usize align in
     let size = Typed.cast_i Usize size in
@@ -61,7 +61,7 @@ module M (StateM : State.StateM.S) = struct
       match args with
       | [ ptr_val; Int size; align ] ->
           (ptr_of_nonnull ptr_val, size, align_of_enum align)
-      | _ -> failwith "dealloc: invalid arguments"
+      | _ -> L.failwith "dealloc: invalid arguments"
     in
     let alloc_size, alloc_align = Sptr.allocation_info ptr_in in
     let* () =
@@ -75,7 +75,7 @@ module M (StateM : State.StateM.S) = struct
       match args with
       | [ ptr; Int old_size; align; Int size ] ->
           (ptr_of_nonnull ptr, old_size, align_of_enum align, size)
-      | _ -> failwith "realloc: invalid arguments"
+      | _ -> L.failwith "realloc: invalid arguments"
     in
     let ptr_in, _ = ptr in
     let prev_size, prev_align = Sptr.allocation_info ptr_in in

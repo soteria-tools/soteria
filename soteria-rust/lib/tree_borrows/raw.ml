@@ -87,9 +87,9 @@ let[@inline] meet st1 st2 =
   | Reserved b1, Reserved b2 -> Reserved (b1 || b2)
   | ReservedIM, ReservedIM -> ReservedIM
   | Cell, Cell -> Cell
-  | Cell, _ | _, Cell -> failwith "Can't compare Cell with non-Cell"
+  | Cell, _ | _, Cell -> L.failwith "Can't compare Cell with non-Cell"
   | Reserved _, ReservedIM | ReservedIM, Reserved _ ->
-      failwith "Can't compare Reserved and ReservedIM"
+      L.failwith "Can't compare Reserved and ReservedIM"
 
 let[@inline] meet' (p1, st1) (p2, st2) = (p1 || p2, meet st1 st2)
 

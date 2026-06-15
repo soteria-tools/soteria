@@ -47,7 +47,7 @@ module DecayMap = struct
     let pp = ppa
     let show = Fmt.to_to_string pp
     let simplify = Rustsymex.simplify
-    let fresh _ = failwith "Cannot allocate in DecayMap"
+    let fresh _ = L.failwith "Cannot allocate in DecayMap"
     let to_syn = Expr.of_value
     let learn_eq s l = Consumer.learn_eq s l
     let exprs_syn s : Expr.t list = [ s ]
@@ -61,7 +61,7 @@ module DecayMap = struct
     type t = sint Typed.t raw [@@deriving show { with_path = false }]
     type syn = Expr.t raw [@@deriving show { with_path = false }]
 
-    let fresh () = failwith "No fresh for DecayMap.SM.Entry"
+    let fresh () = L.failwith "No fresh for DecayMap.SM.Entry"
 
     let to_syn ({ address; exposed } : t) =
       { address = Expr.of_value address; exposed }
