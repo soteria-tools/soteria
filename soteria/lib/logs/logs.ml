@@ -128,7 +128,8 @@ module L = struct
   let failwith msgf =
     msgf
     |> Fmt.kstr @@ fun msg ->
-       log ~level:Error (fun m -> m "INTERNAL ERROR: %s" msg);
+       let trace = Printexc.(raw_backtrace_to_string @@ get_callstack 52) in
+       log ~level:Error (fun m -> m "INTERNAL ERROR: %s@.%s" msg trace);
        failwith msg
 end
 
