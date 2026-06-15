@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781524173492,
+  "lastUpdate": 1781545845188,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -2932,6 +2932,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 117.745,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "57e21c1971bdee01e59d7d0e7f04263e8165ea7f",
+          "message": "Support more atomics, some externs, fix benchmark (#403)\n\n* Fix plugins breaking\n\n* Fix/update some stubs\n\n* Resolve `Pointee::Metadata` builtin trait type\n\n* Support thread locals on Linux! re-run tests\n\n* Implement all remaining `atomic_` intrinsics\n\n* fix `Sptr` considering wrapping offset checked\n\n* minor fix to benchmarks workflow\n\n* this took ages to compile ?????\n\n* oops\n\n* tests\n\n* Update run.t",
+          "timestamp": "2026-06-15T17:23:33Z",
+          "tree_id": "aa4b4ca5b8bbc6034808ac395c608df54e818f6f",
+          "url": "https://github.com/soteria-tools/soteria/commit/57e21c1971bdee01e59d7d0e7f04263e8165ea7f"
+        },
+        "date": 1781545842549,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 4.57955050194,
+            "range": "± 0.0482",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.10973305118,
+            "range": "± 0.0073",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.633621053,
+            "range": "± 0.0153",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.40077522004,
+            "range": "± 0.0054",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.67320927106,
+            "range": "± 0.0353",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.7383905244200001,
+            "range": "± 0.0237",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.4305881059200001,
+            "range": "± 0.0046",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9288699240399996,
+            "range": "± 0.0315",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.884891076944768,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 372,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 118.8502,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 459,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 101,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 40,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 105.6089,
             "unit": "s"
           }
         ]
