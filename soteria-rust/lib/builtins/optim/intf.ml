@@ -696,6 +696,52 @@ module M (StateM : State.StateM.S) = struct
     val handle_alloc_error : layout:rust_val -> unit ret
 
     val handle_error : e:rust_val -> unit ret
+
+    (** {@markdown[
+          Calculates the hash of a single value.
+
+           This is intended as a convenience for code which *consumes* hashes, such
+           as the implementation of a hash table or in unit tests that check
+           whether a custom [`Hash`] implementation behaves as expected.
+
+           This must not be used in any code which *creates* hashes, such as in an
+           implementation of [`Hash`].  The way to create a combined hash of
+           multiple values is to call [`Hash::hash`] multiple times using the same
+           [`Hasher`], not to call this method repeatedly and combine the results.
+
+           # Example
+
+           ```
+           use std::cmp::{max, min};
+           use std::hash::{BuildHasher, Hash, Hasher};
+           struct OrderAmbivalentPair<T: Ord>(T, T);
+           impl<T: Ord + Hash> Hash for OrderAmbivalentPair<T> {
+               fn hash<H: Hasher>(&self, hasher: &mut H) {
+                   min(&self.0, &self.1).hash(hasher);
+                   max(&self.0, &self.1).hash(hasher);
+               }
+           }
+
+           // Then later, in a `#[test]` for the type...
+           let bh = std::hash::RandomState::new();
+           assert_eq!(
+               bh.hash_one(OrderAmbivalentPair(1, 2)),
+               bh.hash_one(OrderAmbivalentPair(2, 1))
+           );
+           assert_eq!(
+               bh.hash_one(OrderAmbivalentPair(10, 2)),
+               bh.hash_one(&OrderAmbivalentPair(2, 10))
+           );
+           ```
+        ]} *)
+    val hash_one :
+      types:Types.ty list ->
+      t_self:Types.ty ->
+      t:Types.ty ->
+      self:full_ptr ->
+      x:rust_val ->
+      Typed.T.sint Typed.t ret
+
     val option_unwrap_failed : unit -> unit ret
 
     (** {@markdown[

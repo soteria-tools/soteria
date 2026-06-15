@@ -759,4 +759,14 @@ Test the SIMD intrinsics used by hashbrown's NEON control group.
   note: simd::main: done in <time>, ran 1 branch
   PC 1: empty
   
+Test a HashMap with concrete keys (insert/get/len) and a symbolic key. The
+stubbed (constant) hasher keeps bucket indices concrete even for the symbolic
+key, so the only branch is its equality with the concrete entry.
+  $ soteria-rust exec hashmap.rs --target aarch64-apple-darwin
+  Compiling... done in <time>
+  => Running hashmap::main...
+  note: hashmap::main: done in <time>, ran 2 branches
+  PC 1: (0x00000007 == V|1|) /\ (0x00000007 == V|1|)
+  PC 2: (0x00000007 != V|1|)
+  
   

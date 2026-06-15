@@ -5,8 +5,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
   open Syntax
 
-  let hashmap_random_keys ~(fun_sig : Types.fun_sig) =
-    Encoder.nondet_valid fun_sig.output
+  (* Returning *symbolic* keys makes every hash symbolic, causing branch
+     explosion; we instead stick to a concrete hash. *)
+  let hashmap_random_keys ~fun_sig:_ =
+    let k0 = 0x0123456789abcdefL in
+    let k1 = 0x94D049BB133111EBL in
+    let to_u64 i = Int (Typed.BV.u64 (Z.of_int64 i)) in
+    ok (Tuple [ to_u64 k0; to_u64 k1 ])
 
   (** {@rust[
         fn _var(key: &OsStr) -> Result<String, VarError>
