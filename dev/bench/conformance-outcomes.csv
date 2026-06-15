@@ -272,7 +272,7 @@ kani,Intrinsics/RawEq/main.rs,pass
 kani,Intrinsics/RawEq/uninit_eq.rs,pass
 kani,Intrinsics/RawEq/uninit_ne.rs,pass
 kani,Intrinsics/Rotate/rotate_left.rs,pass
-kani,Intrinsics/Rotate/rotate_right.rs,timeout
+kani,Intrinsics/Rotate/rotate_right.rs,pass
 kani,Intrinsics/Saturating/main.rs,timeout
 kani,Intrinsics/SizeOfVal/size_of_basic.rs,pass
 kani,Intrinsics/SizeOfVal/size_of_fat_ptr.rs,pass
@@ -802,8 +802,8 @@ miri,pass/alloc-access-tracking.rs,unsupported
 miri,pass/arrays.rs,unsupported
 miri,pass/associated-const.rs,pass
 miri,pass/assume_bug.rs,pass
-miri,pass/backtrace/backtrace-global-alloc.rs,timeout
-miri,pass/backtrace/backtrace-std.rs,timeout
+miri,pass/backtrace/backtrace-global-alloc.rs,pass
+miri,pass/backtrace/backtrace-std.rs,pass
 miri,pass/bad_substs.rs,pass
 miri,pass/binary-heap.rs,timeout
 miri,pass/binops.rs,pass
@@ -967,7 +967,7 @@ miri,pass/rust-lang-org.rs,pass
 miri,pass/slices.rs,pass
 miri,pass/small_enum_size_bug.rs,pass
 miri,pass/specialization.rs,pass
-miri,pass/static_align.rs,unsupported
+miri,pass/static_align.rs,fail
 miri,pass/static_mut.rs,pass
 miri,pass/strange_references.rs,pass
 miri,pass/strings.rs,pass
