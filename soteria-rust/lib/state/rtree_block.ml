@@ -478,8 +478,13 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
 
   let check_owned (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) =
+    let open DecayMap.SM.Syntax in
     let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
-    with_bound_check bound (fun t -> ok ((), t))
+    let mk_fixes () =
+      let+ bound = DecayMap.SM.nondet (Typed.t_usize ()) in
+      [ [ Bound (Expr.of_value bound) ] ]
+    in
+    with_bound_check ~mk_fixes bound (fun t -> ok ((), t))
 
   (* Memory operations *)
 
