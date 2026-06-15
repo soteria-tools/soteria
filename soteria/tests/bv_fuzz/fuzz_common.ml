@@ -97,7 +97,8 @@ let print_test d =
   let model = z3_check_with_model ~vars_d:vars ~assumptions:checks s d in
   let pp_model fmt = function
     | None -> Format.fprintf fmt "Model unavailable"
-    | Some m -> Fmt.pf fmt "Counterexample model:@,%a" Soteria_smt.pp_sexp m
+    | Some m ->
+        Fmt.pf fmt "Counterexample model:@,%a" Soteria.Soteria_smt.pp_sexp m
   in
   Format.asprintf
     "@[<v>full: %a@,\
