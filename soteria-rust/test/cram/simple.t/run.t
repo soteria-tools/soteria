@@ -745,3 +745,24 @@ Test the atomic read-modify-write intrinsics (fetch_and/or/xor/nand/sub/min/max)
   note: atomics::pointer: done in <time>, ran 1 branch
   PC 1: empty
   
+Test a field access through a pointer derived from ptr.sub with a symbolic index; used to error
+  $ soteria-rust exec ptr_sub_field.rs
+  Compiling... done in <time>
+  => Running ptr_sub_field::main...
+  error: ptr_sub_field::main: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Dangling pointer in ptr_sub_field::main
+      --> $TESTCASE_ROOT/ptr_sub_field.rs:13:19
+    6 |  fn main() {
+      |  --------- 1: Entry point
+      .  
+   13 |          let val = &(*bucket).1; // field projection on a sub-derived pointer
+      |                    ^^^^^^^^^^^^ Pointer offset
+  PC 1: ((0x0000000000000003 & V|1|) <=u 0xfffffffffffffffe) /\
+        !((0x0000000000000000 -s_ovf (0x0000000000000001 +ck (0x0000000000000003 & V|1|)))) /\
+        (-((0x0000000000000001 +ck (0x0000000000000003 & V|1|))) <=s 0x3ffffffffffffffb) /\
+        (0xc000000000000000 <=s -((0x0000000000000001 +ck (0x0000000000000003 & V|1|)))) /\
+        (-((0x0000000000000001 +ck (0x0000000000000003 & V|1|))) <=s 0x3fffffffffffffff) /\
+        (-((0x0000000000000001 +ck (0x0000000000000003 & V|1|))) <=s 0x0000000000000000) /\
+        (0x7ffffffffffffffb <u -((0x0000000000000001 +ck (0x0000000000000003 & V|1|))))
+  
+  [1]
