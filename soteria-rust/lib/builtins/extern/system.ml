@@ -39,7 +39,7 @@ module M (StateM : State.StateM.S) = struct
       match args with
       | [ Ptr dtor_ptr; arg_ptr ] -> ok (dtor_ptr, arg_ptr)
       | _ ->
-          Fmt.kstr not_impl "tlv_atexit: unexpected arguments: %a"
+          not_impl "tlv_atexit: unexpected arguments: %a"
             Fmt.(list pp_rust_val)
             args
     in
