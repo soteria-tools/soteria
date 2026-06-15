@@ -292,12 +292,18 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let multiplicand = double_bv @@ as_base t multiplicand in
     let addend = double_bv @@ as_base t addend in
     let carry = double_bv @@ as_base t carry in
-    (* This cannot overflow:
+    (* This cannot overflow as an *unsigned* 2n-bit operation:
      *   MAX * MAX + MAX + MAX
      *   => (2ⁿ-1) × (2ⁿ-1) + (2ⁿ-1) + (2ⁿ-1)
      *   => (2²ⁿ - 2ⁿ⁺¹ + 1) + (2ⁿ⁺¹ - 2)
      *   => 2²ⁿ - 1 *)
-    let res = (multiplier *!!@ multiplicand) +!!@ addend +!!@ carry in
+    let ( *!@ ) l r =
+      Typed.cast @@ BV.mul ~checked:(Typed.checked_of_signed false) l r
+    in
+    let ( +!@ ) l r =
+      Typed.cast @@ BV.add ~checked:(Typed.checked_of_signed false) l r
+    in
+    let res = (multiplier *!@ multiplicand) +!@ addend +!@ carry in
     let res_l, res_h =
       ( BV.extract 0 ((size_t * 8) - 1) res,
         BV.extract (size_t * 8) ((size_t * 16) - 1) res )
@@ -925,11 +931,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           let if_ovf =
             if signed then Typed.ite (a <$@ BV.mki_lit t 0) min max else max
           in
-          Typed.ite ovf if_ovf (a +!!@ b)
+          let res = BV.add ~checked:(Typed.checked_of_signed signed) a b in
+          Typed.ite ovf if_ovf (Typed.cast res)
       | Sub _ ->
           let ovf = BV.sub_overflows ~signed a b in
           let if_ovf = if signed then Typed.ite (a <$@ b) min max else min in
-          Typed.ite ovf if_ovf (a -!!@ b)
+          let res = BV.sub ~checked:(Typed.checked_of_signed signed) a b in
+          Typed.ite ovf if_ovf (Typed.cast res)
       | _ -> L.failwith "Unreachable: not add or sub?"
     in
     ok (Int res)

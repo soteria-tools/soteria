@@ -51,8 +51,9 @@ let bv_binop : 'a Gen.t =
   let bv_checked_binop =
     let open Gen in
     let* op = oneof_array bv_checked_binops in
-    let+ checked = bool in
-    op ~checked
+    let* signed = bool in
+    let+ unsigned = bool in
+    op ~checked:{ Sv.signed; unsigned }
   in
   let bv_unchecked_binop = Gen.oneof_array bv_unchecked_binops in
   Gen.oneof_weighted
