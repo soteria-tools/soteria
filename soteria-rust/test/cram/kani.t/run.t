@@ -228,18 +228,24 @@ Test our simple Kani demo works
   => Running demo::memory_leak...
   error: demo::memory_leak: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak in demo::memory_leak
-      --> $RUSTLIB/library/alloc/src/alloc.rs:449:9
-  449 |          self.alloc_impl(layout, false)
-      |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-      |          |
-      |          Triggering operation
-      |          5: Allocation
+      --> $RUSTLIB/library/alloc/src/alloc.rs:101:9
+  101 |            __rust_alloc(layout.size(), layout.alignment())
+      |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |            |
+      |            Triggering operation
+      |            5: Allocation
+      .    
+  331 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
+  332 | /          core::intrinsics::const_eval_select(
+  333 | |              (layout, zeroed),
+  334 | |              Global::alloc_impl_const,
+  335 | |              Global::alloc_impl_runtime,
+  336 | |          )
+      | \----------' 4: Call trace
+  337 |        }
       --> $RUSTLIB/library/alloc/src/boxed.rs:286:19
-  248 |      match Global.allocate(layout) {
-      |            ----------------------- 4: Call trace
-      .  
-  286 |          let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
-      |                    -------------------------------------------------- 3: Call trace
+  286 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
+      |                      -------------------------------------------------- 3: Call trace
       --> $TESTCASE_ROOT/demo.rs:33:21
    32 |    fn memory_leak() {
       |    ---------------- 1: Leaking function
