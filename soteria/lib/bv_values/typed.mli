@@ -196,7 +196,7 @@ module BitVec : sig
   val div : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val rem : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val mod_ : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-  val neg : [< sint ] t -> [> sint_ovf ] t
+  val neg : ?checked:bool -> [< sint ] t -> [> sint_ovf ] t
 
   (* overflow checks *)
   val add_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
