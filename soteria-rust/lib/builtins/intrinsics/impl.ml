@@ -986,7 +986,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let read_vtable ~slot ~(ptr : full_ptr) : T.sint Typed.t ret =
     let ptr, _ = ptr in
     let* ptr =
-      Sptr.offset ~check_signed:false ~ty:(TLiteral (TUInt Usize))
+      Sptr.offset ~check_signed:true ~ty:(TLiteral (TUInt Usize))
         (BV.usizei slot) ptr
     in
     let+ align = State.load (ptr, Thin) (TLiteral (TUInt Usize)) in
@@ -1024,7 +1024,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
               Iter.(0 -- (Z.to_int bytes - 1))
               ~f:(fun i ->
                 let off = BV.usizei i in
-                let* ptr = Sptr.offset ~check_signed:false off ptr in
+                let* ptr = Sptr.offset ~check_signed:true off ptr in
                 State.store (ptr, Thin) (TLiteral (TUInt U8)) (Int val_))
         | None ->
             not_impl "write_bytes: don't know how to handle symbolic sizes"
