@@ -102,6 +102,10 @@ module L : sig
 
   (** [error] is [log ~level:Error] *)
   val error : ('a, unit) msgf -> unit
+
+  (** [failwith fmt ...] logs the formatted message at level [Error] and then
+      raises [Failure] with that message. *)
+  val failwith : ('a, Format.formatter, unit, 'b) format4 -> 'a
 end
 
 (** Information on the current printing profile, to know what capabilities the

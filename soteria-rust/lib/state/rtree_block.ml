@@ -117,7 +117,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
           (mask_l, mask_r)
       | _ ->
-          Fmt.kstr not_impl "Split unsupported: %a at %a" Typed.ppa v Typed.ppa
+          not_impl "Split unsupported: %a at %a" Typed.ppa v Typed.ppa
             at
 
     let split ~at node =
@@ -129,7 +129,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           let ll = Leaf (Init vl, tb) in
           let lr = Leaf (Init vr, tb) in
           TB.Split_tree.(Leaf ll, Leaf lr)
-      | Lazy -> failwith "Should never split an intermediate node"
+      | Lazy -> L.failwith "Should never split an intermediate node"
 
     type syn =
       | SInit of Typed.Expr.t
@@ -165,7 +165,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       | Leaf (Unowned, Some tb) ->
           Some
             (Borrows.State.to_syn tb |> List.map lift_tb_st_fix |> List.to_seq)
-      | Leaf (Unowned, None) -> failwith "Impossible: unowned with no TB state"
+      | Leaf (Unowned, None) ->
+          L.failwith "Impossible: unowned with no TB state"
       | Leaf (leaf, tb) ->
           let leaf_ser =
             match leaf with
@@ -238,7 +239,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
             let+? fixes = Borrows.State.consume s tb in
             List.map lift_tb_st_fix fixes
         | STree_borrow _ ->
-            failwith
+            L.failwith
               "TB structure syn in tree block, should have been caught before"
         (* unrelated to tree borrows *)
         | SInit _ | SZeros | SUninit | SAny -> ok tb
@@ -311,7 +312,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           let+ r = produce s r in
           TB.make_tree_raw ~node:t.node ~range:t.range ~children:(l, r) ()
       | STree_borrow _, _ ->
-          failwith
+          L.failwith
             "TB structure syn in tree block, should have been caught before"
 
     let rec assert_exclusively_owned (t : tree) =
@@ -334,9 +335,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     let map_leaves_tb f =
       map_leaves @@ function
       | TB.NotOwned Totally ->
-          failwith "impossible: iterating over non-owned node"
+          L.failwith "impossible: iterating over non-owned node"
       | NotOwned Partially | Owned Lazy ->
-          failwith "impossible: iterating over intermediate node"
+          L.failwith "impossible: iterating over intermediate node"
       | Owned (Leaf (v, tb)) ->
           let++ tb' = lift_tb_miss @@ f tb in
           TB.Owned (Leaf (v, tb'))
@@ -346,9 +347,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       |> Iter.filter_map @@ fun (leaf : _ tree) ->
          match leaf.node with
          | NotOwned Totally ->
-             failwith "impossible: iterating over non-owned node"
+             L.failwith "impossible: iterating over non-owned node"
          | NotOwned Partially | Owned Lazy ->
-             failwith "impossible: iterating over intermediate node"
+             L.failwith "impossible: iterating over intermediate node"
          | Owned (Leaf (v, tb)) -> Some (leaf.range, v, tb)
   end
 
@@ -426,15 +427,14 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           | TExtension TFullPtr -> Sptr.decay (Typed.Ptr.ptr_of v)
           | TFloat _ -> Value_codec.float_to_bv_bits v
           | _ ->
-              Fmt.kstr not_impl "Unexpected rust_val in lazy decoding: %a"
-                Typed.ppa v)
+              not_impl "Unexpected rust_val in lazy decoding: %a" Typed.ppa v)
     in
     match List.rev leaves with
     | hd :: tl ->
         let bv = List.fold_left BV.concat hd tl in
         let+ res = Value_codec.transmute_one ~to_ty:ty bv in
         Ok res
-    | _ -> failwith "Impossible: lazy with one leaf"
+    | _ -> L.failwith "Impossible"
 
   let decode_tree ~ty (t : Tree.t) =
     match t.node with
@@ -478,8 +478,13 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
 
   let check_owned (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) =
-    let _, bound = Range.of_low_and_size ofs (size :> Typed.(T.sint t)) in
-    with_bound_check bound (fun t -> ok ((), t))
+    let open DecayMap.SM.Syntax in
+    let _, bound = Range.of_low_and_size ofs  (size :> Typed.(T.sint t)) in
+    let mk_fixes () =
+      let+ bound = DecayMap.SM.nondet (Typed.t_usize ()) in
+      [ [ Bound (Expr.of_value bound) ] ]
+    in
+    with_bound_check ~mk_fixes bound (fun t -> ok ((), t))
 
   (* Memory operations *)
 

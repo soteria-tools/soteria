@@ -4,6 +4,8 @@ module StatKeys = struct
   let load_accesses = "soteria-rust.loads"
   let loads_from_store = "soteria-rust.loads_from_store"
   let function_calls = "soteria-rust.function_calls"
+  let allocs = "soteria-rust.allocs"
+  let decayed_pointers = "soteria-rust.decayed_pointers"
 
   let () =
     let open Soteria.Stats in
@@ -14,7 +16,8 @@ module StatKeys = struct
         Fmt.pf ft "%d (%a through store)" n pp_percent
           (Float.of_int n, Float.of_int store_loads));
     register_int_printer ~name:"Function calls" function_calls (fun _ ->
-        Fmt.int)
+        Fmt.int);
+    register_int_printer ~name:"Allocations" allocs (fun _ -> Fmt.int)
 end
 
 module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver (Svalue.Typed_core))
@@ -185,5 +188,12 @@ let with_extra_call_trace ?name ~loc ~msg (f : 'a t) : 'a t =
   let+ result, st = f { st with trace = new_trace } in
   (result, { st with trace = cur_trace })
 
-let not_impl = give_up
-let of_opt_not_impl = some_or_give_up
+let not_impl ?tip ?issue fmt =
+  Fmt.kstr
+    (fun desc ->
+      give_up (Unimplemented.to_string (Unimplemented.make ?tip ?issue desc)))
+    fmt
+
+let of_opt_not_impl ?tip ?issue msg = function
+  | Some x -> return x
+  | None -> not_impl ?tip ?issue "%s" msg

@@ -144,6 +144,7 @@
   fmt
   unionFind
   charon
+  name_matcher_parser
   ppx_deriving_hash
   (odoc :with-doc)
   (alcotest :with-test)

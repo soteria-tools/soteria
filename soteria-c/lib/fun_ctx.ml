@@ -37,7 +37,7 @@ let of_linked_program (prog : Ail_tys.linked_program) =
           let sym_name =
             match sym with
             | Cerb_frontend.Symbol.Symbol (_, _, SD_Id name) -> name
-            | _ -> failwith "Expected a function symbol"
+            | _ -> L.failwith "Expected a function symbol"
           in
           let is_a_builtin = List.mem sym_name Stubs.builtin_functions in
           let is_already_declared = Bidirectional_map.has_sym sym ctx.bmap in

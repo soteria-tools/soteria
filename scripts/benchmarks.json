@@ -20,6 +20,14 @@
     {
       "name": "btreeset sort (size 4)",
       "path": "soteria-rust/test/cram/perf.t/btreeset_sort.rs"
+    },
+    {
+      "name": "reborrow (chain)",
+      "path": "soteria-rust/test/cram/perf.t/reborrow_chain.rs"
+    },
+    {
+      "name": "reborrow (tree)",
+      "path": "soteria-rust/test/cram/perf.t/reborrow_tree.rs"
     }
   ],
   "rust_crates": [],

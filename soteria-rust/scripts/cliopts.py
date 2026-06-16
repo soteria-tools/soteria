@@ -58,8 +58,10 @@ class FakeCliOpts:
         raise RuntimeError("Call parse_flags before accessing OPTS")
 
 
-def parse_flags() -> CliOpts:
-    opts: CliOpts = {
+def default_opts() -> CliOpts:
+    """A fresh CliOpts with all defaults; the starting point of parse_flags and
+    a way to drive commands programmatically (e.g. the conformance benchmark)."""
+    return {
         "cmd": cast(Cmd, None),
         "tool": "Soteria",
         "tool_cmd": [],
@@ -74,12 +76,16 @@ def parse_flags() -> CliOpts:
         "categorise": categorise_soteria,
     }
 
+
+def parse_flags() -> CliOpts:
+    opts: CliOpts = default_opts()
+
     sys.argv.pop(0)  # remove script name
     if len(sys.argv) == 0:
         raise ArgError("missing command")
     arg = sys.argv.pop(0)
     if arg in SUITE_NAMES:
-        opts["cmd"] = ("exec", (arg,))
+        opts["cmd"] = ("exec", (cast(SuiteName, arg),))
     elif arg == "all":
         opts["cmd"] = ("all", ())
     elif arg == "eval":
@@ -88,7 +94,7 @@ def parse_flags() -> CliOpts:
         suite = sys.argv.pop(0)
         if suite not in SUITE_NAMES:
             raise ArgError("invalid test suite name, expected kani or miri")
-        opts["cmd"] = ("eval", (suite, 5))
+        opts["cmd"] = ("eval", (cast(SuiteName, suite), 5))
     elif arg == "eval-diff":
         if len(sys.argv) < 2:
             raise ArgError("missing paths to two evaluation CSV files")

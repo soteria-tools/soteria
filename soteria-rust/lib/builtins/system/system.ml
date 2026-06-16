@@ -7,18 +7,15 @@ open Common
 open Svalue
 
 type fn =
-  | StdSysEnvUnixGetenv
+  | StdEnvVarInner
   | StdSysRandomHashmapRandomKeys
-  | StdSysThreadLocalGuardAppleEnableTlvAtexit
   | StdSysTimeUnixInstantNow
   | StdThreadFunctionsAvailableParallelism
 
 let fn_pats : (string * fn) list =
   [
-    ("std::sys::env::_::getenv", StdSysEnvUnixGetenv);
+    ("std::env::var::inner", StdEnvVarInner);
     ("std::sys::random::hashmap_random_keys", StdSysRandomHashmapRandomKeys);
-    ( "std::sys::thread_local::guard::apple::enable::_tlv_atexit",
-      StdSysThreadLocalGuardAppleEnableTlvAtexit );
     ("std::sys::time::unix::Instant::now", StdSysTimeUnixInstantNow);
     ( "std::thread::functions::available_parallelism",
       StdThreadFunctionsAvailableParallelism );
@@ -40,18 +37,16 @@ module M (StateM : State.StateM.S) = struct
     match[@warning "-redundant-case"]
       (stub, generics.types, generics.const_generics, args)
     with
-    | StdSysEnvUnixGetenv, [], [], [ k ] ->
-        let k = Typed.cast_ptr_f k in
-        getenv ~fun_sig:_fun_sig ~k
+    | StdEnvVarInner, [], [], [ key ] ->
+        let key = as_ptr key in
+        inner ~fun_sig:_fun_sig ~key
     | StdSysRandomHashmapRandomKeys, [], [], [] ->
         hashmap_random_keys ~fun_sig:_fun_sig
-    | StdSysThreadLocalGuardAppleEnableTlvAtexit, _, _, _ ->
-        _tlv_atexit ~fun_exec:_fun_exec ~args
     | StdSysTimeUnixInstantNow, [], [], [] -> now ()
     | StdThreadFunctionsAvailableParallelism, [], [], [] ->
         available_parallelism ~fun_sig:_fun_sig
     | _, tys, cs, args ->
-        Fmt.kstr not_impl
+        not_impl
           "Custom stub found but called with the wrong arguments; got:@.Types: \
            %a@.Consts: %a@.Args: %a"
           Fmt.(list ~sep:comma Charon_util.pp_ty)

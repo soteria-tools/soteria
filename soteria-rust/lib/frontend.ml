@@ -5,14 +5,11 @@ open Frontend_runtime
 
 exception FrontendError = FrontendError
 
-(** Something wrong internally with plugins *)
-exception PluginError of string
+(** Compilation of the code failed; contains
+    [(error message, where it happened)]. *)
+exception CompilationError of string * string
 
-(** Compilation of the code failed at the rustc level *)
-exception CompilationError of string
-
-let compilation_err msg = raise (CompilationError msg)
-let plugin_err msg = raise (PluginError msg)
+let compilation_err info msg = raise (CompilationError (info, msg))
 
 module Lib = struct
   let target =
@@ -24,7 +21,8 @@ module Lib = struct
           let info = Exe.exec_exn ~env (Cmd.cargo ()) [ "-vV" ] in
           match List.find_opt (String.starts_with ~prefix:"host") info with
           | Some s -> String.sub s 6 (String.length s - 6)
-          | None -> plugin_err "Couldn't find target host"))
+          | None ->
+              compilation_err "executing rustc" "Couldn't find target host"))
 
   let root =
     lazy
@@ -33,7 +31,8 @@ module Lib = struct
        with
       | Some root, _ -> root
       | None, root :: _ -> root
-      | None, [] -> plugin_err "Couldn't find plugin directory")
+      | None, [] ->
+          compilation_err "loading plugins" "Couldn't find plugin directory")
 
   type t = Std | Soteria | Kani
 
@@ -55,7 +54,9 @@ module Lib = struct
     match status with
     | WEXITED (0 | 255) -> ()
     | _ ->
-        Fmt.kstr plugin_err "Couldn't compile lib at %s@.%a" path
+        Fmt.kstr
+          (compilation_err ("compiling plugin " ^ name lib))
+          "Couldn't compile lib at %s@.%a" path
           Fmt.(list string)
           err
 
@@ -63,7 +64,8 @@ module Lib = struct
   let clean lib = exec_cargo lib [ "clean" ]
 
   let compile lib =
-    if not (Config.get ()).no_compile_plugins then
+    let config = Config.get () in
+    if not config.no_compile_plugins then
       let env =
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
       in
@@ -71,6 +73,7 @@ module Lib = struct
         [ "build"; "--lib"; "--target"; Lazy.force target ]
         @ if (Config.get ()).log_compilation then [ "--verbose" ] else []
       in
+      let args = if config.offline then args @ [ "--offline" ] else args in
       exec_cargo ~env lib args
 
   let with_compiled lib f =
@@ -80,6 +83,10 @@ module Lib = struct
     let config : Cmd.t = f (path, target) in
     let lib_imports =
       [
+        "--extern";
+        name lib
+        ^ "="
+        ^ (path / "target" / target / "debug" / ("lib" ^ name lib ^ ".rlib"));
         "-L" ^ (path / "target" / target / "debug" / "deps");
         "-L" ^ (path / "target" / "debug" / "deps");
       ]
@@ -118,6 +125,10 @@ let default () =
          "--format=postcard";
          "--no-typecheck";
          "--no-normalize";
+         (* Use the normal distributed sysroot; Charon otherwise defaults to a
+            full-MIR Miri sysroot, whose std is incompatible with our
+            separately-compiled [soteria] support crate. *)
+         "--sysroot=default";
        ]
       @ opaque_names
       @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
@@ -139,12 +150,6 @@ let default () =
         "crate-attr=feature(register_tool)";
         "-Z";
         "crate-attr=register_tool(soteriatool)";
-        "--extern";
-        "soteria";
-        (* include the std *)
-        (* "--extern";
-        "noprelude:std="
-        ^ (std_lib_path / "target" / target / "debug" / "libstd.rlib"); *)
       ]
     ()
 
@@ -153,7 +158,7 @@ let kani () =
   Cmd.make ~features:[ "kani" ]
     ~entry_points:[ Attrib "kanitool::proof" ]
     ~expect_error:[ Attrib "kanitool::should_panic" ]
-    ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)"; "--extern"; "kani" ]
+    ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)" ]
     ()
 
 let miri () =
@@ -249,7 +254,8 @@ let parse_ullbc ~mode ~cmd ~output ~pwd () =
   if not (Config.get ()).no_compile then (
     let _, err, res = Cmd.exec_in ~mode pwd cmd in
     if not (Exe.is_ok res) then
-      if res = WEXITED 2 then compilation_err (String.concat "\n" err)
+      if res = WEXITED 2 then
+        compilation_err "compiling target code" (String.concat "\n" err)
       else
         Fmt.kstr frontend_err "Failed compilation to ULLBC:@,%a"
           Fmt.(list ~sep:(any "\n") string)
@@ -268,7 +274,7 @@ let parse_ullbc ~mode ~cmd ~output ~pwd () =
   in
   if (Config.get ()).output_crate then (
     (* save pretty-printed crate to local file *)
-    let crate_file = Printf.sprintf "%s.crate" output in
+    let crate_file = Filename.chop_suffix output ".ullbc" ^ ".crate" in
     let str = Charon.Print.crate_to_string crate in
     let oc = open_out_bin crate_file in
     output_string oc str;
@@ -286,7 +292,7 @@ let with_entry_points ~filter (crate : Charon.UllbcAst.crate) =
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_file ~(mk_cmd : mk_cmd) file_name =
   let parent_folder = Filename.dirname file_name in
-  let output = Printf.sprintf "%s.llbc.json" file_name in
+  let output = Printf.sprintf "%s.ullbc" file_name in
   let cmd = mk_cmd ~input:file_name ~output () in
   parse_ullbc ~mode:Rustc ~cmd ~output ~pwd:parent_folder ()
 
@@ -294,8 +300,8 @@ let parse_ullbc_of_file ~(mk_cmd : mk_cmd) file_name =
 let parse_ullbc_of_crate ~(mk_cmd : mk_cmd) crate_dir =
   let filename =
     match (Config.get ()).test with
-    | Some test -> "test-" ^ test ^ ".llbc.json"
-    | None -> "crate.llbc.json"
+    | Some test -> "test-" ^ test ^ ".ullbc"
+    | None -> "crate.ullbc"
   in
   let output = crate_dir / filename in
   let cmd = mk_cmd ~output () in

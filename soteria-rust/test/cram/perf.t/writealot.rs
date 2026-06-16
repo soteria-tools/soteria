@@ -65,11 +65,13 @@ macro_rules! access {
 }
 
 fn access(x: &mut u32) {
-    access!(x, 10000);
+    for _ in 0..20 {
+        access!(x, 10000);
+    }
 }
 
 fn main() {
     let mut x = 0;
     access(&mut x);
-    assert_eq!(x, 10_000);
+    assert_eq!(x, 200_000);
 }

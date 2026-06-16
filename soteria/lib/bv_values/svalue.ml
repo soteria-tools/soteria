@@ -1,3 +1,4 @@
+open Logs.Import
 open Hc
 open Soteria_std
 module Var = Symex.Var
@@ -13,7 +14,7 @@ module FloatPrecision = struct
     | 32 -> F32
     | 64 -> F64
     | 128 -> F128
-    | _ -> failwith "Invalid float size"
+    | _ -> L.failwith "Invalid float size"
 end
 
 module FloatClass = struct
@@ -269,7 +270,7 @@ module Make (V : Value_ext) = struct
 
   let precision_of_f = function
     | TFloat p -> p
-    | ty -> Fmt.failwith "Not a float: %a" pp_ty ty
+    | ty -> L.failwith "Not a float: %a" pp_ty ty
 
   let hash t = t.tag
   let kind t = t.node.kind
@@ -304,7 +305,7 @@ module Make (V : Value_ext) = struct
     | TBitVector n -> n
     | TPointer n -> n
     | TLoc n -> n
-    | _ -> failwith "Not a bit value"
+    | _ -> L.failwith "Not a bit value"
 
   let rec pp ft t =
     let open Fmt in
@@ -823,17 +824,17 @@ module Make (V : Value_ext) = struct
     let exists_1 ~not_in ty mk =
       exists_n ~not_in [ ty ] (function
         | [ v ] -> mk v
-        | _ -> failwith "exists_1: unreachable")
+        | _ -> L.failwith "exists_1: unreachable")
 
     let exists_2 ~not_in ty1 ty2 mk =
       exists_n ~not_in [ ty1; ty2 ] (function
         | [ v1; v2 ] -> mk v1 v2
-        | _ -> failwith "exists_2: unreachable")
+        | _ -> L.failwith "exists_2: unreachable")
 
     let exists_3 ~not_in ty1 ty2 ty3 mk =
       exists_n ~not_in [ ty1; ty2; ty3 ] (function
         | [ v1; v2; v3 ] -> mk v1 v2 v3
-        | _ -> failwith "exists_3: unreachable")
+        | _ -> L.failwith "exists_3: unreachable")
 
     let sem_eq_untyped v1 v2 =
       if equal_ty v1.node.ty v2.node.ty then sem_eq v1 v2 else v_false
@@ -1115,6 +1116,7 @@ module Make (V : Value_ext) = struct
       | Binop (Add _, l, r), _ when equal r v2 -> l
       | Binop (Add _, l1, r1), Binop (Add _, l2, r2) when equal l1 l2 ->
           sub ~checked r1 r2
+      | _l, Binop (Sub _, l', r) when equal v1 l' -> r
       (* only propagate down ites if we know it's concrete *)
       | Ite (b, l, r), BitVec _ -> Bool.ite b (sub l v2) (sub r v2)
       | BitVec _, Ite (b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)
@@ -1440,7 +1442,7 @@ module Make (V : Value_ext) = struct
           | BitAnd -> and_ v1 v2
           | BitOr -> or_ v1 v2
           | BitXor -> xor v1 v2
-          | _ -> failwith "unreachable binop")
+          | _ -> L.failwith "unreachable binop")
       | Binop (Shl, v1, { node = { kind = BitVec x; _ }; _ }) ->
           (* extract[from_, to_](v1 << x) *)
           let shift = Z.to_int x in
@@ -2309,7 +2311,7 @@ module Make (V : Value_ext) = struct
     let fp_of v =
       match v.node.ty with
       | TFloat fp -> fp
-      | _ -> Fmt.failwith "Unsupported float type"
+      | _ -> L.failwith "Unsupported float type"
 
     let f16 f = mk_f F16 f
     let f32 f = mk_f F32 f
@@ -2405,7 +2407,7 @@ module Make (V : Value_ext) = struct
     let mk ~seq_ty l = Seq l <| seq_ty
 
     let inner_ty ty =
-      match ty with TSeq ty -> ty | _ -> failwith "Expected a sequence type"
+      match ty with TSeq ty -> ty | _ -> L.failwith "Expected a sequence type"
   end
 
   (** {2 General constructors} *)

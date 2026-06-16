@@ -9,7 +9,8 @@ struct LinkedList<T> {
 
 fn main() {
     // A pattern that gets executed during tokio's runtime initialisation and caused performance issues in Soteria in the past.
-    let arr: [LinkedList<u32>; 64] = std::array::from_fn(|_| LinkedList {
+    // The array is sized larger than tokio's (64) so the benchmark runs for ~1s+.
+    let arr: [LinkedList<u32>; 1024] = std::array::from_fn(|_| LinkedList {
         head: None,
         tail: None,
         _marker: PhantomData,

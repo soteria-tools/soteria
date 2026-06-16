@@ -29,6 +29,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from soteria_utils import *
+
 # Directory scanned (recursively) for workflow / action YAML files
 SCAN_DIR = ".github"
 
@@ -42,99 +44,6 @@ USES_PATTERN = re.compile(r"^(\s*)(?:-\s*)?uses:\s*([^@\s]+)@(\S+)")
 
 # Regex to recognise a clean version tag (vX, vX.Y, vX.Y.Z), no pre-release suffix
 VERSION_TAG_PATTERN = re.compile(r"^v(\d+)(?:\.(\d+))?(?:\.(\d+))?$")
-
-
-# ANSI color codes for pretty output
-class Colors:
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    BLUE = "\033[94m"
-    YELLOW = "\033[93m"
-    BOLD = "\033[1m"
-    RESET = "\033[0m"
-
-
-# The progress bar currently being rendered, if any. Messages printed while a bar
-# is active are interleaved above it (the bar line is cleared and redrawn).
-_active_progress: "Progress | None" = None
-
-
-def color_print(message: str, color: str = "") -> None:
-    """Print a message with optional color, cooperating with an active progress bar."""
-    text = f"{color}{message}{Colors.RESET}"
-    if _active_progress is not None:
-        _active_progress.log(text)
-    else:
-        print(text)
-
-
-def info(message: str) -> None:
-    """Print an info message in blue."""
-    color_print(f"ℹ {message}", Colors.BLUE)
-
-
-def success(message: str) -> None:
-    """Print a success message in green."""
-    color_print(f"✓ {message}", Colors.GREEN)
-
-
-def warn(message: str) -> None:
-    """Print a warning message in yellow."""
-    color_print(f"⚠ {message}", Colors.YELLOW)
-
-
-def error(message: str) -> None:
-    """Print an error message in red."""
-    color_print(f"✗ {message}", Colors.RED)
-
-
-def step(message: str) -> None:
-    """Print a step message in bold."""
-    color_print(f"▶ {message}", Colors.BOLD)
-
-
-class Progress:
-    """A minimal terminal progress bar. No-op when stdout is not a TTY."""
-
-    BAR_WIDTH = 30
-
-    def __init__(self, label: str, total: int) -> None:
-        self.label = label
-        self.total = total
-        self.n = 0
-        self.enabled = sys.stdout.isatty() and total > 0
-
-    def _render(self) -> None:
-        if not self.enabled:
-            return
-        filled = int(self.BAR_WIDTH * self.n / self.total)
-        bar = "█" * filled + "░" * (self.BAR_WIDTH - filled)
-        pct = int(100 * self.n / self.total)
-        print(
-            f"\r{Colors.BOLD}{self.label}{Colors.RESET} "
-            f"[{bar}] {self.n}/{self.total} ({pct}%)",
-            end="",
-            flush=True,
-        )
-
-    def advance(self, n: int = 1) -> None:
-        """Advance the bar by n steps and redraw it."""
-        self.n += n
-        self._render()
-
-    def log(self, message: str) -> None:
-        """Print a message above the bar, then redraw the bar."""
-        if self.enabled:
-            print("\r\033[K", end="")  # clear the current bar line
-        print(message)
-        self._render()
-
-    def finish(self) -> None:
-        """Complete the bar and move to a fresh line."""
-        if self.enabled:
-            self.n = self.total
-            self._render()
-            print()
 
 
 def run_command(cmd: list[str]) -> str:
@@ -343,21 +252,15 @@ def count_external_uses(files: list[Path]) -> int:
 
 def cmd_pins(root: Path, upgrade: bool, dry_run: bool) -> int:
     """Renew or upgrade pins across all scanned files."""
-    global _active_progress
     files = find_yaml_files(root)
     label = "Upgrading versions" if upgrade else "Renewing pins"
-    progress = Progress(label, count_external_uses(files))
-    _active_progress = progress
 
     any_change = False
-    try:
+    with Progress(label, count_external_uses(files)) as progress:
         for file_path in files:
             file_rel = file_path.relative_to(root)
             if process_file(file_path, file_rel, upgrade, dry_run, progress):
                 any_change = True
-    finally:
-        progress.finish()
-        _active_progress = None
 
     if not any_change:
         success("All pins are already up to date.")

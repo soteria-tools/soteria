@@ -95,6 +95,8 @@ let pp_generic_params = mk_pp PrintFmt.pp_generic_params_single_line
 let pp_global_decl_ref = mk_pp PrintFmt.pp_global_decl_ref
 let pp_name = mk_pp PrintFmt.pp_name
 let pp_place = mk_pp PrintFmt.pp_place
+let pp_region_binder pp = mk_pp (PrintFmt.pp_region_binder (fun _ -> pp))
+let pp_trait_decl_ref = mk_pp PrintFmt.pp_trait_decl_ref
 let pp_trait_impl_ref = mk_pp PrintFmt.pp_trait_impl_ref
 let pp_trait_ref = mk_pp PrintFmt.pp_trait_ref
 let pp_type_decl_ref = mk_pp PrintFmt.pp_type_decl_ref
@@ -120,8 +122,8 @@ let get_adt (adt_ref : Types.type_decl_ref) =
       let subst = subst_at_binder_zero subst in
       st_substitute_visitor#visit_type_decl subst adt
   | TBuiltin _ | TTuple ->
-      Fmt.failwith "get_adt: unexpected non-ADT type decl id: %a"
-        Types.pp_type_id adt_ref.id
+      L.failwith "get_adt: unexpected non-ADT type decl id: %a" Types.pp_type_id
+        adt_ref.id
 
 let get_adt_lang_item lang_item =
   let exception Found of Types.type_decl in
@@ -138,6 +140,13 @@ let get_adt_lang_item_ref lang_item =
   let adt = get_adt_lang_item lang_item in
   let generics = TypesUtils.generic_args_of_params () adt.generics in
   ({ id = TAdtId adt.def_id; generics } : Types.type_decl_ref)
+
+let adt_has_lang_item lang_item (adt_ref : Types.type_decl_ref) =
+  match adt_ref.id with
+  | TAdtId id ->
+      Option.equal String.equal (get_adt_raw id).item_meta.lang_item
+        (Some lang_item)
+  | TBuiltin _ | TTuple -> false
 
 let get_fun id =
   let crate = get_crate () in
@@ -216,24 +225,36 @@ let is_union (adt_ref : Types.type_decl_ref) =
       match (get_adt_raw id).kind with Union _ -> true | _ -> false)
   | _ -> false
 
+let is_union' (adt_id : Types.type_decl_id) =
+  match (get_adt_raw adt_id).kind with Union _ -> true | _ -> false
+
 let as_enum adt_ref =
   match (get_adt adt_ref).kind with
   | Enum variants -> variants
-  | _ -> failwith "as_enum expected an enum"
+  | _ -> L.failwith "as_enum expected an enum"
 
 let as_struct adt_ref =
   match (get_adt adt_ref).kind with
   | Struct fields -> fields
-  | _ -> failwith "as_struct expected a struct"
+  | _ -> L.failwith "as_struct expected a struct"
 
 let as_struct_or_tuple (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with
   | TTuple -> adt_ref.generics.types
   | TAdtId _ ->
       as_struct adt_ref |> List.map (fun (f : Types.field) -> f.field_ty)
-  | _ -> failwith "as_struct_or_tuple expected a struct or tuple"
+  | _ -> L.failwith "as_struct_or_tuple expected a struct or tuple"
 
 let as_union adt_ref =
   match (get_adt adt_ref).kind with
   | Union fields -> fields
-  | _ -> failwith "as_union expected a union"
+  | _ -> L.failwith "as_union expected a union"
+
+module L = struct
+  include L
+
+  let entry_point_section name =
+    Fmt.kstr
+      (with_section ~is_branch:false)
+      "Executing entry point: %a" pp_name name
+end

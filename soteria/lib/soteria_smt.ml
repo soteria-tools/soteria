@@ -12,6 +12,7 @@
       fresh atom. *)
 
 include Fast_sexp
+module Subprocess = Soteria_std.Subprocess
 module StrSet = Set.Make (String)
 module StrMap = Map.Make (String)
 
@@ -458,10 +459,9 @@ let drain_threshold = 1024
 
 let new_solver (cfg : solver_config) : solver =
   let args = Array.of_list (cfg.exe :: cfg.opts) in
-  let proc = Unix.open_process_args_full cfg.exe args [||] in
-  let pid = Unix.process_full_pid proc in
-  let in_chan, out_chan, in_err_chan = proc in
-  let reader = Reader.create in_chan in_err_chan in
+  let sub = Subprocess.open_ cfg.exe args in
+  let stdin = Subprocess.stdin sub in
+  let reader = Reader.create (Subprocess.stdout sub) (Subprocess.stderr sub) in
   let cmd_buf = Buffer.create 4096 in
   (* Number of fire-and-forget commands whose [success] acknowledgement has not
      been read back yet. *)
@@ -470,9 +470,9 @@ let new_solver (cfg : solver_config) : solver =
   let write_command c =
     Buffer.clear cmd_buf;
     write_buf cmd_buf c;
-    Buffer.output_buffer out_chan cmd_buf;
-    output_char out_chan '\n';
-    flush out_chan;
+    Buffer.output_buffer stdin cmd_buf;
+    output_char stdin '\n';
+    flush stdin;
     cfg.log.send (fun () -> Buffer.contents cmd_buf)
   in
   let read_response () =
@@ -513,25 +513,20 @@ let new_solver (cfg : solver_config) : solver =
     write_command c;
     read_response ()
   in
-  (* [stop] is idempotent: it can be called explicitly and is also registered as
-     a GC finaliser, so [Unix.close_process_full] must not run twice. *)
-  let stopped = ref false in
+  (* [stop]/[force_stop] delegate to {!Subprocess}, which makes them idempotent,
+     unregisters the process, and reaps it at exit or on interruption. The
+     graceful [(exit)] and the log hook are this solver's own concern. *)
   let stop_command () =
-    if not !stopped then (
-      stopped := true;
-      (try
-         output_string out_chan "(exit)\n";
-         flush out_chan
-       with Sys_error _ -> ());
-      let _ = Unix.close_process_full proc in
-      cfg.log.stop ())
+    (try
+       output_string stdin "(exit)\n";
+       flush stdin
+     with Sys_error _ -> ());
+    Subprocess.stop_process sub;
+    cfg.log.stop ()
   in
   let force_stop_command () =
-    if not !stopped then (
-      stopped := true;
-      (try Unix.kill pid 9 with Unix.Unix_error _ -> ());
-      let _ = Unix.close_process_full proc in
-      cfg.log.stop ())
+    Subprocess.force_stop_process sub;
+    cfg.log.stop ()
   in
   let s =
     {

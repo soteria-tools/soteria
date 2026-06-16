@@ -61,7 +61,7 @@ module DecayMap : DecayMapS = struct
     let pp = ppa
     let show = Fmt.to_to_string pp
     let simplify = Rustsymex.simplify
-    let fresh _ = failwith "Cannot allocate in DecayMap"
+    let fresh _ = L.failwith "Cannot allocate in DecayMap"
     let to_syn = Expr.of_value
     let learn_eq s l = Consumer.learn_eq s l
     let exprs_syn s : Expr.t list = [ s ]
@@ -69,13 +69,13 @@ module DecayMap : DecayMapS = struct
   end
 
   module Entry = struct
-    type t = { address : sint Typed.t; exposed : bool }
+    type 'addr raw = { address : 'addr; exposed : bool }
     [@@deriving show { with_path = false }]
 
-    type syn = { address : Expr.t; exposed : bool }
-    [@@deriving show { with_path = false }]
+    type t = sint Typed.t raw [@@deriving show { with_path = false }]
+    type syn = Expr.t raw [@@deriving show { with_path = false }]
 
-    let fresh () = failwith "No fresh for DecayMap.SM.Entry"
+    let fresh () = L.failwith "No fresh for DecayMap.SM.Entry"
 
     let to_syn ({ address; exposed } : t) =
       { address = Expr.of_value address; exposed }
@@ -102,8 +102,12 @@ module DecayMap : DecayMapS = struct
   module SM = struct
     include SM
 
-    let[@inline] not_impl msg = lift @@ not_impl msg
-    let[@inline] of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
+    let[@inline] not_impl ?tip ?issue fmt =
+      Fmt.kstr (fun msg -> lift @@ Rustsymex.not_impl ?tip ?issue "%s" msg) fmt
+
+    let[@inline] of_opt_not_impl ?tip ?issue msg x =
+      lift @@ of_opt_not_impl ?tip ?issue msg x
+
     let[@inline] match_on xs ~constr = lift @@ match_on xs ~constr
     let[@inline] get_where () = lift @@ get_trace ()
   end
@@ -115,6 +119,7 @@ module DecayMap : DecayMapS = struct
       =
     if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
     else
+      let* state = get_state () in
       wrap loc
         (let open EntryExcl.SM in
          let open Syntax in
@@ -125,14 +130,25 @@ module DecayMap : DecayMapS = struct
              Result.ok address
          | Some { address; exposed = _ } -> Result.ok address
          | None ->
+             Soteria.Stats.As_ctx.incr Rustsymex.StatKeys.decayed_pointers;
              let* address = nondet (Typed.t_usize ()) in
              let isize_max = Layout.max_value_z (TInt Isize) in
+             (* Distinct allocations live at distinct addresses. We
+                under-approximate this by only requiring the base addresses to
+                differ. *)
+             let disctinct =
+               syntactic_bindings (of_opt state)
+               |> Seq.map (fun (_, Entry.{ address; _ }) -> address)
+               |> Seq.cons address
+               |> Typed.distinct_seq
+             in
              let* () =
                assume
                  [
                    (address %@ align ==@ Usize.(0s));
                    align <=@ address;
                    address <@ Typed.BitVec.usize isize_max -!@ size;
+                   disctinct;
                  ]
              in
              let* () = set_state (Some { address; exposed = expose }) in
@@ -181,6 +197,24 @@ let is_null = Typed.Ptr.is_null'
 
 (** Whether this pointer has provenance, i.e. points to some allocation. *)
 let has_provenance ptr = Typed.not (Typed.Ptr.is_at_null_loc' ptr)
+
+(** Returns a symbolic boolean characterising whether the pointer is in bound to
+    its allocation. *)
+let in_bound { ptr; size; _ } =
+  let ofs = Typed.Ptr.ofs ptr in
+  Usize.(0s) <=@ ofs &&@ (ofs <@ size)
+
+(** Creates a dangling pointer to the given type, if that type is a ZST; returns
+    [None] otherwise. *)
+let dangling_if_zst ty =
+  let open Rustsymex in
+  let open Syntax in
+  let** layout = Layout.layout_of ty in
+  if%sat layout.size ==@ Usize.(0s) then
+    (* UX: really any address that is well-aligned is valid, we
+       under-approximate here to make our life easier. *)
+    Result.ok (Some (of_address layout.align))
+  else Result.ok None
 
 (** If these two pointers have the same provenance, i.e. point to the same
     allocation (or if they both have no provenance). *)

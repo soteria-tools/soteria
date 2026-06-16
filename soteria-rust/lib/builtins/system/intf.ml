@@ -14,9 +14,6 @@ module M (StateM : State.StateM.S) = struct
   type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   module type S = sig
-    val _tlv_atexit :
-      fun_exec:fun_exec -> args:Typed.(T.any t) list -> Typed.([> T.any ] t) ret
-
     (** {@markdown[
           Returns an estimate of the default amount of parallelism a program should use.
 
@@ -106,12 +103,8 @@ module M (StateM : State.StateM.S) = struct
     val available_parallelism :
       fun_sig:Types.fun_sig -> Typed.([> T.adt ] t) ret
 
-    val getenv :
-      fun_sig:Types.fun_sig ->
-      k:Typed.([< T.sptr_f ] t) ->
-      Typed.([> T.adt ] t) ret
-
-    val hashmap_random_keys : fun_sig:Types.fun_sig -> Typed.([> T.adt ] t) ret
-    val now : unit -> Typed.([> T.adt ] t) ret
+    val hashmap_random_keys : fun_sig:Types.fun_sig -> rust_val ret
+    val inner : fun_sig:Types.fun_sig -> key:full_ptr -> rust_val ret
+    val now : unit -> rust_val ret
   end
 end

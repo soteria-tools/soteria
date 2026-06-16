@@ -79,6 +79,21 @@ let rec dst_slice_ty : Types.ty -> Types.ty option = function
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let is_dst ty = dst_kind ty <> NoneKind
 
+(** The [Pointee::Metadata] associated type of a pointer to [pointee]: [()] for
+    sized types, [usize] for slices and [str], and [DynMetadata<Dyn>] for trait
+    objects. *)
+let pointee_metadata (pointee : Types.ty) : Types.ty =
+  match dst_kind pointee with
+  | NoneKind -> TypesUtils.mk_unit_ty
+  | LenKind -> TLiteral (TUInt Usize)
+  | VTableKind ->
+      let adt = Crate.get_adt_lang_item "dyn_metadata" in
+      TAdt
+        {
+          id = TAdtId adt.def_id;
+          generics = TypesUtils.mk_generic_args_from_types [ pointee ];
+        }
+
 let[@inline] size_to_fit ~size ~align =
   Typed.ite
     (size %@ align ==@ Usize.(0s))
@@ -92,9 +107,7 @@ let mk ~size ~align ?(uninhabited = false)
 let mk_concrete ~size ~align =
   mk ~size:(BV.usizei size) ~align:(BV.usizeinz align)
 
-let not_impl_layout msg ty =
-  Fmt.kstr not_impl "Can't compute layout: %s %a" msg pp_ty ty
-
+let not_impl_layout msg ty = not_impl "Can't compute layout: %s %a" msg pp_ty ty
 let layout_warning msg ty = [%l.warn "Layout: %s@.Type: %a" msg pp_ty ty]
 
 let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
@@ -149,7 +162,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       | [ (_triple, layout) ], _
         when (not (Config.get ()).polymorphic) || ty_is_monomorphic ty ->
           translate_layout ty layout
-      | _ :: _ :: _, _ -> failwith "multiple layouts for the same ADT"
+      | _ :: _ :: _, _ -> L.failwith "multiple layouts for the same ADT"
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
       | _, Union fields -> compute_union_layout ty (field_tys fields)
       | _, Enum variants -> compute_enum_layout ty variants
@@ -197,7 +210,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
        * let align = Typed.cast (Usize.(1s) <<@ align_shift) in *)
       let align = Usize.(1s) in
       ok (mk ~size ~align ())
-  | TVar (Bound _) -> failwith "escaping bound type variable found in layout_of"
+  | TVar (Bound _) ->
+      L.failwith "escaping bound type variable found in layout_of"
   (* Others (unhandled for now) *)
   | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
   | TError _ -> not_impl_layout "error" ty
@@ -237,7 +251,7 @@ and translate_layout ty (layout : Types.layout) =
               match v.tagger with
               | [] -> None
               | [ (ofs, value) ] -> Some (BV.usizei ofs, BV.of_scalar value)
-              | _ :: _ :: _ -> failwith "unsupported: >1 tagger values"
+              | _ :: _ :: _ -> L.failwith "unsupported: >1 tagger values"
             in
             (tagger, Arbitrary (Types.VariantId.of_int i, ofs)))
       layout.variant_layouts
@@ -252,7 +266,7 @@ and translate_layout ty (layout : Types.layout) =
     | Some (Known v), _ -> snd (Types.VariantId.nth variant_layouts v)
     (* we didn't translate a discriminator; we hope it's a struct-like! *)
     | None, [ (_, v) ] -> v
-    | None, _ -> failwith "no discriminator and >1 variant layouts?"
+    | None, _ -> L.failwith "no discriminator and >1 variant layouts?"
   in
   let layout = mk ~size ~align ~uninhabited ~fields () in
   [%l.trace "Translated layout for %a:@.%a" pp_ty ty pp layout];
@@ -382,6 +396,9 @@ and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
       let trait_assoc_ty = Types.AssocTypeId.Map.find assoc_ty_id impl.types in
       (* HACK: we skip the binder here! *)
       ok trait_assoc_ty.binder_value.value
+  | BuiltinOrAuto (BuiltinPointee, _, _) ->
+      let pointee = List.hd tref.trait_decl_ref.binder_value.generics.types in
+      ok (pointee_metadata pointee)
   | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id, args))
 
 (** Normalise a type, by substituting any generics with the current generic
@@ -411,7 +428,7 @@ let min_value_z : Types.literal_type -> Z.t = function
   | TInt I32 -> Z.neg (Z.shift_left Z.one 31)
   | TInt I16 -> Z.neg (Z.shift_left Z.one 15)
   | TInt I8 -> Z.neg (Z.shift_left Z.one 7)
-  | _ -> failwith "Invalid integer type for min_value_z"
+  | _ -> L.failwith "Invalid integer type for min_value_z"
 
 let max_value_z : Types.literal_type -> Z.t = function
   | TUInt U128 -> Z.pred (Z.shift_left Z.one 128)
@@ -426,7 +443,7 @@ let max_value_z : Types.literal_type -> Z.t = function
   | TInt I16 -> Z.pred (Z.shift_left Z.one 15)
   | TInt I8 -> Z.pred (Z.shift_left Z.one 7)
   | TInt Isize -> Z.pred (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))
-  | _ -> failwith "Invalid integer type for max_value_z"
+  | _ -> L.failwith "Invalid integer type for max_value_z"
 
 let rec is_unsafe_cell : Types.ty -> bool = function
   | TAdt { id = TTuple; generics = { types; _ } } ->

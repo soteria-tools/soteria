@@ -22,11 +22,15 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import TypedDict
+
+from soteria_utils import *
 
 # Files to scan for versionsync tags
 FILES_TO_SCAN = [
     ".github/workflows/build.yml",
     ".github/workflows/test-packages.yml",
+    ".github/workflows/benchmarks.yml",
     "soteria-rust.opam.template",
     "dune-project",
     ".ocamlformat",
@@ -43,41 +47,6 @@ TAG_PATTERN = re.compile(r"\[versionsync:\s*(\w+)=([^\]]+)\]")
 
 # Regex to match slice filter: [versionsync.slice: a..b]
 SLICE_PATTERN = re.compile(r"\[versionsync\.slice:\s*(-?\d*)\.\.(-?\d*)\]")
-
-
-# ANSI color codes for pretty output
-class Colors:
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    BLUE = "\033[94m"
-    YELLOW = "\033[93m"
-    BOLD = "\033[1m"
-    RESET = "\033[0m"
-
-
-def color_print(message: str, color: str = "") -> None:
-    """Print a message with optional color."""
-    print(f"{color}{message}{Colors.RESET}")
-
-
-def info(message: str) -> None:
-    """Print an info message in blue."""
-    color_print(f"ℹ {message}", Colors.BLUE)
-
-
-def success(message: str) -> None:
-    """Print a success message in green."""
-    color_print(f"✓ {message}", Colors.GREEN)
-
-
-def error(message: str) -> None:
-    """Print an error message in red."""
-    color_print(f"✗ {message}", Colors.RED)
-
-
-def step(message: str) -> None:
-    """Print a step message in bold."""
-    color_print(f"▶ {message}", Colors.BOLD)
 
 
 def parse_slice(slice_str: str) -> tuple[int | None, int | None]:
@@ -560,20 +529,28 @@ def pull_project(
 
     info(f"Running build command: {' '.join(build_cmd_parts)}")
     run_command(build_cmd_parts, target_dir)
-    success(f"Build completed successfully")
+    success("Build completed successfully")
 
     for cmd in post_build_cmds or []:
         info(f"Running post-build command: {' '.join(cmd)}")
         run_command(cmd, target_dir)
 
     color_print(
-        f"\n✓ {project} updated and built successfully!\n", Colors.GREEN + Colors.BOLD
+        f"\n✓ {project} updated and built successfully!\n", GREEN + BOLD
     )
+
+
+class ProjectPullConfig(TypedDict):
+    repo_key: str
+    version_key: str
+    default_dir: Path
+    build_cmd: str
+    post_build_cmds: list[list[str]]
 
 
 def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> int:
     """Pull and build obol and/or charon."""
-    projects_config = {
+    projects_config: dict[str, ProjectPullConfig] = {
         "obol": {
             "repo_key": "OBOL_REPO",
             "version_key": "OBOL_COMMIT_HASH",
@@ -597,6 +574,7 @@ def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> 
             "version_key": "CHARON_COMMIT_HASH",
             "default_dir": root.parent / "charon",
             "build_cmd": "make build-charon-rust",
+            "post_build_cmds": [],
         },
     }
 

@@ -1,3 +1,4 @@
+open Logs.Import
 open Hc
 open Svalue
 
@@ -93,14 +94,25 @@ module Make (V : Value_ext) : S with module Ext = V = struct
     include BitVec
 
     let mk_nz n z =
-      if Z.equal z Z.zero then failwith "Zero value in mk_nonzero" else mk n z
+      if Z.equal z Z.zero then L.failwith "Zero value in mk_nonzero" else mk n z
 
     let mki_masked n i = mk_masked n (Z.of_int i)
 
     let mki_nz n i =
-      if i = 0 then failwith "Zero value in mki_nonzero" else mki_masked n i
+      if i = 0 then L.failwith "Zero value in mki_nonzero" else mki_masked n i
 
     let no_ovf_unsafe x = x
+
+    let add_checked ~signed l r =
+      (add ~checked:true l r, add_overflows ~signed l r)
+
+    let sub_checked ~signed l r =
+      (sub ~checked:true l r, sub_overflows ~signed l r)
+
+    let mul_checked ~signed l r =
+      (mul ~checked:true l r, mul_overflows ~signed l r)
+
+    let neg_checked x = (neg x, neg_overflows x)
   end
 
   module Infix = struct
@@ -113,13 +125,12 @@ module Make (V : Value_ext) : S with module Ext = V = struct
     let ( *!@ ) = ( *@ )
     let ( *!!@ ) = BitVec.mul ~checked:true
     let ( ~-! ) = ( ~- )
-    let mk_checked_op op ovf = fun l r -> (op ?checked:(Some true) l r, ovf l r)
-    let ( +?@ ) = mk_checked_op BitVec.add (BitVec.add_overflows ~signed:false)
-    let ( +$?@ ) = mk_checked_op BitVec.add (BitVec.add_overflows ~signed:true)
-    let ( -?@ ) = mk_checked_op BitVec.sub (BitVec.sub_overflows ~signed:false)
-    let ( -$?@ ) = mk_checked_op BitVec.sub (BitVec.sub_overflows ~signed:true)
-    let ( *?@ ) = mk_checked_op BitVec.mul (BitVec.mul_overflows ~signed:false)
-    let ( *$?@ ) = mk_checked_op BitVec.mul (BitVec.mul_overflows ~signed:true)
-    let ( ~-? ) x = (~-x, BitVec.neg_overflows x)
+    let ( +?@ ) = BitVec.add_checked ~signed:false
+    let ( +$?@ ) = BitVec.add_checked ~signed:true
+    let ( -?@ ) = BitVec.sub_checked ~signed:false
+    let ( -$?@ ) = BitVec.sub_checked ~signed:true
+    let ( *?@ ) = BitVec.mul_checked ~signed:false
+    let ( *$?@ ) = BitVec.mul_checked ~signed:true
+    let ( ~-? ) = BitVec.neg_checked
   end
 end

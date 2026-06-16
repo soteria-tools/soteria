@@ -1,3 +1,4 @@
+open Logs.Import
 open Soteria_std
 
 (** A [Split_tree] is a simplified representation of a tree, that has no offset.
@@ -165,7 +166,8 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
           return
             ( Split_tree.Leaf (NotOwned Totally),
               Split_tree.Leaf (NotOwned Totally) )
-      | NotOwned Partially -> failwith "Should never split an intermediate node"
+      | NotOwned Partially ->
+          L.failwith "Should never split an intermediate node"
   end
 
   module Tree = struct
@@ -706,7 +708,8 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
         let+ bound = pb () in
         Some { bound = Some bound; root = Tree.not_owned (0s, bound) }
     | Some { bound = None; root } ->
-        let+ bound = pb () in
+        let* bound = pb () in
+        let+^ () = assume [ snd root.range <=@ bound ] in
         Some { bound = Some bound; root }
     | Some { bound = Some _; _ } -> vanish ()
 

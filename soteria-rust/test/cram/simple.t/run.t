@@ -27,8 +27,7 @@ Test memory leaks
       |    --------- 1: Leaking function
     2 |        std::mem::forget(Box::new(11));
       |                         ------------ 2: Call trace
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   [1]
 
@@ -86,11 +85,7 @@ Test that we properly handle the niche optimisation
   Compiling... done in <time>
   => Running niche_optim::main...
   note: niche_optim::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0x0000000000000004 <=u V|2|) /\ (V|2| <=u 0x7ffffffffffffff6) /\
-        (0x0000000000000004 <=u V|3|) /\ (V|3| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|)) /\ (0b00 == extract[0-1](V|2|)) /\
-        (0b00 == extract[0-1](V|3|))
+  PC 1: empty
   
 Test function calls on function pointers
   $ soteria-rust exec fn_ptr.rs
@@ -149,7 +144,13 @@ Check permissive provenance allows int to ptr casts
   note: provenance::with_exposed: done in <time>, ran 1 branch
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
-
+Distinct allocations get distinct base addresses, so they can never alias
+  $ soteria-rust exec distinct_allocs.rs --stats stats.json && check_stat stats.json decayed_pointers 0
+  Compiling... done in <time>
+  => Running distinct_allocs::distinct_allocs_dont_alias...
+  note: distinct_allocs::distinct_allocs_dont_alias: done in <time>, ran 1 branch
+  PC 1: empty
+  
 Check corner cases with permissive provenance, around transmutes
   $ soteria-rust exec provenance_transmute.rs --provenance permissive
   Compiling... done in <time>
@@ -242,14 +243,25 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running thread_local::static_ref_cell...
-  warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::list::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
+  warning: thread_local::static_ref_cell (<time>): an unsupported feature was reached
+  Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
+  
+  tip: to get a sysroot, run
+       cargo +nightly-2026-06-01 miri setup --print-sysroot
+  
+  This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
   => Running thread_local::pub_static_from_const_expr...
-  warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::list::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
+  warning: thread_local::pub_static_from_const_expr (<time>): an unsupported feature was reached
+  Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
+  
+  tip: to get a sysroot, run
+       cargo +nightly-2026-06-01 miri setup --print-sysroot
+  
+  This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
   [2]
 
@@ -258,14 +270,25 @@ This test must be run separtely on linux and macos as it yields different error 
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running thread_local::static_ref_cell...
-  warning: thread_local::static_ref_cell (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::linux_like::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
+  warning: thread_local::static_ref_cell (<time>): an unsupported feature was reached
+  Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
+  
+  tip: to get a sysroot, run
+       cargo +nightly-2026-06-01 miri setup --print-sysroot
+  
+  This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
   => Running thread_local::pub_static_from_const_expr...
-  warning: thread_local::pub_static_from_const_expr (<time>): unsupported feature, can't execute function std::sys::thread_local::destructors::linux_like::register, the function's body was not found while compiling; try using a sysroot (with --sysroot)
+  warning: thread_local::pub_static_from_const_expr (<time>): an unsupported feature was reached
+  Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
+  
+  tip: to get a sysroot, run
+       cargo +nightly-2026-06-01 miri setup --print-sysroot
+  
+  This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
   [2]
 
@@ -300,8 +323,7 @@ Test recursive validity check for references; disabled
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -312,8 +334,7 @@ Test recursive validity check for references; disabled
       .  
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -341,8 +362,7 @@ Test recursive validity check for references; enabled
       .  
     7 |      let as_ref: &u32 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Fake read
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -353,8 +373,7 @@ Test recursive validity check for references; enabled
       .  
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -382,8 +401,7 @@ Test recursive validity check for references; warn
     7 |      let as_ref: &u32 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Triggering operation
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -394,8 +412,7 @@ Test recursive validity check for references; warn
       .  
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -451,8 +468,7 @@ Print the callgraph
   Compiling... done in <time>
   => Running callgraph::main...
   note: callgraph::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffa) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: empty
   
   digraph callgraph {
     node [shape=box fontname="monospace"];
@@ -596,7 +612,136 @@ Ensure we implement the caller_location intrinsic correctly; this used to cause 
       |  --------- 1: Entry point
     2 |      unreachable!("This should not be a null pointer deref!");
       |      -------------------------------------------------------- 2: Call trace
-  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7fffffffffffffee) /\
-        (0b000 == extract[0-2](V|1|))
+  PC 1: empty
   
   [1]
+
+Boolean BitOr must not be assumed true; both operands can be false (issue #376).
+  $ soteria-rust exec bool_or.rs
+  Compiling... done in <time>
+  => Running bool_or::main...
+  error: bool_or::main: found issues in <time>, errors in 1 branch (out of 2)
+  error: Panic: assertion failed: output in bool_or::main
+      --> $TESTCASE_ROOT/bool_or.rs:5:5
+    1 |  fn main() {
+      |  --------- 1: Entry point
+      .  
+    5 |      assert!(output);
+      |      ^^^^^^^^^^^^^^^
+      |      |
+      |      Triggering operation
+      |      2: Call trace
+  PC 1: (0x00 == V|1|) /\ (0x00 == V|2|) /\ (0x00 == V|1|) /\ (0x00 == V|2|)
+  
+  [1]
+
+Test that allocating a box only requires two heap allocation (thanks to the store optimisation): one for the contents of the box, and one for the box that we pass to the drop glue.
+FIXME: now that named consts are globals, there is in fact a third allocation: the one for <i32 as SizedTypeProperties>::LAYOUT. We should extend the store optimisation to handle globals; in particular we have a guarantee they can't be written to, so it's likely the optimisation will perform really well.
+  $ soteria-rust exec box.rs --stats stats.json && check_stat stats.json allocs 2
+  Compiling... done in <time>
+  => Running box::main...
+  note: box::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  check_stat: expected '2', got '3' for allocs
+  [1]
+
+Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.
+  $ soteria-rust exec zst_ref.rs --stats stats.json && check_stat stats.json allocs 0
+  Compiling... done in <time>
+  => Running zst_ref::main...
+  note: zst_ref::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+Test that indexing arrays with a constant index does not allocate; the value is updated in place in the store.
+  $ soteria-rust exec store_struct.rs --stats stats.json && check_stat stats.json allocs 0
+  Compiling... done in <time>
+  => Running store_struct::main...
+  note: store_struct::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+Test that reading the metadata of a store-hosted pointer does not allocate; the pointer stays in the store.
+  $ soteria-rust exec ptr_metadata.rs --stats stats.json && check_stat stats.json allocs 0
+  Compiling... done in <time>
+  => Running ptr_metadata::main...
+  note: ptr_metadata::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+Test we can use ptr::metadata to get the metadata of a trait object; this used to crash
+  $ soteria-rust exec ptr_dyn_metadata.rs
+  Compiling... done in <time>
+  => Running ptr_dyn_metadata::main...
+  note: ptr_dyn_metadata::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  $ soteria-rust exec nonnull.rs --stats stats.json && check_stat stats.json decayed_pointers 0
+  Compiling... done in <time>
+  => Running nonnull::match_niched_enums...
+  note: nonnull::match_niched_enums: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running nonnull::null_is_none...
+  note: nonnull::null_is_none: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running nonnull::niche_ok...
+  note: nonnull::niche_ok: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running nonnull::niche_err...
+  note: nonnull::niche_err: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running nonnull::transmuted_discriminant...
+  note: nonnull::transmuted_discriminant: done in <time>, ran 2 branches
+  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
+  PC 2: (0x0000000000000001 <=u V|1|)
+  
+  $ soteria-rust exec btreeset_small.rs --stats stats.json && check_stat stats.json decayed_pointers 0
+  Compiling... done in <time>
+  => Running btreeset_small::test_treeset_is_ordered...
+  note: btreeset_small::test_treeset_is_ordered: done in <time>, ran 3 branches
+  PC 1: (V|2| <u V|1|)
+  PC 2: (V|1| <=u V|2|) /\ (V|1| != V|2|)
+  PC 3: (V|1| <=u V|2|) /\ (V|1| == V|2|)
+  
+
+Pointers are compared by their addresses. Two pointer with equal addresses
+but different provenance should be decayed, compared, and checked to be equal
+successfuly.
+  $ soteria-rust exec ptr_diff_prov.rs
+  Compiling... done in <time>
+  => Running ptr_diff_prov::diff_prov_same_address...
+  note: ptr_diff_prov::diff_prov_same_address: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ (0x0000000000000001 <=u V|1|) /\
+        (V|1| <=u 0x7ffffffffffffffd) /\ (0x0000000000000001 <=u V|2|) /\
+        (V|2| <=u 0x7ffffffffffffffd)
+  
+  => Running ptr_diff_prov::one_prov_one_no_prove_same_address...
+  note: ptr_diff_prov::one_prov_one_no_prove_same_address: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
+        (0b000 == extract[0-2](V|1|))
+  
+Test calls to FnOnce trait objects.
+  $ soteria-rust exec box_fnonce.rs
+  Compiling... done in <time>
+  => Running box_fnonce::main...
+  note: box_fnonce::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+Test the atomic read-modify-write intrinsics (fetch_and/or/xor/nand/sub/min/max), on both integers and pointers.
+  $ soteria-rust exec atomics.rs
+  Compiling... done in <time>
+  => Running atomics::bitwise...
+  warning: An atomic intrinsic was encountered; it will be executed as sequential code
+  note: atomics::bitwise: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running atomics::min_max_sub...
+  note: atomics::min_max_sub: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running atomics::pointer...
+  note: atomics::pointer: done in <time>, ran 1 branch
+  PC 1: empty
+  

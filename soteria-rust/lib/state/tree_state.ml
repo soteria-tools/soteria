@@ -144,7 +144,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         | false, _ -> None
         | true, TRef _ -> Some Strong
         | true, TAdt adt when adt_is_box adt -> Some Weak
-        | true, _ -> failwith "Non-ref or box in borrow?"
+        | true, _ -> L.failwith "Non-ref or box in borrow?"
       in
       let** tag = with_borrow (Borrows.Tree.borrow ~state ?protector tag) in
       let ptr' = Typed.Ptr.with_tag ptr (Some tag) in
@@ -213,13 +213,21 @@ module Make (Borrows : Tree_borrows.T) = struct
         (StateKey)
         (Freeable_block_with_meta)
 
-    type access = Ghost | Read | Write
+    type access = Ghost | Read | Write [@@deriving show { with_path = false }]
+
+    let print_access access ptr =
+      let open SM.Syntax in
+      let+ st = SM.get_state () in
+      [%l.debug
+        "%a access to the state at pointer %a" pp_access access Sptr_base.pp ptr];
+      [%l.trace "STATE:@\n%a" (Fmt.Dump.option pp) st]
 
     let with_ptr (access : access) (ptr : Typed.([< T.sptr_t ] t))
         (f : [< T.sint ] Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
         ('a, 'err, syn list) SM.Result.t =
       let open SM in
       let open SM.Syntax in
+      let* () = print_access access ptr in
       let** () =
         assert_or_error Typed.(not (Typed.Ptr.is_null' ptr)) `NullDereference
       in
@@ -238,13 +246,13 @@ module Make (Borrows : Tree_borrows.T) = struct
                else Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs)
            | _ -> Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs))
       in
-      match res with
-      | Missing _ as miss ->
-          (* FIXME: this is wrong in compositional? *)
-          if%sat Typed.not (Sptr.has_provenance ptr) then
+      match (res, Config.get_mode ()) with
+      | (Missing _ as miss), Whole_program ->
+          (* HACK: a miss in WPST means there is a dangling pointer. *)
+          if%sat Typed.not (Sptr_base.has_provenance ptr) then
             Result.error `UBDanglingPointer
           else return miss
-      | ok_or_err -> return ok_or_err
+      | ok_or_err, _ -> return ok_or_err
 
     let is_freed loc =
       wrap loc
@@ -360,6 +368,8 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   let uninit (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) :
       (unit, 'err, 'fix) Result.t =
+    [%l.debug
+      "Executing Uninit with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Uninitialising memory" () in
     let ptr = Typed.Ptr.ptr_of ptr in
     let* () = log "uninit" ptr in
@@ -425,20 +435,23 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   and check_non_dangling (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     let ptr, meta = Typed.Ptr.split ptr in
+    if layout.uninhabited then Result.error (`RefToUninhabited ty)
+    else
+
     let** size, _ = size_and_align_of_val ty meta in
     check_non_dangling_untyped ptr size
 
   and check_validity ~check_refs ty value =
+    let default_check ptr ty =
+      let** () = check_ptr_align ptr ty in
+      check_non_dangling ptr ty
+    in
     let check_ref =
       if (Config.get ()).recursive_validity <> Allow && check_refs then
         fun ptr ty ->
-        (* we still need to check it's non-dangling! *)
-        let** () = check_ptr_align ptr ty in
-        let** () = check_non_dangling ptr ty in
+        let** () = default_check ptr ty in
         fake_read ptr ty
-      else fun ptr ty ->
-        let** () = check_ptr_align ptr ty in
-        check_non_dangling ptr ty
+      else default_check
     in
     Value_codec.check_validity ~check_ref ty value
 
@@ -461,7 +474,11 @@ module Make (Borrows : Tree_borrows.T) = struct
   and load_discriminant (ptr : Typed.([< T.sptr_f ] t)) ty =
     let** () = check_ptr_align ptr ty in
     let parser ~offset = Heap.Decoder.variant_of_enum ty ~offset in
-    apply_parser (Typed.Ptr.ptr_of ptr) parser
+    let++ variant_id = apply_parser (Typed.Ptr.ptr_of ptr) parser in
+    let adt = Charon_util.ty_as_adt ty in
+    let variants = Crate.as_enum adt in
+    let variant = Types.VariantId.nth variants variant_id in
+    (Typed.BV.of_literal variant.discriminant)
 
   (** Performs a side-effect free ghost read -- this does not modify the state
       or the tree-borrow state. Returns [Some error] if an error occurred, and
@@ -488,7 +505,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         ()
       in
       match (Config.get ()).recursive_validity with
-      | Allow -> failwith "Unreachable, handled above"
+      | Allow -> L.failwith "Unreachable, handled above"
       | Deny -> Result.error (`InvalidRef err)
       | Warn ->
           let*^ trace = get_trace () in
@@ -515,12 +532,16 @@ module Make (Borrows : Tree_borrows.T) = struct
       without attempting to validate the values or checking uninitialised memory
       accesses; all of these are ignored. *)
   let tb_load (ptr : Typed.([< T.sptr_f ] t)) ty =
+    [%l.debug
+      "Executing Tb_load with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Tree Borrow access" () in
     let**^ size = Layout.size_of ty in
     tb_load_untyped (Typed.Ptr.ptr_of ptr) size
 
   let store (ptr : Typed.([< T.sptr_f ] t)) ty sval :
       (unit, Error.with_trace, syn list) Result.t =
+    [%l.debug
+      "Executing Store with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Memory store" () in
     let**^ parts =
       Value_codec.encode ~offset:Usize.(0s) (sval :> Typed.T.any Typed.t) ty
@@ -598,7 +619,7 @@ module Make (Borrows : Tree_borrows.T) = struct
            | Error (e, _block) -> Error e
            (* HACK: we add this because we can't lift misses for a part of state
               that doesn't exist (and misses can't happen here anyways) *)
-           | Missing _ -> failwith "impossible : miss"))
+           | Missing _ -> L.failwith "impossible : miss"))
     in
     let++ () = check_validity ~check_refs:true to_ value in
     (value : Typed.T.any Typed.t :> Typed.([> T.any ] t))
@@ -608,16 +629,16 @@ module Make (Borrows : Tree_borrows.T) = struct
 
     let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8)) ~signed off_by
         (ptr : Typed.([< T.sptr_t ] t)) =
+      [%l.debug
+        "Executing Offset of pointer %a by %a" Sptr_base.pp fptr Typed.ppa
+          off_by];
       let@ () = with_loc_err ~trace:"Pointer offset" () in
       let**^ size = Layout.size_of ty in
       let loc, off = Typed.Ptr.decompose' ptr in
-      let ( *? ), ( +? ) =
-        if signed then (( *$?@ ), ( +$?@ )) else (( *?@ ), ( +?@ ))
-      in
-      let off_by, off_by_ovf = size *? off_by in
-      let off, off_ovf = off +? off_by in
-      let++ () =
+      let++ off =
         if check then
+          let off_by, off_by_ovf = Typed.BV.mul_checked ~signed size off_by in
+          let off, off_ovf = Typed.BV.add_checked ~signed off off_by in
           let** () =
             assert_or_error
               (off_by
@@ -625,8 +646,14 @@ module Make (Borrows : Tree_borrows.T) = struct
               ||@ (Typed.not off_by_ovf &&@ Typed.not off_ovf))
               `UBDanglingPointer
           in
-          check_non_dangling_untyped ptr off_by
-        else Result.ok ()
+          let++ () = check_non_dangling_untyped ptr off_by in
+          off
+        else
+          (* we use the unchecked, possibly overflowing version of the
+             operators, as wrapping is permitted dhere. *)
+          let off_by = size *!@ off_by in
+          let off = off +!@ off_by in
+          Result.ok off
       in
       let inner = Typed.Ptr.mk loc off in
       Typed.Ptr.with_inner ptr inner
@@ -645,26 +672,36 @@ module Make (Borrows : Tree_borrows.T) = struct
   end
 
   let size_and_align_of_val ty meta =
+    [%l.debug "Executing Size_and_align_of_val for %a" pp_ty ty];
     let@ () = with_loc_err ~trace:"Size and alignment check" () in
     let++ size, align = size_and_align_of_val ty meta in
     ( (size : Typed.T.sint Typed.t :> Typed.([> T.sint ] t)),
       (align : Typed.T.nonzero Typed.t :> Typed.([> T.nonzero ] t)) )
 
-  let load ?ignore_borrow ptr ty =
+  let load ?ignore_borrow ((ptr, _) as fptr) ty =
+    [%l.debug "Executing Load with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Memory load" () in
-    load ?ignore_borrow ptr ty
+    load ?ignore_borrow fptr ty
 
-  let load_discriminant ptr ty =
+  let load_discriminant ((ptr, _) as fptr) ty =
+    [%l.debug
+      "Executing Load_discriminant with pointer %a for %a" Sptr_base.pp ptr
+        pp_ty ty];
     let@ () = with_loc_err ~trace:"Memory load (discriminant)" () in
-    load_discriminant ptr ty
+    load_discriminant fptr ty
 
-  let fake_read ptr ty =
+  let fake_read ((ptr, _) as fptr) ty =
+    [%l.debug
+      "Executing Fake_read with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Fake read" () in
-    fake_read ptr ty
+    fake_read fptr ty
 
   let copy_nonoverlapping ~(src : Typed.([< T.sptr_f ] t))
       ~(dst : Typed.([< T.sptr_f ] t)) ~size :
       (unit, Error.with_trace, syn list) Result.t =
+    [%l.debug
+      "Executing Copy_nonoverlapping from %a to %a" Sptr_base.pp src
+        Sptr_base.pp dst];
     let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
     let** tree_to_write =
       let@ ofs = with_ptr Read (Typed.Ptr.ptr_of src) in
@@ -700,7 +737,7 @@ module Make (Borrows : Tree_borrows.T) = struct
        let put_tb tb t =
          let rec aux tb (t : Tree.t) =
            match t.node with
-           | NotOwned _ -> failwith "impossible: checked before"
+           | NotOwned _ -> L.failwith "impossible: checked before"
            | Owned Lazy ->
                let l, r = Option.get t.children in
                Tree.make ~node:t.node ~range:t.range
@@ -714,7 +751,7 @@ module Make (Borrows : Tree_borrows.T) = struct
                  ~range:t.range ?children:t.children ()
          in
          try DecayMap.SM.Result.ok (aux tb t)
-         with Failure msg -> DecayMap.SM.not_impl msg
+         with Failure msg -> DecayMap.SM.not_impl "%s" msg
        in
        (* Applies all the tree borrow ranges to the tree we're writing,
           overwriting all previous states. *)
@@ -732,6 +769,9 @@ module Make (Borrows : Tree_borrows.T) = struct
        Tree_block.put_raw_tree ofs tree_to_write)
 
   let alloc ?span ?zeroed size align =
+    [%l.debug
+      "Executing Alloc of size %a (align %a)" Typed.ppa size Typed.ppa align];
+    Soteria.Stats.As_ctx.incr StatKeys.allocs;
     with_heap
       (let open Heap.SM in
        let open Heap.SM.Syntax in
@@ -772,6 +812,8 @@ module Make (Borrows : Tree_borrows.T) = struct
            return (Typed.Ptr.mk_ptr_f ptr None, block)))
 
   let free (ptr : Typed.([< T.sptr_f ] t)) =
+    [%l.debug "Executing Free with pointer %a" Sptr_base.pp ptr];
+
     let@ () = with_loc_err ~trace:"Freeing memory" () in
     let ptr = Typed.Ptr.ptr_of ptr in
     let loc, ofs = Typed.Ptr.decompose' ptr in
@@ -801,6 +843,10 @@ module Make (Borrows : Tree_borrows.T) = struct
       (Heap.wrap loc (Freeable_block_with_meta.wrap (Freeable_block.free ())))
 
   let zeros (ptr : Typed.([< T.sptr_f ] t)) size =
+
+    [%l.debug
+      "Executing Zeros with pointer %a (size %a)" Sptr_base.pp ptr Typed.ppa
+        size];
     let@ () = with_loc_err ~trace:"Memory store (0s)" () in
     let ptr = Typed.Ptr.ptr_of ptr in
     let* () = log "zeroes" ptr in
@@ -836,6 +882,9 @@ module Make (Borrows : Tree_borrows.T) = struct
         globals )
 
   let borrow ?protect (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
+    [%l.debug
+      "Executing Borrow with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
+
     let@ () = with_loc_err ~trace:"Borrow" () in
     let ptr_inner = Typed.Ptr.ptr_of ptr in
     match Typed.Ptr.tag_of ptr_inner with
@@ -845,6 +894,9 @@ module Make (Borrows : Tree_borrows.T) = struct
         Block.borrow ?protect ptr tag ty ofs
 
   let unprotect (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
+    [%l.debug
+      "Executing Unprotect with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
+
     let@ () = with_loc_err ~trace:"Reference unprotection" () in
     let ptr = Typed.Ptr.ptr_of ptr in
     match Typed.Ptr.tag_of ptr with
@@ -859,6 +911,7 @@ module Make (Borrows : Tree_borrows.T) = struct
           Block.unprotect ofs tag size
 
   let with_exposed addr =
+    [%l.debug "Executing With_exposed for address %a" Typed.ppa addr];
     let@ () = with_loc_err ~trace:"Casting integer to pointer" () in
     match (Config.get ()).provenance with
     | Strict -> Result.error `UBIntToPointerStrict
@@ -886,6 +939,7 @@ module Make (Borrows : Tree_borrows.T) = struct
                    Result.ok (Typed.Ptr.mk_ptr_f ptr None)))
 
   let leak_check () : (unit, Error.with_trace, syn list) Result.t =
+    [%l.debug "Executing Leak_check"];
     with_heap
       (let open Heap.SM in
        let open Heap.SM.Syntax in
@@ -922,7 +976,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       let@ errors = with_errors_sym in
       match errors with
       | e :: rest -> Rustsymex.Result.ok (e, rest)
-      | _ -> failwith "pop_error with no errors?"
+      | _ -> L.failwith "pop_error with no errors?"
     in
     Result.error error
 
@@ -989,7 +1043,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ thread_destructor = with_thread_destructor_sym in
     let callback () =
       SM.Result.map_missing
-        (fun _ -> failwith "TODO: Miss in thread exit")
+        (fun _ -> L.failwith "TODO: Miss in thread exit")
         (callback ())
     in
     let destructor =

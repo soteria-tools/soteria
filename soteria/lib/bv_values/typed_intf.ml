@@ -210,6 +210,18 @@ module type S = sig
 
     val neg_overflows : [< sint ] t -> [> sbool ] t
 
+    (* checked operators *)
+    val add_checked :
+      signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
+
+    val sub_checked :
+      signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
+
+    val mul_checked :
+      signed:bool -> [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
+
+    val neg_checked : [< sint ] t -> [> sint ] t * [> sbool ] t
+
     (* Unsafe mark as not overflow *)
     val no_ovf_unsafe : [< sint_ovf ] t -> [> sint ] t
 

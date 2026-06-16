@@ -52,7 +52,13 @@ module type S = sig
   val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
   val miss : syn list list -> ('a, 'env) t
   val vanish : unit -> ('a, 'env) t
-  val not_impl : string -> ('a, 'env) t
+
+  val not_impl :
+    ?tip:string * string option ->
+    ?issue:int ->
+    ('a, Format.formatter, unit, ('b, 'env) t) format4 ->
+    'a
+
   val bind : ('a -> ('b, 'env) t) -> ('a, 'env) t -> ('b, 'env) t
   val map : ('a -> 'b) -> ('a, 'env) t -> ('b, 'env) t
 
@@ -60,9 +66,17 @@ module type S = sig
 
   val get_state : unit -> (st, 'env) t
   val get_env : unit -> ('env, 'env) t
+  val set_env : 'env -> (unit, 'env) t
   val map_env : ('env -> 'env) -> (unit, 'env) t
   val with_env : env:'env1 -> ('a, 'env1) t -> ('a, 'env) t
-  val of_opt_not_impl : string -> 'a option -> ('a, 'env) t
+
+  val of_opt_not_impl :
+    ?tip:string * string option ->
+    ?issue:int ->
+    string ->
+    'a option ->
+    ('a, 'env) t
+
   val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
 
@@ -134,6 +148,7 @@ module type S = sig
     val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
     val decay : t -> (Typed.T.sint Typed.t, 'env) monad
     val expose : t -> (Typed.T.sint Typed.t, 'env) monad
+    val dangling_if_zst : Types.ty -> (t option, 'env) monad
   end
 
   module Layout : sig
@@ -184,7 +199,7 @@ module type S = sig
       (Typed.([> T.any ] t), 'env) t
 
     val load_discriminant :
-      Typed.([< T.sptr_f ] t) -> Types.ty -> (Types.variant_id, 'env) t
+      Typed.([< T.sptr_f ] t) -> Types.ty -> (Typed.([< T.sint ] t), 'env) t
 
     val store :
       Typed.([< T.sptr_f ] t) ->
@@ -298,6 +313,22 @@ module type S = sig
         ('a, 'env) t
     end
   end
+
+  module OptionM : sig
+    type ('a, 'env) t = ('a option, 'env) monad
+
+    val ok : 'a -> ('a, 'env) t
+    val none : unit -> ('a, 'env) t
+    val bind : ('a -> ('b, 'env) t) -> ('a, 'env) t -> ('b, 'env) t
+    val map : ('a -> 'b) -> ('a, 'env) t -> ('b, 'env) t
+    val lift : ('a, 'env) monad -> ('a, 'env) t
+
+    module Syntax : sig
+      val ( let** ) : ('a, 'env) t -> ('a -> ('b, 'env) t) -> ('b, 'env) t
+      val ( let++ ) : ('a, 'env) t -> ('a -> 'b) -> ('b, 'env) t
+      val ( let*^ ) : 'a option -> ('a -> ('b, 'env) t) -> ('b, 'env) t
+    end
+  end
 end
 
 module Make (State : State_intf.S) :
@@ -349,8 +380,11 @@ module Make (State : State_intf.S) :
   let assert_not cond err = assert_ (Typed.not cond) err
   let miss f : ('a, 'env) t = ESM.Result.miss f
 
-  let not_impl str : ('a, 'env) t =
-    ESM.lift @@ State.SM.lift @@ Rustsymex.not_impl str
+  let not_impl ?tip ?issue fmt =
+    Fmt.kstr
+      (fun str ->
+        ESM.lift @@ State.SM.lift @@ Rustsymex.not_impl ?tip ?issue "%s" str)
+      fmt
 
   let get_state () : (st, 'env) t =
     ESM.Result.lift_state @@ State.SM.get_state ()
@@ -376,6 +410,11 @@ module Make (State : State_intf.S) :
     let+ () = ESM.map_state f in
     Compo_res.Ok ()
 
+  let set_env e =
+    let open ESM.Syntax in
+    let+ () = ESM.set_state e in
+    Compo_res.Ok ()
+
   let with_env ~(env : 'env1) (f : ('a, 'env1) t) : ('a, 'env) t =
    fun old_env ->
     let open State.SM.Syntax in
@@ -389,7 +428,9 @@ module Make (State : State_intf.S) :
   let[@inline] lift_symex (s : 'a Rustsymex.t) : ('a, 'env) t =
     ESM.Result.lift_state @@ State.SM.lift s
 
-  let of_opt_not_impl msg x = lift_symex (of_opt_not_impl msg x)
+  let of_opt_not_impl ?tip ?issue msg x =
+    lift_symex (of_opt_not_impl ?tip ?issue msg x)
+
   let assume x = lift_symex (assume x)
 
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
@@ -455,6 +496,7 @@ module Make (State : State_intf.S) :
     let[@inline] distance ptr1 ptr2 = with_pointers_sym (distance ptr1 ptr2)
     let[@inline] decay ptr = with_pointers_sym (decay ptr)
     let[@inline] expose ptr = with_pointers_sym (expose ptr)
+    let[@inline] dangling_if_zst ty = lift_err (dangling_if_zst ty)
   end
 
   module Layout = struct
@@ -578,6 +620,22 @@ module Make (State : State_intf.S) :
         Rustsymex.if_sure ?left_branch_name ?right_branch_name guard
           ~then_:(fun () -> then_ () env state)
           ~else_:(fun () -> else_ () env state)
+    end
+  end
+
+  module OptionM = struct
+    type nonrec ('a, 'env) t = ('a option, 'env) t
+
+    let lift x = map Option.some x
+    let bind f x = bind (function Some v -> f v | None -> ok None) x
+    let map f x = map (Option.map f) x
+    let none () = ok None
+    let ok x = ok (Some x)
+
+    module Syntax = struct
+      let ( let** ) x f = bind f x
+      let ( let++ ) x f = map f x
+      let ( let*^ ) x f = match x with Some v -> f v | None -> none ()
     end
   end
 end

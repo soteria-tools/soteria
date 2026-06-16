@@ -183,6 +183,11 @@ module Cmd = struct
       (let cmd = frontend_cmd () in
        Exe.exec_exn cmd [ "toolchain-path" ] |> List.hd)
 
+  let toolchain_version =
+    lazy
+      (let cmd = frontend_cmd () in
+       Exe.exec_exn cmd [ "toolchain-version" ] |> List.hd)
+
   let cargo () = Lazy.force toolchain_path / "bin" / "cargo"
   let rustc () = Lazy.force toolchain_path / "bin" / "rustc"
   let rustc_as_env () = [ "RUSTC=" ^ rustc () ]
@@ -197,7 +202,11 @@ module Cmd = struct
     in
     rustc @ sysroot
 
-  let cargo_flags () = (Config.get ()).cargo_flags
+  let cargo_flags () =
+    let config = Config.get () in
+    let offline = if config.offline then [ "--offline" ] else [] in
+    offline @ config.cargo_flags
+
   let is_crate_type_flag = String.starts_with ~prefix:"--crate-type"
   let is_edition_flag = String.starts_with ~prefix:"--edition"
 
@@ -218,30 +227,11 @@ module Cmd = struct
       else rustc
     in
     let rustc = rustc @ user_specified @ features in
+    let entries = List.concat_map entry_as_flag entry_points in
     let cmd, args =
       match (Config.get ()).frontend with
-      | Obol ->
-          let entries = List.concat_map entry_as_flag entry_points in
-          ((Config.get ()).obol_path, obol @ entries)
-      | Charon ->
-          (* FIXME: PR Charon to change this! *)
-          let attribs, non_attribs =
-            List.partition
-              (function Attrib _ -> true | _ -> false)
-              entry_points
-          in
-          let attribs =
-            match attribs with
-            | [] -> []
-            | [ h ] -> [ h ]
-            | _ :: _ ->
-                [%l.warn
-                  "Charon currently only support one entry attribute; more \
-                   than one was specified, only the last one will be used"];
-                [ List.last attribs ]
-          in
-          let entries = List.concat_map entry_as_flag (attribs @ non_attribs) in
-          ((Config.get ()).charon_path, charon @ entries)
+      | Obol -> ((Config.get ()).obol_path, obol @ entries)
+      | Charon -> ((Config.get ()).charon_path, charon @ entries)
     in
     let target_flag =
       Option.fold ~none:[]

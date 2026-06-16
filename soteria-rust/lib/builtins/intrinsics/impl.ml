@@ -90,35 +90,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let+ () = State.store dst t src in
     old
 
-  let atomic_xadd ~t ~(u : Types.ty) ~ord:_ ~(dst : Typed.([< T.sptr_f ] t))
-      ~(src : Typed.([< T.any ] t)) =
-    atomic_warn ();
-    let* old = State.load dst t in
-    match (t, u) with
-    (* - `T` must be an integer or pointer *)
-    (* - `U` must be the same as `T`if it is an integer, or `usize` if it is a pointer. *)
-    | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
-        (* The operation adds `src` without multiplying by the size of the
-           data. *)
-        let src = Typed.cast_i Usize src in
-        let old_v, _ = Typed.Ptr.split @@ Typed.cast_ptr_f old in
-        (* Wrapping add: no overflow check *)
-        let* new_ = Sptr.offset ~check:false ~signed:false src old_v in
-        let new_ = Typed.Ptr.mk_ptr_f new_ None in
-        let+ () = State.store dst t new_ in
-        Typed.as_any old
-    | TLiteral lit, TLiteral lit' when Types.equal_literal_type lit lit' ->
-        let src = Typed.cast_lit lit src in
-        let old_v = Typed.cast_lit lit old in
-        (* Wrapping add. *)
-        let* new_ = Core.eval_lit_binop (Add OWrap) lit old_v src in
-        let+ () = State.store dst t new_ in
-        Typed.as_any old
-    | _ ->
-        failwith
-          "atomic_xadd: invalid types, expects to follow the rules of \
-           atomic_xadd"
-
   let atomic_cxchgweak ~t ~ord_succ:_ ~ord_fail:_ ~dst ~old ~src =
     atomic_warn ();
     let* curr = State.load dst t in
@@ -133,12 +104,101 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           let old = Typed.cast_lit lit old in
           let curr = Typed.cast_lit lit curr in
           ok (old ==@ curr)
-      | _ -> failwith "atomic_cxchgweak: invalid type, expects ptr or integer"
+      | _ -> L.failwith "atomic_cxchgweak: invalid type, expects ptr or integer"
     in
     if%sat are_equal then
       let* () = State.store dst t src in
       ok (Typed.Adt.mk_tuple [ curr; BV.of_bool Typed.v_true ])
     else ok (Typed.Adt.mk_tuple [ curr; BV.of_bool Typed.v_false ])
+
+  (* In our sequential model the strong compare-exchange behaves exactly like
+     the weak one (the weak variant is only allowed to spuriously fail). *)
+  let atomic_cxchg = atomic_cxchgweak
+
+  (* Atomic read-modify-write for the intrinsics whose [T] may be an integer or
+     a pointer (these take a [u] type parameter, [usize] for pointers). [int_op]
+     computes the new integer value; [ptr_op] the new pointer from [src] (a
+     [usize]) and the old pointer. (Executed sequentially -- see
+     {!atomic_warn}.) *)
+  let atomic_rmw ~(t : Types.ty) ~(u : Types.ty) ~dst ~src ~int_op ~ptr_op =
+    atomic_warn ();
+    let* old = State.load dst t in
+    match (t, u) with
+    | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
+        let old_ptr, meta = as_ptr old in
+        let* new_ptr = ptr_op (as_base_i Usize src) old_ptr in
+        let+ () = State.store dst t (Ptr (new_ptr, meta)) in
+        old
+    | TLiteral lit, _ ->
+        let* res = int_op lit (as_base lit old) (as_base lit src) in
+        let+ () = State.store dst t (Int res) in
+        old
+    | _ -> not_impl "atomic read-modify-write on unexpected type %a" pp_ty t
+
+  (* The pointer case of a bitwise atomic: apply [op] to the pointer's address,
+     dropping provenance -- like {!ptr_mask}. *)
+  let atomic_addr_op op src old =
+    let+ addr = Sptr.decay old in
+    Sptr.of_address (op addr src)
+
+  let atomic_and ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun _ a b -> ok (a &@ b))
+      ~ptr_op:(atomic_addr_op ( &@ ))
+
+  let atomic_or ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun _ a b -> ok (a |@ b))
+      ~ptr_op:(atomic_addr_op ( |@ ))
+
+  let atomic_xor ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun _ a b -> ok (a ^@ b))
+      ~ptr_op:(atomic_addr_op ( ^@ ))
+
+  let atomic_nand ~t ~u ~ord:_ ~dst ~src =
+    let nand a b = BV.not (a &@ b) in
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun _ a b -> ok (nand a b))
+      ~ptr_op:(atomic_addr_op nand)
+
+  let atomic_xadd ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun lit a b -> Core.eval_lit_binop (Add OWrap) lit a b)
+      ~ptr_op:(fun src old -> Sptr.offset ~check:false ~signed:false src old)
+
+  let atomic_xsub ~t ~u ~ord:_ ~dst ~src =
+    atomic_rmw ~t ~u ~dst ~src
+      ~int_op:(fun lit a b -> Core.eval_lit_binop (Sub OWrap) lit a b)
+        (* subtract [src] bytes by offsetting by [-src] *)
+      ~ptr_op:(fun src old -> Sptr.offset ~check:false ~signed:false ~-!src old)
+
+  (* Atomic read-modify-write on an integer (the min/max intrinsics, which only
+     apply to integers). *)
+  let atomic_int_rmw ~(t : Types.ty) ~dst ~src f =
+    atomic_warn ();
+    match t with
+    | TLiteral lit ->
+        let* old = State.load dst t in
+        let+ () =
+          State.store dst t (Int (f (as_base lit old) (as_base lit src)))
+        in
+        old
+    | _ -> not_impl "atomic read-modify-write on non-integer type %a" pp_ty t
+
+  (* [atomic_{min,max}] are guaranteed (signed) integers, [atomic_u{min,max}]
+     unsigned integers. *)
+  let atomic_max ~t ~ord:_ ~dst ~src =
+    atomic_int_rmw ~t ~dst ~src (BV.max ~signed:true)
+
+  let atomic_min ~t ~ord:_ ~dst ~src =
+    atomic_int_rmw ~t ~dst ~src (BV.min ~signed:true)
+
+  let atomic_umax ~t ~ord:_ ~dst ~src =
+    atomic_int_rmw ~t ~dst ~src (BV.max ~signed:false)
+
+  let atomic_umin ~t ~ord:_ ~dst ~src =
+    atomic_int_rmw ~t ~dst ~src (BV.min ~signed:false)
 
   let black_box ~t:_ ~dummy = ok @@ Typed.as_any dummy
   let breakpoint () : unit ret = error `Breakpoint
@@ -149,7 +209,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let v = Typed.cast_lit lit x in
     let bits = List.init nbits (fun i -> BV.extract i i v) in
     let rec aux = function
-      | [] -> failwith "impossible: no bits"
+      | [] -> L.failwith "impossible: no bits"
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
@@ -163,7 +223,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       List.init nbytes (fun i -> BV.extract (i * 8) (((i + 1) * 8) - 1) v)
     in
     let rec aux = function
-      | [] -> failwith "impossible: no bytes"
+      | [] -> L.failwith "impossible: no bytes"
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
@@ -476,18 +536,26 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   (** [check_overlap name l r size] ensures the pointers [l] and [r] do not
       overlap for a range of size [size]; otherwise errors, with
-      [`StdErr (name ^ " overlapped")]. *)
+      [`StdErr (name ^ " overlapped")].
+
+      We optimise the path where pointers don't have the same provenance to
+      avoid spuriously decaying pointers. *)
   let check_overlap name l r size =
-    let l, _ = Typed.Ptr.split l in
-    let r, _ = Typed.Ptr.split r in
-    let* l_end = Sptr.offset ~signed:false size l in
-    let* r_end = Sptr.offset ~signed:false size r in
-    let* dist1 = Sptr.distance l r_end in
-    let* dist2 = Sptr.distance r l_end in
-    let zero = Usize.(0s) in
-    assert_not
-      (Sptr.have_same_provenance l r &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
-      (`StdErr (name ^ " overlapped"))
+let l, _ = Typed.Ptr.split l in
+let r, _ = Typed.Ptr.split r in
+
+let same_provenance = Sptr.have_same_provenance l r in
+    if%sure not same_provenance then ok ()
+    else
+
+      let* l_end = Sptr.offset ~signed:false size l in
+      let* r_end = Sptr.offset ~signed:false size r in
+      let* dist1 = Sptr.distance l r_end in
+      let* dist2 = Sptr.distance r l_end in
+      let zero = Usize.(0s) in
+      assert_not
+        (same_provenance &&@ (dist1 <$@ zero &&@ (dist2 <$@ zero)))
+        (`StdErr (name ^ " overlapped"))
 
   let copy_ nonoverlapping ~t ~src ~dst ~count : unit ret =
     [%l.debug
@@ -629,15 +697,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let discriminant_value ~t ~v =
     let adt = ty_as_adt t in
-    let adt = Crate.get_adt adt in
-    match adt.kind with
-    | Enum variants ->
-        let+ variant_id = State.load_discriminant v t in
-        let variant = Types.VariantId.nth variants variant_id in
-        BV.of_literal variant.discriminant
-    | _ ->
-        (* FIXME: this size is probably wrong *)
-        ok U8.(0s)
+    if Crate.is_enum adt then State.load_discriminant v t
+    (* FIXME: this size is probably wrong *)
+      else ok ( U8.(0s))
 
   let disjoint_bitor ~t ~a ~b =
     let ty = TypesUtils.ty_as_literal t in
@@ -665,7 +727,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let fabs ~t ~x =
     let t = TypesUtils.ty_as_literal t in
     let f =
-      match t with TFloat f -> f | _ -> failwith "fabs with non-float?"
+      match t with TFloat f -> f | _ -> L.failwith "fabs with non-float?"
     in
     let x = Typed.cast_f f x in
     ok (Typed.Float.abs x)
@@ -680,7 +742,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       | Mul _ -> (( *.@ ), "core::intrinsics::fmul_fast")
       | Div _ -> (( /.@ ), "core::intrinsics::fdiv_fast")
       | Rem _ -> (Typed.Float.rem, "core::intrinsics::frem_fast")
-      | _ -> failwith "fast_float: invalid binop"
+      | _ -> L.failwith "fast_float: invalid binop"
     in
     let is_finite f =
       Typed.((not (Float.is_nan f)) &&@ not (Float.is_infinite f))
@@ -879,7 +941,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         let ovf = BV.sub_overflows ~signed a b in
         let if_ovf = if signed then Typed.ite (a <$@ b) min max else min in
         ok (Typed.ite ovf if_ovf (a -!!@ b))
-    | _ -> failwith "Unreachable: not add or sub?"
+    | _ -> L.failwith "Unreachable: not add or sub?"
 
   let saturating_add ~t ~a ~b = saturating (Add OUB) ~t ~a ~b
   let saturating_sub ~t ~a ~b = saturating (Sub OUB) ~t ~a ~b
@@ -901,11 +963,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     align
 
   let transmute ~t_src ~dst ~src = State.transmute ~from:t_src ~to_:dst src
-
-  let type_id ~t =
-    (* lazy but works *)
-    let hash = Hashtbl.hash t in
-    ok (BV.u128i hash)
 
   let type_name ~t =
     let str = Fmt.to_to_string pp_ty t in

@@ -334,7 +334,7 @@ module Make (State : State_intf.S) = struct
           match ty with
           | Ctype.Ctype (_, Basic (Floating fty)) -> Layout.precision fty
           | _ ->
-              Fmt.failwith "float is not of float type: %a of type %a at %a"
+              L.failwith "float is not of float type: %a of type %a at %a"
                 Fmt_ail.pp_constant c Fmt_ail.pp_ty ty Fmt_ail.pp_loc loc
         in
         let f = Typed.Float.mk precision str in
@@ -385,7 +385,7 @@ module Make (State : State_intf.S) = struct
               let v = BV.fit_to ~signed:false (8 * size_t) (cast v) in
               return (Ptr.mk Ptr.null_loc v)
           | TPointer _ -> return v
-          | _ -> Fmt.failwith "BUG: not a valid C value: %a" Typed.ppa v)
+          | _ -> L.failwith "BUG: not a valid C value: %a" Typed.ppa v)
       | Pointer (_, _), Pointer (_, _) -> return v
       | (Basic (Integer _) | Pointer (_, _)), Basic (Integer ity) ->
           let* v = cast_to_int v in
@@ -536,7 +536,7 @@ module Make (State : State_intf.S) = struct
         match v2 with
         | Ok v2 -> ok (Typed.cast @@ BV.div ~signed v1 v2)
         | Error `NonZeroIsZero -> error `DivisionByZero
-        | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
+        | Missing _ -> L.failwith "Unreachable: check_nonzero returned miss")
     | Mod, Basic (Integer inty) -> (
         let signed = Layout.is_int_ty_signed inty in
         let*^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
@@ -545,7 +545,7 @@ module Make (State : State_intf.S) = struct
         match v2 with
         | Ok v2 -> ok (Typed.cast @@ BV.rem ~signed v1 v2)
         | Error `NonZeroIsZero -> error `DivisionByZero
-        | Missing _ -> failwith "Unreachable: check_nonzero returned miss")
+        | Missing _ -> L.failwith "Unreachable: check_nonzero returned miss")
     | Mul, Basic (Integer inty) ->
         let signed = Layout.is_int_ty_signed inty in
         let*^ v1 = cast_basic ~old_ty:t1 ~new_ty v1 in
@@ -578,7 +578,7 @@ module Make (State : State_intf.S) = struct
           | Sub -> Typed.Float.sub
           | Mul -> Typed.Float.mul
           | Div -> Typed.Float.div
-          | _ -> failwith "unreachable: all operators matches"
+          | _ -> L.failwith "unreachable: all operators matches"
         in
         ok (op v1 v2)
     (* Pointer arithmetic *)
@@ -597,7 +597,7 @@ module Make (State : State_intf.S) = struct
             let v1 = BV.fit_to ~signed:false (8 * ptr_size) (Typed.cast v1) in
             let* v1 = arith_mul ~signed:true v1 factor in
             arith_add ~signed:true v2 v1
-        | None, None -> failwith "Should have been handled before?")
+        | None, None -> L.failwith "Should have been handled before?")
     | Sub, _ -> (
         match (t1 |> pointer_inner, t2 |> pointer_inner) with
         | Some ty, None ->
@@ -609,7 +609,7 @@ module Make (State : State_intf.S) = struct
             arith_sub ~signed:true v1 v2
         | None, Some _ -> error `UBPointerArithmetic
         | Some _, Some _ -> arith_sub ~signed:true v1 v2
-        | None, None -> failwith "Should have been handled before?")
+        | None, None -> L.failwith "Should have been handled before?")
     (* Bitwise operations *)
     | ((Band | Shl | Shr | Bxor | Bor) as a_op), _ ->
         let* { signed; _ } =
@@ -624,7 +624,7 @@ module Make (State : State_intf.S) = struct
           | Bor -> Typed.BitVec.or_
           | Shl -> Typed.BitVec.shl
           | Shr -> if signed then Typed.BitVec.ashr else Typed.BitVec.lshr
-          | _ -> failwith "unreachable: bit operator is not bit operator?"
+          | _ -> L.failwith "unreachable: bit operator is not bit operator?"
         in
         ok (op v1 v2)
     | _ ->
@@ -642,7 +642,7 @@ module Make (State : State_intf.S) = struct
         let* store = try_immediate_store lvalue res in
         match store with
         | `NotImmediate ->
-            failwith "Immediate store failed after immediate load succeeded"
+            L.failwith "Immediate store failed after immediate load succeeded"
         | `Success -> InterpM.ok (Some res))
     | None -> InterpM.ok None
 
@@ -800,7 +800,7 @@ module Make (State : State_intf.S) = struct
             match op with
             | PostfixIncr -> arith_add ~signed v operand
             | PostfixDecr -> arith_sub ~signed v operand
-            | _ -> failwith "unreachable: postfix is not postfix??"
+            | _ -> L.failwith "unreachable: postfix is not postfix??"
           in
           Agv.Basic res
         in
@@ -818,7 +818,7 @@ module Make (State : State_intf.S) = struct
         let* v = eval_expr e in
         match op with
         | Indirection -> ok v
-        | Address -> failwith "unreachable: address_of already handled"
+        | Address -> L.failwith "unreachable: address_of already handled"
         | Minus -> (
             let*^ v = cast ~old_ty:(type_of e) ~new_ty:(type_of aexpr) v in
             let*^ v = cast_aggregate_to_int v in
@@ -920,7 +920,7 @@ module Make (State : State_intf.S) = struct
             in
             if op = Eq then Agv.Basic (res :> T.cval Typed.t)
             else Agv.Basic (BV.not_bool res)
-        | Or | And -> failwith "Unreachable, handled earlier."
+        | Or | And -> L.failwith "Unreachable, handled earlier."
         | Arithmetic a_op ->
             let*^ v1 = Agv.basic_or_unsupported ~msg:"Arithmetics" v1 in
             let*^ v2 = Agv.basic_or_unsupported ~msg:"Arithmetics" v2 in
@@ -1118,7 +1118,7 @@ module Make (State : State_intf.S) = struct
           let* res = exec_goto label body in
           aux res
       | Break | Continue | Case _ ->
-          failwith
+          L.failwith
             "Unreachable: terminated function body with Continue/Break/Case"
     in
     let* first_exec = exec_stmt body in
@@ -1157,13 +1157,13 @@ module Make (State : State_intf.S) = struct
         match then_res with
         | Goto l -> exec_goto l else_stmt
         | Normal | Break | Continue | Returned _ -> ok then_res
-        | Case _ -> failwith "SOTERIA BUG: Case in if branch")
+        | Case _ -> L.failwith "SOTERIA BUG: Case in if branch")
     | AilSwhile (_, body, _) -> (
         let* res = exec_goto label body in
         match res with
         | Goto _ | Break | Returned _ -> ok res
         | Normal | Continue -> exec_stmt astmt
-        | Case _ -> failwith "SOTERIA BUG: Case in while body")
+        | Case _ -> L.failwith "SOTERIA BUG: Case in while body")
     | AilSdo (body, e, _) -> (
         let* res = exec_goto label body in
         match res with
@@ -1172,7 +1172,7 @@ module Make (State : State_intf.S) = struct
             let* guard = eval_expr e in
             let*^ guard_bool = cast_aggregate_to_bool guard in
             if%sat guard_bool then exec_stmt astmt else ok Normal
-        | Case _ -> failwith "SOTERIA BUG: Case in do body")
+        | Case _ -> L.failwith "SOTERIA BUG: Case in do body")
     | AilSswitch (_, body) -> exec_goto label body
     | AilSmarker (_, stmt) -> exec_goto label stmt
     | _ -> ok (Goto label)
@@ -1180,7 +1180,7 @@ module Make (State : State_intf.S) = struct
   and exec_case (guard : T.sint Typed.t) (astmt : stmt) :
       Stmt_exec_result.t InterpM.t =
     let fail_if_different_case guard' =
-      if guard != guard' then failwith "Returned a different case?"
+      if guard != guard' then L.failwith "Returned a different case?"
     in
     let open Stmt_exec_result in
     [%l.trace
@@ -1286,7 +1286,7 @@ module Make (State : State_intf.S) = struct
             | Returned _ | Goto _ -> ok res
             | Break -> ok Normal
             | Normal | Continue -> loop ()
-            | Case _ -> failwith "SOTERIA BUG: Case in while body"
+            | Case _ -> L.failwith "SOTERIA BUG: Case in while body"
         in
         loop ()
     | AilSdo (stmt, cond, _loop_id) ->
@@ -1299,7 +1299,7 @@ module Make (State : State_intf.S) = struct
               let* cond_v = eval_expr cond in
               let*^ cond_v = cast_aggregate_to_bool cond_v in
               if%sat Typed.not cond_v then ok Normal else loop ()
-          | Case _ -> failwith "SOTERIA BUG: Case in do body"
+          | Case _ -> L.failwith "SOTERIA BUG: Case in do body"
         in
         loop ()
     | AilSlabel (_, stmt, _) | AilScase (_, stmt) -> exec_stmt stmt

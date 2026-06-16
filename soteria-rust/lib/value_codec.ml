@@ -35,7 +35,7 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
         match BV.to_z len with
         (* TODO: strings and slices of symbolic length *)
         | Some len -> Iter.repeatz len sub_ty
-        | None -> failwith "iter_fields: symbolic length for slice/str")
+        | None -> L.failwith "iter_fields: symbolic length for slice/str")
     | TAdt adt -> (
         let type_decl = Crate.get_adt adt in
         match (type_decl.kind, variant) with
@@ -46,16 +46,16 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
             let variant = Types.VariantId.nth variants variant in
             let field_tys = field_tys variant.fields in
             Iter.of_list field_tys
-        | _ -> failwith "invalid iter_fields type_decl")
+        | _ -> L.failwith "invalid iter_fields type_decl")
     | TRef (_, pointee, _) | TRawPtr (pointee, _) -> (
         match Layout.dst_kind pointee with
-        | NoneKind -> failwith "invalid iter_fields: no metadata"
+        | NoneKind -> L.failwith "invalid iter_fields: no metadata"
         | LenKind -> Iter.of_list [ unit_ptr; TLiteral (TInt Isize) ]
         | VTableKind -> Iter.of_list [ unit_ptr; unit_ptr ])
     | TPattern (inner, _) -> to_fields ?variant fields inner
     | TLiteral _ | TNever | TVar _ | TTraitType _ | TDynTrait _ | TFnPtr _
     | TFnDef _ | TPtrMetadata _ | TError _ ->
-        Fmt.failwith "invalid iter_fields: %a" pp_ty ty
+        L.failwith "invalid iter_fields: %a" pp_ty ty
   in
   let aux ?variant fields ty =
     to_fields ?variant fields ty
@@ -142,8 +142,12 @@ struct
     let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) : 'a t =
      fun _handler _get_all -> SM.lift (DecayMap.SM.lift m)
 
-    let not_impl msg = lift @@ not_impl msg
-    let of_opt_not_impl msg x = lift @@ of_opt_not_impl msg x
+    let not_impl ?tip ?issue fmt =
+      Fmt.kstr (fun msg -> lift @@ not_impl ?tip ?issue "%s" msg) fmt
+
+    let of_opt_not_impl ?tip ?issue msg x =
+      lift @@ of_opt_not_impl ?tip ?issue msg x
+
     let layout_of ty = lift_rsymex @@ Layout.layout_of ty
     let normalise ty = lift_rsymex @@ Layout.normalise ty
 
@@ -179,20 +183,45 @@ struct
         Fields_shape.discriminator -> Types.variant_id ParserMonad.t = function
       | Known v -> ok v
       | Branch { offset = tag_ofs; tag_ty; children; fallback } ->
-          let* tag = query (TLiteral tag_ty, offset +!!@ tag_ofs) in
-          let tag = Typed.cast_lit tag_ty tag in
+          (* You know what's cheaper than Pointer->Integer cast?
+             Integer->Pointer cast. If the tag is pointer-sized, we read it as a
+             pointer anyway, and special case null-checking. Allows for
+             optimising away decays happening for e.g. Option<NonNull<T>>. *)
+          let* tag =
+            if match tag_ty with TInt Isize | TUInt Usize -> true | _ -> false
+            then
+              let+ v = query (unit_ptr, offset +!!@ tag_ofs) in
+              `Ptr (Typed.Ptr.ptr_of (as_ptr v))
+            else
+              let+ v = query (TLiteral tag_ty, offset +!!@ tag_ofs) in
+              `Int (as_base tag_ty v)
+          in
+          let pp_tag ft = function
+            | `Int v -> Typed.ppa ft v
+            | `Ptr p -> Typed.ppa ft p
+          in
           let pp_info ft () =
-            Fmt.pf ft ", read %a: %s at offset %a" Typed.ppa tag
+            Fmt.pf ft ", read %a: %s at offset %a" pp_tag tag
               (Print.literal_type_to_string tag_ty)
               Typed.ppa offset
           in
+          let cond_for from_ to_ =
+            let is_single = Typed.equal from_ to_ in
+            let int_cond tag =
+              if is_single then tag ==@ from_
+              else from_ <=@ tag &&@ (tag <=@ to_)
+            in
+            match tag with
+            | `Int tag -> ok (int_cond tag)
+            | `Ptr ptr when is_single && Typed.BV.sure_is_zero from_ ->
+                ok (Sptr.is_null ptr)
+            | `Ptr ptr -> map int_cond @@ lift (Sptr.decay ptr)
+          in
           let rec aux = function
             | [] -> exec fallback
-            | (from_, to_, discr) :: rest when Typed.equal from_ to_ ->
-                if%sat tag ==@ from_ then exec ~pp_info discr else aux rest
             | (from_, to_, discr) :: rest ->
-                if%sat from_ <=@ tag &&@ (tag <=@ to_) then exec ~pp_info discr
-                else aux rest
+                let* cond = cond_for from_ to_ in
+                if%sat cond then exec ~pp_info discr else aux rest
           in
           aux children
       | Invalid ->
@@ -207,7 +236,7 @@ struct
     match layout.fields with
     | Arbitrary (vid, _) -> ok vid
     | Enum (discriminator, _) -> exec discriminator
-    | Array _ | Primitive -> failwith "Unexpected layout for enum"
+    | Array _ | Primitive -> L.failwith "Unexpected layout for enum"
 
   (** [decode ~meta ~offset ty] Parses a rust value of type [ty] at the given
       offset, using the provided metadata for DSTs, and returns the associated
@@ -226,7 +255,7 @@ struct
     let* layout = layout_of ty in
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error (`RefToUninhabited ty)
-    | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
+    | _, TDynTrait _ -> L.failwith "decode: cannot decode an unsized dyn value"
     | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Typed.Adt.mk_union adt [])
         else
@@ -249,13 +278,13 @@ struct
         let ptr, meta =
           match vs with
           | [ ptr; meta ] -> (Typed.cast_ptr_t ptr, meta)
-          | _ -> failwith "decode: unexpected values"
+          | _ -> L.failwith "decode: unexpected values"
         in
         let meta =
           match%ty meta with
           | TBitVector _ -> (meta :> Typed.(T.ptr_meta t))
           | TExtension TThinPtr -> (meta :> Typed.(T.ptr_meta t))
-          | _ -> failwith "read invalid meta?"
+          | _ -> L.failwith "read invalid meta?"
         in
         Typed.Ptr.mk_ptr_f ptr (Some meta)
     | Array { is_ptr = false; _ }, _ ->
@@ -278,7 +307,7 @@ struct
         let variant = Types.VariantId.nth variants variant in
         let discr = BV.of_literal variant.discriminant in
         Typed.Adt.mk_enum adt discr fields
-    | Enum _, _ -> failwith "decode: expected enum type for enum layout"
+    | Enum _, _ -> L.failwith "decode: expected enum type for enum layout"
 end
 
 (** Given a value of type [Box], returns the container pointer *)
@@ -560,7 +589,7 @@ let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
       let signed = Layout.is_signed from_ty in
       BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv
   | TFloat _, _ | _, TFloat _ ->
-      Fmt.failwith "Unhandled float transmute: %a -> %a" pp_literal_ty from_ty
+      L.failwith "Unhandled float transmute: %a -> %a" pp_literal_ty from_ty
         pp_literal_ty to_ty
   (* here we know we're only handling scalars: bool, char, or int/uint, so we
      can just resize the value as needed! *)
@@ -618,13 +647,13 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
         Fmt.kstr not_impl "transmute_one: mismatched type variables %a -> %a"
           Types.pp_type_var_id type_var_id Types.pp_type_var_id tid *)
   | _, TVar (Bound _) ->
-      failwith "transmute_one: bound type variable encountered?"
+      L.failwith "transmute_one: bound type variable encountered?"
   | _, TVar _ ->
-      Fmt.kstr not_impl
+      not_impl
         "losing concrete value in %a -> %a; somewhere we lost track of generics"
         Typed.ppa v pp_ty to_ty
   | _, _ ->
-      Fmt.kstr not_impl "transmute_one: unsupported %a -> %a" Typed.ppa v pp_ty
+      not_impl "transmute_one: unsupported %a -> %a" Typed.ppa v pp_ty
         to_ty
 
 (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing

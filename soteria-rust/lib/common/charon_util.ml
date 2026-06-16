@@ -40,7 +40,7 @@ let z_of_literal : Values.literal -> Z.t = function
   | VScalar s -> z_of_scalar s
   | VBool b -> if b then Z.one else Z.zero
   | VChar c -> Z.of_int @@ Uchar.to_int c
-  | VFloat _ | VByteStr _ | VStr _ -> failwith "z_of_literal: not an int"
+  | VFloat _ | VByteStr _ | VStr _ -> L.failwith "z_of_literal: not an int"
 
 let type_of_operand : Expressions.operand -> Types.ty = function
   | Constant c -> c.ty
@@ -50,7 +50,7 @@ let lit_to_string = Print.literal_type_to_string
 
 let ty_as_float : Types.ty -> Values.float_type = function
   | TLiteral (TFloat f) -> f
-  | _ -> failwith "ty_as_float: not a float type"
+  | _ -> L.failwith "ty_as_float: not a float type"
 
 let pp_literal_ty = Fmt.of_to_string Print.literal_type_to_string
 
@@ -67,17 +67,17 @@ let lit_ty_of_lit : Values.literal -> Types.literal_type = function
   | VBool _ -> TBool
   | VChar _ -> TChar
   | VFloat { float_ty; _ } -> TFloat float_ty
-  | VStr _ | VByteStr _ -> failwith "lit_ty_of_lit: not a literal type"
+  | VStr _ | VByteStr _ -> L.failwith "lit_ty_of_lit: not a literal type"
 
 let int_ty_of_lit_ty : Types.literal_type -> Types.integer_type = function
   | TInt ity -> Signed ity
   | TUInt uty -> Unsigned uty
-  | _ -> Fmt.failwith "int_ty_of_lit_ty: not an int literal"
+  | _ -> L.failwith "int_ty_of_lit_ty: not an int literal"
 
 let z_of_constant_expr : Types.constant_expr -> Z.t = function
   | { kind = CLiteral (VScalar s); _ } -> z_of_scalar s
   | cg ->
-      Fmt.failwith "int_of_const_generic: unhandled const: %a"
+      L.failwith "int_of_const_generic: unhandled const: %a"
         Types.pp_constant_expr cg
 
 let int_of_constant_expr (c : Types.constant_expr) : int =
@@ -229,8 +229,21 @@ let rec get_pointee : Types.ty -> Types.ty = function
         let adt = Crate.get_adt adt in
         match List.last adt.item_meta.name with
         | PeInstantiated gargs -> List.hd gargs.binder_value.types
-        | _ -> failwith "Box with non instantiates args in monomorphic mode?")
-  | _ -> failwith "Non-pointer type given to get_pointee"
+        | _ -> L.failwith "Box with non instantiates args in monomorphic mode?")
+  | _ -> L.failwith "Non-pointer type given to get_pointee"
+
+let ty_as_adt : Types.ty -> Types.type_decl_ref = function
+  | TAdt tref -> tref
+  | _ -> invalid_arg "ty_as_adt: not an ADT type"
+
+let ty_as_adt_opt : Types.ty -> Types.type_decl_ref option = function
+  | TAdt tref -> Some tref
+  | _ -> None
+
+let return_place (body : 'a GAst.gexpr_body) : Expressions.place =
+  let ret_id = Expressions.LocalId.zero in
+  let local = Expressions.LocalId.nth body.locals.locals ret_id in
+  { kind = PlaceLocal ret_id; ty = local.local_ty }
 
 (** Whether the given type is monomorphic, i.e. contains no type variables.
     {b This is a conservative estimate}: [struct Foo<T> {}] is considered

@@ -8,35 +8,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let hashmap_random_keys ~(fun_sig : Types.fun_sig) =
     map Typed.cast_any_adt @@ Value_codec.nondet_valid fun_sig.output
 
-  (** Used on macOS to register thread local destructors; receives a function
-      pointer and an argument. Should call the destructor with the argument at
-      the end of the thread.
-
-      [_tlv_atexit(dtor: unsafe extern "C" fn( *mut u8), arg: *mut u8)] *)
-  let _tlv_atexit ~fun_exec ~args =
-    let* dtor, arg =
-      match args with
-      | [ dtor_ptr; arg_ptr ] -> ok (Typed.cast_ptr_f dtor_ptr, arg_ptr)
-      | _ ->
-          Fmt.kstr not_impl "tlv_atexit: unexpected arguments: %a"
-            Fmt.(list Typed.ppa)
-            args
-    in
-    let+ () =
-      State.register_thread_exit (fun () ->
-          let* fn = State.lookup_fn dtor in
-          let* _ = fun_exec fn [ arg ] in
-          ok ())
-    in
-    Typed.Adt.mk_tuple []
-
   (** {@rust[
         fn getenv(k: &OsStr) -> Option<OsString>
       ]}
       HACK: we assume that hitting the environment never finds the variable
       we're looking for. Under-approximating behaviour. *)
-  let getenv ~(fun_sig : Types.fun_sig) ~k:_ =
-    let out = Common.Charon_util.ty_as_adt fun_sig.output in
+  let inner ~(fun_sig : Types.fun_sig) ~key:_ =
     let var_error_ty =
       match fun_sig.output with
       | TAdt { id = TAdtId id; _ } -> (
@@ -50,11 +27,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
             ->
               Common.Charon_util.ty_as_adt var_error_ty
           | _ ->
-              Fmt.failwith
+              L.failwith
                 "std::env::_var: unexpected type Result<_, VarError> (%a)"
                 Types.pp_ty fun_sig.output)
       | _ ->
-          Fmt.failwith "std::env::_var: unexpected return type %a"
+          L.failwith "std::env::_var: unexpected return type %a"
             Charon.Types.pp_ty fun_sig.output
     in
     (* We need to return the rust value `Err(VarError::NotPresent)`. `Err` is

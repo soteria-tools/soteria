@@ -22,10 +22,16 @@ let with_exn_and_config mode config f =
     let outcome = f () in
     Analyses.Outcome.exit outcome
   with
-  | Frontend.PluginError e -> fatal ~name:"Plugin" e
   | Frontend.FrontendError e -> fatal ~name:"Frontend" ~code:3 e
-  | Frontend.CompilationError e ->
-      print_diagnostic_simple ~severity:Error ("Compilation error:\n" ^ e);
+  | Frontend.CompilationError (info, msg) ->
+      print_diagnostic_simple ~severity:Error "Compilation error";
+      Fmt.pr "@.%s@.%a@.@." msg Unimplemented.pp
+        (Unimplemented.make
+           ~tip:
+             ( "You can try cleaning plugins and rebuilding them",
+               Some "soteria-rust build-plugins [compilation flags]" )
+           ~issue:388
+           ("Compilation failed while " ^ info));
       Analyses.Outcome.exit Error
   | Exn.Config_error err ->
       fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err

@@ -36,7 +36,7 @@ module M (StateM : State.StateM.S) = struct
         let payload = Typed.cast_ptr_f payload in
         cleanup ~payload
     | _, tys, cs, args ->
-        Fmt.kstr not_impl
+        not_impl
           "Custom stub found but called with the wrong arguments; got:@.Types: \
            %a@.Consts: %a@.Args: %a"
           Fmt.(list ~sep:comma Charon_util.pp_ty)

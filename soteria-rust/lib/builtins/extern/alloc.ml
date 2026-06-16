@@ -33,7 +33,7 @@ module M (StateM : State.StateM.S) = struct
   let ptr_of_nonnull nonull =
     match Typed.Adt.as_tuple @@ Typed.cast_any_adt nonull with
     | [ v ] -> Typed.cast_ptr_f v
-    | _ -> Fmt.failwith "alloc: invalid NonNull argument: %a" Typed.ppa nonull
+    | _ -> L.failwith "alloc: invalid NonNull argument: %a" Typed.ppa nonull
 
   let align_of_enum align : [> T.nonzero ] Typed.t =
     match Typed.Adt.as_tuple @@ Typed.cast_any_adt align with
@@ -41,13 +41,13 @@ module M (StateM : State.StateM.S) = struct
         let as_enum = Typed.cast_any_adt align_enum in
         let discr = Typed.Adt.discriminant_of as_enum in
         Typed.cast_nonzero @@ Typed.cast_i Usize discr
-    | v -> Fmt.failwith "alloc: invalid align argument: %a" Typed.ppa align
+    | v -> L.failwith "alloc: invalid align argument: %a" Typed.ppa align
 
   let alloc ?(zeroed = false) args =
     let size, align =
       match args with
       | [ size; align ] -> (Typed.cast_i Usize size, align_of_enum align)
-      | _ -> failwith "alloc: invalid arguments"
+      | _ -> L.failwith "alloc: invalid arguments"
     in
     let max_size = Layout.max_value_z (TInt Isize) in
     let max_size = Typed.BitVec.usize max_size in
@@ -61,7 +61,7 @@ module M (StateM : State.StateM.S) = struct
       match args with
       | [ ptr_val; size; align ] ->
           (ptr_of_nonnull ptr_val, Typed.cast_i Usize size, align_of_enum align)
-      | _ -> failwith "dealloc: invalid arguments"
+      | _ -> L.failwith "dealloc: invalid arguments"
     in
     let ptr_in = Typed.Ptr.ptr_of ptr in
     let alloc_size, alloc_align = Sptr.allocation_info ptr_in in
@@ -79,7 +79,7 @@ module M (StateM : State.StateM.S) = struct
             Typed.cast_i Usize old_size,
             align_of_enum align,
             Typed.cast_i Usize size )
-      | _ -> failwith "realloc: invalid arguments"
+      | _ -> L.failwith "realloc: invalid arguments"
     in
     let ptr_in = Typed.Ptr.ptr_of ptr in
     let prev_size, prev_align = Sptr.allocation_info ptr_in in

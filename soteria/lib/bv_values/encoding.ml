@@ -1,10 +1,11 @@
+open Logs.Import
 open Soteria_std
 open Soteria_smt
 open Svalue
 
 module Make (Typed : Typed_intf.S) = struct
   let pointers_not_supported () =
-    failwith "Encoding of pointers is not supported in Bv_values"
+    L.failwith "Encoding of pointers is not supported in Bv_values"
 
   module Svalue = Typed.Svalue
 
@@ -109,7 +110,7 @@ module Make (Typed : Typed_intf.S) = struct
     | Ptr _ -> pointers_not_supported ()
     | Seq vs -> (
         match vs with
-        | [] -> failwith "need type to encode empty lists"
+        | [] -> L.failwith "need type to encode empty lists"
         | _ :: _ ->
             List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat
         )

@@ -92,12 +92,12 @@ let get_struct_fields tag =
   let* _loc, def = Tag_defs.find_opt tag in
   match def with
   | StructDef (fs, fam) -> Some (fs, fam)
-  | UnionDef _ -> failwith "Not a structure"
+  | UnionDef _ -> L.failwith "Not a structure"
 
 let get_struct_fields_ty ty =
   match CF.Ctype.proj_ctype_ ty with
   | Struct tag -> get_struct_fields tag
-  | _ -> failwith "Not a structure"
+  | _ -> L.failwith "Not a structure"
 
 let rec layout_of ty =
   let open Syntaxes.Option in
@@ -411,7 +411,7 @@ let type_conversion_arith (ty1 : ctype) ty2 =
           | _ -> ty1)
   | Pointer _, _ -> ty1
   | _, Pointer _ -> ty1
-  | _ -> failwith "non-basic types in arith operation"
+  | _ -> L.failwith "non-basic types in arith operation"
 
 (** Size of the [int] type in C. *)
 let c_int_size =
