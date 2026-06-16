@@ -68,9 +68,8 @@
          --list-tests
              List the testing entry points found in the program as a one-line
              JSON list and exit, without running them; the resulting names can
-             be used with --filter to isolate a single test. The code is still
-             compiled, unless --no-compile is given. Only active in [exec]
-             mode.
+             be used with --filter to isolate a single test. Only active in
+             [exec] mode.
   
          --output-crate
              Pretty-print the compiled crate to a file
@@ -348,9 +347,8 @@
          --list-tests
              List the testing entry points found in the program as a one-line
              JSON list and exit, without running them; the resulting names can
-             be used with --filter to isolate a single test. The code is still
-             compiled, unless --no-compile is given. Only active in [exec]
-             mode.
+             be used with --filter to isolate a single test. Only active in
+             [exec] mode.
   
          --output-crate
              Pretty-print the compiled crate to a file
