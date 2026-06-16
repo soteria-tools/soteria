@@ -756,11 +756,9 @@ module Make (Borrows : Tree_borrows.T) = struct
 
     let offset ?check_signed ?(ty = Types.TLiteral (TUInt U8)) off_by
         ({ ptr; _ } as fptr) =
-      [%l.warn
-        "Executing Offset of pointer %a by %a (%a)" Sptr_base.pp fptr Typed.ppa
-          off_by
-          Fmt.(option bool)
-          check_signed];
+      [%l.debug
+        "Executing Offset of pointer %a by %a" Sptr_base.pp fptr Typed.ppa
+          off_by];
       let@ () = with_loc_err ~trace:"Pointer offset" () in
       let**^ size = Layout.size_of ty in
       let loc, off = Typed.Ptr.decompose ptr in
@@ -773,7 +771,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             let ofs_unsigned_neg =
               if not signed then off_by <$@ Usize.(0s) else Typed.v_false
             in
-            let off, off_ovf = Typed.BV.add_alloca_checked off off_by in
+            let off, off_ovf = off +$?@ off_by in
             let** () =
               assert_or_error
                 (off_by

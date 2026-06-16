@@ -564,7 +564,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       let* () = Sptr.check_aligned fdst t in
       ok ()
     else
-      let size, overflowed = BV.mul_alloca_checked ty_size count in
+      let size, overflowed = ty_size *?@ count in
       let* () = assert_not overflowed `Overflow in
       let* () = Sptr.check_non_dangling_untyped fsrc size in
       let* () = Sptr.check_non_dangling_untyped fdst size in
@@ -1009,7 +1009,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let zero = Usize.(0s) in
     let* () = Sptr.check_aligned dst t in
     let* size = Layout.size_of t in
-    let size, overflowed = BV.mul_alloca_checked size count in
+    let size, overflowed = size *?@ count in
     let* () = assert_not overflowed `Overflow in
     if%sat size ==@ zero then ok ()
     else
