@@ -507,12 +507,69 @@ module rec Bool : Bool = struct
     (* avoid re-alloc and re-hashconsing *)
     if b then v_true else v_false
 
+  (* Recognize an upper-bound constraint [a < c] / [a <= c], returning the
+     bounded value, the signedness, the original node, and the inclusive upper
+     bound as an integer in that signedness. [as_lower_bound] is symmetric for
+     [c < a] / [c <= a] (returning an inclusive lower bound). *)
+  let as_upper_bound v =
+    match v.node.kind with
+    | Binop (Lt s, a, { node = { kind = BitVec c; _ }; _ }) ->
+        Some (a, s, v, Z.pred (BitVec.bv_to_z s (size_of a.node.ty) c))
+    | Binop (Leq s, a, { node = { kind = BitVec c; _ }; _ }) ->
+        Some (a, s, v, BitVec.bv_to_z s (size_of a.node.ty) c)
+    | _ -> None
+
+  let as_lower_bound v =
+    match v.node.kind with
+    | Binop (Lt s, { node = { kind = BitVec c; _ }; _ }, a) ->
+        Some (a, s, v, Z.succ (BitVec.bv_to_z s (size_of a.node.ty) c))
+    | Binop (Leq s, { node = { kind = BitVec c; _ }; _ }, a) ->
+        Some (a, s, v, BitVec.bv_to_z s (size_of a.node.ty) c)
+    | _ -> None
+
+  (* For two bounds on the same value (same signedness), [&&] keeps the tighter
+     and [||] keeps the looser; either way the kept node already implies (resp.
+     is implied by) the other, so we can drop it. *)
+  let combine_bounds ~keep_tighter v1 v2 =
+    let pick lhs_smaller n1 n2 =
+      if Stdlib.( = ) lhs_smaller keep_tighter then n1 else n2
+    in
+    match (as_upper_bound v1, as_upper_bound v2) with
+    | Some (a1, s1, n1, u1), Some (a2, s2, n2, u2) when s1 = s2 && equal a1 a2
+      ->
+        Some (pick (Z.leq u1 u2) n1 n2)
+    | _ -> (
+        match (as_lower_bound v1, as_lower_bound v2) with
+        | Some (a1, s1, n1, l1), Some (a2, s2, n2, l2)
+          when s1 = s2 && equal a1 a2 ->
+            Some (pick (Z.geq l1 l2) n1 n2)
+        | _ -> None)
+
+  (* Whether [boundv] (a bound on some [a]) is implied by [eqv] (an equality [a
+     == k] with [k] constant), i.e. [k] satisfies the bound. *)
+  let bound_implied_by_eq boundv eqv =
+    match eqv.node.kind with
+    | Binop (Eq, a, { node = { kind = BitVec k; _ }; _ })
+    | Binop (Eq, { node = { kind = BitVec k; _ }; _ }, a) -> (
+        let k_in s = BitVec.bv_to_z s (size_of a.node.ty) k in
+        (match as_upper_bound boundv with
+          | Some (ba, s, _, u) -> equal ba a && Z.leq (k_in s) u
+          | None -> false)
+        ||
+        match as_lower_bound boundv with
+        | Some (ba, s, _, l) -> equal ba a && Z.geq (k_in s) l
+        | None -> false)
+    | _ -> false
+
   let rec and_ v1 v2 =
     match (v1.node.kind, v2.node.kind) with
     | _, _ when equal v1 v2 -> v1
     | Bool false, _ | _, Bool false -> v_false
     | Bool true, _ -> v2
     | _, Bool true -> v1
+    (* p && !p <=> false *)
+    | _, Unop (Not, p) when equal v1 p -> v_false
+    | Unop (Not, p), _ when equal v2 p -> v_false
     | Binop (Eq, l1, r1), Binop (Eq, l2, r2)
       when (equal l1 l2 && sure_neq r1 r2)
            || (equal l1 r2 && sure_neq r1 l2)
@@ -528,30 +585,12 @@ module rec Bool : Bool = struct
           else (BitVec.concat bv1 bv2, BitVec.extract s2 e1 x)
         in
         sem_eq bv xy
-    (* (a <= c1) && (a <= c2) <=> a <= min(c1, c2), comparing the constants in
-       the (shared) signedness of the comparisons. *)
-    | ( Binop (Leq s1, a1, ({ node = { kind = BitVec c1; _ }; _ } as r1)),
-        Binop (Leq s2, a2, ({ node = { kind = BitVec c2; _ }; _ } as r2)) )
-      when s1 = s2 && equal a1 a2 ->
-        let bits = size_of a1.node.ty in
-        let smaller =
-          if Z.leq (BitVec.bv_to_z s1 bits c1) (BitVec.bv_to_z s1 bits c2) then
-            r1
-          else r2
-        in
-        BitVec.leq ~signed:s1 a1 smaller
-    (* (c1 <= a) && (c2 <= a) <=> max(c1, c2) <= a *)
-    | ( Binop (Leq s1, ({ node = { kind = BitVec c1; _ }; _ } as l1), a1),
-        Binop (Leq s2, ({ node = { kind = BitVec c2; _ }; _ } as l2), a2) )
-      when s1 = s2 && equal a1 a2 ->
-        let bits = size_of a1.node.ty in
-        let larger =
-          if Z.geq (BitVec.bv_to_z s1 bits c1) (BitVec.bv_to_z s1 bits c2) then
-            l1
-          else l2
-        in
-        BitVec.leq ~signed:s1 larger a1
-    | _ -> mk_commut_binop And v1 v2 <| TBool
+    | _ -> (
+        (* two bounds on the same value (e.g. [a < c1] && [a <= c2]) keep the
+           tighter one *)
+        match combine_bounds ~keep_tighter:true v1 v2 with
+        | Some r -> r
+        | None -> mk_commut_binop And v1 v2 <| TBool)
 
   and or_ v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -559,6 +598,9 @@ module rec Bool : Bool = struct
     | Bool true, _ | _, Bool true -> v_true
     | Bool false, _ -> v2
     | _, Bool false -> v1
+    (* p || !p <=> true *)
+    | _, Unop (Not, p) when equal v1 p -> v_true
+    | Unop (Not, p), _ when equal v2 p -> v_true
     | Binop (Lt s1, l1, r1), Binop (Lt s2, l2, r2)
       when s1 = s2 && equal l1 r2 && equal r1 l2 ->
         not (sem_eq l1 r1)
@@ -568,7 +610,15 @@ module rec Bool : Bool = struct
         v_true
     | Binop (Or, a, b), _ when equal a v2 || equal b v2 -> v1
     | _, Binop (Or, a, b) when equal v1 a || equal v1 b -> v2
-    | _ -> mk_commut_binop Or v1 v2 <| TBool
+    (* a bound absorbs an equality it already allows, e.g. [a < c] || [a ==
+       0] *)
+    | _ when bound_implied_by_eq v1 v2 -> v1
+    | _ when bound_implied_by_eq v2 v1 -> v2
+    | _ -> (
+        (* two bounds on the same value keep the looser one *)
+        match combine_bounds ~keep_tighter:false v1 v2 with
+        | Some r -> r
+        | None -> mk_commut_binop Or v1 v2 <| TBool)
 
   and not sv =
     if equal sv v_true then v_false
@@ -1710,6 +1760,19 @@ and BitVec : BitVec = struct
         c.unsigned
     | _ -> false
 
+  (* An inclusive upper bound on the unsigned value of [v], derived from its
+     most significant possibly-set bit (e.g. [x & 0b11 <= 3]). Conservative: an
+     unknown value bounds to the full width's maximum. *)
+  let unsigned_ub v = Z.(pred (one lsl Stdlib.(msb_of v + 1)))
+
+  (* When rewriting a checked comparison [y + l <op> x + r] into one with a
+     single symbolic sum (e.g. [y <op> x + (r - l)]), that rebuilt sum is only
+     guaranteed not to overflow when the joined constant [d] lies between [0]
+     and [base] (then [v + d] sits between the in-range values [v] and [v +
+     base]). [base] and [d] are the signed values of the constants. *)
+  let const_keeps_in_range ~base d =
+    Z.leq (Z.min Z.zero base) d && Z.leq d (Z.max Z.zero base)
+
   let rec lt ~signed v1 v2 =
     assert (equal_ty v1.node.ty v2.node.ty);
     let bits = size_of v1.node.ty in
@@ -1770,22 +1833,16 @@ and BitVec : BitVec = struct
             (Add checked_r, x, ({ node = { kind = BitVec bv_r; _ }; _ } as r))
           ) )
       when checked_has ~signed checked_l && checked_has ~signed checked_r ->
-        (* y + l < x + r <=> y < x + (r - l) <=> y + (l - r) < x *)
+        (* y + l < x + r <=> y + (l - r) < x <=> y < x + (r - l); only sound
+           when the rebuilt symbolic sum is known not to overflow. *)
         let int_l = bv_to_z signed bits bv_l in
         let int_r = bv_to_z signed bits bv_r in
         let chk = checked_of_signed signed in
-        (* we pick the option that will make a positive constant
-           (superstition) *)
-        if Z.geq int_l int_r then
-          (* Check that (l - r) doesn't overflow *)
-          if overflows ~signed bits int_l int_r Z.( - ) then
-            Binop (Lt signed, v1, v2) <| TBool
-          else lt ~signed (add ~checked:chk y (sub ~checked:chk l r)) x
-        else if
-          (* Check that (r - l) doesn't overflow *)
-          overflows ~signed bits int_r int_l Z.( - )
-        then Binop (Lt signed, v1, v2) <| TBool
-        else lt ~signed y (add ~checked:chk x (sub ~checked:chk r l))
+        if const_keeps_in_range ~base:int_l Z.(int_l - int_r) then
+          lt ~signed (add ~checked:chk y (sub ~checked:chk l r)) x
+        else if const_keeps_in_range ~base:int_r Z.(int_r - int_l) then
+          lt ~signed y (add ~checked:chk x (sub ~checked:chk r l))
+        else Binop (Lt signed, v1, v2) <| TBool
     | _, BitVec x when Stdlib.not signed && Z.(equal x one) ->
         (* unsigned x < 1 is x == 0 *)
         Bool.sem_eq v1 (zero bits)
@@ -1949,6 +2006,12 @@ and BitVec : BitVec = struct
           if Stdlib.not signed then Bool.v_true
           else Binop (Lt signed, v1, v2) <| TBool
         else lt ~signed (sub ~checked:(checked_of_signed signed) k v2) x
+    (* v1 <u c is true when v1's value can't reach c *)
+    | _, BitVec c when Stdlib.not signed && Z.lt (unsigned_ub v1) c ->
+        Bool.v_true
+    (* c <u v2 is false when v2's value can't exceed c *)
+    | BitVec c, _ when Stdlib.not signed && Z.leq (unsigned_ub v2) c ->
+        Bool.v_false
     | BitVec c, _ when signed && is_checked_unsigned_op v2 ->
         signed_to_unsigned_cmp ~is_leq:false ~c_on_left:true c v1 v2
     | _, BitVec c when signed && is_checked_unsigned_op v1 ->
@@ -2005,22 +2068,16 @@ and BitVec : BitVec = struct
             (Add checked_r, x, ({ node = { kind = BitVec bv_r; _ }; _ } as r))
           ) )
       when checked_has ~signed checked_l && checked_has ~signed checked_r ->
-        (* y + l <= x + r <=> y <= x + (r - l) <=> y + (l - r) <= x *)
+        (* y + l <= x + r <=> y + (l - r) <= x <=> y <= x + (r - l); only sound
+           when the rebuilt symbolic sum is known not to overflow. *)
         let int_l = bv_to_z signed bits bv_l in
         let int_r = bv_to_z signed bits bv_r in
         let chk = checked_of_signed signed in
-        (* we pick the option that will make a positive constant
-           (superstition) *)
-        if Z.geq int_l int_r then
-          (* Check that (l - r) doesn't overflow *)
-          if overflows ~signed bits int_l int_r Z.( - ) then
-            Binop (Leq signed, v1, v2) <| TBool
-          else leq ~signed (add ~checked:chk y (sub ~checked:chk l r)) x
-        else if
-          (* Check that (r - l) doesn't overflow *)
-          overflows ~signed bits int_r int_l Z.( - )
-        then Binop (Leq signed, v1, v2) <| TBool
-        else leq ~signed y (add ~checked:chk x (sub ~checked:chk r l))
+        if const_keeps_in_range ~base:int_l Z.(int_l - int_r) then
+          leq ~signed (add ~checked:chk y (sub ~checked:chk l r)) x
+        else if const_keeps_in_range ~base:int_r Z.(int_r - int_l) then
+          leq ~signed y (add ~checked:chk x (sub ~checked:chk r l))
+        else Binop (Leq signed, v1, v2) <| TBool
     | _, Binop (Add checked, v2, v2')
       when checked_has ~signed checked && (equal v1 v2 || equal v1 v2') ->
         (* a <= b + a when + doesn't overflow is equivalent to 0 <= b *)
@@ -2172,6 +2229,12 @@ and BitVec : BitVec = struct
           if Stdlib.not signed then Bool.v_true
           else Binop (Leq signed, v1, v2) <| TBool
         else leq ~signed (sub ~checked:(checked_of_signed signed) k v2) x
+    (* v1 <=u c is true when v1's value can't exceed c *)
+    | _, BitVec c when Stdlib.not signed && Z.leq (unsigned_ub v1) c ->
+        Bool.v_true
+    (* c <=u v2 is false when v2's value can't reach c *)
+    | BitVec c, _ when Stdlib.not signed && Z.lt (unsigned_ub v2) c ->
+        Bool.v_false
     | BitVec c, _ when signed && is_checked_unsigned_op v2 ->
         signed_to_unsigned_cmp ~is_leq:true ~c_on_left:true c v1 v2
     | _, BitVec c when signed && is_checked_unsigned_op v1 ->
