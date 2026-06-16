@@ -65,6 +65,13 @@
              If provided, dump the call graph as a DOT file to the given path
              after analysis.
   
+         --list-tests
+             List the testing entry points found in the program as a one-line
+             JSON list and exit, without running them; the resulting names can
+             be used with --filter to isolate a single test. The code is still
+             compiled, unless --no-compile is given. Only active in [exec]
+             mode.
+  
          --output-crate
              Pretty-print the compiled crate to a file
   
@@ -338,6 +345,13 @@
              If provided, dump the call graph as a DOT file to the given path
              after analysis.
   
+         --list-tests
+             List the testing entry points found in the program as a one-line
+             JSON list and exit, without running them; the resulting names can
+             be used with --filter to isolate a single test. The code is still
+             compiled, unless --no-compile is given. Only active in [exec]
+             mode.
+  
          --output-crate
              Pretty-print the compiled crate to a file
   
@@ -568,3 +582,14 @@
   SEE ALSO
          soteria-rust(1)
   
+
+
+List the testing entry points as a one-line JSON list, without running them
+  $ soteria-rust exec --list-tests tests.rs
+  Compiling... done in <time>
+  ["tests::first_test","tests::second_test","tests::third_test"]
+
+The list respects --filter, so it can be used to isolate a single test
+  $ soteria-rust exec --list-tests --filter second tests.rs
+  Compiling... done in <time>
+  ["tests::second_test"]

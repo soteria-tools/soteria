@@ -127,6 +127,11 @@ type t = {
       [@docs Sections.output] [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
+  list_tests : bool;
+      [@docs Sections.output] [@make.default false] [@names [ "list-tests" ]]
+      (** List the testing entry points found in the program as a one-line JSON
+          list and exit, without running them; the resulting names can be used
+          with --filter to isolate a single test. Only active in [exec] mode. *)
   show_pcs : bool;
       [@docs Sections.output]
       [@make.default false]

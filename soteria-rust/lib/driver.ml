@@ -36,10 +36,23 @@ let with_exn_and_config mode config f =
   | Exn.Config_error err ->
       fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err
 
+let list_tests (crate, entry_points) =
+  let fmt_env = Charon.Print.crate_to_fmt_env crate in
+  let names =
+    List.map
+      (fun (ep : Frontend.entry_point) ->
+        `String (Charon.Print.name_to_string fmt_env ep.fun_decl.item_meta.name))
+      entry_points
+  in
+  print_endline (Yojson.Safe.to_string (`List names));
+  Analyses.Outcome.Ok
+
 let exec_wpst config target =
   let@ () = with_exn_and_config Whole_program config in
   let compile () = Frontend.parse_ullbc_with_entry_points target in
-  wrap_step "Compiling" compile |> Analyses.Wpst.exec
+  let targets = wrap_step "Compiling" compile in
+  if (Config.get ()).list_tests then list_tests targets
+  else Analyses.Wpst.exec targets
 
 let build_plugins config =
   let@ () = with_exn_and_config Whole_program config in
