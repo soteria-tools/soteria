@@ -97,7 +97,7 @@ module BitVec = struct
   let mul_checked ~signed l r =
     (mul ~checked:(checked_of_signed signed) l r, mul_overflows ~signed l r)
 
-  let neg_checked x = (neg ~checked:true x, neg_overflows x)
+  let neg_checked x = (neg x, neg_overflows x)
 end
 
 module Infix = struct

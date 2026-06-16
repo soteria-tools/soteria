@@ -62,8 +62,7 @@ let bv_binop : 'a Gen.t =
       (Array.length bv_unchecked_binops, bv_unchecked_binop);
     ]
 
-let all_bv_unops =
-  [| D.BitVec.not_; D.BitVec.neg ~checked:false; D.BitVec.neg ~checked:true |]
+let all_bv_unops = [| D.BitVec.not_; D.BitVec.neg |]
 
 (* ------------------------------------------------------------------ *)
 (* Bool operations that compare bitvectors                             *)

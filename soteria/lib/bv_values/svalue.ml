@@ -86,9 +86,7 @@ module Unop = struct
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
-    | Neg of bool
-      (* is this negation overflow-checked (operand <> INT_MIN, so it behaves
-         like exact integer negation)? for optimisations only *)
+    | Neg
     | FAbs
     | FIs of FloatClass.t
     | FRound of RoundingMode.t
@@ -111,7 +109,7 @@ module Unop = struct
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
-    | Neg checked -> Fmt.pf ft "-%s" (if checked then "ck" else "")
+    | Neg -> Fmt.string ft "-"
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
     | FRound mode -> Fmt.pf ft "fround(%a)" RoundingMode.pp mode
 end
@@ -414,7 +412,7 @@ module type BitVec = sig
   val div : signed:bool -> t -> t -> t
   val rem : signed:bool -> t -> t -> t
   val mod_ : t -> t -> t
-  val neg : ?checked:bool -> t -> t
+  val neg : t -> t
 
   (* overflow checks *)
   val add_overflows : signed:bool -> t -> t -> t
@@ -587,8 +585,8 @@ module rec Bool : Bool = struct
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
     | BitVec b1, BitVec b2 -> of_bool (Z.equal b1 b2)
     (* Arithmetics *)
-    | BitVec _, Unop (Neg _, v2) -> sem_eq (BitVec.neg v1) v2
-    | Unop (Neg _, v1), BitVec _ -> sem_eq v1 (BitVec.neg v2)
+    | BitVec _, Unop (Neg, v2) -> sem_eq (BitVec.neg v1) v2
+    | Unop (Neg, v1), BitVec _ -> sem_eq v1 (BitVec.neg v2)
     | BitVec _, Unop (BvNot, v2) -> sem_eq (BitVec.not v1) v2
     | Unop (BvNot, v1), BitVec _ -> sem_eq v1 (BitVec.not v2)
     | BitVec _, Binop (Add _, ({ node = { kind = BitVec _; _ }; _ } as l), r)
@@ -942,8 +940,8 @@ and BitVec : BitVec = struct
       (v1.node.kind, v2.node.kind)
     with
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l + r)
-    | Unop (Neg _, v1), _ -> sub v2 v1
-    | _, Unop (Neg _, v2) -> sub v1 v2
+    | Unop (Neg, v1), _ -> sub v2 v1
+    | _, Unop (Neg, v2) -> sub v1 v2
     | _, BitVec z when Z.equal z Z.zero -> v1
     | BitVec z, _ when Z.equal z Z.zero -> v2
     | (BitVec z, Unop (BvNot, v) | Unop (BvNot, v), BitVec z)
@@ -995,13 +993,10 @@ and BitVec : BitVec = struct
     match (v1.node.kind, v2.node.kind) with
     | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l - r)
     | _, BitVec z when Z.equal z Z.zero -> v1
-    | BitVec z, _ when Z.equal z Z.zero ->
-        (* 0 - x = -x; the subtraction overflows (signed) iff x = INT_MIN, so a
-           signed-checked subtraction yields a signed-checked negation. *)
-        neg ~checked:checked.signed v2
+    | BitVec z, _ when Z.equal z Z.zero -> neg v2
     | _, _ when equal v1 v2 -> zero (size_of v1.node.ty)
     (* BAD PERF:!!!! *)
-    | _, Unop (Neg _, v2) -> add v1 v2
+    | _, Unop (Neg, v2) -> add v1 v2
     | Binop (Sub c, ({ node = { kind = BitVec _; _ }; _ } as c1), s), BitVec _
       ->
         sub ~checked:(checked_meet c checked) (sub c1 v2) s
@@ -1032,14 +1027,14 @@ and BitVec : BitVec = struct
     | BitVec _, Unop (BvOfBool n, b) -> Bool.ite b (sub v1 (one n)) v1
     | _ -> Binop (Sub checked, v1, v2) <| v1.node.ty
 
-  and neg ?(checked = false) v =
+  and neg v =
     let n = size_of v.node.ty in
     match v.node.kind with
     | BitVec bv -> mk_masked n Z.(neg bv)
-    | Unop (Neg _, v) -> v
-    | Ite (b, l, r) -> Bool.ite b (neg ~checked l) (neg ~checked r)
+    | Unop (Neg, v) -> v
+    | Ite (b, l, r) -> Bool.ite b (neg l) (neg r)
     | Unop (BvOfBool n, b) -> Bool.ite b (neg (one n)) (zero n)
-    | _ -> Unop (Neg checked, v) <| v.node.ty
+    | _ -> Unop (Neg, v) <| v.node.ty
 
   (** [mod_ v1 v2] is the signed remainder of [v1 / v2], which takes the sign of
       the divisor [v2] if [signed]. For an unsigned version, use
@@ -1599,16 +1594,6 @@ and BitVec : BitVec = struct
     | BitVec z, _ when Z.equal z Z.one -> v2
     | _, BitVec z when Z.equal z Z.zero -> zero (size_of v1.node.ty)
     | BitVec z, _ when Z.equal z Z.zero -> zero (size_of v1.node.ty)
-    (* c * (-x) = (-c) * x (holds mod 2^n); with a checked negation (x <>
-       INT_MIN) and c <> INT_MIN, the signed no-overflow guarantee carries over
-       to the rebuilt product. *)
-    | (BitVec c, Unop (Neg true, x) | Unop (Neg true, x), BitVec c)
-      when Stdlib.not
-             (Z.equal
-                (bv_to_z true (size_of v1.node.ty) c)
-                (min_for true (size_of v1.node.ty))) ->
-        let n = size_of v1.node.ty in
-        mul ~checked:(checked_meet checked checked_signed) (neg (mk n c)) x
     | ( ( Binop (Mul ckm, x, { node = { kind = BitVec n; _ }; _ })
         | Binop (Mul ckm, { node = { kind = BitVec n; _ }; _ }, x) ),
         BitVec m )
@@ -1682,20 +1667,6 @@ and BitVec : BitVec = struct
     | BitVec l, BitVec r ->
         Bool.of_bool @@ Z.lt (bv_to_z signed bits l) (bv_to_z signed bits r)
     | _ when equal v1 v2 -> Bool.v_false
-    (* -a < -b <=> b < a, when neither negation overflows *)
-    | Unop (Neg true, a), Unop (Neg true, b) when signed -> lt ~signed b a
-    (* -a < c <=> -c < a, when -a doesn't overflow and c <> INT_MIN *)
-    | Unop (Neg true, a), BitVec c
-      when signed
-           && Stdlib.not (Z.equal (bv_to_z signed bits c) (min_for signed bits))
-      ->
-        lt ~signed (neg v2) a
-    (* c < -a <=> a < -c, when -a doesn't overflow and c <> INT_MIN *)
-    | BitVec c, Unop (Neg true, a)
-      when signed
-           && Stdlib.not (Z.equal (bv_to_z signed bits c) (min_for signed bits))
-      ->
-        lt ~signed a (neg v1)
     | ( BitVec bv_v1,
         ( Binop (Add checked, ({ node = { kind = BitVec bv_r; _ }; _ } as r), x)
         | Binop (Add checked, x, ({ node = { kind = BitVec bv_r; _ }; _ } as r))
@@ -1889,20 +1860,6 @@ and BitVec : BitVec = struct
     | _ when equal v1 v2 -> Bool.v_true
     | BitVec l, BitVec r ->
         Bool.of_bool @@ Z.leq (bv_to_z signed bits l) (bv_to_z signed bits r)
-    (* -a <= -b <=> b <= a, when neither negation overflows *)
-    | Unop (Neg true, a), Unop (Neg true, b) when signed -> leq ~signed b a
-    (* -a <= c <=> -c <= a, when -a doesn't overflow and c <> INT_MIN *)
-    | Unop (Neg true, a), BitVec c
-      when signed
-           && Stdlib.not (Z.equal (bv_to_z signed bits c) (min_for signed bits))
-      ->
-        leq ~signed (neg v2) a
-    (* c <= -a <=> a <= -c, when -a doesn't overflow and c <> INT_MIN *)
-    | BitVec c, Unop (Neg true, a)
-      when signed
-           && Stdlib.not (Z.equal (bv_to_z signed bits c) (min_for signed bits))
-      ->
-        leq ~signed a (neg v1)
     | ( BitVec bv_v1,
         ( Binop (Add checked, ({ node = { kind = BitVec bv_r; _ }; _ } as r), x)
         | Binop (Add checked, x, ({ node = { kind = BitVec bv_r; _ }; _ } as r))
@@ -2323,7 +2280,7 @@ module Infix = struct
   let ( <=$@ ) = BitVec.leq ~signed:true
   let ( +@ ) = BitVec.add ~checked:unchecked
   let ( -@ ) = BitVec.sub ~checked:unchecked
-  let ( ~- ) v = BitVec.neg v
+  let ( ~- ) = BitVec.neg
   let ( *@ ) = BitVec.mul ~checked:unchecked
   let ( /@ ) = BitVec.div ~signed:false
   let ( /$@ ) = BitVec.div ~signed:true

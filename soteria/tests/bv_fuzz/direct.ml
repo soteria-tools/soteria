@@ -76,7 +76,7 @@ module BitVec = struct
   let div ~signed v1 v2 = Binop (Div signed, v1, v2) <| v1.Hc.node.ty
   let rem ~signed v1 v2 = Binop (Rem signed, v1, v2) <| v1.Hc.node.ty
   let mod_ v1 v2 = Binop (Mod, v1, v2) <| v1.Hc.node.ty
-  let neg ?(checked = false) v = Unop (Neg checked, v) <| v.Hc.node.ty
+  let neg v = Unop (Neg, v) <| v.Hc.node.ty
 
   (* Bitwise *)
   let not_ v = Unop (BvNot, v) <| v.Hc.node.ty
@@ -154,9 +154,6 @@ let collect_checked_assumptions (v : t) : t list =
 
   let rec go v =
     match v.Hc.node.kind with
-    | Unop (Neg true, v') ->
-        Dynarray.add_last assumptions (Bool.not_ (BitVec.neg_overflows v'));
-        go v'
     | Unop (_, v) -> go v
     | Ptr (a, b) ->
         go a;
