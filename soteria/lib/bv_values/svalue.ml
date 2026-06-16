@@ -1002,6 +1002,20 @@ and BitVec : BitVec = struct
     let res = op l r in
     Z.Compare.(res < minz || res > maxz)
 
+  (* Re-associating a checked add/sub folds two of its constants ([a], [b]) into
+     a single one via [op]. The rebuilt operation can overflow even when the
+     originals didn't (the fold wraps), so the [checked] flag only survives in a
+     signedness where that constant fold does not itself overflow. *)
+  let mask_checked_after_fold c a b op =
+    match (a.node.kind, b.node.kind) with
+    | BitVec za, BitVec zb ->
+        let n = size_of a.node.ty in
+        let keep ~signed =
+          checked_has ~signed c && Stdlib.not (overflows ~signed n za zb op)
+        in
+        { signed = keep ~signed:true; unsigned = keep ~signed:false }
+    | _ -> unchecked
+
   let ovf_check ~signed n l r op = Bool.of_bool @@ overflows ~signed n l r op
 
   let of_bool n b =
@@ -1038,13 +1052,22 @@ and BitVec : BitVec = struct
     | Binop (Add c, ({ node = { kind = BitVec _; _ }; _ } as c1), r), BitVec _
     | Binop (Add c, r, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
       ->
-        add ~checked:(checked_meet checked c) (add c1 v2) r
+        let checked =
+          mask_checked_after_fold (checked_meet checked c) c1 v2 Z.( + )
+        in
+        add ~checked (add c1 v2) r
     | Binop (Sub c, l, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
       ->
-        add ~checked:(checked_meet checked c) l (sub v2 c1)
+        let checked =
+          mask_checked_after_fold (checked_meet checked c) v2 c1 Z.( - )
+        in
+        add ~checked l (sub v2 c1)
     | Binop (Sub c, ({ node = { kind = BitVec _; _ }; _ } as c1), r), BitVec _
       ->
-        sub ~checked:(checked_meet checked c) (add c1 v2) r
+        let checked =
+          mask_checked_after_fold (checked_meet checked c) c1 v2 Z.( + )
+        in
+        sub ~checked (add c1 v2) r
     | _, Binop (Sub _, l, r) when equal r v1 -> l
     | Binop (Sub _, l, r), _ when equal r v2 -> l
     | Binop (Mul _, l1, r1), Binop (Mul _, l2, r2)
@@ -1090,13 +1113,22 @@ and BitVec : BitVec = struct
     | _, Unop (Neg _, v2) -> add v1 v2
     | Binop (Sub c, ({ node = { kind = BitVec _; _ }; _ } as c1), s), BitVec _
       ->
-        sub ~checked:(checked_meet c checked) (sub c1 v2) s
+        let checked =
+          mask_checked_after_fold (checked_meet c checked) c1 v2 Z.( - )
+        in
+        sub ~checked (sub c1 v2) s
     | Binop (Sub c, s, ({ node = { kind = BitVec _; _ }; _ } as c1)), BitVec _
       ->
-        sub ~checked:(checked_meet c checked) s (add c1 v2)
+        let checked =
+          mask_checked_after_fold (checked_meet c checked) c1 v2 Z.( + )
+        in
+        sub ~checked s (add c1 v2)
     | BitVec _, Binop (Add c, ({ node = { kind = BitVec _; _ }; _ } as r), l)
     | BitVec _, Binop (Add c, l, ({ node = { kind = BitVec _; _ }; _ } as r)) ->
-        sub ~checked:(checked_meet c checked) (sub v1 r) l
+        let checked =
+          mask_checked_after_fold (checked_meet c checked) v1 r Z.( - )
+        in
+        sub ~checked (sub v1 r) l
     | ( Binop (Add c, ({ node = { kind = BitVec bv1; _ }; _ } as r), l),
         BitVec bv2 )
     | ( Binop (Add c, l, ({ node = { kind = BitVec bv1; _ }; _ } as r)),
@@ -1104,8 +1136,15 @@ and BitVec : BitVec = struct
         (* if bv1 < bv2 there would be an overflow which causes problems since
            the operation can't be deemed checked anymore. *)
         if Z.lt bv1 bv2 then
-          sub ~checked:(checked_meet c checked) l (neg (sub r v2))
-        else add ~checked:(checked_meet c checked) l (sub r v2)
+          let checked =
+            mask_checked_after_fold (checked_meet c checked) v2 r Z.( - )
+          in
+          sub ~checked l (neg (sub r v2))
+        else
+          let checked =
+            mask_checked_after_fold (checked_meet c checked) r v2 Z.( - )
+          in
+          add ~checked l (sub r v2)
     | Binop (Add _, l, r), _ when equal l v2 -> r
     | Binop (Add _, l, r), _ when equal r v2 -> l
     | Binop (Add _, l1, r1), Binop (Add _, l2, r2) when equal l1 l2 ->
