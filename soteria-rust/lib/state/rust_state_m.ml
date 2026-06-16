@@ -128,9 +128,8 @@ module type S = sig
     include Sptr.S
 
     val offset :
-      ?check:bool ->
+      ?check_signed:bool ->
       ?ty:Charon.Types.ty ->
-      signed:bool ->
       [< Typed.T.sint ] Typed.t ->
       t ->
       (t, 'env) monad
@@ -454,8 +453,8 @@ module Make (State : State_intf.S) :
   module Sptr = struct
     include State.Sptr
 
-    let[@inline] offset ?check ?ty ~signed off ptr =
-      ESM.lift @@ offset ?check ?ty ~signed off ptr
+    let[@inline] offset ?check_signed ?ty off ptr =
+      ESM.lift @@ offset ?check_signed ?ty off ptr
 
     let[@inline] check_aligned ptr ty = ESM.lift (check_aligned ptr ty)
 

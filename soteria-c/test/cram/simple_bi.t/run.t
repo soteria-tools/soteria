@@ -286,7 +286,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         [(Ser_heap
             (V|1|,
              { node =
-               MemVal {offset = (V|2| +ck 0x0000000000000004);
+               MemVal {offset = (V|2| +cks 0x0000000000000004);
                  len = 0x0000000000000004; v = V|5| : signed int};
                info = None }));
           (Ser_heap
@@ -326,7 +326,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
         [(Ser_heap
             (V|1|,
              { node =
-               MemVal {offset = (V|2| +ck 0x0000000000000004);
+               MemVal {offset = (V|2| +cks 0x0000000000000004);
                  len = 0x0000000000000004; v = V|5| : signed int};
                info = None }));
           (Ser_heap
@@ -354,7 +354,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
                   len = 0x0000000000000004; v = V|5| : signed int};
                 info = None }))
           ];
-        ret = (Ok (V|4| +ck V|5|)) };
+        ret = (Ok (V|4| +cks V|5|)) };
       manifest_bugs = []}
   
   $ soteria-c gen-summaries overflow.c --no-ignore-parse-failures --no-ignore-duplicate-symbols --dump-summaries "out.summaries" ; cat out.summaries
@@ -375,7 +375,7 @@ if%sat1 had the wrong semantics and would not correctly backtrack.
     Analysed {
       raw =
       { args = [V|1|; V|2|]; pre = []; pc = [!((V|1| +s_ovf V|2|))]; post = [];
-        ret = (Ok (V|1| +ck V|2|)) };
+        ret = (Ok (V|1| +cks V|2|)) };
       manifest_bugs = []}
   
   Summaries for add_ovf_manifest_<id>:

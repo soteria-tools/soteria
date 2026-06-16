@@ -65,7 +65,7 @@ macro_rules! access {
 }
 
 fn access(x: &mut u32) {
-    for _ in 0..20 {
+    for _ in 0..10 {
         access!(x, 10000);
     }
 }

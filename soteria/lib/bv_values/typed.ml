@@ -89,27 +89,28 @@ module BitVec = struct
   let no_ovf_unsafe x = x
 
   let add_checked ~signed l r =
-    (add ~checked:true l r, add_overflows ~signed l r)
+    (add ~checked:(checked_of_signed signed) l r, add_overflows ~signed l r)
 
   let sub_checked ~signed l r =
-    (sub ~checked:true l r, sub_overflows ~signed l r)
+    (sub ~checked:(checked_of_signed signed) l r, sub_overflows ~signed l r)
 
   let mul_checked ~signed l r =
-    (mul ~checked:true l r, mul_overflows ~signed l r)
+    (mul ~checked:(checked_of_signed signed) l r, mul_overflows ~signed l r)
 
-  let neg_checked x = (neg x, neg_overflows x)
+  let neg_checked x = (neg ~checked:true x, neg_overflows x)
 end
 
 module Infix = struct
   include Infix
 
   let ( +!@ ) = ( +@ )
-  let ( +!!@ ) = BitVec.add ~checked:true
+  let ( +!!@ ) = BitVec.add ~checked:checked_both
   let ( -!@ ) = ( -@ )
-  let ( -!!@ ) = BitVec.sub ~checked:true
+  let ( -!!@ ) = BitVec.sub ~checked:checked_both
   let ( *!@ ) = ( *@ )
-  let ( *!!@ ) = BitVec.mul ~checked:true
+  let ( *!!@ ) = BitVec.mul ~checked:checked_both
   let ( ~-! ) = ( ~- )
+  let ( ~-!! ) = BitVec.neg ~checked:true
   let ( +?@ ) = BitVec.add_checked ~signed:false
   let ( +$?@ ) = BitVec.add_checked ~signed:true
   let ( -?@ ) = BitVec.sub_checked ~signed:false

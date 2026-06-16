@@ -32,7 +32,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let* drop_fn = State.declare_fn (Synthetic GenericDropInPlace) in
     let* () = State.store (vtable, Thin) Charon_util.unit_ptr (Ptr drop_fn) in
     let* align_ptr =
-      Sptr.offset ~ty:(TLiteral (TUInt Usize)) ~signed:false Usize.(2s) vtable
+      Sptr.offset ~ty:(TLiteral (TUInt Usize)) ~check_signed:true
+        Usize.(2s)
+        vtable
     in
     let+ () =
       State.store (align_ptr, Thin) Charon_util.unit_ptr (Int Usize.(1s))

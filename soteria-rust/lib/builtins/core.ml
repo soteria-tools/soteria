@@ -85,11 +85,15 @@ module M (StateM : State.StateM.S) = struct
             `InvalidShift
       | _ -> ok ()
     in
+    let checked_of : Expressions.overflow_mode -> Typed.checked = function
+      | OWrap -> unchecked
+      | OPanic | OUB -> checked_of_signed signed
+    in
     let res =
       match bop with
-      | Add om -> BV.add ~checked:(om <> OWrap) l r
-      | Sub om -> BV.sub ~checked:(om <> OWrap) l r
-      | Mul om -> BV.mul ~checked:(om <> OWrap) l r
+      | Add om -> BV.add ~checked:(checked_of om) l r
+      | Sub om -> BV.sub ~checked:(checked_of om) l r
+      | Mul om -> BV.mul ~checked:(checked_of om) l r
       | Div _ -> BV.div ~signed l (cast r)
       | Rem _ -> BV.rem ~signed l (cast r)
       | Shl _ -> BV.shl l r

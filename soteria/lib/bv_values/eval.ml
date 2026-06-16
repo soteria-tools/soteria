@@ -13,9 +13,9 @@ let eval_binop : Binop.t -> t -> t -> t = function
   | FMul -> Float.mul
   | FDiv -> Float.div
   | FRem -> Float.rem
-  | Add { checked } -> BitVec.add ~checked
-  | Sub { checked } -> BitVec.sub ~checked
-  | Mul { checked } -> BitVec.mul ~checked
+  | Add checked -> BitVec.add ~checked
+  | Sub checked -> BitVec.sub ~checked
+  | Mul checked -> BitVec.mul ~checked
   | Div signed -> BitVec.div ~signed
   | Rem signed -> BitVec.rem ~signed
   | Mod -> BitVec.mod_
@@ -45,7 +45,7 @@ let eval_unop : Unop.t -> t -> t = function
   | BvExtract (from, to_) -> BitVec.extract from to_
   | BvExtend (signed, by) -> BitVec.extend ~signed by
   | BvNot -> BitVec.not
-  | Neg -> BitVec.neg
+  | Neg _ -> fun v -> BitVec.neg v
   | FIs fc -> Float.is_floatclass fc
   | FRound rm -> Float.round rm
 
