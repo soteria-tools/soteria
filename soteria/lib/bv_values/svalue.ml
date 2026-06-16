@@ -1797,7 +1797,9 @@ and BitVec : BitVec = struct
         Bool.and_ b (Bool.sem_eq v1 (zero n))
     | Ite (b, l, r), _ -> Bool.ite b (lt ~signed l v2) (lt ~signed r v2)
     | _, Ite (b, l, r) -> Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
-    | _, BitVec x when signed && Z.(equal x zero) ->
+    | _, BitVec x
+      when signed && Z.(equal x zero) && Stdlib.not (is_checked_unsigned_op v1)
+      ->
         let lt_zero v =
           Binop (Lt signed, v, zero (size_of v.node.ty)) <| TBool
         in
@@ -1948,15 +1950,9 @@ and BitVec : BitVec = struct
           else Binop (Lt signed, v1, v2) <| TBool
         else lt ~signed (sub ~checked:(checked_of_signed signed) k v2) x
     | BitVec c, _ when signed && is_checked_unsigned_op v2 ->
-        (* [c <s X], for [X] a checked-unsigned operation, is rewritten to
-           unsigned comparisons so the checked-unsigned reductions can fire.
-           When [c] is non-negative this is [c <u X && X <u s], and when [c] is
-           negative it is [X <u s || c <u X]. *)
-        let sign_bit = mk bits Z.(one lsl Stdlib.( - ) bits 1) in
-        let below = lt ~signed:false v1 v2 in
-        let bounded = lt ~signed:false v2 sign_bit in
-        if Z.geq (bv_to_z signed bits c) Z.zero then Bool.and_ below bounded
-        else Bool.or_ bounded below
+        signed_to_unsigned_cmp ~is_leq:false ~c_on_left:true c v1 v2
+    | _, BitVec c when signed && is_checked_unsigned_op v1 ->
+        signed_to_unsigned_cmp ~is_leq:false ~c_on_left:false c v1 v2
     | _ -> Binop (Lt signed, v1, v2) <| TBool
 
   and leq ~signed v1 v2 =
@@ -2177,16 +2173,34 @@ and BitVec : BitVec = struct
           else Binop (Leq signed, v1, v2) <| TBool
         else leq ~signed (sub ~checked:(checked_of_signed signed) k v2) x
     | BitVec c, _ when signed && is_checked_unsigned_op v2 ->
-        (* [c <=s X], for [X] a checked-unsigned operation, is rewritten so
-           unsigned comparisons so the checked-unsigned reductions can fire.
-           When [c] is non-negative this is [c <=u X && X <u s], and when [c] is
-           negative it is [X <u s || c <=u X]. *)
-        let sign_bit = mk bits Z.(one lsl Stdlib.( - ) bits 1) in
-        let below = leq ~signed:false v1 v2 in
-        let bounded = lt ~signed:false v2 sign_bit in
-        if Z.geq (bv_to_z signed bits c) Z.zero then Bool.and_ below bounded
-        else Bool.or_ bounded below
+        signed_to_unsigned_cmp ~is_leq:true ~c_on_left:true c v1 v2
+    | _, BitVec c when signed && is_checked_unsigned_op v1 ->
+        signed_to_unsigned_cmp ~is_leq:true ~c_on_left:false c v1 v2
     | _ -> Binop (Leq signed, v1, v2) <| TBool
+
+  and signed_to_unsigned_cmp ~is_leq ~c_on_left c v1 v2 =
+    (* Rewrites a signed comparison [v1 R v2] (with [R] being [<=] when
+       [is_leq], else [<]) where the concrete operand [c] is on the [c_on_left]
+       side and the other operand is a checked-unsigned operation, into an
+       equivalent unsigned formula. This lets the checked-unsigned reductions
+       fire. Splitting the non-constant operand [X] at the sign threshold [s =
+       2^(bits-1)] (so [X <u s] is its non-negative half), and with [c_cmp] the
+       same comparison taken unsigned: - [c] on the left: [c R X <=> c_cmp && X
+       <u s] if [c >=s 0] [c R X <=> X <u s || c_cmp] if [c <s 0] - [c] on the
+       right: [X R c <=> c_cmp || s <=u X] if [c >=s 0] [X R c <=> s <=u X &&
+       c_cmp] if [c <s 0] *)
+    let bits = size_of v1.node.ty in
+    let sign_bit = mk bits Z.(one lsl Stdlib.( - ) bits 1) in
+    let c_cmp =
+      if is_leq then leq ~signed:false v1 v2 else lt ~signed:false v1 v2
+    in
+    let nonneg = Z.geq (bv_to_z true bits c) Z.zero in
+    if c_on_left then
+      let in_pos = lt ~signed:false v2 sign_bit in
+      if nonneg then Bool.and_ c_cmp in_pos else Bool.or_ in_pos c_cmp
+    else
+      let in_neg = leq ~signed:false sign_bit v1 in
+      if nonneg then Bool.or_ c_cmp in_neg else Bool.and_ in_neg c_cmp
 
   let gt ~signed v1 v2 = lt ~signed v2 v1
   let geq ~signed v1 v2 = leq ~signed v2 v1
