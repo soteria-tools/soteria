@@ -529,21 +529,20 @@ module rec Bool : Bool = struct
 
   (* For two bounds on the same value (same signedness), [&&] keeps the tighter
      and [||] keeps the looser; either way the kept node already implies (resp.
-     is implied by) the other, so we can drop it. *)
-  let combine_bounds ~keep_tighter v1 v2 =
-    let pick lhs_smaller n1 n2 =
-      if Stdlib.( = ) lhs_smaller keep_tighter then n1 else n2
-    in
+     is implied by) the other, so we can drop it. Callers only invoke these once
+     both operands have matched as upper (resp. lower) bounds, so the [None]
+     cases are unreachable. *)
+  let combine_upper_bounds ~keep_tighter v1 v2 =
     match (as_upper_bound v1, as_upper_bound v2) with
-    | Some (a1, s1, n1, u1), Some (a2, s2, n2, u2) when s1 = s2 && equal a1 a2
-      ->
-        Some (pick (Z.leq u1 u2) n1 n2)
-    | _ -> (
-        match (as_lower_bound v1, as_lower_bound v2) with
-        | Some (a1, s1, n1, l1), Some (a2, s2, n2, l2)
-          when s1 = s2 && equal a1 a2 ->
-            Some (pick (Z.geq l1 l2) n1 n2)
-        | _ -> None)
+    | Some (_, _, _, u1), Some (_, _, _, u2) ->
+        if Stdlib.( = ) (Z.leq u1 u2) keep_tighter then v1 else v2
+    | _ -> assert false
+
+  let combine_lower_bounds ~keep_tighter v1 v2 =
+    match (as_lower_bound v1, as_lower_bound v2) with
+    | Some (_, _, _, l1), Some (_, _, _, l2) ->
+        if Stdlib.( = ) (Z.geq l1 l2) keep_tighter then v1 else v2
+    | _ -> assert false
 
   (* Whether [boundv] (a bound on some [a]) is implied by [eqv] (an equality [a
      == k] with [k] constant), i.e. [k] satisfies the bound. *)
@@ -585,12 +584,17 @@ module rec Bool : Bool = struct
           else (BitVec.concat bv1 bv2, BitVec.extract s2 e1 x)
         in
         sem_eq bv xy
-    | _ -> (
-        (* two bounds on the same value (e.g. [a < c1] && [a <= c2]) keep the
-           tighter one *)
-        match combine_bounds ~keep_tighter:true v1 v2 with
-        | Some r -> r
-        | None -> mk_commut_binop And v1 v2 <| TBool)
+    (* two upper (resp. lower) bounds on the same value (e.g. [a < c1] && [a <=
+       c2]) keep the tighter one *)
+    | ( Binop ((Lt s1 | Leq s1), a1, { node = { kind = BitVec _; _ }; _ }),
+        Binop ((Lt s2 | Leq s2), a2, { node = { kind = BitVec _; _ }; _ }) )
+      when s1 = s2 && equal a1 a2 ->
+        combine_upper_bounds ~keep_tighter:true v1 v2
+    | ( Binop ((Lt s1 | Leq s1), { node = { kind = BitVec _; _ }; _ }, a1),
+        Binop ((Lt s2 | Leq s2), { node = { kind = BitVec _; _ }; _ }, a2) )
+      when s1 = s2 && equal a1 a2 ->
+        combine_lower_bounds ~keep_tighter:true v1 v2
+    | _ -> mk_commut_binop And v1 v2 <| TBool
 
   and or_ v1 v2 =
     match (v1.node.kind, v2.node.kind) with
@@ -612,13 +616,22 @@ module rec Bool : Bool = struct
     | _, Binop (Or, a, b) when equal v1 a || equal v1 b -> v2
     (* a bound absorbs an equality it already allows, e.g. [a < c] || [a ==
        0] *)
-    | _ when bound_implied_by_eq v1 v2 -> v1
-    | _ when bound_implied_by_eq v2 v1 -> v2
-    | _ -> (
-        (* two bounds on the same value keep the looser one *)
-        match combine_bounds ~keep_tighter:false v1 v2 with
-        | Some r -> r
-        | None -> mk_commut_binop Or v1 v2 <| TBool)
+    | Binop ((Lt _ | Leq _), _, _), Binop (Eq, _, _)
+      when bound_implied_by_eq v1 v2 ->
+        v1
+    | Binop (Eq, _, _), Binop ((Lt _ | Leq _), _, _)
+      when bound_implied_by_eq v2 v1 ->
+        v2
+    (* two upper (resp. lower) bounds on the same value keep the looser one *)
+    | ( Binop ((Lt s1 | Leq s1), a1, { node = { kind = BitVec _; _ }; _ }),
+        Binop ((Lt s2 | Leq s2), a2, { node = { kind = BitVec _; _ }; _ }) )
+      when s1 = s2 && equal a1 a2 ->
+        combine_upper_bounds ~keep_tighter:false v1 v2
+    | ( Binop ((Lt s1 | Leq s1), { node = { kind = BitVec _; _ }; _ }, a1),
+        Binop ((Lt s2 | Leq s2), { node = { kind = BitVec _; _ }; _ }, a2) )
+      when s1 = s2 && equal a1 a2 ->
+        combine_lower_bounds ~keep_tighter:false v1 v2
+    | _ -> mk_commut_binop Or v1 v2 <| TBool
 
   and not sv =
     if equal sv v_true then v_false
