@@ -13,11 +13,12 @@ module M (StateM : State.StateM.S) = struct
   open Syntax
 
   let cmp ~signed l r =
+    let ordering = Crate.get_adt_lang_item_ref "Ordering" in
     let ( < ) = if signed then ( <$@ ) else ( <@ ) in
     let discr =
       Typed.ite (l < r) U8.(-1s) (Typed.ite (l ==@ r) U8.(0s) U8.(1s))
     in
-    Typed.Adt.mk_enum discr []
+    Typed.Adt.mk_enum ordering discr []
 
   let rec equality_check (v1 : [< T.sint | T.sptr ] Typed.t)
       (v2 : [< T.sint | T.sptr ] Typed.t) =

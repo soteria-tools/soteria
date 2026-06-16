@@ -28,7 +28,7 @@
   "Optim": {
     "features": ["f16", "f128", "const_index"],
     "patterns": [
-      "alloc::alloc::Global::alloc_impl",
+      { "pattern": "alloc::alloc::Global::alloc_impl", "extra_args": ["sig"] },
       "core::f16::_::is_finite",
       "core::f16::_::is_infinite",
       "core::f16::_::is_nan",

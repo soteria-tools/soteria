@@ -134,6 +134,11 @@ let get_adt_lang_item lang_item =
     raise (MissingDecl ("Missing ADT with lang item: " ^ lang_item))
   with Found adt -> adt
 
+let get_adt_lang_item_ref lang_item =
+  let adt = get_adt_lang_item lang_item in
+  let generics = TypesUtils.generic_args_of_params () adt.generics in
+  ({ id = TAdtId adt.def_id; generics } : Types.type_decl_ref)
+
 let get_fun id =
   let crate = get_crate () in
   match UllbcAst.FunDeclId.Map.find_opt id crate.fun_decls with

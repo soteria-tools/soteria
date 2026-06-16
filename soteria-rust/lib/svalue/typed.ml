@@ -45,6 +45,8 @@ let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
     (CastError
        ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
 
+let ( <| ) = Typed_core.Svalue.( <| )
+
 let float_precision :
     Values.float_type -> Soteria.Bv_values.Svalue.FloatPrecision.t = function
   | F16 -> F16
@@ -106,11 +108,15 @@ let cast_ptr_t v =
 let cast_adt adt v =
   match get_ty v with
   | TExtension (TAdt adt') when Types.equal_type_decl_ref adt adt' -> cast v
+  | TExtension (TTuple tys) ->
+      (* HACK: for now we give up, as this would require recursively solving all
+         inner types :( *)
+      cast v
   | ty -> cast_error v (t_adt adt)
 
 let cast_any_adt v =
   match get_ty v with
-  | TExtension (TAdt _) -> cast v
+  | TExtension (TTuple _ | TAdt _) -> cast v
   | _ ->
       cast_error v
         (t_adt { id = TTuple; generics = TypesUtils.empty_generic_args })
@@ -190,53 +196,125 @@ module Ptr = struct
   let null_loc () = null_loc (8 * size_of_uint_ty Usize)
   let null () = null (8 * size_of_uint_ty Usize)
   let loc_of_int i = loc_of_int (8 * size_of_uint_ty Usize) i
+
+  let mk_ptr_t ~ptr ~size ~align ~tag =
+    type_
+      (Extension
+         (ThinPtr
+            {
+              ptr = untyped ptr;
+              size = untyped size;
+              align = untyped align;
+              tag;
+            })
+      <| TExtension TThinPtr)
+
+  let _get_ptr (ptr : [< T.sptr_t ] t) =
+    match kind ptr with
+    | Extension (ThinPtr ptr) -> ptr
+    | _ -> failwith "todo: ThinPtr.ptr getter"
+
+  let _set_ptr (ptr : [< T.sptr_t ] t) f =
+    match kind ptr with
+    | Extension (ThinPtr inner) ->
+        type_ (Extension (ThinPtr (f inner)) <| get_ty ptr)
+    | _ -> failwith "todo: ThinPtr.ptr setter"
+
+  let ptr_inner ptr = type_ (_get_ptr ptr).ptr
+
+  let with_inner ptr ptr_inner =
+    _set_ptr ptr (fun inner -> { inner with ptr = untyped ptr_inner })
+
+  let is_null' ptr = is_null @@ ptr_inner ptr
+  let is_at_null_loc' ptr = is_at_null_loc @@ ptr_inner ptr
+  let decompose' ptr = decompose @@ ptr_inner ptr
+  let loc' ptr = loc @@ ptr_inner ptr
+  let ofs' ptr = ofs @@ ptr_inner ptr
+  let add_ofs' ptr ofs = with_inner ptr (add_ofs (ptr_inner ptr) ofs)
+  let align_of ptr = type_ (_get_ptr ptr).align
+  let size_of ptr = type_ (_get_ptr ptr).size
+  let tag_of ptr = (_get_ptr ptr).tag
+  let with_tag ptr tag = _set_ptr ptr (fun inner -> { inner with tag })
+
+  let mk_ptr_f ptr meta =
+    type_
+      (Extension (Ptr (untyped ptr, Option.map untyped meta))
+      <| TExtension TFullPtr)
+
+  let meta_of ptr =
+    match kind ptr with
+    | Extension (Ptr (_, meta)) -> Option.map type_ meta
+    | _ -> failwith "todo: Ptr get meta"
+
+  let ptr_of ptr =
+    match kind ptr with
+    | Extension (Ptr (ptr, _)) -> type_ ptr
+    | _ -> failwith "todo: Ptr get ptr"
+
+  let split ptr = (ptr_of ptr, meta_of ptr)
 end
 
 module Adt = struct
-  open Typed_core.Svalue
-
-  let mk_tuple adt vs = type_ (Extension (Tuple vs) <| TExtension (TAdt adt))
+  let mk_tuple vs =
+    type_
+      (Extension (Tuple (untyped_list vs))
+      <| TExtension (TTuple (List.map get_ty vs)))
 
   let mk_enum adt discr vs =
-    type_ (Extension (Enum (discr, vs)) <| TExtension (TAdt adt))
+    type_
+      (Extension (Enum (untyped discr, untyped_list vs))
+      <| TExtension (TAdt adt))
 
   let mk_union adt blocks =
-    type_ (Extension (Union blocks) <| TExtension (TAdt adt))
+    type_
+      (Extension (Union (List.map (Pair.map untyped untyped) blocks))
+      <| TExtension (TAdt adt))
 
   let mk_poly ty_id = type_ (Extension (PolyVal ty_id) <| TExtension TPolyType)
 
   let as_union v =
-    match kind (untyped v) with
+    match kind v with
     | Extension (Union blocks) -> List.map (Pair.map type_ type_) blocks
     | _ -> cast_error v (type_type (get_ty v))
 
   let as_tuple v =
-    match kind (untyped v) with
+    match kind v with
     | Extension (Tuple vs) -> type_list vs
     | _ -> cast_error v (type_type (get_ty v))
 
   let as_enum v =
-    match kind (untyped v) with
+    match kind v with
     | Extension (Enum (discr, vs)) -> (type_ discr, type_list vs)
     | _ -> cast_error v (type_type (get_ty v))
 
   let discriminant_of v =
-    match kind (untyped v) with
+    match kind v with
     | Extension (Enum (discr, _)) -> type_ discr
     | _ -> cast_error v (type_type (get_ty v))
 
   let field_of v idx =
-    match kind (untyped v) with
+    match kind v with
     | Extension (Tuple vs) -> (
-        try List.nth vs idx
+        try type_ @@ List.nth vs idx
         with Failure _ ->
           Fmt.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
     | Extension (Enum (_, vs)) -> (
-        try List.nth vs idx
+        try type_ @@ List.nth vs idx
         with Failure _ ->
           Fmt.failwith "Enum field index %d out of bounds for value %a" idx ppa
             v)
     | _ -> cast_error v (type_type (get_ty v))
+
+  module Checked = struct
+    let mk_enum tref variant vs =
+      let variant =
+        Crate.as_enum tref
+        |> List.find (fun (v : Types.variant) -> v.variant_name = variant)
+      in
+      assert (List.compare_lengths variant.fields vs = 0);
+      let discr = BV.of_literal variant.discriminant in
+      mk_enum tref discr vs
+  end
 end
 
 module Syntax = struct

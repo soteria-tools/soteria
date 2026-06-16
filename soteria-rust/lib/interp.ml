@@ -218,11 +218,12 @@ module Make (StateImpl : State.S) = struct
         let+ vals = map_list fields ~f:resolve_constant in
         Typed.Adt.mk_tuple vals
     | CAdt (Some var, fields) ->
-        let variants = Crate.as_enum @@ ty_as_adt const.ty in
+        let adt = ty_as_adt const.ty in
+        let variants = Crate.as_enum adt in
         let variant = Types.VariantId.nth variants var in
         let discr = BV.of_literal variant.discriminant in
         let+ vals = map_list fields ~f:resolve_constant in
-        Typed.Adt.mk_enum discr vals
+        Typed.Adt.mk_enum adt discr vals
     | CLiteral (VByteStr _) -> not_impl "TODO: resolve const ByteStr"
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't
        too bad *)
@@ -303,7 +304,10 @@ module Make (StateImpl : State.S) = struct
                     in
                     (ptr_frag, BV.usizei ofs))
         in
-        Typed.Adt.mk_union blocks
+        failwith
+          "We don't have an ADT to mk_union, and it would be wrong anyways. we \
+           need to add a `transmute_raw` to state_intf. todo later"
+        (* Typed.Adt.mk_union blocks *)
     | CGlobal glob ->
         let+ p = resolve_global glob in
         Typed.as_any p
@@ -844,9 +848,9 @@ module Make (StateImpl : State.S) = struct
         let variant = Types.VariantId.nth variants v_id in
         let discr = BV.of_literal variant.discriminant in
         let+ vals = eval_operand_list vals in
-        Typed.Adt.mk_enum discr vals
+        Typed.Adt.mk_enum adt discr vals
     (* Union aggregate *)
-    | Aggregate (AggregatedAdt (ty, None, Some field), ops) ->
+    | Aggregate (AggregatedAdt (adt, None, Some field), ops) ->
         let op =
           match ops with
           | [ op ] -> op
@@ -855,13 +859,13 @@ module Make (StateImpl : State.S) = struct
         in
         let* value = eval_operand op in
         let field = Types.FieldId.to_int field in
-        let* layout = Layout.layout_of (TAdt ty) in
+        let* layout = Layout.layout_of (TAdt adt) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
         let+ op_blocks =
           Value_codec.encode ~offset value (type_of_operand op)
         in
         let op_blocks = Iter.to_list op_blocks in
-        Typed.Adt.mk_union op_blocks
+        Typed.Adt.mk_union adt op_blocks
     (* Struct aggregate *)
     | Aggregate (AggregatedAdt (adt, None, None), operands) ->
         let+ values = eval_operand_list operands in

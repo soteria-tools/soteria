@@ -117,7 +117,7 @@ module M (StateM : State.StateM.S) = struct
         let self = Typed.cast_ptr_f self in
         let layout = Typed.cast_any_adt layout in
         let zeroed = Typed.BitVec.to_bool (Typed.cast_lit TBool zeroed) in
-        alloc_impl ~self ~layout ~zeroed
+        alloc_impl ~fun_sig:_fun_sig ~self ~layout ~zeroed
     | AllocAllocHandleAllocError, [], [], [ layout ] ->
         let layout = Typed.cast_any_adt layout in
         let+ () = handle_alloc_error ~layout in

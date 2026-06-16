@@ -18,6 +18,7 @@ module M (StateM : State.StateM.S) = struct
     val _print : args:Typed.([< T.adt ] t) -> unit ret
 
     val alloc_impl :
+      fun_sig:Types.fun_sig ->
       self:Typed.([< T.sptr_f ] t) ->
       layout:Typed.([< T.adt ] t) ->
       zeroed:Typed.([< T.sbool ] t) ->

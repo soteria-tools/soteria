@@ -1,4 +1,5 @@
 open Svalue
+open Common.Charon_util
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
@@ -20,8 +21,28 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   (** {@rust[
         const fn alloc_impl(&self, layout: Layout, zeroed: bool)
           -> Result<NonNull<[u8]>, AllocError> { ... }
+      ]}
+
+      with
+      {@rust[
+        pub struct Layout {
+            size: usize,
+            align: Alignment,
+        }
+
+        pub struct Alignment {
+            _inner_repr_trick: AlignmentEnum,
+        }
+
+        enum AlignmentEnum { ... }
       ]} *)
-  let alloc_impl ~self:_ ~layout ~zeroed =
+  let alloc_impl ~(fun_sig : Charon.Types.fun_sig) ~self:_ ~layout ~zeroed =
+    let layout_ty = List.nth fun_sig.inputs 1 in
+    let alignment_ty = List.nth (Crate.as_struct @@ ty_as_adt layout_ty) 1 in
+    let alignmentenum_ty =
+      List.hd (Crate.as_struct @@ ty_as_adt alignment_ty.field_ty)
+    in
+    let alignmentenum = ty_as_adt alignmentenum_ty.field_ty in
     let zeroed = (zeroed :> Typed.T.sbool Typed.t) in
     let size, align =
       let layout = Typed.cast_any_adt layout in
@@ -31,23 +52,26 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
           let align = Typed.cast_any_adt align in
           match Typed.Adt.as_tuple align with
           | [ align_enum ] ->
-              let align_enum = Typed.cast_any_adt align_enum in
+              let align_enum = Typed.cast_adt alignmentenum align_enum in
               let align = Typed.Adt.discriminant_of align_enum in
               (size, Typed.cast_i Usize align)
           | _ -> Fmt.failwith "alloc_impl: invalid layout: %a" Typed.ppa layout)
       | _ -> Fmt.failwith "alloc_impl: invalid layout: %a" Typed.ppa layout
     in
     let mk_res ptr len =
+      let out_res = ty_as_adt fun_sig.output in
       let ptr = Typed.Ptr.mk_ptr_f ptr (Some len) in
       let nonnull = Typed.Adt.mk_tuple [ ptr ] in
-      Typed.Adt.mk_enum Usize.(0s) [ nonnull ]
+      Typed.Adt.Checked.mk_enum out_res "Ok" [ nonnull ]
     in
     if%sat size ==@ Usize.(0s) then
       let dangling = Sptr.of_address align in
       ok (mk_res dangling Usize.(0s))
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
-      let align = Typed.Adt.mk_tuple [ Typed.Adt.mk_enum align [] ] in
+      let align =
+        Typed.Adt.mk_tuple [ Typed.Adt.mk_enum alignmentenum align [] ]
+      in
       let+ ptr = Alloc.alloc ~zeroed [ size; align ] in
       let ptr = Typed.Ptr.ptr_of ptr in
       mk_res ptr size

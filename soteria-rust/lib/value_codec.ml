@@ -228,7 +228,7 @@ struct
     | _ when layout.uninhabited -> error (`RefToUninhabited ty)
     | _, TDynTrait _ -> not_impl "Tried reading a trait object?"
     | _, TAdt adt when Crate.is_union adt ->
-        if%sat layout.size ==@ Usize.(0s) then ok (Typed.Adt.mk_union [])
+        if%sat layout.size ==@ Usize.(0s) then ok (Typed.Adt.mk_union adt [])
         else
           (* FIXME: this isn't exactly correct; union actually doesn't copy the
              padding bytes (i.e. the intersection of the padding bytes of all
@@ -238,7 +238,7 @@ struct
              a proper implementation is here:
              https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
           let+ blocks = get_all (Typed.cast_nonzero layout.size, offset) in
-          Typed.Adt.mk_union blocks
+          Typed.Adt.mk_union adt blocks
     | Primitive, TFnDef _ -> ok (Typed.Adt.mk_tuple [])
     | Primitive, TVar (Free id) ->
         if%sat layout.size ==@ Usize.(0s) then ok (Typed.Adt.mk_poly id)
@@ -252,7 +252,10 @@ struct
           | _ -> failwith "decode: unexpected values"
         in
         let meta =
-          Option.get ~msg:"read invalid meta?" (Typed.Ptr.cast_meta meta)
+          match%ty meta with
+          | TBitVector _ -> (meta :> Typed.(T.ptr_meta t))
+          | TExtension TThinPtr -> (meta :> Typed.(T.ptr_meta t))
+          | _ -> failwith "read invalid meta?"
         in
         Typed.Ptr.mk_ptr_f ptr (Some meta)
     | Array { is_ptr = false; _ }, _ ->
@@ -266,7 +269,7 @@ struct
             let variants = Crate.as_enum adt in
             let variant = Types.VariantId.nth variants variant in
             let discr = BV.of_literal variant.discriminant in
-            Typed.Adt.mk_enum discr fields
+            Typed.Adt.mk_enum adt discr fields
         | _ -> Typed.Adt.mk_tuple fields)
     | Enum _, TAdt adt ->
         let variants = Crate.as_enum adt in
@@ -274,7 +277,7 @@ struct
         let+ fields = iter (iter_fields ~variant ?meta layout ty) offset in
         let variant = Types.VariantId.nth variants variant in
         let discr = BV.of_literal variant.discriminant in
-        Typed.Adt.mk_enum discr fields
+        Typed.Adt.mk_enum adt discr fields
     | Enum _, _ -> failwith "decode: expected enum type for enum layout"
 end
 
@@ -380,26 +383,45 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
   (* undefined.validity.wide *)
   let metadata_validity ~is_raw_ptr pointee
       (meta : Typed.T.ptr_meta Typed.t option) =
-    let meta_k = Option.bind Typed.Ptr.meta_kind_of meta in
-    match (meta, meta_k, Layout.dst_kind pointee) with
-    | None, None, NoneKind -> ok ()
-    | Some meta, Some `Len, LenKind ->
-        let len = Typed.cast_i Usize meta in
+    let meta =
+      Option.map
+        (fun meta ->
+          match%ty meta with
+          | TBitVector _ -> `Len meta
+          | TExtension TThinPtr -> `VTable meta
+          | _ -> failwith "unexpected meta type")
+        meta
+    in
+    match (meta, Layout.dst_kind pointee) with
+    | None, NoneKind -> ok ()
+    | Some (`Len len), LenKind ->
         if is_raw_ptr then ok ()
         else f Usize.(0s <=$@ len) (`UBTransmute "Negative slice length")
-    | Some vt, Some `VTable, VTableKind ->
+    | Some (`VTable vt), VTableKind ->
         (* TODO: the vtable must always match the trait type of the pointee.
            Will require a new input to this function (?) *)
         let vt = Typed.cast_ptr vt in
         f
           (Typed.not (Typed.Ptr.is_null vt))
           (`UBTransmute "Null vtable pointer")
-    | _, Some `Len, VTableKind ->
-        f Typed.v_false (`UBTransmute "Length metadata when VTable expected")
-    | _, Some `VTable, LenKind ->
-        f Typed.v_false (`UBTransmute "VTable metadata when length expected")
-    | _ ->
-        f Typed.v_false (`UBTransmute "Mismatch between metadata and DST kind")
+    | _, dst_kind ->
+        let got =
+          match meta with
+          | None -> "unit"
+          | Some (`Len _) -> "length"
+          | Some (`VTable _) -> "vtable"
+        in
+        let expected =
+          match dst_kind with
+          | NoneKind -> "unit"
+          | LenKind -> "length"
+          | VTableKind -> "vtable"
+        in
+        let msg =
+          Fmt.str "Mismatch between metadata and DST kind; expected %s, got %s"
+            expected got
+        in
+        f Typed.v_false (`UBTransmute msg)
   in
   (* undefined.validity.reference-box *)
   let ref_box_validity (fptr : Typed.([< T.sptr_f ] t)) pointee =
@@ -655,7 +677,7 @@ let rec nondet_raw :
             match variant with Some v -> return v | None -> vanish ()
           in
           let++ fields = nondets_raw @@ field_tys variant.fields in
-          Typed.Adt.mk_enum (BV.of_literal variant.discriminant) fields
+          Typed.Adt.mk_enum adt (BV.of_literal variant.discriminant) fields
       | Struct fields ->
           let++ fields = nondets_raw @@ field_tys fields in
           Typed.Adt.mk_tuple fields
@@ -667,7 +689,7 @@ let rec nondet_raw :
             | None -> vanish ()
           in
           let+ bytes = nondet (Typed.t_int (sizei * 8)) in
-          Ok (Typed.Adt.mk_union [ (bytes, Usize.(0s)) ])
+          Ok (Typed.Adt.mk_union adt [ (bytes, Usize.(0s)) ])
       | ty ->
           Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
             Types.pp_type_decl_kind ty)
@@ -770,7 +792,7 @@ let rec ref_tys_in
       let d, vs = Typed.Adt.as_enum v in
       let* var = variant_for_discr d adt in
       let++ vs, acc = fs' init (field_tys Types.(var.fields)) vs in
-      (Typed.Adt.mk_enum d vs, acc)
+      (Typed.Adt.mk_enum adt d vs, acc)
   | TPattern (inner, _) -> f init inner v
   | _ -> Result.ok (v, init)
 

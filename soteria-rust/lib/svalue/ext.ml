@@ -2,13 +2,6 @@
 
 open Charon
 
-type ext_ty =
-  | TAdt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
-  | TThinPtr
-  | TFullPtr
-  | TPolyType
-[@@deriving eq, ord, show]
-
 (* the full values *)
 type sv = (ext_t, ext_ty) Soteria.Bv_values.Svalue.t
 and svty = ext_ty Soteria.Bv_values.Svalue.ty
@@ -19,7 +12,17 @@ and svty = ext_ty Soteria.Bv_values.Svalue.ty
 and ptr = { ptr : sv; tag : Ptr_tag.t option; size : sv; align : sv }
 
 (* values *)
-and full_ptr = ptr * sv option
+and full_ptr = sv * sv option
+
+and ext_ty =
+  | TAdt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+      (** invariant: the type decl ref must be that of an {b enum or union};
+          structs and tuples go through [TTuple] *)
+  | TTuple of svty list
+  | TThinPtr
+  | TFullPtr
+  | TPolyType
+[@@deriving eq, ord, show]
 
 and ext_t =
   | Ptr of full_ptr  (** pointer, with optional meta *)
@@ -39,6 +42,7 @@ module Rust_ext :
 struct
   type ty = ext_ty =
     | TAdt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+    | TTuple of svty list
     | TThinPtr
     | TFullPtr
     | TPolyType
@@ -59,8 +63,8 @@ struct
 
   let pp_full_ptr pp fmt (p, meta) =
     match meta with
-    | None -> Fmt.pf fmt "(%a)" pp p.ptr
-    | Some meta -> Fmt.pf fmt "(%a, %a)" pp p.ptr pp meta
+    | None -> Fmt.pf fmt "(%a)" pp p
+    | Some meta -> Fmt.pf fmt "(%a, %a)" pp p pp meta
 
   let pp pp ft v =
     match v with
@@ -84,9 +88,9 @@ struct
 
   (* TODO: derivable *)
   let iter_vars iter_vars = function
-    | Ptr (ptr, None) -> iter_vars_ptr iter_vars ptr
+    | Ptr (ptr, None) -> iter_vars ptr
     | Ptr (ptr, Some meta) ->
-        iter_vars_ptr iter_vars ptr;
+        iter_vars ptr;
         iter_vars meta
     | ThinPtr ptr -> iter_vars_ptr iter_vars ptr
     | Enum (disc, vals) ->
@@ -138,10 +142,10 @@ struct
   (* TODO: derivable *)
   and apply_subst apply ~missing_var s = function
     | Ptr (v, None) ->
-        let v, s = apply_subst_ptr apply ~missing_var s v in
+        let v, s = apply ~missing_var s v in
         (Ptr (v, None), s)
     | Ptr (v, Some meta) ->
-        let v, s = apply_subst_ptr apply ~missing_var s v in
+        let v, s = apply ~missing_var s v in
         let meta, s = apply ~missing_var s meta in
         (Ptr (v, Some meta), s)
     | ThinPtr ptr ->

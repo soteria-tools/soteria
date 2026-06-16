@@ -117,14 +117,14 @@ module Ptr : sig
 
   val is_null' : [< T.sptr_t ] t -> [> T.sbool ] t
   val is_at_null_loc' : [< T.sptr_t ] t -> [> T.sbool ] t
-  val decompose' : [< T.sptr_t ] t -> [< T.sloc ] t * [< T.sint ] t
-  val loc' : [< T.sptr_t ] t -> [< T.sloc ] t
-  val ofs' : [< T.sptr_t ] t -> [< T.sint ] t
+  val decompose' : [< T.sptr_t ] t -> [> T.sloc ] t * [> T.sint ] t
+  val loc' : [< T.sptr_t ] t -> [> T.sloc ] t
+  val ofs' : [< T.sptr_t ] t -> [> T.sint ] t
   val add_ofs' : [< T.sptr_t ] t -> [< T.sint ] t -> [> T.sptr_t ] t
-  val ptr_inner : [< T.sptr_t ] t -> [< T.sptr ] t
+  val ptr_inner : [< T.sptr_t ] t -> [> T.sptr ] t
   val with_inner : [< T.sptr_t ] t -> [< T.sptr ] t -> [> T.sptr_t ] t
-  val align_of : [< T.sptr_t ] t -> [< T.nonzero ] t
-  val size_of : [< T.sptr_t ] t -> [< T.sint ] t
+  val align_of : [< T.sptr_t ] t -> [> T.nonzero ] t
+  val size_of : [< T.sptr_t ] t -> [> T.sint ] t
   val tag_of : [< T.sptr_t ] t -> Ptr_tag.t option
   val with_tag : [< T.sptr_t ] t -> Ptr_tag.t option -> [> T.sptr_t ] t
 
@@ -133,14 +133,12 @@ module Ptr : sig
   val split : [< T.sptr_f ] t -> [< T.sptr_t ] t * [< T.ptr_meta ] t option
   val meta_of : [< T.sptr_f ] t -> [> T.ptr_meta ] t option
   val ptr_of : [< T.sptr_f ] t -> [> T.sptr_t ] t
-  val cast_meta : [< T.any ] t -> [> T.ptr_meta ] t option
-  val meta_kind_of : [< T.ptr_meta ] t -> [ `VTable | `Len ] option
 end
 
 module Adt : sig
   (** Creates a tuple ADT with the given value blocks. This may be an array,
       struct, or tuple. *)
-  val mk_tuple : Types.type_decl_ref -> [< T.any ] t list -> [> T.adt ] t
+  val mk_tuple : [< T.any ] t list -> [> T.adt ] t
 
   (** Creates an enum ADT with the given discriminant and values. *)
   val mk_enum :
@@ -168,7 +166,7 @@ module Adt : sig
 
   module Checked : sig
     val mk_enum :
-      ty:Types.type_decl_ref -> string -> [< T.any ] t list -> [> T.adt ] t
+      Types.type_decl_ref -> string -> [< T.any ] t list -> [> T.adt ] t
   end
 end
 

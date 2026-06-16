@@ -164,6 +164,11 @@ let fields_of_tys : Types.ty list -> Types.field list =
         field_ty;
       })
 
+let ty_as_adt (ty : Types.ty) : Types.type_decl_ref =
+  match ty with
+  | TAdt tref -> tref
+  | _ -> invalid_arg "ty_as_adt: not an ADT type"
+
 let mk_array_ty ty len : Types.ty =
   TArray
     ( ty,
@@ -179,9 +184,16 @@ let mk_tuple_ty types : Types.ty =
       generics = { types; regions = []; const_generics = []; trait_refs = [] };
     }
 
+(** The type [()] *)
+let unit_ty = TypesUtils.mk_unit_ty
+
+(** The type ref of the unit type *)
+let unit_tref = ty_as_adt unit_ty
+
 (** The type [*const ()] *)
 let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)
 
+(** The type [&()] *)
 let unit_ref = Types.TRef (RErased, TypesUtils.mk_unit_ty, RShared)
 
 let decl_has_attr (decl : GAst.fun_decl) attr =
@@ -219,11 +231,6 @@ let rec get_pointee : Types.ty -> Types.ty = function
         | PeInstantiated gargs -> List.hd gargs.binder_value.types
         | _ -> failwith "Box with non instantiates args in monomorphic mode?")
   | _ -> failwith "Non-pointer type given to get_pointee"
-
-let ty_as_adt (ty : Types.ty) : Types.type_decl_ref =
-  match ty with
-  | TAdt tref -> tref
-  | _ -> invalid_arg "ty_as_adt: not an ADT type"
 
 (** Whether the given type is monomorphic, i.e. contains no type variables.
     {b This is a conservative estimate}: [struct Foo<T> {}] is considered

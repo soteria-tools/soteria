@@ -63,10 +63,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
        VarError { NotPresent, NotUnicode(OsString) }
 
        So the variant of NotPresent is 0 *)
-    let var_error =
-      Typed.Adt.Checked.mk_enum ~ty:var_error_ty "NotPresent" []
-    in
-    let res = Typed.Adt.Checked.mk_enum ~ty:out "Err" [ var_error ] in
+    let var_error = Typed.Adt.Checked.mk_enum var_error_ty "NotPresent" [] in
+    let res = Typed.Adt.Checked.mk_enum out "Err" [ var_error ] in
     StateM.ok res
 
   (** HACK: We under-approximate and always return 1. *)
@@ -77,7 +75,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let nonzero_one = Typed.Adt.mk_tuple [ one ] in
     (* `Ok(Nonzero(1))` *)
     let out = Common.Charon_util.ty_as_adt fun_sig.output in
-    ok (Typed.Adt.Checked.mk_enum ~ty:out "Ok" [ nonzero_one ])
+    ok (Typed.Adt.Checked.mk_enum out "Ok" [ nonzero_one ])
 
   let now () =
     (* We need to return a Instant where

@@ -179,14 +179,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      *     _filename: PhantomData<&'a str>,
      * }
      *)
-    let location_adt = Crate.get_adt_lang_item "panic_location" in
-    let generics : Types.generic_args =
-      TypesUtils.generic_args_of_params () location_adt.generics
-    in
-    let tref : Types.type_decl_ref =
-      { id = TAdtId location_adt.def_id; generics }
-    in
-    let location_ty : Types.ty = TAdt tref in
+    let location_ref = Crate.get_adt_lang_item_ref "panic_location" in
+    let location_ty : Types.ty = TAdt location_ref in
     let* trace = get_trace () in
     let filename, col, line =
       match trace.loc with
@@ -198,7 +192,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     let* ptr = Core.string_to_ptr filename in
     let location =
-      Typed.Adt.mk_struct tref
+      Typed.Adt.mk_tuple
         [
           (* filename: *)
           Typed.Adt.mk_tuple [ ptr ];
