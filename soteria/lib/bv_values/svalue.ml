@@ -1683,6 +1683,18 @@ and BitVec : BitVec = struct
         extend ~signed:false by (div ~signed x v2)
     | _ -> Binop (Div signed, v1, v2) <| v1.node.ty
 
+  (* Whether [v] is an addition, subtraction or multiplication involving a
+     constant that is known not to overflow when interpreted as unsigned. The
+     unsigned [lt]/[leq] cases can reduce such operations, so a signed
+     comparison against one is worth rewriting to unsigned. *)
+  let is_checked_unsigned_op v =
+    match v.node.kind with
+    | Binop ((Add c | Sub c | Mul c), { node = { kind = BitVec _; _ }; _ }, _)
+    | Binop ((Add c | Sub c | Mul c), _, { node = { kind = BitVec _; _ }; _ })
+      ->
+        c.unsigned
+    | _ -> false
+
   let rec lt ~signed v1 v2 =
     assert (equal_ty v1.node.ty v2.node.ty);
     let bits = size_of v1.node.ty in
@@ -1874,6 +1886,48 @@ and BitVec : BitVec = struct
         else if equal r1 l2 && is_nonzero r1 then lt ~signed l1 r2
         else if equal r1 r2 && is_nonzero r1 then lt ~signed l1 l2
         else Binop (Lt signed, v1, v2) <| TBool
+    | ( BitVec bv_v1,
+        Binop (Sub checked, x, ({ node = { kind = BitVec bv_k; _ }; _ } as k)) )
+      when checked_has ~signed checked ->
+        (* v1 < x - k <=> v1 + k < x (when v1 + k doesn't overflow) *)
+        if overflows ~signed bits bv_v1 bv_k Z.( + ) then
+          if Stdlib.not signed then Bool.v_false
+          else Binop (Lt signed, v1, v2) <| TBool
+        else lt ~signed (add ~checked:(checked_of_signed signed) v1 k) x
+    | ( BitVec bv_v1,
+        Binop (Sub checked, ({ node = { kind = BitVec bv_k; _ }; _ } as k), x) )
+      when checked_has ~signed checked ->
+        (* v1 < k - x <=> x < k - v1 (when k - v1 doesn't overflow) *)
+        if overflows ~signed bits bv_k bv_v1 Z.( - ) then
+          if Stdlib.not signed then Bool.v_false
+          else Binop (Lt signed, v1, v2) <| TBool
+        else lt ~signed x (sub ~checked:(checked_of_signed signed) k v1)
+    | ( Binop (Sub checked, x, ({ node = { kind = BitVec bv_k; _ }; _ } as k)),
+        BitVec bv_v2 )
+      when checked_has ~signed checked ->
+        (* x - k < v2 <=> x < v2 + k (when v2 + k doesn't overflow) *)
+        if overflows ~signed bits bv_v2 bv_k Z.( + ) then
+          if Stdlib.not signed then Bool.v_true
+          else Binop (Lt signed, v1, v2) <| TBool
+        else lt ~signed x (add ~checked:(checked_of_signed signed) v2 k)
+    | ( Binop (Sub checked, ({ node = { kind = BitVec bv_k; _ }; _ } as k), x),
+        BitVec bv_v2 )
+      when checked_has ~signed checked ->
+        (* k - x < v2 <=> k - v2 < x (when k - v2 doesn't overflow) *)
+        if overflows ~signed bits bv_k bv_v2 Z.( - ) then
+          if Stdlib.not signed then Bool.v_true
+          else Binop (Lt signed, v1, v2) <| TBool
+        else lt ~signed (sub ~checked:(checked_of_signed signed) k v2) x
+    | BitVec c, _ when signed && is_checked_unsigned_op v2 ->
+        (* [c <s X], for [X] a checked-unsigned operation, is rewritten to
+           unsigned comparisons so the checked-unsigned reductions can fire.
+           When [c] is non-negative this is [c <u X && X <u s], and when [c] is
+           negative it is [X <u s || c <u X]. *)
+        let sign_bit = mk bits Z.(one lsl Stdlib.( - ) bits 1) in
+        let below = lt ~signed:false v1 v2 in
+        let bounded = lt ~signed:false v2 sign_bit in
+        if Z.geq (bv_to_z signed bits c) Z.zero then Bool.and_ below bounded
+        else Bool.or_ bounded below
     | _ -> Binop (Lt signed, v1, v2) <| TBool
 
   and leq ~signed v1 v2 =
@@ -2047,6 +2101,48 @@ and BitVec : BitVec = struct
         Bool.ite b (leq ~signed l v2) (leq ~signed r v2)
     | BitVec _, Ite (b, l, r) ->
         Bool.ite b (leq ~signed v1 l) (leq ~signed v1 r)
+    | ( BitVec bv_v1,
+        Binop (Sub checked, x, ({ node = { kind = BitVec bv_k; _ }; _ } as k)) )
+      when checked_has ~signed checked ->
+        (* v1 <= x - k <=> v1 + k <= x (when v1 + k doesn't overflow) *)
+        if overflows ~signed bits bv_v1 bv_k Z.( + ) then
+          if Stdlib.not signed then Bool.v_false
+          else Binop (Leq signed, v1, v2) <| TBool
+        else leq ~signed (add ~checked:(checked_of_signed signed) v1 k) x
+    | ( BitVec bv_v1,
+        Binop (Sub checked, ({ node = { kind = BitVec bv_k; _ }; _ } as k), x) )
+      when checked_has ~signed checked ->
+        (* v1 <= k - x <=> x <= k - v1 (when k - v1 doesn't overflow) *)
+        if overflows ~signed bits bv_k bv_v1 Z.( - ) then
+          if Stdlib.not signed then Bool.v_false
+          else Binop (Leq signed, v1, v2) <| TBool
+        else leq ~signed x (sub ~checked:(checked_of_signed signed) k v1)
+    | ( Binop (Sub checked, x, ({ node = { kind = BitVec bv_k; _ }; _ } as k)),
+        BitVec bv_v2 )
+      when checked_has ~signed checked ->
+        (* x - k <= v2 <=> x <= v2 + k (when v2 + k doesn't overflow) *)
+        if overflows ~signed bits bv_v2 bv_k Z.( + ) then
+          if Stdlib.not signed then Bool.v_true
+          else Binop (Leq signed, v1, v2) <| TBool
+        else leq ~signed x (add ~checked:(checked_of_signed signed) v2 k)
+    | ( Binop (Sub checked, ({ node = { kind = BitVec bv_k; _ }; _ } as k), x),
+        BitVec bv_v2 )
+      when checked_has ~signed checked ->
+        (* k - x <= v2 <=> k - v2 <= x (when k - v2 doesn't overflow) *)
+        if overflows ~signed bits bv_k bv_v2 Z.( - ) then
+          if Stdlib.not signed then Bool.v_true
+          else Binop (Leq signed, v1, v2) <| TBool
+        else leq ~signed (sub ~checked:(checked_of_signed signed) k v2) x
+    | BitVec c, _ when signed && is_checked_unsigned_op v2 ->
+        (* [c <=s X], for [X] a checked-unsigned operation, is rewritten so
+           unsigned comparisons so the checked-unsigned reductions can fire.
+           When [c] is non-negative this is [c <=u X && X <u s], and when [c] is
+           negative it is [X <u s || c <=u X]. *)
+        let sign_bit = mk bits Z.(one lsl Stdlib.( - ) bits 1) in
+        let below = leq ~signed:false v1 v2 in
+        let bounded = lt ~signed:false v2 sign_bit in
+        if Z.geq (bv_to_z signed bits c) Z.zero then Bool.and_ below bounded
+        else Bool.or_ bounded below
     | _ -> Binop (Leq signed, v1, v2) <| TBool
 
   let gt ~signed v1 v2 = lt ~signed v2 v1
