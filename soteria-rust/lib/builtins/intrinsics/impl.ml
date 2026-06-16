@@ -34,18 +34,15 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let align_of ~t = Layout.align_of t
 
   let arith_offset ~t ~dst:(dst, meta) ~offset =
-    let+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t offset dst in
+    let+ dst' = Sptr.offset ~ty:t offset dst in
     (dst', meta)
 
   let offset ~ptr ~delta ~dst ~offset =
-    match dst with
-    | Ptr (dst, meta) ->
-        let offset = as_base_i Usize offset in
-        let signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
-        let+ dst' = Sptr.offset ~signed ~ty:ptr offset dst in
-        Ptr (dst', meta)
-    | Int _ -> error `UBPointerArithmetic
-    | _ -> not_impl "ptr_add: invalid arguments"
+    let dst, meta = as_ptr dst in
+    let offset = as_base_i Usize offset in
+    let check_signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
+    let+ dst' = Sptr.offset ~check_signed ~ty:ptr offset dst in
+    Ptr (dst', meta)
 
   let assert_inhabited ~t =
     let* layout = Layout.layout_of t in
@@ -167,14 +164,14 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let atomic_xadd ~t ~u ~ord:_ ~dst ~src =
     atomic_rmw ~t ~u ~dst ~src
-      ~int_op:(fun lit a b -> Core.eval_lit_binop (Add OWrap) lit a b)
-      ~ptr_op:(fun src old -> Sptr.offset ~check:false ~signed:false src old)
+      ~int_op:(Core.eval_lit_binop (Add OWrap))
+      ~ptr_op:Sptr.offset
 
   let atomic_xsub ~t ~u ~ord:_ ~dst ~src =
     atomic_rmw ~t ~u ~dst ~src
-      ~int_op:(fun lit a b -> Core.eval_lit_binop (Sub OWrap) lit a b)
+      ~int_op:(Core.eval_lit_binop (Sub OWrap))
         (* subtract [src] bytes by offsetting by [-src] *)
-      ~ptr_op:(fun src old -> Sptr.offset ~check:false ~signed:false ~-!src old)
+      ~ptr_op:(fun src old -> Sptr.offset ~-!src old)
 
   (* Atomic read-modify-write on an integer (the min/max intrinsics, which only
      apply to integers). *)
@@ -514,8 +511,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let rec aux ?res ?(inc = one) l r len =
       if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
-        let* l = Sptr.offset ~signed:false inc l in
-        let* r = Sptr.offset ~signed:false inc r in
+        let* l = Sptr.offset inc l in
+        let* r = Sptr.offset inc r in
         let* bl = State.load (l, Thin) byte in
         let* br = State.load (r, Thin) byte in
         (* compare_bytes reads all bytes and mustn't short-circuit, so we must
@@ -545,8 +542,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let same_provenance = Sptr.have_same_provenance l r in
     if%sure not same_provenance then ok ()
     else
-      let* l_end = Sptr.offset ~signed:false size l in
-      let* r_end = Sptr.offset ~signed:false size r in
+      let* l_end = Sptr.offset size l in
+      let* r_end = Sptr.offset size r in
       let* dist1 = Sptr.distance l r_end in
       let* dist2 = Sptr.distance r l_end in
       let zero = Usize.(0s) in
@@ -567,7 +564,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       let* () = Sptr.check_aligned fdst t in
       ok ()
     else
-      let size, overflowed = ty_size *?@ count in
+      let size, overflowed = BV.mul_alloca_checked ty_size count in
       let* () = assert_not overflowed `Overflow in
       let* () = Sptr.check_non_dangling_untyped fsrc size in
       let* () = Sptr.check_non_dangling_untyped fdst size in
@@ -989,8 +986,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let read_vtable ~slot ~(ptr : full_ptr) : T.sint Typed.t ret =
     let ptr, _ = ptr in
     let* ptr =
-      Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) (BV.usizei slot)
-        ptr
+      Sptr.offset ~check_signed:false ~ty:(TLiteral (TUInt Usize))
+        (BV.usizei slot) ptr
     in
     let+ align = State.load (ptr, Thin) (TLiteral (TUInt Usize)) in
     as_base_i Usize align
@@ -1012,7 +1009,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let zero = Usize.(0s) in
     let* () = Sptr.check_aligned dst t in
     let* size = Layout.size_of t in
-    let size, overflowed = size *?@ count in
+    let size, overflowed = BV.mul_alloca_checked size count in
     let* () = assert_not overflowed `Overflow in
     if%sat size ==@ zero then ok ()
     else
@@ -1027,7 +1024,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
               Iter.(0 -- (Z.to_int bytes - 1))
               ~f:(fun i ->
                 let off = BV.usizei i in
-                let* ptr = Sptr.offset ~signed:false off ptr in
+                let* ptr = Sptr.offset ~check_signed:false off ptr in
                 State.store (ptr, Thin) (TLiteral (TUInt U8)) (Int val_))
         | None ->
             not_impl "write_bytes: don't know how to handle symbolic sizes"

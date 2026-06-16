@@ -115,6 +115,31 @@ module BitVec = struct
   let max ~signed l r = ite (gt ~signed l r) l r
   let min ~signed l r = ite (lt ~signed l r) l r
   let sure_is_zero v = Option.is_some_and Z.(equal zero) (to_z v)
+
+  let isize_max () =
+    let bits = 8 * size_of_uint_ty Usize in
+    usize (Z.sub (Z.shift_left Z.one (bits - 1)) Z.one)
+
+  open Infix
+
+  let mk_alloca_checked op overflows l r =
+    let res = op l r in
+    (res, overflows ~signed:true l r ||@ (res <$@ usizei 0))
+
+  (** Addition checked over both signednesses, for pointer offsets and
+      allocation sizes. This enables better reductions than {!mul_checked}. *)
+  let add_alloca_checked l r =
+    mk_alloca_checked ( +!!@ ) BitVec.add_overflows l r
+
+  (** Subtraction checked over both signednesses, for pointer offsets and
+      allocation sizes. This enables better reductions than {!mul_checked}. *)
+  let sub_alloca_checked l r =
+    mk_alloca_checked ( -!!@ ) BitVec.sub_overflows l r
+
+  (** Multiplication checked over both signednesses, for pointer offsets and
+      allocation sizes. This enables better reductions than {!mul_checked}. *)
+  let mul_alloca_checked l r =
+    mk_alloca_checked ( *!!@ ) BitVec.mul_overflows l r
 end
 
 module BV = BitVec

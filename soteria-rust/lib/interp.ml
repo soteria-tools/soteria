@@ -347,7 +347,7 @@ module Make (StateImpl : State.S) = struct
         [%l.debug
           "Projecting metadata of pointer %a for %a" Sptr.pp ptr pp_ty base.ty];
         let+ ptr' =
-          Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
+          Sptr.offset ~check_signed:false ~ty:(TLiteral (TUInt Usize))
             Usize.(1s)
             ptr
         in
@@ -367,7 +367,7 @@ module Make (StateImpl : State.S) = struct
           | ProjAdt (_, None) | ProjTuple _ -> layout.fields
         in
         let off = Layout.Fields_shape.offset_of field fields in
-        let* ptr' = Sptr.offset ~signed:false off ptr in
+        let* ptr' = Sptr.offset ~check_signed:false off ptr in
         [%l.debug
           "Projecting ADT %a, field %d, with pointer %a to pointer %a"
             Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr'];
@@ -381,7 +381,7 @@ module Make (StateImpl : State.S) = struct
         let* () =
           assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty idx ptr in
+        let+ ptr' = Sptr.offset ~check_signed:false ~ty:place.ty idx ptr in
         [%l.debug
           "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
             Sptr.pp ptr'];
@@ -399,7 +399,7 @@ module Make (StateImpl : State.S) = struct
             (Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len))
             `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty from ptr in
+        let+ ptr' = Sptr.offset ~check_signed:false ~ty from ptr in
         let slice_len = to_ -!@ from in
         [%l.debug
           "Projected %a, slice %a..%a%s, to pointer %a, len %a" Sptr.pp ptr
@@ -532,7 +532,8 @@ module Make (StateImpl : State.S) = struct
               fold_list fields ~init:vt ~f:(fun vt field ->
                   let idx = Types.FieldId.to_int field in
                   let* vt_addr =
-                    Sptr.offset ~ty:unit_ptr ~signed:false (BV.usizei idx) vt
+                    Sptr.offset ~check_signed:false ~ty:unit_ptr (BV.usizei idx)
+                      vt
                   in
                   let+ vt = State.load (vt_addr, Thin) unit_ptr in
                   fst (as_ptr vt))
@@ -837,8 +838,8 @@ module Make (StateImpl : State.S) = struct
                 let off = as_base_i Usize p2 in
                 let ty = get_pointee (type_of_operand e1) in
                 let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
-                let signed = Layout.is_signed off_ty in
-                let+ p' = Sptr.offset ~signed ~ty off p in
+                let check_signed = Layout.is_signed off_ty in
+                let+ p' = Sptr.offset ~check_signed ~ty off p in
                 Ptr (p', meta)
             | _ ->
                 let+ res = Core.eval_ptr_binop op ptr1 p2 in

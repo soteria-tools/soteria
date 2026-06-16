@@ -526,6 +526,29 @@ module rec Bool : Bool = struct
           else (BitVec.concat bv1 bv2, BitVec.extract s2 e1 x)
         in
         sem_eq bv xy
+    (* (a <= c1) && (a <= c2) <=> a <= min(c1, c2), comparing the constants in
+       the (shared) signedness of the comparisons. *)
+    | ( Binop (Leq s1, a1, ({ node = { kind = BitVec c1; _ }; _ } as r1)),
+        Binop (Leq s2, a2, ({ node = { kind = BitVec c2; _ }; _ } as r2)) )
+      when s1 = s2 && equal a1 a2 ->
+        let bits = size_of a1.node.ty in
+        let smaller =
+          if Z.leq (BitVec.bv_to_z s1 bits c1) (BitVec.bv_to_z s1 bits c2) then
+            r1
+          else r2
+        in
+        BitVec.leq ~signed:s1 a1 smaller
+    (* (c1 <= a) && (c2 <= a) <=> max(c1, c2) <= a *)
+    | ( Binop (Leq s1, ({ node = { kind = BitVec c1; _ }; _ } as l1), a1),
+        Binop (Leq s2, ({ node = { kind = BitVec c2; _ }; _ } as l2), a2) )
+      when s1 = s2 && equal a1 a2 ->
+        let bits = size_of a1.node.ty in
+        let larger =
+          if Z.geq (BitVec.bv_to_z s1 bits c1) (BitVec.bv_to_z s1 bits c2) then
+            l1
+          else l2
+        in
+        BitVec.leq ~signed:s1 larger a1
     | _ -> mk_commut_binop And v1 v2 <| TBool
 
   and or_ v1 v2 =

@@ -785,7 +785,7 @@ module Encoder (Sptr : Sptr.S) = struct
           in
           let** layout = Layout.layout_of sub_ty in
           let len = Typed.cast_i Usize meta in
-          let size, ovf_mul = layout.size *?@ len in
+          let size, ovf_mul = BV.mul_alloca_checked layout.size len in
           let++ () = assert_or_error (Typed.not ovf_mul) `Overflow in
           (size, layout.align)
       | TDynTrait _, (Thin | Len _) ->

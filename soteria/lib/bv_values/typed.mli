@@ -79,6 +79,7 @@ type sbool = T.sbool
     operation is known not to overflow. *)
 type checked = Svalue.checked = { signed : bool; unsigned : bool }
 
+val checked_both : checked
 val unchecked : checked
 val checked_of_signed : bool -> checked
 
