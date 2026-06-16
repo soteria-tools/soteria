@@ -38,6 +38,32 @@ module Exec = struct
       term
 end
 
+module Compile = struct
+  let term =
+    Term.(
+      const Soteria_rust_lib.Driver.compile
+      $ Soteria_rust_lib.Config.global_term
+      $ dir_arg)
+
+  let cmd =
+    Cmd.make
+      (Cmd.info ~exits ~doc:"Compile without running any analysis"
+         ~man:
+           [
+             `S Cmdliner.Manpage.s_description;
+             `P
+               "Compile the specified file or crate to ULLBC, as [exec] would, \
+                but do not run any symbolic execution. This is useful to warm \
+                up the compilation cache, or, combined with --list-tests, to \
+                discover the available entry points. With --list-tests, the \
+                JSON list of entry points is the only thing printed to stdout \
+                (the compilation progress goes to stderr), so it can be piped \
+                directly into e.g. [jq].";
+           ]
+         "compile")
+      term
+end
+
 module Build_plugins = struct
   let term =
     Term.(
@@ -61,6 +87,8 @@ module Build_plugins = struct
 end
 
 let cmd =
-  Cmd.group (Cmd.info ~exits "soteria-rust") [ Exec.cmd; Build_plugins.cmd ]
+  Cmd.group
+    (Cmd.info ~exits "soteria-rust")
+    [ Exec.cmd; Compile.cmd; Build_plugins.cmd ]
 
 let () = exit @@ Cmd.eval cmd

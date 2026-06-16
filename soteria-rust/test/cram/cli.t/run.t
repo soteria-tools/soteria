@@ -9,6 +9,9 @@
          build-plugins [OPTION]…
              Build plugins
   
+         compile [OPTION]… PATH
+             Compile without running any analysis
+  
          exec [OPTION]… PATH
              Run symbolic execution
   
@@ -66,10 +69,12 @@
              after analysis.
   
          --list-tests
-             List the testing entry points found in the program as a one-line
-             JSON list and exit, without running them; the resulting names can
-             be used with --filter to isolate a single test. Only active in
-             [exec] mode.
+             Print the testing entry points found in the program as a one-line
+             JSON list to stdout; the resulting names can be used with --filter
+             to isolate a single test. Analysis is still run as usual in [exec]
+             mode. When used with [compile], this is the only thing printed to
+             stdout, so the output can be piped directly into e.g. [jq]. Only
+             active in [exec] and [compile] modes.
   
          --output-crate
              Pretty-print the compiled crate to a file
@@ -345,10 +350,12 @@
              after analysis.
   
          --list-tests
-             List the testing entry points found in the program as a one-line
-             JSON list and exit, without running them; the resulting names can
-             be used with --filter to isolate a single test. Only active in
-             [exec] mode.
+             Print the testing entry points found in the program as a one-line
+             JSON list to stdout; the resulting names can be used with --filter
+             to isolate a single test. Analysis is still run as usual in [exec]
+             mode. When used with [compile], this is the only thing printed to
+             stdout, so the output can be piped directly into e.g. [jq]. Only
+             active in [exec] and [compile] modes.
   
          --output-crate
              Pretty-print the compiled crate to a file
@@ -582,12 +589,306 @@
   
 
 
-List the testing entry points as a one-line JSON list, without running them
-  $ soteria-rust exec --list-tests tests.rs
+  $ soteria-rust compile --help
+  NAME
+         soteria-rust-compile - Compile without running any analysis
+  
+  SYNOPSIS
+         soteria-rust compile [OPTION]… PATH
+  
+  DESCRIPTION
+         Compile the specified file or crate to ULLBC, as [exec] would, but do
+         not run any symbolic execution. This is useful to warm up the
+         compilation cache, or, combined with --list-tests, to discover the
+         available entry points. With --list-tests, the JSON list of entry
+         points is the only thing printed to stdout (the compilation progress
+         goes to stderr), so it can be piped directly into e.g. [jq].
+  
+  SOLVER OPTIONS
+         --dump-smt-to=VAL, --dump-smt=VAL
+             Dump the SMT queries to the given file
+  
+         --solver-timeout=INT (absent SOTERIA_SOLVER_TIMEOUT env)
+             Set the solver timeout in miliseconds
+  
+         --z3-path=VAL (absent=z3 or SOTERIA_Z3_PATH env)
+             Path to the Z3 executable
+  
+  PROFILING OPTIONS
+         --flamegraphs=VAL (absent SOTERIA_FLAMEGRAPHS env)
+             Specify the folder in which the flamegraphs will be saved.
+  
+  OUTPUT OPTIONS
+         --compact (absent SOTERIA_COMPACT_DIAGNOSTICS env)
+             Make diagnostic outputs compact.
+  
+         --dump-callgraph=VAL
+             If provided, dump the call graph as a DOT file to the given path
+             after analysis.
+  
+         --list-tests
+             Print the testing entry points found in the program as a one-line
+             JSON list to stdout; the resulting names can be used with --filter
+             to isolate a single test. Analysis is still run as usual in [exec]
+             mode. When used with [compile], this is the only thing printed to
+             stdout, so the output can be piped directly into e.g. [jq]. Only
+             active in [exec] and [compile] modes.
+  
+         --output-crate
+             Pretty-print the compiled crate to a file
+  
+         --show-pcs, --pcs (absent SHOW_PCS env)
+             Whether to show the path conditions for outcomes at the end of
+             execution.
+  
+         --stats=VAL, --output-stats=VAL, --dump-stats=VAL (absent
+         SOTERIA_OUTPUT_STATS env)
+             If stats should be output. If the value is "stdout", prints the
+             stats to stdout; otherwise, stores them as JSON in the specified
+             file.
+  
+         --summary
+             If a summary of all test cases should be printed at the end of
+             execution
+  
+         -v, --verbose
+             Verbosity level, clashes with -q
+  
+  LOGS OPTIONS
+         --hide-unstable, --diffable (absent HIDE_UNSTABLE env)
+             Do not display unstable values like durations (e.g. for diffing
+             purposes). Also overrides the profile to disable colors and utf8
+             and ensure that it is reproducible accross runs.
+  
+         --html
+             HTML logging, clashes with --log-kind
+  
+         -l ENUM, --log_kind=ENUM
+             Log kind, clashes with --html
+  
+         --log-smt
+             Always log SMT queries, even in silent mode
+  
+         --no-colour, --no-color (absent NO_COLOR env)
+             Disables coloured output.
+  
+  FRONTEND OPTIONS
+         --cargo=[,…] (absent CARGO_FLAGS env)
+             Additional flags to pass to Cargo when analysing a crate
+  
+         --charon-path=VAL (absent=charon or SOTERIA_CHARON_PATH env)
+             Path to the charon binary. Defaults to "charon", i.e. looked up in
+             PATH.
+  
+         --clean (absent SOTERIA_RUST_CLEANUP env)
+             Clean up compiled files after execution
+  
+         --exclude=REGEX[,…]
+             Filter the entrypoints to exclude, by name. If empty, no
+             entrypoints are excluded. Multiple filters can be provided,
+             comma-separated; tests matching any will be excluded. The filters
+             are treated as regexes. Opposite of --filter.
+  
+         --filter=REGEX[,…]
+             Filter the entrypoints to run, by name. If empty, all entrypoints
+             are run. Multiple filters can be provided, comma-separated; tests
+             matching any will be selected. The filters are treated as regexes.
+             Opposite of --exclude.
+  
+         --frontend=ENUM (absent=obol)
+             Choose the frontend to use: Charon or Obol
+  
+         --kani
+             Use the Kani library
+  
+         --log-compilation
+             Log the compilation process
+  
+         --miri
+             Use the Miri library
+  
+         --no-compile
+             Do not compile the Rust code, as it is already compiled
+  
+         --no-compile-plugins
+             Do not compile the plugins, as they are already compiled
+  
+         --obol-path=VAL (absent=obol or SOTERIA_OBOL_PATH env)
+             Path to the obol binary. Defaults to "obol", i.e. looked up in
+             PATH.
+  
+         --offline (absent SOTERIA_OFFLINE env)
+             Whether to compile without accessing the network, which can be
+             useful for reproducibility. This will pass --offline to Cargo..
+  
+         --plugins=VAL (absent SOTERIA_RUST_PLUGINS env)
+             The directory in which plugins are and should be compiled;
+             defaults to the current dune-managed site.
+  
+         --rustc=[,…] (absent RUSTC_FLAGS env)
+             Additional flags to pass to the Rustc compiler
+  
+         --sysroot=VAL (absent RUST_SYSROOT env)
+             The sysroot to use for compilation. If not provided, the default
+             sysroot is used.
+  
+         --target=VAL (absent TARGET env)
+             The compilation target triple to use, e.g.
+             x86_64-unknown-linux-gnu. If not provided, the default target for
+             the current machine is used.
+  
+         --test=VAL
+             The test profile to use to compile the crate; this only has an
+             effect if analysing a crate. Use [lib] for unit tests in [src/].
+             By default, the crate's source is analysed, not the tests.
+  
+  ANALYSIS OPTIONS
+         --approx-floating-ops=ENUM (absent=warn)
+             Whether to allow complex floating-point operations to be
+             over-approximated. Applies to e.g. sqrt, exp, pow and
+             trigonometric functions. If deny, will vanish execution when
+             encountering them.
+  
+         --branch-fuel=INT (absent BRANCH_FUEL env)
+             The default branch fuel for each entrypoint -- every symbolic
+             execution branching point counts as one fuel. Defaults to infinite
+             fuel.
+  
+         --fail-fast (absent FAIL_FAST env)
+             Stop symbolic execution upon the first error encountered.
+  
+         --ignore-aliasing
+             Ignore pointer aliasing rules (tree borrows)
+  
+         --ignore-leaks
+             Ignore memory leaks
+  
+         --polymorphic, --poly
+             Whether compilation (and thus analysis) should be done on
+             polymorphic code (experimental), rather than on monomorphic code
+             (with generics substituted).
+  
+         --provenance=ENUM (absent=permissive)
+             The provenance model to use for pointers. If not provided, the
+             default is permissive.
+  
+         --recursive-validity=ENUM (absent=warn)
+             Whether to check the validity of the addressed memory when
+             obtaining a reference to it. We only go one level deep.
+  
+         --step-fuel=INT (absent STEP_FUEL env)
+             The default step fuel for each entrypoint -- every control flow
+             jump counts as one fuel. Defaults to infinite fuel.
+  
+  ARGUMENTS
+         PATH (required)
+             The .rs file or the directory of the crate to analyse
+  
+  COMMON OPTIONS
+         --help[=FMT] (default=auto)
+             Show this help in format FMT. The value FMT must be one of auto,
+             pager, groff or plain. With auto, the format is pager or plain
+             whenever the TERM env var is dumb or undefined.
+  
+  EXIT STATUS
+         soteria-rust compile exits with:
+  
+         0   on success
+  
+         1   on failure (bug or error found)
+  
+         2   on crash caused by Soteria Rust
+  
+         3   on crash caused by Charon
+  
+  ENVIRONMENT
+         These environment variables affect the execution of soteria-rust
+         compile:
+  
+         BRANCH_FUEL
+             See option --branch-fuel.
+  
+         CARGO_FLAGS
+             See option --cargo.
+  
+         FAIL_FAST
+             See option --fail-fast.
+  
+         HIDE_UNSTABLE
+             See option --hide-unstable.
+  
+         NO_COLOR
+             See option --no-color.
+  
+         RUSTC_FLAGS
+             See option --rustc.
+  
+         RUST_SYSROOT
+             See option --sysroot.
+  
+         SHOW_PCS
+             See option --show-pcs.
+  
+         SOTERIA_CHARON_PATH
+             See option --charon-path.
+  
+         SOTERIA_COMPACT_DIAGNOSTICS
+             See option --compact.
+  
+         SOTERIA_FLAMEGRAPHS
+             See option --flamegraphs.
+  
+         SOTERIA_OBOL_PATH
+             See option --obol-path.
+  
+         SOTERIA_OFFLINE
+             See option --offline.
+  
+         SOTERIA_OUTPUT_STATS
+             See option --output-stats.
+  
+         SOTERIA_RUST_CLEANUP
+             See option --clean.
+  
+         SOTERIA_RUST_PLUGINS
+             See option --plugins.
+  
+         SOTERIA_SOLVER_TIMEOUT
+             See option --solver-timeout.
+  
+         SOTERIA_Z3_PATH
+             See option --z3-path.
+  
+         STEP_FUEL
+             See option --step-fuel.
+  
+         TARGET
+             See option --target.
+  
+  SEE ALSO
+         soteria-rust(1)
+  
+
+`compile` compiles the code without running any analysis
+  $ soteria-rust compile tests.rs
   Compiling... done in <time>
+
+`compile --list-tests` additionally prints the testing entry points as a
+one-line JSON list; the compilation progress goes to stderr, so stdout only
+contains the JSON list and can be piped into e.g. jq
+  $ soteria-rust compile --list-tests tests.rs 2>/dev/null
   ["tests::first_test","tests::second_test","tests::third_test"]
 
 The list respects --filter, so it can be used to isolate a single test
-  $ soteria-rust exec --list-tests --filter second tests.rs
-  Compiling... done in <time>
+  $ soteria-rust compile --list-tests --filter second tests.rs 2>/dev/null
   ["tests::second_test"]
+
+In `exec` mode, --list-tests prints the list and still runs the analysis
+  $ soteria-rust exec --list-tests --filter first tests.rs
+  Compiling... done in <time>
+  ["tests::first_test"]
+  => Running tests::first_test...
+  note: tests::first_test: done in <time>, ran 1 branch
+  PC 1: empty
+  
+
