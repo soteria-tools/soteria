@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781545845188,
+  "lastUpdate": 1781623789417,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -3059,6 +3059,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 105.6089,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3cb990fc2d894f5467efce48315c4a475292d6cc",
+          "message": "Fix `Bv_values` checked flag (#404)\n\n* Add test\n\n* Fix unsoundness in `Bv_values` checked ops\n\n* Add checked flag to neg\n\n* Revert \"Add checked flag to neg\"\n\nThis reverts commit c95403132ec5270cb995e7b7d8807d76b143bf77.\n\n* Make `Sptr.offset` simpler + reductions\n\n* tweak write a lot to not take 4s\n\n* tweak ptr offsets to prefer unsigned\n\n* add reductions to reclaim PC\n\n* Reapply \"Add checked flag to neg\"\n\nThis reverts commit b3e5f9793fac516a8810502032c959c4fe693cb1.\n\n* try improving reductions\n\n* Reduce signed comparisons better\n\n* Add some more reductions...\n\n* minor: gate reductions\n\n* okayyy okay\n\n* Fix a wrong reduction\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\nCo-authored-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-06-16T15:04:36Z",
+          "tree_id": "6f1b0b1f6a6fdc6ef813798bc4304dde15e8e0cc",
+          "url": "https://github.com/soteria-tools/soteria/commit/3cb990fc2d894f5467efce48315c4a475292d6cc"
+        },
+        "date": 1781623787182,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.32777405234,
+            "range": "± 0.0267",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.1024798161799998,
+            "range": "± 0.0057",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.62103306188,
+            "range": "± 0.0101",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.4015371418600001,
+            "range": "± 0.0056",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.6328467840399994,
+            "range": "± 0.0312",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.73048191508,
+            "range": "± 0.0048",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.42506445226,
+            "range": "± 0.0046",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.90803220586,
+            "range": "± 0.0266",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.795160409994423,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 372,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 119.9142,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 459,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 101,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 40,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 105.426,
             "unit": "s"
           }
         ]
