@@ -353,6 +353,7 @@ module Infix : sig
   val ( +!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( -!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( *!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( ~-!! ) : [< sint ] t -> [> sint ] t
 
   (* arithmetic operations for checked operations *)
   val ( +?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t

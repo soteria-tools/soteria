@@ -110,6 +110,7 @@ module Infix = struct
   let ( *!@ ) = ( *@ )
   let ( *!!@ ) = BitVec.mul ~checked:checked_both
   let ( ~-! ) = ( ~- )
+  let ( ~-!! ) = BitVec.neg ~checked:true
   let ( +?@ ) = BitVec.add_checked ~signed:false
   let ( +$?@ ) = BitVec.add_checked ~signed:true
   let ( -?@ ) = BitVec.sub_checked ~signed:false

@@ -863,7 +863,7 @@ module Make (Borrows : Tree_borrows.T) = struct
        let collect_tb_states f =
          Tree.iter_leaves_rev original_tree @@ fun (range, _, tb) ->
          let range =
-           Tree_block.Range.offset range ~-!(fst original_tree.range)
+           Tree_block.Range.offset range ~-!!(fst original_tree.range)
          in
          f (tb, range)
        in
