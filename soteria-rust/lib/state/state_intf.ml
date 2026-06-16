@@ -13,14 +13,16 @@ module type S = sig
   module Sptr : sig
     include module type of Sptr
 
-    (** [offset ?check ?ty ~signed ptr off] Offsets [ptr] by the size of [ty] *
-        [off], interpreting [off] as a [signed] integer. [ty] defaults to u8.
-        May result in a dangling pointer error if the pointer goes over the
-        allocation limit. This check can be disabled with [~check:false]. *)
+    (** [offset ?check_signed ?ty ptr off] Offsets [ptr] by the size of [ty] *
+        [off]. [ty] defaults to u8.
+
+        If [check_signed] is [Some s], the offset is checked for overflows and
+        dangling pointers. [s] represents whether the offset is signed or
+        unsigned (this matters for overflow checks on the multiplication with
+        the pointee type). *)
     val offset :
-      ?check:bool ->
+      ?check_signed:bool ->
       ?ty:Charon.Types.ty ->
-      signed:bool ->
       [< sint ] Typed.t ->
       t ->
       t ret

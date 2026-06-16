@@ -41,7 +41,7 @@ type t =
         to `Panic *)
   | `UBAbort  (** Abort caused by an UB trap being triggered *)
   | `UBDanglingPointer  (** Pointer was offset outside of its allocation *)
-  | `UBPointerArithmetic  (** Arithmetics on two pointers *)
+  | `PointerArithmeticOverflow  (** Overflow on pointer arithmetic *)
   | `UBPointerComparison
     (** Comparison of pointers with different provenance *)
   | `UBIntToPointerNoProvenance of Typed.T.sint Typed.t
@@ -121,6 +121,7 @@ let rec pp ft : [> t ] -> unit = function
   | `Overflow -> Fmt.string ft "Overflow"
   | `Panic (Some msg) -> Fmt.pf ft "Panic: %s" msg
   | `Panic None -> Fmt.pf ft "Panic"
+  | `PointerArithmeticOverflow -> Fmt.string ft "Overflow on pointer arithmetic"
   | `RefInvalidatedEarly ->
       Fmt.string ft "Protected ref invalidated before function ended"
   | `RefToUninhabited ty -> Fmt.pf ft "Ref to uninhabited type: %a" pp_ty ty
@@ -128,7 +129,6 @@ let rec pp ft : [> t ] -> unit = function
   | `UninitializedMemoryAccess -> Fmt.string ft "Uninitialized memory access"
   | `UBAbort -> Fmt.string ft "UB: undefined behaviour trap reached"
   | `UBDanglingPointer -> Fmt.string ft "Dangling pointer"
-  | `UBPointerArithmetic -> Fmt.string ft "UB: pointer arithmetic"
   | `UBPointerComparison -> Fmt.string ft "UB: pointer comparison"
   | `UBIntToPointerNoProvenance addr ->
       Fmt.pf ft "UB: int to pointer without exposed address: %a" Typed.ppa addr

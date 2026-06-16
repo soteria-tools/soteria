@@ -40,8 +40,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let offset ~ptr ~delta ~dst ~offset =
     let dst, meta = Typed.Ptr.split @@ Typed.cast_ptr_f dst in
     let offset = Typed.cast_i Usize offset in
-    let signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
-    let+ dst' = Sptr.offset ~signed ~ty:ptr offset dst in
+    let check_signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
+    let+ dst' = Sptr.offset ~check_signed ~ty:ptr offset dst in
     Typed.Ptr.mk_ptr_f dst' meta
 
   let assert_inhabited ~t =
@@ -164,14 +164,14 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let atomic_xadd ~t ~u ~ord:_ ~dst ~src =
     atomic_rmw ~t ~u ~dst ~src
-      ~int_op:(fun lit a b -> Core.eval_lit_binop (Add OWrap) lit a b)
-      ~ptr_op:(fun src old -> Sptr.offset ~check:false ~signed:false src old)
+      ~int_op:(Core.eval_lit_binop (Add OWrap))
+      ~ptr_op:Sptr.offset
 
   let atomic_xsub ~t ~u ~ord:_ ~dst ~src =
     atomic_rmw ~t ~u ~dst ~src
-      ~int_op:(fun lit a b -> Core.eval_lit_binop (Sub OWrap) lit a b)
+      ~int_op:(Core.eval_lit_binop (Sub OWrap))
         (* subtract [src] bytes by offsetting by [-src] *)
-      ~ptr_op:(fun src old -> Sptr.offset ~check:false ~signed:false ~-!src old)
+      ~ptr_op:(fun src old -> Sptr.offset ~-!src old)
 
   (* Atomic read-modify-write on an integer (the min/max intrinsics, which only
      apply to integers). *)
@@ -283,12 +283,18 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let multiplicand = double_bv @@ Typed.cast_lit t multiplicand in
     let addend = double_bv @@ Typed.cast_lit t addend in
     let carry = double_bv @@ Typed.cast_lit t carry in
-    (* This cannot overflow:
+    (* This cannot overflow as an *unsigned* 2n-bit operation:
      *   MAX * MAX + MAX + MAX
      *   => (2ⁿ-1) × (2ⁿ-1) + (2ⁿ-1) + (2ⁿ-1)
      *   => (2²ⁿ - 2ⁿ⁺¹ + 1) + (2ⁿ⁺¹ - 2)
      *   => 2²ⁿ - 1 *)
-    let res = (multiplier *!!@ multiplicand) +!!@ addend +!!@ carry in
+    let ( *!@ ) l r =
+      Typed.cast @@ BV.mul ~checked:(Typed.checked_of_signed false) l r
+    in
+    let ( +!@ ) l r =
+      Typed.cast @@ BV.add ~checked:(Typed.checked_of_signed false) l r
+    in
+    let res = (multiplier *!@ multiplicand) +!@ addend +!@ carry in
     let res_l, res_h =
       ( BV.extract 0 ((size_t * 8) - 1) res,
         BV.extract (size_t * 8) ((size_t * 16) - 1) res )
@@ -509,8 +515,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let rec aux ?res ?(inc = one) l r len =
       if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
-        let* l = Sptr.offset ~signed:false inc l in
-        let* r = Sptr.offset ~signed:false inc r in
+        let* l = Sptr.offset  inc l in
+        let* r = Sptr.offset  inc r in
         let l_full = Typed.Ptr.mk_ptr_f l None in
         let r_full = Typed.Ptr.mk_ptr_f r None in
         let* bl = State.load l_full byte in
@@ -547,9 +553,8 @@ let r, _ = Typed.Ptr.split r in
 let same_provenance = Sptr.have_same_provenance l r in
     if%sure not same_provenance then ok ()
     else
-
-      let* l_end = Sptr.offset ~signed:false size l in
-      let* r_end = Sptr.offset ~signed:false size r in
+      let* l_end = Sptr.offset size l in
+      let* r_end = Sptr.offset size r in
       let* dist1 = Sptr.distance l r_end in
       let* dist2 = Sptr.distance r l_end in
       let zero = Usize.(0s) in
@@ -936,11 +941,13 @@ let same_provenance = Sptr.have_same_provenance l r in
         let if_ovf =
           if signed then Typed.ite (a <$@ BV.mki_lit t 0) min max else max
         in
-        ok (Typed.ite ovf if_ovf (a +!!@ b))
+        let res = BV.add ~checked:(Typed.checked_of_signed signed) a b in
+        ok (Typed.ite ovf if_ovf (Typed.cast res))
     | Sub _ ->
         let ovf = BV.sub_overflows ~signed a b in
         let if_ovf = if signed then Typed.ite (a <$@ b) min max else min in
-        ok (Typed.ite ovf if_ovf (a -!!@ b))
+        let res = BV.sub ~checked:(Typed.checked_of_signed signed) a b in
+        ok (Typed.ite ovf if_ovf (Typed.cast res))
     | _ -> L.failwith "Unreachable: not add or sub?"
 
   let saturating_add ~t ~a ~b = saturating (Add OUB) ~t ~a ~b
@@ -991,8 +998,8 @@ let same_provenance = Sptr.have_same_provenance l r in
   let read_vtable ~slot ~ptr : [> T.sint ] Typed.t ret =
     let ptr = Typed.Ptr.ptr_of ptr in
     let* ptr =
-      Sptr.offset ~signed:false ~ty:(TLiteral (TUInt Usize)) (BV.usizei slot)
-        ptr
+      Sptr.offset ~check_signed:true ~ty:(TLiteral (TUInt Usize))
+        (BV.usizei slot) ptr
     in
     let ptr = Typed.Ptr.mk_ptr_f ptr None in
     let+ align = State.load ptr (TLiteral (TUInt Usize)) in
@@ -1031,7 +1038,7 @@ let same_provenance = Sptr.have_same_provenance l r in
             Iter.(0 -- (Z.to_int bytes - 1))
             ~f:(fun i ->
               let off = BV.usizei i in
-              let* ptr = Sptr.offset ~signed:false off ptr in
+              let* ptr = Sptr.offset ~check_signed:true off ptr in
               let ptr = Typed.Ptr.mk_ptr_f ptr None in
               State.store ptr (TLiteral (TUInt U8)) val_)
       | None -> not_impl "write_bytes: don't know how to handle symbolic sizes"

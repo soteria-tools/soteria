@@ -627,8 +627,8 @@ module Make (Borrows : Tree_borrows.T) = struct
   module Sptr = struct
     include Sptr
 
-    let offset ?(check = true) ?(ty = Types.TLiteral (TUInt U8)) ~signed off_by
-        (ptr : Typed.([< T.sptr_t ] t)) =
+    let offset ?check_signed ?(ty = Types.TLiteral (TUInt U8)) off_by
+      (ptr : Typed.([< T.sptr_t ] t)) =
       [%l.debug
         "Executing Offset of pointer %a by %a" Sptr_base.pp fptr Typed.ppa
           off_by];
@@ -636,24 +636,32 @@ module Make (Borrows : Tree_borrows.T) = struct
       let**^ size = Layout.size_of ty in
       let loc, off = Typed.Ptr.decompose' ptr in
       let++ off =
-        if check then
-          let off_by, off_by_ovf = Typed.BV.mul_checked ~signed size off_by in
-          let off, off_ovf = Typed.BV.add_checked ~signed off off_by in
-          let** () =
-            assert_or_error
-              (off_by
-              ==@ Usize.(0s)
-              ||@ (Typed.not off_by_ovf &&@ Typed.not off_ovf))
-              `UBDanglingPointer
-          in
-          let++ () = check_non_dangling_untyped ptr off_by in
-          off
-        else
-          (* we use the unchecked, possibly overflowing version of the
-             operators, as wrapping is permitted dhere. *)
-          let off_by = size *!@ off_by in
-          let off = off +!@ off_by in
-          Result.ok off
+        match check_signed with
+        | Some signed ->
+            (* the multiplication cannot overflow *)
+            let off_by, off_by_ovf = Typed.BV.mul_checked ~signed size off_by in
+            (* if the offset is unsigned, it cannot be negative *)
+            let ofs_unsigned_neg =
+              if not signed then off_by <$@ Usize.(0s) else Typed.v_false
+            in
+            let off, off_ovf = off +$?@ off_by in
+            let** () =
+              assert_or_error
+                (off_by
+                ==@ Usize.(0s)
+                ||@ (Typed.not off_by_ovf
+                    &&@ Typed.not off_ovf
+                    &&@ Typed.not ofs_unsigned_neg))
+                `PointerArithmeticOverflow
+            in
+            let++ () = check_non_dangling_untyped (fptr, Thin) off_by in
+            off
+        | None ->
+            (* we use the unchecked, possibly overflowing version of the
+               operators, as wrapping is permitted dhere. *)
+            let off_by = size *!@ off_by in
+            let off = off +!@ off_by in
+            Result.ok off
       in
       let inner = Typed.Ptr.mk loc off in
       Typed.Ptr.with_inner ptr inner
@@ -729,7 +737,7 @@ module Make (Borrows : Tree_borrows.T) = struct
        let collect_tb_states f =
          Tree.iter_leaves_rev original_tree @@ fun (range, _, tb) ->
          let range =
-           Tree_block.Range.offset range ~-!(fst original_tree.range)
+           Tree_block.Range.offset range ~-!!(fst original_tree.range)
          in
          f (tb, range)
        in

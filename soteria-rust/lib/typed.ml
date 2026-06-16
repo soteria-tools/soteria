@@ -115,6 +115,10 @@ module BitVec = struct
   let max ~signed l r = ite (gt ~signed l r) l r
   let min ~signed l r = ite (lt ~signed l r) l r
   let sure_is_zero v = Option.is_some_and Z.(equal zero) (to_z v)
+
+  let isize_max () =
+    let bits = 8 * size_of_uint_ty Usize in
+    usize (Z.sub (Z.shift_left Z.one (bits - 1)) Z.one)
 end
 
 module BV = BitVec

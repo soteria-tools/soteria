@@ -16,9 +16,9 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext)) = struct
     | FMul -> Float.mul
     | FDiv -> Float.div
     | FRem -> Float.rem
-    | Add { checked } -> BitVec.add ~checked
-    | Sub { checked } -> BitVec.sub ~checked
-    | Mul { checked } -> BitVec.mul ~checked
+    | Add checked -> BitVec.add ~checked
+    | Sub checked -> BitVec.sub ~checked
+    | Mul checked -> BitVec.mul ~checked
     | Div signed -> BitVec.div ~signed
     | Rem signed -> BitVec.rem ~signed
     | Mod -> BitVec.mod_

@@ -34,7 +34,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let* () = State.store vtable Charon_util.unit_ptr drop_fn in
     let vtable = Typed.Ptr.ptr_of vtable in
     let* align_ptr =
-      Sptr.offset ~ty:(TLiteral (TUInt Usize)) ~signed:false Usize.(2s) vtable
+      Sptr.offset ~ty:(TLiteral (TUInt Usize)) ~check_signed:true
+        Usize.(2s)
+        vtable
     in
     let align_ptr = Typed.Ptr.mk_ptr_f align_ptr None in
     let+ () = State.store align_ptr Charon_util.unit_ptr Usize.(1s) in

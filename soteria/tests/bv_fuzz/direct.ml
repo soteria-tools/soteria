@@ -68,19 +68,19 @@ module BitVec = struct
   let one n = BitVec Z.one <| t_bv n
 
   (* Arithmetic *)
-  let add ?(checked = false) v1 v2 =
-    Binop (Add { checked }, v1, v2) <| v1.Hc.node.ty
+  let add ?(checked = unchecked) v1 v2 =
+    Binop (Add checked, v1, v2) <| v1.Hc.node.ty
 
-  let sub ?(checked = false) v1 v2 =
-    Binop (Sub { checked }, v1, v2) <| v1.Hc.node.ty
+  let sub ?(checked = unchecked) v1 v2 =
+    Binop (Sub checked, v1, v2) <| v1.Hc.node.ty
 
-  let mul ?(checked = false) v1 v2 =
-    Binop (Mul { checked }, v1, v2) <| v1.Hc.node.ty
+  let mul ?(checked = unchecked) v1 v2 =
+    Binop (Mul checked, v1, v2) <| v1.Hc.node.ty
 
   let div ~signed v1 v2 = Binop (Div signed, v1, v2) <| v1.Hc.node.ty
   let rem ~signed v1 v2 = Binop (Rem signed, v1, v2) <| v1.Hc.node.ty
   let mod_ v1 v2 = Binop (Mod, v1, v2) <| v1.Hc.node.ty
-  let neg v = Unop (Neg, v) <| v.Hc.node.ty
+  let neg ?(checked = false) v = Unop (Neg checked, v) <| v.Hc.node.ty
 
   (* Bitwise *)
   let not_ v = Unop (BvNot, v) <| v.Hc.node.ty
@@ -146,37 +146,35 @@ module BitVec = struct
     Unop (FloatOfBvRaw fp, v) <| TFloat fp
 end
 
+(* A checked operation only promises no overflow in the signedness(es) recorded
+   by its [checked] flag, so we only assume those. *)
+let checked_assumptions assumptions checked v1 v2 overflows =
+  Iter.bools @@ fun signed ->
+  if checked_has ~signed checked then
+    Dynarray.add_last assumptions (Bool.not_ (overflows ~signed v1 v2))
+
 let collect_checked_assumptions (v : t) : t list =
   let assumptions = Dynarray.create () in
 
   let rec go v =
     match v.Hc.node.kind with
+    | Unop (Neg true, v') ->
+        Dynarray.add_last assumptions (Bool.not_ (BitVec.neg_overflows v'));
+        go v'
     | Unop (_, v) -> go v
     | Ptr (a, b) ->
         go a;
         go b
-    | Binop (Add { checked = true }, v1, v2) ->
-        Dynarray.append_list assumptions
-          [
-            Bool.not_ (BitVec.add_overflows ~signed:false v1 v2);
-            Bool.not_ (BitVec.add_overflows ~signed:true v1 v2);
-          ];
+    | Binop (Add checked, v1, v2) ->
+        checked_assumptions assumptions checked v1 v2 BitVec.add_overflows;
         go v1;
         go v2
-    | Binop (Sub { checked = true }, v1, v2) ->
-        Dynarray.append_list assumptions
-          [
-            Bool.not_ (BitVec.sub_overflows ~signed:false v1 v2);
-            Bool.not_ (BitVec.sub_overflows ~signed:true v1 v2);
-          ];
+    | Binop (Sub checked, v1, v2) ->
+        checked_assumptions assumptions checked v1 v2 BitVec.sub_overflows;
         go v1;
         go v2
-    | Binop (Mul { checked = true }, v1, v2) ->
-        Dynarray.append_list assumptions
-          [
-            Bool.not_ (BitVec.mul_overflows ~signed:false v1 v2);
-            Bool.not_ (BitVec.mul_overflows ~signed:true v1 v2);
-          ];
+    | Binop (Mul checked, v1, v2) ->
+        checked_assumptions assumptions checked v1 v2 BitVec.mul_overflows;
         go v1;
         go v2
     | Binop (_, v1, v2) ->

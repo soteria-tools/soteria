@@ -159,7 +159,7 @@ module Make (StateImpl : State.S) = struct
     | CLiteral (VBool b) -> ok (BV.of_bool (Typed.of_bool b))
     | CLiteral (VChar c) -> ok (BV.u32i (Uchar.to_int c))
     | CLiteral (VFloat { float_value; float_ty }) ->
-  ok (Float (Typed.Float.mk float_ty float_value))
+        ok (Float (Typed.Float.mk float_ty float_value))
     | CLiteral (VStr str) -> Core.string_to_ptr str
     | CLiteral (VByteStr str) ->
         let str = List.to_seq str |> Seq.map Char.chr |> String.of_seq in
@@ -308,7 +308,7 @@ module Make (StateImpl : State.S) = struct
         @@ exec_fun fn args
     | CFnPtr fn_ptr ->
         let* fn = resolve_fn_ptr fn_ptr in
-        State.declare_fn fn 
+        State.declare_fn fn
     | CVTableRef _ ->
         not_impl "vtable-reference constants are not yet supported: %a"
           Crate.pp_constant_expr const
@@ -337,7 +337,7 @@ module Make (StateImpl : State.S) = struct
         | TRef _ | TAdt { id = TBuiltin TBox; _ } ->
             let+ () = Sptr.check_aligned deref pointee in
             deref
-        | _ -> ok deref
+        | _ -> ok deref)
     (* The metadata of a pointer type is just the second part of the pointer *)
     | PlaceProjection (base, PtrMetadata) ->
         let* ptr = resolve_place base in
@@ -346,7 +346,7 @@ module Make (StateImpl : State.S) = struct
         [%l.debug
           "Projecting metadata of pointer %a for %a" Typed.ppa ptr pp_ty base.ty];
         let+ ptr' =
-          Sptr.offset ~check:false ~ty:(TLiteral (TUInt Usize)) ~signed:false
+          Sptr.offset ~check_signed:true ~ty:(TLiteral (TUInt Usize))
             Usize.(1s)
             ptr
         in
@@ -367,7 +367,7 @@ module Make (StateImpl : State.S) = struct
         in
         let off = Layout.Fields_shape.offset_of field fields in
         let ptr, meta = Typed.Ptr.split ptr in
-        let* ptr' = Sptr.offset ~signed:false off ptr in
+        let* ptr' = Sptr.offset ~check_signed:true off ptr in
         [%l.debug
           "Projecting ADT %a, field %d, with pointer %a to pointer %a"
             Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr'];
@@ -376,14 +376,14 @@ module Make (StateImpl : State.S) = struct
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr = resolve_place base in
         let ptr, meta = Typed.Ptr.split ptr in
-          let* len, _ = len_of_indexable ~meta ~pointee:base.ty in
+        let* len, _ = len_of_indexable ~meta ~pointee:base.ty in
         let* idx = eval_operand idx in
         let len = Typed.cast_i Usize len and idx = Typed.cast_i Usize idx in
         let idx = if from_end then len -!@ idx else idx in
         let* () =
           assert_ (Usize.(0s) <=$@ idx &&@ (idx <$@ len)) `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty:place.ty idx ptr in
+        let+ ptr' = Sptr.offset ~check_signed:true ~ty:place.ty idx ptr in
         [%l.debug
           "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
             Typed.ppa ptr'];
@@ -391,7 +391,7 @@ module Make (StateImpl : State.S) = struct
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr = resolve_place base in
         let ptr, meta = Typed.Ptr.split ptr in
-          let* len, ty = len_of_indexable ~meta ~pointee:base.ty in
+        let* len, ty = len_of_indexable ~meta ~pointee:base.ty in
         let* from = eval_operand from in
         let* to_ = eval_operand to_ in
         let from = Typed.cast_i Usize from in
@@ -403,7 +403,7 @@ module Make (StateImpl : State.S) = struct
             (Usize.(0s) <=$@ from &&@ (from <=$@ to_) &&@ (to_ <=$@ len))
             `OutOfBounds
         in
-        let+ ptr' = Sptr.offset ~signed:false ~ty from ptr in
+        let+ ptr' = Sptr.offset ~check_signed:true ~ty from ptr in
         let slice_len = to_ -!@ from in
         [%l.debug
           "Projected %a, slice %a..%a%s, to pointer %a, len %a" Typed.ppa ptr
@@ -536,7 +536,8 @@ module Make (StateImpl : State.S) = struct
               fold_list fields ~init:vt ~f:(fun vt field ->
                   let idx = Types.FieldId.to_int field in
                   let* vt_addr =
-                    Sptr.offset ~ty:unit_ptr ~signed:false (BV.usizei idx) vt
+                    Sptr.offset ~check_signed:true ~ty:unit_ptr (BV.usizei idx)
+                      vt
                   in
                   let+ vt = State.load (vt_addr, Thin) unit_ptr in
                   fst (as_ptr vt))
@@ -762,8 +763,8 @@ module Make (StateImpl : State.S) = struct
                   in
                   (vt :> Typed.(T.ptr_meta t))
               | MetaUnknown ->
-                  not_impl "Unknown metadata for %a -> %a" pp_ty
-                    from_ty pp_ty to_ty
+                  not_impl "Unknown metadata for %a -> %a" pp_ty from_ty pp_ty
+                    to_ty
             in
             let rec unsize_path_rev acc : Types.ty -> int list option = function
               | TRawPtr _ | TRef _ -> Some acc
@@ -868,8 +869,8 @@ module Make (StateImpl : State.S) = struct
             let p1 = Typed.cast_ptr_f v1 in
             let p, meta = Typed.Ptr.split p1 in
             let off = Typed.cast_i Usize v2 in
-            let signed = Layout.is_signed lit in
-            let+ p' = Sptr.offset ~signed ~ty:pointee off p in
+            let check_signed = Layout.is_signed off_ty in
+            let+ p' = Sptr.offset ~check_signed ~ty:pointee off p in
             Typed.Ptr.mk_ptr_f p' meta
         | TLiteral (TFloat fp), TLiteral (TFloat _) -> (
             let v1 = Typed.cast_f fp v1 and v2 = Typed.cast_f fp v2 in
@@ -918,7 +919,7 @@ module Make (StateImpl : State.S) = struct
             let fields =
               Layout.Fields_shape.shape_for_variant variant layout.fields
             in
-Typed.as_any @@ Layout.Fields_shape.offset_of field fields)
+            Typed.as_any @@ Layout.Fields_shape.offset_of field fields)
     | Discriminant place ->
         if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
           let open OptionM in
@@ -939,7 +940,7 @@ Typed.as_any @@ Layout.Fields_shape.offset_of field fields)
               | _ -> none ())
         (* If a type doesn't have variants, return 0.
            https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
-          else ok ( U8.(0s))
+          else ok U8.(0s)
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
         let variants = Crate.as_enum adt in
@@ -994,8 +995,8 @@ Typed.as_any @@ Layout.Fields_shape.offset_of field fields)
               ok (Some (Typed.cast_i Usize meta))
           | TRawPtr _ | TRef _ -> ok (Some Typed.(Ptr.ptr_of @@ cast_ptr_f ptr))
           | elms ->
-              L.failwith "unexpected meta type in AggregatedRawPtr: %a"
-                pp_ty meta_ty
+              L.failwith "unexpected meta type in AggregatedRawPtr: %a" pp_ty
+                meta_ty
         in
         Typed.Ptr.mk_ptr_f ptr meta
     (* Array repetition *)
