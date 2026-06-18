@@ -6,6 +6,7 @@ void __soteria___assert(int x);
 #define __extension__
 #define __PRETTY_FUNCTION__ "__PRETTY_FUNCTION__"
 #define __restrict
+#define __inline
 
 // Dealing with Apple extensions
 // Uncomment this or pass "-fno-blocks" to clang's cpp
