@@ -89,6 +89,7 @@ module BitVec : sig
 
   val min : signed:bool -> ([< T.sint ] as 'a) t -> 'a t -> 'a t
   val max : signed:bool -> ([< T.sint ] as 'a) t -> 'a t -> 'a t
+  val sure_is_zero : [< T.sint ] t -> bool
 end
 
 module BV = BitVec

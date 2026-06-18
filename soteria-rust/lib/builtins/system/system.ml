@@ -38,7 +38,7 @@ module M (StateM : State.StateM.S) = struct
       (stub, generics.types, generics.const_generics, args)
     with
     | StdEnvVarInner, [], [], [ key ] ->
-        let key = as_ptr key in
+        let key = Typed.cast_ptr_f key in
         inner ~fun_sig:_fun_sig ~key
     | StdSysRandomHashmapRandomKeys, [], [], [] ->
         hashmap_random_keys ~fun_sig:_fun_sig

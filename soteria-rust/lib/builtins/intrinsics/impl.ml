@@ -34,7 +34,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let arith_offset ~t ~dst ~offset =
     let dst, meta = Typed.Ptr.split dst in
-    let+ dst' = Sptr.offset ~signed:true ~check:false ~ty:t offset dst in
+    let+ dst' = Sptr.offset ~ty:t offset dst in
     Typed.Ptr.mk_ptr_f dst' meta
 
   let offset ~ptr ~delta ~dst ~offset =
@@ -125,13 +125,16 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* old = State.load dst t in
     match (t, u) with
     | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
-        let old_ptr, meta = as_ptr old in
-        let* new_ptr = ptr_op (as_base_i Usize src) old_ptr in
-        let+ () = State.store dst t (Ptr (new_ptr, meta)) in
-        old
+        let old_ptr, meta = Typed.Ptr.split @@ Typed.cast_ptr_f old in
+        let* new_ptr = ptr_op (Typed.cast_i Usize src) old_ptr in
+        let new_ptr = Typed.Ptr.mk_ptr_f new_ptr meta in
+        let+ () = State.store dst t new_ptr in
+        Typed.as_any old
     | TLiteral lit, _ ->
-        let* res = int_op lit (as_base lit old) (as_base lit src) in
-        let+ () = State.store dst t (Int res) in
+        let old = Typed.cast_lit lit old in
+        let src = Typed.cast_lit lit src in
+        let* res = int_op lit old src in
+        let+ () = State.store dst t res in
         old
     | _ -> not_impl "atomic read-modify-write on unexpected type %a" pp_ty t
 
@@ -180,9 +183,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     match t with
     | TLiteral lit ->
         let* old = State.load dst t in
-        let+ () =
-          State.store dst t (Int (f (as_base lit old) (as_base lit src)))
-        in
+        let old = Typed.cast_lit lit old in
+        let src = Typed.cast_lit lit src in
+        let+ () = State.store dst t (f old src) in
         old
     | _ -> not_impl "atomic read-modify-write on non-integer type %a" pp_ty t
 
@@ -515,8 +518,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let rec aux ?res ?(inc = one) l r len =
       if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
-        let* l = Sptr.offset  inc l in
-        let* r = Sptr.offset  inc r in
+        let* l = Sptr.offset inc l in
+        let* r = Sptr.offset inc r in
         let l_full = Typed.Ptr.mk_ptr_f l None in
         let r_full = Typed.Ptr.mk_ptr_f r None in
         let* bl = State.load l_full byte in
@@ -547,10 +550,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       We optimise the path where pointers don't have the same provenance to
       avoid spuriously decaying pointers. *)
   let check_overlap name l r size =
-let l, _ = Typed.Ptr.split l in
-let r, _ = Typed.Ptr.split r in
+    let l, _ = Typed.Ptr.split l in
+    let r, _ = Typed.Ptr.split r in
 
-let same_provenance = Sptr.have_same_provenance l r in
+    let same_provenance = Sptr.have_same_provenance l r in
     if%sure not same_provenance then ok ()
     else
       let* l_end = Sptr.offset size l in
@@ -704,7 +707,7 @@ let same_provenance = Sptr.have_same_provenance l r in
     let adt = ty_as_adt t in
     if Crate.is_enum adt then State.load_discriminant v t
     (* FIXME: this size is probably wrong *)
-      else ok ( U8.(0s))
+      else ok U8.(0s)
 
   let disjoint_bitor ~t ~a ~b =
     let ty = TypesUtils.ty_as_literal t in

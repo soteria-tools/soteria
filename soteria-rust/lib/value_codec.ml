@@ -191,10 +191,10 @@ struct
             if match tag_ty with TInt Isize | TUInt Usize -> true | _ -> false
             then
               let+ v = query (unit_ptr, offset +!!@ tag_ofs) in
-              `Ptr (Typed.Ptr.ptr_of (as_ptr v))
+              `Ptr (Typed.Ptr.ptr_of (Typed.cast_ptr_f v))
             else
               let+ v = query (TLiteral tag_ty, offset +!!@ tag_ofs) in
-              `Int (as_base tag_ty v)
+              `Int (Typed.cast_lit tag_ty v)
           in
           let pp_tag ft = function
             | `Int v -> Typed.ppa ft v
@@ -653,8 +653,7 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
         "losing concrete value in %a -> %a; somewhere we lost track of generics"
         Typed.ppa v pp_ty to_ty
   | _, _ ->
-      not_impl "transmute_one: unsupported %a -> %a" Typed.ppa v pp_ty
-        to_ty
+      not_impl "transmute_one: unsupported %a -> %a" Typed.ppa v pp_ty to_ty
 
 (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
     [ty]: the returned value will have the right structure, and any required
@@ -719,12 +718,10 @@ let rec nondet_raw :
           in
           let+ bytes = nondet (Typed.t_int (sizei * 8)) in
           Ok (Typed.Adt.mk_union adt [ (bytes, Usize.(0s)) ])
-      | ty ->
-          Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a"
-            Types.pp_type_decl_kind ty)
+      | ty -> not_impl "nondet: unsupported type %a" Types.pp_type_decl_kind ty)
   | TPattern (inner, _) -> nondet_raw inner
   | TVar (Free id) -> Result.ok (Typed.Adt.mk_poly id)
-  | ty -> Fmt.kstr Rustsymex.not_impl "nondet: unsupported type %a" pp_ty ty
+  | ty -> not_impl "nondet: unsupported type %a" pp_ty ty
 
 (** Much like {!nondet_raw}, but also assumes validity invariants for the value,
     with {!validity}. Note this uses "stateless" validity: references are not

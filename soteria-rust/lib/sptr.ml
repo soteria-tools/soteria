@@ -24,8 +24,15 @@ module type DecayMapS = sig
   module SM : sig
     include module type of SM
 
-    val not_impl : string -> 'a t
-    val of_opt_not_impl : string -> 'a option -> 'a t
+    val not_impl :
+      ?tip:string * string option ->
+      ?issue:int ->
+      ('a, Format.formatter, unit, 'b t) format4 ->
+      'a
+
+    val of_opt_not_impl :
+      ?tip:string * string option -> ?issue:int -> string -> 'a option -> 'a t
+
     val match_on : 'a list -> constr:('a -> sbool Typed.t) -> 'a option t
     val get_where : unit -> Trace.t t
   end
@@ -200,8 +207,9 @@ let has_provenance ptr = Typed.not (Typed.Ptr.is_at_null_loc' ptr)
 
 (** Returns a symbolic boolean characterising whether the pointer is in bound to
     its allocation. *)
-let in_bound { ptr; size; _ } =
-  let ofs = Typed.Ptr.ofs ptr in
+let in_bound ptr =
+  let size = Typed.Ptr.size_of ptr in
+  let ofs = Typed.Ptr.ofs' ptr in
   Usize.(0s) <=@ ofs &&@ (ofs <@ size)
 
 (** Creates a dangling pointer to the given type, if that type is a ZST; returns

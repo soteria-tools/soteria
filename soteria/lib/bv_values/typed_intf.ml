@@ -83,6 +83,14 @@ module type S = sig
   type +'a t
   type sbool = T.sbool
 
+  (** In which signedness(es) a checked arithmetic operation is known not to
+      overflow. *)
+  type checked
+
+  val checked_both : checked
+  val unchecked : checked
+  val checked_of_signed : bool -> checked
+
   (** Basic value operations *)
 
   val is_bool_ty : 'a ty -> bool
@@ -190,13 +198,13 @@ module type S = sig
     val to_z : [< any ] t -> Z.t option
 
     (* arithmetic *)
-    val add : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-    val sub : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-    val mul : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+    val add : ?checked:checked -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+    val sub : ?checked:checked -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+    val mul : ?checked:checked -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
     val div : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
     val rem : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
     val mod_ : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-    val neg : [< sint ] t -> [> sint_ovf ] t
+    val neg : ?checked:bool -> [< sint ] t -> [> sint_ovf ] t
 
     (* overflow checks *)
     val add_overflows :
@@ -358,6 +366,7 @@ module type S = sig
     val ( +!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
     val ( -!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
     val ( *!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+    val ( ~-!! ) : [< sint ] t -> [> sint ] t
 
     (* arithmetic operations for checked operations *)
     val ( +?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t

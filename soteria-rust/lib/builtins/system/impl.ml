@@ -1,5 +1,6 @@
 open Charon
 open Svalue
+open Common.Charon_util
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
@@ -9,30 +10,23 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     map Typed.cast_any_adt @@ Value_codec.nondet_valid fun_sig.output
 
   (** {@rust[
-        fn getenv(k: &OsStr) -> Option<OsString>
+        fn inner(key: &OsStr) -> Result<String, VarError>
+
+        pub enum VarError {
+            NotPresent,
+            NotUnicode(OsString),
+        }
       ]}
       HACK: we assume that hitting the environment never finds the variable
       we're looking for. Under-approximating behaviour. *)
   let inner ~(fun_sig : Types.fun_sig) ~key:_ =
+    let out_res = ty_as_adt fun_sig.output in
     let var_error_ty =
-      match fun_sig.output with
-      | TAdt { id = TAdtId id; _ } -> (
-          let tydecl = Crate.get_adt_raw id in
-          let name = tydecl.item_meta.name in
-
-          match List.last_opt name with
-          | Some
-              (PeInstantiated
-                 { binder_value = { types = [ _string; var_error_ty ]; _ }; _ })
-            ->
-              Common.Charon_util.ty_as_adt var_error_ty
-          | _ ->
-              L.failwith
-                "std::env::_var: unexpected type Result<_, VarError> (%a)"
-                Types.pp_ty fun_sig.output)
-      | _ ->
-          L.failwith "std::env::_var: unexpected return type %a"
-            Charon.Types.pp_ty fun_sig.output
+      let err =
+        Crate.as_enum out_res
+        |> List.find (fun (v : Types.variant) -> v.variant_name = "Err")
+      in
+      ty_as_adt (List.hd err.fields).field_ty
     in
     (* We need to return the rust value `Err(VarError::NotPresent)`. `Err` is
        variant 1 in the Result enum, and `VarError` is defined as:
@@ -41,8 +35,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
        So the variant of NotPresent is 0 *)
     let var_error = Typed.Adt.Checked.mk_enum var_error_ty "NotPresent" [] in
-    let res = Typed.Adt.Checked.mk_enum out "Err" [ var_error ] in
-    StateM.ok res
+    ok @@ Typed.Adt.Checked.mk_enum out_res "Err" [ var_error ]
 
   (** HACK: We under-approximate and always return 1. *)
   let available_parallelism ~(fun_sig : Types.fun_sig) =

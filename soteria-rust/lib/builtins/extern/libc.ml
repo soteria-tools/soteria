@@ -23,7 +23,7 @@ module M (StateM : State.StateM.S) = struct
   let malloc args =
     let size =
       match args with
-      | [ Int size ] -> Typed.cast_i Usize size
+      | [ size ] -> Typed.cast_i Usize size
       | _ -> L.failwith "malloc: invalid arguments"
     in
     let max_size = Typed.BitVec.usize (Layout.max_value_z (TInt Isize)) in
@@ -31,17 +31,18 @@ module M (StateM : State.StateM.S) = struct
     (* we under-approximate here: the alignment can be smaller (its min size is
        the first power of 2 greater than or equal to the requested size) *)
     let align = Typed.BitVec.usizeinz (2 * Crate.pointer_size ()) in
-    let+ ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
-    Ptr ptr
+    State.alloc_untyped ~zeroed:false ~size ~align ()
 
   let free args =
     match args with
-    | [ Ptr ((ptr_in, _) as ptr) ] ->
+    | [ ptr ] ->
         (* [free(NULL)] is a no-op. *)
-        if%sat Sptr.is_null ptr_in then ok (Tuple [])
+        let ptr = Typed.cast_ptr_f ptr in
+        let ptr_in = Typed.Ptr.ptr_of ptr in
+        if%sat Sptr.is_null ptr_in then ok (Typed.Adt.mk_tuple [])
         else
           let+ () = State.free ptr in
-          Tuple []
+          Typed.Adt.mk_tuple []
     | _ -> L.failwith "free: invalid arguments"
 
   let sysconf _args =

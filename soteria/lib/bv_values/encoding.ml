@@ -50,7 +50,7 @@ module Make (Typed : Typed_intf.S) = struct
     | BvExtend (true, by) -> bv_sign_extend by
     | BvExtend (false, by) -> bv_zero_extend by
     | BvNot -> bv_not
-    | Neg -> bv_neg
+    | Neg _ -> bv_neg
     | FIs fc -> fp_is (FloatClass.as_fpclass fc)
     | FRound rm -> fp_round (rm_to_smt rm)
 

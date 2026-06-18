@@ -144,7 +144,7 @@ struct
       | Unop (Unop.BvNot, e') -> learn s e' (BitVec.not v)
       (* Arithmetic negation is self-inverse mod 2^n: Neg(e') = v => e' =
          Neg(v) *)
-      | Unop (Unop.Neg, e') -> learn s e' (BitVec.neg v)
+      | Unop (Unop.Neg _, e') -> learn s e' (BitVec.neg v)
       (* Bit extension: BvExtend(false, by)(e') = v => e' = extract(lower bits
          of v). This is valid whether the extension is signed or unsigned. *)
       | Unop (Unop.BvExtend (_, _by), e') ->

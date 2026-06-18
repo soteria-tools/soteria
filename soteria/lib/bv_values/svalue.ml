@@ -435,6 +435,12 @@ module Make (V : Value_ext) = struct
     let vs = sort (fun l r -> Int.compare l.tag r.tag) vs in
     Nop (op, vs)
 
+  type nonrec checked = checked = { signed : bool; unsigned : bool }
+
+  let unchecked = unchecked
+  let checked_both = checked_both
+  let checked_of_signed = checked_of_signed
+
   (** {2 Operator declarations} *)
 
   module type Bool = sig

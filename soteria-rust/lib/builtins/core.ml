@@ -158,7 +158,7 @@ module M (StateM : State.StateM.S) = struct
           (* Fast path: if two pointer have the same provenance, it's enough to
              compare their offsets *)
           let+ meta_eq = eval_meta_eq meta_l meta_r in
-          BV.of_bool (meta_eq &&@ (Sptr.ofs l ==@ Sptr.ofs r))
+          BV.of_bool (meta_eq &&@ (Typed.Ptr.ofs' l ==@ Typed.Ptr.ofs' r))
         else if%sure
           (not same_provenance) &&@ null_or_in_bound l &&@ null_or_in_bound r
         then

@@ -198,7 +198,7 @@ module type S = sig
       (Typed.([> T.any ] t), 'env) t
 
     val load_discriminant :
-      Typed.([< T.sptr_f ] t) -> Types.ty -> (Typed.([< T.sint ] t), 'env) t
+      Typed.([< T.sptr_f ] t) -> Types.ty -> (Typed.([> T.sint ] t), 'env) t
 
     val store :
       Typed.([< T.sptr_f ] t) ->

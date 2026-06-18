@@ -48,7 +48,7 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext)) = struct
     | BvExtract (from, to_) -> BitVec.extract from to_
     | BvExtend (signed, by) -> BitVec.extend ~signed by
     | BvNot -> BitVec.not
-    | Neg -> BitVec.neg
+    | Neg checked -> BitVec.neg ~checked
     | FIs fc -> Float.is_floatclass fc
     | FRound rm -> Float.round rm
 

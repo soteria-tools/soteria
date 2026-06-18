@@ -48,7 +48,7 @@ module M (StateM : State.StateM.S) = struct
     | SoteriaNondetBytes, _, _, _ -> nondet_bytes ~types:generics.types ~args
     | SoteriaPanic, _, _, _ -> soteria_panic ~args
     | _, tys, cs, args ->
-        Fmt.kstr not_impl
+        not_impl
           "Custom stub found but called with the wrong arguments; got:@.Types: \
            %a@.Consts: %a@.Args: %a"
           Fmt.(list ~sep:comma Charon_util.pp_ty)
