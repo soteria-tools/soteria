@@ -479,7 +479,13 @@ let rec pp : type a. Format.formatter -> a t -> unit =
       if size mod 4 <> 0 then
         pf ft "0b%s" (Z.format ("0" ^ string_of_int size ^ "b") bv)
       else pf ft "0x%s" (Z.format ("0" ^ string_of_int (size / 4) ^ "x") bv)
-  | LocLit z -> pf ft "L%s" (Z.to_string z)
+  | LocLit z ->
+      (* Render concrete locations exactly like the bitvectors they used to be
+         (before locations became a distinct kind), to keep output stable. *)
+      let size = size_of t.node.ty in
+      if size mod 4 <> 0 then
+        pf ft "0b%s" (Z.format ("0" ^ string_of_int size ^ "b") z)
+      else pf ft "0x%s" (Z.format ("0" ^ string_of_int (size / 4) ^ "x") z)
   | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
   | Seq l -> pf ft "%a" (brackets (list ~sep:comma (fun ft x -> pp ft x))) l
   | Ite (c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
@@ -1058,6 +1064,7 @@ module rec Bool : Bool = struct
     | Bool b1, Bool b2 -> of_bool (b1 = b2)
     | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
     | BitVec b1, BitVec b2 -> of_bool (Z.equal b1 b2)
+    | LocLit b1, LocLit b2 -> of_bool (Z.equal b1 b2)
     (* Arithmetics *)
     | BitVec _, UnBv (Neg _, v2) -> sem_eq (BitVec.neg v1) v2
     | UnBv (Neg _, v1), BitVec _ -> sem_eq v1 (BitVec.neg v2)
