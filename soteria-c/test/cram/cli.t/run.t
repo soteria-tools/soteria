@@ -114,10 +114,6 @@
          -f FUNCTION_NAME
              List of functions to analyse
   
-         --no-c23 (absent SOTERIA_NO_C23 env)
-             Disable C23 support (even if the underlying Cerberus library
-             supports it).
-  
          --no-ignore-duplicate-symbols (absent
          SOTERIA_NO_IGNORE_DUPLICATE_SYMBOLS env)
              Programs that contain duplicate symbols are ignored by default,
@@ -213,9 +209,6 @@
   
          SOTERIA_IGNORE_UB
              See option --ignore-ub.
-  
-         SOTERIA_NO_C23
-             See option --no-c23.
   
          SOTERIA_NO_IGNORE_DUPLICATE_SYMBOLS
              See option --no-ignore-duplicate-symbols.
@@ -332,10 +325,6 @@
          -I DIR
              Add a directory to the include path
   
-         --no-c23 (absent SOTERIA_NO_C23 env)
-             Disable C23 support (even if the underlying Cerberus library
-             supports it).
-  
          --no-ignore-duplicate-symbols (absent
          SOTERIA_NO_IGNORE_DUPLICATE_SYMBOLS env)
              Programs that contain duplicate symbols are ignored by default,
@@ -448,9 +437,6 @@
   
          SOTERIA_INFINITE_FUEL
              See option --infinite-fuel.
-  
-         SOTERIA_NO_C23
-             See option --no-c23.
   
          SOTERIA_NO_IGNORE_DUPLICATE_SYMBOLS
              See option --no-ignore-duplicate-symbols.
@@ -571,10 +557,6 @@
          -I DIR
              Add a directory to the include path
   
-         --no-c23 (absent SOTERIA_NO_C23 env)
-             Disable C23 support (even if the underlying Cerberus library
-             supports it).
-  
          --no-ignore-duplicate-symbols (absent
          SOTERIA_NO_IGNORE_DUPLICATE_SYMBOLS env)
              Programs that contain duplicate symbols are ignored by default,
@@ -670,9 +652,6 @@
   
          SOTERIA_IGNORE_UB
              See option --ignore-ub.
-  
-         SOTERIA_NO_C23
-             See option --no-c23.
   
          SOTERIA_NO_IGNORE_DUPLICATE_SYMBOLS
              See option --no-ignore-duplicate-symbols.
@@ -786,10 +765,6 @@
          -I DIR
              Add a directory to the include path
   
-         --no-c23 (absent SOTERIA_NO_C23 env)
-             Disable C23 support (even if the underlying Cerberus library
-             supports it).
-  
          --no-ignore-duplicate-symbols (absent
          SOTERIA_NO_IGNORE_DUPLICATE_SYMBOLS env)
              Programs that contain duplicate symbols are ignored by default,
@@ -885,9 +860,6 @@
   
          SOTERIA_IGNORE_UB
              See option --ignore-ub.
-  
-         SOTERIA_NO_C23
-             See option --no-c23.
   
          SOTERIA_NO_IGNORE_DUPLICATE_SYMBOLS
              See option --no-ignore-duplicate-symbols.

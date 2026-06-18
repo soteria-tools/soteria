@@ -114,6 +114,7 @@ let rec layout_of ty =
       let+ align = align_of_float_ty fty in
       { size; align; members_ofs = [] }
   | Pointer _ -> layout_of (Ctype ([], Basic (Integer Size_t)))
+  | Byte -> layout_of (Ctype ([], Basic (Integer (Unsigned Ichar))))
   | Struct tag -> layout_of_struct tag
   | Union tag ->
       let* _loc, def = Tag_defs.find_opt tag in
@@ -333,10 +334,11 @@ let constraints ~ty v =
     [%l.debug "Constraints for %a: %s" Fmt_ail.pp_ty ty msg];
     None
 
-let nondet_c_ty_ (ty : ctype_) : Typed.T.cval Typed.t Csymex.t =
+let rec nondet_c_ty_ (ty : ctype_) : Typed.T.cval Typed.t Csymex.t =
   let open Csymex.Syntax in
   match ty with
   | Void -> Csymex.return Usize.(0s)
+  | Byte -> nondet_c_ty_ (Basic (Integer (Unsigned Ichar)))
   | Pointer _ ->
       let* loc = Csymex.nondet Typed.t_loc in
       let* ofs = Csymex.nondet Typed.t_usize in
