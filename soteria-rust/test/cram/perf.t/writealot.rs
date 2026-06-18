@@ -73,5 +73,5 @@ fn access(x: &mut u32) {
 fn main() {
     let mut x = 0;
     access(&mut x);
-    assert_eq!(x, 200_000);
+    assert_eq!(x, 100_000);
 }
