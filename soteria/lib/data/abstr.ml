@@ -27,7 +27,7 @@ module M (Symex : Symex.Base) = struct
     val to_syn : t -> syn
 
     (** Given a substitution, casts a syntactic object to a semantic object. *)
-    val subst : (Value.Expr.t -> 'a Value.t) -> syn -> t
+    val subst : (Value.Expr.t -> Value.Expr.packed_v) -> syn -> t
 
     (** [learn_eq s t] extends the substitution [θ] of the consumer monad such
         that all variables of [s] are bound and [θ(s) = t] (or fails to do so).

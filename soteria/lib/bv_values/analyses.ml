@@ -11,15 +11,17 @@ module type S = sig
 
   (** Simplifies a constraints using the current knowledge base, without
       updating it. *)
-  val simplify : t -> Svalue.t -> Svalue.t
+  val simplify : t -> 'a Svalue.t -> 'a Svalue.t
 
   (** Adds a constraint to the current analysis, updating the currently tracked
       data. *)
-  val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
+  val add_constraint :
+    t -> Svalue.sbool Svalue.t -> Svalue.sbool Svalue.t * Var.Set.t
 
   (** Filters the given iterator of symbolic values, keeping only those relevant
       to the given variable according to the analysis. *)
-  val filter : t -> Var.t -> Svalue.ty -> Svalue.t Iter.t -> Svalue.t Iter.t
+  val filter :
+    t -> Var.t -> 'a Svalue.ty -> 'a Svalue.t Iter.t -> 'a Svalue.t Iter.t
 
   (** Encode all the information relevant to the given variables and conjuncts
       them with the given accumulator. *)
@@ -81,7 +83,7 @@ module Interval : S = struct
     let to_bv n x = Z.(x land pred (one lsl n))
   end
 
-  let mk_var n v : Svalue.t = Svalue.mk_var v (TBitVector n)
+  let mk_var n v : Svalue.sbv Svalue.t = Svalue.mk_var v (TBitVector n)
   let mk_var_ty n v : Typed.T.sint Typed.t = Typed.mk_var v (Typed.t_int n)
   let max_for n = Z.(pred (shift_left one n))
 
@@ -285,7 +287,7 @@ module Interval : S = struct
            additional PC assertions. *)
         (Svalue.Bool.v_true, Var.Set.singleton var, st)
 
-  let rec as_range (v : Svalue.t) =
+  let rec as_range (v : Svalue.sbool Svalue.t) =
     (* For the inequalities, see https://ceur-ws.org/Vol-1617/paper8.pdf *)
     match v.node.kind with
     (*
@@ -293,7 +295,7 @@ module Interval : S = struct
      *  • c1 < c2 => ~[ -c2; c1 - c2 - 1 ]
      *  • c1 >= c2 => [ c1 - c2; -c2 - 1 ]
      *)
-    | Binop
+    | BvCmp
         ( ((Lt false | Leq false) as bop),
           { node = { kind = BitVec c1; ty = TBitVector size }; _ },
           {
@@ -301,11 +303,11 @@ module Interval : S = struct
               {
                 kind =
                   ( Var v
-                  | Binop
+                  | BvArith
                       ( Add _,
                         { node = { kind = Var v; _ }; _ },
                         { node = { kind = BitVec _; _ }; _ } )
-                  | Binop
+                  | BvArith
                       ( Add _,
                         { node = { kind = BitVec _; _ }; _ },
                         { node = { kind = Var v; _ }; _ } ) ) as rhs;
@@ -317,8 +319,8 @@ module Interval : S = struct
         let c2 =
           match rhs with
           | Var _ -> Z.zero
-          | Binop (Add _, { node = { kind = BitVec c2; _ }; _ }, _)
-          | Binop (Add _, _, { node = { kind = BitVec c2; _ }; _ }) ->
+          | BvArith (Add _, { node = { kind = BitVec c2; _ }; _ }, _)
+          | BvArith (Add _, _, { node = { kind = BitVec c2; _ }; _ }) ->
               c2
           | _ -> L.failwith "unreachable"
         in
@@ -332,18 +334,18 @@ module Interval : S = struct
      *  • c1 <= c2 => ~[ c2 - c1 + 1; -c1 - 1 ]
      *  • c1 > c2 => [ -c1; -c1 + c2 ]
      *)
-    | Binop
+    | BvCmp
         ( ((Lt false | Leq false) as bop),
           {
             node =
               {
                 kind =
                   ( Var v
-                  | Binop
+                  | BvArith
                       ( Add _,
                         { node = { kind = Var v; _ }; _ },
                         { node = { kind = BitVec _; _ }; _ } )
-                  | Binop
+                  | BvArith
                       ( Add _,
                         { node = { kind = BitVec _; _ }; _ },
                         { node = { kind = Var v; _ }; _ } ) ) as lhs;
@@ -355,8 +357,8 @@ module Interval : S = struct
         let c1 =
           match lhs with
           | Var _ -> Z.zero
-          | Binop (Add _, { node = { kind = BitVec c1; _ }; _ }, _)
-          | Binop (Add _, _, { node = { kind = BitVec c1; _ }; _ }) ->
+          | BvArith (Add _, { node = { kind = BitVec c1; _ }; _ }, _)
+          | BvArith (Add _, _, { node = { kind = BitVec c1; _ }; _ }) ->
               c1
           | _ -> L.failwith "unreachable"
         in
@@ -368,7 +370,7 @@ module Interval : S = struct
      *  • c1 < 2^{n-1} => ~[ c1 + 1; 2^{n-1} - 1 ]
      *  • c1 >= 2^{n-1} => [ 2^{n-1}; c1 ]
      *)
-    | Binop
+    | BvCmp
         ( ((Lt true | Leq true) as binop),
           { node = { kind = Var v; _ }; _ },
           { node = { kind = BitVec c1; ty = TBitVector size }; _ } ) ->
@@ -381,7 +383,7 @@ module Interval : S = struct
      *  • c1 < 2^{n-1} => [ c1; 2^{n-1} - 1 ]
      *  • c1 >= 2^{n-1} => ~[ 2^{n-1}; c1 - 1 ]
      *)
-    | Binop
+    | BvCmp
         ( ((Lt true | Leq true) as binop),
           { node = { kind = BitVec c1; ty = TBitVector size }; _ },
           { node = { kind = Var v; _ }; _ } ) ->
@@ -391,18 +393,16 @@ module Interval : S = struct
         if c1 < mid then Some (v, size, (Pos, (c1, mid - one)))
         else Some (v, size, (Neg, (mid, c1 - one)))
     (* Simple equality *)
-    | Binop
-        ( Eq,
-          { node = { kind = BitVec x; ty = TBitVector size }; _ },
+    | Eq
+        ( { node = { kind = BitVec x; ty = TBitVector size }; _ },
           { node = { kind = Var v; _ }; _ } )
-    | Binop
-        ( Eq,
-          { node = { kind = Var v; _ }; _ },
+    | Eq
+        ( { node = { kind = Var v; _ }; _ },
           { node = { kind = BitVec x; ty = TBitVector size }; _ } ) ->
         Some (v, size, (Pos, (x, x)))
     (* This only works for a single fact; we can't apply this to [!(A && B)],
        since that's a disjunction! *)
-    | Unop (Not, v) ->
+    | UnBool (Not, v) ->
         Option.map
           (fun (v1, size, (sign, range)) ->
             (v1, size, ((if sign = Neg then Pos else Neg), range)))
@@ -418,10 +418,10 @@ module Interval : S = struct
       if it was deemed unfeasible), [learnt] is additional facts learnt from the
       simplified formula, [dirty] is the set of variables whose ranges changed,
       and [st] is the updated state. *)
-  let rec add_constraint (v : Svalue.t) st :
-      Svalue.t * Svalue.t * Var.Set.t * st =
+  let rec add_constraint (v : Svalue.sbool Svalue.t) st :
+      Svalue.sbool Svalue.t * Svalue.sbool Svalue.t * Var.Set.t * st =
     match (v.node.kind, lazy (as_range v)) with
-    | Binop (And, v1, v2), _ ->
+    | BoolBin (And, v1, v2), _ ->
         let v1', learnt1, vars1, st' = add_constraint v1 st in
         let v2', learnt2, vars2, st'' = add_constraint v2 st' in
 
@@ -434,9 +434,9 @@ module Interval : S = struct
         (Svalue.Bool.v_true, learnt, vars, st')
     | _, (lazy None) -> (v, Svalue.Bool.v_true, Var.Set.empty, st)
 
-  let rec simplify (v : Svalue.t) st =
+  let rec simplify_bool (v : Svalue.sbool Svalue.t) st =
     match (v.node.kind, lazy (as_range v)) with
-    | Binop (Or, v1, v2), _ ->
+    | BoolBin (Or, v1, v2), _ ->
         (* [v1 || v2] is valid under [st] iff [¬v1 && ¬v2] is infeasible there.
            Unlike the join of ranges (which over-approximates a union and would
            let us wrongly conclude e.g. [x != 0 || y != 0] is always true),
@@ -452,15 +452,14 @@ module Interval : S = struct
           || Svalue.equal learnt2 Svalue.Bool.v_false
         then Svalue.Bool.v_true
         else v
-    | ( Binop
-          ( Eq,
-            ({ node = { kind = Binop (Lt _, _, _); _ }; _ } as l),
-            ({ node = { kind = Binop (Lt _, _, _); _ }; _ } as r) ),
+    | ( Eq
+          ( ({ node = { kind = BvCmp (Lt _, _, _); ty = TBool }; _ } as l),
+            ({ node = { kind = BvCmp (Lt _, _, _); ty = TBool }; _ } as r) ),
         _ ) ->
-        let l' = simplify l st in
-        let r' = simplify r st in
+        let l' = simplify_bool l st in
+        let r' = simplify_bool r st in
         if Svalue.equal l l' && Svalue.equal r r' then v
-        else Eval.eval_binop Eq l' r'
+        else Svalue.Bool.sem_eq l' r'
     | _, (lazy (Some (var, size, srange))) ->
         let range = get size var st in
         log (fun m ->
@@ -486,7 +485,12 @@ module Interval : S = struct
     else log (fun m -> m "No change.@.");
     ((v' &&@ learnt, vars), st')
 
-  let filter var ty vs st =
+  let simplify : type a. a Svalue.t -> st -> a Svalue.t =
+   fun v st -> match v.node.ty with TBool -> simplify_bool v st | _ -> v
+
+  let filter : type a.
+      Var.t -> a Svalue.ty -> a Svalue.t Iter.t -> st -> a Svalue.t Iter.t =
+   fun var ty vs st ->
     match ty with
     | Svalue.TBitVector n -> (
         let range_opt = Var.Map.find_opt var st in
@@ -533,14 +537,14 @@ module Equality : S = struct
   module UnionFind = UnionFind.Make (UnionFind.StoreMap)
 
   module VMap = PatriciaTree.MakeMap (struct
-    type t = Svalue.t
+    type t = Svalue.packed
 
-    let to_int = Svalue.unique_tag
-    let pp = Svalue.pp
+    let to_int (Svalue.Packed v) = Svalue.unique_tag v
+    let pp ft (Svalue.Packed v) = Svalue.pp ft v
   end)
 
   include Reversible.Make_mutable (struct
-    type t = Svalue.t UnionFind.store * Svalue.t UnionFind.rref VMap.t
+    type t = Svalue.packed UnionFind.store * Svalue.packed UnionFind.rref VMap.t
 
     let default = (UnionFind.new_store (), VMap.empty)
   end)
@@ -550,10 +554,25 @@ module Equality : S = struct
     let uf, st = Dynarray.get_last d in
     Dynarray.add_last d (UnionFind.copy uf, st)
 
-  let rec cost (v : Svalue.t) : int =
+  let rec cost : type a. a Svalue.t -> int =
+   fun v ->
     match v.node.kind with
-    | Binop (op, l, r) -> cost_binop op + cost l + cost r
-    | Unop (op, v) -> cost_unop op + cost v
+    | BvArith (_, l, r) -> 1 + cost l + cost r
+    | BvCmp (_, l, r) -> 1 + cost l + cost r
+    | FArith (_, l, r) -> 3 + cost l + cost r
+    | FCmp (_, l, r) -> 3 + cost l + cost r
+    | BoolBin (_, l, r) -> 1 + cost l + cost r
+    | Eq (l, r) -> 1 + cost l + cost r
+    | UnBv (op, x) -> (match op with FloatOfBv _ -> 4 | _ -> 1) + cost x
+    | UnBool (_, x) -> 1 + cost x
+    | UnFloat (op, x) ->
+        (match op with
+          | FRound _ -> 5
+          | FIs _ -> 5
+          | BvOfFloat _ -> 4
+          | FAbs -> 1)
+        + cost x
+    | UnPtr (_, x) -> 1 + cost x
     | Ite (i, t, e) -> cost i + cost t + cost e
     | Nop (_, vs) -> costs vs
     | Var _ -> 3
@@ -562,83 +581,127 @@ module Equality : S = struct
     | Exists (_, sv) ->
         (* quantifiers are very expensive *)
         cost sv + 1024
-    | Ptr _ | Bool _ | BitVec _ -> 1
+    | Ptr _ | Bool _ | BitVec _ | LocLit _ -> 1
 
-  and costs vs = List.fold_left (fun acc v -> acc + cost v) 0 vs
+  and costs : type a. a Svalue.t list -> int =
+   fun vs -> List.fold_left (fun acc v -> acc + cost v) 0 vs
 
-  and cost_binop : Svalue.Binop.t -> int = function
-    | FAdd | FSub | FMul | FDiv | FEq | FLt | FLeq -> 3
-    | _ -> 1
-
-  and cost_unop : Svalue.Unop.t -> int = function
-    | FRound _ | FIs _ -> 5
-    | BvOfFloat _ | FloatOfBv _ -> 4
-    | _ -> 1
+  let cost_packed (Svalue.Packed v) = cost v
+  let equal_packed (Svalue.Packed a) (Svalue.Packed b) = Svalue.equal a b
 
   let get_or_make v ((uf, refs) as st) =
-    match VMap.find_opt v refs with
+    let key = Svalue.Packed v in
+    match VMap.find_opt key refs with
     | None ->
-        let ref = UnionFind.make uf v in
-        let refs = VMap.add v ref refs in
+        let ref = UnionFind.make uf key in
+        let refs = VMap.add key ref refs in
         (ref, (uf, refs))
     | Some ref -> (ref, st)
 
   let merge v1 v2 (uf, _) =
     ignore
     @@ UnionFind.merge uf
-         (fun v1 v2 -> if cost v1 > cost v2 then v2 else v1)
+         (fun v1 v2 -> if cost_packed v1 > cost_packed v2 then v2 else v1)
          v1 v2
 
-  let find_cheaper_opt v (uf, refs) =
-    VMap.find_opt v refs
-    |> Option.bind @@ fun r ->
-       let v_repr = UnionFind.get uf r in
-       if Svalue.equal v v_repr then None else Some v_repr
+  let find_cheaper_opt : type a. a Svalue.t -> _ -> a Svalue.t option =
+   fun v (uf, refs) ->
+    match VMap.find_opt (Svalue.Packed v) refs with
+    | None -> None
+    | Some r -> (
+        let (Svalue.Packed v_repr) = UnionFind.get uf r in
+        match Svalue.eq_ty v_repr.node.ty v.node.ty with
+        | Some Equal -> if Svalue.equal v v_repr then None else Some v_repr
+        | None -> None)
 
-  let known_eq v1 v2 (uf, refs) : bool =
-    match (VMap.find_opt v1 refs, VMap.find_opt v2 refs) with
+  let known_eq : type a b. a Svalue.t -> b Svalue.t -> _ -> bool =
+   fun v1 v2 (uf, refs) ->
+    match
+      ( VMap.find_opt (Svalue.Packed v1) refs,
+        VMap.find_opt (Svalue.Packed v2) refs )
+    with
     | Some r1, Some r2 -> UnionFind.eq uf r1 r2
     | _ -> false
 
-  let eval_var (uf, refs) var _ _ =
-    VMap.find_opt var refs |> Option.fold ~none:var ~some:(UnionFind.get uf)
+  let eval_var_rec (uf, refs) : Eval.eval_var =
+    {
+      ev =
+        (fun (type a) (value : a Svalue.t) _var (_ty : a Svalue.ty) ->
+          match VMap.find_opt (Svalue.Packed value) refs with
+          | None -> value
+          | Some r -> (
+              let (Svalue.Packed repr) = UnionFind.get uf r in
+              match Svalue.eq_ty repr.node.ty value.node.ty with
+              | Some Equal -> repr
+              | None -> value));
+    }
 
-  let simplify (v : Svalue.t) st =
-    let rec simplify ~fuel v =
+  let simplify : type a. a Svalue.t -> _ -> a Svalue.t =
+   fun v st ->
+    let rec aux : type b. fuel:int -> b Svalue.t -> b Svalue.t =
+     fun ~fuel v ->
       if fuel - 1 <= 0 then v
       else
-        let simplify = simplify ~fuel:(fuel - 1) in
+        let simplify v = aux ~fuel:(fuel - 1) v in
         match find_cheaper_opt v st with
         | Some v' -> v'
         | None -> (
             match v.node.kind with
-            | Binop ((Eq | Leq _), l, r) when known_eq l r st ->
-                Svalue.Bool.v_true
-            | Binop (Lt _, l, r) when known_eq l r st -> Svalue.Bool.v_false
-            | Binop (op, l, r) ->
-                let l' = simplify l in
-                let r' = simplify r in
+            | Eq (l, r) when known_eq l r st -> Svalue.Bool.v_true
+            | BvCmp (Leq _, l, r) when known_eq l r st -> Svalue.Bool.v_true
+            | BvCmp (Lt _, l, r) when known_eq l r st -> Svalue.Bool.v_false
+            | BvArith (op, l, r) ->
+                let l' = simplify l and r' = simplify r in
                 if Svalue.equal l l' && Svalue.equal r r' then v
-                else Eval.eval_binop op l' r'
-            | Unop (op, x) ->
+                else Eval.eval_arith op l' r'
+            | BvCmp (op, l, r) ->
+                let l' = simplify l and r' = simplify r in
+                if Svalue.equal l l' && Svalue.equal r r' then v
+                else Eval.eval_cmp op l' r'
+            | FArith (op, l, r) ->
+                let l' = simplify l and r' = simplify r in
+                if Svalue.equal l l' && Svalue.equal r r' then v
+                else Eval.eval_farith op l' r'
+            | FCmp (op, l, r) ->
+                let l' = simplify l and r' = simplify r in
+                if Svalue.equal l l' && Svalue.equal r r' then v
+                else Eval.eval_fcmp op l' r'
+            | BoolBin (op, l, r) ->
+                let l' = simplify l and r' = simplify r in
+                if Svalue.equal l l' && Svalue.equal r r' then v
+                else Eval.eval_boolean op l' r'
+            | Eq (l, r) ->
+                let l' = simplify l and r' = simplify r in
+                if Svalue.equal l l' && Svalue.equal r r' then v
+                else Svalue.Bool.sem_eq l' r'
+            | UnBv (op, x) ->
                 let x' = simplify x in
-                if Svalue.equal x x' then v else Eval.eval_unop op x'
+                if Svalue.equal x x' then v else Eval.eval_on_bv op x'
+            | UnBool (op, x) ->
+                let x' = simplify x in
+                if Svalue.equal x x' then v else Eval.eval_on_bool op x'
+            | UnFloat (op, x) ->
+                let x' = simplify x in
+                if Svalue.equal x x' then v else Eval.eval_on_float op x'
+            | UnPtr (op, x) ->
+                let x' = simplify x in
+                if Svalue.equal x x' then v else Eval.eval_on_ptr op x'
             | _ -> v)
     in
-    Eval.eval ~eval_var:(eval_var st) v |> simplify ~fuel:3
+    Eval.eval ~eval_var:(eval_var_rec st) v |> aux ~fuel:3
 
   let add_vars v s =
     Svalue.iter_vars v |> Iter.fold (fun s (v, _) -> Var.Set.add v s) s
 
-  let add_constraint (v : Svalue.t) st =
+  let add_constraint (v : Svalue.sbool Svalue.t) st =
     match v.node.kind with
-    | Binop (Eq, v1, v2) ->
+    | Eq (v1, v2) ->
         let vars = Var.Set.empty |> add_vars v1 |> add_vars v2 in
         let v1, st = get_or_make v1 st in
         let v2, st = get_or_make v2 st in
         merge v1 v2 st;
         ((Svalue.Bool.v_true, vars), st)
-    | Unop (Not, { node = { kind = Nop (Distinct, hd :: tl); _ }; _ }) ->
+    | UnBool (Not, { node = { kind = Nop (Distinct, hd :: tl); _ }; _ }) ->
         let vars = add_vars hd Var.Set.empty in
         let v1, st = get_or_make hd st in
         let rec aux vars st = function
@@ -656,7 +719,9 @@ module Equality : S = struct
   (** In equality analysis we can be certain of the value of a variable, so we
       can entirely replace the set of possible values [vs] with the
       representative value (if any). *)
-  let filter var ty vs st =
+  let filter : type a.
+      Var.t -> a Svalue.ty -> a Svalue.t Iter.t -> _ -> a Svalue.t Iter.t =
+   fun var ty vs st ->
     let v = Svalue.mk_var var ty in
     match find_cheaper_opt v st with
     | None -> vs
@@ -664,7 +729,7 @@ module Equality : S = struct
 
   let encode ?vars (uf, refs) f =
     let module URefTbl = Hashtbl.Make (struct
-      type t = Svalue.t UnionFind.rref
+      type t = Svalue.packed UnionFind.rref
 
       let equal r1 r2 = UnionFind.eq uf r1 r2
       let hash = Hashtbl.hash
@@ -673,7 +738,7 @@ module Equality : S = struct
       match vars with
       | None -> fun _ -> true
       | Some vars ->
-          fun v ->
+          fun (Svalue.Packed v) ->
             Svalue.iter_vars v
             |> Iter.exists (fun (v, _) -> Var.Hashset.mem vars v)
     in
@@ -693,8 +758,13 @@ module Equality : S = struct
         let ufref = UnionFind.find uf ufref in
         match URefTbl.find_opt relevant_refs ufref with
         | None -> ()
-        | Some repr when Svalue.equal v repr -> ()
-        | Some repr -> f (Typed.sem_eq (Typed.type_ v) (Typed.type_ repr)))
+        | Some repr when equal_packed v repr -> ()
+        | Some repr -> (
+            let (Svalue.Packed v) = v in
+            let (Svalue.Packed repr) = repr in
+            match Svalue.eq_ty v.node.ty repr.node.ty with
+            | Some Equal -> f (Svalue.Bool.sem_eq v repr)
+            | None -> ()))
       refs
 
   let simplify st v = wrap_read (simplify v) st

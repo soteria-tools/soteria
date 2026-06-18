@@ -27,7 +27,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let* vtable, _ =
       State.alloc_untyped ~zeroed:true
         ~size:Usize.(usize_size *!!@ 3s)
-        ~align:(Typed.cast usize_size) ()
+        ~align:usize_size ()
     in
     let* drop_fn = State.declare_fn (Synthetic GenericDropInPlace) in
     let* () = State.store (vtable, Thin) Charon_util.unit_ptr (Ptr drop_fn) in

@@ -119,3 +119,7 @@ module Expr :
     with type 'a v := 'a t
      and type 'a ty := 'a ty
      and type t = Svalue.t
+
+val cast_value : 'a ty -> Expr.packed_v -> 'a t option
+val as_bool : Expr.packed_v -> sbool t
+val of_packed : Expr.packed_v -> 'a t

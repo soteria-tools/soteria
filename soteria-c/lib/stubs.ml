@@ -31,7 +31,7 @@ module M (State : State_intf.S) = struct
 
   let failed_alloc_case () =
     if (Config.current ()).alloc_cannot_fail then []
-    else [ (fun () -> Result.ok (Basic Typed.Ptr.null)) ]
+    else [ (fun () -> Result.ok (Basic (Svalue.Packed Typed.Ptr.null))) ]
 
   let malloc ~(args : Agv.t list) =
     let* sz =
@@ -39,6 +39,7 @@ module M (State : State_intf.S) = struct
       | [ Basic sz ] -> return sz
       | _ -> not_impl "malloc with non-one arguments"
     in
+    let (Svalue.Packed sz) = sz in
     let* sz =
       BV.cast_to_size_t sz
       |> of_opt_not_impl ~msg:"malloc with non-integer argument"
@@ -47,14 +48,14 @@ module M (State : State_intf.S) = struct
       ([
          (fun () ->
            let++ ptr = State.alloc sz in
-           Basic ptr);
+           Basic (Svalue.Packed ptr));
        ]
       @ failed_alloc_case ())
 
   let calloc ~(args : Agv.t list) =
     let* sz =
       match args with
-      | [ Basic num; Basic sz ] ->
+      | [ Basic (Svalue.Packed num); Basic (Svalue.Packed sz) ] ->
           let* num =
             BV.cast_to_size_t num
             |> of_opt_not_impl ~msg:"calloc with non-integer arguments"
@@ -72,7 +73,7 @@ module M (State : State_intf.S) = struct
       ([
          (fun () ->
            let++ ptr = State.alloc ~zeroed:true sz in
-           Basic ptr);
+           Basic (Svalue.Packed ptr));
        ]
       @ failed_alloc_case ())
 
@@ -82,11 +83,11 @@ module M (State : State_intf.S) = struct
       | [ Basic ptr ] -> return ptr
       | _ -> not_impl "free with non-one arguments"
     in
-    match Typed.get_ty ptr with
+    let (Svalue.Packed ptr) = ptr in
+    match ptr.node.ty with
     | TPointer _ ->
         let++ () =
-          if%sat Typed.Ptr.is_null (Typed.cast ptr) then Result.ok ()
-          else State.free (Typed.cast ptr)
+          if%sat Typed.Ptr.is_null ptr then Result.ok () else State.free ptr
         in
         Agv.void
     | TBitVector _ ->
@@ -100,28 +101,27 @@ module M (State : State_intf.S) = struct
       | _ -> not_impl "memcpy with non-three arguments"
     in
     let* dst =
-      Typed.cast_checked dst Typed.t_ptr
+      Typed.cast_value Typed.t_ptr dst
       |> of_opt_not_impl ~msg:"memcpy with non-pointer dst"
     in
     let* src =
-      Typed.cast_checked src Typed.t_ptr
+      Typed.cast_value Typed.t_ptr src
       |> of_opt_not_impl ~msg:"memcpy with non-pointer src"
     in
+    let (Svalue.Packed size) = size in
     let* size =
       BV.cast_to_size_t size
       |> of_opt_not_impl ~msg:"memcpy with non-integer arguments"
     in
-    let dst = Typed.cast dst in
-    let src = Typed.cast src in
-    let size = Typed.cast size in
     let++ () = State.copy_nonoverlapping ~dst ~src ~size in
-    Basic dst
+    Basic (Svalue.Packed dst)
 
   let assert_ ~(args : Agv.t list) =
     let open Typed.Infix in
     let* to_assert, size =
       match args with
       | [ Basic t ] | [ Basic t; _ ] ->
+          let (Svalue.Packed t) = t in
           Typed.cast_int t
           |> Csymex.of_opt_not_impl ~msg:"assert: not an integer"
           |> SM.lift
@@ -136,6 +136,7 @@ module M (State : State_intf.S) = struct
     let* to_assume, _ =
       match args with
       | [ Basic t ] ->
+          let (Svalue.Packed t) = t in
           Typed.cast_int t
           |> Csymex.of_opt_not_impl ~msg:"assume: not an integer"
           |> SM.lift
@@ -153,11 +154,11 @@ module M (State : State_intf.S) = struct
       match args with
       | [ Basic s1; Basic s2 ] ->
           let* s1_ptr =
-            Typed.cast_checked s1 Typed.t_ptr
+            Typed.cast_value Typed.t_ptr s1
             |> of_opt_not_impl ~msg:"strcmp with non-pointer s1"
           in
           let+ s2_ptr =
-            Typed.cast_checked s2 Typed.t_ptr
+            Typed.cast_value Typed.t_ptr s2
             |> of_opt_not_impl ~msg:"strcmp with non-pointer s2"
           in
           (s1_ptr, s2_ptr)
@@ -172,10 +173,12 @@ module M (State : State_intf.S) = struct
         SM.lift
         @@ Agv.basic_or_unsupported ~msg:"strcmp: loaded but not char" c1
       in
+      let c1 = Typed.as_int c1 in
       let* c2 =
         SM.lift
         @@ Agv.basic_or_unsupported ~msg:"strcmp: loaded but not char" c2
       in
+      let c2 = Typed.as_int c2 in
       if%sat c1 ==@ U8.(0s) &&@ (c2 ==@ U8.(0s)) then Result.ok (Agv.c_int 0)
       else if%sat c1 ==@ c2 then loop (next s1_ptr) (next s2_ptr)
       else
@@ -186,7 +189,7 @@ module M (State : State_intf.S) = struct
         (* This cannot overflow because they were chars and operation happens in
            integer world *)
         let res = c1 -!@ c2 in
-        Result.ok (Basic res)
+        Result.ok (Basic (Svalue.Packed res))
     in
     loop s1 s2
 
@@ -195,14 +198,15 @@ module M (State : State_intf.S) = struct
       match args with
       | [ Basic s1; Basic s2; Basic s3 ] ->
           let* s1_ptr =
-            Typed.cast_checked s1 Typed.t_ptr
+            Typed.cast_value Typed.t_ptr s1
             |> of_opt_not_impl ~msg:"memset with non-pointer s1"
           in
           let sizeofint = Layout.c_int_size * 8 in
           let* char_int =
-            Typed.cast_checked s2 (Typed.t_int sizeofint)
+            Typed.cast_value (Typed.t_int sizeofint) s2
             |> of_opt_not_impl ~msg:"memset with non-pointer s2"
           in
+          let (Svalue.Packed s3) = s3 in
           let+ count =
             BV.cast_to_size_t s3
             |> of_opt_not_impl ~msg:"memset with non-integer count"
@@ -219,7 +223,7 @@ module M (State : State_intf.S) = struct
         if%sat count ==@ Usize.(0s) then Result.ok Agv.void
         else
           let** () =
-            State.store dest Ctype.char (Agv.Basic (char :> T.cval Typed.t))
+            State.store dest Ctype.char (Agv.Basic (Svalue.Packed char))
           in
           let s1_ptr = Typed.Ptr.add_ofs dest (BV.usizei 1) in
           let count = count -!@ Usize.(1s) in
@@ -231,7 +235,7 @@ module M (State : State_intf.S) = struct
     let rec havoc_aggregate (v : Agv.t) =
       match v with
       | Basic v -> (
-          match Typed.cast_checked v Typed.t_ptr with
+          match Typed.cast_value Typed.t_ptr v with
           | Some _ ->
               SM.lift
               @@ Csymex.not_impl

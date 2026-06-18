@@ -15,18 +15,23 @@ module type Expr = sig
   type 'a v
   type t [@@deriving show]
 
+  (** Existentially-wrapped value and type. Because the syntactic representation
+      [t] is monomorphic (it has erased its index), substitution can only
+      recover a value up to this existential; callers re-type with {!cast_value}
+      (using a type-equality witness). *)
+  type packed_v = Packed : 'a v -> packed_v
+
+  type packed_ty = PackedTy : 'a ty -> packed_ty
+
   (** Obtain a syntactic representation from a semantic value. This implicitly
       uses an identity substitution. *)
   val of_value : 'a v -> t
 
-  (* NOTE: Being able to get a type from an expresion might be too restrictive
-     for some applications with dynamic types? *)
-
-  (** Gets the type associated to a syntactic values. *)
-  val ty : t -> 'a ty
+  (** Gets the type associated to a syntactic value. *)
+  val ty : t -> packed_ty
 
   (** Convenience function *)
-  val subst : (t -> 'a v) -> t -> 'b v
+  val subst : (t -> packed_v) -> t -> packed_v
 
   (** A susbtitution projects the syntactic to the semantic world. *)
   module Subst : sig
@@ -38,10 +43,14 @@ module type Expr = sig
     val pp : Format.formatter -> t -> unit
     val empty : t
 
+    (** Generates a fresh value for a missing variable; polymorphic in the
+        variable's kind (hence wrapped in a record). *)
+    type missing = { missing : 'a. Var.t -> 'a ty -> 'a v }
+
     (** Applies a substitution to a syntactic representation to obtain a
         symbolic value. Should a variable binding be missing, fresh values are
         generated using the provided function. *)
-    val apply : missing_var:(Var.t -> 'a ty -> 'a v) -> t -> expr -> 'a v * t
+    val apply : missing_var:missing -> t -> expr -> packed_v * t
 
     (** [learn θ e v] takes the substitution [θ], the expression [e] and the
         value [v] and tries to complete [θ] into a substitution [θ'] such that
@@ -72,10 +81,10 @@ module type S = sig
 
       Values also expose an {!module:Expr} module for their syntactic
       representation. *)
-  type +'a t
+  type 'a t
 
   (** Type of values. *)
-  type +'a ty
+  type 'a ty
 
   (** The type for booleans. *)
   type sbool
@@ -105,4 +114,14 @@ module type S = sig
      it optional. *)
 
   module Expr : Expr with type 'a ty := 'a ty and type 'a v := 'a t
+
+  (** [cast_value ty pv] recovers the value wrapped in the existential [pv] at
+      type [ty], using a type-equality witness, or [None] if [pv]'s type is not
+      [ty]. This is how a substituted value (necessarily existential) is brought
+      back to a statically-known type. *)
+  val cast_value : 'a ty -> Expr.packed_v -> 'a t option
+
+  (** [as_bool pv] recovers a boolean value from the existential [pv]; raises if
+      [pv] is not a boolean (only sound on values known to be pure). *)
+  val as_bool : Expr.packed_v -> sbool t
 end

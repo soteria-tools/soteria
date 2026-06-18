@@ -19,15 +19,14 @@ module M (StateM : State.StateM.S) = struct
     in
     Enum (discr, [])
 
-  let rec equality_check (v1 : [< T.sint | T.sptr ] Typed.t)
-      (v2 : [< T.sint | T.sptr ] Typed.t) =
+  let rec equality_check : type a b. a Typed.t -> b Typed.t -> _ =
+   fun v1 v2 ->
     match (get_ty v1, get_ty v2) with
-    | TBitVector _, TBitVector _ | TPointer _, TPointer _ ->
-        ok (BV.of_bool (v1 ==@ v2))
+    | TBitVector _, TBitVector _ -> ok (BV.of_bool (v1 ==@ v2))
+    | TPointer _, TPointer _ -> ok (BV.of_bool (v1 ==@ v2))
     | TPointer _, TBitVector _ ->
-        let v2 : T.sint Typed.t = cast v2 in
         if%sat v2 ==@ Usize.(0s) then
-          let res = cast v1 ==@ Ptr.null () in
+          let res = v1 ==@ Ptr.null () in
           ok (BV.of_bool res)
         else error `UBPointerComparison
     | TBitVector _, TPointer _ -> equality_check v2 v1
@@ -41,7 +40,7 @@ module M (StateM : State.StateM.S) = struct
   let[@inline] normalise_shift_r (bop : Expressions.binop) l r =
     match bop with
     | Shl _ | Shr _ ->
-        let l, r = (cast l, cast r) in
+        let l, r = (l, r) in
         let l_size = Typed.size_of_int l in
         let r_size = Typed.size_of_int r in
         if l_size > r_size then BV.extend ~signed:false (l_size - r_size) r
@@ -51,8 +50,8 @@ module M (StateM : State.StateM.S) = struct
 
   (** Evaluates a binary operator of [+,-,/,*,rem], and ensures the result is
       within the type's constraints, else errors *)
-  let eval_lit_binop (bop : Expressions.binop) ty (l : [< T.sint ] Typed.t)
-      (r : [< T.sint ] Typed.t) : ([> T.sint ] Typed.t, 'e) StateM.t =
+  let eval_lit_binop (bop : Expressions.binop) ty (l : T.sint Typed.t)
+      (r : T.sint Typed.t) : (T.sint Typed.t, 'e) StateM.t =
     (* do overflow/arithmetic checks *)
     let signed = Layout.is_signed ty in
     let r = normalise_shift_r bop l r in
@@ -94,8 +93,8 @@ module M (StateM : State.StateM.S) = struct
       | Add om -> BV.add ~checked:(checked_of om) l r
       | Sub om -> BV.sub ~checked:(checked_of om) l r
       | Mul om -> BV.mul ~checked:(checked_of om) l r
-      | Div _ -> BV.div ~signed l (cast r)
-      | Rem _ -> BV.rem ~signed l (cast r)
+      | Div _ -> BV.div ~signed l r
+      | Rem _ -> BV.rem ~signed l r
       | Shl _ -> BV.shl l r
       | Shr _ -> if signed then BV.ashr l r else BV.lshr l r
       | _ -> L.failwith "Invalid binop in binop_fn"
@@ -143,7 +142,7 @@ module M (StateM : State.StateM.S) = struct
     match (bop, l, r) with
     | Ne, _, _ ->
         let+ res = eval_ptr_binop Eq l r in
-        BV.not_bool (cast res)
+        BV.not_bool res
     | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
         (* Pointer comparison just uses the address! See
            https://doc.rust-lang.org/std/ptr/index.html#provenance *)

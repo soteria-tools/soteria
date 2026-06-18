@@ -35,7 +35,7 @@ module BitVec = struct
   let sure_is_zero bv =
     match to_z bv with Some z -> Z.equal z Z.zero | None -> false
 
-  let fit_to ?(signed = false) size (bv : [< T.sint ] t) : [> T.sint ] t =
+  let fit_to ?(signed = false) size (bv : T.sint t) : T.sint t =
     let cur = size_of_int bv in
     if cur = size then bv
     else if cur < size then extend ~signed (size - cur) bv

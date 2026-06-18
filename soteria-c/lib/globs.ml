@@ -13,7 +13,7 @@ module Loc = struct
   let to_syn (loc : t) : syn = Expr.of_value loc
   let learn_eq s l = Consumer.learn_eq s l
   let exprs_syn (loc : syn) : Expr.t list = [ loc ]
-  let subst = Expr.subst
+  let subst s v = Typed.as_loc (Expr.subst s v)
   let pp = Typed.ppa
 
   let fresh () =

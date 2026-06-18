@@ -28,13 +28,15 @@ module M (StateM : State.StateM.S) = struct
 
   let alloc_id args =
     match args with
-    | [ Ptr (ptr, _) ] -> ok (Int (Sptr.as_id ptr))
+    | [ Ptr (ptr, _) ] ->
+        let+ addr = Sptr.decay ptr in
+        Int addr
     | _ -> not_impl "alloc_id: invalid arguments"
 
   let promise_alignement args =
     match args with
     | [ Ptr (ptr, _); Int align ] ->
-        let align = Typed.cast @@ Typed.cast_i Usize align in
+        let align = Typed.cast_i Usize align in
         let* addr = Sptr.decay ptr in
         let+ () = assume [ (addr %@ align ==@ Usize.(0s)) ] in
         Tuple []

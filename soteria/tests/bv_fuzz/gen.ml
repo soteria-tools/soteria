@@ -85,7 +85,7 @@ let all_bv_cmp_ops =
 
 (** Generate a bitvector expression of the given size via direct constructors.
 *)
-let rec gen_bv ~bv_size : Sv.t Gen.sized =
+let rec gen_bv ~bv_size : Sv.sbv Sv.t Gen.sized =
   let open Gen in
   fun depth ->
     if depth <= 0 then gen_bv_leaf ~bv_size
@@ -108,7 +108,8 @@ let rec gen_bv ~bv_size : Sv.t Gen.sized =
           let+ e = gen_bv ~bv_size (depth - 1) in
           D.Bool.ite cond t e
         in
-        let shrink_to_branches (ite : Sv.t) =
+        let shrink_to_branches : type a. a Sv.t -> a Sv.t Seq.t =
+         fun ite ->
           match ite.node.kind with
           | Sv.Ite (_, t, e) -> List.to_seq [ t; e ]
           | _ -> Seq.empty
@@ -155,7 +156,7 @@ let rec gen_bv ~bv_size : Sv.t Gen.sized =
         ]
 
 (** Generate a bitvector leaf (concrete value or symbolic variable). *)
-and gen_bv_leaf ~bv_size : Sv.t QCheck2.Gen.t =
+and gen_bv_leaf ~bv_size : Sv.sbv Sv.t QCheck2.Gen.t =
   let open QCheck2.Gen in
   let gen_concrete =
     let+ z = gen_z ~bv_size in
@@ -165,7 +166,7 @@ and gen_bv_leaf ~bv_size : Sv.t QCheck2.Gen.t =
 
 (** Generate a boolean expression. [bv_size] is the bitvector width used when we
     need BV sub-expressions. *)
-and gen_bool ~bv_size : Sv.t Gen.sized =
+and gen_bool ~bv_size : Sv.sbool Sv.t Gen.sized =
   let open Gen in
   fun depth ->
     if depth <= 0 then gen_bool_leaf
@@ -187,7 +188,8 @@ and gen_bool ~bv_size : Sv.t Gen.sized =
           let+ e = gen_bool ~bv_size (depth - 1) in
           D.Bool.ite cond t e
         in
-        let shrink_to_branches (ite : Sv.t) =
+        let shrink_to_branches : type a. a Sv.t -> a Sv.t Seq.t =
+         fun ite ->
           match ite.node.kind with
           | Sv.Ite (_, t, e) -> List.to_seq [ t; e ]
           | _ -> Seq.empty
@@ -222,7 +224,7 @@ and gen_bool ~bv_size : Sv.t Gen.sized =
         ]
 
 (** Generate a boolean leaf (concrete or symbolic). *)
-and gen_bool_leaf : Sv.t Gen.t =
+and gen_bool_leaf : Sv.sbool Sv.t Gen.t =
   let open Gen in
   let gen_concrete =
     let+ b = bool in
@@ -237,13 +239,13 @@ let depth = Gen.int_bound 6
    really nice. *)
 let bv_size = Gen.int_range 1 16
 
-let gen_bv : Sv.t Gen.t =
+let gen_bv : Sv.sbv Sv.t Gen.t =
   let open Gen in
   set_shrink Direct.Shrink.shrink
     (let* bv_size = bv_size in
      Gen.sized_size depth @@ gen_bv ~bv_size)
 
-let gen_bool : Sv.t Gen.t =
+let gen_bool : Sv.sbool Sv.t Gen.t =
   let open Gen in
   set_shrink Direct.Shrink.shrink
     (let* bv_size = bv_size in

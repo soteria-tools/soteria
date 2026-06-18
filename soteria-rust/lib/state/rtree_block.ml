@@ -45,7 +45,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       type syn = Typed.Expr.t [@@deriving show { with_path = false }]
 
       let to_syn = Typed.Expr.of_value
-      let subst = Typed.Expr.subst
+      let subst s x = Typed.as_int (Typed.Expr.subst s x)
       let learn_eq = Consumer.learn_eq
       let exprs_syn x = [ x ]
       let fresh () = nondet (Typed.t_usize ())
@@ -482,10 +482,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let+ fixes = mk_fixes () in
         Missing fixes
 
-  let check_owned (ofs : Typed.([< T.sint ] t))
-      (size : Typed.([< T.nonzero ] t)) =
+  let check_owned (ofs : Typed.(T.sint t)) (size : Typed.(T.nonzero t)) =
     let open DecayMap.SM.Syntax in
-    let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
+    let _, bound = Range.of_low_and_size ofs size in
     let mk_fixes () =
       let+ bound = DecayMap.SM.nondet (Typed.t_usize ()) in
       [ [ Bound (Expr.of_value bound) ] ]
@@ -494,7 +493,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
 
   (* Memory operations *)
 
-  let load ~(ignore_borrow : bool) (ofs : Typed.([< T.sint ] t)) (ty : Types.ty)
+  let load ~(ignore_borrow : bool) (ofs : Typed.(T.sint t)) (ty : Types.ty)
       (tag : Borrows.Tag.t option) (tb : Borrows.Tree.t option) =
     let open SM.Syntax in
     let** size = lift_symex @@ Layout.size_of ty in
@@ -517,7 +516,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let++ sval = decode_tree ~ty framed in
         (sval, tree))
 
-  let store (ofs : Typed.([< T.sint ] t)) (value : rust_val)
+  let store (ofs : Typed.(T.sint t)) (value : rust_val)
       (tag : Borrows.Tag.t option) (tb : Borrows.Tree.t option) :
       (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
@@ -545,10 +544,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         in
         ((), tree))
 
-  let get_init_leaves (ofs : Typed.([< T.sint ] t))
-      (size : Typed.([< T.nonzero ] t)) :
+  let get_init_leaves (ofs : Typed.(T.sint t)) (size : Typed.(T.nonzero t)) :
       ((rust_val * Typed.(T.sint t)) list, 'err, 'fix) SM.Result.t =
-    let ((_, bound) as range) = Range.of_low_and_size ofs (Typed.cast size) in
+    let ((_, bound) as range) = Range.of_low_and_size ofs size in
     with_bound_check bound (fun t ->
         let open DecayMap.SM.Syntax in
         let replace_node node = ok node in
@@ -559,8 +557,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let++ leaves = collect_leaves ~uninit:`Ignore framed in
         (leaves, tree))
 
-  let uninit_range (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.sint ] t))
-      : (unit, 'err, 'fix) SM.Result.t =
+  let uninit_range (ofs : Typed.(T.sint t)) (size : Typed.(T.sint t)) :
+      (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
@@ -576,7 +574,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         in
         ((), tree))
 
-  let zero_range (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.sint ] t)) :
+  let zero_range (ofs : Typed.(T.sint t)) (size : Typed.(T.sint t)) :
       (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
@@ -600,8 +598,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
 
   (* Tree borrow updates *)
 
-  let with_tb_access (ofs : Typed.([< T.sint ] t))
-      (size : Typed.([< T.sint ] t)) f =
+  let with_tb_access (ofs : Typed.(T.sint t)) (size : Typed.(T.sint t)) f =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_tb ofs size in
     with_bound_check ~mk_fixes bound (fun t ->

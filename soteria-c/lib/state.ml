@@ -18,7 +18,7 @@ module Heap = struct
         let to_syn (loc : t) : syn = Expr.of_value loc
         let exprs_syn (loc : syn) : Expr.t list = [ loc ]
         let learn_eq s l = Consumer.learn_eq s l
-        let subst = Expr.subst
+        let subst s v = Typed.as_loc (Expr.subst s v)
 
         let fresh () =
           match Config.current_mode () with
@@ -37,6 +37,7 @@ module Heap = struct
     let open Producer in
     let open Syntax in
     let* loc = apply_subst Typed.Expr.subst loc in
+    let loc = Typed.as_loc loc in
     let*^ () = assume [ Typed.not (Typed.Ptr.is_null_loc loc) ] in
     produce syn st
 end
@@ -81,10 +82,9 @@ let[@inline] check_non_null loc =
     [@name "Null-deref case"])
   else SM.Result.ok () [@name "Non-null case"]
 
-let with_ptr (ptr : [< T.sptr ] Typed.t)
-    (f :
-      ofs:[< T.sint ] Typed.t -> ('a, 'err, 'fix list) Ctree_block.SM.Result.t)
-    : ('a, 'err, syn list) SM.Result.t =
+let with_ptr (ptr : T.sptr Typed.t)
+    (f : ofs:T.sint Typed.t -> ('a, 'err, 'fix list) Ctree_block.SM.Result.t) :
+    ('a, 'err, syn list) SM.Result.t =
   let loc = Typed.Ptr.loc ptr in
   let ofs = Typed.Ptr.ofs ptr in
   let** () = check_non_null loc in
@@ -97,8 +97,7 @@ let load_basic ptr ty =
   let* () = log load_msg ptr in
   with_ptr ptr (fun ~ofs -> Ctree_block.load ofs ty)
 
-let load (ptr : [< T.sptr ] Typed.t) ty :
-    (Aggregate_val.t, 'err, 'fix) SM.Result.t =
+let load (ptr : T.sptr Typed.t) ty : (Aggregate_val.t, 'err, 'fix) SM.Result.t =
   let++ v = load_basic ptr ty in
   Agv.Basic v
 
@@ -118,7 +117,7 @@ let deinit ptr len =
   let* () = log "deinit" ptr in
   with_ptr ptr (fun ~ofs -> Ctree_block.deinit ofs len)
 
-let rec store (ptr : [< T.sptr ] Typed.t) ty v =
+let rec store (ptr : T.sptr Typed.t) ty v =
   match v with
   | Agv.Basic v -> store_basic ptr ty v
   | Agv.Array elems ->
@@ -161,7 +160,7 @@ let rec store (ptr : [< T.sptr ] Typed.t) ty v =
       in
       aux layout.members_ofs members values
 
-let copy_nonoverlapping ~dst ~(src : [< T.sptr ] Typed.t) ~size =
+let copy_nonoverlapping ~dst ~(src : T.sptr Typed.t) ~size =
   let open Typed.Infix in
   [%l.trace
     "copy_nonoverlapping: copying %a bytes from %a to %a" Typed.ppa size
@@ -194,7 +193,7 @@ let alloc_ty ty =
   let*^ size = Layout.size_of_s ty in
   alloc size
 
-let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, syn list) SM.Result.t =
+let free (ptr : T.sptr Typed.t) : (unit, 'err, syn list) SM.Result.t =
   let@ () = with_error_loc ~msg:"Invalid free" () in
   if%sat Typed.Ptr.ofs ptr ==@ Usize.(0s) then
     with_heap @@ Heap.wrap (Typed.Ptr.loc ptr) (Block.free ())
@@ -222,20 +221,21 @@ let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
   let open Producer in
   let open Syntax in
   let syn v = Typed.Expr.of_value v in
-  let loc = Svalue.Ptr.loc ptr in
-  let offset = Svalue.Ptr.ofs ptr in
+  let ptr_v = Typed.as_ptr ptr in
+  let loc = Svalue.Ptr.loc ptr_v in
+  let offset = Svalue.Ptr.ofs ptr_v in
   match (v, ty) with
-  | Basic v, _ -> produce_basic_val loc offset ty v st
+  | Basic v, _ -> produce_basic_val (syn loc) (syn offset) ty v st
   | Array elems, ty ->
       let*^ elem_ty, _ =
         Layout.get_array_info ty
         |> Csymex.of_opt_not_impl ~msg:"Array element type"
       in
       let+ _, st =
-        fold_list elems ~init:(ptr, st) ~f:(fun (ptr, st) elem ->
-            let* st = produce_aggregate ptr elem_ty elem st in
+        fold_list elems ~init:(ptr_v, st) ~f:(fun (ptr_v, st) elem ->
+            let* st = produce_aggregate (syn ptr_v) elem_ty elem st in
             let+^ elem_size = Layout.size_of_s elem_ty in
-            (Svalue.Ptr.add_ofs ptr (syn elem_size), st))
+            (Svalue.Ptr.add_ofs ptr_v elem_size, st))
       in
       st
   | Struct values, ty ->
@@ -252,7 +252,7 @@ let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
         | [], [], [] -> return st
         | (Layout.Padding size, ofs) :: rest_ofs, members, values ->
             let* st =
-              produce_padding loc
+              produce_padding (syn loc)
                 ~offset:(syn @@ BV.usizei ofs)
                 ~len:(syn @@ BV.usizei size)
                 st
@@ -263,7 +263,7 @@ let rec produce_aggregate (ptr : Typed.Expr.t) ty (v : Agv.syn) (st : t option)
             value :: rest_values ) ->
             let* st =
               produce_aggregate
-                (Svalue.Ptr.mk loc (syn @@ BV.usizei ofs))
+                (syn (Svalue.Ptr.mk loc (BV.usizei ofs)))
                 mem_ty value st
             in
             aux rest_ofs rest_mems rest_values st

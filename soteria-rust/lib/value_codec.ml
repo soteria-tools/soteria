@@ -287,7 +287,7 @@ struct
              https://github.com/rust-lang/unsafe-code-guidelines/issues/518 And
              a proper implementation is here:
              https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
-          let+ blocks = get_all (Typed.cast layout.size, offset) in
+          let+ blocks = get_all (layout.size, offset) in
           Union blocks
     | Primitive, TFnDef _ -> ok (Tuple [])
     | Primitive, TVar (Free id) ->
@@ -533,11 +533,11 @@ module Encoder (Sptr : Sptr.S) = struct
       https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
   *)
   let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
-      (v : Typed.([< T.cval ] t)) =
+      (v : 'a Typed.t) =
     match (from_ty, to_ty) with
-    | _, TFloat _ when from_ty = to_ty -> Float (Typed.cast v)
+    | _, TFloat _ when from_ty = to_ty -> Float (Typed.cast_float v)
     | _, (TInt _ | TUInt _ | TBool | TChar) when from_ty = to_ty ->
-        Int (Typed.cast v)
+        Int (Typed.cast_lit to_ty v)
     | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
         let sv = Typed.cast_f fty v in
         let signed = Layout.is_signed lit_ty in
@@ -572,8 +572,8 @@ module Encoder (Sptr : Sptr.S) = struct
 
       See https://smt-lib.org/theories-FloatingPoint.shtml, "Conversions to
       other sorts" *)
-  let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
-      Typed.([> T.sint ] t) DecayMap.SM.t =
+  let float_to_bv_bits (f : Typed.(T.sfloat t)) : Typed.(T.sint t) DecayMap.SM.t
+      =
     let fp = Typed.Float.fp_of f in
     let size = Svalue.FloatPrecision.size fp in
     let* bv = nondet (Typed.t_int size) in
@@ -637,8 +637,9 @@ module Encoder (Sptr : Sptr.S) = struct
         let+ f = nondet (Typed.t_float fp) in
         Ok (Float f)
     | TLiteral lit ->
-        let+ i = nondet (Typed.t_lit lit) in
-        Ok (Int (Typed.cast i))
+        let (Svalue.PackedTy ty) = Typed.t_lit lit in
+        let+ i = nondet ty in
+        Ok (Int (Typed.cast_lit lit i))
     | (TRef (_, pointee, _) | TRawPtr (pointee, _))
       when not (Layout.is_dst pointee) ->
         let++ p = Sptr.nondet pointee in
@@ -655,8 +656,12 @@ module Encoder (Sptr : Sptr.S) = struct
         match type_decl.kind with
         | Enum [] -> vanish ()
         | Enum (v :: _ as variants) ->
-            let* discr = nondet (Typed.t_lit (lit_ty_of_lit v.discriminant)) in
-            let discr : Typed.(T.sint t) = Typed.cast discr in
+            let discr_lit = lit_ty_of_lit v.discriminant in
+            let* discr =
+              let (Svalue.PackedTy ty) = Typed.t_lit discr_lit in
+              let+ d = nondet ty in
+              Typed.cast_lit discr_lit d
+            in
             let* variant =
               match_on variants ~constr:(fun v ->
                   BV.of_literal v.discriminant ==@ discr)
@@ -795,7 +800,7 @@ module Encoder (Sptr : Sptr.S) = struct
           let++ align = load_vtable `Align vtable in
           let size = as_base_i Usize size in
           let align = as_base_i Usize align in
-          (size, Typed.cast align)
+          (size, align)
       | TAdt { id = TTuple | TAdtId _; _ }, _ ->
           let field_tys =
             match t with

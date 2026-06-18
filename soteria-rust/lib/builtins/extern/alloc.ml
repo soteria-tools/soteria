@@ -2,10 +2,10 @@
 
     See https://doc.rust-lang.org/src/alloc/alloc.rs.html *)
 
-open Rust_val
 open Typed
 open Typed.Infix
 open Typed.Syntax
+open Rust_val
 
 type fn =
   | Alloc of { zeroed : bool }
@@ -52,7 +52,6 @@ module M (StateM : State.StateM.S) = struct
     let* () =
       assert_ (Usize.(1s) <=@ align &&@ (size <=@ max_size)) `InvalidAlloc
     in
-    let align = Typed.cast align in
     let+ ptr = State.alloc_untyped ~zeroed ~size ~align () in
     Ptr ptr
 
@@ -84,7 +83,7 @@ module M (StateM : State.StateM.S) = struct
         (prev_align ==?@ align &&@ (prev_size ==?@ old_size))
         `InvalidAlloc
     in
-    let align = Typed.cast align in
+    let align = align in
     let size = Typed.cast_i Usize size in
     let* new_ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
     let copy_size = BV.min ~signed:false size prev_size in

@@ -2,7 +2,7 @@
 
 module S (Symex : Symex.Base) = struct
   module type S = sig
-    type +'a v := 'a Symex.Value.t
+    type 'a v := 'a Symex.Value.t
     type t = Symex.Value.sbool
 
     val not : t v -> t v

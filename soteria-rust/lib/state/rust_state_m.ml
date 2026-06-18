@@ -47,8 +47,8 @@ module type S = sig
   val ok : 'a -> ('a, 'env) t
   val error : Error.t -> ('a, 'env) t
   val error_raw : Error.with_trace -> ('a, 'env) t
-  val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
-  val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
+  val assert_ : Typed.T.sbool Typed.t -> Error.t -> (unit, 'env) t
+  val assert_not : Typed.T.sbool Typed.t -> Error.t -> (unit, 'env) t
   val miss : syn list list -> ('a, 'env) t
   val vanish : unit -> ('a, 'env) t
 
@@ -130,7 +130,7 @@ module type S = sig
     val offset :
       ?check_signed:bool ->
       ?ty:Charon.Types.ty ->
-      [< Typed.T.sint ] Typed.t ->
+      Typed.T.sint Typed.t ->
       t ->
       (t, 'env) monad
 
@@ -158,11 +158,11 @@ module type S = sig
     include module type of Layout
 
     val layout_of : Types.ty -> (Layout.t, 'env) monad
-    val size_of : Types.ty -> ([> Typed.T.sint ] Typed.t, 'env) monad
-    val align_of : Types.ty -> ([> Typed.T.nonzero ] Typed.t, 'env) monad
+    val size_of : Types.ty -> (Typed.T.sint Typed.t, 'env) monad
+    val align_of : Types.ty -> (Typed.T.nonzero Typed.t, 'env) monad
 
     val is_abi_compatible :
-      Types.ty -> Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
+      Types.ty -> Types.ty -> (Typed.T.sbool Typed.t, 'env) monad
   end
 
   module Encoder : sig
@@ -175,7 +175,7 @@ module type S = sig
     val cast_literal :
       from_ty:Values.literal_type ->
       to_ty:Values.literal_type ->
-      [< Typed.T.cval ] Typed.t ->
+      'a Typed.t ->
       rust_val
 
     val nondet_valid : Types.ty -> (rust_val, 'env) monad
@@ -220,7 +220,7 @@ module type S = sig
     val free : full_ptr -> (unit, 'env) t
     val borrow : ?protect:bool -> full_ptr -> Types.ty -> (full_ptr, 'env) t
     val unprotect : full_ptr -> Types.ty -> (unit, 'env) t
-    val with_exposed : [< Typed.T.sint ] Typed.t -> (full_ptr, 'env) t
+    val with_exposed : Typed.T.sint Typed.t -> (full_ptr, 'env) t
     val tb_load : full_ptr -> Types.ty -> (unit, 'env) t
     val load_global : Types.global_decl_id -> (full_ptr option, 'env) t
     val store_global : Types.global_decl_id -> full_ptr -> (unit, 'env) t

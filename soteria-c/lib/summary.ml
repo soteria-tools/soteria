@@ -76,7 +76,7 @@ module Var_graph = Graph.Make_in_place (Var)
 module Var_hashset = Var_graph.Node_set
 
 let filter_pc relevant_vars pc =
-  ListLabels.filter pc ~f:(fun v ->
+  ListLabels.filter pc ~f:(fun (Svalue.Packed v) ->
       Iter.exists
         (fun (var, _) -> Var_hashset.mem relevant_vars var)
         (Svalue.iter_vars v))
@@ -101,10 +101,11 @@ let filter_serialized_state relevant_vars (state : State.syn list) =
              bi-abduced and necessary *)
           true
       | State_intf.Ser_heap (loc, b) ->
+          let (Svalue.Packed loc_v) = loc in
           let relevant =
             Iter.exists
               (fun (var, _) -> Var_hashset.mem relevant_vars var)
-              (Svalue.iter_vars loc)
+              (Svalue.iter_vars loc_v)
           in
           if relevant then true
           else
@@ -138,7 +139,8 @@ let init_reachable_vars summary =
       | Ser_globs g ->
           let _, values = Globs.ins_outs g in
           List.iter
-            (fun v -> Svalue.iter_vars v (fun (x, _) -> mark_reachable x))
+            (fun (Svalue.Packed v) ->
+              Svalue.iter_vars v (fun (x, _) -> mark_reachable x))
             values)
   in
   init_reachable
@@ -161,9 +163,9 @@ let prune (summary : after_exec t) : pruned t =
   let init_reachable = init_reachable_vars summary in
   (* For each equality [e1 = e2] in the path condition, we add a double edge
      from all variables of [e1] to all variables of [e2] *)
-  ListLabels.iter summary.pc ~f:(fun v ->
+  ListLabels.iter summary.pc ~f:(fun (Svalue.Packed v) ->
       match Svalue.kind v with
-      | Binop (Eq, el, er) ->
+      | Eq (el, er) ->
           (* We make the second iterator peristent to avoid going over the
              structure too many times if there are many *)
           let r_iter = Iter.persistent_lazy (Svalue.iter_vars er) in
@@ -181,8 +183,10 @@ let prune (summary : after_exec t) : pruned t =
   ListLabels.iter all_points_tos ~f:(fun (l, b) ->
       let b_iter =
         let _, outs = Block.ins_outs b in
-        Iter.of_list outs |> Iter.flat_map Svalue.iter_vars
+        Iter.of_list outs
+        |> Iter.flat_map (fun (Svalue.Packed v) -> Svalue.iter_vars v)
       in
+      let (Svalue.Packed l) = l in
       Iter.product (Svalue.iter_vars l) (Iter.persistent_lazy b_iter)
         (fun ((x, _), (y, _)) -> Var_graph.add_edge graph x y));
   (* [init_reachable] is the set of initially-reachable variables, and we have a
@@ -257,7 +261,7 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
             [%l.trace
               "Produced heap, about to check if path condition holds in every \
                branch"];
-            Csymex.assert_ (Typed.conj pc)
+            Csymex.assert_ (Typed.conj (List.map Typed.as_bool pc))
           in
           let is_manifest =
             try
@@ -268,7 +272,8 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
                     list ~sep:cut (fun ft (res, pc) ->
                         let pp_pc ft pc =
                           Fmt.pf ft "@[<2>Path condition: %a@]"
-                            (Fmt.Dump.list Svalue.pp) pc
+                            (Fmt.Dump.list Typed.Expr.pp)
+                            pc
                         in
                         Fmt.pf ft "<v 2>Branch:@.Res: %a@.%a@]" Fmt.bool res
                           pp_pc pc))

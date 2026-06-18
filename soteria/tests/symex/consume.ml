@@ -17,7 +17,7 @@ module S_int = struct
   let learn_eq (s : syn) (t : t) = Symex.Consumer.learn_eq s t
   let to_syn (x : t) = Symex.Value.Expr.of_value x
   let exprs_syn (x : syn) = [ x ]
-  let subst = Symex.Value.Expr.subst
+  let subst s v = of_packed (Symex.Value.Expr.subst s v)
 end
 
 module Excl_int = Soteria.Sym_states.Excl.Make (Symex) (S_int)

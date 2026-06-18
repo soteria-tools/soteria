@@ -3,7 +3,7 @@ open Common.Charon_util
 include Soteria.Bv_values.Typed
 
 (** [CastError (value, expected, got)] *)
-exception CastError of T.any t * T.any ty * T.any ty
+exception CastError : 'a t * 'b ty * 'c ty -> exn
 
 let () =
   Printexc.register_printer (function
@@ -13,24 +13,22 @@ let () =
              expected ppa_ty got ppa v)
     | _ -> None)
 
-let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
-  raise
-    (CastError
-       ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
+let cast_error (v : 'a t) (ty : 'b ty) =
+  raise (CastError (v, ty, type_type @@ get_ty v))
 
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
 
-let t_lit : Types.literal_type -> [< T.cval ] ty = function
-  | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
-  | TFloat F16 -> t_f16
-  | TFloat F32 -> t_f32
-  | TFloat F64 -> t_f64
-  | TFloat F128 -> t_f128
+let t_lit : Types.literal_type -> Svalue.packed_ty = function
+  | (TInt _ | TUInt _ | TBool | TChar) as ty ->
+      PackedTy (t_int (size_of_literal_ty ty * 8))
+  | TFloat F16 -> PackedTy t_f16
+  | TFloat F32 -> PackedTy t_f32
+  | TFloat F64 -> PackedTy t_f64
+  | TFloat F128 -> PackedTy t_f128
 
-let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
-  t_float (float_precision ty)
+let t_float (ty : Types.float_type) : T.sfloat ty = t_float (float_precision ty)
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -40,7 +38,7 @@ let cast_checked2 v1 v2 =
   | Some (v1, v2, ty) -> (v1, v2, ty)
   | None -> cast_error v1 (type_type @@ get_ty v2)
 
-let cast_lit ty (v : 'a t) : [> T.sint ] t =
+let cast_lit ty (v : 'a t) : T.sint t =
   let size = 8 * size_of_literal_ty ty in
   cast_checked ~ty:(t_int size) v
 
@@ -52,8 +50,22 @@ let cast_float v =
 
 (** DEPRECATED: it is unlikely you need this; the interpreter should be well
     typed *)
-let cast_int (v : 'a t) : [> T.sint ] t * int =
+let cast_int (v : 'a t) : T.sint t * int =
   match cast_int v with Some v -> v | None -> cast_error v (t_int 0)
+
+(* Recover an existentially-wrapped (substituted) value at a known kind. The
+   kind is determined by the leaf's type, recovered from the value itself. *)
+let as_int (Svalue.Packed v : Expr.packed_v) : T.sint t =
+  match v.node.ty with TBitVector _ -> v | _ -> cast_error v (t_int 0)
+
+let as_loc (Svalue.Packed v : Expr.packed_v) : T.sloc t =
+  match v.node.ty with TLoc _ -> v | _ -> cast_error v (t_loc ())
+
+let as_ptr (Svalue.Packed v : Expr.packed_v) : T.sptr t =
+  match v.node.ty with TPointer _ -> v | _ -> cast_error v (t_ptr ())
+
+let as_float (Svalue.Packed v : Expr.packed_v) : T.sfloat t =
+  match v.node.ty with TFloat _ -> v | _ -> cast_error v (t_float F64)
 
 module BitVec = struct
   include BitVec
@@ -86,11 +98,9 @@ module BitVec = struct
   let usizei z = mki_lit (TUInt Usize) z
   let usizenz z = mk_lit_nz (TUInt Usize) z
   let usizeinz z = mki_lit_nz (TUInt Usize) z
+  let of_bool : T.sbool t -> T.sint t = of_bool (size_of_literal_ty TBool * 8)
 
-  let of_bool : T.sbool t -> [> T.sint ] t =
-    of_bool (size_of_literal_ty TBool * 8)
-
-  let of_scalar : Values.scalar_value -> [> T.sint ] t = function
+  let of_scalar : Values.scalar_value -> T.sint t = function
     | UnsignedScalar (Usize, v) | SignedScalar (Isize, v) -> usize v
     | UnsignedScalar (U8, v) | SignedScalar (I8, v) -> u8 v
     | UnsignedScalar (U16, v) | SignedScalar (I16, v) -> u16 v
@@ -98,7 +108,7 @@ module BitVec = struct
     | UnsignedScalar (U64, v) | SignedScalar (I64, v) -> u64 v
     | UnsignedScalar (U128, v) | SignedScalar (I128, v) -> u128 v
 
-  let of_literal : Values.literal -> [> T.sint ] t = function
+  let of_literal : Values.literal -> T.sint t = function
     | VScalar s -> of_scalar s
     | VChar c -> u32i (Uchar.to_int c)
     | VBool b -> of_bool (Bool.of_bool b)
@@ -106,7 +116,7 @@ module BitVec = struct
         L.failwith "Cannot convert non-scalar literal %s to bitvector"
           (Print.literal_to_string l)
 
-  let of_constant_expr : Types.constant_expr -> [> T.sint ] t = function
+  let of_constant_expr : Types.constant_expr -> T.sint t = function
     | { kind = CLiteral lit; _ } -> of_literal lit
     | c ->
         L.failwith "Cannot convert non-value const expr %a to bitvector"

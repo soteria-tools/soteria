@@ -17,16 +17,18 @@ let test_count =
     | exception Not_found -> default)
 
 (** Collect all free variables and their types from an expression. *)
-let collect_vars (v : Svalue.t) : Svalue.ty Var.Hashtbl.t =
+let collect_vars (v : 'a Svalue.t) : Svalue.packed_ty Var.Hashtbl.t =
   let tbl = Var.Hashtbl.create 16 in
   Svalue.iter_vars v (fun (var, ty) -> Var.Hashtbl.replace tbl var ty);
   tbl
 
-let check_no_new_vars (existing : Svalue.ty Var.Hashtbl.t) (v : Svalue.t) =
+let check_no_new_vars (existing : Svalue.packed_ty Var.Hashtbl.t)
+    (v : 'a Svalue.t) =
   Svalue.iter_vars v
-  |> Iter.for_all (fun (var, ty) ->
-      Var.Hashtbl.find_opt existing var
-      |> Option.equal Svalue.equal_ty (Some ty))
+  |> Iter.for_all (fun (var, Svalue.PackedTy ty) ->
+      match Var.Hashtbl.find_opt existing var with
+      | Some (Svalue.PackedTy ty') -> Svalue.equal_ty ty ty'
+      | None -> false)
 
 let pp_pair fmt (smart, direct) =
   Format.fprintf fmt "@[<v>smart:  %a@,direct: %a@]" Svalue.pp smart Svalue.pp
@@ -36,8 +38,8 @@ let pp_pair fmt (smart, direct) =
     Returns [true] if equivalent (Z3 says unsat for not(smart = direct)), or
     [false] if a counterexample exists (bug found). Timeouts are treated as
     pass. *)
-let z3_check_equivalent_raw ~vars_d ~assumptions (smart : Svalue.t)
-    (direct : Svalue.t) : Soteria.Symex.Solver_result.t =
+let z3_check_equivalent_raw ~vars_d ~assumptions (smart : 'a Svalue.t)
+    (direct : 'a Svalue.t) : Soteria.Symex.Solver_result.t =
   Soteria.Stats.As_ctx.with_ignored () @@ fun () ->
   Z3_raw.reset solver;
   (* The vars of the simplified version should be a subset of the vars of the
@@ -55,19 +57,23 @@ let z3_check_equivalent_raw ~vars_d ~assumptions (smart : Svalue.t)
     end
   in
   Var.Hashtbl.iter (fun v ty -> declare (v, ty)) vars_d;
-  List.iter (Z3_raw.add_constraint solver) assumptions;
+  List.iter
+    (fun a -> Z3_raw.add_constraint solver (Svalue.Packed a))
+    assumptions;
   (* Build: not(smart = direct) using RAW constructors to avoid relying on the
      smart constructors we're testing. *)
-  let eq_expr = Svalue.(Binop (Eq, smart, direct) <| TBool) in
-  let neq_expr = Svalue.(Unop (Not, eq_expr) <| TBool) in
-  Z3_raw.add_constraint solver neq_expr;
+  let eq_expr = Svalue.(Eq (smart, direct) <| TBool) in
+  let neq_expr = Svalue.(UnBool (Not, eq_expr) <| TBool) in
+  Z3_raw.add_constraint solver (Svalue.Packed neq_expr);
   Z3_raw.check_sat solver
 
 let z3_check_equivalent smart direct =
   (* Collect and declare all variables from both expressions *)
   let vars_d = collect_vars direct in
   (* Collect all assumptions made by checked operators *)
-  let assumptions : Svalue.t list = Direct.collect_checked_assumptions direct in
+  let assumptions : Svalue.sbool Svalue.t list =
+    Direct.collect_checked_assumptions direct
+  in
   match z3_check_equivalent_raw ~vars_d ~assumptions smart direct with
   | Sat -> false
   | Unsat -> true
@@ -83,13 +89,13 @@ let z3_check_with_model ~vars_d ~assumptions start direct =
   | Unknown -> None
   | Unsat -> failwith "Got SAT then UNSAT for the same question, impossible"
 
-let print_svalue = Fmt.to_to_string Svalue.pp
+let print_svalue v = Fmt.to_to_string Svalue.pp v
 
 let print_test d =
   let vars = collect_vars d in
   let pp_vars =
     Fmt.iter_bindings ~sep:Fmt.semi Var.Hashtbl.iter
-      (Fmt.Dump.pair Var.pp Svalue.pp_ty)
+      (Fmt.Dump.pair Var.pp (fun ft (Svalue.PackedTy ty) -> Svalue.pp_ty ft ty))
   in
   let s = Eval.eval ~force:true d in
   let checks = Direct.collect_checked_assumptions d in

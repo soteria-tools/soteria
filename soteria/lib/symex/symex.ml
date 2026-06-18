@@ -239,7 +239,7 @@ module type Base = sig
     val vanish : unit -> 'a t
 
     val apply_subst :
-      ((Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> 'sem t
+      ((Value.Expr.t -> Value.Expr.packed_v) -> 'syn -> 'sem) -> 'syn -> 'sem t
 
     val produce_pure : Value.Expr.t -> unit t
     val run : subst:subst -> 'a t -> ('a * subst) symex
@@ -270,7 +270,9 @@ module type Base = sig
     include Monad.Extension2 with type ('a, 'fix) t := ('a, 'fix) t
 
     val apply_subst :
-      ((Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem) -> 'syn -> ('sem, 'fix) t
+      ((Value.Expr.t -> Value.Expr.packed_v) -> 'syn -> 'sem) ->
+      'syn ->
+      ('sem, 'fix) t
 
     val assert_pure : Value.(sbool t) -> (unit, 'fix) t
     val consume_pure : Value.Expr.t -> (unit, 'fix) t
@@ -829,7 +831,7 @@ module Base_extension (Core : Core) = struct
 
     let vanish () = lift (vanish ())
 
-    let apply_subst (sf : (Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem)
+    let apply_subst (sf : (Value.Expr.t -> Value.Expr.packed_v) -> 'syn -> 'sem)
         (e : 'syn) : 'sem t =
      fun s ->
       (* There's maybe a safer version with effects and no reference? *)
@@ -838,7 +840,9 @@ module Base_extension (Core : Core) = struct
           let vsf e =
             let v, _ =
               let open Value.Expr.Subst in
-              apply ~missing_var:(fun v ty -> Value.mk_var v ty) empty e
+              apply
+                ~missing_var:{ missing = (fun v ty -> Value.mk_var v ty) }
+                empty e
             in
             v
           in
@@ -849,7 +853,7 @@ module Base_extension (Core : Core) = struct
           let vsf e =
             let v, s' =
               Value.Expr.Subst.apply
-                ~missing_var:(fun _ ty -> nondet_UNSAFE ty)
+                ~missing_var:{ missing = (fun _ ty -> nondet_UNSAFE ty) }
                 !s e
             in
             s := s';
@@ -859,7 +863,9 @@ module Base_extension (Core : Core) = struct
           Core.return (res, Some !s)
 
     let produce_pure e : unit t =
-      let is_bool = Value.is_bool_ty @@ Value.Expr.ty e in
+      let is_bool =
+        match Value.Expr.ty e with PackedTy ty -> Value.is_bool_ty ty
+      in
       if not is_bool then (
         [%l.error
           "Producing non-boolean pure value!! This is quite probably a tool \
@@ -868,7 +874,7 @@ module Base_extension (Core : Core) = struct
         vanish ())
       else
         let* v = apply_subst Fun.id e in
-        lift (assume [ v ])
+        lift (assume [ Value.as_bool v ])
 
     let run ~subst p =
       let ( let+ ) = Fun.flip Core.map in
@@ -965,14 +971,14 @@ module Base_extension (Core : Core) = struct
 
     open Syntax
 
-    let apply_subst (sf : (Value.Expr.t -> 'a Value.t) -> 'syn -> 'sem)
+    let apply_subst (sf : (Value.Expr.t -> Value.Expr.packed_v) -> 'syn -> 'sem)
         (e : 'syn) : ('sem, 'fix) t =
       let exception Missing_subst of Var.t in
       fun s ->
         let vsf e =
           let v, _ =
             Value.Expr.Subst.apply
-              ~missing_var:(fun v _ -> raise (Missing_subst v))
+              ~missing_var:{ missing = (fun v _ -> raise (Missing_subst v)) }
               s e
           in
           v
@@ -990,7 +996,7 @@ module Base_extension (Core : Core) = struct
 
     let consume_pure e : (unit, 'fix) t =
       let* v = apply_subst Fun.id e in
-      assert_pure v
+      assert_pure (Value.as_bool v)
 
     let learn_eq expr v : (unit, 'fix) t =
      fun subst ->
@@ -1001,12 +1007,17 @@ module Base_extension (Core : Core) = struct
       | Some subst ->
           let v', subst =
             Value.Expr.Subst.apply
-              ~missing_var:(fun _ _ ->
-                tool_bug
-                  "Tool Bug: learned substitution does not cover expression's \
-                   free variables.")
+              ~missing_var:
+                {
+                  missing =
+                    (fun _ _ ->
+                      tool_bug
+                        "Tool Bug: learned substitution does not cover \
+                         expression's free variables.");
+                }
               subst expr
           in
+          let (Packed v') = v' in
           assert_pure (Value.sem_eq_untyped v v') subst
 
     let expose_subst () : (subst, 'fix) t = fun subst -> Result.ok (subst, subst)

@@ -209,19 +209,20 @@ let flatten v =
 
 let rec subst subst_ptr subst_val rv =
   let subst = subst subst_ptr subst_val in
-  let subst_expr = Expr.subst subst_val in
+  let subst_int v = Typed.as_int (Expr.subst subst_val v) in
+  let subst_float v = Typed.as_float (Expr.subst subst_val v) in
   match rv with
-  | Int v -> Int (subst_expr v)
-  | Float v -> Float (subst_expr v)
+  | Int v -> Int (subst_int v)
+  | Float v -> Float (subst_float v)
   | PolyVal i -> PolyVal i
-  | Union vs -> Union (List.map (fun (v, ofs) -> (subst v, subst_expr ofs)) vs)
-  | Enum (disc, vals) -> Enum (subst_expr disc, List.map subst vals)
+  | Union vs -> Union (List.map (fun (v, ofs) -> (subst v, subst_int ofs)) vs)
+  | Enum (disc, vals) -> Enum (subst_int disc, List.map subst vals)
   | Tuple vals -> Tuple (List.map subst vals)
   | Ptr (p, meta) ->
       let meta =
         match meta with
         | Thin -> Thin
-        | Len len -> Len (subst_expr len)
+        | Len len -> Len (subst_int len)
         | VTable ptr -> VTable (subst_ptr subst_val ptr)
       in
       Ptr (subst_ptr subst_val p, meta)

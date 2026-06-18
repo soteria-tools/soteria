@@ -306,7 +306,7 @@ let constraints_exn ~(ty : ctype) (v : Agv.t) : Typed.T.sbool Typed.t list =
   in
   match proj_ctype_ ty with
   | Void -> (
-      let v = basic_or_unsupported v in
+      let (Svalue.Packed v) = basic_or_unsupported v in
       match Typed.cast_int v with
       | None -> [ Typed.v_false ]
       | Some (v, size) -> [ v ==@ BV.zero size ])
@@ -315,7 +315,7 @@ let constraints_exn ~(ty : ctype) (v : Agv.t) : Typed.T.sbool Typed.t list =
       match int_constraints ity with
       | None -> unsupported "No int constraints"
       | Some constrs -> (
-          let v = basic_or_unsupported v in
+          let (Svalue.Packed v) = basic_or_unsupported v in
           match Typed.cast_int v with
           | None -> [ Typed.v_false ]
           | Some (x, _) -> constrs x))
@@ -333,28 +333,28 @@ let constraints ~ty v =
     [%l.debug "Constraints for %a: %s" Fmt_ail.pp_ty ty msg];
     None
 
-let nondet_c_ty_ (ty : ctype_) : Typed.T.cval Typed.t Csymex.t =
+let nondet_c_ty_ (ty : ctype_) : Svalue.packed Csymex.t =
   let open Csymex.Syntax in
   match ty with
-  | Void -> Csymex.return Usize.(0s)
+  | Void -> Csymex.return (Svalue.Packed Usize.(0s))
   | Pointer _ ->
       let* loc = Csymex.nondet Typed.t_loc in
       let* ofs = Csymex.nondet Typed.t_usize in
-      Csymex.return (Typed.Ptr.mk loc ofs)
+      Csymex.return (Svalue.Packed (Typed.Ptr.mk loc ofs))
   | Basic (Integer ity) ->
       let* size = size_of_int_ty_unsupported ity in
       let* res = Csymex.nondet (Typed.t_int (8 * size)) in
       let constrs = int_constraints ity |> Option.get in
       let+ () = Csymex.assume (constrs res) in
-      (res :> Typed.T.cval Typed.t)
+      Svalue.Packed res
   | Basic (Floating fty) ->
       let precision = precision fty in
       let* res = Csymex.nondet (Typed.t_float precision) in
-      Csymex.return (res :> Typed.T.cval Typed.t)
+      Csymex.return (Svalue.Packed res)
   | Array _ | Function _ | FunctionNoParams _ | Struct _ | Union _ | Atomic _ ->
       Csymex.not_impl "nondet_c_ty: unsupported type"
 
-let nondet_c_ty (ty : ctype) : Typed.T.cval Typed.t Csymex.t =
+let nondet_c_ty (ty : ctype) : Svalue.packed Csymex.t =
   nondet_c_ty_ (proj_ctype_ ty)
 
 let nondet_c_ty_aggregate_ (ty : ctype_) : Agv.t Csymex.t =

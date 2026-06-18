@@ -723,14 +723,11 @@ module Make (StateImpl : State.S) = struct
                 L.failwith "unexpected types for CastRawPtr: %a -> %a" pp_ty
                   from_ty pp_ty to_ty)
         | Cast (CastTransmute (from, to_)) -> State.transmute ~from ~to_ v
-        | Cast (CastScalar (from_ty, to_ty)) ->
-            let+ v =
-              match v with
-              | Int i -> ok (i :> T.cval Typed.t)
-              | Float f -> ok (f :> T.cval Typed.t)
-              | _ -> L.failwith "Invalid value for CastScalar"
-            in
-            Encoder.cast_literal ~from_ty ~to_ty v
+        | Cast (CastScalar (from_ty, to_ty)) -> (
+            match v with
+            | Int i -> ok (Encoder.cast_literal ~from_ty ~to_ty i)
+            | Float f -> ok (Encoder.cast_literal ~from_ty ~to_ty f)
+            | _ -> L.failwith "Invalid value for CastScalar")
         | Cast (CastUnsize (from_ty, to_ty, meta)) ->
             let rec with_ptr_meta : rust_val -> rust_val t = function
               | Ptr (v, prev) ->
@@ -798,7 +795,7 @@ module Make (StateImpl : State.S) = struct
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
                 let+ res = Core.eval_lit_binop op ty v1 v2 in
-                Int (Typed.cast res)
+                Int res
             | AddChecked | SubChecked | MulChecked ->
                 let ty =
                   match type_of_operand e1 with

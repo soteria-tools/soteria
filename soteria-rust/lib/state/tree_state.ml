@@ -68,9 +68,9 @@ module Make (Borrows : Tree_borrows.T) = struct
 
     let subst subst_val p =
       let se = Typed.Expr.subst subst_val in
-      let ptr = se p.ptr in
-      let align = se p.align in
-      let size = se p.size in
+      let ptr = Typed.as_ptr (se p.ptr) in
+      let align = Typed.as_int (se p.align) in
+      let size = Typed.as_int (se p.size) in
       let tag = L_option.subst Borrows.Tag.subst subst_val p.tag in
       { ptr; align; size; tag }
 
@@ -132,8 +132,8 @@ module Make (Borrows : Tree_borrows.T) = struct
         let+ ptr2 = decay p2 in
         ptr1 -!@ ptr2
 
-    let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
-    let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
+    let as_id { ptr; _ } = Typed.Ptr.loc ptr
+    let allocation_info { size; align; _ } = (size, align)
 
     let nondet ty =
       let open Rustsymex.Syntax in
@@ -162,7 +162,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let to_syn v = Expr.of_value v
     let learn_eq (s : syn) (v : t) = DecayMap.SM.Consumer.learn_eq s v
     let exprs_syn v = [ v ]
-    let subst = Expr.subst
+    let subst s v = as_loc (Expr.subst s v)
     let pp = ppa
     let show = Fmt.to_to_string pp
     let to_int = unique_tag
@@ -358,7 +358,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       [%l.trace "STATE:@\n%a" (Fmt.Dump.option pp) st]
 
     let with_ptr (access : access) (ptr : Sptr_base.t)
-        (f : [< T.sint ] Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
+        (f : T.sint Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
         ('a, 'err, syn list) SM.Result.t =
       let open SM in
       let open SM.Syntax in
@@ -536,7 +536,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         Typed.ppa exp_align pp_ty ty];
     let loc, ofs = Typed.Ptr.decompose ptr.ptr in
     (* A pointer with no provenance is aligned to it's offset *)
-    let align = Typed.(ite (Ptr.is_null_loc loc) exp_align (cast ptr.align)) in
+    let align = Typed.(ite (Ptr.is_null_loc loc) exp_align ptr.align) in
     let is_aligned =
       ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
     in
@@ -561,13 +561,11 @@ module Make (Borrows : Tree_borrows.T) = struct
         if%sat size >$@ Usize.(0s) then Result.ok (ptr, size)
         else
           let++^ ptr' = Sptr_base.raw_offset ptr size in
-          (ptr', Typed.(cast (BV.neg size)))
+          (ptr', Typed.(BV.neg size))
       in
       let open Block.SM.Syntax in
       let@ ofs = with_ptr Ghost ptr in
-      let+- _ =
-        Block.with_block (Tree_block.check_owned ofs (Typed.cast size))
-      in
+      let+- _ = Block.with_block (Tree_block.check_owned ofs size) in
       `UBDanglingPointer
 
   and check_non_dangling ((_, meta) as ptr) (ty : Types.ty) =

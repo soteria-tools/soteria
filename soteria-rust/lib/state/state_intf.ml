@@ -22,11 +22,7 @@ module type S = sig
         unsigned (this matters for overflow checks on the multiplication with
         the pointee type). *)
     val offset :
-      ?check_signed:bool ->
-      ?ty:Charon.Types.ty ->
-      [< sint ] Typed.t ->
-      t ->
-      t ret
+      ?check_signed:bool -> ?ty:Charon.Types.ty -> sint Typed.t -> t -> t ret
 
     (** Checks this pointer isn't dangling for the given pointee type, i.e. it
         points to an allocation and doesn't range outside of it. This also
@@ -85,7 +81,7 @@ module type S = sig
   val load_global : Types.global_decl_id -> full_ptr option ret
   val borrow : ?protect:bool -> full_ptr -> Types.ty -> full_ptr ret
   val unprotect : full_ptr -> Types.ty -> unit ret
-  val with_exposed : [< sint ] Typed.t -> full_ptr ret
+  val with_exposed : sint Typed.t -> full_ptr ret
   val leak_check : unit -> unit ret
   val add_error : Error.with_trace -> unit ret
   val pop_error : unit -> 'a ret

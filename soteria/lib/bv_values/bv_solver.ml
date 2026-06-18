@@ -6,78 +6,95 @@ module Var = Svalue.Var
     implies the negation of [q], and [None] otherwise. Used to suppress
     redundant ordering constraints (e.g. [a <= b] becomes trivially true once
     [a < b] is in the PC). *)
-let[@inline] implies_or_contradicts ~(q : Svalue.t) ~(neg_q : Svalue.t)
-    (pc : Svalue.t) : bool option =
+let[@inline] implies_or_contradicts ~(q : Svalue.sbool Svalue.t)
+    ~(neg_q : Svalue.sbool Svalue.t) (pc : Svalue.sbool Svalue.t) : bool option
+    =
   let open Svalue in
   if Svalue.equal q pc then Some true
   else if Svalue.equal neg_q pc then Some false
   else
     match (q.node.kind, pc.node.kind) with
     (* [a < b] in PC implies [a <= b] *)
-    | Binop (Leq qs, qa, qb), Binop (Lt ps, pa, pb)
+    | BvCmp (Leq qs, qa, qb), BvCmp (Lt ps, pa, pb)
       when qs = ps && equal qa pa && equal qb pb ->
         Some true
     (* [a < b] in PC implies ~[b <= a] and ~[b < a] *)
-    | Binop ((Lt qs | Leq qs), qa, qb), Binop (Lt ps, pa, pb)
+    | BvCmp ((Lt qs | Leq qs), qa, qb), BvCmp (Lt ps, pa, pb)
       when qs = ps && equal qa pb && equal qb pa ->
         Some false
     (* [a <= b] in PC implies ~[b < a] *)
-    | Binop (Lt qs, qa, qb), Binop (Leq ps, pa, pb)
+    | BvCmp (Lt qs, qa, qb), BvCmp (Leq ps, pa, pb)
       when qs = ps && equal qa pb && equal qb pa ->
         Some false
     (* [a < b] (either direction) in PC implies ~[a = b] *)
-    | Binop (Eq, qa, qb), Binop (Lt _, pa, pb)
+    | Eq (qa, qb), BvCmp (Lt _, pa, pb)
       when (equal qa pa && equal qb pb) || (equal qa pb && equal qb pa) ->
         Some false
     (* [a < b] (either direction) in PC implies [~(a = b)] *)
-    | ( Unop (Not, { node = { kind = Binop (Eq, qa, qb); _ }; _ }),
-        Binop (Lt _, pa, pb) )
+    | UnBool (Not, { node = { kind = Eq (qa, qb); _ }; _ }), BvCmp (Lt _, pa, pb)
       when (equal qa pa && equal qb pb) || (equal qa pb && equal qb pa) ->
         Some true
     | _ -> None
 
-let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
-  let simplify = simplify ~trivial_truthiness ~fallback in
+(* A simplification fallback, polymorphic in the value kind (hence wrapped in a
+   record so it can be applied at several types within [simplify]). *)
+type simplifier = { run : 'a. 'a Svalue.t -> 'a Svalue.t }
+
+let rec simplify : type a.
+    trivial_truthiness:(Svalue.sbool Svalue.t -> bool option) ->
+    fallback:simplifier ->
+    a Svalue.t ->
+    a Svalue.t =
+ fun ~trivial_truthiness ~fallback v ->
+  let simplify v = simplify ~trivial_truthiness ~fallback v in
   match v.node.kind with
   | Bool _ | BitVec _ | Float _ -> v
   | _ -> (
-      match trivial_truthiness (Typed.type_ v) with
-      | Some true -> Svalue.Bool.v_true
-      | Some false -> Svalue.Bool.v_false
-      | None -> (
-          match v.node.kind with
-          | Unop (Not, e) ->
-              let e' = simplify e in
-              if Svalue.equal e e' then fallback v else Svalue.Bool.not e'
-          | Binop (Eq, e1, e2) ->
-              if Svalue.equal e1 e2 then Svalue.Bool.v_true
-              else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
-              else fallback v
-          | Binop (And, e1, e2) ->
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-              else Svalue.Bool.and_ se1 se2
-          | Binop (Or, e1, e2) ->
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then fallback v
-              else Svalue.Bool.or_ se1 se2
-          | Ite (g, e1, e2) ->
-              let sg = simplify g in
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal sg g && Svalue.equal se1 e1 && Svalue.equal se2 e2
-              then v
-              else Svalue.Bool.ite sg se1 se2
-          | _ -> fallback v))
+      match v.node.ty with
+      | TBool -> (
+          match trivial_truthiness v with
+          | Some true -> Svalue.Bool.v_true
+          | Some false -> Svalue.Bool.v_false
+          | None -> (
+              match v.node.kind with
+              | UnBool (Not, e) ->
+                  let e' = simplify e in
+                  if Svalue.equal e e' then fallback.run v
+                  else Svalue.Bool.not e'
+              | Eq (e1, e2) ->
+                  if Svalue.equal e1 e2 then Svalue.Bool.v_true
+                  else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
+                  else fallback.run v
+              | BoolBin (And, e1, e2) ->
+                  let se1 = simplify e1 in
+                  let se2 = simplify e2 in
+                  if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
+                  else Svalue.Bool.and_ se1 se2
+              | BoolBin (Or, e1, e2) ->
+                  let se1 = simplify e1 in
+                  let se2 = simplify e2 in
+                  if Svalue.equal se1 e1 && Svalue.equal se2 e2 then
+                    fallback.run v
+                  else Svalue.Bool.or_ se1 se2
+              | Ite (g, e1, e2) ->
+                  let sg = simplify g in
+                  let se1 = simplify e1 in
+                  let se2 = simplify e2 in
+                  if
+                    Svalue.equal sg g
+                    && Svalue.equal se1 e1
+                    && Svalue.equal se2 e2
+                  then v
+                  else Svalue.Bool.ite sg se1 se2
+              | _ -> fallback.run v))
+      | _ -> fallback.run v)
 
 module Make_incremental
     (Analysis : Analyses.S)
     (Intf :
       Solvers.Solver_interface.S
-        with type value = Svalue.t
-         and type ty = Svalue.ty) =
+        with type value = Svalue.packed
+         and type ty = Svalue.packed_ty) =
 struct
   module Value = Typed
 
@@ -134,7 +151,7 @@ struct
 
   let fresh_var solver ty =
     let v_id = Var_counter.get_next solver.var_counter in
-    Intf.declare_var solver.z3_exe v_id (Typed.untype_type ty);
+    Intf.declare_var solver.z3_exe v_id (Svalue.PackedTy (Typed.untype_type ty));
     v_id
 
   let simplify solver (v : 'a Typed.t) : 'a Typed.t =
@@ -142,7 +159,7 @@ struct
     |> Typed.untyped
     |> simplify
          ~trivial_truthiness:(Solver_state.trivial_truthiness_of solver.state)
-         ~fallback:(Analysis.simplify solver.analysis)
+         ~fallback:{ run = (fun v -> Analysis.simplify solver.analysis v) }
     |> Typed.type_
 
   let add_constraints solver ?(simplified = false) vs =
@@ -152,7 +169,7 @@ struct
     (* the incremental solver doesn't need to dirty variables *)
     let v, _ = Analysis.add_constraint solver.analysis (Typed.untyped v) in
     Solver_state.add_constraint solver.state (Typed.type_ v);
-    Intf.add_constraint solver.z3_exe v
+    Intf.add_constraint solver.z3_exe (Svalue.Packed v)
 
   (* Incremental doesn't allow for caching queries... *)
   let sat solver =
@@ -180,8 +197,8 @@ module Make
     (Analysis : Analyses.S)
     (Intf :
       Solvers.Solver_interface.S
-        with type value = Svalue.t
-         and type ty = Svalue.ty) =
+        with type value = Svalue.packed
+         and type ty = Svalue.packed_ty) =
 struct
   module Value = Typed
 
@@ -340,7 +357,7 @@ struct
     |> Typed.untyped
     |> simplify
          ~trivial_truthiness:(Solver_state.trivial_truthiness_of solver.state)
-         ~fallback:(Analysis.simplify solver.analysis)
+         ~fallback:{ run = (fun v -> Analysis.simplify solver.analysis v) }
     |> Typed.type_
 
   let add_constraints solver ?(simplified = false) vs =
@@ -357,7 +374,7 @@ struct
 
   let trivial_model_works solver to_check var_tys =
     let exception No_model in
-    let value_generator : Svalue.ty -> unit -> Svalue.t = function
+    let value_generator : type a. a Svalue.ty -> unit -> a Svalue.t = function
       | TLoc n ->
           let max = Z.(shift_left one n) in
           fun () -> Svalue.Ptr.loc_of_z n (Z.random_int max)
@@ -375,11 +392,12 @@ struct
     try
       let bindings =
         Var.Map.fold
-          (fun v (ty : Svalue.ty) acc ->
+          (fun v (Svalue.PackedTy ty) acc ->
             let values =
               Iter.forever (value_generator ty)
               |> Analysis.filter solver.analysis v ty
               |> Iter.take fuel
+              |> Iter.map (fun x -> Svalue.Packed x)
               |> Iter.to_array
             in
             if Array.length values = 0 then raise No_model;
@@ -387,12 +405,23 @@ struct
           var_tys Var.Map.empty
       in
       let rec aux i =
-        let rec eval_var _ v _ =
-          let values = Var.Map.find v bindings in
-          let index = i mod Array.length values in
-          match values.(index) with
-          | { node = { kind = Var var; ty }; _ } as v -> eval_var v var ty
-          | v -> v
+        let eval_var =
+          let rec resolve : type a.
+              a Svalue.t -> Var.t -> a Svalue.ty -> a Svalue.t =
+           fun orig var _ty ->
+            match Var.Map.find_opt var bindings with
+            | None -> orig
+            | Some values -> (
+                let index = i mod Array.length values in
+                let (Svalue.Packed value) = values.(index) in
+                match Svalue.eq_ty value.node.ty orig.node.ty with
+                | None -> orig
+                | Some Equal -> (
+                    match value.node.kind with
+                    | Var var' -> resolve value var' value.node.ty
+                    | _ -> value))
+          in
+          { Eval.ev = (fun orig var ty -> resolve orig var ty) }
         in
         let res = Eval.eval ~eval_var to_check in
         if Svalue.equal res Svalue.Bool.v_true then true
@@ -415,17 +444,18 @@ struct
       (* Declare all relevant variables *)
       Var.Map.iter (Intf.declare_var solver.z3_exe) var_tys;
       (* Declare the constraint *)
-      Intf.add_constraint solver.z3_exe to_check;
+      Intf.add_constraint solver.z3_exe (Svalue.Packed to_check);
       (* Actually check sat *)
       Intf.check_sat solver.z3_exe)
 
   let check_sat_raw_memo solver to_check =
     let to_check = Typed.untyped to_check in
-    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
+    let tag = Svalue.unique_tag to_check in
+    match Hashtbl.Hint.find_opt memo_sat_check_tbl tag with
     | Some result -> result
     | None ->
         let result = check_sat_raw solver to_check in
-        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
+        Hashtbl.Hint.add memo_sat_check_tbl tag result;
         result
 
   let sat solver =

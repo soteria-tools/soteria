@@ -36,12 +36,12 @@ let fresh_alloc_id () =
   | Whole_program -> return (Concrete_alloc_id.get_next ())
 
 let check_nonzero (t : Typed.T.sint Typed.t) :
-    ([> Typed.T.nonzero ] Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
+    (Typed.T.nonzero Typed.t, [> `NonZeroIsZero ], 'fix) Result.t =
   let open Syntax in
   let open Typed.Infix in
   if%sat t ==@ Typed.BitVec.zero (Typed.size_of_int t) then
     Result.error `NonZeroIsZero
-  else Result.ok (Typed.cast t)
+  else Result.ok t
 
 let get_loc () = get_state ()
 

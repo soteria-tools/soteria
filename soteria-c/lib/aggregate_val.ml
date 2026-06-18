@@ -2,11 +2,14 @@ module T = Typed.T
 module Expr = Typed.Expr
 
 type 'v agv = Basic of 'v | Struct of 'v agv list | Array of 'v agv list
-type t = T.cval Typed.t agv
+
+(* A basic value can be of any kind (int/ptr/float), so it is held
+   existentially-wrapped. *)
+type t = Svalue.packed agv
 type syn = Expr.t agv
 
 let rec to_syn = function
-  | Basic v -> Basic (Typed.Expr.of_value v)
+  | Basic v -> Basic v
   | Struct fields -> Struct (List.map to_syn fields)
   | Array elements -> Array (List.map to_syn elements)
 
@@ -22,10 +25,13 @@ let rec pp_agv pp_v ft =
   | Struct fields -> braces (list ~sep:comma (pp_agv pp_v)) ft fields
   | Array elements -> brackets (list ~sep:comma (pp_agv pp_v)) ft elements
 
-let pp ft v = (pp_agv Typed.ppa) ft v
+let pp ft v = (pp_agv Typed.Expr.pp) ft v
 let pp_syn ft v = (pp_agv Typed.Expr.pp) ft v
-let int_z size z = Basic (Typed.BitVec.mk_masked size z)
-let int size i = Basic (Typed.BitVec.mki_masked size i)
+
+(* Wrap a typed value into a basic aggregate leaf. *)
+let basic v = Basic (Svalue.Packed v)
+let int_z size z = Basic (Svalue.Packed (Typed.BitVec.mk_masked size z))
+let int size i = Basic (Svalue.Packed (Typed.BitVec.mki_masked size i))
 
 let c_int i =
   let c_int_size =
@@ -35,8 +41,8 @@ let c_int i =
   in
   int (c_int_size * 8) i
 
-let void = Basic (Typed.BitVec.zero 8)
-let null = Basic Typed.Ptr.null
+let void = Basic (Svalue.Packed (Typed.BitVec.zero 8))
+let null = Basic (Svalue.Packed Typed.Ptr.null)
 
 let basic_or_unsupported ~msg v =
   match v with
@@ -46,6 +52,6 @@ let basic_or_unsupported ~msg v =
 
 let rec iter_vars v f =
   match v with
-  | Basic v -> Svalue.iter_vars v f
+  | Basic (Svalue.Packed v) -> Svalue.iter_vars v f
   | Struct values | Array values ->
       List.iter (fun value -> iter_vars value f) values

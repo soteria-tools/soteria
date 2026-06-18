@@ -24,16 +24,15 @@ module type DecayMapS = sig
       along with the updated decay map. *)
   val decay :
     expose:bool ->
-    size:[< sint ] Typed.t ->
-    align:[< nonzero ] Typed.t ->
-    [< sloc ] Typed.t ->
+    size:sint Typed.t ->
+    align:nonzero Typed.t ->
+    sloc Typed.t ->
     sint Typed.t SM.t
 
   (** Tries finding, for the given integer, the matching provenance in the decay
       map. If found, it returns that provenance, along with the exposed address
       for that allocation at offset 0. Otherwise returns [None]. *)
-  val from_exposed :
-    [< sint ] Typed.t -> (sloc Typed.t * sint Typed.t) option SM.t
+  val from_exposed : sint Typed.t -> (sloc Typed.t * sint Typed.t) option SM.t
 end
 
 module DecayMap = struct
@@ -51,7 +50,7 @@ module DecayMap = struct
     let to_syn = Expr.of_value
     let learn_eq s l = Consumer.learn_eq s l
     let exprs_syn s : Expr.t list = [ s ]
-    let subst = Expr.subst
+    let subst s k = as_loc (Expr.subst s k)
   end
 
   module Entry = struct
@@ -76,7 +75,7 @@ module DecayMap = struct
     let exprs_syn ({ address; exposed = _ } : syn) : Expr.t list = [ address ]
 
     let subst s ({ address; exposed } : syn) : t =
-      { address = Expr.subst s address; exposed }
+      { address = Typed.as_int (Expr.subst s address); exposed }
   end
 
   module EntryExcl = Soteria.Sym_states.Agree.Make (Rustsymex) (Entry)
@@ -101,8 +100,7 @@ module DecayMap = struct
   open SM
   open Syntax
 
-  let decay ~expose ~size ~align (loc : [< sloc ] Typed.t) : T.sint Typed.t SM.t
-      =
+  let decay ~expose ~size ~align (loc : sloc Typed.t) : T.sint Typed.t SM.t =
     if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
     else
       let* state = get_state () in
@@ -141,7 +139,7 @@ module DecayMap = struct
              Result.ok address)
       |> map Compo_res.get_ok
 
-  let from_exposed (loc_int : [< sint ] Typed.t) :
+  let from_exposed (loc_int : sint Typed.t) :
       (sloc Typed.t * sint Typed.t) option SM.t =
     (* UX: we only consider the first one; this is more or less correct, as per
        the documentation of [with_exposed_provenance]: "The provenance of the
@@ -153,7 +151,7 @@ module DecayMap = struct
     let+ map = get_state () in
     let bindings = syntactic_bindings (of_opt map) in
     Typed.iter_vars loc_int
-    |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
+    |> Iter.filter (fun (_, Svalue.PackedTy ty) -> Typed.equal_ty usize_ty ty)
     |> Iter.filter_map (fun (var, _) ->
         let v = Typed.mk_var var usize_ty in
         Seq.find
@@ -174,7 +172,7 @@ module type S = sig
   type t [@@mixins D_abstr.S_with_syn]
 
   (** Converts an address into a pointer, without provenance. *)
-  val of_address : [< sint ] Typed.t -> t
+  val of_address : sint Typed.t -> t
 
   (** Creates a dangling pointer to the given type, if that type is a ZST;
       returns [None] otherwise. *)
@@ -188,7 +186,7 @@ module type S = sig
   val is_null : t -> sbool Typed.t
 
   (** The offset of this pointer within its allocation. *)
-  val ofs : t -> [> sint ] Typed.t
+  val ofs : t -> sint Typed.t
 
   (** Returns a symbolic boolean characterising whether the pointer is in bound
       to its allocation. *)
@@ -213,17 +211,17 @@ module type S = sig
   (** Decay a pointer into an integer value, losing provenance.
       {b This does not expose the address of the allocation; for that, use
          [expose]} *)
-  val decay : t -> [> sint ] Typed.t DecayMap.SM.t
+  val decay : t -> sint Typed.t DecayMap.SM.t
 
   (** Decay a pointer into an integer value, exposing the address of the
       allocation, allowing it to be retrieved with [DecayMapS.from_exposed]
       later. *)
-  val expose : t -> [> sint ] Typed.t DecayMap.SM.t
+  val expose : t -> sint Typed.t DecayMap.SM.t
 
   (** For Miri: the allocation ID of this location, as a u64 *)
-  val as_id : t -> [> sint ] Typed.t
+  val as_id : t -> sloc Typed.t
 
   (** For Miri: get the allocation info for this pointer: its size and alignment
   *)
-  val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
+  val allocation_info : t -> sint Typed.t * nonzero Typed.t
 end

@@ -118,7 +118,7 @@ type t = {
 [@@deriving show]
 
 let iter_vars ({ size; align; fields; uninhabited = _ } : t)
-    (f : Svalue.Var.t * 'a Typed.ty -> unit) : unit =
+    (f : Svalue.Var.t * Svalue.packed_ty -> unit) : unit =
   iter_vars size f;
   iter_vars align f;
   Fields_shape.iter_vars fields f

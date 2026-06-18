@@ -43,7 +43,7 @@ module M (Symex : Symex.Base) = struct
         let () =
           ignore
           @@ Value.Expr.Subst.apply
-               ~missing_var:(fun _ _ -> raise_notrace Not_covered)
+               ~missing_var:{ missing = (fun _ _ -> raise_notrace Not_covered) }
                subst expr
         in
         true
@@ -57,22 +57,18 @@ module M (Symex : Symex.Base) = struct
         - All out-parameters are either known or can be learned *)
     let is_consumable (subst : Value.Expr.Subst.t) (atom : B.syn atom) : bool =
       let ins, outs = ins_outs atom in
-      let learnable_pairs =
-        List.mapi
-          (fun i syn ->
-            let dummy_value =
-              (* These values are toxic, do not use them in the symex! *)
-              Value.mk_var (Var.of_int i) (Value.Expr.ty syn)
-            in
-            (syn, dummy_value))
-          outs
+      (* [dummy_value] is existentially typed, so the learn must be done within
+         the iteration (it cannot escape into a list). *)
+      let learnable i syn =
+        let (PackedTy ty) = Value.Expr.ty syn in
+        (* These values are toxic, do not use them in the symex! *)
+        let dummy_value = Value.mk_var (Var.of_int i) ty in
+        Option.is_some (Value.Expr.Subst.learn subst syn dummy_value)
       in
       List.for_all (subst_covers subst) ins
       && List.for_all
-           (fun (syn, v) ->
-             (* Syn.learn returns [Some _] if we can learn everything *)
-             Option.is_some (Value.Expr.Subst.learn subst syn v))
-           learnable_pairs
+           (fun (i, syn) -> learnable i syn)
+           (List.mapi (fun i syn -> (i, syn)) outs)
 
     let consume_atom atom st =
       let open Consumer.Syntax in
@@ -130,7 +126,7 @@ module M (Symex : Symex.Base) = struct
       (B : Base)
       (Syn : sig
         val mk_exists :
-          (Var.t * 'a Value.ty) list -> Value.Expr.t -> Value.Expr.t
+          (Var.t * Value.Expr.packed_ty) list -> Value.Expr.t -> Value.Expr.t
 
         val conj : Value.Expr.t list -> Value.Expr.t
       end) =
@@ -145,10 +141,16 @@ module M (Symex : Symex.Base) = struct
       let free_vars =
         let r = ref [] in
         ListLabels.iter exprs ~f:(fun expr ->
-            Value.Expr.Subst.apply subst expr ~missing_var:(fun var ty ->
-                let vars = !r in
-                if not @@ List.mem (var, ty) vars then r := (var, ty) :: vars;
-                Value.mk_var var ty)
+            Value.Expr.Subst.apply subst expr
+              ~missing_var:
+                {
+                  missing =
+                    (fun var ty ->
+                      let vars = !r in
+                      let packed = (var, Value.Expr.PackedTy ty) in
+                      if not @@ List.mem packed vars then r := packed :: vars;
+                      Value.mk_var var ty);
+                }
             |> ignore);
         !r
       in

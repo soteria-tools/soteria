@@ -294,12 +294,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      *   => (2ⁿ-1) × (2ⁿ-1) + (2ⁿ-1) + (2ⁿ-1)
      *   => (2²ⁿ - 2ⁿ⁺¹ + 1) + (2ⁿ⁺¹ - 2)
      *   => 2²ⁿ - 1 *)
-    let ( *!@ ) l r =
-      Typed.cast @@ BV.mul ~checked:(Typed.checked_of_signed false) l r
-    in
-    let ( +!@ ) l r =
-      Typed.cast @@ BV.add ~checked:(Typed.checked_of_signed false) l r
-    in
+    let ( *!@ ) l r = BV.mul ~checked:(Typed.checked_of_signed false) l r in
+    let ( +!@ ) l r = BV.add ~checked:(Typed.checked_of_signed false) l r in
     let res = (multiplier *!@ multiplicand) +!@ addend +!@ carry in
     let res_l, res_h =
       ( BV.extract 0 ((size_t * 8) - 1) res,
@@ -713,10 +709,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let ( %@ ) = BV.rem ~signed:(Layout.is_signed lit) in
     let+ () =
       assert_
-        (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero))
+        (Typed.not (y ==@ zero) &&@ (x %@ y ==@ zero))
         (`StdErr "core::intrinsics::exact_div on non divisible")
     in
-    Int (Typed.cast res)
+    Int res
 
   let fabs ~t ~x =
     let t = TypesUtils.ty_as_literal t in
@@ -829,14 +825,14 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* () =
       assert_not (size ==@ zero) (`Panic (Some "ptr_offset_from with ZST"))
     in
-    let size = Typed.cast size in
+    let size = size in
     let* off = Sptr.distance ptr base in
     (* If the pointers are not equal, they mustn't be dangling *)
     let* () =
       if%sat off ==@ zero then ok ()
       else
         let* () = Sptr.check_non_dangling_untyped (base, Thin) off in
-        Sptr.check_non_dangling_untyped (ptr, Thin) (cast ~-off)
+        Sptr.check_non_dangling_untyped (ptr, Thin) ~-off
     in
     (* UB conditions:
      * 1. must be at the same address, OR derived from the same allocation
@@ -851,12 +847,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     (* we cast to ignore the overflow for MIN/-1, since the size can't be -1 *)
     if unsigned then
       let+ () =
-        assert_
-          (Typed.cast (off >=$@ zero))
+        assert_ (off >=$@ zero)
           (`StdErr "core::intrinsics::offset_from_unsigned negative offset")
       in
-      Typed.cast (off /$@ size)
-    else ok (Typed.cast (off /$@ size))
+      off /$@ size
+    else ok (off /$@ size)
 
   let ptr_offset_from = ptr_offset_from_ ~unsigned:false
   let ptr_offset_from_unsigned = ptr_offset_from_ ~unsigned:true
@@ -905,7 +900,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           if bits <= 32 then BV.extract 0 (bits - 1) shift
           else BV.extend ~signed:false (bits - 32) shift
         in
-        let shift = Typed.cast @@ BV.rem ~signed:false shift bits' in
+        let shift = BV.rem ~signed:false shift bits' in
         let res =
           if side = `Left then x <<@ shift |@ (x >>@ bits' -!@ shift)
           else x >>@ shift |@ (x <<@ bits' -!@ shift)
@@ -929,12 +924,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
             if signed then Typed.ite (a <$@ BV.mki_lit t 0) min max else max
           in
           let res = BV.add ~checked:(Typed.checked_of_signed signed) a b in
-          Typed.ite ovf if_ovf (Typed.cast res)
+          Typed.ite ovf if_ovf res
       | Sub _ ->
           let ovf = BV.sub_overflows ~signed a b in
           let if_ovf = if signed then Typed.ite (a <$@ b) min max else min in
           let res = BV.sub ~checked:(Typed.checked_of_signed signed) a b in
-          Typed.ite ovf if_ovf (Typed.cast res)
+          Typed.ite ovf if_ovf res
       | _ -> L.failwith "Unreachable: not add or sub?"
     in
     ok (Int res)
@@ -966,7 +961,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let t = TypesUtils.ty_as_literal t in
     let x, y = (as_base t x, as_base t y) in
     let+ res = Core.eval_lit_binop op t x y in
-    Int (Typed.cast res)
+    Int res
 
   let unchecked_add = unchecked_op (Add OUB)
   let unchecked_div = unchecked_op (Div OUB)
@@ -999,7 +994,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let ity = TypesUtils.ty_as_literal t in
     let a, b = (as_base ity a, as_base ity b) in
     let+ res = Core.eval_lit_binop op ity a b in
-    Int (Typed.cast res)
+    Int res
 
   let wrapping_add = wrapping_op (Add OWrap)
   let wrapping_mul = wrapping_op (Mul OWrap)
@@ -1015,7 +1010,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     else
       (* if v == 0, then we can replace this mess by initialising a Zeros
          subtree *)
-      let val_ : [> T.sint ] Typed.t = Typed.cast val_ in
+      let val_ : T.sint Typed.t = val_ in
       if%sure val_ ==@ U8.(0s) then State.zeros dst size
       else
         match BV.to_z size with

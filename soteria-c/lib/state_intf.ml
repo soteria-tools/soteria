@@ -16,23 +16,18 @@ module type S = sig
   val pp_pretty : ignore_freed:bool -> Format.formatter -> t -> unit
 
   val empty : t option
-  val load : [< sptr ] Typed.t -> Ctree_block.Ctype.ctype -> Agv.t res
+  val load : sptr Typed.t -> Ctree_block.Ctype.ctype -> Agv.t res
   val store : sptr Typed.t -> Ctree_block.Ctype.ctype -> Agv.t -> unit res
-  val zero_range : [< sptr ] Typed.t -> sint Typed.t -> unit res
-  val alloc : ?zeroed:bool -> sint Typed.t -> [> sptr ] Typed.t res
-  val alloc_ty : Ctree_block.Ctype.ctype -> [> sptr ] Typed.t res
-  val free : [< sptr ] Typed.t -> unit res
+  val zero_range : sptr Typed.t -> sint Typed.t -> unit res
+  val alloc : ?zeroed:bool -> sint Typed.t -> sptr Typed.t res
+  val alloc_ty : Ctree_block.Ctype.ctype -> sptr Typed.t res
+  val free : sptr Typed.t -> unit res
 
   val get_global :
-    Cerb_frontend.Symbol.sym ->
-    t option ->
-    ([> sptr ] Typed.t * t option) Csymex.t
+    Cerb_frontend.Symbol.sym -> t option -> (sptr Typed.t * t option) Csymex.t
 
   val copy_nonoverlapping :
-    dst:[< sptr ] Typed.t ->
-    src:[< sptr ] Typed.t ->
-    size:sint Typed.t ->
-    unit res
+    dst:sptr Typed.t -> src:sptr Typed.t -> size:sint Typed.t -> unit res
 
   val produce_aggregate :
     Expr.t ->

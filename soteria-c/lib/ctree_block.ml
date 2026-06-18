@@ -33,7 +33,7 @@ module MemVal = struct
     type syn = Typed.Expr.t [@@deriving show { with_path = false }]
 
     let to_syn = Typed.Expr.of_value
-    let subst = Typed.Expr.subst
+    let subst s v = Typed.as_int (Typed.Expr.subst s v)
     let learn_eq = Consumer.learn_eq
     let exprs_syn x = [ x ]
     let fresh () = nondet Typed.t_usize
@@ -41,12 +41,12 @@ module MemVal = struct
 
   let pp_init ft (v, ty) =
     let open Fmt in
-    pf ft "%a : %a" Typed.ppa v Fmt_ail.pp_ty ty
+    pf ft "%a : %a" Typed.Expr.pp v Fmt_ail.pp_ty ty
 
   type qty = Totally | Partially [@@deriving show]
 
   type t =
-    | Init of (T.cval Typed.t * Ctype.ctype) [@printer pp_init]
+    | Init of (Svalue.packed * Ctype.ctype) [@printer pp_init]
     | Zeros
     | Uninit of qty
     | Any
@@ -63,7 +63,7 @@ module MemVal = struct
         in
         let* value = Csymex.nondet (Typed.t_int (8 * size)) in
         let+ () = Csymex.assume (constrs value) in
-        ((value :> T.cval Typed.t), ty)
+        (Svalue.Packed value, ty)
     | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
 
   let merge ~left ~right =
@@ -71,7 +71,7 @@ module MemVal = struct
     | Zeros, Zeros -> Zeros
     | Uninit Totally, Uninit Totally -> Uninit Totally
     | Uninit _, Uninit _ -> Uninit Partially
-    | Init (v1, _), Init (v2, _)
+    | Init (Svalue.Packed v1, _), Init (Svalue.Packed v2, _)
       when Typed.BitVec.sure_is_zero v1 && Typed.BitVec.sure_is_zero v2 ->
         Zeros
     | _, _ -> Lazy
@@ -84,7 +84,7 @@ module MemVal = struct
     | Uninit Partially | Lazy ->
         L.failwith "Should never split an intermediate node"
 
-  let decode ~ty t : ([> T.sint ] Typed.t, 'err, 'fix) Csymex.Result.t =
+  let decode ~ty t : (Svalue.packed, 'err, 'fix) Csymex.Result.t =
     match t with
     | Uninit _ ->
         [%l.trace "Uninitialized Memory Access detected!"];
@@ -93,11 +93,11 @@ module MemVal = struct
         match ty with
         | Ctype.Ctype (_, Basic (Integer ity)) ->
             let+ size = Layout.size_of_int_ty_unsupported ity in
-            Compo_res.ok (BitVec.zero (8 * size))
+            Compo_res.ok (Svalue.Packed (BitVec.zero (8 * size)))
         | Ctype (_, Basic (Floating fty)) ->
             let precision = Layout.precision fty in
-            Result.ok (Typed.Float.mk precision "+0.0")
-        | Ctype.Ctype (_, Pointer _) -> Result.ok Typed.Ptr.null
+            Result.ok (Svalue.Packed (Typed.Float.mk precision "+0.0"))
+        | Ctype.Ctype (_, Pointer _) -> Result.ok (Svalue.Packed Typed.Ptr.null)
         | _ ->
             Fmt.kstr not_impl "Cannot decode Zeros for type %a" Fmt_ail.pp_ty ty
         )
@@ -126,9 +126,7 @@ module MemVal = struct
 
   let to_syn (t : t) : syn Seq.t option =
     match t with
-    | Init (v, ty) ->
-        let v = Expr.of_value v in
-        Some (Seq.return (SInit (v, ty)))
+    | Init (v, ty) -> Some (Seq.return (SInit (v, ty)))
     | Uninit Totally -> Some (Seq.return SUninit)
     | Zeros -> Some (Seq.return SZeros)
     | Any -> Some (Seq.return SAny)
@@ -136,7 +134,7 @@ module MemVal = struct
 
   let mk_fix_typed ty () =
     let* v = Layout.nondet_c_ty ty in
-    return [ SInit (Expr.of_value v, ty) ]
+    return [ SInit (v, ty) ]
 
   let mk_fix_any () = [ Any ]
 
@@ -159,7 +157,7 @@ module MemVal = struct
     | SInit (v, ty), Owned node -> (
         let*^ sval_res = decode ~ty node in
         match sval_res with
-        | Ok sv ->
+        | Ok (Svalue.Packed sv) ->
             let+ () = learn_eq v sv in
             not_owned t
         | Missing f -> miss f
@@ -175,7 +173,7 @@ module MemVal = struct
         lfail Typed.v_false
     (* zeros *)
     | SZeros, Owned Zeros -> ok (not_owned t)
-    | SZeros, Owned (Init (v, cty)) ->
+    | SZeros, Owned (Init (Svalue.Packed v, cty)) ->
         let*^ size = Layout.size_of_s cty in
         let*^ size =
           of_opt_not_impl ~msg:"Consuming zeros with unknown size"
@@ -219,7 +217,8 @@ let range_of_low_and_type low ty =
   Range.of_low_and_size low size
 
 let sval_leaf ~range ~value ~ty =
-  if Typed.BitVec.sure_is_zero value then
+  let (Svalue.Packed v) = value in
+  if Typed.BitVec.sure_is_zero v then
     Tree.make ~node:(TB.Owned Zeros) ~range ?children:None ()
   else Tree.make ~node:(TB.Owned (Init (value, ty))) ~range ?children:None ()
 
@@ -244,8 +243,8 @@ let decode ~ty ~ofs node =
       let+ fixes = mk_fix_typed ofs ty () in
       Compo_res.miss (log_fixes fixes)
 
-let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
-    (T.cval Typed.t, 'err, syn list) SM.Result.t =
+let load (ofs : T.sint Typed.t) (ty : Ctype.ctype) :
+    (Svalue.packed, 'err, syn list) SM.Result.t =
   let open SM.Syntax in
   let*^ ((_, bound) as range) = range_of_low_and_type ofs ty in
   with_bound_check ~mk_fixes:(mk_fix_typed ofs ty) bound (fun t ->
@@ -256,10 +255,10 @@ let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
         Tree.frame_range t ~replace_node ~rebuild_parent range
       in
       let++ sval = decode ~ty ~ofs framed.node in
-      ((sval :> T.cval Typed.t), tree))
+      (sval, tree))
 
-let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
-    (sval : [< T.cval ] Typed.t) : (unit, 'err, syn list) SM.Result.t =
+let store (low : T.sint Typed.t) (ty : Ctype.ctype) (sval : Svalue.packed) :
+    (unit, 'err, syn list) SM.Result.t =
   let open SM.Syntax in
   let*^ ((_, bound) as range) = range_of_low_and_type low ty in
   let len = Range.size range in
@@ -281,7 +280,7 @@ let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
       in
       ((), tree))
 
-let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
+let zero_range (ofs : T.sint Typed.t) (size : T.sint Typed.t) :
     (unit, 'err, syn list) SM.Result.t =
   let ((_, bound) as range) = Range.of_low_and_size ofs size in
   let len = Range.size range in
@@ -299,7 +298,7 @@ let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
       let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
       ((), tree))
 
-let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t) :
+let deinit (low : T.sint Typed.t) (len : T.sint Typed.t) :
     (unit, 'err, 'fix) SM.Result.t =
   let ((_, bound) as range) = Range.of_low_and_size low len in
   with_bound_check ~mk_fixes:(mk_fix_any_s low len) bound (fun t ->
