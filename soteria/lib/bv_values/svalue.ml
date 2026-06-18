@@ -335,19 +335,41 @@ module Hcons = Hc.Make (struct
 
   let equal = equal_t_node
 
-  (* We could do a lot more efficient in terms of hashing probably, if this ever
-     becomes a bottleneck. *)
+  (* Allocation-free structural hash *)
+  let[@inline] combine h x = (h * 65599) + x
+
+  let rec hash_ty = function
+    | TBool -> 1
+    | TFloat p -> combine 2 (FloatPrecision.size p)
+    | TLoc n -> combine 3 n
+    | TPointer n -> combine 4 n
+    | TSeq ty -> combine 5 (hash_ty ty)
+    | TBitVector n -> combine 6 n
+
   let hash { kind; ty } =
-    let hty = Hashtbl.hash ty in
+    let h = hash_ty ty in
     match kind with
-    | Var _ | Bool _ | Float _ | BitVec _ -> Hashtbl.hash (kind, hty)
-    | Ptr (l, r) -> Hashtbl.hash (l.tag, r.tag, hty)
-    | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.tag) l, hty)
-    | Unop (op, v) -> Hashtbl.hash (op, v.tag, hty)
-    | Binop (op, l, r) -> Hashtbl.hash (op, l.tag, r.tag, hty)
-    | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
-    | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
-    | Exists (vs, sv) -> Hashtbl.hash (vs, sv.tag, hty)
+    | Bool b -> combine (combine h 1) (if b then 1 else 2)
+    | Var v -> combine (combine h 2) (Var.to_int v)
+    | Float f -> combine (combine h 3) (Hashtbl.hash f)
+    | BitVec z -> combine (combine h 4) (Z.hash z)
+    | Ptr (l, r) -> combine (combine (combine h 5) l.tag) r.tag
+    | Seq l -> List.fold_left (fun acc sv -> combine acc sv.tag) (combine h 6) l
+    | Unop (op, v) -> combine (combine (combine h 7) (Hashtbl.hash op)) v.tag
+    | Binop (op, l, r) ->
+        combine (combine (combine (combine h 8) (Hashtbl.hash op)) l.tag) r.tag
+    | Nop (op, l) ->
+        List.fold_left
+          (fun acc sv -> combine acc sv.tag)
+          (combine (combine h 9) (Hashtbl.hash op))
+          l
+    | Ite (c, t, e) ->
+        combine (combine (combine (combine h 10) c.tag) t.tag) e.tag
+    | Exists (vs, sv) ->
+        List.fold_left
+          (fun acc (v, ty) -> combine (combine acc (Var.to_int v)) (hash_ty ty))
+          (combine (combine h 11) sv.tag)
+          vs
 end)
 
 let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
