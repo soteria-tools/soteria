@@ -561,12 +561,15 @@ let rec list_tag_equal : type a b. a t list -> b t list -> bool =
 let equal_binder (v1, PackedTy t1) (v2, PackedTy t2) =
   Var.equal v1 v2 && equal_ty t1 t2
 
-(* Structural equality of two kinds known (by their types) to be at the same
-   index. Children are compared by their unique hash-consing tag. The [-56]
-   (unreachable-case) warning is suppressed: GADT exhaustiveness is imprecise
-   here, so some same-constructor cases are wrongly flagged unreachable, but
-   they are reachable at runtime and required for correctness. *)
-let kind_eq : type a. a t_kind -> a t_kind -> bool =
+(* Structural equality of two kinds, compared by their children's unique
+   hash-consing tags. Heterogeneous (the two kinds need not share an index):
+   mismatched constructors fall through to [false], so this doubles as the
+   hash-cons table's equality and avoids boxing a [(a, b) eq option] witness on
+   every bucket comparison. The [-56] (unreachable-case) warning is suppressed:
+   GADT exhaustiveness is imprecise here, so some same-constructor cases are
+   wrongly flagged unreachable, but they are reachable at runtime and required
+   for correctness. *)
+let kind_eq : type a b. a t_kind -> b t_kind -> bool =
  fun k1 k2 ->
   match[@warning "-56"] (k1, k2) with
   | Var a, Var b -> Var.equal a b
@@ -625,34 +628,68 @@ let equal_node : type a b. a t_node -> b t_node -> (a, b) eq option =
   | None -> None
   | Some Equal -> if kind_eq n1.kind n2.kind then Some Equal else None
 
-(* We could do a lot more efficient in terms of hashing probably, if this ever
-   becomes a bottleneck. *)
+let[@inline] combine h x = (h * 65599) + x
+
+(* Avalanche finaliser (32-bit lowbias mix, fits in OCaml's 63-bit int). The
+   bucket index uses the low bits of the hash, and the [combine] accumulator
+   alone mixes them poorly for the dense, sequential children tags we produce —
+   so without this, lookups in a large table degrade to long chains. *)
+let[@inline] final h =
+  let h = h lxor (h lsr 16) in
+  let h = h * 0x45d9f3b in
+  let h = h lxor (h lsr 16) in
+  let h = h * 0x45d9f3b in
+  h lxor (h lsr 16)
+
+let rec hash_ty : type a. a ty -> int = function
+  | TBool -> 1
+  | TFloat fp -> combine 2 (Hashtbl.hash fp)
+  | TLoc n -> combine 3 n
+  | TPointer n -> combine 4 n
+  | TSeq t -> combine 5 (hash_ty t)
+  | TBitVector n -> combine 6 n
+
 let hash_node : type a. a t_node -> int =
  fun { kind; ty } ->
-  let hty = Hashtbl.hash ty in
+  let hty = hash_ty ty in
+  let seq h l = List.fold_left (fun h sv -> combine h sv.tag) h l in
+  final
+  @@
   match kind with
-  | Var v -> Hashtbl.hash (`V v, hty)
-  | Bool b -> Hashtbl.hash (`B b, hty)
-  | Float f -> Hashtbl.hash (`F f, hty)
-  | BitVec z -> Hashtbl.hash (`Bv z, hty)
-  | LocLit z -> Hashtbl.hash (`Lc z, hty)
-  | Ptr (l, r) -> Hashtbl.hash (l.tag, r.tag, hty)
-  | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.tag) l, hty)
-  | UnBv (op, v) -> Hashtbl.hash (`UBv op, v.tag, hty)
-  | UnBool (op, v) -> Hashtbl.hash (`UBool op, v.tag, hty)
-  | UnFloat (op, v) -> Hashtbl.hash (`UFloat op, v.tag, hty)
-  | UnPtr (op, v) -> Hashtbl.hash (`UPtr op, v.tag, hty)
-  | BvArith (op, l, r) -> Hashtbl.hash (`Ar op, l.tag, r.tag, hty)
-  | BvCmp (op, l, r) -> Hashtbl.hash (`Cm op, l.tag, r.tag, hty)
-  | FArith (op, l, r) -> Hashtbl.hash (`Fa op, l.tag, r.tag, hty)
-  | FCmp (op, l, r) -> Hashtbl.hash (`Fc op, l.tag, r.tag, hty)
-  | BoolBin (op, l, r) -> Hashtbl.hash (`Bo op, l.tag, r.tag, hty)
-  | Eq (l, r) -> Hashtbl.hash (`Eq, l.tag, r.tag, hty)
-  | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
-  | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
+  | Var v -> combine (combine 1 (Var.hash v)) hty
+  | Bool b -> combine (combine 2 (Bool.to_int b)) hty
+  | Float f -> combine (combine 3 (Hashtbl.hash f)) hty
+  | BitVec z -> combine (combine 4 (Z.hash z)) hty
+  | LocLit z -> combine (combine 5 (Z.hash z)) hty
+  | Ptr (l, r) -> combine (combine (combine 6 l.tag) r.tag) hty
+  | Seq l -> combine (seq 7 l) hty
+  | UnBv (op, v) -> combine (combine (combine 8 (Hashtbl.hash op)) v.tag) hty
+  | UnBool (op, v) -> combine (combine (combine 9 (Hashtbl.hash op)) v.tag) hty
+  | UnFloat (op, v) ->
+      combine (combine (combine 10 (Hashtbl.hash op)) v.tag) hty
+  | UnPtr (op, v) -> combine (combine (combine 11 (Hashtbl.hash op)) v.tag) hty
+  | BvArith (op, l, r) ->
+      combine (combine (combine (combine 12 (Hashtbl.hash op)) l.tag) r.tag) hty
+  | BvCmp (op, l, r) ->
+      combine (combine (combine (combine 13 (Hashtbl.hash op)) l.tag) r.tag) hty
+  | FArith (op, l, r) ->
+      combine (combine (combine (combine 14 (Hashtbl.hash op)) l.tag) r.tag) hty
+  | FCmp (op, l, r) ->
+      combine (combine (combine (combine 15 (Hashtbl.hash op)) l.tag) r.tag) hty
+  | BoolBin (op, l, r) ->
+      combine (combine (combine (combine 16 (Hashtbl.hash op)) l.tag) r.tag) hty
+  | Eq (l, r) -> combine (combine (combine 17 l.tag) r.tag) hty
+  | Nop (op, l) -> combine (seq (combine 18 (Hashtbl.hash op)) l) hty
+  | Ite (c, t, e) ->
+      combine (combine (combine (combine 19 c.tag) t.tag) e.tag) hty
   | Exists (vs, sv) ->
-      Hashtbl.hash
-        (List.map (fun (v, PackedTy ty) -> (v, Hashtbl.hash ty)) vs, sv.tag, hty)
+      let h =
+        List.fold_left
+          (fun h (v, PackedTy ty) ->
+            combine (combine h (Var.hash v)) (hash_ty ty))
+          20 vs
+      in
+      combine (combine h sv.tag) hty
 
 (* A (strong) hash table of nodes, keyed by structure. We cannot use a weak/
    ephemeron table à la the [Hc] library: that keeps an entry's value alive only
@@ -665,7 +702,12 @@ let hash_node : type a. a t_node -> int =
 module Node_table = Hashtbl.Make (struct
   type t = packed
 
-  let equal (Packed a) (Packed b) = Option.is_some (equal_node a.node b.node)
+  (* Pure-bool structural equality: avoids boxing a [(a, b) eq option] witness
+     on every bucket comparison. [equal_ty] settles the index, [kind_eq] (which
+     is heterogeneous) the structure. *)
+  let equal (Packed a) (Packed b) =
+    equal_ty a.node.ty b.node.ty && kind_eq a.node.kind b.node.kind
+
   let hash (Packed a) = hash_node a.node
 end)
 
@@ -674,15 +716,22 @@ let node_counter = ref 0
 
 let hashcons : type a. a t_node -> a t_node hash_consed =
  fun node ->
-  match Node_table.find_opt node_table (Packed { node; tag = -1 }) with
+  (* Build the candidate node (and its [packed] box) up front so the same box
+     serves as both the lookup key and, on a miss, the stored entry — avoiding a
+     throwaway probe allocation. On a hit we hand back the existing node and
+     undo the counter bump, so tags are assigned exactly as if we only counted
+     on misses. *)
+  incr node_counter;
+  let hc = { node; tag = !node_counter } in
+  let key = Packed hc in
+  match Node_table.find_opt node_table key with
   | Some (Packed found) -> (
+      decr node_counter;
       match equal_node node found.node with
       | Some Equal -> found
       | None -> assert false)
   | None ->
-      incr node_counter;
-      let hc = { node; tag = !node_counter } in
-      Node_table.replace node_table (Packed hc) (Packed hc);
+      Node_table.replace node_table key key;
       hc
 
 let ( <| ) : type a. a t_kind -> a ty -> a t =
