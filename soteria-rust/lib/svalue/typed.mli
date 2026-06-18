@@ -159,11 +159,16 @@ module Adt : sig
 
   val as_tuple : [< T.adt ] t -> [> T.any ] t list
   val as_enum : [< T.adt ] t -> [> T.sint ] t * [> T.any ] t list
+  val discriminant_of : [< T.adt ] t -> [> T.sint ] t
 
-  (**  *)
-  val discriminant_of : [< T.adt ] t -> [< T.sint ] t
+  (* NOTE: i don't know if this will work at the solver level, or if i need a
+     [field_of idx] for tuples, and a [field_of_variant idx variant] for enums.
+     That wouldn't be annoying anyways. *)
+  val field_of : int -> [< T.adt ] t -> [> T.any ] t
+  val set_field : int -> [< T.any ] t -> [< T.adt ] t -> [> T.adt ] t
 
-  val field_of : [< T.adt ] t -> int -> [> T.any ] t
+  val update_field :
+    int -> ([< T.any ] t -> [> T.any ] t) -> [< T.adt ] t -> [> T.adt ] t
 
   module Checked : sig
     val mk_enum :

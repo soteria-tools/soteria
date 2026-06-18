@@ -32,12 +32,15 @@ end
 (** [CastError (value, expected, got)] *)
 exception CastError of T.any t * T.any ty * T.any ty
 
+exception TypedMigration of string
+
 let () =
   Printexc.register_printer (function
     | CastError (v, expected, got) ->
         Some
           (Fmt.str "Cast error: expected %a, got %a for value %a" ppa_ty
              expected ppa_ty got ppa v)
+    | TypedMigration msg -> Some (Fmt.str "TODO(typed migration): %s" msg)
     | _ -> None)
 
 let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
@@ -45,6 +48,7 @@ let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
     (CastError
        ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
 
+let todo_migration msg = raise (TypedMigration msg)
 let ( <| ) = Typed_core.Svalue.( <| )
 
 let float_precision :
@@ -213,13 +217,16 @@ module Ptr = struct
   let _get_ptr (ptr : [< T.sptr_t ] t) =
     match kind ptr with
     | Extension (ThinPtr ptr) -> ptr
-    | _ -> failwith "todo: ThinPtr.ptr getter"
+    | _ -> todo_migration "todo: ThinPtr.ptr getter"
 
   let _set_ptr (ptr : [< T.sptr_t ] t) f =
     match kind ptr with
     | Extension (ThinPtr inner) ->
         type_ (Extension (ThinPtr (f inner)) <| get_ty ptr)
-    | _ -> failwith "todo: ThinPtr.ptr setter"
+    | _ ->
+        (* NOTE: i actually don't think we want a setter unop, we just want to
+           rebuild the ptr from scratch *)
+        todo_migration "ThinPtr.ptr setter"
 
   let ptr_inner ptr = type_ (_get_ptr ptr).ptr
 
@@ -245,12 +252,12 @@ module Ptr = struct
   let meta_of ptr =
     match kind ptr with
     | Extension (Ptr (_, meta)) -> Option.map type_ meta
-    | _ -> failwith "todo: Ptr get meta"
+    | _ -> todo_migration "PtrFull get meta"
 
   let ptr_of ptr =
     match kind ptr with
     | Extension (Ptr (ptr, _)) -> type_ ptr
-    | _ -> failwith "todo: Ptr get ptr"
+    | _ -> todo_migration "PtrFull get ptr"
 
   let split ptr = (ptr_of ptr, meta_of ptr)
 end
@@ -273,27 +280,36 @@ module Adt = struct
 
   let mk_poly ty_id = type_ (Extension (PolyVal ty_id) <| TExtension TPolyType)
 
+  (* HACK: i have no idea what this really means or how to lift this for
+     variables... *)
   let as_union v =
     match kind v with
     | Extension (Union blocks) -> List.map (Pair.map type_ type_) blocks
-    | _ -> cast_error v (type_type (get_ty v))
+    | _ -> todo_migration "as_union unop"
 
+  (* HACK: i don't like this; it forces all fields to be resolved, which is
+     often overkill. i think i want to get rid of this, and force clients to
+     instead go through [index_of] *)
   let as_tuple v =
     match kind v with
     | Extension (Tuple vs) -> type_list vs
-    | _ -> cast_error v (type_type (get_ty v))
+    | _ -> todo_migration "as_tuple unop"
 
+  (* HACK: for a symbolic enum, this branches; this means we can't implement
+     this at the value level. we might have to get rid of [as_enum], and instead
+     expose e.g. in [Rustsymex] a util that does [branch_on] for all variants of
+     an enum, and tries seeing which matches. *)
   let as_enum v =
     match kind v with
     | Extension (Enum (discr, vs)) -> (type_ discr, type_list vs)
-    | _ -> cast_error v (type_type (get_ty v))
+    | _ -> todo_migration "discriminant_of + fields_of unops"
 
   let discriminant_of v =
     match kind v with
     | Extension (Enum (discr, _)) -> type_ discr
-    | _ -> cast_error v (type_type (get_ty v))
+    | _ -> todo_migration "discriminant_of unop"
 
-  let field_of v idx =
+  let field_of idx v =
     match kind v with
     | Extension (Tuple vs) -> (
         try type_ @@ List.nth vs idx
@@ -304,7 +320,30 @@ module Adt = struct
         with Failure _ ->
           Fmt.failwith "Enum field index %d out of bounds for value %a" idx ppa
             v)
-    | _ -> cast_error v (type_type (get_ty v))
+    | _ -> todo_migration "field_of binop"
+
+  let set_field idx f v =
+    match kind v with
+    | Extension (Tuple vs) -> (
+        try
+          type_ (Extension (Tuple (List.set_nth idx (untyped f) vs)) <| get_ty v)
+        with Failure _ ->
+          L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
+    | Extension (Enum (_, vs)) -> (
+        try
+          type_
+            (Extension
+               (Enum
+                  (untyped @@ discriminant_of v, List.set_nth idx (untyped f) vs))
+            <| get_ty v)
+        with Failure _ ->
+          L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
+    | _ ->
+        (* NOTE: again, i think rather than an operator we just want to
+           reconstruct the value fully. *)
+        todo_migration "set_field triop"
+
+  let update_field idx f v = set_field idx (f (field_of idx v)) v
 
   module Checked = struct
     let mk_enum tref variant vs =

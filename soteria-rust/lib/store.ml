@@ -1,5 +1,6 @@
 open Charon
 open Svalue
+open Common.Charon_util
 
 module Map = Stdlib.Map.Make (struct
   type t = Expressions.LocalId.id
@@ -33,16 +34,22 @@ module Place = struct
     | Local v -> v
     | Field (base, _, _) | Index (base, _) | Metadata base -> root base
 
-  (** The root value [v] with the value at [sp] replaced by [f] applied to it;
-      [None] if not navigable. *)
+  (** [update_val sp inner' v] updates the root value [v] with the value at [sp]
+      replaced by [inner']; [None] if [sp] is not navigable. *)
   let rec update_val { kind; _ } ~f v =
     match kind with
     | Local _ -> Some (f v)
     | Field (base, _, field) ->
         update_val base
-          ~f:(Rust_val.update_field (Types.FieldId.to_int field) ~f)
+          ~f:(fun v ->
+            Typed.Adt.update_field
+              (Types.FieldId.to_int field)
+              f (Typed.cast_any_adt v))
           v
-    | Index (base, idx) -> update_val base ~f:(Rust_val.update_field idx ~f) v
+    | Index (base, idx) ->
+        update_val base
+          ~f:(fun v -> Typed.Adt.update_field idx f (Typed.cast_any_adt v))
+          v
     (* metadata isn't navigable for in-place writes; spill to the heap *)
     | Metadata _ -> None
 
@@ -64,29 +71,26 @@ module Binding = struct
       - Uninit: the symbol is bound to an immediate, uninitialized value.
       - Dead: the symbol is dead; it doesn't exist (e.g. after a [StorageDead]).
   *)
-  type 'a kind =
-    | Stackptr of 'a Rust_val.full_ptr
-    | Value of 'a Rust_val.t
+  type kind =
+    | Stackptr of Typed.T.sptr_f Typed.t
+    | Value of Typed.T.any Typed.t
     | Uninit
     | Dead
   [@@deriving show { with_path = false }]
 
-  type 'a t = { kind : 'a kind; ty : Types.ty }
+  type t = { kind : kind; ty : Types.ty }
 
   let pp ft { kind; ty } =
     match kind with
-    | Stackptr ptr ->
-        Fmt.pf ft "Stackptr(%a) : %a"
-          (Rust_val.pp_full_ptr Fmt.nop)
-          ptr pp_ty ty
-    | Value v -> Fmt.pf ft "Value(%a) : %a" (Rust_val.pp Fmt.nop) v pp_ty ty
+    | Stackptr ptr -> Fmt.pf ft "Stackptr(%a) : %a" Typed.ppa ptr pp_ty ty
+    | Value v -> Fmt.pf ft "Value(%a) : %a" Typed.ppa v pp_ty ty
     | Uninit -> Fmt.pf ft "Uninit : %a" pp_ty ty
     | Dead -> Fmt.pf ft "Dead : %a" pp_ty ty
 
   let as_value = function { kind = Value v; _ } -> Some v | _ -> None
 
-  let bind_value (f : 'a Rust_val.t -> 'a kind) :
-      'a kind option -> 'a kind option = function
+  let bind_value (f : Typed.(T.any t) -> kind) : kind option -> kind option =
+    function
     | Some (Value v) -> Some (f v)
     | (Some Uninit | Some Dead) as v -> v
     | Some (Stackptr _) | None -> None
@@ -94,7 +98,7 @@ end
 
 open Binding
 
-type 'a t = 'a Binding.t Map.t
+type t = Binding.t Map.t
 
 let pp ft s =
   Fmt.(
@@ -116,26 +120,24 @@ let declare_ptr sym ptr t = declare sym (Stackptr ptr) t
 let declare_uninit sym t = declare sym Uninit t
 let dealloc sym t = declare sym Dead t
 let get_ty sym t = (Map.find sym t).ty
-let find local (store : 'a t) = Map.find local store
+let find local (store : t) = Map.find local store
 let empty = Map.empty
-let bindings (store : 'a t) = Map.bindings store
+let bindings (store : t) = Map.bindings store
 
 (** [try_load p s] tries loading [p] from the [s], returning [Some v] if it
     succeded, and [None] if it has to be spilled into the heap. *)
-let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
+let rec try_load (place : Place.t) (store : t) : Binding.kind option =
   match place.kind with
   | Local v -> Some (find v store).kind
-  | Field (base, _, field) -> (
+  | Field (base, _, field) ->
       let field_idx = Types.FieldId.to_int field in
       try_load base store
-      |> bind_value @@ function
-         | Tuple vs | Enum (_, vs) -> Value (List.nth vs field_idx)
-         | _ -> L.failwith "tried loading field of non-aggregate")
-  | Index (base, idx) -> (
+      |> bind_value @@ fun v ->
+         Value (Typed.Adt.field_of field_idx (Typed.cast_any_adt v))
+  | Index (base, idx) ->
       try_load base store
-      |> bind_value @@ function
-         | Tuple vs -> Value (List.nth vs idx)
-         | _ -> L.failwith "tried loading index of non-tuple")
+      |> bind_value @@ fun v ->
+         Value (Typed.Adt.field_of idx (Typed.cast_any_adt v))
   | Metadata base -> (
       try_load base store
       |> bind_value @@ fun v ->
@@ -144,17 +146,29 @@ let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
             likes to sometimes treat the metadata as a raw pointer, so we much
             check for that. Additionally, we must flatten the value, because a
             valid metadata target can be e.g. [Box<T>]. *)
-         match Rust_val.flatten v with
-         | [ Ptr (_, Thin) ] -> Value Rust_val.unit_
-         | [ Ptr (_, Len len) ] -> Value (Int len)
-         | [ Ptr (_, VTable vt) ] ->
-             if
-               Option.is_some_and
-                 (Crate.adt_has_lang_item "dyn_metadata")
-                 (ty_as_adt_opt place.origin.ty)
-             then Value (Tuple [ Tuple [ Ptr (vt, Thin) ]; Tuple [] ])
-             else Value (Ptr (vt, Thin))
-         | _ -> L.failwith "tried loading metadata of non-pointer")
+         let ptr =
+           match base.origin.ty with
+           | TRawPtr _ | TRef _ -> Typed.cast_ptr_f v
+           | TAdt adt when adt_is_box adt -> Value_codec.ptr_of_box v
+           | _ ->
+               L.failwith "tried loading metadata of non-pointer: %a" pp_ty
+                 base.origin.ty
+         in
+         match Typed.Ptr.meta_of ptr with
+         | None -> Value (Typed.Adt.mk_tuple [])
+         | Some meta -> (
+             match%ty meta with
+             | TBitVector _ -> Value (Typed.as_any meta)
+             | TExtension TThinPtr ->
+                 let vt = Typed.Ptr.mk_ptr_f meta None in
+                 if
+                   Option.is_some_and
+                     (Crate.adt_has_lang_item "dyn_metadata")
+                     (ty_as_adt_opt place.origin.ty)
+                 then
+                   Value Typed.Adt.(mk_tuple [ mk_tuple [ vt ]; mk_tuple [] ])
+                 else Value vt
+             | _ -> L.failwith "invalid metada type"))
 
 let try_store (place : Place.t) store value =
   let open Syntaxes.Option in

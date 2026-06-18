@@ -314,13 +314,13 @@ end
 let ptr_of_box v =
   let box = Typed.cast_any_adt v in
   (* Unique<T> *)
-  let unique = Typed.Adt.field_of box 0 in
+  let unique = Typed.Adt.field_of 0 box in
   let unique = Typed.cast_any_adt unique in
   (* NonNull<T> *)
-  let nonnull = Typed.Adt.field_of unique 0 in
+  let nonnull = Typed.Adt.field_of 0 unique in
   let nonnull = Typed.cast_any_adt nonnull in
   (* *mut T *)
-  let ptr = Typed.Adt.field_of nonnull 0 in
+  let ptr = Typed.Adt.field_of 0 nonnull in
   Typed.cast_ptr_f ptr
 
 (** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an iterator
@@ -523,13 +523,13 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       let discr = Typed.Adt.discriminant_of v in
       let* variant = variant_for_discr discr adt in
       Iter.of_list (field_tys variant.fields)
-      |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of v i))
+      |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of i v))
       |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   (* undefined.validity.struct *)
   | TAdt adt when Crate.is_struct adt ->
       let v = Typed.cast_adt adt v in
       Iter.of_list (Crate.as_struct_or_tuple adt)
-      |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of v i))
+      |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of i v))
       |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   | TArray (ty, _) | TSlice ty ->
       let v = Typed.cast_any_adt v in

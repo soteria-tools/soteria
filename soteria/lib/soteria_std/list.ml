@@ -170,12 +170,19 @@ let rec find_with_rest f l =
         | None -> None
         | Some (found, rest) -> Some (found, x :: rest))
 
-(** [update_at f i l] updates the element at index [i] in list [l] with function
+(** [update_at i f l] updates the element at index [i] in list [l] with function
     [f]. This is more efficient than e.g. {!mapi}, as it only traverses and
     rebuilds the list up to index [i]; the list is shared after index [i].
 
     @raise Invalid_argument
       if [i] is negative or greater than or equal to the length of [l]. *)
-let[@tail_mod_cons] rec update_at f i = function
-  | x :: rest -> if i = 0 then f x :: rest else x :: update_at f (i - 1) rest
+let[@tail_mod_cons] rec update_at i f = function
+  | x :: rest -> if i = 0 then f x :: rest else x :: update_at (i - 1) f rest
   | [] -> invalid_arg "List.update_at"
+
+(** [set_nth i v l] sets the value at index [i] in [l] to [v]. This is more
+    efficient than using {!mapi}, as the part of the list after [i] is shared.
+
+    @raise Invalid_argument
+      if [i] is negative or greater than or equal to the length of [l]. *)
+let set_nth i v l = update_at i (Fun.const v) l

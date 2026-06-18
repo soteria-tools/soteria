@@ -162,6 +162,8 @@ module type S = sig
   end
 
   module Value_codec : sig
+    include module type of Value_codec
+
     val encode :
       offset:Typed.T.sint Typed.t ->
       Typed.(T.any t) ->

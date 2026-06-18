@@ -134,7 +134,10 @@ let rewrite_case ~var ~tuple case =
       let p = Ast_builder.Default.pvar ~loc var in
       let pc_rhs =
         [%expr
-          let [%p p] = (Typed.cast [%e v] : [%t ct]) in
+          let [%p p] =
+            (Typed.cast [%e v] : [%t ct])
+              [@@warning "-unused-var"]
+          in
           [%e case.pc_rhs]]
       in
       { case with pc_rhs }
