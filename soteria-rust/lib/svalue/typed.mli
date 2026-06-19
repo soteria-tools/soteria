@@ -20,7 +20,10 @@ module T : sig
 
   type sptr_f = [ `FullPtr ]
   type sptr_t = [ `ThinPtr ]
-  type adt = [ `Adt ]
+  type tuple = [ `Tuple ]
+  type enum = [ `Enum ]
+  type union = [ `Union ]
+  type poly = [ `Poly ]
   type ptr_meta = [ sptr_t | sint ]
 
   type any =
@@ -32,11 +35,17 @@ module T : sig
     | any sseq
     | sptr_f
     | sptr_t
-    | adt ]
+    | tuple
+    | enum
+    | union
+    | poly ]
 
   val pp_sptr_f : Format.formatter -> sptr_f -> unit
   val pp_sptr_t : Format.formatter -> sptr_t -> unit
-  val pp_adt : Format.formatter -> adt -> unit
+  val pp_tuple : Format.formatter -> tuple -> unit
+  val pp_enum : Format.formatter -> enum -> unit
+  val pp_union : Format.formatter -> union -> unit
+  val pp_poly : Format.formatter -> poly -> unit
   val pp_any : Format.formatter -> any -> unit
 end
 
@@ -63,8 +72,9 @@ val cast_f : Types.float_type -> [< T.any ] t -> T.sfloat t
 val cast_lit : Types.literal_type -> [< T.any ] t -> [> T.sint ] t
 val cast_ptr_f : [< T.any ] t -> [< T.sptr_f ] t
 val cast_ptr_t : [< T.any ] t -> [< T.sptr_t ] t
-val cast_adt : Types.type_decl_ref -> [< T.any ] t -> [> T.adt ] t
-val cast_any_adt : [< T.any ] t -> [> T.adt ] t
+val cast_tuple : [< T.any ] t -> [> T.tuple ] t
+val cast_enum : ?adt:Types.type_decl_ref -> [< T.any ] t -> [> T.enum ] t
+val cast_union : ?adt:Types.type_decl_ref -> [< T.any ] t -> [> T.union ] t
 
 (** Reinterprets an integer as known to be non-zero. The caller is responsible
     for ensuring the value is indeed non-zero (e.g. an alignment). *)
@@ -169,54 +179,66 @@ module Ptr : sig
 end
 
 module Adt : sig
-  (** Creates a tuple ADT with the given value blocks. This may be an array,
-      struct, or tuple. *)
-  val mk_tuple : [< T.any ] t list -> [> T.adt ] t
+  (** Creates a tuple value with the given fields. This may be an array, struct,
+      or tuple. *)
+  val mk_tuple : [< T.any ] t list -> [> T.tuple ] t
 
-  (** Creates an enum ADT with the given discriminant and values. *)
+  (** Creates an enum value with the given discriminant and fields. *)
   val mk_enum :
-    Types.type_decl_ref -> [< T.sint ] t -> [< T.any ] t list -> [> T.adt ] t
+    Types.type_decl_ref -> [< T.sint ] t -> [< T.any ] t list -> [> T.enum ] t
 
-  (** Creates a union ADT with the given value blocks. *)
+  (** Creates a union value with the given value blocks. *)
   val mk_union :
     Types.type_decl_ref ->
     ([< T.any ] t * [< T.sint ] t * [< T.nonzero ] t) list ->
-    [> T.adt ] t
+    [> T.union ] t
 
   (** Creates an unknown polymorphic value. {b HACK: what does this even mean?}
   *)
-  val mk_poly : Types.type_var_id -> [> T.adt ] t
+  val mk_poly : Types.type_var_id -> [> T.poly ] t
 
-  (** Gets the blocks of this adt as a union; returns [None] if the ADT is not a
-      union. *)
+  (** Gets the value blocks of a union. *)
   val as_union :
-    [< T.adt ] t -> ([> T.any ] t * [> T.sint ] t * [> T.nonzero ] t) list
+    [< T.union ] t -> ([> T.any ] t * [> T.sint ] t * [> T.nonzero ] t) list
 
-  val as_tuple : [< T.adt ] t -> [> T.any ] t list
+  val as_tuple : [< T.tuple ] t -> [> T.any ] t list
 
-  (** Like {!as_tuple}, but casts to a fixed-arity tuple, failing if the ADT
+  (** Like {!as_tuple}, but casts to a fixed-arity tuple, failing if the tuple
       does not have exactly that many fields. Avoids partial list pattern
       matches at call sites. *)
-  val as_tuple1 : [< T.adt ] t -> [> T.any ] t
+  val as_tuple1 : [< T.tuple ] t -> [> T.any ] t
 
-  val as_tuple2 : [< T.adt ] t -> [> T.any ] t * [> T.any ] t
-  val as_tuple3 : [< T.adt ] t -> [> T.any ] t * [> T.any ] t * [> T.any ] t
-  val as_enum : [< T.adt ] t -> [> T.sint ] t * [> T.any ] t list
-  val as_type_var : [< T.adt ] t -> Types.type_var_id
-  val discriminant_of : [< T.adt ] t -> [> T.sint ] t
+  val as_tuple2 : [< T.tuple ] t -> [> T.any ] t * [> T.any ] t
+  val as_tuple3 : [< T.tuple ] t -> [> T.any ] t * [> T.any ] t * [> T.any ] t
+  val as_enum : [< T.enum ] t -> [> T.sint ] t * [> T.any ] t list
+  val as_type_var : [< T.poly ] t -> Types.type_var_id
+  val discriminant_of : [< T.enum ] t -> [> T.sint ] t
 
-  (* NOTE: i don't know if this will work at the solver level, or if i need a
-     [field_of idx] for tuples, and a [field_of_variant idx variant] for enums.
-     That wouldn't be annoying anyways. *)
-  val field_of : int -> [< T.adt ] t -> [> T.any ] t
-  val set_field : int -> [< T.any ] t -> [< T.adt ] t -> [> T.adt ] t
+  (* Field access is split by kind: tuples/structs/arrays and enum variants
+     store their fields differently (an enum also keeps its discriminant). *)
+  val field_of : int -> [< T.tuple ] t -> [> T.any ] t
+
+  val field_of_variant :
+    Types.variant_id -> int -> [< T.enum ] t -> [> T.any ] t
+
+  val set_field : int -> [< T.any ] t -> [< T.tuple ] t -> [> T.tuple ] t
+
+  val set_field_of_variant :
+    Types.variant_id -> int -> [< T.any ] t -> [< T.enum ] t -> [> T.enum ] t
 
   val update_field :
-    int -> ([< T.any ] t -> [> T.any ] t) -> [< T.adt ] t -> [> T.adt ] t
+    int -> ([< T.any ] t -> [> T.any ] t) -> [< T.tuple ] t -> [> T.tuple ] t
+
+  val update_field_of_variant :
+    Types.variant_id ->
+    int ->
+    ([< T.any ] t -> [> T.any ] t) ->
+    [< T.enum ] t ->
+    [> T.enum ] t
 
   module Checked : sig
     val mk_enum :
-      Types.type_decl_ref -> string -> [< T.any ] t list -> [> T.adt ] t
+      Types.type_decl_ref -> string -> [< T.any ] t list -> [> T.enum ] t
   end
 end
 

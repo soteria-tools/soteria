@@ -174,8 +174,21 @@ class FunDecl(TypedDict):
     body: Body
 
 
+class TypeDeclStruct(TypedDict):
+    Struct: list[Any]
+
+
+class TypeDeclUnion(TypedDict):
+    Union: list[Any]
+
+
+class TypeDeclEnum(TypedDict):
+    Enum: list[Any]
+
+
 class TypeDecl(TypedDict):
     item_meta: ItemMeta
+    kind: TypeDeclStruct | TypeDeclUnion | TypeDeclEnum
 
 
 InterpTypeBase = Literal[
@@ -184,7 +197,9 @@ InterpTypeBase = Literal[
     "bool",
     "float",
     "ptr",
-    "adt",
+    "union",
+    "tuple",
+    "enum",
     "unknown",
     "fun_exec",
     "meta_ty",
@@ -241,12 +256,25 @@ def type_of(unique_ty: UniqueType) -> InterpType:
         return "ptr", None
 
     if "Adt" in ty:
-        if ty["Adt"]["id"] == "Tuple" and len(ty["Adt"]["generics"]["types"]) == 0:
-            return "unit", None
-        return "adt", None
+        adt_id = ty["Adt"]["id"]
+        if adt_id == "Tuple":
+            if len(ty["Adt"]["generics"]["types"]) == 0:
+                return "unit", None
+            return "tuple", None
+        if "Adt" in adt_id:
+            ty_decl_id = cast(AdtId, adt_id)["Adt"]
+            ty_decl = type_decls[ty_decl_id]
+            if "Struct" in ty_decl["kind"]:
+                return "tuple", None
+            if "Union" in ty_decl["kind"]:
+                return "union", None
+            if "Enum" in ty_decl["kind"]:
+                return "enum", None
+
+        return "unknown", None
 
     if "Array" in ty:
-        return "adt", None
+        return "tuple", None
 
     ignored = ["TypeVar", "TraitType"]
     if any(kind in ty for kind in ignored):
@@ -286,13 +314,21 @@ def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
         traverse_types(v, k)
 
 
+def traverse_ty_decls(ullbc: Any) -> None:
+    for id, ty_decl in enumerate(ullbc["translated"]["type_decls"]):
+        if ty_decl is not None:
+            type_decls[id] = ty_decl
+
+
 input_type: dict[InterpTypeBase, str] = {
     "unit": "unit",
     "int": "Typed.([< T.sint ] t)",
     "float": "Typed.([< T.sfloat ] t)",
     "bool": "Typed.([< T.sbool ] t)",
     "ptr": "Typed.([< T.sptr_f ] t)",
-    "adt": "Typed.([< T.adt ] t)",
+    "tuple": "Typed.([< T.tuple ] t)",
+    "union": "Typed.([< T.union ] t)",
+    "enum": "Typed.([< T.enum ] t)",
     "unknown": "Typed.([< T.any ] t)",
     "fun_exec": "fun_exec",
     "meta_ty": "Types.ty",
@@ -309,7 +345,9 @@ output_type: dict[InterpTypeBase, str] = {
     "float": "Typed.([> T.sfloat] t)",
     "bool": "Typed.([> T.sbool] t)",
     "ptr": "Typed.([> T.sptr_f] t)",
-    "adt": "Typed.([> T.adt ] t)",
+    "tuple": "Typed.([> T.tuple ] t)",
+    "union": "Typed.([> T.union ] t)",
+    "enum": "Typed.([> T.enum ] t)",
     "unknown": "Typed.([> T.any] t)",
 }
 
@@ -324,8 +362,12 @@ def input_type_cast(arg: str, ty: InterpType) -> str:
         return f"let {arg} = Typed.cast_ptr_f {arg} in "
     if ty[0] == "bool":
         return f"let {arg} = Typed.BitVec.to_bool (Typed.cast_lit TBool {arg}) in "
-    if ty[0] == "adt":
-        return f"let {arg} = Typed.cast_any_adt {arg} in "
+    if ty[0] == "tuple":
+        return f"let {arg} = Typed.cast_tuple {arg} in "
+    if ty[0] == "enum":
+        return f"let {arg} = Typed.cast_enum {arg} in "
+    if ty[0] == "union":
+        return f"let {arg} = Typed.cast_union {arg} in "
     return ""
 
 
@@ -590,13 +632,15 @@ def get_intrinsics() -> dict[str, FunDecl]:
         pprint("Loading intrinsics...")
         file_rs = (PWD / "intrinsics.rs").resolve()
         file_rs.touch(exist_ok=True)
-
+        # only include intrinsics
+        # we must also manually include the ADTs we care about
         charon_cmd = f"charon rustc --ullbc \
             --dest-file {file_json} \
             --start-from core::intrinsics \
             --include core::intrinsics \
             --exclude core::intrinsics::const_allocate \
-            --exclude core \
+            --include core \
+            --preset fast \
             -- {file_rs} --cfg miri --crate-type=lib"
 
         proc = subprocess.run(charon_cmd, shell=True, stderr=subprocess.STDOUT)
@@ -608,6 +652,7 @@ def get_intrinsics() -> dict[str, FunDecl]:
         file_rs.unlink(missing_ok=True)
 
     ullbc = json.loads(file_json.read_text())
+    traverse_ty_decls(ullbc)
     traverse_types(ullbc)
     intrinsics: dict[str, FunDecl] = {
         "::".join(i["Ident"][0] for i in fun["item_meta"]["name"][2:]): fun
@@ -668,9 +713,7 @@ def get_stubs(patterns: list[str], crate_path: Path) -> list[FunDecl]:
             )
 
     ullbc = json.loads(file_json.read_text())
-    for id, ty_decl in enumerate(ullbc["translated"]["type_decls"]):
-        if ty_decl is not None:
-            type_decls[id] = ty_decl
+    traverse_ty_decls(ullbc)
     traverse_types(ullbc)
     return [fun for fun in ullbc["translated"]["fun_decls"] if fun is not None]
 

@@ -62,7 +62,10 @@ let key_of_ty_ctor = function
 let key_of_ext_ctor = function
   | "TFullPtr" -> Some "sptr_f"
   | "TThinPtr" -> Some "sptr_t"
-  | "TAdt" | "TTuple" | "TPolyType" -> Some "adt"
+  | "TTuple" -> Some "tuple"
+  | "TEnum" -> Some "enum"
+  | "TUnion" -> Some "union"
+  | "TPolyType" -> Some "poly"
   | _ -> None
 
 (* [ [< <tag for key> ] Typed.t ] *)

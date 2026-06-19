@@ -751,7 +751,7 @@ module Make (StateImpl : State.S) = struct
                   let+ meta = resolve_unsizing_metadata ~help ~prev meta in
                   Typed.Ptr.mk_ptr_f v (Some meta)
               | idx :: rest ->
-                  let v = Typed.cast_any_adt v in
+                  let v = Typed.cast_tuple v in
                   let fs = Typed.Adt.as_tuple v in
                   let before, target, after = List.split_around fs idx in
                   let+ target = with_ptr_meta target rest in
@@ -882,7 +882,7 @@ module Make (StateImpl : State.S) = struct
               match v with
               | Value enum ->
                   let* adt = Poly.subst_tyref (ty_as_adt sp.origin.ty) in
-                  let enum = Typed.cast_adt adt enum in
+                  let enum = Typed.cast_enum ~adt enum in
                   ok (Typed.Adt.discriminant_of enum)
               | Uninit -> (
                   let* dangling = Sptr.dangling_if_zst sp.origin.ty in

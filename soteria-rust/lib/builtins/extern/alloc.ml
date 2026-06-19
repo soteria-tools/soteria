@@ -31,11 +31,11 @@ module M (StateM : State.StateM.S) = struct
   (* NonNull<u8> is a struct { pointer: *const u8 is !null }. Extract the inner
      ptr. *)
   let ptr_of_nonnull nonull =
-    Typed.cast_ptr_f @@ Typed.Adt.as_tuple1 @@ Typed.cast_any_adt nonull
+    Typed.cast_ptr_f @@ Typed.Adt.as_tuple1 @@ Typed.cast_tuple nonull
 
   let align_of_enum align : [> T.nonzero ] Typed.t =
-    let align_enum = Typed.Adt.as_tuple1 @@ Typed.cast_any_adt align in
-    let as_enum = Typed.cast_any_adt align_enum in
+    let align_enum = Typed.Adt.as_tuple1 @@ Typed.cast_tuple align in
+    let as_enum = Typed.cast_enum align_enum in
     let discr = Typed.Adt.discriminant_of as_enum in
     Typed.cast_nonzero @@ Typed.cast_i Usize discr
 

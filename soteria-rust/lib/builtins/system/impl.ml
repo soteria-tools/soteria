@@ -7,7 +7,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open Syntax
 
   let hashmap_random_keys ~(fun_sig : Types.fun_sig) =
-    map Typed.cast_any_adt @@ Value_codec.nondet_valid fun_sig.output
+    map Typed.cast_tuple @@ Value_codec.nondet_valid fun_sig.output
 
   (** {@rust[
         fn inner(key: &OsStr) -> Result<String, VarError>

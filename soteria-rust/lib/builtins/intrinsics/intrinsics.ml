@@ -147,7 +147,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let ptr = Typed.cast_ptr_f ptr in
         const_make_global ~ptr
     | "contract_check_ensures", [ c; t_ret ], [], [ cond; ret ] ->
-        let cond = Typed.cast_any_adt cond in
+        let cond = Typed.cast_enum cond in
         contract_check_ensures ~c ~t_ret ~cond ~ret
     | "contract_check_requires", [ c ], [], [ cond ] ->
         let+ () = contract_check_requires ~c ~cond in
@@ -233,7 +233,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "fdiv_fast", [ t ], [], [ a; b ] -> fdiv_fast ~t ~a ~b
     | "field_offset", [ f ], [], [] -> field_offset ~f
     | "field_representing_type_actual_type_id", [], [], [ frt_type_id ] ->
-        let frt_type_id = Typed.cast_any_adt frt_type_id in
+        let frt_type_id = Typed.cast_tuple frt_type_id in
         field_representing_type_actual_type_id ~frt_type_id
     | "float_to_int_unchecked", [ float; int ], [], [ value ] ->
         float_to_int_unchecked ~float ~int ~value
@@ -413,8 +413,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         [ t_f; t; r ],
         [],
         [ f; workgroup_dim; thread_dim; dyn_cache; args ] ) ->
-        let workgroup_dim = Typed.cast_any_adt workgroup_dim in
-        let thread_dim = Typed.cast_any_adt thread_dim in
+        let workgroup_dim = Typed.cast_tuple workgroup_dim in
+        let thread_dim = Typed.cast_tuple thread_dim in
         let dyn_cache = Typed.cast_i U32 dyn_cache in
         offload ~t_f ~t ~r ~f ~workgroup_dim ~thread_dim ~dyn_cache ~args
     | "offset", [ ptr; delta ], [], [ dst; offset_ ] ->
@@ -552,7 +552,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         sinf64 ~x
     | "size_of", [ t ], [], [] -> size_of ~t
     | "size_of_type_id", [], [], [ id ] ->
-        let id = Typed.cast_any_adt id in
+        let id = Typed.cast_tuple id in
         size_of_type_id ~id
     | "size_of_val", [ t ], [], [ ptr ] ->
         let ptr = Typed.cast_ptr_f ptr in
@@ -592,32 +592,32 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let x = Typed.cast_f F64 x in
         truncf64 ~x
     | "type_id_eq", [], [], [ a; b ] ->
-        let a = Typed.cast_any_adt a in
-        let b = Typed.cast_any_adt b in
+        let a = Typed.cast_tuple a in
+        let b = Typed.cast_tuple b in
         let+ ret = type_id_eq ~a ~b in
         Typed.BitVec.of_bool ret
     | ( "type_id_field_representing_type",
         [],
         [],
         [ id; variant_index; field_index ] ) ->
-        let id = Typed.cast_any_adt id in
+        let id = Typed.cast_tuple id in
         let variant_index = Typed.cast_i Usize variant_index in
         let field_index = Typed.cast_i Usize field_index in
         type_id_field_representing_type ~id ~variant_index ~field_index
     | "type_id_fields", [], [], [ id; variant_index ] ->
-        let id = Typed.cast_any_adt id in
+        let id = Typed.cast_tuple id in
         let variant_index = Typed.cast_i Usize variant_index in
         type_id_fields ~id ~variant_index
     | "type_id_variants", [], [], [ id ] ->
-        let id = Typed.cast_any_adt id in
+        let id = Typed.cast_tuple id in
         type_id_variants ~id
     | "type_id_vtable", [], [], [ id; trait ] ->
-        let id = Typed.cast_any_adt id in
-        let trait = Typed.cast_any_adt trait in
+        let id = Typed.cast_tuple id in
+        let trait = Typed.cast_tuple trait in
         type_id_vtable ~id ~trait
     | "type_name", [ t ], [], [] -> type_name ~t
     | "type_of", [], [], [ id ] ->
-        let id = Typed.cast_any_adt id in
+        let id = Typed.cast_tuple id in
         type_of ~id
     | "typed_swap_nonoverlapping", [ t ], [], [ x; y ] ->
         let x = Typed.cast_ptr_f x in

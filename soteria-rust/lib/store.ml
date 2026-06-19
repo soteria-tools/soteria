@@ -39,16 +39,22 @@ module Place = struct
   let rec update_val { kind; _ } ~f v =
     match kind with
     | Local _ -> Some (f v)
-    | Field (base, _, field) ->
+    | Field (base, Expressions.ProjAdt (_, Some var), field) ->
+        (* enum variant field *)
+        let idx = Types.FieldId.to_int field in
         update_val base
           ~f:(fun v ->
-            Typed.Adt.update_field
-              (Types.FieldId.to_int field)
-              f (Typed.cast_any_adt v))
+            Typed.Adt.update_field_of_variant var idx f (Typed.cast_enum v))
+          v
+    | Field (base, _, field) ->
+        (* struct/tuple field *)
+        let idx = Types.FieldId.to_int field in
+        update_val base
+          ~f:(fun v -> Typed.Adt.update_field idx f (Typed.cast_tuple v))
           v
     | Index (base, idx) ->
         update_val base
-          ~f:(fun v -> Typed.Adt.update_field idx f (Typed.cast_any_adt v))
+          ~f:(fun v -> Typed.Adt.update_field idx f (Typed.cast_tuple v))
           v
     (* metadata isn't navigable for in-place writes; spill to the heap *)
     | Metadata _ -> None
@@ -129,15 +135,22 @@ let bindings (store : t) = Map.bindings store
 let rec try_load (place : Place.t) (store : t) : Binding.kind option =
   match place.kind with
   | Local v -> Some (find v store).kind
-  | Field (base, _, field) ->
+  | Field (base, Expressions.ProjAdt (_, Some var), field) ->
+      (* enum variant field *)
       let field_idx = Types.FieldId.to_int field in
       try_load base store
       |> bind_value @@ fun v ->
-         Value (Typed.Adt.field_of field_idx (Typed.cast_any_adt v))
+         Value (Typed.Adt.field_of_variant var field_idx (Typed.cast_enum v))
+  | Field (base, _, field) ->
+      (* struct/tuple field *)
+      let field_idx = Types.FieldId.to_int field in
+      try_load base store
+      |> bind_value @@ fun v ->
+         Value (Typed.Adt.field_of field_idx (Typed.cast_tuple v))
   | Index (base, idx) ->
       try_load base store
       |> bind_value @@ fun v ->
-         Value (Typed.Adt.field_of idx (Typed.cast_any_adt v))
+         Value (Typed.Adt.field_of idx (Typed.cast_tuple v))
   | Metadata base -> (
       try_load base store
       |> bind_value @@ fun v ->

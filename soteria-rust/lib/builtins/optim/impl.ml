@@ -45,10 +45,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let alignmentenum = ty_as_adt alignmentenum_ty.field_ty in
     let zeroed = (zeroed :> Typed.T.sbool Typed.t) in
     let size, align =
-      let size, align = Typed.Adt.as_tuple2 (Typed.cast_any_adt layout) in
+      let size, align = Typed.Adt.as_tuple2 (Typed.cast_tuple layout) in
       let size = Typed.cast_i Usize size in
-      let align_enum = Typed.Adt.as_tuple1 (Typed.cast_any_adt align) in
-      let align_enum = Typed.cast_adt alignmentenum align_enum in
+      let align_enum = Typed.Adt.as_tuple1 (Typed.cast_tuple align) in
+      let align_enum = Typed.cast_enum ~adt:alignmentenum align_enum in
       let align = Typed.Adt.discriminant_of align_enum in
       (size, Typed.cast_i Usize align)
     in

@@ -205,7 +205,7 @@ module M (StateM : State.StateM.S) = struct
         { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
     in
     let+ str_data = State.load ptr str_ty in
-    Typed.Adt.as_tuple @@ Typed.cast_any_adt str_data
+    Typed.Adt.as_tuple @@ Typed.cast_tuple str_data
     |> (Monad.OptionM.all @@ fun b -> Typed.BitVec.to_z @@ Typed.cast_i U8 b)
     |> Option.map (fun cs ->
         let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in

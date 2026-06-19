@@ -887,8 +887,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
        transmutations to be read from again later. *)
     let* l = State.load a bytes in
     let* r = State.load b bytes in
-    let l = Typed.cast_any_adt l in
-    let r = Typed.cast_any_adt r in
+    let l = Typed.cast_tuple l in
+    let r = Typed.cast_tuple r in
     let byte_pairs =
       List.combine (Typed.Adt.as_tuple l) (Typed.Adt.as_tuple r)
     in

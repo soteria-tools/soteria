@@ -13,10 +13,11 @@ and ptr = { ptr : sv; tag : Ptr_tag.t option; size : sv; align : sv }
 
 (* values *)
 and ext_ty =
-  | TAdt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
-      (** invariant: the type decl ref must be that of an {b enum or union};
-          structs and tuples go through [TTuple] *)
-  | TTuple of svty list
+  | TEnum of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+      (** the type decl ref of an {b enum} *)
+  | TUnion of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+      (** the type decl ref of a {b union} *)
+  | TTuple of svty list  (** structs, tuples and arrays (ordered fields) *)
   | TThinPtr
   | TFullPtr
   | TPolyType
@@ -39,7 +40,8 @@ module Rust_ext :
   Soteria.Bv_values.Svalue.Value_ext with type t = ext_t and type ty = ext_ty =
 struct
   type ty = ext_ty =
-    | TAdt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+    | TEnum of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+    | TUnion of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
     | TTuple of svty list
     | TThinPtr
     | TFullPtr

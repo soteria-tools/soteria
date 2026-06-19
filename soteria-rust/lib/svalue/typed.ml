@@ -18,7 +18,10 @@ module T = struct
 
   type sptr_f = [ `FullPtr ]
   type sptr_t = [ `ThinPtr ]
-  type adt = [ `Adt ]
+  type tuple = [ `Tuple ]
+  type enum = [ `Enum ]
+  type union = [ `Union ]
+  type poly = [ `Poly ]
   type ptr_meta = [ sint | sptr_t ]
 
   type any =
@@ -30,10 +33,17 @@ module T = struct
     | any sseq
     | sptr_f
     | sptr_t
-    | adt ]
+    | tuple
+    | enum
+    | union
+    | poly ]
 
   let pp_sptr_f = Fmt.nop
   let pp_sptr_t = Fmt.nop
+  let pp_tuple = Fmt.nop
+  let pp_enum = Fmt.nop
+  let pp_union = Fmt.nop
+  let pp_poly = Fmt.nop
   let pp_adt = Fmt.nop
   let pp_any = Fmt.nop
 end
@@ -52,9 +62,7 @@ let () =
     | TypedMigration msg -> Some (Fmt.str "TODO(typed migration): %s" msg)
     | _ -> None)
 
-let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
-  raise (CastError ((v :> T.any t), (ty :> T.any ty), (get_ty v :> T.any ty)))
-
+let cast_error v ty = raise (CastError (v, ty, v.node.ty))
 let todo_migration msg = raise (TypedMigration msg)
 let ( <| ) = Self.Svalue.( <| )
 
@@ -87,22 +95,27 @@ let t_lit : Types.literal_type -> [> T.sint ] ty = function
 let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
   t_float (float_precision ty)
 
-let t_adt adt : [> T.adt ] ty =
-  assert (Common.Charon_util.tyref_is_substituted adt);
-  TExtension (TAdt adt)
+let t_tuple tys : [> T.tuple ] ty = TExtension (TTuple tys)
 
-let t_tuple tys : [> T.adt ] ty = TExtension (TTuple tys)
-let t_poly () : [> T.adt ] ty = TExtension TPolyType
+let t_enum adt : [> T.enum ] ty =
+  assert (Common.Charon_util.tyref_is_substituted adt);
+  TExtension (TEnum adt)
+
+let t_union adt : [> T.union ] ty =
+  assert (Common.Charon_util.tyref_is_substituted adt);
+  TExtension (TUnion adt)
+
+let t_poly () : [> T.poly ] ty = TExtension TPolyType
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
 
 let as_any x = (x : [< T.any ] t :> [> T.any ] t)
-let cast_nonzero (x : [< T.sint ] t) : [> T.nonzero ] t = cast x
+let cast_nonzero (x : [< T.sint ] t) : [> T.nonzero ] t = x
 
 let cast_lit ty (v : 'a t) : [> T.sint ] t =
   let size = 8 * size_of_literal_ty ty in
-  cast (cast_checked ~ty:(t_int size) v)
+  cast_checked ~ty:(t_int size) v
 
 let cast_i uty = cast_lit (TUInt uty)
 let cast_f fty v = cast_checked ~ty:(t_float fty) v
@@ -110,31 +123,34 @@ let cast_f fty v = cast_checked ~ty:(t_float fty) v
 let cast_float v =
   match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
 
-let cast_ptr_f v =
-  match get_ty v with
-  | TExtension TFullPtr -> cast v
-  | _ -> cast_error v (t_ptr_f ())
+let cast_ptr_f v = cast_checked ~ty:(t_ptr_f ()) v
+let cast_ptr_t v = cast_checked ~ty:(t_ptr_t ()) v
 
-let cast_ptr_t v =
+let cast_tuple v =
   match get_ty v with
-  | TExtension TThinPtr -> cast v
-  | _ -> cast_error v (t_ptr_t ())
+  | TExtension (TTuple _) -> v
+  | _ -> cast_error v (t_tuple [])
 
-let cast_adt adt v =
-  match get_ty v with
-  | TExtension (TAdt adt') when Types.equal_type_decl_ref adt adt' -> cast v
-  | TExtension (TTuple tys) ->
-      (* HACK: for now we give up, as this would require recursively solving all
-         inner types :( *)
-      cast v
-  | ty -> cast_error v (t_adt adt)
+(* The [adt] ref, when given, additionally checks the value is that precise
+   enum/union; callers that only know the kind (e.g. the generic store
+   navigation) may omit it. *)
+let dummy_decl_ref =
+  { Types.id = TTuple; generics = TypesUtils.empty_generic_args }
 
-let cast_any_adt v =
-  match get_ty v with
-  | TExtension (TTuple _ | TAdt _) -> cast v
-  | _ ->
-      cast_error v
-        (t_adt { id = TTuple; generics = TypesUtils.empty_generic_args })
+let cast_enum ?adt v =
+  match (get_ty v, adt) with
+  | TExtension (TEnum _), None -> v
+  | TExtension (TEnum adt'), Some adt when Types.equal_type_decl_ref adt adt' ->
+      v
+  | _ -> cast_error v (t_enum (Option.value adt ~default:dummy_decl_ref))
+
+let cast_union ?adt v =
+  match (get_ty v, adt) with
+  | TExtension (TUnion _), None -> v
+  | TExtension (TUnion adt'), Some adt when Types.equal_type_decl_ref adt adt'
+    ->
+      v
+  | _ -> cast_error v (t_union (Option.value adt ~default:dummy_decl_ref))
 
 module BitVec = struct
   include BitVec
@@ -315,8 +331,8 @@ end
 
 module Adt = struct
   let mk_tuple vs = Extension (Tuple vs) <| t_tuple (List.map get_ty vs)
-  let mk_enum adt discr vs = Extension (Enum (discr, vs)) <| t_adt adt
-  let mk_union adt blocks = Extension (Union blocks) <| t_adt adt
+  let mk_enum adt discr vs = Extension (Enum (discr, vs)) <| t_enum adt
+  let mk_union adt blocks = Extension (Union blocks) <| t_union adt
   let mk_poly ty_id = Extension (PolyVal ty_id) <| t_poly ()
 
   (* HACK: i have no idea what this really means or how to lift this for
@@ -379,13 +395,17 @@ module Adt = struct
     | Extension (Tuple vs) -> (
         try List.nth vs idx
         with Failure _ ->
-          Fmt.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
+          L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
+    | _ -> todo_migration "field_of op"
+
+  let field_of_variant _var_id idx v =
+    (* TODO: assert the variant? *)
+    match kind v with
     | Extension (Enum (_, vs)) -> (
         try List.nth vs idx
         with Failure _ ->
-          Fmt.failwith "Enum field index %d out of bounds for value %a" idx ppa
-            v)
-    | _ -> todo_migration "field_of binop"
+          L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
+    | _ -> todo_migration "field_of_variant op"
 
   let set_field idx f v =
     match kind v with
@@ -393,18 +413,21 @@ module Adt = struct
         try Extension (Tuple (List.set_nth idx f vs)) <| v.node.ty
         with Failure _ ->
           L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
-    | Extension (Enum (_, vs)) -> (
-        try
-          Extension (Enum (discriminant_of v, List.set_nth idx f vs))
-          <| v.node.ty
+    | _ -> todo_migration "set_field op"
+
+  let set_field_of_variant _var_id idx f v =
+    (* TODO: assert the variant *)
+    match kind v with
+    | Extension (Enum (discr, vs)) -> (
+        try Extension (Enum (discr, List.set_nth idx f vs)) <| v.node.ty
         with Failure _ ->
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
-    | _ ->
-        (* NOTE: again, i think rather than an operator we just want to
-           reconstruct the value fully. *)
-        todo_migration "set_field triop"
+    | _ -> todo_migration "set_field_of_variant op"
 
   let update_field idx f v = set_field idx (f (field_of idx v)) v
+
+  let update_field_of_variant var idx f v =
+    set_field_of_variant var idx (f (field_of_variant var idx v)) v
 
   module Checked = struct
     let mk_enum tref variant vs =

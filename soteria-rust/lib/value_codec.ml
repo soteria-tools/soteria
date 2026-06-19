@@ -315,13 +315,13 @@ end
 
 (** Given a value of type [Box], returns the container pointer *)
 let ptr_of_box v =
-  let box = Typed.cast_any_adt v in
+  let box = Typed.cast_tuple v in
   (* Unique<T> *)
   let unique = Typed.Adt.field_of 0 box in
-  let unique = Typed.cast_any_adt unique in
+  let unique = Typed.cast_tuple unique in
   (* NonNull<T> *)
   let nonnull = Typed.Adt.field_of 0 unique in
-  let nonnull = Typed.cast_any_adt nonnull in
+  let nonnull = Typed.cast_tuple nonnull in
   (* *mut T *)
   let ptr = Typed.Adt.field_of 0 nonnull in
   Typed.cast_ptr_f ptr
@@ -352,18 +352,16 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         ok (Iter.singleton (value, offset, Typed.cast_nonzero layout.size))
     | Arbitrary (_, _) ->
         let adt = ty_as_adt ty in
-        let value = Typed.cast_adt adt value in
         if Crate.is_union adt then
-          let blocks = Typed.Adt.as_union value in
+          let blocks = Typed.Adt.as_union (Typed.cast_union ~adt value) in
           ok
             (Iter.of_list blocks
             |> Iter.map (fun (v, o, s) -> (v, offset +!!@ o, s)))
         else
-          let fields = Typed.Adt.as_tuple value in
+          let fields = Typed.Adt.as_tuple (Typed.cast_tuple value) in
           chain fields (iter_fields layout ty)
     | Array { is_ptr = false } ->
-        let value = Typed.cast_any_adt value in
-        let fields = Typed.Adt.as_tuple value in
+        let fields = Typed.Adt.as_tuple (Typed.cast_tuple value) in
         chain fields (iter_fields layout ty)
     | Array { is_ptr = true } ->
         let value = Typed.cast_ptr_f value in
@@ -373,7 +371,7 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         chain [ ptr; meta ] (iter_fields layout ty)
     | Enum (_, layouts) -> (
         let adt = ty_as_adt ty in
-        let value = Typed.cast_adt adt value in
+        let value = Typed.cast_enum ~adt value in
         let discr, fields = Typed.Adt.as_enum value in
         let* variant = variant_for_discr discr adt in
         let variant = variant.id in
@@ -527,21 +525,20 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       metadata_validity ~is_raw_ptr:true pointee meta
   (* undefined.validity.enum *)
   | TAdt adt when Crate.is_enum adt ->
-      let v = Typed.cast_adt adt v in
+      let v = Typed.cast_enum ~adt v in
       let discr = Typed.Adt.discriminant_of v in
       let* variant = variant_for_discr discr adt in
       Iter.of_list (field_tys variant.fields)
-      |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of i v))
+      |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of_variant variant.id i v))
       |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   (* undefined.validity.struct *)
   | TAdt adt when Crate.is_struct_or_tuple adt ->
-      let v = Typed.cast_adt adt v in
+      let v = Typed.cast_tuple v in
       Iter.of_list (Crate.as_struct_or_tuple adt)
       |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of i v))
       |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   | TArray (ty, _) | TSlice ty ->
-      let v = Typed.cast_any_adt v in
-      let vs = Typed.Adt.as_tuple v in
+      let vs = Typed.Adt.as_tuple (Typed.cast_tuple v) in
       iter_list vs ~f:(fun v -> validity ~check_ref ty v f)
   (* undefined.validity.union *)
   | TAdt adt when Crate.is_union adt -> ok ()
@@ -791,9 +788,9 @@ let rec ref_tys_in
   | TAdt adt when adt_is_box adt ->
       (* a box has only one non ZST, the pointer *)
       let ptr, allocator, marker =
-        let unique, allocator = Typed.Adt.as_tuple2 (Typed.cast_any_adt v) in
-        let nonnull, marker = Typed.Adt.as_tuple2 (Typed.cast_any_adt unique) in
-        let ptr = Typed.Adt.as_tuple1 (Typed.cast_any_adt nonnull) in
+        let unique, allocator = Typed.Adt.as_tuple2 (Typed.cast_tuple v) in
+        let nonnull, marker = Typed.Adt.as_tuple2 (Typed.cast_tuple unique) in
+        let ptr = Typed.Adt.as_tuple1 (Typed.cast_tuple nonnull) in
         (Typed.cast_ptr_f ptr, allocator, marker)
       in
       let++ ptr, acc = fn init ty ptr in
@@ -804,17 +801,17 @@ let rec ref_tys_in
       in
       (res, acc)
   | TAdt adt when Crate.is_struct_or_tuple adt ->
-      let v = Typed.cast_adt adt v in
+      let v = Typed.cast_tuple v in
       let++ vs, acc =
         fs' init (Crate.as_struct_or_tuple adt) (Typed.Adt.as_tuple v)
       in
       (Typed.Adt.mk_tuple vs, acc)
   | TArray (ty, _) | TSlice ty ->
-      let v = Typed.cast_any_adt v in
+      let v = Typed.cast_tuple v in
       let++ vs, acc = fs init ty (Typed.Adt.as_tuple v) in
       (Typed.Adt.mk_tuple vs, acc)
   | TAdt adt when Crate.is_enum adt ->
-      let v = Typed.cast_adt adt v in
+      let v = Typed.cast_enum ~adt v in
       let d, vs = Typed.Adt.as_enum v in
       let* var = variant_for_discr d adt in
       let++ vs, acc = fs' init (field_tys Types.(var.fields)) vs in

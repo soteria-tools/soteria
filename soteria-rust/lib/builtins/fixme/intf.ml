@@ -14,7 +14,7 @@ module M (StateM : State.StateM.S) = struct
   type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   module type S = sig
-    val cleanup : payload:Typed.([< T.sptr_f ] t) -> Typed.([> T.adt ] t) ret
+    val cleanup : payload:Typed.([< T.sptr_f ] t) -> Typed.([> T.tuple ] t) ret
 
     (** {@markdown[
           Executes the destructor (if any) of the pointed-to value.

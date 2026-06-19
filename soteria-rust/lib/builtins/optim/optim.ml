@@ -116,15 +116,13 @@ module M (StateM : State.StateM.S) = struct
     with
     | AllocAllocGlobalAllocImpl, [], [], [ self; layout; zeroed ] ->
         let self = Typed.cast_ptr_f self in
-        let layout = Typed.cast_any_adt layout in
         let zeroed = Typed.BitVec.to_bool (Typed.cast_lit TBool zeroed) in
         alloc_impl ~fun_sig:_fun_sig ~self ~layout ~zeroed
     | AllocAllocHandleAllocError, [], [], [ layout ] ->
-        let layout = Typed.cast_any_adt layout in
         let+ () = handle_alloc_error ~layout in
         Typed.Adt.mk_tuple []
     | AllocRawVecHandleError, [], [], [ e ] ->
-        let e = Typed.cast_any_adt e in
+        let e = Typed.cast_tuple e in
         let+ () = handle_error ~e in
         Typed.Adt.mk_tuple []
     | CoreF128IsFinite, [], [], [ arg ] ->
@@ -243,10 +241,8 @@ module M (StateM : State.StateM.S) = struct
         let+ () = option_unwrap_failed () in
         Typed.Adt.mk_tuple []
     | CorePanickingAssertFailedInner, [], [], [ kind; left; right; args ] ->
-        let kind = Typed.cast_any_adt kind in
         let left = Typed.cast_ptr_f left in
         let right = Typed.cast_ptr_f right in
-        let args = Typed.cast_any_adt args in
         let+ () = assert_failed_inner ~kind ~left ~right ~args in
         Typed.Adt.mk_tuple []
     | CorePanickingPanic, [], [], [ expr ] ->
@@ -254,11 +250,9 @@ module M (StateM : State.StateM.S) = struct
         let+ () = panic ~expr in
         Typed.Adt.mk_tuple []
     | CorePanickingPanicFmt, [], [], [ fmt ] ->
-        let fmt = Typed.cast_any_adt fmt in
         let+ () = panic_fmt ~fmt in
         Typed.Adt.mk_tuple []
     | CorePanickingPanicNounwindFmt, [], [], [ fmt; force_no_backtrace ] ->
-        let fmt = Typed.cast_any_adt fmt in
         let force_no_backtrace =
           Typed.BitVec.to_bool (Typed.cast_lit TBool force_no_backtrace)
         in
@@ -270,21 +264,17 @@ module M (StateM : State.StateM.S) = struct
         let+ () = result_unwrap_failed ~msg ~error in
         Typed.Adt.mk_tuple []
     | StdIoStdioEprint, [], [], [ args ] ->
-        let args = Typed.cast_any_adt args in
         let+ () = _eprint ~args in
         Typed.Adt.mk_tuple []
     | StdIoStdioPrint, [], [], [ args ] ->
-        let args = Typed.cast_any_adt args in
         let+ () = _print ~args in
         Typed.Adt.mk_tuple []
     | StdIoStdioPrintTo, [ t ], [], [ args; global_s; label ] ->
-        let args = Typed.cast_any_adt args in
         let global_s = Typed.cast_ptr_f global_s in
         let label = Typed.cast_ptr_f label in
         let+ () = print_to ~t ~args ~global_s ~label in
         Typed.Adt.mk_tuple []
     | StdIoStdioPrintToBufferIfCaptureUsed, [], [], [ args ] ->
-        let args = Typed.cast_any_adt args in
         let+ ret = print_to_buffer_if_capture_used ~args in
         Typed.BitVec.of_bool ret
     | StdPanickingBeginPanic, [ m ], [], [ msg ] ->

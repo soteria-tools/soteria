@@ -14,6 +14,6 @@ module M (StateM : State.StateM.S) = struct
   type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   module type S = sig
-    val new_ : fun_sig:Types.fun_sig -> Typed.([> T.adt ] t) ret
+    val new_ : fun_sig:Types.fun_sig -> Typed.([> T.tuple ] t) ret
   end
 end
