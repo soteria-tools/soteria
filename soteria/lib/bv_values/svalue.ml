@@ -5,7 +5,7 @@ module Var = Symex.Var
 
 module FloatPrecision = struct
   type t = F16 | F32 | F64 | F128
-  [@@deriving eq, show { with_path = false }, ord]
+  [@@deriving eq, show { with_path = false }, ord, hash]
 
   let size = function F16 -> 16 | F32 -> 32 | F64 -> 64 | F128 -> 128
 
@@ -19,7 +19,7 @@ end
 
 module FloatClass = struct
   type t = Normal | Subnormal | Zero | Infinite | NaN
-  [@@deriving eq, show { with_path = false }, ord]
+  [@@deriving eq, show { with_path = false }, ord, hash]
 
   let as_fpclass = function
     | Normal -> FP_normal
@@ -31,7 +31,7 @@ end
 
 module RoundingMode = struct
   type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
-  [@@deriving eq, show { with_path = false }, ord]
+  [@@deriving eq, show { with_path = false }, ord, hash]
 end
 
 type ty =
@@ -67,7 +67,7 @@ let size_of = function
   | ty -> L.failwith "Not a bit value: %a" pp_ty ty
 
 module Nop = struct
-  type t = Distinct [@@deriving eq, show { with_path = false }, ord]
+  type t = Distinct [@@deriving eq, show { with_path = false }, ord, hash]
 end
 
 module Unop = struct
@@ -92,7 +92,7 @@ module Unop = struct
     | FAbs
     | FIs of FloatClass.t
     | FRound of RoundingMode.t
-  [@@deriving eq, ord]
+  [@@deriving eq, ord, hash]
 
   let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
 
@@ -120,7 +120,7 @@ end
     not to overflow, and so behaves like exact integer arithmetic. This is used
     to justify simplifications. *)
 type checked = { signed : bool; unsigned : bool }
-[@@deriving eq, show { with_path = false }, ord]
+[@@deriving eq, show { with_path = false }, ord, hash]
 
 let unchecked = { signed = false; unsigned = false }
 let checked_both = { signed = true; unsigned = true }
@@ -186,7 +186,7 @@ module Binop = struct
     | Shl
     | LShr
     | AShr
-  [@@deriving eq, show { with_path = false }, ord]
+  [@@deriving eq, show { with_path = false }, ord, hash]
 
   let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
 
@@ -355,13 +355,13 @@ module Hcons = Hc.Make (struct
     | BitVec z -> combine (combine h 4) (Z.hash z)
     | Ptr (l, r) -> combine (combine (combine h 5) l.tag) r.tag
     | Seq l -> List.fold_left (fun acc sv -> combine acc sv.tag) (combine h 6) l
-    | Unop (op, v) -> combine (combine (combine h 7) (Hashtbl.hash op)) v.tag
+    | Unop (op, v) -> combine (combine (combine h 7) (Unop.hash op)) v.tag
     | Binop (op, l, r) ->
-        combine (combine (combine (combine h 8) (Hashtbl.hash op)) l.tag) r.tag
+        combine (combine (combine (combine h 8) (Binop.hash op)) l.tag) r.tag
     | Nop (op, l) ->
         List.fold_left
           (fun acc sv -> combine acc sv.tag)
-          (combine (combine h 9) (Hashtbl.hash op))
+          (combine (combine h 9) (Nop.hash op))
           l
     | Ite (c, t, e) ->
         combine (combine (combine (combine h 10) c.tag) t.tag) e.tag
