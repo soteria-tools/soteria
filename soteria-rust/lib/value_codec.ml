@@ -496,7 +496,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       f U8.(0s <=@ v &&@ (v <=@ 1s)) (`UBTransmute "Invalid bool value")
   (* undefined.validity.fn-pointer *)
   | TFnPtr _ ->
-      let ptr, _ = Typed.Ptr.split @@ Typed.cast_ptr_f v in
+      let ptr = Typed.Ptr.ptr_of @@ Typed.cast_ptr_f v in
       f (Typed.not (Typed.Ptr.is_null ptr)) `UBDanglingPointer
   (* undefined.validity.char *)
   | TLiteral TChar ->
@@ -644,7 +644,7 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
       return (Typed.Ptr.mk_ptr_f v None)
   | TBitVector _, TLiteral (TFloat _) -> return (BV.to_float_raw v)
   | TExtension TFullPtr, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
-      let ptr, _ = Typed.Ptr.split v in
+      let ptr = Typed.Ptr.ptr_of v in
       Sptr.decay ptr
   | TFloat _, TLiteral (TInt _ | TUInt _ | TBool | TChar) -> float_to_bv_bits v
   | TBitVector _, (TRawPtr _ | TRef _ | TFnPtr _) ->

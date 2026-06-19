@@ -96,8 +96,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* are_equal =
       match t with
       | TRawPtr _ | TRef _ ->
-          let old, _ = Typed.Ptr.split @@ Typed.cast_ptr_f old in
-          let curr, _ = Typed.Ptr.split @@ Typed.cast_ptr_f curr in
+          let old = Typed.Ptr.ptr_of @@ Typed.cast_ptr_f old in
+          let curr = Typed.Ptr.ptr_of @@ Typed.cast_ptr_f curr in
           let+ dist = Sptr.distance old curr in
           dist ==@ Usize.(0s)
       | TLiteral lit ->
@@ -539,8 +539,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         in
         aux ?res l r (len -!@ one)
     in
-    let l, _ = Typed.Ptr.split left in
-    let r, _ = Typed.Ptr.split right in
+    let l = Typed.Ptr.ptr_of left in
+    let r = Typed.Ptr.ptr_of right in
     aux ~inc:zero l r (bytes :> T.sint Typed.t)
 
   (** [check_overlap name l r size] ensures the pointers [l] and [r] do not
@@ -550,8 +550,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       We optimise the path where pointers don't have the same provenance to
       avoid spuriously decaying pointers. *)
   let check_overlap name l r size =
-    let l, _ = Typed.Ptr.split l in
-    let r, _ = Typed.Ptr.split r in
+    let l = Typed.Ptr.ptr_of l in
+    let r = Typed.Ptr.ptr_of r in
 
     let same_provenance = Typed.Ptr.have_same_provenance l r in
     if%sure not same_provenance then ok ()
