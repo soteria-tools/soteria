@@ -78,7 +78,9 @@ let t_lit : Types.literal_type -> [> T.sint ] ty = function
 let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
   t_float (float_precision ty)
 
-let t_adt adt : [> T.adt ] ty = type_type @@ TExtension (TAdt adt)
+let t_adt adt : [> T.adt ] ty =
+  assert (Common.Charon_util.tyref_is_substituted adt);
+  type_type @@ TExtension (TAdt adt)
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -271,7 +273,7 @@ module Adt = struct
   let mk_enum adt discr vs =
     type_
       (Extension (Enum (untyped discr, untyped_list vs))
-      <| TExtension (TAdt adt))
+      <| untype_type (t_adt adt))
 
   let mk_union adt blocks =
     type_
@@ -280,7 +282,7 @@ module Adt = struct
             (List.map
                (fun (a, b, c) -> (untyped a, untyped b, untyped c))
                blocks))
-      <| TExtension (TAdt adt))
+      <| untype_type (t_adt adt))
 
   let mk_poly ty_id = type_ (Extension (PolyVal ty_id) <| TExtension TPolyType)
 
@@ -308,6 +310,11 @@ module Adt = struct
     match kind v with
     | Extension (Enum (discr, vs)) -> (type_ discr, type_list vs)
     | _ -> todo_migration "discriminant_of + fields_of unops"
+
+  let as_type_var v =
+    match kind v with
+    | Extension (PolyVal ty_id) -> ty_id
+    | _ -> todo_migration "as_type_var unop"
 
   let discriminant_of v =
     match kind v with

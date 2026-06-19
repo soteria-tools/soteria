@@ -43,11 +43,7 @@ module Make (StateImpl : State.S) = struct
             let* ptr = State.alloc_ty binding.ty in
             let* () =
               match binding.kind with
-              | Value v ->
-                  [%l.warn
-                    "storing %a: %a in %a" Typed.ppa v pp_ty binding.ty
-                      Typed.ppa ptr];
-                  State.store ptr binding.ty v
+              | Value v -> State.store ptr binding.ty v
               | _ -> ok ()
             in
             let+ () = map_env (Store.declare_ptr var_id ptr) in
@@ -260,26 +256,30 @@ module Make (StateImpl : State.S) = struct
           | ProvFunction f -> State.declare_fn (Real f)
           | ProvUnknown -> not_impl "Unknown provenance in RawMemory"
         in
-        let+ blocks =
+        let* blocks =
           map_list blocks ~f:(fun block ->
               match block with
-              | `Byte (b, ofs) -> ok (b, BV.usizei ofs)
+              | `Byte (b, ofs) ->
+                  ok
+                    ( Typed.as_any b,
+                      BV.usizei ofs,
+                      BV.usizeinz (Typed.size_of_int b / 8) )
               | `Ptr (p, from_, size, ofs) ->
                   let* ptr = ptr_of_provenance p in
                   let ptr = Typed.Ptr.ptr_of ptr in
                   if from_ = 0 && size = ptr_size then
-                    ok (Typed.Ptr.mk_ptr_f ptr None, BV.usizei ofs)
+                    ok
+                      ( Typed.Ptr.mk_ptr_f ptr None,
+                        BV.usizei ofs,
+                        BV.usizeinz size )
                   else
                     let+ ptr_int = Sptr.decay ptr in
                     let ptr_frag =
                       BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
                     in
-                    (ptr_frag, BV.usizei ofs))
+                    (ptr_frag, BV.usizei ofs, BV.usizeinz size))
         in
-        L.failwith
-          "We don't have an ADT to mk_union, and it would be wrong anyways. we \
-           need to add a `transmute_raw` to state_intf. todo later"
-        (* Typed.Adt.mk_union blocks *)
+        State.transmute_raw ~to_:const.ty blocks
     | CGlobal glob ->
         let* ptr = resolve_global glob in
         State.load ptr const.ty
@@ -884,7 +884,8 @@ module Make (StateImpl : State.S) = struct
               let*^ v = Store.try_load sp store in
               match v with
               | Value enum ->
-                  let enum = Typed.cast_adt (ty_as_adt sp.origin.ty) enum in
+                  let* adt = Poly.subst_tyref (ty_as_adt sp.origin.ty) in
+                  let enum = Typed.cast_adt adt enum in
                   ok (Typed.Adt.discriminant_of enum)
               | Uninit -> (
                   let* dangling = Sptr.dangling_if_zst sp.origin.ty in
@@ -901,6 +902,7 @@ module Make (StateImpl : State.S) = struct
           else ok U8.(0s)
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
+        let* adt = Poly.subst_tyref adt in
         let variants = Crate.as_enum adt in
         let variant = Types.VariantId.nth variants v_id in
         let discr = BV.of_literal variant.discriminant in
@@ -914,6 +916,7 @@ module Make (StateImpl : State.S) = struct
           | [] -> L.failwith "union aggregate with 0 values?"
           | _ :: _ -> L.failwith "union aggregate with >1 values?"
         in
+        let* adt = Poly.subst_tyref adt in
         let* value = eval_operand op in
         let field = Types.FieldId.to_int field in
         let* layout = Layout.layout_of (TAdt adt) in

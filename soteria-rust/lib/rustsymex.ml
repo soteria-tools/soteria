@@ -123,6 +123,7 @@ module Poly = struct
   let subst_ty = subst ty_substitute
   let subst_tys = subst (fun subst -> List.map (ty_substitute subst))
   let subst_tref = subst trait_ref_substitute
+  let subst_tyref = subst st_substitute_visitor#visit_type_decl_ref
   let subst_constant_expr = subst st_substitute_visitor#visit_constant_expr
   let subst_generic_args = subst generic_args_substitute
 

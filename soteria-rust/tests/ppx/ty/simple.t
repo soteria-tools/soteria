@@ -12,25 +12,41 @@
   let test (x : [< Typed.T.any ] Typed.t) =
     match Typed.get_ty x with
     | TBool ->
-        let x = (Typed.cast x : [< Typed.T.sbool ] Typed.t) in
+        let x =
+          (Typed.cast x : [< Typed.T.sbool ] Typed.t)
+            [@@warning "-unused-var"]
+        in
         use_sbool x
     | TBitVector _ ->
-        let x = (Typed.cast x : [< Typed.T.sint ] Typed.t) in
+        let x =
+          (Typed.cast x : [< Typed.T.sint ] Typed.t)
+            [@@warning "-unused-var"]
+        in
         use_sint x
     | TFloat _ ->
-        let x = (Typed.cast x : [< Typed.T.sfloat ] Typed.t) in
+        let x =
+          (Typed.cast x : [< Typed.T.sfloat ] Typed.t)
+            [@@warning "-unused-var"]
+        in
         use_sfloat x
     | TPointer _ ->
-        let x = (Typed.cast x : [< Typed.T.sptr ] Typed.t) in
+        let x =
+          (Typed.cast x : [< Typed.T.sptr ] Typed.t)
+            [@@warning "-unused-var"]
+        in
         use_sptr x
-    | TExtension FullPtr ->
-        let x = (Typed.cast x : [< Typed.T.sptr_f ] Typed.t) in
-        use_sptr_f x
-    | TExtension ThinPtr ->
-        let x = (Typed.cast x : [< Typed.T.sptr_t ] Typed.t) in
-        use_sptr_t x
-    | TExtension (Adt _) ->
-        let x = (Typed.cast x : [< Typed.T.adt ] Typed.t) in
-        use_adt x
+    | TExtension FullPtr -> use_sptr_f x
+    | TExtension ThinPtr -> use_sptr_t x
+    | TExtension (Adt _) -> use_adt x
     | _ -> ()
-  Success ✅
+  File "out.ml", line 28, characters 39-40:
+  28 |   | TExtension (ThinPtr) -> use_sptr_t x
+                                              ^
+  Error: The value x has type [< Prelude.Typed.T.sptr_f ] Prelude.Typed.t
+         but an expression was expected of type
+           [< Prelude.Typed.T.sptr_t ] Prelude.Typed.t
+         Type [< Prelude.Typed.T.sptr_f ] = [< `FullPtr ]
+         is not compatible with type
+           [< Prelude.Typed.T.sptr_t ] = [< `ThinPtr ]
+         These two variant types have no intersection
+  [1]

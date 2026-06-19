@@ -10,13 +10,17 @@
   let test (x : [< Typed.T.any ] Typed.t) (c : cty) =
     match (Typed.get_ty x, c) with
     | TBitVector _, CInt ->
-        let x = (Typed.cast x : [< Typed.T.sint ] Typed.t) in
+        let x =
+          (Typed.cast x : [< Typed.T.sint ] Typed.t)
+            [@@warning "-unused-var"]
+        in
         use_sint x
     | TFloat _, (CFloat | COther) ->
-        let x = (Typed.cast x : [< Typed.T.sfloat ] Typed.t) in
+        let x =
+          (Typed.cast x : [< Typed.T.sfloat ] Typed.t)
+            [@@warning "-unused-var"]
+        in
         use_sfloat x
-    | TExtension FullPtr, CPtr ->
-        let x = (Typed.cast x : [< Typed.T.sptr_f ] Typed.t) in
-        use_sptr_f x
+    | TExtension FullPtr, CPtr -> use_sptr_f x
     | _, _ -> ()
   Success ✅

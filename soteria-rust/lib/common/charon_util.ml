@@ -253,13 +253,32 @@ let ty_is_monomorphic ty =
   let ty_visitor =
     object (_)
       inherit [_] Types.iter_ty
-      method! visit_TVar _ _ = raise FoundGeneric
+      method! visit_TVar _ _ = raise_notrace FoundGeneric
     end
   in
   try
     ty_visitor#visit_ty () ty;
     true
   with FoundGeneric -> false
+
+(** Whether the given type decl ref is properly substituted, i.e. it contains no
+    bound type variables. This can still return [true] for polymorphic type decl
+    refs, e.g. [Option<@Free0>], but we guarantee all type variables are free.
+*)
+let tyref_is_substituted ty =
+  let exception FoundBoundVar in
+  let ty_visitor =
+    object (_)
+      inherit [_] Types.iter_ty
+
+      method! visit_TVar _ =
+        function Free _ -> () | Bound _ -> raise_notrace FoundBoundVar
+    end
+  in
+  try
+    ty_visitor#visit_type_decl_ref () ty;
+    true
+  with FoundBoundVar -> false
 
 let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
   let clean_filename name =

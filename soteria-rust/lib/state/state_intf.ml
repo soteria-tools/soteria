@@ -96,6 +96,11 @@ module type S = sig
     [< T.any ] Typed.t ->
     [> T.any ] Typed.t ret
 
+  val transmute_raw :
+    to_:Types.ty ->
+    Typed.([< T.any ] t * [< T.sint ] t * [< T.nonzero ] t) list ->
+    [> T.any ] Typed.t ret
+
   val uninit : Typed.([< T.sptr_f ] t) -> Types.ty -> unit ret
   val zeros : Typed.([< T.sptr_f ] t) -> sint Typed.t -> unit ret
   val with_pointers_sym : 'a Sptr.DecayMap.SM.t -> 'a SM.t

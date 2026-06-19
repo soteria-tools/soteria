@@ -648,16 +648,16 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
   | TBitVector _, (TRawPtr _ | TRef _ | TFnPtr _) ->
       return (Typed.Ptr.mk_ptr_f (Sptr.of_address v) None)
   | _, TPattern (inner_ty, _) -> transmute_one ~to_ty:inner_ty v
-  (* TODO: ????? *)
-  (* | (PolyVal tid as v), TVar (Free type_var_id) ->
-      if Types.TypeVarId.equal_id type_var_id tid then return v
+  | TExtension TPolyType, TVar (Free type_var_id) ->
+      let tid = Typed.Adt.as_type_var v in
+      if Types.TypeVarId.equal_id type_var_id tid then return (Typed.as_any v)
       else
-        Fmt.kstr not_impl "transmute_one: mismatched type variables %a -> %a"
-          Types.pp_type_var_id type_var_id Types.pp_type_var_id tid *)
+        not_impl "transmute_one: mismatched type variables %a -> %a"
+          Types.pp_type_var_id type_var_id Types.pp_type_var_id tid
   | _, TVar (Bound _) ->
       L.failwith "transmute_one: bound type variable encountered?"
   | _, TVar _ ->
-      not_impl
+      L.failwith
         "losing concrete value in %a -> %a; somewhere we lost track of generics"
         Typed.ppa v pp_ty to_ty
   | ty, _ ->
@@ -748,15 +748,6 @@ let nondet_valid ty =
   in
   v
 
-(** Traverses the given type and rust value, and returns all findable references
-    with their type (ignores pointers, except if [include_ptrs] is true). This
-    is needed e.g. when needing to get the pointers along with the size of their
-    pointee, in particular in nested cases. *)
-let rec ref_tys_in ?(include_ptrs = false) (_ : Typed.([< T.any ] t))
-    (_ : Types.ty) : (Typed.([< T.sptr_f ] t) * Types.ty) list =
-  (* FIXME: this is removed in a future PR *)
-  []
-
 (** Folds over all the references and boxes in the given value and type,
     applying [fn] to them. This is used to update nested references when
     reborrowing. Calls [fn] with the pointer value and the pointer type (not the
@@ -789,6 +780,7 @@ let rec ref_tys_in
     in
     (List.rev vs, acc)
   in
+  let* ty = Poly.subst_ty ty in
   match ty with
   | TRef (_, _, _) | TAdt { id = TBuiltin TBox; _ } ->
       let v = Typed.cast_ptr_f v in

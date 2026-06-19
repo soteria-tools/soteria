@@ -162,6 +162,7 @@ module Adt : sig
 
   val as_tuple : [< T.adt ] t -> [> T.any ] t list
   val as_enum : [< T.adt ] t -> [> T.sint ] t * [> T.any ] t list
+  val as_type_var : [< T.adt ] t -> Types.type_var_id
   val discriminant_of : [< T.adt ] t -> [> T.sint ] t
 
   (* NOTE: i don't know if this will work at the solver level, or if i need a

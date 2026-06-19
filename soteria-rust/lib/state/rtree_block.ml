@@ -513,10 +513,12 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       (value : Typed.([< T.any ] t)) (tag : Ptr_tag.t option)
       (tb : Borrows.Tree.t option) : (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
-    let ((_, bound) as range) =
-      Range.of_low_and_size ofs (size :> Typed.(T.sint t))
-    in
-    let mk_fixes = mk_fix_any_s ofs (size :> Typed.(T.sint t)) in
+    (* manually coerce so types line up *)
+    let ofs = (ofs :> Typed.(T.sint t)) in
+    let size = (size :> Typed.(T.sint t)) in
+    let value = (value :> Typed.(T.any t)) in
+    let ((_, bound) as range) = Range.of_low_and_size ofs size in
+    let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMap.SM.Syntax in
         let replace_node t =

@@ -119,6 +119,7 @@ module type S = sig
     val subst_ty : Types.ty -> (Types.ty, 'env) t
     val subst_tys : Types.ty list -> (Types.ty list, 'env) t
     val subst_tref : Types.trait_ref -> (Types.trait_ref, 'env) t
+    val subst_tyref : Types.type_decl_ref -> (Types.type_decl_ref, 'env) t
     val subst_generic_args : Types.generic_args -> (Types.generic_args, 'env) t
 
     val subst_constant_expr :
@@ -237,6 +238,11 @@ module type S = sig
       from:Types.ty ->
       to_:Types.ty ->
       Typed.([< T.any ] t) ->
+      (Typed.([> T.any ] t), 'env) t
+
+    val transmute_raw :
+      to_:Types.ty ->
+      Typed.([< T.any ] t * [< T.sint ] t * [< T.nonzero ] t) list ->
       (Typed.([> T.any ] t), 'env) t
 
     val uninit : Typed.([< T.sptr_f ] t) -> Types.ty -> (unit, 'env) t
@@ -473,6 +479,7 @@ module Make (State : State_intf.S) :
     let[@inline] subst_ty ty = lift_symex (Poly.subst_ty ty)
     let[@inline] subst_tys tys = lift_symex (Poly.subst_tys tys)
     let[@inline] subst_tref tref = lift_symex (Poly.subst_tref tref)
+    let[@inline] subst_tyref tyref = lift_symex (Poly.subst_tyref tyref)
 
     let[@inline] subst_generic_args generic_args =
       lift_symex (Poly.subst_generic_args generic_args)
@@ -532,6 +539,7 @@ module Make (State : State_intf.S) :
       ESM.lift (copy_nonoverlapping ~src ~dst ~size)
 
     let[@inline] transmute ~from ~to_ v = ESM.lift (transmute ~from ~to_ v)
+    let[@inline] transmute_raw ~to_ vs = ESM.lift (transmute_raw ~to_ vs)
     let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
     let[@inline] free ptr = ESM.lift (free ptr)
     let[@inline] borrow ?protect ptr ty = ESM.lift (borrow ?protect ptr ty)
