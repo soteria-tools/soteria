@@ -368,6 +368,12 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         let ptr, meta = Typed.Ptr.split value in
         let ptr = Typed.Ptr.mk_ptr_f ptr None in
         let meta = Option.get meta in
+        let meta =
+          match%ty meta with
+          | TBitVector _ -> (meta :> Typed.(T.any t))
+          | TExtension TThinPtr -> Typed.Ptr.mk_ptr_f meta None
+          | _ -> L.failwith "invalid meta"
+        in
         chain [ ptr; meta ] (iter_fields layout ty)
     | Enum (_, layouts) -> (
         let adt = ty_as_adt ty in
@@ -579,10 +585,10 @@ let check_validity ~check_ref ty value st =
     https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
 *)
 let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
-    (v : Typed.([< T.cval ] t)) =
+    (v : Typed.([< T.sint | T.sfloat ] t)) =
   match (from_ty, to_ty) with
   | _, _ when Types.equal_literal_type from_ty to_ty ->
-      Typed.((v : [< T.cval ] t :> [> T.cval ] t))
+      Typed.((v : [< T.sint | T.sfloat ] t :> [> T.sint | T.sfloat ] t))
   | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
       let sv = Typed.cast_f fty v in
       let signed = Layout.is_signed lit_ty in
@@ -637,8 +643,6 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
   | TFloat _, TLiteral (TFloat _) -> return (Typed.as_any v)
   | TExtension TFullPtr, (TRawPtr _ | TRef _ | TFnPtr _) ->
       return (Typed.as_any v)
-  | TExtension TThinPtr, (TRawPtr _ | TRef _ | TFnPtr _) ->
-      return (Typed.Ptr.mk_ptr_f v None)
   | TBitVector _, TLiteral (TFloat _) -> return (BV.to_float_raw v)
   | TExtension TFullPtr, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
       let ptr = Typed.Ptr.ptr_of v in

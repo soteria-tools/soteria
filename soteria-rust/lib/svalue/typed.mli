@@ -26,19 +26,9 @@ module T : sig
   type poly = [ `Poly ]
   type ptr_meta = [ sptr_t | sint ]
 
-  type any =
-    [ sint_ovf
-    | sfloat
-    | sbool
-    | sptr
-    | sloc
-    | any sseq
-    | sptr_f
-    | sptr_t
-    | tuple
-    | enum
-    | union
-    | poly ]
+  (** The values that are allowed within the Rust interpreter as standalone
+      values. *)
+  type any = [ sint | sfloat | sptr_f | tuple | enum | union | poly ]
 
   val pp_sptr_f : Format.formatter -> sptr_f -> unit
   val pp_sptr_t : Format.formatter -> sptr_t -> unit
@@ -65,16 +55,19 @@ val t_ptr_t : unit -> [> T.sptr_t ] ty
 
 (* casts *)
 
-val cast_checked : ty:([< T.any ] as 'a) ty -> [< T.any ] t -> 'a t
-val cast_float : [< T.any ] t -> [> T.sfloat ] t
-val cast_i : Values.u_int_ty -> [< T.any ] t -> [> T.sint ] t
-val cast_f : Types.float_type -> [< T.any ] t -> T.sfloat t
-val cast_lit : Types.literal_type -> [< T.any ] t -> [> T.sint ] t
-val cast_ptr_f : [< T.any ] t -> [< T.sptr_f ] t
-val cast_ptr_t : [< T.any ] t -> [< T.sptr_t ] t
-val cast_tuple : [< T.any ] t -> [> T.tuple ] t
-val cast_enum : ?adt:Types.type_decl_ref -> [< T.any ] t -> [> T.enum ] t
-val cast_union : ?adt:Types.type_decl_ref -> [< T.any ] t -> [> T.union ] t
+(* Casts reinterpret a value and verify the result kind at runtime, so they
+   accept any input — including non-standalone values such as pointer metadata
+   (a vtable is a thin pointer, which is not part of [T.any]). *)
+val cast_checked : ty:([< T.any ] as 'a) ty -> _ t -> 'a t
+val cast_float : _ t -> [> T.sfloat ] t
+val cast_i : Values.u_int_ty -> _ t -> [> T.sint ] t
+val cast_f : Types.float_type -> _ t -> T.sfloat t
+val cast_lit : Types.literal_type -> _ t -> [> T.sint ] t
+val cast_ptr_f : _ t -> [< T.sptr_f ] t
+val cast_ptr_t : _ t -> [< T.sptr_t ] t
+val cast_tuple : _ t -> [> T.tuple ] t
+val cast_enum : ?adt:Types.type_decl_ref -> _ t -> [> T.enum ] t
+val cast_union : ?adt:Types.type_decl_ref -> _ t -> [> T.union ] t
 
 (** Reinterprets an integer as known to be non-zero. The caller is responsible
     for ensuring the value is indeed non-zero (e.g. an alignment). *)

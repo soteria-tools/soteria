@@ -735,7 +735,8 @@ module Make (StateImpl : State.S) = struct
         | Cast (CastScalar (from_ty, to_ty)) ->
             let v =
               match from_ty with
-              | TFloat f -> (Typed.cast_f f v :> Typed.(T.cval t))
+              | TFloat f ->
+                  (Typed.cast_f f v :> Typed.([ T.sint | T.sfloat ] t))
               | _ -> Typed.cast_lit from_ty v
             in
             ok (Value_codec.cast_literal ~from_ty ~to_ty v)

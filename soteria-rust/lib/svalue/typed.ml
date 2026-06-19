@@ -23,20 +23,7 @@ module T = struct
   type union = [ `Union ]
   type poly = [ `Poly ]
   type ptr_meta = [ sint | sptr_t ]
-
-  type any =
-    [ sint_ovf
-    | sfloat
-    | sbool
-    | sptr
-    | sloc
-    | any sseq
-    | sptr_f
-    | sptr_t
-    | tuple
-    | enum
-    | union
-    | poly ]
+  type any = [ sint | sfloat | sptr_f | tuple | enum | union | poly ]
 
   let pp_sptr_f = Fmt.nop
   let pp_sptr_t = Fmt.nop
@@ -44,7 +31,6 @@ module T = struct
   let pp_enum = Fmt.nop
   let pp_union = Fmt.nop
   let pp_poly = Fmt.nop
-  let pp_adt = Fmt.nop
   let pp_any = Fmt.nop
 end
 

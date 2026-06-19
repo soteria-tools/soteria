@@ -376,7 +376,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ ofs = with_ptr Write ptr in
     Block.with_block @@ Tree_block.uninit_range ofs size
 
-  let rec size_and_align_of_val t meta =
+  let rec size_and_align_of_val t (meta : Typed.([< T.ptr_meta ] t) option) =
     let* st = get_state () in
     let load_vtable field ptr =
       let open Rustsymex.Syntax in

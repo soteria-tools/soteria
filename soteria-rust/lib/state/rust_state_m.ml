@@ -174,8 +174,8 @@ module type S = sig
     val cast_literal :
       from_ty:Values.literal_type ->
       to_ty:Values.literal_type ->
-      Typed.([< T.cval ] t) ->
-      Typed.([> T.cval ] t)
+      Typed.([< T.sint | T.sfloat ] t) ->
+      Typed.([> T.sint | T.sfloat ] t)
 
     val nondet_valid : Types.ty -> (Typed.(T.any t), 'env) monad
 
