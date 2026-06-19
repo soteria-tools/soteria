@@ -93,7 +93,9 @@ struct
     (* The following is just query -> (rust_val, 'err, 'fix) StateResult.t where
        StateResult = StateT (Result), but I need StateT1of3 urgh. *)
     type handler = query -> Typed.T.any Typed.t res
-    type get_all_handler = get_all_query -> Typed.(T.any t * T.sint t) list res
+
+    type get_all_handler =
+      get_all_query -> Typed.(T.any t * T.sint t * T.nonzero t) list res
 
     (* A parser monad is an object such that, given a query handler with state
        ['state], returns a state monad-ish for that state which may fail or
@@ -323,11 +325,12 @@ let ptr_of_box v =
   let ptr = Typed.Adt.field_of 0 nonnull in
   Typed.cast_ptr_f ptr
 
-(** [encode ?offset v ty] Converts a [Rust_val.t] of type [ty] into an iterator
-    over its sub values, along with their offset. Offsets all blocks by [offset]
-    if specified *)
+(** [encode ~offset v ty] Converts a value of type [ty] into an iterator over
+    its sub values, along with their offsets and sizes. Offsets all blocks by
+    [offset]. *)
 let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
-    (Typed.(T.any t * T.sint t) Iter.t, 'e, 'f) Rustsymex.Result.t =
+    (Typed.(T.any t * T.sint t * T.nonzero t) Iter.t, 'e, 'f) Rustsymex.Result.t
+    =
   let open Rustsymex in
   let open Syntax in
   let open Result in
@@ -344,13 +347,16 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
   if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
   else
     match layout.fields with
-    | Primitive -> ok (Iter.singleton (value, offset))
+    | Primitive ->
+        ok (Iter.singleton (value, offset, Typed.cast_nonzero layout.size))
     | Arbitrary (_, _) ->
         let adt = ty_as_adt ty in
         let value = Typed.cast_adt adt value in
         if Crate.is_union adt then
           let blocks = Typed.Adt.as_union value in
-          ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
+          ok
+            (Iter.of_list blocks
+            |> Iter.map (fun (v, o, s) -> (v, offset +!!@ o, s)))
         else
           let fields = Typed.Adt.as_tuple value in
           chain fields (iter_fields layout ty)
@@ -361,8 +367,9 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
     | Array { is_ptr = true } ->
         let value = Typed.cast_ptr_f value in
         let ptr, meta = Typed.Ptr.split value in
+        let ptr = Typed.Ptr.mk_ptr_f ptr None in
         let meta = Option.get meta in
-        chain [ Typed.as_any ptr; Typed.as_any meta ] (iter_fields layout ty)
+        chain [ ptr; meta ] (iter_fields layout ty)
     | Enum (_, layouts) -> (
         let adt = ty_as_adt ty in
         let value = Typed.cast_adt adt value in
@@ -373,8 +380,9 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         match fst layouts.(Types.VariantId.to_int variant) with
         | None -> fields
         | Some (ofs, tag) ->
+            let size = BV.usizeinz (Typed.size_of_int tag / 8) in
             let offset = ofs +!!@ offset in
-            Iter.cons ((tag :> Typed.T.any Typed.t), offset) fields)
+            Iter.cons (Typed.as_any tag, offset, size) fields)
 
 (** Iterates over the validity constraints of this particular value for a given
     type, traversing it recursively. For every requirement, this associates to
@@ -526,7 +534,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of i v))
       |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   (* undefined.validity.struct *)
-  | TAdt adt when Crate.is_struct adt ->
+  | TAdt adt when Crate.is_struct_or_tuple adt ->
       let v = Typed.cast_adt adt v in
       Iter.of_list (Crate.as_struct_or_tuple adt)
       |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of i v))
@@ -653,7 +661,7 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
         "losing concrete value in %a -> %a; somewhere we lost track of generics"
         Typed.ppa v pp_ty to_ty
   | _, _ ->
-      not_impl "transmute_one: unsupported %a -> %a" Typed.ppa v pp_ty to_ty
+      L.failwith "transmute_one: unexpected %a -> %a" Typed.ppa v pp_ty to_ty
 
 (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
     [ty]: the returned value will have the right structure, and any required
@@ -717,7 +725,9 @@ let rec nondet_raw :
             | None -> vanish ()
           in
           let+ bytes = nondet (Typed.t_int (sizei * 8)) in
-          Ok (Typed.Adt.mk_union adt [ (bytes, Usize.(0s)) ])
+          Ok
+            (Typed.Adt.mk_union adt
+               [ (bytes, Usize.(0s), Typed.cast_nonzero size) ])
       | ty -> not_impl "nondet: unsupported type %a" Types.pp_type_decl_kind ty)
   | TPattern (inner, _) -> nondet_raw inner
   | TVar (Free id) -> Result.ok (Typed.Adt.mk_poly id)
@@ -825,7 +835,8 @@ let rec ref_tys_in
 (** Calculates the size and alignment of a type [t], according to the pointer
     metadata [meta]. Receives an arbitrary state and [load] function, to
     possibly access a heap to get VTable information. *)
-let rec size_and_align_of_val ~load_vtable ~t ~meta =
+let rec size_and_align_of_val ~load_vtable ~t
+    ~(meta : Typed.([< T.ptr_meta ] t) option) =
   let open Rustsymex in
   let open Rustsymex.Syntax in
   (* Takes inspiration from rustc, to calculate the size and alignment of DSTs.

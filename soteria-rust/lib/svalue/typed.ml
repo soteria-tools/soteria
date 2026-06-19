@@ -275,7 +275,11 @@ module Adt = struct
 
   let mk_union adt blocks =
     type_
-      (Extension (Union (List.map (Pair.map untyped untyped) blocks))
+      (Extension
+         (Union
+            (List.map
+               (fun (a, b, c) -> (untyped a, untyped b, untyped c))
+               blocks))
       <| TExtension (TAdt adt))
 
   let mk_poly ty_id = type_ (Extension (PolyVal ty_id) <| TExtension TPolyType)
@@ -284,7 +288,8 @@ module Adt = struct
      variables... *)
   let as_union v =
     match kind v with
-    | Extension (Union blocks) -> List.map (Pair.map type_ type_) blocks
+    | Extension (Union blocks) ->
+        List.map (fun (a, b, c) -> (type_ a, type_ b, type_ c)) blocks
     | _ -> todo_migration "as_union unop"
 
   (* HACK: i don't like this; it forces all fields to be resolved, which is

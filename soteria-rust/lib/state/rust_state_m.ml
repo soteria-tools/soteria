@@ -168,7 +168,7 @@ module type S = sig
       offset:Typed.T.sint Typed.t ->
       Typed.(T.any t) ->
       Types.ty ->
-      ((Typed.(T.any t) * Typed.T.sint Typed.t) Iter.t, 'env) monad
+      (Typed.(T.any t * T.sint t * T.nonzero t) Iter.t, 'env) monad
 
     val cast_literal :
       from_ty:Values.literal_type ->

@@ -131,7 +131,7 @@ module Ptr : sig
 
   (* full pointers *)
   val mk_ptr_f : [< T.sptr_t ] t -> [< T.ptr_meta ] t option -> [> T.sptr_f ] t
-  val split : [< T.sptr_f ] t -> [< T.sptr_t ] t * [< T.ptr_meta ] t option
+  val split : [< T.sptr_f ] t -> [> T.sptr_t ] t * [> T.ptr_meta ] t option
   val meta_of : [< T.sptr_f ] t -> [> T.ptr_meta ] t option
   val ptr_of : [< T.sptr_f ] t -> [> T.sptr_t ] t
 end
@@ -147,7 +147,9 @@ module Adt : sig
 
   (** Creates a union ADT with the given value blocks. *)
   val mk_union :
-    Types.type_decl_ref -> ([< T.any ] t * [< T.sint ] t) list -> [> T.adt ] t
+    Types.type_decl_ref ->
+    ([< T.any ] t * [< T.sint ] t * [< T.nonzero ] t) list ->
+    [> T.adt ] t
 
   (** Creates an unknown polymorphic value. {b HACK: what does this even mean?}
   *)
@@ -155,7 +157,8 @@ module Adt : sig
 
   (** Gets the blocks of this adt as a union; returns [None] if the ADT is not a
       union. *)
-  val as_union : [< T.adt ] t -> ([> T.any ] t * [> T.sint ] t) list
+  val as_union :
+    [< T.adt ] t -> ([> T.any ] t * [> T.sint ] t * [> T.nonzero ] t) list
 
   val as_tuple : [< T.adt ] t -> [> T.any ] t list
   val as_enum : [< T.adt ] t -> [> T.sint ] t * [> T.any ] t list

@@ -43,7 +43,11 @@ module Make (StateImpl : State.S) = struct
             let* ptr = State.alloc_ty binding.ty in
             let* () =
               match binding.kind with
-              | Value v -> State.store ptr binding.ty v
+              | Value v ->
+                  [%l.warn
+                    "storing %a: %a in %a" Typed.ppa v pp_ty binding.ty
+                      Typed.ppa ptr];
+                  State.store ptr binding.ty v
               | _ -> ok ()
             in
             let+ () = map_env (Store.declare_ptr var_id ptr) in

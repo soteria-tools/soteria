@@ -561,8 +561,8 @@ module Make (Borrows : Tree_borrows.T) = struct
           (* We uninitialise the whole range before writing, to ensure padding
              bytes are copied if there are any. *)
           let** () = Tree_block.uninit_range ofs size in
-          Result.iter_iter parts ~f:(fun (value, offset) ->
-              Tree_block.store (offset +!!@ ofs) value tag tb))
+          Result.iter_iter parts ~f:(fun (value, offset, size) ->
+              Tree_block.store (offset +!!@ ofs) size value tag tb))
 
   (** We can't use {!Heap.Decoder} for [transmute], since the transmute happens
       regardless of the heap's state, so we need to re-instantiate it for tree
@@ -601,8 +601,8 @@ module Make (Borrows : Tree_borrows.T) = struct
                    from
             in
             let** () =
-              Result.iter_iter parts ~f:(fun (value, offset) ->
-                  Tree_block.store offset value None None)
+              Result.iter_iter parts ~f:(fun (value, offset, size) ->
+                  Tree_block.store offset size value None None)
             in
             (* next, we read *)
             let handler (ty, ofs) =
@@ -666,19 +666,21 @@ module Make (Borrows : Tree_borrows.T) = struct
       let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
       check_ptr_align ptr ty
 
-    let check_non_dangling_untyped ptr size =
+    let check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
       let@ () = with_loc_err ~trace:"Dangling check" () in
-      check_non_dangling_untyped ptr size
+      check_non_dangling_untyped (ptr :> Typed.T.sptr_t Typed.t) size
 
     let check_non_dangling ptr ty =
       let@ () = with_loc_err ~trace:"Dangling check" () in
       check_non_dangling ptr ty
   end
 
-  let size_and_align_of_val ty meta =
+  let size_and_align_of_val ty (meta : Typed.([< T.ptr_meta ] t) option) =
     [%l.debug "Executing Size_and_align_of_val for %a" pp_ty ty];
     let@ () = with_loc_err ~trace:"Size and alignment check" () in
-    let++ size, align = size_and_align_of_val ty meta in
+    let++ size, align =
+      size_and_align_of_val ty (meta :> Typed.T.ptr_meta Typed.t option)
+    in
     ( (size : Typed.T.sint Typed.t :> Typed.([> T.sint ] t)),
       (align : Typed.T.nonzero Typed.t :> Typed.([> T.nonzero ] t)) )
 

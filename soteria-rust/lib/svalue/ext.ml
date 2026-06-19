@@ -30,8 +30,8 @@ and ext_t =
       (** thin pointer, without metadata but with extra info on the pointer *)
   | Enum of sv * sv list  (** discriminant * values *)
   | Tuple of sv list  (** contains ordered values *)
-  | Union of (sv * sv) list
-      (** list of blocks in the union, with their offset *)
+  | Union of (sv * sv * sv) list
+      (** list of blocks in the union, with their offset and size *)
   | PolyVal of Charon.Types.type_var_id
       (** The opaque value of a type variable, identified by (type variable
           index, unique identifier). *)
@@ -54,8 +54,8 @@ struct
         (** thin pointer, without metadata but with extra info on the pointer *)
     | Enum of sv * sv list  (** discriminant * values *)
     | Tuple of sv list  (** contains ordered values *)
-    | Union of (sv * sv) list
-        (** list of blocks in the union, with their offset *)
+    | Union of (sv * sv * sv) list
+        (** list of blocks in the union, with their offset and size *)
     | PolyVal of Charon.Types.type_var_id
         (** The opaque value of a type variable, identified by (type variable
             index, unique identifier). *)
@@ -77,7 +77,9 @@ struct
         Fmt.pf ft "Enum(%a: %a)" pp disc (Fmt.list ~sep:(Fmt.any ", ") pp) vals
     | Tuple vals -> Fmt.pf ft "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp) vals
     | Union vs ->
-        let pp_block ft (v, ofs) = Fmt.pf ft "(%a: %a)" pp ofs pp v in
+        let pp_block ft (v, ofs, size) =
+          Fmt.pf ft "(%a: %a-%a)" pp ofs pp v pp size
+        in
         Fmt.pf ft "Union(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_block) vs
     | PolyVal tid -> Fmt.pf ft "PolyVal(%a)" Charon.Types.pp_type_var_id tid
 
@@ -99,9 +101,10 @@ struct
     | Tuple vals -> List.iter iter_vars vals
     | Union vs ->
         List.iter
-          (fun (v, ofs) ->
+          (fun (v, ofs, size) ->
             iter_vars v;
-            iter_vars ofs)
+            iter_vars ofs;
+            iter_vars size)
           vs
     | PolyVal _ -> ()
 
@@ -116,7 +119,10 @@ struct
     | Tuple vals -> Hashtbl.hash (List.map (fun (v : sv) -> v.tag) vals)
     | Union vs ->
         Hashtbl.hash
-          (List.map (fun ((v : sv), (ofs : sv)) -> (v.tag, ofs.tag)) vs)
+          (List.map
+             (fun ((v : sv), (ofs : sv), (size : sv)) ->
+               (v.tag, ofs.tag, size.tag))
+             vs)
     | PolyVal x -> Hashtbl.hash x
 
   (* TODO: ?? *)
@@ -159,10 +165,11 @@ struct
         let vs, s = apply_list apply ~missing_var s vs in
         (Tuple vs, s)
     | Union vs ->
-        let apply ~missing_var s (v, ofs) =
+        let apply ~missing_var s (v, ofs, size) =
           let v, s = apply ~missing_var s v in
           let ofs, s = apply ~missing_var s ofs in
-          ((v, ofs), s)
+          let size, s = apply ~missing_var s size in
+          ((v, ofs, size), s)
         in
         (* FIXME(OCaml 5.5): this can be removed with polymorphic functions *)
         let rec apply_list ~missing_var s vs =

@@ -116,9 +116,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           let mask_l = BV.extract 0 ((at * 8) - 1) v in
           let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
           (mask_l, mask_r)
-      | _ ->
-          not_impl "Split unsupported: %a at %a" Typed.ppa v Typed.ppa
-            at
+      | _ -> not_impl "Split unsupported: %a at %a" Typed.ppa v Typed.ppa at
 
     let split ~at node =
       match node with
@@ -380,20 +378,21 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs (range, v, _tb) ->
         let offset, _ = range in
         let offset = offset -!@ fst t.range in
+        let size = Typed.cast_nonzero @@ Range.size range in
         match v with
         | Uninit -> (
             match uninit with
             | `Ignore -> ok vs
             | `Error -> error `UninitializedMemoryAccess)
         | Zeros ->
-            let+ size = sint_to_int (Range.size range) in
-            let value = BV.zero (size * 8) in
-            Ok ((value, offset) :: vs)
-        | Init value -> ok ((value, offset) :: vs)
+            let+ size_i = sint_to_int size in
+            let value = BV.zero (size_i * 8) in
+            Ok ((value, offset, size) :: vs)
+        | Init value -> ok ((value, offset, size) :: vs)
         | Any ->
             [%l.info "Reading from Any memory, vanishing."];
             vanish ()
-        | Unowned -> miss (mk_fix_any offset (Range.size range) ()))
+        | Unowned -> miss (mk_fix_any offset size ()))
 
   let decode_mem_val ~ty = function
     | Init value ->
@@ -421,13 +420,12 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
        concatenate them and call the encoder to decode the full value. *)
     let** leaves = collect_leaves ~uninit:`Error t in
     let* leaves : Typed.([< T.sint ] t) list =
-      DecayMap.SM.map_list leaves ~f:(fun (v, _) ->
+      DecayMap.SM.map_list leaves ~f:(fun (v, _, _) ->
           match%ty v with
           | TBitVector _ -> return v
           | TExtension TFullPtr -> Sptr.decay (Typed.Ptr.ptr_of v)
           | TFloat _ -> Value_codec.float_to_bv_bits v
-          | _ ->
-              not_impl "Unexpected rust_val in lazy decoding: %a" Typed.ppa v)
+          | _ -> not_impl "Unexpected rust_val in lazy decoding: %a" Typed.ppa v)
     in
     match List.rev leaves with
     | hd :: tl ->
@@ -479,7 +477,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   let check_owned (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) =
     let open DecayMap.SM.Syntax in
-    let _, bound = Range.of_low_and_size ofs  (size :> Typed.(T.sint t)) in
+    let _, bound = Range.of_low_and_size ofs (size :> Typed.(T.sint t)) in
     let mk_fixes () =
       let+ bound = DecayMap.SM.nondet (Typed.t_usize ()) in
       [ [ Bound (Expr.of_value bound) ] ]
@@ -511,14 +509,14 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         let++ sval = decode_tree ~ty framed in
         (sval, tree))
 
-  let store (ofs : Typed.([< T.sint ] t)) (value : Typed.([< T.any ] t))
-      (tag : Ptr_tag.t option) (tb : Borrows.Tree.t option) :
-      (unit, 'err, 'fix) SM.Result.t =
+  let store (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.nonzero ] t))
+      (value : Typed.([< T.any ] t)) (tag : Ptr_tag.t option)
+      (tb : Borrows.Tree.t option) : (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
-    (* let** size = lift_symex @@ Value_codec.size_of value in *)
-    let size = failwith "TODO??????" in
-    let ((_, bound) as range) = Range.of_low_and_size ofs size in
-    let mk_fixes = mk_fix_any_s ofs size in
+    let ((_, bound) as range) =
+      Range.of_low_and_size ofs (size :> Typed.(T.sint t))
+    in
+    let mk_fixes = mk_fix_any_s ofs (size :> Typed.(T.sint t)) in
     with_bound_check ~mk_fixes bound (fun t ->
         let open DecayMap.SM.Syntax in
         let replace_node t =
@@ -542,7 +540,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
 
   let get_init_leaves (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) :
-      (Typed.(T.any t * T.sint t) list, 'err, 'fix) SM.Result.t =
+      (Typed.(T.any t * T.sint t * T.nonzero t) list, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) =
       Range.of_low_and_size ofs (size :> Typed.(T.sint t))
     in
