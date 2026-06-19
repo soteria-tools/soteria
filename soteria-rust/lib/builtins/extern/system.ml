@@ -59,7 +59,7 @@ module M (StateM : State.StateM.S) = struct
     ok (Typed.Adt.Checked.mk_enum adt "None" [])
 
   (** [__dso_handle: *mut u8] is likewise an unlinked weak symbol, i.e. null. *)
-  let dso_handle _args = ok (Typed.Ptr.mk_ptr_f (Sptr.null ()) None)
+  let dso_handle _args = ok (Sptr.null_f ())
 
   (** [pthread_key_create] takes a key out-pointer and an optional destructor.
       We don't model pthread TLS storage, so any non-sentinel key works; std
@@ -83,7 +83,7 @@ module M (StateM : State.StateM.S) = struct
       let+ () =
         State.register_thread_exit (fun () ->
             let* fn = State.lookup_fn dtor in
-            map ignore @@ fun_exec fn [ Typed.Ptr.mk_ptr_f (Sptr.null ()) None ])
+            map ignore @@ fun_exec fn [ Sptr.null_f () ])
       in
       U32.(0s)
 

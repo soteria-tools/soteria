@@ -18,4 +18,4 @@
 - A utility to unwrap the pointer out of a box
 - A utility like `as_checked_ref` that returns a pointer option, with `Some` for references and boxes (i.e. a simpler version of ref_tys_in)
 - Maybe `type +'a ret =  ...` fixes all our problems?? do i just need to specify the invariance of all types....
-- Typed.Ptr.null for a full ptr
+- [DONE] Typed.Ptr.null for a full ptr (added as `Sptr.null_f`, not `Typed.Ptr`, since the null thin-pointer convention — size 0, align 1 — lives in `Sptr.null`, and `Typed` is below `Sptr` in the dependency order)

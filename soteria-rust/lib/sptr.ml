@@ -199,6 +199,9 @@ let null () =
 (** Converts an address into a pointer, without provenance. *)
 let of_address ofs = Typed.Ptr.add_ofs' (null ()) ofs
 
+(** The null full (wide) pointer: a {!null} thin pointer with no metadata. *)
+let null_f () = Typed.Ptr.mk_ptr_f (null ()) None
+
 (** Whether this is the null pointer, meaning it always decays to 0. *)
 let is_null = Typed.Ptr.is_null'
 
