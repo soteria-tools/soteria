@@ -59,7 +59,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
       Typed.Adt.Checked.mk_enum out_res "Ok" [ nonnull ]
     in
     if%sat size ==@ Usize.(0s) then
-      let dangling = Sptr.of_address align in
+      let dangling = Typed.Ptr.of_address align in
       ok (mk_res dangling Usize.(0s))
     else
       let* zeroed = if%sat zeroed then ok true else ok false in

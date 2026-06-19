@@ -31,7 +31,7 @@ module M (StateM : State.StateM.S) = struct
     | [ ptr ] ->
         let ptr = Typed.cast_ptr_f ptr in
         let ptr = Typed.Ptr.ptr_of ptr in
-        ok (Sptr.as_id ptr)
+        ok (Typed.Ptr.as_id ptr)
     | _ -> not_impl "alloc_id: invalid arguments"
 
   let promise_alignement args =

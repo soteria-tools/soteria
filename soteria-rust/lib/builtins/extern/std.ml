@@ -11,7 +11,7 @@ module M (StateM : State.StateM.S) = struct
   (** Stub for [__rust_panic_cleanup]: returns a dummy [&dyn Any] pointer so the
       caller does not crash before we handle the panic. *)
   let panic_cleanup _ =
-    ok (Typed.Ptr.mk_ptr_f (Sptr.null ()) (Some (Sptr.null ())))
+    ok (Typed.Ptr.mk_ptr_f (Typed.Ptr.null ()) (Some (Typed.Ptr.null ())))
 
   (** This shoyld be a call that gets resolved to the `#[panic_handler]`
       function. For now, we just panic. *)

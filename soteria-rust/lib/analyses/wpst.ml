@@ -100,7 +100,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
     ("Running " ^ entry_name ^ "...");
   let args : Typed.([> T.any ] t) list =
-    if entry_name = "miri_start" then Typed.[ BV.usizei 0; Sptr.null_f () ]
+    if entry_name = "miri_start" then Typed.[ BV.usizei 0; Typed.Ptr.null_f () ]
     else []
   in
   let branches =

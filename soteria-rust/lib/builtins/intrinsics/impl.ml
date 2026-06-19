@@ -142,7 +142,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      dropping provenance -- like {!ptr_mask}. *)
   let atomic_addr_op op src old =
     let+ addr = Sptr.decay old in
-    Sptr.of_address (op addr src)
+    Typed.Ptr.of_address (op addr src)
 
   let atomic_and ~t ~u ~ord:_ ~dst ~src =
     atomic_rmw ~t ~u ~dst ~src
@@ -321,7 +321,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
            (* We can't use [null] here because this messes up with the niche of
               the return type, which checks if the pointer is 0! *)
            exec_fun "catch_unwind catch" catch_fn
-             [ data; Typed.Ptr.mk_ptr_f (Sptr.of_address Usize.(1s)) None ]
+             [ data; Typed.Ptr.of_address_f Usize.(1s) ]
            |> unwind_with
                 ~f:(fun _ -> ok Typed.v_true)
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
@@ -553,7 +553,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let l, _ = Typed.Ptr.split l in
     let r, _ = Typed.Ptr.split r in
 
-    let same_provenance = Sptr.have_same_provenance l r in
+    let same_provenance = Typed.Ptr.have_same_provenance l r in
     if%sure not same_provenance then ok ()
     else
       let* l_end = Sptr.offset size l in
@@ -832,7 +832,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let ptr, meta = Typed.Ptr.split ptr in
     let* addr = Sptr.decay ptr in
     let addr = addr &@ mask in
-    ok (Typed.Ptr.mk_ptr_f (Sptr.of_address addr) meta)
+    ok (Typed.Ptr.mk_ptr_f (Typed.Ptr.of_address addr) meta)
 
   let ptr_offset_from_ ~unsigned ~t ~ptr ~base : [> T.sint ] Typed.t ret =
     let zero = Usize.(0s) in
@@ -855,7 +855,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      * 1. must be at the same address, OR derived from the same allocation
      * 2. the distance must be a multiple of sizeof(T) *)
     let same_addr_or_alloc =
-      off ==@ zero ||@ Sptr.have_same_provenance ptr_in base_in
+      off ==@ zero ||@ Typed.Ptr.have_same_provenance ptr_in base_in
     in
     let distance_multiple = off %$@ size ==@ zero in
     let* () =

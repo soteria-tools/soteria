@@ -216,7 +216,7 @@ struct
             match tag with
             | `Int tag -> ok (int_cond tag)
             | `Ptr ptr when is_single && Typed.BV.sure_is_zero from_ ->
-                ok (Sptr.is_null ptr)
+                ok (Typed.Ptr.is_null ptr)
             | `Ptr ptr -> map int_cond @@ lift (Sptr.decay ptr)
           in
           let rec aux = function
@@ -438,7 +438,9 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
     | Some (`VTable vt), VTableKind ->
         (* TODO: the vtable must always match the trait type of the pointee.
            Will require a new input to this function (?) *)
-        f (Typed.not (Sptr.is_null vt)) (`UBTransmute "Null vtable pointer")
+        f
+          (Typed.not (Typed.Ptr.is_null vt))
+          (`UBTransmute "Null vtable pointer")
     | _, dst_kind ->
         let got =
           match meta with
@@ -480,7 +482,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
     | NotNull ->
         let ptr = Typed.cast_ptr_f v in
         let ptr = Typed.Ptr.ptr_of ptr in
-        Typed.not (Typed.Ptr.is_null' ptr)
+        Typed.not (Typed.Ptr.is_null ptr)
     | OrPattern pats ->
         List.fold_left
           (fun acc p -> acc ||@ pattern_valid_cond inner_ty v p)
@@ -495,7 +497,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
   (* undefined.validity.fn-pointer *)
   | TFnPtr _ ->
       let ptr, _ = Typed.Ptr.split @@ Typed.cast_ptr_f v in
-      f (Typed.not (Typed.Ptr.is_null' ptr)) `UBDanglingPointer
+      f (Typed.not (Typed.Ptr.is_null ptr)) `UBDanglingPointer
   (* undefined.validity.char *)
   | TLiteral TChar ->
       let v = Typed.cast_lit TChar v in
@@ -646,7 +648,7 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
       Sptr.decay ptr
   | TFloat _, TLiteral (TInt _ | TUInt _ | TBool | TChar) -> float_to_bv_bits v
   | TBitVector _, (TRawPtr _ | TRef _ | TFnPtr _) ->
-      return (Typed.Ptr.mk_ptr_f (Sptr.of_address v) None)
+      return (Typed.Ptr.of_address_f v)
   | _, TPattern (inner_ty, _) -> transmute_one ~to_ty:inner_ty v
   | TExtension TPolyType, TVar (Free type_var_id) ->
       let tid = Typed.Adt.as_type_var v in
@@ -691,7 +693,7 @@ let rec nondet_raw :
     when not (Layout.is_dst pointee) ->
       let** { size; align; _ } = Layout.layout_of pointee in
       let+ ptr = nondet (Typed.t_ptr ()) in
-      let ptr = Typed.Ptr.mk_ptr_t ~ptr ~size ~align ~tag:None in
+      let ptr = Typed.Ptr.of_raw ~ptr ~size ~align ~tag:None in
       Ok (Typed.Ptr.mk_ptr_f ptr None)
   | TAdt { id = TTuple; generics = { types; _ } } ->
       let++ fields = nondets_raw types in

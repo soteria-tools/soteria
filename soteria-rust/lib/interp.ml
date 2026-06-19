@@ -103,7 +103,7 @@ module Make (StateImpl : State.S) = struct
         | Stackptr ptr, None -> State.free ptr
         | Stackptr fptr, Some protect ->
             let ptr = Typed.Ptr.ptr_of fptr in
-            if%sat Sptr.have_same_provenance ptr protect then ok ()
+            if%sat Typed.Ptr.have_same_provenance ptr protect then ok ()
             else State.free fptr)
 
   let resolve_fn_ptr (fn : Types.fn_ptr) : Fun_kind.t t =
@@ -165,8 +165,7 @@ module Make (StateImpl : State.S) = struct
         let str = List.to_seq str |> Seq.map Char.chr |> String.of_seq in
         Core.string_to_ptr str
     | CFnDef _ -> ok (Typed.Adt.mk_tuple [])
-    | CPtrNoProvenance v ->
-        ok (Typed.Ptr.mk_ptr_f (Sptr.of_address (BV.usize v)) None)
+    | CPtrNoProvenance v -> ok (Typed.Ptr.of_address_f (BV.usize v))
     | CArray cs ->
         let+ vals = map_list cs ~f:resolve_constant in
         Typed.Adt.mk_tuple vals
@@ -721,7 +720,7 @@ module Make (StateImpl : State.S) = struct
                 (* with provenance, not null *)
                 let v = Typed.cast_i Usize v in
                 let* fptr = State.with_exposed v in
-                if%sat Typed.Ptr.is_null' @@ Typed.Ptr.ptr_of fptr then
+                if%sat Typed.Ptr.is_null @@ Typed.Ptr.ptr_of fptr then
                   error (`UBTransmute "null pointer for !null pattern")
                 else ok (Typed.as_any fptr)
             | _, (TRef (_, to_ty, _) | TRawPtr (to_ty, _)) ->
@@ -791,10 +790,8 @@ module Make (StateImpl : State.S) = struct
                   | _ -> assert false
                 in
                 ok (op ~signed v1 v2 |> BV.of_bool)
-            | Eq | Ne ->
-                let+ res = Core.equality_check v1 v2 in
-                if op = Eq then Typed.as_any res
-                else Typed.as_any (BV.not_bool res)
+            | Eq -> ok (BV.of_bool (v1 ==@ v2))
+            | Ne -> ok (BV.of_bool (Typed.not (v1 ==@ v2)))
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
                 Core.eval_lit_binop op ty v1 v2
             | AddChecked | SubChecked | MulChecked ->

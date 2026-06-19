@@ -72,6 +72,8 @@ type ptr = {
   tag : Ptr_tag.t option;
 }
 
+(* The raw pointer type; only used to materialise a fully-symbolic nondet
+   pointer in [Value_codec] (see {!Ptr.of_raw}). *)
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
 let t_ptr_f () : 'a ty = TExtension TFullPtr
 let t_ptr_t () : 'a ty = TExtension TThinPtr
@@ -107,9 +109,6 @@ let cast_f fty v = cast_checked ~ty:(t_float fty) v
 
 let cast_float v =
   match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
-
-let cast_ptr v =
-  match get_ty v with TPointer _ -> cast v | _ -> cast_error v (t_ptr ())
 
 let cast_ptr_f v =
   match get_ty v with
@@ -207,15 +206,19 @@ module Float = struct
   let mk fty = mk (float_precision fty)
 end
 
+(* This module exposes pointers as the two standalone embedded values, thin
+   pointers ([sptr_t]) and full/wide pointers ([sptr_f]). The fact that a thin
+   pointer wraps a "raw" [sptr] (a bare location+offset) is an implementation
+   detail: the raw [Self.Ptr] operations are used only here, and are never
+   re-exposed, so [sptr] never leaks into the rest of the interpreter. *)
 module Ptr = struct
-  include Ptr
+  (* {1 Locations} *)
 
-  let null_loc () = null_loc (8 * size_of_uint_ty Usize)
-  let null () = null (8 * size_of_uint_ty Usize)
-  let loc_of_int i = loc_of_int (8 * size_of_uint_ty Usize) i
+  let null_loc () = Self.Ptr.null_loc (8 * size_of_uint_ty Usize)
+  let loc_of_int i = Self.Ptr.loc_of_int (8 * size_of_uint_ty Usize) i
+  let is_null_loc loc = Self.Ptr.is_null_loc loc
 
-  let mk_ptr_t ~ptr ~size ~align ~tag =
-    Extension (ThinPtr { ptr; size; align; tag }) <| t_ptr_t ()
+  (* {1 Internal raw-pointer plumbing (never exposed)} *)
 
   let _get_ptr ptr =
     match kind ptr with
@@ -230,22 +233,72 @@ module Ptr = struct
            rebuild the ptr from scratch *)
         todo_migration "ThinPtr.ptr setter"
 
-  let ptr_inner ptr = (_get_ptr ptr).ptr
+  let _inner ptr = (_get_ptr ptr).ptr
 
-  let with_inner ptr ptr_inner =
-    _set_ptr ptr (fun inner -> { inner with ptr = ptr_inner })
+  let of_raw ~ptr ~size ~align ~tag =
+    Extension (ThinPtr { ptr; size; align; tag }) <| t_ptr_t ()
 
-  let is_null' ptr = is_null @@ ptr_inner ptr
-  let is_at_null_loc' ptr = is_at_null_loc @@ ptr_inner ptr
-  let decompose' ptr = decompose @@ ptr_inner ptr
-  let loc' ptr = loc @@ ptr_inner ptr
-  let ofs' ptr = ofs @@ ptr_inner ptr
-  let add_ofs' ptr ofs = with_inner ptr (add_ofs (ptr_inner ptr) ofs)
+  let mk_ptr_t ~loc ~ofs ~size ~align ~tag =
+    of_raw ~ptr:(Self.Ptr.mk loc ofs) ~size ~align ~tag
+
+  let loc ptr = Self.Ptr.loc (_inner ptr)
+  let ofs ptr = Self.Ptr.ofs (_inner ptr)
+  let decompose ptr = Self.Ptr.decompose (_inner ptr)
+  let is_null ptr = Self.Ptr.is_null (_inner ptr)
+  let is_at_null_loc ptr = Self.Ptr.is_at_null_loc (_inner ptr)
+
+  let add_ofs ptr o =
+    _set_ptr ptr (fun inner ->
+        { inner with ptr = Self.Ptr.add_ofs inner.ptr o })
+
+  (* Sets the (absolute) offset of a thin pointer, keeping its location, size,
+     alignment and tag. Rebuilds only the inner raw pointer. *)
+  let set_ofs ptr o =
+    _set_ptr ptr (fun inner ->
+        { inner with ptr = Self.Ptr.mk (Self.Ptr.loc inner.ptr) o })
+
   let align_of ptr = (_get_ptr ptr).align
   let size_of ptr = (_get_ptr ptr).size
+  let allocation_info ptr = (size_of ptr, align_of ptr)
   let tag_of ptr = (_get_ptr ptr).tag
   let with_tag ptr tag = _set_ptr ptr (fun inner -> { inner with tag })
+  let has_provenance ptr = not (is_at_null_loc ptr)
+  let have_same_provenance p1 p2 = sem_eq (loc p1) (loc p2)
+
+  let in_bound ptr =
+    let open Infix in
+    BV.usizei 0 <=@ ofs ptr &&@ (ofs ptr <@ size_of ptr)
+
+  (** For Miri: the allocation ID of this location, as a u64. *)
+  let as_id ptr =
+    (* the cast converts the location to a bitvector, which is safe because they
+       have the same type, internally. *)
+    let loc = cast (loc ptr) in
+    let size = size_of_int loc in
+    if size < 64 then BV.extend ~signed:false (64 - size) loc
+    else (
+      (* should basically always be the case but let's be cautious *)
+      assert (size = 64);
+      loc)
+
+  (** The null pointer, which always decays to 0, and has no provenance.
+      Equivalent to [of_address 0]. *)
+  let null () =
+    mk_ptr_t ~loc:(null_loc ()) ~ofs:(BV.usizei 0) ~size:(BV.usizei 0)
+      ~align:(BV.usizeinz 1) ~tag:None
+
+  (** Converts an address into a pointer, without provenance. *)
+  let of_address ofs = add_ofs (null ()) ofs
+
+  (* {1 Full/wide pointers ([sptr_f])} *)
+
   let mk_ptr_f ptr meta = Extension (Ptr (ptr, meta)) <| t_ptr_f ()
+
+  (** The null full (wide) pointer: a {!null} thin pointer with no metadata. *)
+  let null_f () = mk_ptr_f (null ()) None
+
+  (** Like {!of_address}, but produces a full pointer with no metadata. *)
+  let of_address_f addr = mk_ptr_f (of_address addr) None
 
   let meta_of ptr =
     match kind ptr with

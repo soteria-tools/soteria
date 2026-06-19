@@ -20,22 +20,6 @@ module M (StateM : State.StateM.S) = struct
     in
     Typed.Adt.mk_enum ordering discr []
 
-  let rec equality_check (v1 : [< T.sint | T.sptr ] Typed.t)
-      (v2 : [< T.sint | T.sptr ] Typed.t) =
-    match (get_ty v1, get_ty v2) with
-    | TBitVector _, TBitVector _ | TPointer _, TPointer _ ->
-        ok (BV.of_bool (v1 ==@ v2))
-    | TPointer _, TBitVector _ ->
-        let v2 : T.sint Typed.t = cast v2 in
-        if%sat v2 ==@ Usize.(0s) then
-          let res = cast v1 ==@ Ptr.null () in
-          ok (BV.of_bool res)
-        else error `UBPointerComparison
-    | TBitVector _, TPointer _ -> equality_check v2 v1
-    | _ ->
-        not_impl "Unexpected types in cval equality: %a and %a" Typed.ppa v1
-          Typed.ppa v2
-
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
       hand side. *)
@@ -150,15 +134,15 @@ module M (StateM : State.StateM.S) = struct
         let+ res = eval_ptr_binop Eq l r in
         BV.not_bool (cast res)
     | Eq ->
-        let null_or_in_bound p = Sptr.is_null p ||@ Sptr.in_bound p in
+        let null_or_in_bound p = Typed.Ptr.is_null p ||@ Typed.Ptr.in_bound p in
         let l, meta_l = Typed.Ptr.split l in
         let r, meta_r = Typed.Ptr.split r in
-        let same_provenance = Sptr.have_same_provenance l r in
+        let same_provenance = Typed.Ptr.have_same_provenance l r in
         if%sure same_provenance then
           (* Fast path: if two pointer have the same provenance, it's enough to
              compare their offsets *)
           let+ meta_eq = eval_meta_eq meta_l meta_r in
-          BV.of_bool (meta_eq &&@ (Typed.Ptr.ofs' l ==@ Typed.Ptr.ofs' r))
+          BV.of_bool (meta_eq &&@ (Typed.Ptr.ofs l ==@ Typed.Ptr.ofs r))
         else if%sure
           (not same_provenance) &&@ null_or_in_bound l &&@ null_or_in_bound r
         then

@@ -60,7 +60,7 @@ module M (StateM : State.StateM.S) = struct
       | _ -> L.failwith "dealloc: invalid arguments"
     in
     let ptr_in = Typed.Ptr.ptr_of ptr in
-    let alloc_size, alloc_align = Sptr.allocation_info ptr_in in
+    let alloc_size, alloc_align = Typed.Ptr.allocation_info ptr_in in
     let* () =
       assert_ (alloc_align ==?@ align &&@ (alloc_size ==?@ size)) `InvalidFree
     in
@@ -78,7 +78,7 @@ module M (StateM : State.StateM.S) = struct
       | _ -> L.failwith "realloc: invalid arguments"
     in
     let ptr_in = Typed.Ptr.ptr_of ptr in
-    let prev_size, prev_align = Sptr.allocation_info ptr_in in
+    let prev_size, prev_align = Typed.Ptr.allocation_info ptr_in in
     let* () =
       assert_
         (prev_align ==?@ align &&@ (prev_size ==?@ old_size))

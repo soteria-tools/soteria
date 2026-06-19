@@ -189,32 +189,6 @@ type t = Typed.(T.sptr_t t)
 
 let pp = Typed.ppa
 
-(** The null pointer, which always decays to 0, and has no provenance.
-    Equivalent to [of_address 0]. *)
-let null () =
-  Typed.Ptr.mk_ptr_t ~ptr:(Typed.Ptr.null ()) ~tag:None
-    ~align:Usize.(1s)
-    ~size:Usize.(0s)
-
-(** Converts an address into a pointer, without provenance. *)
-let of_address ofs = Typed.Ptr.add_ofs' (null ()) ofs
-
-(** The null full (wide) pointer: a {!null} thin pointer with no metadata. *)
-let null_f () = Typed.Ptr.mk_ptr_f (null ()) None
-
-(** Whether this is the null pointer, meaning it always decays to 0. *)
-let is_null = Typed.Ptr.is_null'
-
-(** Whether this pointer has provenance, i.e. points to some allocation. *)
-let has_provenance ptr = Typed.not (Typed.Ptr.is_at_null_loc' ptr)
-
-(** Returns a symbolic boolean characterising whether the pointer is in bound to
-    its allocation. *)
-let in_bound ptr =
-  let size = Typed.Ptr.size_of ptr in
-  let ofs = Typed.Ptr.ofs' ptr in
-  Usize.(0s) <=@ ofs &&@ (ofs <@ size)
-
 (** Creates a dangling pointer to the given type, if that type is a ZST; returns
     [None] otherwise. *)
 let dangling_if_zst ty =
@@ -224,31 +198,24 @@ let dangling_if_zst ty =
   if%sat layout.size ==@ Usize.(0s) then
     (* UX: really any address that is well-aligned is valid, we
        under-approximate here to make our life easier. *)
-    Result.ok (Some (of_address layout.align))
+    Result.ok (Some (Typed.Ptr.of_address layout.align))
   else Result.ok None
-
-(** If these two pointers have the same provenance, i.e. point to the same
-    allocation (or if they both have no provenance). *)
-let have_same_provenance p1 p2 = Typed.Ptr.loc' p1 ==@ Typed.Ptr.loc' p2
 
 (** A simplified, untyped (and {b unsafe}) version of [offset], that adds a
     signed integer to this pointer's offset. This offset doesn't check whether
     the resulting pointer is dangling after being offset. *)
 let raw_offset ptr off_by =
   let open Rustsymex.Syntax in
-  let inner = Typed.Ptr.ptr_inner ptr in
-  let loc, ofs = Typed.Ptr.decompose inner in
-  let ofs', ovf = ofs +$?@ off_by in
+  let _, ovf = Typed.Ptr.ofs ptr +$?@ off_by in
   let++ () = assert_or_error (Typed.not ovf) `UBDanglingPointer in
-  let inner' = Typed.Ptr.mk loc ofs' in
-  Typed.Ptr.with_inner ptr inner'
+  Typed.Ptr.add_ofs ptr off_by
 
 let[@inline] _decay ~expose p =
   let open DecayMap.SM.Syntax in
-  let ptr = Typed.Ptr.ptr_inner p in
   let size = Typed.Ptr.size_of p in
   let align = Typed.Ptr.align_of p in
-  let loc, ofs = Typed.Ptr.decompose ptr in
+  let loc = Typed.Ptr.loc p in
+  let ofs = Typed.Ptr.ofs p in
   let+ loc_int = DecayMap.decay ~expose ~size ~align loc in
   [%l.debug "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int];
   loc_int +!!@ ofs
@@ -267,25 +234,9 @@ let expose p = _decay ~expose:true p
     allocations, they are decayed and substracted. *)
 let distance p1 p2 : [> sint ] Typed.t DecayMap.SM.t =
   let open DecayMap.SM.Syntax in
-  if%sat have_same_provenance p1 p2 then
-    DecayMap.SM.return (Typed.Ptr.ofs' p1 -!@ Typed.Ptr.ofs' p2)
+  if%sat Typed.Ptr.have_same_provenance p1 p2 then
+    DecayMap.SM.return (Typed.Ptr.ofs p1 -!@ Typed.Ptr.ofs p2)
   else
     let* ptr1 = decay p1 in
     let+ ptr2 = decay p2 in
     ptr1 -!@ ptr2
-
-(** For Miri: the allocation ID of this location, as a u64 *)
-let as_id ptr =
-  (* the cast converts the location to a bitvector, which is safe because they
-     have the same type, internally. *)
-  let loc = Typed.cast @@ Typed.Ptr.loc' ptr in
-  let size = Typed.size_of_int loc in
-  if size < 64 then BV.extend ~signed:false (64 - size) loc
-  else (
-    (* should basically always be the case but let's be cautious *)
-    assert (size = 64);
-    loc)
-
-(** For Miri: get the allocation info for this pointer: its size and alignment
-*)
-let allocation_info ptr = (Typed.Ptr.size_of ptr, Typed.Ptr.align_of ptr)

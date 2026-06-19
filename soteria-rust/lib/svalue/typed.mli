@@ -42,8 +42,12 @@ end
 
 (* types *)
 
-val t_ptr : unit -> [> T.sptr ] ty
 val t_loc : unit -> [> T.sloc ] ty
+
+(** The raw pointer type. Only meant for {!Ptr.of_raw}; prefer thin/full
+    pointers everywhere else. *)
+val t_ptr : unit -> [> T.sptr ] ty
+
 val t_float : Types.float_type -> T.sfloat ty
 val t_usize : unit -> [> T.sint ] ty
 val t_lit : Types.literal_type -> [> T.sint ] ty
@@ -57,7 +61,6 @@ val cast_float : [< T.any ] t -> [> T.sfloat ] t
 val cast_i : Values.u_int_ty -> [< T.any ] t -> [> T.sint ] t
 val cast_f : Types.float_type -> [< T.any ] t -> T.sfloat t
 val cast_lit : Types.literal_type -> [< T.any ] t -> [> T.sint ] t
-val cast_ptr : [< T.any ] t -> [< T.sptr ] t
 val cast_ptr_f : [< T.any ] t -> [< T.sptr_f ] t
 val cast_ptr_t : [< T.any ] t -> [< T.sptr_t ] t
 val cast_adt : Types.type_decl_ref -> [< T.any ] t -> [> T.adt ] t
@@ -113,36 +116,53 @@ module Float : sig
 end
 
 module Ptr : sig
-  include module type of Ptr
-
-  (* redefined to avoid the size parameter *)
+  (* locations *)
   val loc_of_int : int -> [> T.sloc ] t
-  val null : unit -> [> T.sptr ] t
   val null_loc : unit -> [> T.sloc ] t
+  val is_null_loc : [< T.sloc ] t -> [> T.sbool ] t
 
-  (* lifted to sptr_t and accessors *)
+  (* thin pointers *)
   val mk_ptr_t :
+    loc:[< T.sloc ] t ->
+    ofs:[< T.sint ] t ->
+    size:[< T.sint ] t ->
+    align:[< T.nonzero ] t ->
+    tag:Ptr_tag.t option ->
+    [> T.sptr_t ] t
+
+  val of_raw :
     ptr:[< T.sptr ] t ->
     size:[< T.sint ] t ->
     align:[< T.nonzero ] t ->
     tag:Ptr_tag.t option ->
     [> T.sptr_t ] t
 
-  val is_null' : [< T.sptr_t ] t -> [> T.sbool ] t
-  val is_at_null_loc' : [< T.sptr_t ] t -> [> T.sbool ] t
-  val decompose' : [< T.sptr_t ] t -> [> T.sloc ] t * [> T.sint ] t
-  val loc' : [< T.sptr_t ] t -> [> T.sloc ] t
-  val ofs' : [< T.sptr_t ] t -> [> T.sint ] t
-  val add_ofs' : [< T.sptr_t ] t -> [< T.sint ] t -> [> T.sptr_t ] t
-  val ptr_inner : [< T.sptr_t ] t -> [> T.sptr ] t
-  val with_inner : [< T.sptr_t ] t -> [< T.sptr ] t -> [> T.sptr_t ] t
+  val null : unit -> [> T.sptr_t ] t
+  val of_address : [< T.sint ] t -> [> T.sptr_t ] t
+  val loc : [< T.sptr_t ] t -> [> T.sloc ] t
+  val ofs : [< T.sptr_t ] t -> [> T.sint ] t
+  val decompose : [< T.sptr_t ] t -> [> T.sloc ] t * [> T.sint ] t
+  val add_ofs : [< T.sptr_t ] t -> [< T.sint ] t -> [> T.sptr_t ] t
+  val set_ofs : [< T.sptr_t ] t -> [< T.sint ] t -> [> T.sptr_t ] t
+  val is_null : [< T.sptr_t ] t -> [> T.sbool ] t
+  val is_at_null_loc : [< T.sptr_t ] t -> [> T.sbool ] t
+  val has_provenance : [< T.sptr_t ] t -> [> T.sbool ] t
+
+  val have_same_provenance :
+    [< T.sptr_t ] t -> [< T.sptr_t ] t -> [> T.sbool ] t
+
+  val in_bound : [< T.sptr_t ] t -> [> T.sbool ] t
   val align_of : [< T.sptr_t ] t -> [> T.nonzero ] t
   val size_of : [< T.sptr_t ] t -> [> T.sint ] t
+  val allocation_info : [< T.sptr_t ] t -> [> T.sint ] t * [> T.nonzero ] t
   val tag_of : [< T.sptr_t ] t -> Ptr_tag.t option
   val with_tag : [< T.sptr_t ] t -> Ptr_tag.t option -> [> T.sptr_t ] t
+  val as_id : [< T.sptr_t ] t -> [> T.sint ] t
 
   (* full pointers *)
   val mk_ptr_f : [< T.sptr_t ] t -> [< T.ptr_meta ] t option -> [> T.sptr_f ] t
+  val null_f : unit -> [> T.sptr_f ] t
+  val of_address_f : [< T.sint ] t -> [> T.sptr_f ] t
   val split : [< T.sptr_f ] t -> [> T.sptr_t ] t * [> T.ptr_meta ] t option
   val meta_of : [< T.sptr_f ] t -> [> T.ptr_meta ] t option
   val ptr_of : [< T.sptr_f ] t -> [> T.sptr_t ] t

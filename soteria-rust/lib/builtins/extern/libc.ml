@@ -39,7 +39,7 @@ module M (StateM : State.StateM.S) = struct
         (* [free(NULL)] is a no-op. *)
         let ptr = Typed.cast_ptr_f ptr in
         let ptr_in = Typed.Ptr.ptr_of ptr in
-        if%sat Sptr.is_null ptr_in then ok (Typed.Adt.mk_tuple [])
+        if%sat Typed.Ptr.is_null ptr_in then ok (Typed.Adt.mk_tuple [])
         else
           let+ () = State.free ptr in
           Typed.Adt.mk_tuple []

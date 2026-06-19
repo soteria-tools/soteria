@@ -229,9 +229,9 @@ module Make (Borrows : Tree_borrows.T) = struct
       let open SM.Syntax in
       let* () = print_access access ptr in
       let** () =
-        assert_or_error Typed.(not (Typed.Ptr.is_null' ptr)) `NullDereference
+        assert_or_error Typed.(not (Typed.Ptr.is_null ptr)) `NullDereference
       in
-      let loc, ofs = Typed.Ptr.decompose' ptr in
+      let loc, ofs = Typed.Ptr.decompose ptr in
       let* res =
         wrap loc
           (let open Freeable_block_with_meta in
@@ -249,7 +249,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       match (res, Config.get_mode ()) with
       | (Missing _ as miss), Whole_program ->
           (* HACK: a miss in WPST means there is a dangling pointer. *)
-          if%sat Typed.not (Sptr.has_provenance ptr) then
+          if%sat Typed.not (Typed.Ptr.has_provenance ptr) then
             Result.error `UBDanglingPointer
           else return miss
       | ok_or_err, _ -> return ok_or_err
@@ -359,7 +359,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       let@ _ofs = Heap.with_ptr Read ptr in
       Block.with_block (Tree_block.get_init_leaves ofs size)
     in
-    let offset = Typed.Ptr.ofs' ptr in
+    let offset = Typed.Ptr.ofs ptr in
     with_heap
     @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all
     @@ parser ~offset
@@ -397,7 +397,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     [%l.debug
       "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
         exp_align pp_ty ty];
-    let loc, ofs = Typed.Ptr.decompose' ptr in
+    let loc, ofs = Typed.Ptr.decompose ptr in
     (* A pointer with no provenance is aligned to it's offset *)
     let align =
       Typed.(ite (Ptr.is_null_loc loc) exp_align (Typed.Ptr.align_of ptr))
@@ -509,7 +509,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       | Warn ->
           let*^ trace = get_trace () in
           let err = Error.decorate trace (`InvalidRef err) in
-          let loc = Typed.Ptr.loc' (Typed.Ptr.ptr_of ptr) in
+          let loc = Typed.Ptr.loc (Typed.Ptr.ptr_of ptr) in
           Error.Diagnostic.warn_trace_once ~reason:(InvalidReference loc) err;
           Result.ok ())
 
@@ -640,37 +640,33 @@ module Make (Borrows : Tree_borrows.T) = struct
         "Executing Offset of pointer %a by %a" Typed.ppa ptr Typed.ppa off_by];
       let@ () = with_loc_err ~trace:"Pointer offset" () in
       let**^ size = Layout.size_of ty in
-      let loc, off = Typed.Ptr.decompose' ptr in
-      let++ off =
-        match check_signed with
-        | Some signed ->
-            (* the multiplication cannot overflow *)
-            let off_by, off_by_ovf = Typed.BV.mul_checked ~signed size off_by in
-            (* if the offset is unsigned, it cannot be negative *)
-            let ofs_unsigned_neg =
-              if not signed then off_by <$@ Usize.(0s) else Typed.v_false
-            in
-            let off, off_ovf = off +$?@ off_by in
-            let** () =
-              assert_or_error
-                (off_by
-                ==@ Usize.(0s)
-                ||@ (Typed.not off_by_ovf
-                    &&@ Typed.not off_ovf
-                    &&@ Typed.not ofs_unsigned_neg))
-                `PointerArithmeticOverflow
-            in
-            let++ () = check_non_dangling_untyped ptr off_by in
-            off
-        | None ->
-            (* we use the unchecked, possibly overflowing version of the
-               operators, as wrapping is permitted dhere. *)
-            let off_by = size *!@ off_by in
-            let off = off +!@ off_by in
-            Result.ok off
-      in
-      let inner = Typed.Ptr.mk loc off in
-      Typed.Ptr.with_inner ptr inner
+      let ofs = Typed.Ptr.ofs ptr in
+      match check_signed with
+      | Some signed ->
+          (* the multiplication cannot overflow *)
+          let off_by, off_by_ovf = Typed.BV.mul_checked ~signed size off_by in
+          (* if the offset is unsigned, it cannot be negative *)
+          let ofs_unsigned_neg =
+            if not signed then off_by <$@ Usize.(0s) else Typed.v_false
+          in
+          let ofs', off_ovf = ofs +$?@ off_by in
+          let** () =
+            assert_or_error
+              (off_by
+              ==@ Usize.(0s)
+              ||@ (Typed.not off_by_ovf
+                  &&@ Typed.not off_ovf
+                  &&@ Typed.not ofs_unsigned_neg))
+              `PointerArithmeticOverflow
+          in
+          let++ () = check_non_dangling_untyped ptr off_by in
+          Typed.Ptr.set_ofs ptr ofs'
+      | None ->
+          (* we use the unchecked, possibly overflowing version of the
+             operators, as wrapping is permitted dhere. *)
+          let off_by = size *!@ off_by in
+          let ofs' = ofs +!@ off_by in
+          Result.ok (Typed.Ptr.set_ofs ptr ofs')
 
     let check_aligned ptr ty =
       let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
@@ -794,8 +790,7 @@ module Make (Borrows : Tree_borrows.T) = struct
          Freeable_block_with_meta.make ?span ?zeroed ~align ~size ()
        in
        let** loc = Heap.alloc ~new_codom:block in
-       let ptr = Typed.Ptr.mk loc Usize.(0s) in
-       let ptr = Typed.Ptr.mk_ptr_t ~ptr ~tag ~align ~size in
+       let ptr = Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag ~align ~size in
        (* The pointer is necessarily not null *)
        let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
        ok (Typed.Ptr.mk_ptr_f ptr None))
@@ -822,15 +817,16 @@ module Make (Borrows : Tree_borrows.T) = struct
            in
            (* create pointer *)
            let* () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-           let ptr = Typed.Ptr.mk loc Usize.(0s) in
-           let ptr = Typed.Ptr.mk_ptr_t ~ptr ~tag ~align ~size in
+           let ptr =
+             Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag ~align ~size
+           in
            return (Typed.Ptr.mk_ptr_f ptr None, block)))
 
   let free (ptr : Typed.([< T.sptr_f ] t)) =
     [%l.debug "Executing Free with pointer %a" Typed.ppa ptr];
     let@ () = with_loc_err ~trace:"Freeing memory" () in
     let ptr = Typed.Ptr.ptr_of ptr in
-    let loc, ofs = Typed.Ptr.decompose' ptr in
+    let loc, ofs = Typed.Ptr.decompose ptr in
     (* FIXME: why are we getting the pointer's size if we can just query the
        block's size??? *)
     let size = Typed.Ptr.size_of ptr in
@@ -911,7 +907,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     match Typed.Ptr.tag_of ptr with
     | None -> Result.ok ()
     | Some tag ->
-        let** freed = with_heap @@ Heap.is_freed (Typed.Ptr.loc' ptr) in
+        let** freed = with_heap @@ Heap.is_freed (Typed.Ptr.loc ptr) in
         if freed then Result.ok ()
         else
           let**^ size = Layout.size_of ty in
@@ -930,10 +926,9 @@ module Make (Borrows : Tree_borrows.T) = struct
            let open Heap.SM.Syntax in
            let*^ res = DecayMap.from_exposed addr in
            match res with
-           | None -> Result.ok (Typed.Ptr.mk_ptr_f (Sptr.of_address addr) None)
+           | None -> Result.ok (Typed.Ptr.of_address_f addr)
            | Some (loc, ofs) -> (
                let ofs = addr -!@ ofs in
-               let ptr = Typed.Ptr.mk loc ofs in
                let** block =
                  Heap.wrap loc
                  @@ Freeable_block_with_meta.SM.Result.get_state ()
@@ -944,7 +939,9 @@ module Make (Borrows : Tree_borrows.T) = struct
                      ~reason:
                        "Get a pointer from exposed with no matching allocation?"
                | Some { info = Some { size; align; _ }; _ } ->
-                   let ptr = Typed.Ptr.mk_ptr_t ~ptr ~align ~size ~tag:None in
+                   let ptr =
+                     Typed.Ptr.mk_ptr_t ~loc ~ofs ~align ~size ~tag:None
+                   in
                    Result.ok (Typed.Ptr.mk_ptr_f ptr None)))
 
   let leak_check () : (unit, Error.with_trace, syn list) Result.t =
@@ -997,8 +994,12 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     match result with
     | Some loc ->
-        let ptr = Typed.Ptr.mk loc Usize.(0s) in
-        let ptr = Typed.Ptr.mk_ptr_t ~ptr ~tag:None ~align ~size:Usize.(0s) in
+        let ptr =
+          Typed.Ptr.mk_ptr_t ~loc
+            ~ofs:Usize.(0s)
+            ~tag:None ~align
+            ~size:Usize.(0s)
+        in
         let ptr = Typed.Ptr.mk_ptr_f ptr None in
         Result.ok ptr
     | None ->
@@ -1013,7 +1014,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         in
         let ptr = Typed.Ptr.ptr_of ptr in
         let ptr = Typed.Ptr.with_tag ptr None in
-        let loc = Typed.Ptr.loc' ptr in
+        let loc = Typed.Ptr.loc ptr in
         let ptr = Typed.Ptr.mk_ptr_f ptr None in
         with_functions_sym (fun fns ->
             Rustsymex.Result.ok (ptr, FunBiMap.add loc fn_def fns))
@@ -1024,7 +1025,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ () = with_loc_err ~trace:"Accessing function pointer" () in
     let@ functions = with_functions_sym in
     let ptr = Typed.Ptr.ptr_of ptr in
-    let loc, ofs = Typed.Ptr.decompose' ptr in
+    let loc, ofs = Typed.Ptr.decompose ptr in
     let** () = assert_or_error (ofs ==@ Usize.(0s)) `MisalignedFnPointer in
     match FunBiMap.get_fn loc functions with
     | Some fn -> Result.ok (fn, functions)
