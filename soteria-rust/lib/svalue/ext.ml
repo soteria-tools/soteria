@@ -12,8 +12,6 @@ and svty = ext_ty Soteria.Bv_values.Svalue.ty
 and ptr = { ptr : sv; tag : Ptr_tag.t option; size : sv; align : sv }
 
 (* values *)
-and full_ptr = sv * sv option
-
 and ext_ty =
   | TAdt of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
       (** invariant: the type decl ref must be that of an {b enum or union};
@@ -25,7 +23,7 @@ and ext_ty =
 [@@deriving eq, ord, show]
 
 and ext_t =
-  | Ptr of full_ptr  (** pointer, with optional meta *)
+  | Ptr of sv * sv option  (** pointer, with optional meta *)
   | ThinPtr of ptr
       (** thin pointer, without metadata but with extra info on the pointer *)
   | Enum of sv * sv list  (** discriminant * values *)
@@ -49,7 +47,7 @@ struct
   [@@deriving eq, ord, show]
 
   type t = ext_t =
-    | Ptr of full_ptr  (** pointer, with optional meta *)
+    | Ptr of sv * sv option  (** pointer, with optional meta *)
     | ThinPtr of ptr
         (** thin pointer, without metadata but with extra info on the pointer *)
     | Enum of sv * sv list  (** discriminant * values *)
@@ -61,14 +59,10 @@ struct
             index, unique identifier). *)
   [@@deriving eq, ord]
 
-  let pp_full_ptr pp fmt (p, meta) =
-    match meta with
-    | None -> Fmt.pf fmt "(%a)" pp p
-    | Some meta -> Fmt.pf fmt "(%a, %a)" pp p pp meta
-
   let pp pp ft v =
     match v with
-    | Ptr ptr -> Fmt.pf ft "Ptr%a" (pp_full_ptr pp) ptr
+    | Ptr (ptr, None) -> Fmt.pf ft "Ptr(%a)" pp ptr
+    | Ptr (ptr, Some meta) -> Fmt.pf ft "Ptr(%a, %a)" pp ptr pp meta
     | ThinPtr ptr ->
         Fmt.pf ft "%a[%a]" pp ptr.ptr
           Fmt.(option ~none:(any "*") Ptr_tag.pp)
