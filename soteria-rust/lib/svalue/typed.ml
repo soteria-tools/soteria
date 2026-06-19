@@ -2,7 +2,16 @@ open Charon
 open Common.Charon_util
 open Soteria.Bv_values.Svalue
 open Ext.Rust_ext
-include Typed_core
+
+(* [Make_transparent] exposes [t]/[ty] as the underlying untyped svalue, so the
+   extension helpers below can be written without ghost-typing ceremony. The
+   [typed.mli] re-seals [t]/[ty] as abstract for the rest of Soteria Rust. *)
+module Self = Soteria.Bv_values.Typed.Make_transparent (Ext.Rust_ext)
+include Self
+
+(* The base, non-extended view, used to instantiate the solver/symex (which
+   expect exactly [Typed_intf.S], i.e. the base [T.any]). *)
+module Solver_value = Self
 
 module T = struct
   include T
@@ -44,12 +53,10 @@ let () =
     | _ -> None)
 
 let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
-  raise
-    (CastError
-       ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
+  raise (CastError ((v :> T.any t), (ty :> T.any ty), (get_ty v :> T.any ty)))
 
 let todo_migration msg = raise (TypedMigration msg)
-let ( <| ) = Typed_core.Svalue.( <| )
+let ( <| ) = Self.Svalue.( <| )
 
 let float_precision :
     Values.float_type -> Soteria.Bv_values.Svalue.FloatPrecision.t = function
@@ -66,8 +73,8 @@ type ptr = {
 }
 
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
-let t_ptr_f () : 'a ty = type_type @@ TExtension TFullPtr
-let t_ptr_t () : 'a ty = type_type @@ TExtension TThinPtr
+let t_ptr_f () : 'a ty = TExtension TFullPtr
+let t_ptr_t () : 'a ty = TExtension TThinPtr
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
 
@@ -80,7 +87,10 @@ let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
 
 let t_adt adt : [> T.adt ] ty =
   assert (Common.Charon_util.tyref_is_substituted adt);
-  type_type @@ TExtension (TAdt adt)
+  TExtension (TAdt adt)
+
+let t_tuple tys : [> T.adt ] ty = TExtension (TTuple tys)
+let t_poly () : [> T.adt ] ty = TExtension TPolyType
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -205,35 +215,25 @@ module Ptr = struct
   let loc_of_int i = loc_of_int (8 * size_of_uint_ty Usize) i
 
   let mk_ptr_t ~ptr ~size ~align ~tag =
-    type_
-      (Extension
-         (ThinPtr
-            {
-              ptr = untyped ptr;
-              size = untyped size;
-              align = untyped align;
-              tag;
-            })
-      <| TExtension TThinPtr)
+    Extension (ThinPtr { ptr; size; align; tag }) <| t_ptr_t ()
 
-  let _get_ptr (ptr : [< T.sptr_t ] t) =
+  let _get_ptr ptr =
     match kind ptr with
     | Extension (ThinPtr ptr) -> ptr
     | _ -> todo_migration "todo: ThinPtr.ptr getter"
 
-  let _set_ptr (ptr : [< T.sptr_t ] t) f =
+  let _set_ptr ptr f =
     match kind ptr with
-    | Extension (ThinPtr inner) ->
-        type_ (Extension (ThinPtr (f inner)) <| get_ty ptr)
+    | Extension (ThinPtr inner) -> Extension (ThinPtr (f inner)) <| ptr.node.ty
     | _ ->
         (* NOTE: i actually don't think we want a setter unop, we just want to
            rebuild the ptr from scratch *)
         todo_migration "ThinPtr.ptr setter"
 
-  let ptr_inner ptr = type_ (_get_ptr ptr).ptr
+  let ptr_inner ptr = (_get_ptr ptr).ptr
 
   let with_inner ptr ptr_inner =
-    _set_ptr ptr (fun inner -> { inner with ptr = untyped ptr_inner })
+    _set_ptr ptr (fun inner -> { inner with ptr = ptr_inner })
 
   let is_null' ptr = is_null @@ ptr_inner ptr
   let is_at_null_loc' ptr = is_at_null_loc @@ ptr_inner ptr
@@ -241,57 +241,36 @@ module Ptr = struct
   let loc' ptr = loc @@ ptr_inner ptr
   let ofs' ptr = ofs @@ ptr_inner ptr
   let add_ofs' ptr ofs = with_inner ptr (add_ofs (ptr_inner ptr) ofs)
-  let align_of ptr = type_ (_get_ptr ptr).align
-  let size_of ptr = type_ (_get_ptr ptr).size
+  let align_of ptr = (_get_ptr ptr).align
+  let size_of ptr = (_get_ptr ptr).size
   let tag_of ptr = (_get_ptr ptr).tag
   let with_tag ptr tag = _set_ptr ptr (fun inner -> { inner with tag })
-
-  let mk_ptr_f ptr meta =
-    type_
-      (Extension (Ptr (untyped ptr, Option.map untyped meta))
-      <| TExtension TFullPtr)
+  let mk_ptr_f ptr meta = Extension (Ptr (ptr, meta)) <| t_ptr_f ()
 
   let meta_of ptr =
     match kind ptr with
-    | Extension (Ptr (_, meta)) -> Option.map type_ meta
+    | Extension (Ptr (_, meta)) -> meta
     | _ -> todo_migration "PtrFull get meta"
 
   let ptr_of ptr =
     match kind ptr with
-    | Extension (Ptr (ptr, _)) -> type_ ptr
+    | Extension (Ptr (ptr, _)) -> ptr
     | _ -> todo_migration "PtrFull get ptr"
 
   let split ptr = (ptr_of ptr, meta_of ptr)
 end
 
 module Adt = struct
-  let mk_tuple vs =
-    type_
-      (Extension (Tuple (untyped_list vs))
-      <| TExtension (TTuple (List.map get_ty vs)))
-
-  let mk_enum adt discr vs =
-    type_
-      (Extension (Enum (untyped discr, untyped_list vs))
-      <| untype_type (t_adt adt))
-
-  let mk_union adt blocks =
-    type_
-      (Extension
-         (Union
-            (List.map
-               (fun (a, b, c) -> (untyped a, untyped b, untyped c))
-               blocks))
-      <| untype_type (t_adt adt))
-
-  let mk_poly ty_id = type_ (Extension (PolyVal ty_id) <| TExtension TPolyType)
+  let mk_tuple vs = Extension (Tuple vs) <| t_tuple (List.map get_ty vs)
+  let mk_enum adt discr vs = Extension (Enum (discr, vs)) <| t_adt adt
+  let mk_union adt blocks = Extension (Union blocks) <| t_adt adt
+  let mk_poly ty_id = Extension (PolyVal ty_id) <| t_poly ()
 
   (* HACK: i have no idea what this really means or how to lift this for
      variables... *)
   let as_union v =
     match kind v with
-    | Extension (Union blocks) ->
-        List.map (fun (a, b, c) -> (type_ a, type_ b, type_ c)) blocks
+    | Extension (Union blocks) -> blocks
     | _ -> todo_migration "as_union unop"
 
   (* HACK: i don't like this; it forces all fields to be resolved, which is
@@ -299,7 +278,7 @@ module Adt = struct
      instead go through [index_of] *)
   let as_tuple v =
     match kind v with
-    | Extension (Tuple vs) -> type_list vs
+    | Extension (Tuple vs) -> vs
     | _ -> todo_migration "as_tuple unop"
 
   (* HACK: for a symbolic enum, this branches; this means we can't implement
@@ -308,7 +287,7 @@ module Adt = struct
      an enum, and tries seeing which matches. *)
   let as_enum v =
     match kind v with
-    | Extension (Enum (discr, vs)) -> (type_ discr, type_list vs)
+    | Extension (Enum (discr, vs)) -> (discr, vs)
     | _ -> todo_migration "discriminant_of + fields_of unops"
 
   let as_type_var v =
@@ -318,17 +297,17 @@ module Adt = struct
 
   let discriminant_of v =
     match kind v with
-    | Extension (Enum (discr, _)) -> type_ discr
+    | Extension (Enum (discr, _)) -> discr
     | _ -> todo_migration "discriminant_of unop"
 
   let field_of idx v =
     match kind v with
     | Extension (Tuple vs) -> (
-        try type_ @@ List.nth vs idx
+        try List.nth vs idx
         with Failure _ ->
           Fmt.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
     | Extension (Enum (_, vs)) -> (
-        try type_ @@ List.nth vs idx
+        try List.nth vs idx
         with Failure _ ->
           Fmt.failwith "Enum field index %d out of bounds for value %a" idx ppa
             v)
@@ -337,17 +316,13 @@ module Adt = struct
   let set_field idx f v =
     match kind v with
     | Extension (Tuple vs) -> (
-        try
-          type_ (Extension (Tuple (List.set_nth idx (untyped f) vs)) <| get_ty v)
+        try Extension (Tuple (List.set_nth idx f vs)) <| v.node.ty
         with Failure _ ->
           L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
     | Extension (Enum (_, vs)) -> (
         try
-          type_
-            (Extension
-               (Enum
-                  (untyped @@ discriminant_of v, List.set_nth idx (untyped f) vs))
-            <| get_ty v)
+          Extension (Enum (discriminant_of v, List.set_nth idx f vs))
+          <| v.node.ty
         with Failure _ ->
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
     | _ ->

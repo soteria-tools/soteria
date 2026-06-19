@@ -1,5 +1,17 @@
 open Charon
-include module type of Typed_core
+
+(* The base, non-extended ghost-typed module ([Typed_intf.S], with the base
+   [T.any]). It is used to instantiate the solver and symex, which require
+   exactly that signature. *)
+module Solver_value : Soteria.Bv_values.Typed.S with module Ext = Ext.Rust_ext
+
+(* The extended ghost-typed interface, sharing [Solver_value]'s [t]/[ty] so
+   values flow between the interpreter and the symex monad. *)
+include
+  Soteria.Bv_values.Typed.S
+    with module Ext = Ext.Rust_ext
+     and type 'a t = 'a Solver_value.t
+     and type 'a ty = 'a Solver_value.ty
 
 (* T *)
 

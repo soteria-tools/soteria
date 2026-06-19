@@ -4,7 +4,16 @@ open Svalue
 
 module type S = Typed_intf.S
 
-module Make (V : Value_ext) : S with module Ext = V = struct
+(** Like {!Make}, but additionally exposes the ghost-typed [+'a t]/[+'a ty] as
+    transparently equal to the underlying untyped svalue. This lets a downstream
+    module write extension helpers without juggling [type_]/[untyped]/[cast],
+    while its own [.mli] re-seals [t]/[ty] as abstract for the rest of the
+    world. *)
+module Make_transparent (V : Value_ext) :
+  S
+    with module Ext = V
+     and type 'a t = (V.t, V.ty) Svalue.t
+     and type 'a ty = V.ty Svalue.ty = struct
   (** IMPORTANT: Svalue.Make is not pure; it instantiates a hashcons table with
       it. This means we need to be very careful to {b not} instantiate new
       [Svalue]s again, as those hashcons tables will clash and will lead to odd
@@ -135,3 +144,5 @@ module Make (V : Value_ext) : S with module Ext = V = struct
     let ( ~-? ) = BitVec.neg_checked
   end
 end
+
+module Make (V : Value_ext) : S with module Ext = V = Make_transparent (V)

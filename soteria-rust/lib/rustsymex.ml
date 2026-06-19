@@ -20,7 +20,8 @@ module StatKeys = struct
     register_int_printer ~name:"Allocations" allocs (fun _ -> Fmt.int)
 end
 
-module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver (Svalue.Typed_core))
+module MonoSymex =
+  Soteria.Symex.Make (Bv_solver.Z3_solver (Svalue.Typed.Solver_value))
 
 module TypeMap = Map.Make (struct
   type t = Charon.Types.ty [@@deriving show]
