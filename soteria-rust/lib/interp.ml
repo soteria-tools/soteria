@@ -741,79 +741,26 @@ module Make (StateImpl : State.S) = struct
             in
             ok (Value_codec.cast_literal ~from_ty ~to_ty v)
         | Cast (CastUnsize (from_ty, to_ty, meta)) -> (
-            let get_new_metadata prev : Typed.(T.ptr_meta t) t =
-              match meta with
-              | MetaLength length ->
-                  let+ len = resolve_constant length in
-                  Typed.cast_i Usize len
-              | MetaVTable (_, const) ->
-                  (* the global adds one level of indirection *)
-                  let* ptr = resolve_constant const in
-                  let ptr = Typed.cast_ptr_f ptr in
-                  let+ vtable = State.load ptr unit_ptr in
-                  let vtable = Typed.cast_ptr_f vtable in
-                  Typed.Ptr.ptr_of vtable
-              | MetaVTableUpcast fields ->
-                  let prev =
-                    Option.get ~msg:"Unsizing VTable with no meta?" prev
-                  in
-                  let vt = Typed.cast_ptr_t prev in
-                  let+ vt =
-                    fold_list fields ~init:vt ~f:(fun vt field ->
-                        let idx = Types.FieldId.to_int field in
-                        let* vt_addr =
-                          Sptr.offset ~ty:unit_ptr ~check_signed:true
-                            (BV.usizei idx) vt
-                        in
-                        let vt_addr = Typed.Ptr.mk_ptr_f vt_addr None in
-                        let+ vt = State.load vt_addr unit_ptr in
-                        Typed.Ptr.ptr_of @@ Typed.cast_ptr_f vt)
-                  in
-                  (vt :> Typed.(T.ptr_meta t))
-              | MetaUnknown ->
-                  not_impl "Unknown metadata for %a -> %a" pp_ty from_ty pp_ty
-                    to_ty
-            in
-            let rec unsize_path_rev acc : Types.ty -> int list option = function
-              | TRawPtr _ | TRef _ -> Some acc
-              | TPattern (ty, _) -> unsize_path_rev acc ty
-              | TAdt adt when Crate.is_struct_or_tuple adt -> (
-                  let tys = Crate.as_struct_or_tuple adt in
-                  let last_non_zst =
-                    List.find_mapi
-                      (fun idx ty ->
-                        if Layout.is_zst ty then None else Some (idx, ty))
-                      (List.rev tys)
-                  in
-                  match last_non_zst with
-                  | Some (idx, ty) -> unsize_path_rev (idx :: acc) ty
-                  | None -> None)
-              | ty -> None
-            in
-            let rec split_around before l n =
-              match (l, n) with
-              | x :: rest, 0 -> (List.rev before, x, rest)
-              | x :: rest, n -> split_around (x :: before) rest (n - 1)
-              | [], _ -> L.failwith "Index out of bounds in split_around"
-            in
             let rec with_ptr_meta v = function
               | [] ->
                   let v = Typed.cast_ptr_f v in
                   let v, prev = Typed.Ptr.split v in
-                  let+ meta = get_new_metadata prev in
+                  let help () =
+                    Fmt.str "don't know how to unsize %a -> %a" pp_ty from_ty
+                      pp_ty to_ty
+                  in
+                  let+ meta = resolve_unsizing_metadata ~help ~prev meta in
                   Typed.Ptr.mk_ptr_f v (Some meta)
               | idx :: rest ->
                   let v = Typed.cast_any_adt v in
                   let fs = Typed.Adt.as_tuple v in
-                  let before, target, after = split_around [] fs idx in
+                  let before, target, after = List.split_around fs idx in
                   let+ target = with_ptr_meta target rest in
                   let fs = before @ (target :: after) in
                   Typed.Adt.mk_tuple fs
             in
-            match unsize_path_rev [] from_ty with
-            | Some path ->
-                let path = List.rev path in
-                with_ptr_meta v path
+            match Layout.unsize_path from_ty with
+            | Some path -> with_ptr_meta v path
             | None -> not_impl "don't know how to unsize through %a" pp_ty ty)
         | Cast (CastConcretize (_from, _to)) ->
             not_impl "Unsupported: dyn (concretize)"

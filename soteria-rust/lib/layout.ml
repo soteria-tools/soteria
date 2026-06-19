@@ -608,3 +608,24 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
       (* 1ZSTs are exclusively compatible with themselves; otherwise type
          equality! *)
       ty1_1zst &&@ ty2_1zst
+
+(** Returns the path through an ADT to the pointer that is the target of an
+    unsizing operation, returning [None] if no path was found. If the path is
+    [Some], it is guaranteed that following the path leads to a pointer type.
+
+    The path is found by recursively exploring the last non-ZST field of the
+    structure, until a pointer is found. *)
+let rec unsize_path ty : int list option =
+  let rec aux acc : Types.ty -> int list option = function
+    | TRawPtr _ | TRef _ -> Some acc
+    | TPattern (ty, _) -> aux acc ty
+    | TAdt adt when Crate.is_struct_or_tuple adt ->
+        let tys = Crate.as_struct_or_tuple adt in
+        let len = List.length tys in
+        List.find_mapi
+          (fun idx ty -> if is_zst ty then None else Some (len - idx - 1, ty))
+          (List.rev tys)
+        |> Option.bind (fun (idx, ty) -> aux (idx :: acc) ty)
+    | ty -> None
+  in
+  Option.map List.rev @@ aux [] ty

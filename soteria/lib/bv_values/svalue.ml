@@ -385,7 +385,7 @@ module Make (V : Value_ext) = struct
         | None -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l)
     | Extension x -> V.pp pp ft x
 
-  let pp_full ft t = pp_t_node ft t.node
+  let pp_full ft t = pp_t_node (Ext.pp pp) Ext.pp_ty ft t.node
   let[@inline] equal a b = Int.equal a.tag b.tag
   let[@inline] compare a b = Int.compare a.tag b.tag
 
@@ -416,7 +416,7 @@ module Make (V : Value_ext) = struct
       | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
       | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
       | Exists (vs, sv) -> Hashtbl.hash (vs, sv.tag, hty)
-      | Extension x -> V.hash x
+      | Extension x -> Hashtbl.hash (V.hash x, hty)
   end)
 
   let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }

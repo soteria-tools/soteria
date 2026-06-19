@@ -186,3 +186,17 @@ let[@tail_mod_cons] rec update_at i f = function
     @raise Invalid_argument
       if [i] is negative or greater than or equal to the length of [l]. *)
 let set_nth i v l = update_at i (Fun.const v) l
+
+(** [split_around l i] splits the list [l] into three parts: the elements before
+    index [i], the element at index [i], and the elements after index [i].
+
+    @raise Invalid_argument
+      if [i] is negative or greater than or equal to the length of [l]. *)
+let split_around l i =
+  let rec aux before l i =
+    match (l, i) with
+    | x :: rest, 0 -> (rev before, x, rest)
+    | x :: rest, i -> aux (x :: before) rest (i - 1)
+    | [], _ -> invalid_arg "Index out of bounds in split_around"
+  in
+  aux [] l i

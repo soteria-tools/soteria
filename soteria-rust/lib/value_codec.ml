@@ -279,13 +279,14 @@ struct
         let+ vs = iter (iter_fields ?meta layout ty) offset in
         let ptr, meta =
           match vs with
-          | [ ptr; meta ] -> (Typed.cast_ptr_t ptr, meta)
+          | [ ptr; meta ] -> (Typed.cast_ptr_f ptr, meta)
           | _ -> L.failwith "decode: unexpected values"
         in
+        let ptr = Typed.Ptr.ptr_of ptr in
         let meta =
           match%ty meta with
           | TBitVector _ -> (meta :> Typed.(T.ptr_meta t))
-          | TExtension TThinPtr -> (meta :> Typed.(T.ptr_meta t))
+          | TExtension TFullPtr -> Typed.Ptr.ptr_of meta
           | _ -> L.failwith "read invalid meta?"
         in
         Typed.Ptr.mk_ptr_f ptr (Some meta)
@@ -437,10 +438,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
     | Some (`VTable vt), VTableKind ->
         (* TODO: the vtable must always match the trait type of the pointee.
            Will require a new input to this function (?) *)
-        let vt = Typed.cast_ptr vt in
-        f
-          (Typed.not (Typed.Ptr.is_null vt))
-          (`UBTransmute "Null vtable pointer")
+        f (Typed.not (Sptr.is_null vt)) (`UBTransmute "Null vtable pointer")
     | _, dst_kind ->
         let got =
           match meta with
@@ -640,6 +638,8 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
   | TFloat _, TLiteral (TFloat _) -> return (Typed.as_any v)
   | TExtension TFullPtr, (TRawPtr _ | TRef _ | TFnPtr _) ->
       return (Typed.as_any v)
+  | TExtension TThinPtr, (TRawPtr _ | TRef _ | TFnPtr _) ->
+      return (Typed.Ptr.mk_ptr_f v None)
   | TBitVector _, TLiteral (TFloat _) -> return (BV.to_float_raw v)
   | TExtension TFullPtr, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
       let ptr, _ = Typed.Ptr.split v in
@@ -660,8 +660,9 @@ let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
       not_impl
         "losing concrete value in %a -> %a; somewhere we lost track of generics"
         Typed.ppa v pp_ty to_ty
-  | _, _ ->
-      L.failwith "transmute_one: unexpected %a -> %a" Typed.ppa v pp_ty to_ty
+  | ty, _ ->
+      L.failwith "transmute_one: unexpected %a (%a) -> %a" Typed.ppa v
+        Typed.Svalue.pp_ty ty pp_ty to_ty
 
 (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
     [ty]: the returned value will have the right structure, and any required
