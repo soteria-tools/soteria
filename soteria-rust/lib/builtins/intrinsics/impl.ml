@@ -292,10 +292,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      *   => (2²ⁿ - 2ⁿ⁺¹ + 1) + (2ⁿ⁺¹ - 2)
      *   => 2²ⁿ - 1 *)
     let ( *!@ ) l r =
-      Typed.cast @@ BV.mul ~checked:(Typed.checked_of_signed false) l r
+      BV.no_ovf_unsafe @@ BV.mul ~checked:(Typed.checked_of_signed false) l r
     in
     let ( +!@ ) l r =
-      Typed.cast @@ BV.add ~checked:(Typed.checked_of_signed false) l r
+      BV.no_ovf_unsafe @@ BV.add ~checked:(Typed.checked_of_signed false) l r
     in
     let res = (multiplier *!@ multiplicand) +!@ addend +!@ carry in
     let res_l, res_h =
@@ -945,12 +945,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           if signed then Typed.ite (a <$@ BV.mki_lit t 0) min max else max
         in
         let res = BV.add ~checked:(Typed.checked_of_signed signed) a b in
-        ok (Typed.ite ovf if_ovf (Typed.cast res))
+        ok (Typed.ite ovf if_ovf (BV.no_ovf_unsafe res))
     | Sub _ ->
         let ovf = BV.sub_overflows ~signed a b in
         let if_ovf = if signed then Typed.ite (a <$@ b) min max else min in
         let res = BV.sub ~checked:(Typed.checked_of_signed signed) a b in
-        ok (Typed.ite ovf if_ovf (Typed.cast res))
+        ok (Typed.ite ovf if_ovf (BV.no_ovf_unsafe res))
     | _ -> L.failwith "Unreachable: not add or sub?"
 
   let saturating_add ~t ~a ~b = saturating (Add OUB) ~t ~a ~b
