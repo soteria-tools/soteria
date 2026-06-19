@@ -5,7 +5,7 @@ module Var = Symex.Var
 
 module FloatPrecision = struct
   type t = F16 | F32 | F64 | F128
-  [@@deriving eq, show { with_path = false }, ord]
+  [@@deriving eq, show { with_path = false }, ord, hash]
 
   let size = function F16 -> 16 | F32 -> 32 | F64 -> 64 | F128 -> 128
 
@@ -19,7 +19,7 @@ end
 
 module FloatClass = struct
   type t = Normal | Subnormal | Zero | Infinite | NaN
-  [@@deriving eq, show { with_path = false }, ord]
+  [@@deriving eq, show { with_path = false }, ord, hash]
 
   let as_fpclass = function
     | Normal -> FP_normal
@@ -31,7 +31,7 @@ end
 
 module RoundingMode = struct
   type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
-  [@@deriving eq, show { with_path = false }, ord]
+  [@@deriving eq, show { with_path = false }, ord, hash]
 end
 
 type ty =
@@ -67,7 +67,7 @@ let size_of = function
   | ty -> L.failwith "Not a bit value: %a" pp_ty ty
 
 module Nop = struct
-  type t = Distinct [@@deriving eq, show { with_path = false }, ord]
+  type t = Distinct [@@deriving eq, show { with_path = false }, ord, hash]
 end
 
 module Unop = struct
@@ -92,7 +92,7 @@ module Unop = struct
     | FAbs
     | FIs of FloatClass.t
     | FRound of RoundingMode.t
-  [@@deriving eq, ord]
+  [@@deriving eq, ord, hash]
 
   let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
 
@@ -120,7 +120,7 @@ end
     not to overflow, and so behaves like exact integer arithmetic. This is used
     to justify simplifications. *)
 type checked = { signed : bool; unsigned : bool }
-[@@deriving eq, show { with_path = false }, ord]
+[@@deriving eq, show { with_path = false }, ord, hash]
 
 let unchecked = { signed = false; unsigned = false }
 let checked_both = { signed = true; unsigned = true }
@@ -186,7 +186,7 @@ module Binop = struct
     | Shl
     | LShr
     | AShr
-  [@@deriving eq, show { with_path = false }, ord]
+  [@@deriving eq, show { with_path = false }, ord, hash]
 
   let pp_signed ft b = Fmt.string ft (if b then "s" else "u")
 
@@ -335,19 +335,41 @@ module Hcons = Hc.Make (struct
 
   let equal = equal_t_node
 
-  (* We could do a lot more efficient in terms of hashing probably, if this ever
-     becomes a bottleneck. *)
+  (* Allocation-free structural hash *)
+  let[@inline] combine h x = (h * 65599) + x
+
+  let rec hash_ty = function
+    | TBool -> 1
+    | TFloat p -> combine 2 (FloatPrecision.size p)
+    | TLoc n -> combine 3 n
+    | TPointer n -> combine 4 n
+    | TSeq ty -> combine 5 (hash_ty ty)
+    | TBitVector n -> combine 6 n
+
   let hash { kind; ty } =
-    let hty = Hashtbl.hash ty in
+    let h = hash_ty ty in
     match kind with
-    | Var _ | Bool _ | Float _ | BitVec _ -> Hashtbl.hash (kind, hty)
-    | Ptr (l, r) -> Hashtbl.hash (l.tag, r.tag, hty)
-    | Seq l -> Hashtbl.hash (List.map (fun sv -> sv.tag) l, hty)
-    | Unop (op, v) -> Hashtbl.hash (op, v.tag, hty)
-    | Binop (op, l, r) -> Hashtbl.hash (op, l.tag, r.tag, hty)
-    | Nop (op, l) -> Hashtbl.hash (op, List.map (fun sv -> sv.tag) l, hty)
-    | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
-    | Exists (vs, sv) -> Hashtbl.hash (vs, sv.tag, hty)
+    | Bool b -> combine (combine h 1) (if b then 1 else 2)
+    | Var v -> combine (combine h 2) (Var.to_int v)
+    | Float f -> combine (combine h 3) (Hashtbl.hash f)
+    | BitVec z -> combine (combine h 4) (Z.hash z)
+    | Ptr (l, r) -> combine (combine (combine h 5) l.tag) r.tag
+    | Seq l -> List.fold_left (fun acc sv -> combine acc sv.tag) (combine h 6) l
+    | Unop (op, v) -> combine (combine (combine h 7) (Unop.hash op)) v.tag
+    | Binop (op, l, r) ->
+        combine (combine (combine (combine h 8) (Binop.hash op)) l.tag) r.tag
+    | Nop (op, l) ->
+        List.fold_left
+          (fun acc sv -> combine acc sv.tag)
+          (combine (combine h 9) (Nop.hash op))
+          l
+    | Ite (c, t, e) ->
+        combine (combine (combine (combine h 10) c.tag) t.tag) e.tag
+    | Exists (vs, sv) ->
+        List.fold_left
+          (fun acc (v, ty) -> combine (combine acc (Var.to_int v)) (hash_ty ty))
+          (combine (combine h 11) sv.tag)
+          vs
 end)
 
 let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
