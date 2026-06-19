@@ -100,9 +100,18 @@ type t = {
       (** Whether to compile without accessing the network, which can be useful
           for reproducibility. This will pass --offline to Cargo.. *)
   test : string option; [@docs Sections.frontend] [@names [ "test" ]]
-      (** The test profile to use to compile the crate; this only has an effect
-          if analysing a crate. Use [lib] for unit tests in [src/]. By default,
-          the crate's source is analysed, not the tests. *)
+      (** The integration-test target to compile and analyse (a file in
+          [tests/]); this only has an effect if analysing a crate. By default,
+          the crate's source is analysed, not the tests. Mutually exclusive with
+          --lib. *)
+  lib : bool; [@docs Sections.frontend] [@make.default false] [@names [ "lib" ]]
+      (** Analyse the library's unit tests in [src/]. By default, the crate's
+          source is analysed, not the tests. Mutually exclusive with --test. *)
+  with_libtest : bool;
+      [@docs Sections.frontend] [@make.default false] [@names [ "libtest" ]]
+      (** When analysing a test target (--test or --lib), also discover the
+          crate's ordinary #[test] functions, not just Soteria's own harnesses
+          (#[soteria::test]). Has no effect when analysing source. *)
   (* Plugins *)
   with_kani : bool;
       [@docs Sections.frontend] [@make.default false] [@names [ "kani" ]]
@@ -217,5 +226,9 @@ let set_and_lock_global (mode : mode) (config : global) =
   if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
     Exn.config_error
       "Obol does not support polymorphic analyses; use --frontend charon";
+  if Option.is_some config.soteria_rust.test && config.soteria_rust.lib then
+    Exn.config_error
+      "--test and --lib are mutually exclusive: use --lib for the library's \
+       unit tests in src/, or --test <name> for an integration test";
   set_mode_and_lock mode;
   set_and_lock config.soteria_rust
