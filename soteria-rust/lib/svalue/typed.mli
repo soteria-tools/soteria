@@ -173,6 +173,14 @@ module Adt : sig
     [< T.adt ] t -> ([> T.any ] t * [> T.sint ] t * [> T.nonzero ] t) list
 
   val as_tuple : [< T.adt ] t -> [> T.any ] t list
+
+  (** Like {!as_tuple}, but casts to a fixed-arity tuple, failing if the ADT
+      does not have exactly that many fields. Avoids partial list pattern
+      matches at call sites. *)
+  val as_tuple1 : [< T.adt ] t -> [> T.any ] t
+
+  val as_tuple2 : [< T.adt ] t -> [> T.any ] t * [> T.any ] t
+  val as_tuple3 : [< T.adt ] t -> [> T.any ] t * [> T.any ] t * [> T.any ] t
   val as_enum : [< T.adt ] t -> [> T.sint ] t * [> T.any ] t list
   val as_type_var : [< T.adt ] t -> Types.type_var_id
   val discriminant_of : [< T.adt ] t -> [> T.sint ] t

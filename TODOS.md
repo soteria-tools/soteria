@@ -11,7 +11,7 @@
 - redefine [T.any] as something like [sint | sfloat | adt | sptr_f ], to avoid stuff like [sbool] being allowed
 - Typed.Ptr.with_meta ?
 - Typed.Ptr.wrap (ptr -> ptr)? or just porting all the offset etc. functions? maybe [Sptr.Full.<fn> = lift <fn>]
-- Possibly a [Typed.Adt.as_tuple{1,2,3}] that casts to an N-tuple, to avoid ugly list pattern matching?
+- [DONE] Possibly a [Typed.Adt.as_tuple{1,2,3}] that casts to an N-tuple, to avoid ugly list pattern matching?
 - We should probably have a special case that pre-creates and pre-hashes regularly used constants, like [unit], or the [cmp] variants. Not sure about the latter because that requires having the [TypeDecl] to type it properly, so it needs a crate :(
 - Add [Typed.Adt.nth_field idx v]/[Typed.Adt.with_field idx f v] to avoid the [as_tuples]
 - Maybe make `nondet_valid` (and others?) receive a `'a ty` argument, to avoid needing to cast on each use

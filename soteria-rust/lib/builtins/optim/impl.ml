@@ -45,18 +45,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let alignmentenum = ty_as_adt alignmentenum_ty.field_ty in
     let zeroed = (zeroed :> Typed.T.sbool Typed.t) in
     let size, align =
-      let layout = Typed.cast_any_adt layout in
-      match Typed.Adt.as_tuple layout with
-      | [ size; align ] -> (
-          let size = Typed.cast_i Usize size in
-          let align = Typed.cast_any_adt align in
-          match Typed.Adt.as_tuple align with
-          | [ align_enum ] ->
-              let align_enum = Typed.cast_adt alignmentenum align_enum in
-              let align = Typed.Adt.discriminant_of align_enum in
-              (size, Typed.cast_i Usize align)
-          | _ -> Fmt.failwith "alloc_impl: invalid layout: %a" Typed.ppa layout)
-      | _ -> Fmt.failwith "alloc_impl: invalid layout: %a" Typed.ppa layout
+      let size, align = Typed.Adt.as_tuple2 (Typed.cast_any_adt layout) in
+      let size = Typed.cast_i Usize size in
+      let align_enum = Typed.Adt.as_tuple1 (Typed.cast_any_adt align) in
+      let align_enum = Typed.cast_adt alignmentenum align_enum in
+      let align = Typed.Adt.discriminant_of align_enum in
+      (size, Typed.cast_i Usize align)
     in
     let mk_res ptr len =
       let out_res = ty_as_adt fun_sig.output in

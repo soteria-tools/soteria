@@ -789,15 +789,10 @@ let rec ref_tys_in
   | TAdt adt when adt_is_box adt ->
       (* a box has only one non ZST, the pointer *)
       let ptr, allocator, marker =
-        match Typed.Adt.as_tuple @@ Typed.cast_any_adt v with
-        | [ unique; allocator ] -> (
-            match Typed.Adt.as_tuple @@ Typed.cast_any_adt unique with
-            | [ nonnull; marker ] -> (
-                match Typed.Adt.as_tuple @@ Typed.cast_any_adt nonnull with
-                | [ ptr ] -> (Typed.cast_ptr_f ptr, allocator, marker)
-                | _ -> failwith "wrong nonull shape")
-            | _ -> failwith "wrong unique shape")
-        | _ -> failwith "wrong box shape"
+        let unique, allocator = Typed.Adt.as_tuple2 (Typed.cast_any_adt v) in
+        let nonnull, marker = Typed.Adt.as_tuple2 (Typed.cast_any_adt unique) in
+        let ptr = Typed.Adt.as_tuple1 (Typed.cast_any_adt nonnull) in
+        (Typed.cast_ptr_f ptr, allocator, marker)
       in
       let++ ptr, acc = fn init ty ptr in
       let res =

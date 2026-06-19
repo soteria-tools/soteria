@@ -281,6 +281,27 @@ module Adt = struct
     | Extension (Tuple vs) -> vs
     | _ -> todo_migration "as_tuple unop"
 
+  let as_tuple1 v =
+    match as_tuple v with
+    | [ a ] -> a
+    | vs ->
+        L.failwith "Expected a 1-tuple, got %d fields in %a" (List.length vs)
+          ppa v
+
+  let as_tuple2 v =
+    match as_tuple v with
+    | [ a; b ] -> (a, b)
+    | vs ->
+        L.failwith "Expected a 2-tuple, got %d fields in %a" (List.length vs)
+          ppa v
+
+  let as_tuple3 v =
+    match as_tuple v with
+    | [ a; b; c ] -> (a, b, c)
+    | vs ->
+        L.failwith "Expected a 3-tuple, got %d fields in %a" (List.length vs)
+          ppa v
+
   (* HACK: for a symbolic enum, this branches; this means we can't implement
      this at the value level. we might have to get rid of [as_enum], and instead
      expose e.g. in [Rustsymex] a util that does [branch_on] for all variants of

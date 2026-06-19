@@ -31,17 +31,13 @@ module M (StateM : State.StateM.S) = struct
   (* NonNull<u8> is a struct { pointer: *const u8 is !null }. Extract the inner
      ptr. *)
   let ptr_of_nonnull nonull =
-    match Typed.Adt.as_tuple @@ Typed.cast_any_adt nonull with
-    | [ v ] -> Typed.cast_ptr_f v
-    | _ -> L.failwith "alloc: invalid NonNull argument: %a" Typed.ppa nonull
+    Typed.cast_ptr_f @@ Typed.Adt.as_tuple1 @@ Typed.cast_any_adt nonull
 
   let align_of_enum align : [> T.nonzero ] Typed.t =
-    match Typed.Adt.as_tuple @@ Typed.cast_any_adt align with
-    | [ align_enum ] ->
-        let as_enum = Typed.cast_any_adt align_enum in
-        let discr = Typed.Adt.discriminant_of as_enum in
-        Typed.cast_nonzero @@ Typed.cast_i Usize discr
-    | v -> L.failwith "alloc: invalid align argument: %a" Typed.ppa align
+    let align_enum = Typed.Adt.as_tuple1 @@ Typed.cast_any_adt align in
+    let as_enum = Typed.cast_any_adt align_enum in
+    let discr = Typed.Adt.discriminant_of as_enum in
+    Typed.cast_nonzero @@ Typed.cast_i Usize discr
 
   let alloc ?(zeroed = false) args =
     let size, align =
