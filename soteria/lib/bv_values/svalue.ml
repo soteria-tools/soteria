@@ -207,56 +207,61 @@ let pp_hash_consed pp_node ft t = pp_node ft t.node
 let equal_hash_consed _ t1 t2 = Int.equal t1.tag t2.tag
 let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
 
-type ('t, 'ty) t_kind =
+(* The phantom ['ghost] parameter is never inhabited; it exists solely to make
+   the values produced by one application of {!Make} type-incompatible with
+   those of another. Since each (generative) application of {!Make} mints a
+   fresh abstract [ghost], values hash-consed in one application's table can
+   never be confused with another's. *)
+type ('ghost, 't, 'ty) t_kind =
   | Var of Var.t
   | Bool of bool
   | Float of string
-  | Ptr of ('t, 'ty) t * ('t, 'ty) t
+  | Ptr of ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
   | BitVec of Z.t [@printer Fmt.of_to_string (Z.format "%#x")]
-  | Seq of ('t, 'ty) t list
-  | Unop of Unop.t * ('t, 'ty) t
-  | Binop of Binop.t * ('t, 'ty) t * ('t, 'ty) t
-  | Nop of Nop.t * ('t, 'ty) t list
-  | Ite of ('t, 'ty) t * ('t, 'ty) t * ('t, 'ty) t
-  | Exists of (Var.t * 'ty ty) list * ('t, 'ty) t
+  | Seq of ('ghost, 't, 'ty) t list
+  | Unop of Unop.t * ('ghost, 't, 'ty) t
+  | Binop of Binop.t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
+  | Nop of Nop.t * ('ghost, 't, 'ty) t list
+  | Ite of ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
+  | Exists of (Var.t * 'ty ty) list * ('ghost, 't, 'ty) t
   | Extension of 't
 
-and ('t, 'ty) t_node = { kind : ('t, 'ty) t_kind; ty : 'ty ty }
+and ('ghost, 't, 'ty) t_node = { kind : ('ghost, 't, 'ty) t_kind; ty : 'ty ty }
 
-and ('t, 'ty) t = ('t, 'ty) t_node hash_consed
+and ('ghost, 't, 'ty) t = ('ghost, 't, 'ty) t_node hash_consed
 [@@deriving show { with_path = false }, eq, ord]
 
 let[@inline] equal a b = Int.equal a.tag b.tag
 let[@inline] compare a b = Int.compare a.tag b.tag
 
 module type Value_ext = sig
-  type ('t, 'ty) super_t := ('t, 'ty) t
+  type ('ghost, 't, 'ty) super_t := ('ghost, 't, 'ty) t
   type 'ty super_ty := 'ty ty
   type t [@@deriving eq, ord]
   type ty [@@deriving eq, ord]
-  type super_t := (t, ty) super_t
   type super_ty := ty super_ty
+  type 'g super_t := ('g, t, ty) super_t
 
-  val pp : super_t Fmt.t -> t Fmt.t
+  val pp : _ super_t Fmt.t -> t Fmt.t
   val pp_ty : ty Fmt.t
-  val iter_vars : (super_t -> unit) -> t -> unit
+  val iter_vars : (_ super_t -> unit) -> t -> unit
   val hash : t -> int
   val hash_ty : ty -> int
-  val mk : super_ty -> t -> super_t
-  val eval : (super_t -> super_t) -> t -> t
+  val mk : super_ty -> t -> _ super_t
+  val eval : (_ super_t -> _ super_t) -> t -> t
 
   val apply_subst :
-    (missing_var:(Var.t -> super_ty -> super_t) ->
+    (missing_var:(Var.t -> super_ty -> _ super_t) ->
     'subst ->
-    super_t ->
-    super_t * 'subst) ->
-    missing_var:(Var.t -> super_ty -> super_t) ->
+    _ super_t ->
+    _ super_t * 'subst) ->
+    missing_var:(Var.t -> super_ty -> _ super_t) ->
     'subst ->
     t ->
     t * 'subst
 
   val encode_ty : (super_ty -> Soteria_smt.sexp) -> ty -> Soteria_smt.sexp
-  val encode_value : (super_t -> Soteria_smt.sexp) -> t -> Soteria_smt.sexp
+  val encode_value : (_ super_t -> Soteria_smt.sexp) -> t -> Soteria_smt.sexp
 end
 
 module Dummy_ext : Value_ext = struct
@@ -275,7 +280,12 @@ module Dummy_ext : Value_ext = struct
   let encode_value _ (x : t) = match x with _ -> .
 end
 
-module Make (V : Value_ext) = struct
+(** [Make] is a {b generative} functor (note the final [()]): each application
+    mints a fresh, abstract [ghost] that tags all values it hash-cons. Two
+    applications — even to the same [V] — produce mutually incompatible [t]s, so
+    values from one (with their own hash-consing table) can never be mixed with
+    another's. *)
+module Make (V : Value_ext) () = struct
   module Ext = V
   module Unop = Unop
   module Binop = Binop
@@ -285,15 +295,18 @@ module Make (V : Value_ext) = struct
   module FloatPrecision = FloatPrecision
   module Var = Var
 
+  (** The fresh, abstract ghost identifying this application of {!Make}. *)
+  type ghost
+
   (* lift everything *)
   type nonrec ty = V.ty ty
-  type nonrec t = (V.t, V.ty) t
-  type nonrec t_kind = (V.t, V.ty) t_kind
-  type nonrec t_node = (V.t, V.ty) t_node
+  type nonrec t = (ghost, V.t, V.ty) t
+  type nonrec t_kind = (ghost, V.t, V.ty) t_kind
+  type nonrec t_node = (ghost, V.t, V.ty) t_node
 
   let pp_ty = pp_ty V.pp_ty
   let equal_ty = equal_ty V.equal_ty
-  let equal_t_node = equal_t_node V.equal V.equal_ty
+  let equal_t_node = equal_t_node (fun _ _ -> true) V.equal V.equal_ty
 
   (* actual decls *)
 
@@ -349,7 +362,7 @@ module Make (V : Value_ext) = struct
     | TLoc n -> n
     | _ -> L.failwith "Not a bit value"
 
-  let rec pp ft t =
+  let rec pp ft (t : t) =
     let open Fmt in
     match t.node.kind with
     | Var v -> pf ft "V%a" Var.pp v
@@ -390,9 +403,9 @@ module Make (V : Value_ext) = struct
         | None -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l)
     | Extension x -> V.pp pp ft x
 
-  let[@inline] equal a b = Int.equal a.tag b.tag
-  let[@inline] compare a b = Int.compare a.tag b.tag
-  let pp_full ft t = pp_t_node (Ext.pp pp) Ext.pp_ty ft t.node
+  let[@inline] equal (a : t) (b : t) = Int.equal a.tag b.tag
+  let[@inline] compare (a : t) (b : t) = Int.compare a.tag b.tag
+  let pp_full ft t = pp_t_node Fmt.nop (Ext.pp pp) Ext.pp_ty ft t.node
 
   let rec sure_neq a b =
     (not (equal_ty a.node.ty b.node.ty))

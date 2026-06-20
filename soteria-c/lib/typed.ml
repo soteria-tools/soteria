@@ -1,5 +1,5 @@
 module TypedCore =
-  Soteria.Bv_values.Typed.Make (Soteria.Bv_values.Svalue.Dummy_ext)
+  Soteria.Bv_values.Typed.Make (Soteria.Bv_values.Svalue.Dummy_ext) ()
 
 include TypedCore
 

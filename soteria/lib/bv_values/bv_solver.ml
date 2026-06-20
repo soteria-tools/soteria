@@ -7,8 +7,8 @@ module Var = Svalue.Var
     implies the negation of [q], and [None] otherwise. Used to suppress
     redundant ordering constraints (e.g. [a <= b] becomes trivially true once
     [a < b] is in the PC). *)
-let[@inline] implies_or_contradicts ~(q : ('e, 'ety) Svalue.t)
-    ~(neg_q : ('e, 'ety) Svalue.t) (pc : ('e, 'ety) Svalue.t) : bool option =
+let[@inline] implies_or_contradicts ~(q : _ Svalue.t) ~(neg_q : _ Svalue.t)
+    (pc : _ Svalue.t) : bool option =
   let open Svalue in
   if Svalue.equal q pc then Some true
   else if Svalue.equal neg_q pc then Some false

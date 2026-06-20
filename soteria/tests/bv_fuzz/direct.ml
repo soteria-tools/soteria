@@ -7,7 +7,7 @@
 
 open Soteria.Bv_values
 open Svalue
-module Typed = Typed.Make (Svalue.Dummy_ext)
+module Typed = Typed.Make (Svalue.Dummy_ext) ()
 module Sv = Typed.Svalue
 open Sv
 

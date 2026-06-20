@@ -2,7 +2,7 @@ open Svalue
 
 module type S = sig
   module Ext : Svalue.Value_ext
-  module Svalue : module type of Svalue.Make (Ext)
+  module Svalue : module type of Svalue.Make (Ext) ()
   module Eval : module type of Eval.Make (Ext) (Svalue)
 
   (** {2 Phantom types} *)

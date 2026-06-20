@@ -9,18 +9,22 @@ module type S = Typed_intf.S
     module write extension helpers without juggling [type_]/[untyped]/[cast],
     while its own [.mli] re-seals [t]/[ty] as abstract for the rest of the
     world. *)
-module Make_transparent (V : Value_ext) :
-  S
-    with module Ext = V
-     and type 'a t = (V.t, V.ty) Svalue.t
-     and type 'a ty = V.ty Svalue.ty = struct
-  (** IMPORTANT: Svalue.Make is not pure; it instantiates a hashcons table with
-      it. This means we need to be very careful to {b not} instantiate new
-      [Svalue]s again, as those hashcons tables will clash and will lead to odd
-      results. Instead we must pass the built [Svalue] module to all functors
-      that need it. *)
-  module Svalue = Svalue.Make (V)
+module Make_transparent (V : Value_ext) () : sig
+  module Svalue : module type of Svalue.Make (V) ()
 
+  include
+    S
+      with module Ext = V
+       and module Svalue := Svalue
+       and type 'a t = Svalue.t
+       and type 'a ty = Svalue.ty
+end = struct
+  (* [Svalue.Make] is a generative functor: each application instantiates its
+     own hashcons table {b and} mints a fresh abstract ghost tagging the values
+     in that table. The ghost makes those values type-incompatible with any
+     other application's, so accidentally instantiating [Svalue] twice and
+     mixing the results is a type error. *)
+  module Svalue = Svalue.Make (V) ()
   module Eval = Eval.Make (V) (Svalue)
   module Expr = Expr.Make (V) (Svalue)
   include Svalue
@@ -144,4 +148,4 @@ module Make_transparent (V : Value_ext) :
   end
 end
 
-module Make (V : Value_ext) : S with module Ext = V = Make_transparent (V)
+module Make (V : Value_ext) () : S with module Ext = V = Make_transparent (V) ()

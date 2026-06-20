@@ -1,7 +1,7 @@
 open Svalue
 open Soteria_std
 
-module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext)) = struct
+module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
   open V
 
   let eval_binop : Binop.t -> t -> t -> t = function

@@ -1,6 +1,9 @@
 open Charon
 open Common.Charon_util
-module Self = Soteria.Bv_values.Typed.Make (Soteria.Bv_values.Svalue.Dummy_ext)
+
+module Self =
+  Soteria.Bv_values.Typed.Make (Soteria.Bv_values.Svalue.Dummy_ext) ()
+
 module Solver_value = Self
 include Self
 

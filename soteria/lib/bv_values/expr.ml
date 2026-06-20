@@ -2,7 +2,7 @@ open Soteria_std
 
 module Make
     (Ext : Svalue.Value_ext)
-    (V : module type of Svalue.Make (Ext)) =
+    (V : module type of Svalue.Make (Ext) ()) =
 struct
   module Svalue = V
   module Eval = Eval.Make (Ext) (V)
