@@ -1,4 +1,7 @@
-include Soteria.Bv_values.Typed
+module TypedCore =
+  Soteria.Bv_values.Typed.Make (Soteria.Bv_values.Svalue.Dummy_ext)
+
+include TypedCore
 
 let ptr_bits =
   Option.get Cerb_frontend.Ocaml_implementation.DefaultImpl.impl.sizeof_pointer

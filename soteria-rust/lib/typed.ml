@@ -1,6 +1,8 @@
 open Charon
 open Common.Charon_util
-include Soteria.Bv_values.Typed
+module Self = Soteria.Bv_values.Typed.Make (Soteria.Bv_values.Svalue.Dummy_ext)
+module Solver_value = Self
+include Self
 
 (** [CastError (value, expected, got)] *)
 exception CastError of T.any t * T.any ty * T.any ty

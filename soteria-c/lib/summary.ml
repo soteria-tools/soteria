@@ -79,7 +79,7 @@ let filter_pc relevant_vars pc =
   ListLabels.filter pc ~f:(fun v ->
       Iter.exists
         (fun (var, _) -> Var_hashset.mem relevant_vars var)
-        (Svalue.iter_vars v))
+        (Typed.Svalue.iter_vars v))
 
 module Leak_set = Hashset.Make (struct
   type t = (Cerb_location.t[@printer Fmt_ail.pp_loc]) option [@@deriving show]
@@ -104,7 +104,7 @@ let filter_serialized_state relevant_vars (state : State.syn list) =
           let relevant =
             Iter.exists
               (fun (var, _) -> Var_hashset.mem relevant_vars var)
-              (Svalue.iter_vars loc)
+              (Typed.Svalue.iter_vars loc)
           in
           if relevant then true
           else
@@ -138,7 +138,7 @@ let init_reachable_vars summary =
       | Ser_globs g ->
           let _, values = Globs.ins_outs g in
           List.iter
-            (fun v -> Svalue.iter_vars v (fun (x, _) -> mark_reachable x))
+            (fun v -> Typed.Svalue.iter_vars v (fun (x, _) -> mark_reachable x))
             values)
   in
   init_reachable
@@ -162,12 +162,12 @@ let prune (summary : after_exec t) : pruned t =
   (* For each equality [e1 = e2] in the path condition, we add a double edge
      from all variables of [e1] to all variables of [e2] *)
   ListLabels.iter summary.pc ~f:(fun v ->
-      match Svalue.kind v with
+      match Typed.Svalue.kind v with
       | Binop (Eq, el, er) ->
           (* We make the second iterator peristent to avoid going over the
              structure too many times if there are many *)
-          let r_iter = Iter.persistent_lazy (Svalue.iter_vars er) in
-          let product = Iter.product (Svalue.iter_vars el) r_iter in
+          let r_iter = Iter.persistent_lazy (Typed.Svalue.iter_vars er) in
+          let product = Iter.product (Typed.Svalue.iter_vars el) r_iter in
           product (fun ((x, _), (y, _)) -> Var_graph.add_double_edge graph x y)
       | _ -> ());
   (* For each block $l -> B in the pre and post state, we add a single-sided
@@ -181,9 +181,9 @@ let prune (summary : after_exec t) : pruned t =
   ListLabels.iter all_points_tos ~f:(fun (l, b) ->
       let b_iter =
         let _, outs = Block.ins_outs b in
-        Iter.of_list outs |> Iter.flat_map Svalue.iter_vars
+        Iter.of_list outs |> Iter.flat_map Typed.Svalue.iter_vars
       in
-      Iter.product (Svalue.iter_vars l) (Iter.persistent_lazy b_iter)
+      Iter.product (Typed.Svalue.iter_vars l) (Iter.persistent_lazy b_iter)
         (fun ((x, _), (y, _)) -> Var_graph.add_edge graph x y));
   (* [init_reachable] is the set of initially-reachable variables, and we have a
      reachability [graph]. We can compute all reachable values. *)
@@ -268,7 +268,8 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
                     list ~sep:cut (fun ft (res, pc) ->
                         let pp_pc ft pc =
                           Fmt.pf ft "@[<2>Path condition: %a@]"
-                            (Fmt.Dump.list Svalue.pp) pc
+                            (Fmt.Dump.list Typed.Svalue.pp)
+                            pc
                         in
                         Fmt.pf ft "<v 2>Branch:@.Res: %a@.%a@]" Fmt.bool res
                           pp_pc pc))
