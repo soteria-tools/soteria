@@ -144,17 +144,25 @@ let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
             likes to sometimes treat the metadata as a raw pointer, so we much
             check for that. Additionally, we must flatten the value, because a
             valid metadata target can be e.g. [Box<T>]. *)
-         match Rust_val.flatten v with
-         | [ Ptr (_, Thin) ] -> Value Rust_val.unit_
-         | [ Ptr (_, Len len) ] -> Value (Int len)
-         | [ Ptr (_, VTable vt) ] ->
+         let ptr, meta =
+           match base.origin.ty with
+           | TRawPtr _ | TRef _ -> Rust_val.as_ptr v
+           | TAdt adt when adt_is_box adt -> Value_codec.ptr_of_box v
+           | _ ->
+               L.failwith "tried loading metadata of non-pointer: %a" pp_ty
+                 base.origin.ty
+         in
+         match meta with
+         | Thin -> Value (Tuple [])
+         | Len len -> Value (Int len)
+         | VTable vt ->
+             let vt = Rust_val.Ptr (vt, Thin) in
              if
                Option.is_some_and
                  (Crate.adt_has_lang_item "dyn_metadata")
                  (ty_as_adt_opt place.origin.ty)
-             then Value (Tuple [ Tuple [ Ptr (vt, Thin) ]; Tuple [] ])
-             else Value (Ptr (vt, Thin))
-         | _ -> L.failwith "tried loading metadata of non-pointer")
+             then Value (Tuple [ Tuple [ vt ]; Tuple [] ])
+             else Value vt)
 
 let try_store (place : Place.t) store value =
   let open Syntaxes.Option in

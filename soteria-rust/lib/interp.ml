@@ -958,32 +958,24 @@ module Make (StateImpl : State.S) = struct
     (* Raw pointer construction *)
     | Aggregate (AggregatedRawPtr (_, _), operands) ->
         let* values = eval_operand_list operands in
-        let ptr, meta =
-          match values with
-          | [ ptr; meta ] -> (ptr, meta)
+        let* ptr, meta, meta_ty =
+          match operands with
+          | [ ptr_op; meta_op ] ->
+              let* ptr = eval_operand ptr_op in
+              let* meta = eval_operand meta_op in
+              ok (ptr, meta, type_of_operand meta_op)
           | _ -> L.failwith "Non-2 arguments in AggregatedRawPtr?"
         in
-        let* ptr =
-          match ptr with
-          | Ptr (ptr, _) -> ok ptr
-          | Int v ->
-              let v = Typed.cast_i Usize v in
-              ok (Sptr.of_address v)
-          | _ ->
-              L.failwith "Unexpected ptr in AggregatedRawPtr: %a" pp_rust_val
-                ptr
-        in
-        (* we flatten the meta, to simplify processing stuff like
-           [std::ptr::DynMetadata] *)
+        let ptr, _ = as_ptr ptr in
         let+ meta =
-          match Rust_val.flatten meta with
-          | [] -> ok Thin
-          | [ Int meta ] -> ok (Len (Typed.cast_i Usize meta))
-          | [ Ptr (ptr, Thin) ] -> ok (VTable ptr)
-          | elms ->
-              L.failwith "Unexpected meta in AggregatedRawPtr: %a"
-                Fmt.(list ~sep:comma pp_rust_val)
-                elms
+          match meta_ty with
+          | TAdt { id = TTuple; generics = { types = []; _ } } -> ok Thin
+          | TLiteral (TInt Isize | TUInt Usize) ->
+              ok (Len (as_base_i Usize meta))
+          | TRawPtr _ | TRef _ -> ok (VTable (fst (as_ptr meta)))
+          | _ ->
+              L.failwith "Unexpected meta type AggregatedRawPtr: %a" pp_ty
+                meta_ty
         in
         Ptr (ptr, meta)
     (* Array repetition *)

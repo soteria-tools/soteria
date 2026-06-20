@@ -196,16 +196,30 @@ let as_tuple = function
   | Tuple vals -> vals
   | v -> L.failwith "Unexpected rust_val kind, expected a tuple, got: %a" ppa v
 
+let as_tuple1 v =
+  match as_tuple v with
+  | [ v ] -> v
+  | _ ->
+      L.failwith
+        "Unexpected rust_val kind, expected a tuple of length 1, got: %a" ppa v
+
+let as_tuple2 v =
+  match as_tuple v with
+  | [ v1; v2 ] -> (v1, v2)
+  | _ ->
+      L.failwith
+        "Unexpected rust_val kind, expected a tuple of length 2, got: %a" ppa v
+
+let as_tuple3 v =
+  match as_tuple v with
+  | [ v1; v2; v3 ] -> (v1, v2, v3)
+  | _ ->
+      L.failwith
+        "Unexpected rust_val kind, expected a tuple of length 3, got: %a" ppa v
+
 let as_enum = function
   | Enum (disc, vals) -> (disc, vals)
   | v -> L.failwith "Unexpected rust_val kind, expected an enum, got: %a" ppa v
-
-let flatten v =
-  let rec aux acc = function
-    | Tuple vs | Enum (_, vs) -> List.fold_left aux acc vs
-    | (Int _ | Float _ | Ptr _ | Union _ | PolyVal _) as v -> v :: acc
-  in
-  List.rev (aux [] v)
 
 let rec subst subst_ptr subst_val rv =
   let subst = subst subst_ptr subst_val in

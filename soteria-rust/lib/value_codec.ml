@@ -28,8 +28,11 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
         let sub_ty =
           match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
         in
+        let meta =
+          Option.get ~msg:"meta required for unsized iter_fields" meta
+        in
         match meta with
-        | Some (Len len) -> (
+        | Len len -> (
             (* TODO: strings and slices of symbolic length *)
             match BV.to_z len with
             | Some len -> Iter.repeatz len sub_ty
@@ -84,6 +87,27 @@ let size_of =
      padding *)
   | Union _ | Enum _ | Tuple _ ->
       L.failwith "Impossible to get size of Enum/Tuple rust_val"
+
+(** Given a value of type [Box<T, A>], returns as a triple the inner pointer,
+    the allocator object, and the marker value. *)
+let unwrap_box v =
+  let unique, allocator = as_tuple2 v in
+  let nonnull, marker = as_tuple2 unique in
+  let ptr = as_tuple1 nonnull in
+  (as_ptr ptr, allocator, marker)
+
+(** Given a value of type [Box<T, A>], returns the container pointer *)
+let ptr_of_box v =
+  let ptr, _, _ = unwrap_box v in
+  ptr
+
+(** Given a pointer, allocator and marker, returns a value of type [Box<T, A>]
+*)
+let mk_box ptr allocator marker =
+  let nonnull = Tuple [ ptr ] in
+  let unique = Tuple [ nonnull; marker ] in
+  let box = Tuple [ unique; allocator ] in
+  box
 
 module Decoder
     (Sptr : Sptr.S)
@@ -420,14 +444,25 @@ module Encoder (Sptr : Sptr.S) = struct
           (* TODO: the vtable must always match the trait type of the pointee.
              Will require a new input to this function (?) *)
           f (Typed.not (Sptr.is_null vt)) (`UBTransmute "Null vtable pointer")
-      | Thin, (LenKind | VTableKind) ->
-          f Typed.v_false (`UBTransmute "Thin pointer to DST")
-      | (Len _ | VTable _), NoneKind ->
-          f Typed.v_false (`UBTransmute "Metadata for non-DST pointee")
-      | Len _, VTableKind ->
-          f Typed.v_false (`UBTransmute "Length metadata when VTable expected")
-      | VTable _, LenKind ->
-          f Typed.v_false (`UBTransmute "VTable metadata when length expected")
+      | _, dst_kind ->
+          let got =
+            match meta with
+            | Thin -> "unit"
+            | Len _ -> "length"
+            | VTable _ -> "vtable"
+          in
+          let expected =
+            match dst_kind with
+            | NoneKind -> "unit"
+            | LenKind -> "length"
+            | VTableKind -> "vtable"
+          in
+          let msg =
+            Fmt.str
+              "Mismatch between metadata and DST kind; expected %s, got %s"
+              expected got
+          in
+          f Typed.v_false (`UBTransmute msg)
     in
     (* undefined.validity.reference-box *)
     let ref_box_validity ((_, meta) as fptr) pointee =
@@ -491,8 +526,8 @@ module Encoder (Sptr : Sptr.S) = struct
     | Ptr ptr, TRef (_, pointee, _) -> ref_box_validity ptr pointee
     | _, TAdt adt when adt_is_box adt ->
         let pointee = get_pointee ty in
-        let ptr, meta = as_ptr @@ List.hd @@ flatten v in
-        ref_box_validity (ptr, meta) pointee
+        let ptr = ptr_of_box v in
+        ref_box_validity ptr pointee
     (* undefined.validity.wide *)
     | Ptr (_, meta), TRawPtr (pointee, _) ->
         metadata_validity ~is_raw_ptr:true pointee meta
@@ -609,12 +644,12 @@ module Encoder (Sptr : Sptr.S) = struct
     | TVar (Bound _), _ ->
         L.failwith "transmute_one: bound type variable encountered?"
     | TVar _, _ ->
-        not_impl
+        L.failwith
           "losing concrete value in %a -> %a; somewhere we lost track of \
            generics"
           pp_rust_val v pp_ty to_ty
     | _ ->
-        not_impl "unsupported transmute of value %a to type %a" pp_rust_val v
+        L.failwith "unsupported transmute of value %a to type %a" pp_rust_val v
           pp_ty to_ty
 
   (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
@@ -733,21 +768,16 @@ module Encoder (Sptr : Sptr.S) = struct
       in
       (List.rev vs, acc)
     in
+    let* ty = Poly.subst_ty ty in
     match ty with
     | TRef (_, _, _) | TAdt { id = TBuiltin TBox; _ } ->
         let++ ptr, acc = fn init ty (as_ptr v) in
         (Ptr ptr, acc)
     | TAdt adt when adt_is_box adt ->
         (* a box has only one non ZST, the pointer *)
-        let ptr = as_ptr @@ List.hd @@ flatten v in
+        let ptr, allocator, marker = unwrap_box v in
         let++ ptr, acc = fn init ty ptr in
-        (* recursively look for where the pointer is and replace it *)
-        let rec subst_ptr = function
-          | Tuple vs -> Tuple (List.map subst_ptr vs)
-          | Ptr _ -> Ptr ptr
-          | v -> v
-        in
-        (subst_ptr v, acc)
+        (mk_box (Ptr ptr) allocator marker, acc)
     | TAdt adt when Crate.is_struct_or_tuple adt ->
         let++ vs, acc = fs' init (Crate.as_struct_or_tuple adt) (as_tuple v) in
         (Tuple vs, acc)
