@@ -518,6 +518,37 @@ module Make (State : State_intf.S) :
       lift_err (is_abi_compatible ty1 ty2)
   end
 
+  module Value_codec = struct
+    include Value_codec
+
+    let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
+    let[@inline] nondet_valid ty = lift_err (nondet_valid ty)
+
+    (* We painfully lift [Layout.ref_tys_in] to make it nicer to use without
+       having to re-define. *)
+    let ref_tys_in
+        ~(f :
+           'acc ->
+           Types.ty ->
+           Typed.([< T.sptr_f ] t) ->
+           (Typed.([> T.sptr_f ] t) * 'acc, 'env) monad) ~(init : 'acc)
+        (ty : Types.ty) (v : Typed.([< T.any ] t)) :
+        (Typed.([< T.any ] t) * 'acc, 'env) monad =
+     fun env state ->
+      let open Rustsymex.Syntax in
+      (* The inner function operates in Rustsymex.Result.t, carrying (acc, env,
+         state) as accumulator *)
+      let f_inner (acc, env, state) ty ptr =
+        let+ (res, new_env), new_state = f acc ty ptr env state in
+        Compo_res.map (fun (ptr, acc) -> (ptr, (acc, new_env, new_state))) res
+      in
+      let+ res = ref_tys_in f_inner (init, env, state) ty v in
+      match res with
+      | Ok (v, (acc, env, state)) -> ((Ok (v, acc), env), state)
+      | Error e -> ((Error e, env), state)
+      | Missing fixes -> ((Missing fixes, env), state)
+  end
+
   module State = struct
     open State
 
@@ -571,37 +602,6 @@ module Make (State : State_intf.S) :
 
     let[@inline] size_and_align_of_val ty meta =
       ESM.lift (size_and_align_of_val ty meta)
-  end
-
-  module Value_codec = struct
-    include Value_codec
-
-    let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
-    let[@inline] nondet_valid ty = lift_err (nondet_valid ty)
-
-    (* We painfully lift [Layout.ref_tys_in] to make it nicer to use without
-       having to re-define. *)
-    let ref_tys_in
-        ~(f :
-           'acc ->
-           Types.ty ->
-           Typed.([< T.sptr_f ] t) ->
-           (Typed.([> T.sptr_f ] t) * 'acc, 'env) monad) ~(init : 'acc)
-        (ty : Types.ty) (v : Typed.([< T.any ] t)) :
-        (Typed.([< T.any ] t) * 'acc, 'env) monad =
-     fun env state ->
-      let open Rustsymex.Syntax in
-      (* The inner function operates in Rustsymex.Result.t, carrying (acc, env,
-         state) as accumulator *)
-      let f_inner (acc, env, state) ty ptr =
-        let+ (res, new_env), new_state = f acc ty ptr env state in
-        Compo_res.map (fun (ptr, acc) -> (ptr, (acc, new_env, new_state))) res
-      in
-      let+ res = ref_tys_in f_inner (init, env, state) ty v in
-      match res with
-      | Ok (v, (acc, env, state)) -> ((Ok (v, acc), env), state)
-      | Error e -> ((Error e, env), state)
-      | Missing fixes -> ((Missing fixes, env), state)
   end
 
   module Syntax = struct
