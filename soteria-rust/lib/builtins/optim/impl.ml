@@ -119,11 +119,20 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   (* ---- hashing ---- *)
 
-  (* Replace the real [SipHasher] with the *constant* hash: every value hashes
-     to 0. This is a valid hash function, and avoid branch explosion from
-     symbolic hashes, as e.g. hashbrown uses the lower bits of the hash to pick
-     a bucket. *)
-  let hash_one ~types:_ ~t_self:_ ~t:_ ~self:_ ~x:_ = ok (Typed.BitVec.u64i 0)
+  let hash_one_ux =
+    String.Interned.intern
+      "std::hash::BuildHasher::hash_one was stubbed to always hash to 0, to \
+       avoid path explosion. This is an under-approximation, some paths may be \
+       missed."
+
+  (** Replace the real [SipHasher] with the *constant* hash: every value hashes
+      to 0. This is a valid hash function, and avoid branch explosion from
+      symbolic hashes, as e.g. hashbrown uses the lower bits of the hash to pick
+      a bucket. *)
+  let hash_one ~types:_ ~t_self:_ ~t:_ ~self:_ ~x:_ =
+    if Soteria.Symex.Approx.As_ctx.is_ox () then
+      Soteria.Terminal.Warn.warn_once hash_one_ux;
+    ok (Typed.BitVec.u64i 0)
 
   (* ---- I/O (no-ops) ---- *)
 

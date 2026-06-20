@@ -799,6 +799,8 @@ key, so the only branch is its equality with the concrete entry.
   $ soteria-rust exec hashmap.rs --target aarch64-apple-darwin
   Compiling... done in <time>
   => Running hashmap::main...
+  warning: std::sys::random::hashmap_random_keys was stubbed to constant random keys, to avoid path explosion. This is an under-approximation, some paths may be missed.
+  warning: std::hash::BuildHasher::hash_one was stubbed to always hash to 0, to avoid path explosion. This is an under-approximation, some paths may be missed.
   note: hashmap::main: done in <time>, ran 2 branches
   PC 1: (0x00000007 == V|1|) /\ (0x00000007 == V|1|)
   PC 2: (0x00000007 != V|1|)
