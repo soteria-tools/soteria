@@ -33,11 +33,16 @@ module Place = struct
     | Local v -> v
     | Field (base, _, _) | Index (base, _) | Metadata base -> root base
 
-  (** The root value [v] with the value at [sp] replaced by [f] applied to it;
-      [None] if not navigable. *)
+  (** [update_val sp inner' v] updates the root value [v] with the value at [sp]
+      replaced by [inner']; [None] if [sp] is not navigable. *)
   let rec update_val { kind; _ } ~f v =
     match kind with
     | Local _ -> Some (f v)
+    | Field (base, ProjAdt (_, Some _var), field) ->
+        (* TODO: check the variant matches *)
+        update_val base
+          ~f:(Rust_val.update_field (Types.FieldId.to_int field) ~f)
+          v
     | Field (base, _, field) ->
         update_val base
           ~f:(Rust_val.update_field (Types.FieldId.to_int field) ~f)
@@ -125,12 +130,19 @@ let bindings (store : 'a t) = Map.bindings store
 let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
   match place.kind with
   | Local v -> Some (find v store).kind
+  | Field (base, ProjAdt (_, Some _var), field) -> (
+      (* TODO: check the variant matches *)
+      let field_idx = Types.FieldId.to_int field in
+      try_load base store
+      |> bind_value @@ function
+         | Enum (_, vs) -> Value (List.nth vs field_idx)
+         | _ -> L.failwith "tried loading field of non-enum")
   | Field (base, _, field) -> (
       let field_idx = Types.FieldId.to_int field in
       try_load base store
       |> bind_value @@ function
-         | Tuple vs | Enum (_, vs) -> Value (List.nth vs field_idx)
-         | _ -> L.failwith "tried loading field of non-aggregate")
+         | Tuple vs -> Value (List.nth vs field_idx)
+         | _ -> L.failwith "tried loading field of non-struct")
   | Index (base, idx) -> (
       try_load base store
       |> bind_value @@ function
