@@ -38,6 +38,7 @@ type fn =
   | CoreF64IsSignNegative
   | CoreF64IsSignPositive
   | CoreF64IsSubnormal
+  | CoreHashBuildHasherHashOne
   | CoreOptionUnwrapFailed
   | CorePanickingAssertFailedInner
   | CorePanickingPanic
@@ -84,6 +85,8 @@ let fn_pats : (string * fn) list =
     ("core::f64::_::is_sign_negative", CoreF64IsSignNegative);
     ("core::f64::_::is_sign_positive", CoreF64IsSignPositive);
     ("core::f64::_::is_subnormal", CoreF64IsSubnormal);
+    ("core::hash::BuildHasher::hash_one", CoreHashBuildHasherHashOne);
+    ("std::hash::BuildHasher::hash_one", CoreHashBuildHasherHashOne);
     ("core::option::unwrap_failed", CoreOptionUnwrapFailed);
     ("core::panicking::assert_failed_inner", CorePanickingAssertFailedInner);
     ("core::panicking::panic", CorePanickingPanic);
@@ -251,6 +254,10 @@ module M (StateM : State.StateM.S) = struct
         let arg = as_base_f F64 arg in
         let+ ret = f64_is_subnormal ~arg in
         Int (Typed.BitVec.of_bool ret)
+    | CoreHashBuildHasherHashOne, [ t_self; t ], [], [ self; x ] ->
+        let self = as_ptr self in
+        let+ ret = hash_one ~types:generics.types ~t_self ~t ~self ~x in
+        Int ret
     | CoreOptionUnwrapFailed, [], [], [] ->
         let+ () = option_unwrap_failed () in
         Tuple []

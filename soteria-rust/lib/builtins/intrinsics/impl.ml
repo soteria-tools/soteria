@@ -1037,4 +1037,103 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     copy_nonoverlapping ~t ~src ~dst ~count
 
   let volatile_store ~t ~dst ~val_ = State.store dst t val_
+
+  (* ---- SIMD ---- *)
+
+  (* A SIMD vector is a `#[repr(simd)]` struct wrapping a `[T; N]` array, so its
+     value is [Tuple [ Tuple lanes ]]. *)
+  let simd_lanes : rust_val -> (rust_val list, unit) t = function
+    | Tuple [ Tuple lanes ] -> ok lanes
+    | _ ->
+        not_impl
+          "unsupported SIMD type definition, expected a struct wrapping a [T; \
+           N] array"
+
+  let simd_of_lanes lanes : rust_val = Tuple [ Tuple lanes ]
+
+  (* The element type of a SIMD vector, i.e. the [T] in its `[T; N]` field. *)
+  let simd_elem_lit (ty : Types.ty) : Types.literal_type =
+    match Crate.as_struct_or_tuple (ty_as_adt ty) with
+    | [ TArray (TLiteral lit, _) ] -> lit
+    | _ -> Fmt.failwith "expected a SIMD vector type, got %a" pp_ty ty
+
+  (* The number of lanes [N] of a SIMD vector. *)
+  let simd_len (ty : Types.ty) =
+    match Crate.as_struct_or_tuple (ty_as_adt ty) with
+    | [ TArray (_, len) ] ->
+        let* len =
+          of_opt_not_impl "simd_len with generic length"
+            (BV.of_constant_expr_opt len)
+        in
+        let+ len =
+          of_opt_not_impl "simd_len with symbolic length" (BV.to_z len)
+        in
+        Z.to_int len
+    | _ -> Fmt.failwith "expected a SIMD vector type, got %a" pp_ty ty
+
+  (* Elementwise comparison producing a mask: each lane of the result is
+     all-ones (if the comparison holds) or all-zeros, with the width of [u]'s
+     element. *)
+  let simd_cmp cmp ~u ~x ~y =
+    let lit = simd_elem_lit u in
+    let width = 8 * Layout.size_of_literal_ty lit in
+    let ones = BV.mk width Z.(pred (one lsl width)) in
+    let zeros = BV.mki width 0 in
+    let lane a b =
+      Int (Typed.ite (cmp (as_base lit a) (as_base lit b)) ones zeros)
+    in
+    let* x = simd_lanes x in
+    let+ y = simd_lanes y in
+    simd_of_lanes (List.map2 lane x y)
+
+  let simd_eq ~t:_ ~u ~x ~y = simd_cmp Typed.sem_eq ~u ~x ~y
+  let simd_ne ~t:_ ~u ~x ~y = simd_cmp (fun a b -> Typed.not (a ==@ b)) ~u ~x ~y
+
+  let simd_signed_cmp cmp ~t ~u ~x ~y =
+    let signed = Layout.is_signed (simd_elem_lit t) in
+    simd_cmp (fun a b -> cmp ~signed a b) ~u ~x ~y
+
+  let simd_ge = simd_signed_cmp BV.geq
+  let simd_gt = simd_signed_cmp BV.gt
+  let simd_le = simd_signed_cmp BV.leq
+  let simd_lt = simd_signed_cmp BV.lt
+
+  (* Elementwise binary operation over two vectors of the same shape. *)
+  let simd_binop t op x y =
+    let lit = simd_elem_lit t in
+    let lane a b = Int (op (as_base lit a) (as_base lit b)) in
+    let* x = simd_lanes x in
+    let+ y = simd_lanes y in
+    simd_of_lanes (List.map2 lane x y)
+
+  let simd_and ~t ~x ~y = simd_binop t BV.and_ x y
+  let simd_or ~t ~x ~y = simd_binop t BV.or_ x y
+  let simd_xor ~t ~x ~y = simd_binop t BV.xor x y
+  let simd_add ~t ~x ~y = simd_binop t ( +!@ ) x y
+  let simd_mul ~t ~x ~y = simd_binop t ( *!@ ) x y
+  let simd_sub ~t ~lhs ~rhs = simd_binop t ( -!@ ) lhs rhs
+  let simd_shl ~t ~lhs ~rhs = simd_binop t BV.shl lhs rhs
+
+  let simd_shr ~t ~lhs ~rhs =
+    let op = if Layout.is_signed (simd_elem_lit t) then BV.ashr else BV.lshr in
+    simd_binop t op lhs rhs
+
+  (* Elementwise unary operation over a vector. *)
+  let simd_unop t op x =
+    let lit = simd_elem_lit t in
+    let+ x = simd_lanes x in
+    simd_of_lanes (List.map (fun a -> Int (op (as_base lit a))) x)
+
+  let simd_neg ~t ~x = simd_unop t ( ~-! ) x
+
+  let simd_extract ~t:_ ~u:_ ~x ~idx =
+    let* idx =
+      of_opt_not_impl "Using a symbolic index on simd_extract" (BV.to_z idx)
+    in
+    let+ x = simd_lanes x in
+    List.nth x (Z.to_int idx)
+
+  let simd_splat ~t ~u:_ ~value =
+    let+ len = simd_len t in
+    simd_of_lanes (List.init len (fun _ -> value))
 end

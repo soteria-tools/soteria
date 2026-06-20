@@ -112,6 +112,11 @@ module BitVec = struct
         L.failwith "Cannot convert non-value const expr %a to bitvector"
           Types.pp_constant_expr c
 
+  let of_constant_expr_opt : Types.constant_expr -> [> T.sint ] t option =
+    function
+    | { kind = CLiteral lit; _ } -> Some (of_literal lit)
+    | _ -> None
+
   let max ~signed l r = ite (gt ~signed l r) l r
   let min ~signed l r = ite (lt ~signed l r) l r
   let sure_is_zero v = Option.is_some_and Z.(equal zero) (to_z v)

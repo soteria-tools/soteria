@@ -78,6 +78,11 @@
       {
         "pattern": "std::panicking::begin_panic",
         "aliases": ["std::rt::begin_panic"]
+      },
+      {
+        "pattern": "core::hash::BuildHasher::hash_one",
+        "aliases": ["std::hash::BuildHasher::hash_one"],
+        "extra_args": ["types"]
       }
     ]
   },

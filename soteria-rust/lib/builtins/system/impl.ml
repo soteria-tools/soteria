@@ -5,8 +5,21 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
   open Syntax
 
-  let hashmap_random_keys ~(fun_sig : Types.fun_sig) =
-    Encoder.nondet_valid fun_sig.output
+  let hashmap_random_keys_ux =
+    String.Interned.intern
+      "std::sys::random::hashmap_random_keys was stubbed to constant random \
+       keys, to avoid path explosion. This is an under-approximation, some \
+       paths may be missed."
+
+  (* Returning *symbolic* keys makes every hash symbolic, causing branch
+     explosion; we instead stick to a concrete hash. *)
+  let hashmap_random_keys ~fun_sig:_ =
+    if Soteria.Symex.Approx.As_ctx.is_ox () then
+      Soteria.Terminal.Warn.warn_once hashmap_random_keys_ux;
+    let k0 = 0x0123456789abcdefL in
+    let k1 = 0x94D049BB133111EBL in
+    let to_u64 i = Int (Typed.BV.u64 (Z.of_int64 i)) in
+    ok (Tuple [ to_u64 k0; to_u64 k1 ])
 
   (** {@rust[
         fn _var(key: &OsStr) -> Result<String, VarError>

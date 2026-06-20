@@ -350,6 +350,169 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let select_unpredictable ~t:_ ~b:_ ~true_val:_ ~false_val:_ =
     not_impl "Unsupported intrinsic: select_unpredictable"
 
+  let simd_add ~t:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_add"
+  let simd_and ~t:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_and"
+
+  let simd_arith_offset ~t:_ ~u:_ ~ptr:_ ~offset:_ =
+    not_impl "Unsupported intrinsic: simd_arith_offset"
+
+  let simd_as ~t:_ ~u:_ ~x:_ = not_impl "Unsupported intrinsic: simd_as"
+
+  let simd_bitmask ~t:_ ~u:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_bitmask"
+
+  let simd_bitreverse ~t:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_bitreverse"
+
+  let simd_bswap ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_bswap"
+
+  let simd_carryless_mul ~t:_ ~a:_ ~b:_ =
+    not_impl "Unsupported intrinsic: simd_carryless_mul"
+
+  let simd_cast ~t:_ ~u:_ ~x:_ = not_impl "Unsupported intrinsic: simd_cast"
+
+  let simd_cast_ptr ~t:_ ~u:_ ~ptr:_ =
+    not_impl "Unsupported intrinsic: simd_cast_ptr"
+
+  let simd_ceil ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_ceil"
+  let simd_ctlz ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_ctlz"
+  let simd_ctpop ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_ctpop"
+  let simd_cttz ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_cttz"
+  let simd_div ~t:_ ~lhs:_ ~rhs:_ = not_impl "Unsupported intrinsic: simd_div"
+  let simd_eq ~t:_ ~u:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_eq"
+
+  let simd_expose_provenance ~t:_ ~u:_ ~ptr:_ =
+    not_impl "Unsupported intrinsic: simd_expose_provenance"
+
+  let simd_extract ~t:_ ~u:_ ~x:_ ~idx:_ =
+    not_impl "Unsupported intrinsic: simd_extract"
+
+  let simd_extract_dyn ~t:_ ~u:_ ~x:_ ~idx:_ =
+    not_impl "Unsupported intrinsic: simd_extract_dyn"
+
+  let simd_fabs ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_fabs"
+  let simd_fcos ~t:_ ~a:_ = not_impl "Unsupported intrinsic: simd_fcos"
+  let simd_fexp ~t:_ ~a:_ = not_impl "Unsupported intrinsic: simd_fexp"
+  let simd_fexp2 ~t:_ ~a:_ = not_impl "Unsupported intrinsic: simd_fexp2"
+  let simd_flog ~t:_ ~a:_ = not_impl "Unsupported intrinsic: simd_flog"
+  let simd_flog10 ~t:_ ~a:_ = not_impl "Unsupported intrinsic: simd_flog10"
+  let simd_flog2 ~t:_ ~a:_ = not_impl "Unsupported intrinsic: simd_flog2"
+  let simd_floor ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_floor"
+  let simd_fma ~t:_ ~x:_ ~y:_ ~z:_ = not_impl "Unsupported intrinsic: simd_fma"
+  let simd_fsin ~t:_ ~a:_ = not_impl "Unsupported intrinsic: simd_fsin"
+  let simd_fsqrt ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_fsqrt"
+
+  let simd_funnel_shl ~t:_ ~a:_ ~b:_ ~shift:_ =
+    not_impl "Unsupported intrinsic: simd_funnel_shl"
+
+  let simd_funnel_shr ~t:_ ~a:_ ~b:_ ~shift:_ =
+    not_impl "Unsupported intrinsic: simd_funnel_shr"
+
+  let simd_gather ~t:_ ~u:_ ~v:_ ~val_:_ ~ptr:_ ~mask:_ =
+    not_impl "Unsupported intrinsic: simd_gather"
+
+  let simd_ge ~t:_ ~u:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_ge"
+  let simd_gt ~t:_ ~u:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_gt"
+
+  let simd_insert ~t:_ ~u:_ ~x:_ ~idx:_ ~val_:_ =
+    not_impl "Unsupported intrinsic: simd_insert"
+
+  let simd_insert_dyn ~t:_ ~u:_ ~x:_ ~idx:_ ~val_:_ =
+    not_impl "Unsupported intrinsic: simd_insert_dyn"
+
+  let simd_le ~t:_ ~u:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_le"
+  let simd_lt ~t:_ ~u:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_lt"
+
+  let simd_masked_load ~v:_ ~u:_ ~t:_ ~align:_ ~mask:_ ~ptr:_ ~val_:_ =
+    not_impl "Unsupported intrinsic: simd_masked_load"
+
+  let simd_masked_store ~v:_ ~u:_ ~t:_ ~align:_ ~mask:_ ~ptr:_ ~val_:_ =
+    not_impl "Unsupported intrinsic: simd_masked_store"
+
+  let simd_maximum_number_nsz ~t:_ ~x:_ ~y:_ =
+    not_impl "Unsupported intrinsic: simd_maximum_number_nsz"
+
+  let simd_minimum_number_nsz ~t:_ ~x:_ ~y:_ =
+    not_impl "Unsupported intrinsic: simd_minimum_number_nsz"
+
+  let simd_mul ~t:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_mul"
+  let simd_ne ~t:_ ~u:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_ne"
+  let simd_neg ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_neg"
+  let simd_or ~t:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_or"
+
+  let simd_reduce_add_ordered ~t:_ ~u:_ ~x:_ ~y:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_add_ordered"
+
+  let simd_reduce_add_unordered ~t:_ ~u:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_add_unordered"
+
+  let simd_reduce_all ~t:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_all"
+
+  let simd_reduce_and ~t:_ ~u:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_and"
+
+  let simd_reduce_any ~t:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_any"
+
+  let simd_reduce_max ~t:_ ~u:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_max"
+
+  let simd_reduce_min ~t:_ ~u:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_min"
+
+  let simd_reduce_mul_ordered ~t:_ ~u:_ ~x:_ ~y:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_mul_ordered"
+
+  let simd_reduce_mul_unordered ~t:_ ~u:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_mul_unordered"
+
+  let simd_reduce_or ~t:_ ~u:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_or"
+
+  let simd_reduce_xor ~t:_ ~u:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_reduce_xor"
+
+  let simd_relaxed_fma ~t:_ ~x:_ ~y:_ ~z:_ =
+    not_impl "Unsupported intrinsic: simd_relaxed_fma"
+
+  let simd_rem ~t:_ ~lhs:_ ~rhs:_ = not_impl "Unsupported intrinsic: simd_rem"
+  let simd_round ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_round"
+
+  let simd_round_ties_even ~t:_ ~x:_ =
+    not_impl "Unsupported intrinsic: simd_round_ties_even"
+
+  let simd_saturating_add ~t:_ ~x:_ ~y:_ =
+    not_impl "Unsupported intrinsic: simd_saturating_add"
+
+  let simd_saturating_sub ~t:_ ~lhs:_ ~rhs:_ =
+    not_impl "Unsupported intrinsic: simd_saturating_sub"
+
+  let simd_scatter ~t:_ ~u:_ ~v:_ ~val_:_ ~ptr:_ ~mask:_ =
+    not_impl "Unsupported intrinsic: simd_scatter"
+
+  let simd_select ~m:_ ~t:_ ~mask:_ ~if_true:_ ~if_false:_ =
+    not_impl "Unsupported intrinsic: simd_select"
+
+  let simd_select_bitmask ~t_m:_ ~t:_ ~m:_ ~yes:_ ~no:_ =
+    not_impl "Unsupported intrinsic: simd_select_bitmask"
+
+  let simd_shl ~t:_ ~lhs:_ ~rhs:_ = not_impl "Unsupported intrinsic: simd_shl"
+  let simd_shr ~t:_ ~lhs:_ ~rhs:_ = not_impl "Unsupported intrinsic: simd_shr"
+
+  let simd_shuffle ~t:_ ~u:_ ~v:_ ~x:_ ~y:_ ~idx:_ =
+    not_impl "Unsupported intrinsic: simd_shuffle"
+
+  let simd_splat ~t:_ ~u:_ ~value:_ =
+    not_impl "Unsupported intrinsic: simd_splat"
+
+  let simd_sub ~t:_ ~lhs:_ ~rhs:_ = not_impl "Unsupported intrinsic: simd_sub"
+  let simd_trunc ~t:_ ~x:_ = not_impl "Unsupported intrinsic: simd_trunc"
+
+  let simd_with_exposed_provenance ~t:_ ~u:_ ~addr:_ =
+    not_impl "Unsupported intrinsic: simd_with_exposed_provenance"
+
+  let simd_xor ~t:_ ~x:_ ~y:_ = not_impl "Unsupported intrinsic: simd_xor"
   let sinf128 ~x:_ = not_impl "Unsupported intrinsic: sinf128"
   let sinf16 ~x:_ = not_impl "Unsupported intrinsic: sinf16"
   let sinf32 ~x:_ = not_impl "Unsupported intrinsic: sinf32"
@@ -368,6 +531,21 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let sub_with_overflow ~t:_ ~x:_ ~y:_ =
     not_impl "Unsupported intrinsic: sub_with_overflow"
+
+  let sve_tuple_create2 ~svec:_ ~svectup:_ ~x0:_ ~x1:_ =
+    not_impl "Unsupported intrinsic: sve_tuple_create2"
+
+  let sve_tuple_create3 ~svec:_ ~svectup:_ ~x0:_ ~x1:_ ~x2:_ =
+    not_impl "Unsupported intrinsic: sve_tuple_create3"
+
+  let sve_tuple_create4 ~svec:_ ~svectup:_ ~x0:_ ~x1:_ ~x2:_ ~x3:_ =
+    not_impl "Unsupported intrinsic: sve_tuple_create4"
+
+  let sve_tuple_get ~svectup:_ ~svec:_ ~idx:_ ~tuple:_ =
+    not_impl "Unsupported intrinsic: sve_tuple_get"
+
+  let sve_tuple_set ~svectup:_ ~svec:_ ~idx:_ ~tuple:_ ~x:_ =
+    not_impl "Unsupported intrinsic: sve_tuple_set"
 
   let three_way_compare ~t:_ ~lhs:_ ~rhss:_ =
     not_impl "Unsupported intrinsic: three_way_compare"

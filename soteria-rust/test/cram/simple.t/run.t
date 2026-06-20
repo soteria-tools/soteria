@@ -745,6 +745,14 @@ Test the atomic read-modify-write intrinsics (fetch_and/or/xor/nand/sub/min/max)
   note: atomics::pointer: done in <time>, ran 1 branch
   PC 1: empty
   
+Test a pointer constant into a larger, over-aligned allocation (à la hashbrown's
+Group::static_empty); the allocation must keep its full size and alignment.
+  $ soteria-rust exec oversized_const_alloc.rs
+  Compiling... done in <time>
+  => Running oversized_const_alloc::main...
+  note: oversized_const_alloc::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
 Test a field access through a pointer derived from ptr.sub with a symbolic index; used to error
   $ soteria-rust exec ptr_sub_field.rs
   Compiling... done in <time>
@@ -777,4 +785,23 @@ Test a field access through a pointer derived from ptr.sub with a symbolic index
         ((0x0000000000000003 & V|1|) <u 0x0000000000000002) /\
         ((0x0000000000000001 <u (0x0000000000000003 & V|1|)) || (0x0000000000000000 == (0x0000000000000003 & V|1|))) /\
         (0xfffffffffffffffe == (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))
+  
+Test the SIMD intrinsics used by hashbrown's NEON control group.
+  $ soteria-rust exec simd.rs --target aarch64-apple-darwin
+  Compiling... done in <time>
+  => Running simd::main...
+  note: simd::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+Test a HashMap with concrete keys (insert/get/len) and a symbolic key. The
+stubbed (constant) hasher keeps bucket indices concrete even for the symbolic
+key, so the only branch is its equality with the concrete entry.
+  $ soteria-rust exec hashmap.rs --target aarch64-apple-darwin
+  Compiling... done in <time>
+  => Running hashmap::main...
+  warning: std::sys::random::hashmap_random_keys was stubbed to constant random keys, to avoid path explosion. This is an under-approximation, some paths may be missed.
+  warning: std::hash::BuildHasher::hash_one was stubbed to always hash to 0, to avoid path explosion. This is an under-approximation, some paths may be missed.
+  note: hashmap::main: done in <time>, ran 2 branches
+  PC 1: (0x00000007 == V|1|) /\ (0x00000007 == V|1|)
+  PC 2: (0x00000007 != V|1|)
   
