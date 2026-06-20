@@ -3,6 +3,8 @@ open Soteria_std
 open Soteria_smt
 open Svalue
 
+(** Lowers the svalues of a built typed layer [Typed] (from {!Typed.Make}) into
+    SMT terms and sorts for the Z3 backend. *)
 module Make (Typed : Typed_intf.S) = struct
   let pointers_not_supported () =
     L.failwith "Encoding of pointers is not supported in Bv_values"

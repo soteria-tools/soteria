@@ -1,5 +1,9 @@
 open Soteria_std
 
+(** Substitution over a {e built} [Svalue] module [V] (the result of
+    {!Svalue.Make}), and the {!Symex.Value.Expr} interface that the symbolic
+    execution engine expects. Provides capture-avoiding substitution
+    ([Subst.apply]) and the equational learning used to grow substitutions. *)
 module Make
     (Ext : Svalue.Value_ext)
     (V : module type of Svalue.Make (Ext) ()) =

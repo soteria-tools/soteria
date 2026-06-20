@@ -2,6 +2,13 @@ open Logs.Import
 open Soteria_std
 open Svalue
 
+(** Syntactic analyses over a built typed layer [Typed] (from {!Typed.Make}):
+    the simplification knowledge base that records facts learned from the path
+    condition and uses them to simplify later constraints. Its [S] signature is
+    what the solvers in {!Bv_solver} consume; concrete instances are
+    {{!Make.None}[None]} (no-op), {{!Make.Interval}[Interval]},
+    {{!Make.Equality}[Equality]}, and {{!Make.Merge}[Merge]} to combine two of
+    them. *)
 module Make (Typed : Typed_intf.S) = struct
   module Svalue = Typed.Svalue
   module Eval = Typed.Eval

@@ -1,6 +1,11 @@
 open Svalue
 open Soteria_std
 
+(** Normalisation of svalues over a {e built} [Svalue] module [V] (the result of
+    {!Svalue.Make}). {{!Make.eval}[eval]} walks a value bottom-up and re-applies
+    the simplifying smart constructors, which both simplifies and rebuilds any
+    value that was assembled directly from raw nodes (e.g. read back from a
+    cache). *)
 module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
   open V
 

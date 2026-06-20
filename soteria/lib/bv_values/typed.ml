@@ -148,4 +148,19 @@ end = struct
   end
 end
 
+(** The main entry point of [Bv_values]. Builds the {e ghost-typed} svalue layer
+    over {!Svalue.Make}: the same hash-consed values, but exposed through a
+    phantom-typed [+'a t] whose ['a] tracks each value's kind (the [sint],
+    [sbool], [sptr], ... tags) so that ill-kinded combinations are rejected at
+    compile time. The result also bundles the matching [Svalue] (untyped layer),
+    [Eval] (normalisation) and [Expr] (substitution) modules.
+
+    Apply it {b once} per tool and reuse the result:
+    {[
+      module Typed = Bv_values.Typed.Make (Bv_values.Svalue.Dummy_ext) ()
+    ]}
+    Like {!Svalue.Make} it is generative (final [()]): distinct applications
+    yield type-incompatible values, so do not re-apply it to share values — pass
+    the built module around instead. Unlike {!Make_transparent}, [t] and [ty]
+    are kept abstract. *)
 module Make (V : Value_ext) () : S with module Ext = V = Make_transparent (V) ()

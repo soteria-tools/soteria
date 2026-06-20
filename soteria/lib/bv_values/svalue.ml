@@ -234,11 +234,36 @@ and ('ghost, 't, 'ty) t = ('ghost, 't, 'ty) t_node hash_consed
 let[@inline] equal a b = Int.equal a.tag b.tag
 let[@inline] compare a b = Int.compare a.tag b.tag
 
+(** How to embed a domain-specific {e extension} into the otherwise fixed svalue
+    grammar. An extension contributes:
+    - a new value leaf [t], reachable through the [Extension] node, and
+    - a new type [ty], reachable through the [TExtension] type.
+
+    {!Make} weaves these into the value/type definitions and threads the
+    operations below through hash-consing, evaluation, substitution and SMT
+    encoding, so the extension behaves like a first-class part of the grammar.
+    Tools needing no extra leaves use {!Dummy_ext} instead.
+
+    Throughout, [super_t] is the {e enclosing} svalue (the whole grammar,
+    including this extension) and [super_ty] its type. Both stay polymorphic in
+    the ['ghost] minted by {!Make}: an extension is defined before any
+    application of {!Make}, so it cannot — and must not — name a concrete ghost.
+    Each operation instead receives svalue-level callbacks already specialised
+    to the embedding application's ghost, and applies them to the svalues nested
+    inside an extension value. *)
 module type Value_ext = sig
+  (** [_ super_t] is the enclosing svalue *)
   type ('ghost, 't, 'ty) super_t := ('ghost, 't, 'ty) t
+
+  (** [_ super_ty] is the enclosing svalue type *)
   type 'ty super_ty := 'ty ty
+
+  (** Extension value leaves; appear in svalues through [Extension]. *)
   type t [@@deriving eq, ord]
+
+  (** Extension types; appear in svalue types through [TExtension]. *)
   type ty [@@deriving eq, ord]
+
   type super_ty := ty super_ty
   type 'g super_t := ('g, t, ty) super_t
 
@@ -247,7 +272,17 @@ module type Value_ext = sig
   val iter_vars : (_ super_t -> unit) -> t -> unit
   val hash : t -> int
   val hash_ty : ty -> int
+
+  (** [mk ty x] is the svalue node-kind representing extension value [x] at type
+      [ty] — typically [Extension x], but the extension may normalise to another
+      kind. {{!Soteria.Bv_values.Svalue.Make}[Make]} hash-conses the result.
+      Called when an svalue carrying an extension is rebuilt (e.g. after its
+      children are evaluated). *)
   val mk : super_ty -> t -> (_, t, ty) t_kind
+
+  (** [eval eval_super x] returns [x] with every enclosing svalue nested in it
+      replaced by [eval_super] applied to it — the extension's contribution to
+      the {{!Soteria.Bv_values.Eval}[Eval]} pass. *)
   val eval : (_ super_t -> _ super_t) -> t -> t
 
   val apply_subst :
@@ -264,6 +299,11 @@ module type Value_ext = sig
   val encode_value : (_ super_t -> Soteria_smt.sexp) -> t -> Soteria_smt.sexp
 end
 
+(** The empty extension: [t] and [ty] are uninhabited, so an svalue built with
+    [Dummy_ext] never contains an [Extension] node nor a [TExtension] type, and
+    every operation above is vacuous. This is the right choice for tools (such
+    as soteria-c and soteria-rust) whose values need nothing beyond the built-in
+    bit-vector / float / pointer grammar. *)
 module Dummy_ext : Value_ext = struct
   type t = | [@@deriving eq, ord]
   type ty = | [@@deriving eq, ord]
@@ -280,11 +320,19 @@ module Dummy_ext : Value_ext = struct
   let encode_value _ (x : t) = match x with _ -> .
 end
 
-(** [Make] is a {b generative} functor (note the final [()]): each application
-    mints a fresh, abstract [ghost] that tags all values it hash-cons. Two
-    applications — even to the same [V] — produce mutually incompatible [t]s, so
-    values from one (with their own hash-consing table) can never be mixed with
-    another's. *)
+(** Builds the untyped svalue layer for extension [V]: the value/type
+    definitions specialised to [V], the hash-cons table, and the simplifying
+    smart constructors ({{!Make.module-type-Bool}[Bool]},
+    {{!Make.module-type-BitVec}[BitVec]}, {{!Make.module-type-Float}[Float]},
+    {{!Make.Ptr}[Ptr]}, {{!Make.SSeq}[SSeq]}, ...). This is the foundation the
+    rest of [Bv_values] is built on; most callers reach it as [Typed.Svalue]
+    rather than applying it directly (see {!Typed.Make}).
+
+    [Make] is {b generative} (note the final [()]): each application mints a
+    fresh, abstract [ghost] tagging every value it hash-conses, and owns its own
+    table. Two applications — even to the same [V] — therefore produce mutually
+    incompatible [t]s, so values from one can never be mixed with another's.
+    Apply it once and share the resulting module. *)
 module Make (V : Value_ext) () = struct
   module Ext = V
   module Unop = Unop
