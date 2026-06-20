@@ -37,9 +37,24 @@ The core library provides a set of batteries-included abstractions for writing o
 
 ## Getting Started
 
+### Install Soteria Rust
+
+For users wishing to user Soteria Rust for writing and running symbolic tests,
+we strongly recommend installing Soteria Rust through `cargo` on **macOS with M-series chips** and **Linux x86_64**:
+
+```sh
+cargo install soteria
+cargo soteria setup # Installs pre-built binaries
+# setup can be run again at every nightly release of Soteria Rust (every day).
+```
+
+For other architectures, please follow the [manual installation instructions](./CONTRIBUTING.md#installing-from-source) in the contributing guide.
+
 ### Install the Soteria Library
 
-Soteria can be used as a library to build your own symbolic execution engines. The [API documentation](https://soteria-tools.com/docs/library) provides a complete reference, and includes a tutorial on how to get started building your own analysis tools.
+Soteria can be used as an OCaml library to build your own symbolic execution engines.
+The [API documentation](https://soteria-tools.com/docs/library) provides a complete reference,
+and includes a tutorial on how to get started building your own analysis tools.
 
 Pin it with opam:
 
@@ -47,35 +62,47 @@ Pin it with opam:
 opam pin add soteria git+https://github.com/soteria-tools/soteria.git#<commit>
 ```
 
-### Install Soteria Rust
-
-Soteria Rust can be installed with `cargo` on **macOS with M-series chips** and **Linux x86_64**:
-
-```sh
-cargo install soteria --git https://github.com/soteria-tools/cargo-soteria.git
-```
-
-For other architectures, please follow the [manual installation instructions](./CONTRIBUTING.md#installing-from-source) in the contributing guide.
-
 ## Soteria Rust
 
-Soteria Rust is a Kani-like symbolic execution engine for Rust. It is in heavy development.
+Soteria Rust is a symbolic execution engine for Rust. It is in heavy development.
 
-### Usage
+### Usage when installed from cargo
 
-Run on a standalone Rust file, symbolically executing the `main` function:
+Using `cargo soteria`, the tests inside of the current crate can be run using:
 ```sh
-soteria-rust exec <file.rs>
+cargo soteria
 ```
 
-Run in Kani mode to execute any function with the `#[kani::proof]` attribute:
+If the crate contains Kani harnesses, the Kani compatibility layer can be enabled
+with:
 ```sh
-soteria-rust exec --kani <file.rs>
+cargo soteria --kani
+```
+
+The full help for `cargo soteria` can be obtained with:
+```sh
+cargo soteria --help
+```
+
+### Usage when installed from source
+
+Installing from source install a `soteria-rust` binary, which can be used as follows.
+
+Run on a standalone Rust file, symbolically executing the `main` function, or any
+function with the `#[soteria::test]` attribute:
+```sh
+soteria-rust exec <file.rs>
 ```
 
 Run all tests in a crate:
 ```sh
 soteria-rust exec <crate-dir>
+```
+
+Run in Kani mode to execute any function with the `#[kani::proof]` attribute,
+with compatibility with the Kani api (e.g. `kani::any`):
+```sh
+soteria-rust exec --kani <file.rs>
 ```
 
 Use `--help` with any command for a full list of options:

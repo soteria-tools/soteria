@@ -46,6 +46,7 @@
   (ppx_subliner
    (>= 0.2.1))
   ppx_deriving
+  ppx_deriving_hash
   fmt
   printbox-text
   htmlit

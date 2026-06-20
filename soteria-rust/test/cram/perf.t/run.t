@@ -178,3 +178,16 @@
   PC 75: (V|1| <=u V|2|) /\ (V|2| <=u V|3|) /\ (V|3| <=u V|4|) /\
          (V|1| == V|2|) /\ (V|1| == V|3|) /\ (V|1| == V|4|)
   
+
+  $ soteria-rust exec writealot.rs
+  Compiling... done in <time>
+  => Running writealot::main...
+  note: writealot::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  $ soteria-rust exec writealotloop.rs
+  Compiling... done in <time>
+  => Running writealotloop::main...
+  note: writealotloop::main: done in <time>, ran 1 branch
+  PC 1: empty
+  

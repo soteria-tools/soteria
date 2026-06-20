@@ -127,6 +127,14 @@ type t = {
       [@docs Sections.output] [@make.default false] [@names [ "summary" ]]
       (** If a summary of all test cases should be printed at the end of
           execution *)
+  list_tests : bool;
+      [@docs Sections.output] [@make.default false] [@names [ "list-tests" ]]
+      (** Print the testing entry points found in the program as a one-line JSON
+          list to stdout; the resulting names can be used with --filter to
+          isolate a single test. Analysis is still run as usual in [exec] mode.
+          When used with [compile], this is the only thing printed to stdout, so
+          the output can be piped directly into e.g. [jq]. Only active in [exec]
+          and [compile] modes. *)
   show_pcs : bool;
       [@docs Sections.output]
       [@make.default false]
