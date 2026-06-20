@@ -247,7 +247,7 @@ module type Value_ext = sig
   val iter_vars : (_ super_t -> unit) -> t -> unit
   val hash : t -> int
   val hash_ty : ty -> int
-  val mk : super_ty -> t -> _ super_t
+  val mk : super_ty -> t -> (_, t, ty) t_kind
   val eval : (_ super_t -> _ super_t) -> t -> t
 
   val apply_subst :

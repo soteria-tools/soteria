@@ -64,7 +64,7 @@ struct
               (Svalue.Bool.mk_exists vs sv, s)
           | Extension x ->
               let x, s = Ext.apply_subst apply ~missing_var s x in
-              (Ext.mk v.node.ty x, s))
+              (Ext.mk v.node.ty x <| v.node.ty, s))
 
     and apply_list ~missing_var s vs =
       match vs with

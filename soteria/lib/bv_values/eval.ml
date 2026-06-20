@@ -99,7 +99,8 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
         if (not force) && not changed then x else SSeq.mk ~seq_ty:x.node.ty l
     | Extension ext ->
         let ext' = Ext.eval eval ext in
-        if (not force) && ext == ext' then x else Ext.mk x.node.ty ext'
+        if (not force) && ext == ext' then x
+        else Ext.mk x.node.ty ext' <| x.node.ty
 
   (** Evaluates an expression; will call [eval_var] on each [Var] encountered.
       If evaluation errors (e.g. from a division by zero), gives up and returns
