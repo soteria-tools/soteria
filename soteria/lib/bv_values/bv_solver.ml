@@ -38,7 +38,7 @@ let[@inline] implies_or_contradicts ~(q : _ Svalue.t) ~(neg_q : _ Svalue.t)
     | _ -> None
 
 module Make_incremental
-    (Typed : Typed_intf.S)
+    (Typed : Typed_intf.Solver_value)
     (Analysis : Analyses.Make(Typed).S)
     (Intf :
       Solvers.Solver_interface.S
@@ -183,7 +183,7 @@ struct
 end
 
 module Make
-    (Typed : Typed_intf.S)
+    (Typed : Typed_intf.Solver_value)
     (Analysis : Analyses.Make(Typed).S)
     (Intf :
       Solvers.Solver_interface.S
@@ -504,15 +504,16 @@ struct
     |> Iter.to_list
 end
 
-module Analysis (Typed : Typed_intf.S) = struct
+module Analysis (Typed : Typed_intf.Solver_value) = struct
   open Analyses.Make (Typed)
   include Merge (Interval) (Equality)
 end
 
-module Z3 (Typed : Typed_intf.S) = Solvers.Z3.Make (Encoding.Make (Typed))
+module Z3 (Typed : Typed_intf.Solver_value) =
+  Solvers.Z3.Make (Encoding.Make (Typed))
 
-module Z3_incremental_solver (Typed : Typed_intf.S) =
+module Z3_incremental_solver (Typed : Typed_intf.Solver_value) =
   Make_incremental (Typed) (Analysis (Typed)) (Z3 (Typed))
 
-module Z3_solver (Typed : Typed_intf.S) =
+module Z3_solver (Typed : Typed_intf.Solver_value) =
   Make (Typed) (Analysis (Typed)) (Z3 (Typed))

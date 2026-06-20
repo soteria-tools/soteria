@@ -1,4 +1,4 @@
-module SYMEX = Soteria.Symex.Make (Bv_solver.Z3_solver (Typed.TypedCore))
+module SYMEX = Soteria.Symex.Make (Bv_solver.Z3_solver (Typed))
 
 module Concrete_alloc_id = struct
   let next_id = ref 1

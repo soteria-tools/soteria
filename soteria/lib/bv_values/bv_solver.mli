@@ -14,10 +14,10 @@
 
 (** Tracks the path condition with its own simplification state and re-sends the
     relevant constraints to Z3 on each query. *)
-module Z3_solver (Typed : Typed_intf.S) :
+module Z3_solver (Typed : Typed_intf.Solver_value) :
   Symex.Solver.Mutable_incremental with module Value = Typed
 
 (** Uses Z3's native incremental push/pop interface instead of re-sending
     constraints. *)
-module Z3_incremental_solver (Typed : Typed_intf.S) :
+module Z3_incremental_solver (Typed : Typed_intf.Solver_value) :
   Symex.Solver.Mutable_incremental with module Value = Typed

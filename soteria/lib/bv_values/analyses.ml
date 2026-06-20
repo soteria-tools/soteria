@@ -9,7 +9,7 @@ open Svalue
     {{!Make.None}[None]} (no-op), {{!Make.Interval}[Interval]},
     {{!Make.Equality}[Equality]}, and {{!Make.Merge}[Merge]} to combine two of
     them. *)
-module Make (Typed : Typed_intf.S) = struct
+module Make (Typed : Typed_intf.Solver_value) = struct
   module Svalue = Typed.Svalue
   module Eval = Typed.Eval
   open Svalue.Infix

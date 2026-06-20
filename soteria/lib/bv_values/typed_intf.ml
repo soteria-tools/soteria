@@ -113,7 +113,7 @@ module type S = sig
   val untyped_list : 'a t list -> Svalue.t list
   val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
   val ppa : Format.formatter -> 'a t -> unit
-  val equal : ([< any ] as 'a) t -> 'a t -> bool
+  val equal : 'a t -> 'a t -> bool
   val compare : ([< any ] as 'a) t -> 'a t -> int
   val hash : ('a -> int) -> 'a t -> int
   val hasha : 'a t -> int
@@ -121,7 +121,7 @@ module type S = sig
 
   (** Typed constructors *)
 
-  val sem_eq : 'a t -> 'a t -> sbool t
+  val sem_eq : 'a t -> 'b t -> sbool t
   val sem_eq_untyped : 'a t -> 'b t -> sbool t
 
   (** Boolean operations *)
@@ -326,7 +326,7 @@ module type S = sig
 
   module Infix : sig
     (* equality *)
-    val ( ==@ ) : [< any ] t -> [< any ] t -> [> sbool ] t
+    val ( ==@ ) : 'a t -> 'b t -> [> sbool ] t
     val ( ==?@ ) : [< any ] t -> [< any ] t -> [> sbool ] t
 
     (* inequality -- [$] indicates signed *)
@@ -401,4 +401,53 @@ module type S = sig
       with type 'a v := 'a t
        and type 'a ty := 'a ty
        and type t = Svalue.t
+end
+
+(** The exact slice of {!S} that {!Bv_solver}'s functors (and the {!Encoding}
+    and {!Analyses} they build on) actually consume — essentially {!Svalue},
+    {!Eval}, {!Ext}, and a handful of boolean/bitvector constructors, enough to
+    also be a {!Symex.Value.S}.
+
+    Solvers take this rather than the whole {!S} so that a downstream [Typed]
+    that adds or overrides constructors — and therefore no longer matches {!S} —
+    can still be passed to {!Bv_solver.Z3_solver} directly: the solver provably
+    never touches the overridden parts. Every module matching {!S} also matches
+    this, so it stays a strict subset. *)
+module type Solver_value = sig
+  module Ext : Svalue.Value_ext
+  module Svalue : module type of Svalue.Make (Ext) ()
+  module Eval : module type of Eval.Make (Ext) (Svalue)
+
+  module T : sig
+    type sint = [ `NonZero | `Zero ]
+    type sbool = [ `Bool ]
+  end
+
+  include Symex.Value.S with type sbool = T.sbool
+
+  (** {2 Extra operations beyond {!Symex.Value.S}} *)
+
+  open T
+
+  val t_int : int -> [> sint ] ty
+  val untype_type : 'a ty -> Svalue.ty
+  val iter_vars : 'a t -> (Var.t * 'b ty -> unit) -> unit
+  val type_ : Svalue.t -> 'a t
+  val untyped : 'a t -> Svalue.t
+  val equal : 'a t -> 'a t -> bool
+  val sem_eq : 'a t -> 'b t -> sbool t
+  val v_true : [> sbool ] t
+  val v_false : [> sbool ] t
+  val and_ : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+  val split_ands : [< sbool ] t -> ([> sbool ] t -> unit) -> unit
+
+  module BitVec : sig
+    val mk : int -> Z.t -> [> sint ] t
+  end
+
+  module Infix : sig
+    val ( ==@ ) : 'a t -> 'a t -> [> sbool ] t
+    val ( <=@ ) : [< sint ] t -> [< sint ] t -> [> sbool ] t
+    val ( &&@ ) : [< sbool ] t -> [< sbool ] t -> [> sbool ] t
+  end
 end
