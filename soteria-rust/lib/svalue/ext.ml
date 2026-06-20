@@ -104,6 +104,18 @@ struct
           vs
     | PolyVal _ -> ()
 
+  (* Allocation-free structural hash *)
+  let[@inline] combine h x = (h * 65599) + x
+
+  let hash_ty hash_ty = function
+    | TEnum ty -> combine 0 (Hashtbl.hash ty)
+    | TUnion ty -> combine 1 (Hashtbl.hash ty)
+    | TTuple tys ->
+        List.fold_left (fun acc ty -> combine acc (hash_ty ty)) 2 tys
+    | TThinPtr -> 3
+    | TFullPtr -> 4
+    | TPolyType -> 5
+
   (* TODO: so derivable *)
   let hash = function
     | Ptr (ptr, None) -> Hashtbl.hash (ptr.tag, 0, 0)
