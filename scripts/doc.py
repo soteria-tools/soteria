@@ -12,6 +12,11 @@ not show. Pass ``--nocache`` to force a from-scratch rebuild (in a throwaway
 build directory, leaving the main ``_build/`` untouched) that always reports
 every warning.
 
+The script exits non-zero if any *actionable* (non-filtered) diagnostic is
+reported, or if the dune build itself fails — so ``make doc`` doubles as a CI
+gate against fixable documentation warnings. CI runs it with ``--nocache`` so
+that dune's cache can never hide a warning.
+
 Usage:
     python3 scripts/doc.py
     python3 scripts/doc.py --open           # build, then open in browser
@@ -89,6 +94,14 @@ FILTER_PATTERNS = [
 def is_filtered(text: str) -> bool:
     """Whether a diagnostic block should be hidden as un-actionable."""
     return any(pattern.search(text) for pattern in FILTER_PATTERNS)
+
+
+def count_actionable(output: str) -> int:
+    """Number of diagnostics that survive filtering — the ones we expect to be
+    fixed. This is the build's pass/fail signal, independent of display flags
+    (e.g. ``--no-simplify`` shows the filtered ones but they still don't fail)."""
+    _, blocks = parse_blocks(output)
+    return sum(1 for block in blocks if not is_filtered(block.text))
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +450,20 @@ def main() -> int:
             _paint(f"\ndune build @doc exited with code {code}.", C.BRED, colour),
             file=sys.stderr,
         )
-    return code
+        return code
+
+    actionable = count_actionable(output)
+    if actionable:
+        print(
+            _paint(
+                f"\n{actionable} actionable documentation diagnostic(s); failing.",
+                C.BRED,
+                colour,
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
