@@ -15,7 +15,7 @@ module Place = struct
     | Metadata of t (* The metadata "field" of a (possibly fat) pointer *)
 
   (** A simple place that lives on the store and doesn't need to be decayed to
-      the heap for reading or writing. Almost identical to {!Expressions.place},
+      the heap for reading or writing. Almost identical to [Expressions.place],
       but with only field and concrete index access. *)
   and t = { kind : kind; origin : Expressions.place }
 

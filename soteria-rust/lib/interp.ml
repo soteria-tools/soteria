@@ -428,8 +428,8 @@ module Make (StateImpl : State.S) = struct
   (** Tries converting a Charon (possibly dynamic) place into a store (known
       statically) place. Returns [None] if the place is not supported on the
       store, and must be resolved to a heap pointer. We do this inside the
-      interpreter rather than in {!Store} so we can evaluate operands, improving
-      the hit-rate of the store. *)
+      interpreter rather than in {!module-Store} so we can evaluate operands,
+      improving the hit-rate of the store. *)
   and build_store_place (origin : Expressions.place) :
       (Store.Place.t, _) StateM.OptionM.t =
     let open StateM.OptionM in

@@ -328,7 +328,8 @@ def build_docs_forced() -> tuple[int, str]:
             stderr=subprocess.STDOUT,
             text=True,
         )
-        publish_docs(force_dir / "default" / "_doc")
+        if proc.returncode == 0:
+            publish_docs(force_dir / "default" / "_doc")
         return proc.returncode, proc.stdout
     finally:
         shutil.rmtree(force_dir, ignore_errors=True)
@@ -359,9 +360,13 @@ def open_index() -> None:
 def apply_theme() -> None:
     css = REPO_ROOT / "_build/default/_doc/_html/odoc.support/odoc.css"
     theme = REPO_ROOT / "doc/odoc-theme/odoc.css"
-    if css.exists() and theme.exists():
+    if not (css.exists() and theme.exists()):
+        return
+    try:
         css.chmod(0o644)
         shutil.copyfile(theme, css)
+    except OSError:
+        return
 
 
 def report(output: str, colour: bool, simplify: bool = True) -> None:
@@ -425,7 +430,7 @@ def main() -> int:
     colour = use_colour()
 
     if args.stdin:
-        output, code = sys.stdin.read(), 0
+        code, output = 0, sys.stdin.read()
     elif args.nocache:
         with Spinner("Force-rebuilding documentation (dune build @doc)…"):
             code, output = build_docs_forced()
