@@ -284,7 +284,7 @@ module Make (StateImpl : State.S) = struct
         State.load ptr const.ty
     | CVar (Free id) -> State.lookup_const_generic id const.ty
     | CVar (Bound _) -> L.failwith "Unbound const generic expression"
-    | CRef (expr, meta) | CPtr (_, expr, meta) ->
+    | CRef (expr, meta) | CPtr (_, expr, meta) -> (
         (* HACK: ideally Charon shouldn't have ref constants, those are entirely
            separate allocations :/ *)
         let* meta =
@@ -296,11 +296,16 @@ module Make (StateImpl : State.S) = struct
                    ~help:(fun () -> "happened when resolving a constant")
                    ~prev:None meta
         in
-        let* v = resolve_constant expr in
-        let@ () = with_alloc_kind ~kind:AnonConst in
-        let* ptr = State.alloc_ty expr.ty in
-        let+ () = State.store ptr expr.ty v in
-        Typed.as_any ptr
+        match expr.kind with
+        | CGlobal glob ->
+            let+ ptr = resolve_global glob in
+            Typed.Ptr.mk_ptr_f (Typed.Ptr.ptr_of ptr) meta
+        | _ ->
+            let* v = resolve_constant expr in
+            let@ () = with_alloc_kind ~kind:AnonConst in
+            let* ptr = State.alloc_ty expr.ty in
+            let+ () = State.store ptr expr.ty v in
+            Typed.Ptr.mk_ptr_f (Typed.Ptr.ptr_of ptr) meta)
     | CCall (ptr, args) ->
         let* args = map_list args ~f:resolve_constant in
         let* fn = resolve_fn_ptr ptr in
