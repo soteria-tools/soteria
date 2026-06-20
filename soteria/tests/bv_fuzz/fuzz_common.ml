@@ -4,7 +4,9 @@
     individual fuzz test executables. *)
 
 open Soteria.Bv_values
-module Z3_raw = Soteria.Solvers.Z3.Make (Encoding)
+module Svalue = Gen.Sv
+module Z3_raw = Soteria.Solvers.Z3.Make (Encoding.Make (Direct.Typed))
+module Eval = Eval.Make (Svalue.Ext) (Svalue)
 module Var = Soteria.Symex.Var
 
 let solver = Z3_raw.init ()

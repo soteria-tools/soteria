@@ -5,7 +5,11 @@
     pattern-matching simplification. This serves as the semantic ground truth
     when fuzz-testing that simplifications are correct. *)
 
-open Soteria.Bv_values.Svalue
+open Soteria.Bv_values
+open Svalue
+module Typed = Typed.Make (Svalue.Dummy_ext)
+module Sv = Typed.Svalue
+open Sv
 
 (* ------------------------------------------------------------------ *)
 (* Boolean operations                                                  *)
@@ -186,6 +190,10 @@ let collect_checked_assumptions (v : t) : t list =
         failwith
           "collect_checked_assumptions: not implemented for quantifiers (we \
            don't generate quantifiers for fuzzing yet)"
+    | Extension _ ->
+        failwith
+          "collect_checked_assumptions: not implemented for extension (we \
+           don't generate extensions for fuzzing)"
   in
   go v;
   Dynarray.to_list assumptions |> List.sort_uniq compare
