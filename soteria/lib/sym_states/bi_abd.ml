@@ -63,6 +63,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
               (List.map
                  (fun fix ->
                    fun () ->
+                    [%l.trace "Producing fix %a" (Fmt.Dump.list B.pp_syn) fix];
                     let*^ (), st'' =
                       B.SM.iter_list fix
                         ~f:(fun fix st ->
@@ -110,6 +111,7 @@ module Make (Symex : Symex.Base) (B : Base.M(Symex).S) = struct
             branches
               (List.map
                  (fun fix () ->
+                   [%l.trace "Producing fix %a" (Fmt.Dump.list B.pp_syn) fix];
                    let*^ st' =
                      Symex.fold_list fix ~init:st ~f:(fun st syn ->
                          Symex.Producer.run_identity (B.produce syn st))

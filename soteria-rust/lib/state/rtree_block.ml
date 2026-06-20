@@ -191,8 +191,6 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       let v = get_ok v in
       [ SInit (Rust_val.to_syn Sptr.to_syn v) ]
 
-    let mk_fix_any () = [ Any ]
-
     type tree = (t, Typed.(T.sint t)) TB.tree
 
     let mk_leaf (t : tree) (v : leaf) tb : tree =
@@ -347,8 +345,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       iter_leaves_rev t
       |> Iter.filter_map @@ fun (leaf : _ tree) ->
          match leaf.node with
-         | NotOwned Totally ->
-             L.failwith "impossible: iterating over non-owned node"
+         | NotOwned Totally -> Some (leaf.range, Unowned, None)
          | NotOwned Partially | Owned Lazy ->
              L.failwith "impossible: iterating over intermediate node"
          | Owned (Leaf (v, tb)) -> Some (leaf.range, v, tb)
@@ -391,9 +388,14 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
             let value = BV.zero (size * 8) in
             Ok ((Rust_val.Int value, offset) :: vs)
         | Init value -> ok ((value, offset) :: vs)
-        | Any ->
-            [%l.info "Reading from Any memory, vanishing."];
-            vanish ()
+        | Any -> (
+            match uninit with
+            | `Ignore -> ok vs
+            | `Error ->
+                if Soteria.Symex.Approx.As_ctx.is_ux () then (
+                  [%l.info "Reading from Any memory, vanishing."];
+                  vanish ())
+                else error `UninitializedMemoryAccess)
         | Unowned -> miss (mk_fix_any offset (Range.size range) ()))
 
   let decode_mem_val ~ty = function
@@ -410,7 +412,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     | Any ->
         (* We don't know if this read is valid, as memory could be
            uninitialised. We have to approximate and vanish. *)
-        not_impl "Reading from Any memory, vanishing."
+        if Soteria.Symex.Approx.As_ctx.is_ux () then (
+          [%l.info "Reading from Any memory, vanishing."];
+          vanish ())
+        else error `UninitializedMemoryAccess
     | Unowned ->
         let+ fix = MemVal.mk_fix_typed ty () in
         Missing [ fix ]

@@ -51,8 +51,9 @@ let bv_binop : 'a Gen.t =
   let bv_checked_binop =
     let open Gen in
     let* op = oneof_array bv_checked_binops in
-    let+ checked = bool in
-    op ~checked
+    let* signed = bool in
+    let+ unsigned = bool in
+    op ~checked:{ Sv.signed; unsigned }
   in
   let bv_unchecked_binop = Gen.oneof_array bv_unchecked_binops in
   Gen.oneof_weighted
@@ -61,7 +62,8 @@ let bv_binop : 'a Gen.t =
       (Array.length bv_unchecked_binops, bv_unchecked_binop);
     ]
 
-let all_bv_unops = [| D.BitVec.not_; D.BitVec.neg |]
+let all_bv_unops =
+  [| D.BitVec.not_; D.BitVec.neg ~checked:false; D.BitVec.neg ~checked:true |]
 
 (* ------------------------------------------------------------------ *)
 (* Bool operations that compare bitvectors                             *)

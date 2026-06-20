@@ -743,7 +743,8 @@ Test the atomic read-modify-write intrinsics (fetch_and/or/xor/nand/sub/min/max)
   
   => Running atomics::pointer...
   note: atomics::pointer: done in <time>, ran 1 branch
-
+  PC 1: empty
+  
 Test a pointer constant into a larger, over-aligned allocation (à la hashbrown's
 Group::static_empty); the allocation must keep its full size and alignment.
   $ soteria-rust exec oversized_const_alloc.rs
@@ -751,6 +752,39 @@ Group::static_empty); the allocation must keep its full size and alignment.
   => Running oversized_const_alloc::main...
   note: oversized_const_alloc::main: done in <time>, ran 1 branch
   PC 1: empty
+  
+Test a field access through a pointer derived from ptr.sub with a symbolic index; used to error
+  $ soteria-rust exec ptr_sub_field.rs
+  Compiling... done in <time>
+  => Running ptr_sub_field::main...
+  note: ptr_sub_field::main: done in <time>, ran 4 branches
+  PC 1: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (0x0000000000000000 != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (((0x0000000000000003 & V|1|) <=u 0x0000000000000001) || (0x0000000000000002 <=u (0x0000000000000003 & V|1|))) /\
+        (0x0000000000000002 <=u (0x0000000000000003 & V|1|)) /\
+        (((0x0000000000000003 & V|1|) <=u 0x0000000000000002) || (0x0000000000000003 <=u (0x0000000000000003 & V|1|))) /\
+        (0x0000000000000003 <=u (0x0000000000000003 & V|1|)) /\
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) == 0xfffffffffffffff8)
+  PC 2: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (0x0000000000000000 != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (((0x0000000000000003 & V|1|) <=u 0x0000000000000001) || (0x0000000000000002 <=u (0x0000000000000003 & V|1|))) /\
+        (0x0000000000000002 <=u (0x0000000000000003 & V|1|)) /\
+        (((0x0000000000000003 & V|1|) <=u 0x0000000000000002) || (0x0000000000000003 <=u (0x0000000000000003 & V|1|))) /\
+        ((0x0000000000000003 & V|1|) <u 0x0000000000000003) /\
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) == 0xfffffffffffffffa)
+  PC 3: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (0x0000000000000000 != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (((0x0000000000000003 & V|1|) <=u 0x0000000000000001) || (0x0000000000000002 <=u (0x0000000000000003 & V|1|))) /\
+        ((0x0000000000000003 & V|1|) <u 0x0000000000000002) /\
+        ((0x0000000000000003 & V|1|) <=u 0x0000000000000001) /\
+        (0x0000000000000001 <=u (0x0000000000000003 & V|1|)) /\
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) == 0xfffffffffffffffc)
+  PC 4: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (0x0000000000000000 != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (((0x0000000000000003 & V|1|) <=u 0x0000000000000001) || (0x0000000000000002 <=u (0x0000000000000003 & V|1|))) /\
+        ((0x0000000000000003 & V|1|) <u 0x0000000000000002) /\
+        ((0x0000000000000001 <u (0x0000000000000003 & V|1|)) || (0x0000000000000000 == (0x0000000000000003 & V|1|))) /\
+        (0xfffffffffffffffe == (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))
   
 Test the SIMD intrinsics used by hashbrown's NEON control group.
   $ soteria-rust exec simd.rs --target aarch64-apple-darwin
@@ -768,5 +802,4 @@ key, so the only branch is its equality with the concrete entry.
   note: hashmap::main: done in <time>, ran 2 branches
   PC 1: (0x00000007 == V|1|) /\ (0x00000007 == V|1|)
   PC 2: (0x00000007 != V|1|)
-  
   

@@ -75,6 +75,14 @@ val t_float : Svalue.FloatPrecision.t -> [> sfloat ] ty
 type +'a t
 type sbool = T.sbool
 
+(** Re-exported from {!Svalue}: in which signedness(es) a checked arithmetic
+    operation is known not to overflow. *)
+type checked = Svalue.checked = { signed : bool; unsigned : bool }
+
+val checked_both : checked
+val unchecked : checked
+val checked_of_signed : bool -> checked
+
 (** Basic value operations *)
 
 val is_bool_ty : 'a ty -> bool
@@ -177,13 +185,19 @@ module BitVec : sig
   val to_z : [< any ] t -> Z.t option
 
   (* arithmetic *)
-  val add : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-  val sub : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-  val mul : ?checked:bool -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+  val add :
+    ?checked:Svalue.checked -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+
+  val sub :
+    ?checked:Svalue.checked -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+
+  val mul :
+    ?checked:Svalue.checked -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
+
   val div : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val rem : signed:bool -> [< sint ] t -> [< nonzero ] t -> [> sint_ovf ] t
   val mod_ : [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
-  val neg : [< sint ] t -> [> sint_ovf ] t
+  val neg : ?checked:bool -> [< sint ] t -> [> sint_ovf ] t
 
   (* overflow checks *)
   val add_overflows : signed:bool -> [< sint ] t -> [< sint ] t -> [> sbool ] t
@@ -339,6 +353,7 @@ module Infix : sig
   val ( +!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( -!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
   val ( *!!@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t
+  val ( ~-!! ) : [< sint ] t -> [> sint ] t
 
   (* arithmetic operations for checked operations *)
   val ( +?@ ) : [< sint ] t -> [< sint ] t -> [> sint ] t * [> sbool ] t
