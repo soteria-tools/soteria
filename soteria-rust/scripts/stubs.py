@@ -204,15 +204,7 @@ USER_IMPL_END = "(* END USER IMPLEMENTATION *)"
 GENERATED_WARNING = "(** This file was generated with [scripts/stubs.py] -- do not edit it manually, instead modify the script and re-run it. *)"
 
 OCAML_HELPERS = """\
-let[@inline] as_ptr (v : rust_val) =
-  match v with
-  | Ptr ptr -> ptr
-  | Int v ->
-      let v = Typed.cast_i Usize v in
-      let ptr = Sptr.of_address v in
-      (ptr, Thin)
-  | _ -> L.failwith "expected pointer"
-
+let as_ptr (v : rust_val) = Rust_val.as_ptr v
 let as_base ty (v : rust_val) = Rust_val.as_base ty v
 let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
 let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v"""
@@ -334,15 +326,15 @@ def input_type_cast(arg: str, ty: InterpType) -> str:
 
 def output_type_cast(ty: InterpType) -> tuple[str, str]:
     if ty[0] == "int":
-        return ("let+ ret = ", " in Int ret")
+        return ("let+ ret = ", " in mk_int ret")
     if ty[0] == "float":
-        return ("let+ ret = ", " in Float ret")
+        return ("let+ ret = ", " in mk_float ret")
     if ty[0] == "bool":
-        return "let+ ret = ", " in Int (Typed.BitVec.of_bool ret)"
+        return "let+ ret = ", " in mk_int (Typed.BitVec.of_bool ret)"
     if ty[0] == "ptr":
-        return "let+ ret = ", " in Ptr ret"
+        return "let+ ret = ", " in mk_ptr (fst ret) (snd ret)"
     if ty[0] == "unit":
-        return "let+ () = ", " in Tuple []"
+        return "let+ () = ", " in mk_tuple []"
     return "", ""
 
 
@@ -807,7 +799,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
                         name
                         Fmt.(list ~sep:comma Charon_util.pp_ty) tys
                         Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
-                        Fmt.(list ~sep:comma pp_rust_val) args
+                        Fmt.(list ~sep:comma Rust_val.pp) args
         end
     """
 
@@ -1202,7 +1194,7 @@ def generate_custom_stubs() -> None:
                             "Custom stub found but called with the wrong arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
                             Fmt.(list ~sep:comma Charon_util.pp_ty) tys
                             Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
-                            Fmt.(list ~sep:comma pp_rust_val)args
+                            Fmt.(list ~sep:comma Rust_val.pp)args
             end
         """
         write_ocaml_file(entry_file, entry_generated)

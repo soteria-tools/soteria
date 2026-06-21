@@ -42,7 +42,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let offset = as_base_i Usize offset in
     let check_signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
     let+ dst' = Sptr.offset ~check_signed ~ty:ptr offset dst in
-    Ptr (dst', meta)
+    mk_ptr dst' meta
 
   let assert_inhabited ~t =
     let* layout = Layout.layout_of t in
@@ -108,8 +108,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     if%sat are_equal then
       let* () = State.store dst t src in
-      ok (Tuple [ curr; Int (BV.of_bool Typed.v_true) ])
-    else ok (Tuple [ curr; Int (BV.of_bool Typed.v_false) ])
+      ok (mk_tuple [ curr; mk_int (BV.of_bool Typed.v_true) ])
+    else ok (mk_tuple [ curr; mk_int (BV.of_bool Typed.v_false) ])
 
   (* In our sequential model the strong compare-exchange behaves exactly like
      the weak one (the weak variant is only allowed to spuriously fail). *)
@@ -127,11 +127,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
         let old_ptr, meta = as_ptr old in
         let* new_ptr = ptr_op (as_base_i Usize src) old_ptr in
-        let+ () = State.store dst t (Ptr (new_ptr, meta)) in
+        let+ () = State.store dst t (mk_ptr new_ptr meta) in
         old
     | TLiteral lit, _ ->
         let* res = int_op lit (as_base lit old) (as_base lit src) in
-        let+ () = State.store dst t (Int res) in
+        let+ () = State.store dst t (mk_int res) in
         old
     | _ -> not_impl "atomic read-modify-write on unexpected type %a" pp_ty t
 
@@ -181,7 +181,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     | TLiteral lit ->
         let* old = State.load dst t in
         let+ () =
-          State.store dst t (Int (f (as_base lit old) (as_base lit src)))
+          State.store dst t (mk_int (f (as_base lit old) (as_base lit src)))
         in
         old
     | _ -> not_impl "atomic read-modify-write on non-integer type %a" pp_ty t
@@ -213,7 +213,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
-    ok (Int (aux bits))
+    ok (mk_int (aux bits))
 
   let bswap ~t ~x =
     let lit = TypesUtils.ty_as_literal t in
@@ -227,7 +227,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       | [ last ] -> last
       | hd :: tl -> BV.concat hd (aux tl)
     in
-    ok (Int (aux bytes))
+    ok (mk_int (aux bytes))
 
   let caller_location () : full_ptr ret =
     (*
@@ -256,18 +256,18 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       | Some { file = { name = Virtual _ | NotReal _; _ }; beg_loc; _ } ->
           ("virtual", beg_loc.col, beg_loc.line)
     in
-    let* ptr = Core.string_to_ptr filename in
+    let* ptr, meta = Core.string_to_ptr filename in
     let location =
-      mk_struct ~ty:tref
+      Rust_val.Checked.mk_tuple tref
         [
           (* filename: *)
-          Tuple [ Ptr ptr ];
+          mk_tuple [ mk_ptr ptr meta ];
           (* line: *)
-          Int (BV.u32i line);
+          mk_int (BV.u32i line);
           (* col: *)
-          Int (BV.u32i col);
+          mk_int (BV.u32i col);
           (* _filename: *)
-          Tuple [];
+          mk_tuple [];
         ]
     in
     let@ () = with_alloc_kind ~kind:AnonConst in
@@ -305,10 +305,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       ( BV.extract 0 ((size_t * 8) - 1) res,
         BV.extract (size_t * 8) ((size_t * 16) - 1) res )
     in
-    Tuple [ Int res_l; Int res_h ]
+    mk_tuple [ mk_int res_l; mk_int res_h ]
 
   let catch_unwind ~fun_exec ~t_data:_ ~try_fn:try_fn_ptr ~data
       ~catch_fn:catch_fn_ptr =
+    let data = mk_ptr (fst data) (snd data) in
     let* trace = get_trace () in
     let[@inline] exec_fun msg fn args =
       with_extra_call_trace ~loc:(Trace.loc_or_default trace) ~msg
@@ -316,14 +317,14 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     let* try_fn = State.lookup_fn try_fn_ptr in
     let* catch_fn = State.lookup_fn catch_fn_ptr in
-    exec_fun "catch_unwind try" try_fn [ Ptr data ]
+    exec_fun "catch_unwind try" try_fn [ data ]
     |> unwind_with
          ~f:(fun _ -> ok Typed.v_false)
          ~fe:(fun _ ->
            (* We can't use [null] here because this messes up with the niche of
               the return type, which checks if the pointer is 0! *)
            exec_fun "catch_unwind catch" catch_fn
-             [ Ptr data; Ptr (Sptr.of_address Usize.(1s), Thin) ]
+             [ data; mk_ptr (Sptr.of_address Usize.(1s)) Thin ]
            |> unwind_with
                 ~f:(fun _ -> ok Typed.v_true)
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
@@ -693,7 +694,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let adt = ty_as_adt t in
     if Crate.is_enum adt then State.load_discriminant v t
     (* FIXME: this size is probably wrong *)
-      else ok (Int U8.(0s))
+      else ok (mk_int U8.(0s))
 
   let disjoint_bitor ~t ~a ~b =
     let ty = TypesUtils.ty_as_literal t in
@@ -703,7 +704,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         (a &@ b ==@ BV.mki_lit ty 0)
         (`StdErr "core::intrinsics::disjoint_bitor with overlapping bits")
     in
-    Int (a |@ b)
+    mk_int (a |@ b)
 
   let exact_div ~t ~x ~y =
     let lit = TypesUtils.ty_as_literal t in
@@ -716,7 +717,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         (Typed.not (y ==@ zero) &&@ (x %@ Typed.cast y ==@ zero))
         (`StdErr "core::intrinsics::exact_div on non divisible")
     in
-    Int (Typed.cast res)
+    mk_int (Typed.cast res)
 
   let fabs ~t ~x =
     let t = TypesUtils.ty_as_literal t in
@@ -724,7 +725,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       match t with TFloat f -> f | _ -> L.failwith "fabs with non-float?"
     in
     let x = as_base_f f x in
-    ok (Float (Typed.Float.abs x))
+    ok (mk_float (Typed.Float.abs x))
 
   let float_fast (bop : Expressions.binop) ~(t : Types.ty) ~a ~b : rust_val ret
       =
@@ -748,7 +749,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         (is_finite l &&@ is_finite r &&@ is_finite (bop l r))
         (`StdErr (name ^ ": operands and result must be finite"))
     in
-    Float res
+    mk_float res
 
   let fadd_fast = float_fast (Add OUB)
   let fdiv_fast = float_fast (Div OUB)
@@ -778,7 +779,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         (min <.@ f &&@ (f <.@ max))
         (`StdErr "float_to_int_unchecked out of int range")
     in
-    Int (BV.of_float ~rounding:Truncate ~signed ~size f)
+    mk_int (BV.of_float ~rounding:Truncate ~signed ~size f)
 
   let fmul_add ~a ~b ~c = ok ((a *.@ b) +.@ c)
   let fmaf16 = fmul_add
@@ -870,15 +871,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
        transmutations to be read from again later. *)
     let* l = State.load a bytes in
     let* r = State.load b bytes in
-    let byte_pairs =
-      match (l, r) with
-      | Tuple l, Tuple r -> List.combine l r
-      | _ -> L.failwith "Unexpected read array"
-    in
+    let l = as_tuple l in
+    let r = as_tuple r in
+    let byte_pairs = List.combine l r in
     let rec aux = function
       | [] -> Typed.v_true
-      | (Int l, Int r) :: rest -> l ==@ r &&@ aux rest
-      | _ :: _ -> L.failwith "Unexpected read array"
+      | (l, r) :: rest -> as_any_int l ==@ as_any_int r &&@ aux rest
     in
     ok (aux byte_pairs)
 
@@ -889,13 +887,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     match BV.to_z shift with
     | Some shift ->
         let shift = Z.(to_int (shift mod of_int bits)) in
-        if shift = 0 then ok (Int x)
+        if shift = 0 then ok (mk_int x)
         else
           let shift = if side = `Left then shift else bits - shift in
           let high = BV.extract (bits - shift) (bits - 1) x in
           let low = BV.extract 0 (bits - shift - 1) x in
           let res = BV.concat low high in
-          ok (Int res)
+          ok (mk_int res)
     | None ->
         let bits' = BV.mki_nz bits bits in
         (* we need shift to be of size [bits] (it originally is of size 32) *)
@@ -908,7 +906,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           if side = `Left then x <<@ shift |@ (x >>@ bits' -!@ shift)
           else x >>@ shift |@ (x <<@ bits' -!@ shift)
         in
-        ok (Int res)
+        ok (mk_int res)
 
   let rotate_left ~t ~x ~shift = rotate_ ~side:`Left ~t ~x ~shift
   let rotate_right ~t ~x ~shift = rotate_ ~side:`Right ~t ~x ~shift
@@ -935,7 +933,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
           Typed.ite ovf if_ovf (Typed.cast res)
       | _ -> L.failwith "Unreachable: not add or sub?"
     in
-    ok (Int res)
+    ok (mk_int res)
 
   let saturating_add = saturating (Add OUB)
   let saturating_sub = saturating (Sub OUB)
@@ -964,7 +962,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let t = TypesUtils.ty_as_literal t in
     let x, y = (as_base t x, as_base t y) in
     let+ res = Core.eval_lit_binop op t x y in
-    Int (Typed.cast res)
+    mk_int (Typed.cast res)
 
   let unchecked_add = unchecked_op (Add OUB)
   let unchecked_div = unchecked_op (Div OUB)
@@ -997,7 +995,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let ity = TypesUtils.ty_as_literal t in
     let a, b = (as_base ity a, as_base ity b) in
     let+ res = Core.eval_lit_binop op ity a b in
-    Int (Typed.cast res)
+    mk_int (Typed.cast res)
 
   let wrapping_add = wrapping_op (Add OWrap)
   let wrapping_mul = wrapping_op (Mul OWrap)
@@ -1023,7 +1021,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
               ~f:(fun i ->
                 let off = BV.usizei i in
                 let* ptr = Sptr.offset ~check_signed:true off ptr in
-                State.store (ptr, Thin) (TLiteral (TUInt U8)) (Int val_))
+                State.store (ptr, Thin) (TLiteral (TUInt U8)) (mk_int val_))
         | None ->
             not_impl "write_bytes: don't know how to handle symbolic sizes"
 
@@ -1040,14 +1038,18 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   (* A SIMD vector is a `#[repr(simd)]` struct wrapping a `[T; N]` array, so its
      value is [Tuple [ Tuple lanes ]]. *)
-  let simd_lanes : rust_val -> (rust_val list, unit) t = function
-    | Tuple [ Tuple lanes ] -> ok lanes
+  let simd_lanes elem_ty lanes =
+    match get_ty lanes with
+    | `Tuple ->
+        let wrapper = as_tuple1 lanes in
+        let elems = as_tuple wrapper in
+        ok (List.map (as_base elem_ty) elems)
     | _ ->
         not_impl
           "unsupported SIMD type definition, expected a struct wrapping a [T; \
            N] array"
 
-  let simd_of_lanes lanes : rust_val = Tuple [ Tuple lanes ]
+  let simd_of_lanes lanes : rust_val = mk_tuple [ mk_tuple lanes ]
 
   (* The element type of a SIMD vector, i.e. the [T] in its `[T; N]` field. *)
   let simd_elem_lit (ty : Types.ty) : Types.literal_type =
@@ -1077,11 +1079,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let width = 8 * Layout.size_of_literal_ty lit in
     let ones = BV.mk width Z.(pred (one lsl width)) in
     let zeros = BV.mki width 0 in
-    let lane a b =
-      Int (Typed.ite (cmp (as_base lit a) (as_base lit b)) ones zeros)
-    in
-    let* x = simd_lanes x in
-    let+ y = simd_lanes y in
+    let lane a b = mk_int (Typed.ite (cmp a b) ones zeros) in
+    let* x = simd_lanes lit x in
+    let+ y = simd_lanes lit y in
     simd_of_lanes (List.map2 lane x y)
 
   let simd_eq ~t:_ ~u ~x ~y = simd_cmp Typed.sem_eq ~u ~x ~y
@@ -1099,9 +1099,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   (* Elementwise binary operation over two vectors of the same shape. *)
   let simd_binop t op x y =
     let lit = simd_elem_lit t in
-    let lane a b = Int (op (as_base lit a) (as_base lit b)) in
-    let* x = simd_lanes x in
-    let+ y = simd_lanes y in
+    let lane a b = mk_int (op a b) in
+    let* x = simd_lanes lit x in
+    let+ y = simd_lanes lit y in
     simd_of_lanes (List.map2 lane x y)
 
   let simd_and ~t ~x ~y = simd_binop t BV.and_ x y
@@ -1119,17 +1119,18 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   (* Elementwise unary operation over a vector. *)
   let simd_unop t op x =
     let lit = simd_elem_lit t in
-    let+ x = simd_lanes x in
-    simd_of_lanes (List.map (fun a -> Int (op (as_base lit a))) x)
+    let+ x = simd_lanes lit x in
+    simd_of_lanes (List.map (fun a -> mk_int (op a)) x)
 
   let simd_neg ~t ~x = simd_unop t ( ~-! ) x
 
-  let simd_extract ~t:_ ~u:_ ~x ~idx =
+  let simd_extract ~t:_ ~u ~x ~idx =
     let* idx =
       of_opt_not_impl "Using a symbolic index on simd_extract" (BV.to_z idx)
     in
-    let+ x = simd_lanes x in
-    List.nth x (Z.to_int idx)
+    let lit = TypesUtils.ty_as_literal u in
+    let+ x = simd_lanes lit x in
+    mk_int (List.nth x (Z.to_int idx))
 
   let simd_splat ~t ~u:_ ~value =
     let+ len = simd_len t in

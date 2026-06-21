@@ -10,13 +10,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   let drop_in_place ~t:_ ~to_drop:_ = ok ()
 
-  let mk_box ptr =
-    let non_null = Tuple [ ptr ] in
-    let phantom_data = Tuple [] in
-    let unique = Tuple [ non_null; phantom_data ] in
-    let allocator = Tuple [] in
-    Tuple [ unique; allocator ]
-
   (* Emulate catch_unwind cleanup: build a &dyn Any trait object so the caller
      can inspect the panic payload. See
      https://doc.rust-lang.org/src/std/panicking.rs.html#557-565 *)
@@ -30,14 +23,16 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         ~align:(Typed.cast usize_size) ()
     in
     let* drop_fn = State.declare_fn (Synthetic GenericDropInPlace) in
-    let* () = State.store (vtable, Thin) Charon_util.unit_ptr (Ptr drop_fn) in
+    let* () =
+      State.store (vtable, Thin) Charon_util.unit_ptr (mk_ptr' drop_fn)
+    in
     let* align_ptr =
       Sptr.offset ~ty:(TLiteral (TUInt Usize)) ~check_signed:true
         Usize.(2s)
         vtable
     in
     let+ () =
-      State.store (align_ptr, Thin) Charon_util.unit_ptr (Int Usize.(1s))
+      State.store (align_ptr, Thin) Charon_util.unit_ptr (mk_int Usize.(1s))
     in
-    mk_box (Ptr (ptr, VTable vtable))
+    Value_codec.mk_box (mk_ptr ptr (VTable vtable)) (mk_tuple []) (mk_tuple [])
 end

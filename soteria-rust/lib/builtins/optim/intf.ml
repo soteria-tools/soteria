@@ -18,6 +18,7 @@ module M (StateM : State.StateM.S) = struct
     val _print : args:rust_val -> unit ret
 
     val alloc_impl :
+      fun_sig:Types.fun_sig ->
       self:full_ptr ->
       layout:rust_val ->
       zeroed:[< Typed.T.sbool ] Typed.t ->

@@ -127,6 +127,29 @@ let rec to_syn x =
   | Ptr p -> Ptr (full_ptr_to_syn p)
   | PolyVal v -> PolyVal v
 
+let rec subst subst_val rv =
+  let subst = subst subst_val in
+  let subst_expr = Expr.subst subst_val in
+  match rv with
+  | Int v -> Int (subst_expr v)
+  | Float v -> Float (subst_expr v)
+  | PolyVal i -> PolyVal i
+  | Union vs ->
+      Union
+        (List.map
+           (fun (v, ofs, sz) -> (subst v, subst_expr ofs, subst_expr sz))
+           vs)
+  | Enum (disc, vals) -> Enum (subst_expr disc, List.map subst vals)
+  | Tuple vals -> Tuple (List.map subst vals)
+  | Ptr (p, meta) ->
+      let meta =
+        match meta with
+        | Thin -> Thin
+        | Len len -> Len (subst_expr len)
+        | VTable ptr -> VTable (Sptr.subst subst_val ptr)
+      in
+      Ptr (Sptr.subst subst_val p, meta)
+
 module Learn_eq = struct
   let learn_eq_meta s t =
     let open Sptr.DecayMap.SM.Consumer in
@@ -180,6 +203,18 @@ let rec is_empty = function
   (* I'm not sure about this one *)
   | Union _ -> false
 
+let get_ty = function
+  | Int _ -> `BitVec
+  | Float _ -> `Float
+  | Ptr _ -> `Ptr
+  | Enum _ -> `Enum
+  | Tuple _ -> `Tuple
+  | Union _ -> `Union
+  | PolyVal _ -> `Poly
+
+let mk_ptr ptr meta = Ptr (ptr, meta)
+let mk_ptr' ptr = Ptr ptr
+
 let as_ptr = function
   | Ptr ptr -> ptr
   | v ->
@@ -192,6 +227,9 @@ let as_ptr_or ~make = function
       L.failwith "Unexpected rust_val kind, expected a pointer or base, got: %a"
         ppa v
 
+let mk_int v : t = Int (v :> T.sint Typed.t)
+let mk_float v : t = Float (v :> T.sfloat Typed.t)
+
 let as_base_f ty = function
   | Float v -> Typed.cast_f ty v
   | v ->
@@ -203,6 +241,28 @@ let as_base ty = function
       L.failwith "Unexpected rust_val kind, expected a base value got: %a" ppa v
 
 let as_base_i ty = as_base (TUInt ty)
+
+let as_any_int = function
+  | Int v -> (v : T.sint Typed.t :> [> T.sint ] Typed.t)
+  | v ->
+      L.failwith "Unexpected rust_val kind, expected an integer value got: %a"
+        ppa v
+
+let as_any_float = function
+  | Float v -> (v : T.sfloat Typed.t :> [> T.sfloat ] Typed.t)
+  | v ->
+      L.failwith "Unexpected rust_val kind, expected a float value got: %a" ppa
+        v
+
+let mk_poly tid = PolyVal tid
+
+let as_type_var = function
+  | PolyVal tid -> tid
+  | v ->
+      L.failwith "Unexpected rust_val kind, expected a type variable got: %a"
+        ppa v
+
+let mk_tuple vs = Tuple vs
 
 let as_tuple = function
   | Tuple vals -> vals
@@ -229,54 +289,57 @@ let as_tuple3 v =
       L.failwith
         "Unexpected rust_val kind, expected a tuple of length 3, got: %a" ppa v
 
-let as_enum = function
-  | Enum (disc, vals) -> (disc, vals)
+let field_of i v = List.nth (as_tuple v) i
+
+let set_field i f v =
+  let vs = as_tuple v in
+  let vs = List.set_nth i f vs in
+  mk_tuple vs
+
+let update_field i f v = set_field i (f (field_of i v)) v
+
+let discriminant_of = function
+  | Enum (disc, _) -> (disc : T.sint Typed.t :> [> T.sint ] Typed.t)
   | v -> L.failwith "Unexpected rust_val kind, expected an enum, got: %a" ppa v
 
-let rec subst subst_val rv =
-  let subst = subst subst_val in
-  let subst_expr = Expr.subst subst_val in
-  match rv with
-  | Int v -> Int (subst_expr v)
-  | Float v -> Float (subst_expr v)
-  | PolyVal i -> PolyVal i
-  | Union vs ->
-      Union
-        (List.map
-           (fun (v, ofs, sz) -> (subst v, subst_expr ofs, subst_expr sz))
-           vs)
-  | Enum (disc, vals) -> Enum (subst_expr disc, List.map subst vals)
-  | Tuple vals -> Tuple (List.map subst vals)
-  | Ptr (p, meta) ->
-      let meta =
-        match meta with
-        | Thin -> Thin
-        | Len len -> Len (subst_expr len)
-        | VTable ptr -> VTable (Sptr.subst subst_val ptr)
-      in
-      Ptr (Sptr.subst subst_val p, meta)
-
-let mk_enum ~ty variant fields =
-  let open Charon in
-  let open Common.Charon_util in
-  let variant =
-    ty_as_adt ty
-    |> Crate.as_enum
-    |> List.find (fun (v : Types.variant) -> v.variant_name = variant)
-  in
-  assert (List.compare_lengths variant.fields fields = 0);
-  let discr = BV.of_literal variant.discriminant in
-  Enum (discr, fields)
-
-let mk_struct ~ty fields =
-  let struct_fields = Crate.as_struct ty in
-  assert (List.compare_lengths fields struct_fields = 0);
-  Tuple fields
-
-(** [v] with its [i]th field replaced by [f] applied to the old value. Errors if
-    [i] is out of bound or [v] is not a [Tuple] or [Enum]. *)
-let update_field i ~f v =
+let as_enum_of_variant _var v =
   match v with
-  | Tuple vs -> Tuple (List.update_at i f vs)
-  | Enum (d, vs) -> Enum (d, List.update_at i f vs)
-  | _ -> L.failwith "update_field with a non-aggregate value"
+  | Enum (_, vals) -> vals
+  | v -> L.failwith "Unexpected rust_val kind, expected an enum, got: %a" ppa v
+
+let field_of_variant var i v = List.nth (as_enum_of_variant var v) i
+
+let set_field_of_variant var i f v =
+  let disc = discriminant_of v in
+  let vals = as_enum_of_variant var v in
+  let vals = List.set_nth i f vals in
+  Enum (disc, vals)
+
+let update_field_of_variant var i f v =
+  set_field_of_variant var i (f (field_of_variant var i v)) v
+
+let mk_enum _tyref disc vals : t = Enum ((disc :> T.sint Typed.t), vals)
+let mk_union _tyref vs : t = Union vs
+
+let as_union (x : t) =
+  match x with
+  | Union vs -> vs
+  | v -> L.failwith "Unexpected rust_val kind, expected a union, got: %a" ppa v
+
+module Checked = struct
+  let mk_enum ty variant fields =
+    let open Charon in
+    let open Common.Charon_util in
+    let variant =
+      Crate.as_enum ty
+      |> List.find (fun (v : Types.variant) -> v.variant_name = variant)
+    in
+    assert (List.compare_lengths variant.fields fields = 0);
+    let discr = BV.of_literal variant.discriminant in
+    Enum (discr, fields)
+
+  let mk_tuple ty fields =
+    let struct_fields = Crate.as_struct ty in
+    assert (List.compare_lengths fields struct_fields = 0);
+    Tuple fields
+end

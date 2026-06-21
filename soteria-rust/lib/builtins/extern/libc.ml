@@ -13,7 +13,8 @@ module M (StateM : State.StateM.S) = struct
 
   let exit args =
     match args with
-    | [ Int code ] ->
+    | [ code ] ->
+        let code = as_base_i U32 code in
         if%sat code ==@ U32.(0s) then error `OkExit else error (`Exit code)
     | _ -> L.failwith "exit: invalid arguments"
 
@@ -22,7 +23,7 @@ module M (StateM : State.StateM.S) = struct
   let malloc args =
     let size =
       match args with
-      | [ Int size ] -> Typed.cast_i Usize size
+      | [ size ] -> as_base_i Usize size
       | _ -> failwith "malloc: invalid arguments"
     in
     let max_size = Typed.BitVec.usize (Layout.max_value_z (TInt Isize)) in
@@ -31,27 +32,24 @@ module M (StateM : State.StateM.S) = struct
        the first power of 2 greater than or equal to the requested size) *)
     let align = Typed.BitVec.usizeinz (2 * Crate.pointer_size ()) in
     let+ ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
-    Ptr ptr
+    mk_ptr' ptr
 
   let free args =
     match args with
-    | [ Ptr ((ptr_in, _) as ptr) ] ->
+    | [ ptr ] ->
         (* [free(NULL)] is a no-op. *)
-        if%sat Sptr.is_null ptr_in then ok (Tuple [])
+        let ((ptr_in, _) as ptr) = as_ptr ptr in
+        if%sat Sptr.is_null ptr_in then ok (mk_tuple [])
         else
           let+ () = State.free ptr in
-          Tuple []
+          mk_tuple []
     | _ -> failwith "free: invalid arguments"
 
   let sysconf args =
-    match args with
-    | [ Int _ ] ->
-        (* https://man7.org/linux/man-pages/man3/sysconf.3.html
-         * It is basically ok to always return the i64 `-1` saying "I don't know"
-         *)
-        let ret = Typed.BitVec.u64 Z.minus_one in
-        ok (Int ret)
-    | _ -> L.failwith "sysconf: invalid arguments"
+    (* https://man7.org/linux/man-pages/man3/sysconf.3.html
+     * It is basically ok to always return the i64 `-1` saying "I don't know"
+     *)
+    ok (mk_int (Typed.BitVec.u64i (-1)))
 
   let[@inline] fn_to_stub = function
     | Exit -> exit

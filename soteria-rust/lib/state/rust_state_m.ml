@@ -119,6 +119,7 @@ module type S = sig
     val subst_ty : Types.ty -> (Types.ty, 'env) t
     val subst_tys : Types.ty list -> (Types.ty list, 'env) t
     val subst_tref : Types.trait_ref -> (Types.trait_ref, 'env) t
+    val subst_tyref : Types.type_decl_ref -> (Types.type_decl_ref, 'env) t
     val subst_generic_args : Types.generic_args -> (Types.generic_args, 'env) t
 
     val subst_constant_expr :
@@ -160,6 +161,8 @@ module type S = sig
   end
 
   module Value_codec : sig
+    include module type of Value_codec
+
     val encode :
       offset:Typed.T.sint Typed.t ->
       Rust_val.t ->
@@ -440,6 +443,7 @@ module Make (State : State_intf.S) :
     let[@inline] subst_ty ty = lift_symex (Poly.subst_ty ty)
     let[@inline] subst_tys tys = lift_symex (Poly.subst_tys tys)
     let[@inline] subst_tref tref = lift_symex (Poly.subst_tref tref)
+    let[@inline] subst_tyref tyref = lift_symex (Poly.subst_tyref tyref)
 
     let[@inline] subst_generic_args generic_args =
       lift_symex (Poly.subst_generic_args generic_args)

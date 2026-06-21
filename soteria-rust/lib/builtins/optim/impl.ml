@@ -1,4 +1,5 @@
 open Rust_val
+open Common.Charon_util
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
@@ -17,25 +18,46 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   (* ---- alloc ---- *)
 
-  let alloc_impl ~self:_ ~layout ~zeroed =
+  (** {@rust[
+        const fn alloc_impl(&self, layout: Layout, zeroed: bool)
+          -> Result<NonNull<[u8]>, AllocError> { ... }
+      ]}
+
+      with
+      {@rust[
+        pub struct Layout {
+            size: usize,
+            align: Alignment,
+        }
+
+        pub struct Alignment {
+            _inner_repr_trick: AlignmentEnum,
+        }
+
+        enum AlignmentEnum { ... }
+      ]} *)
+  let alloc_impl ~(fun_sig : Charon.Types.fun_sig) ~self:_ ~layout ~zeroed =
     let zeroed = (zeroed :> Typed.T.sbool Typed.t) in
-    let zero = Usize.(0s) in
     let size, align =
-      match layout with
-      | Tuple [ Int size; Tuple [ Enum (align, []) ] ] ->
-          (Typed.cast_i Usize size, Typed.cast_i Usize align)
-      | _ -> L.failwith "alloc_impl: invalid layout: %a" pp_rust_val layout
+      let size, align = as_tuple2 layout in
+      let size = as_base_i Usize size in
+      let align_enum = as_tuple1 align in
+      let align = discriminant_of align_enum in
+      (size, Typed.cast_i Usize align)
     in
-    let mk_res ptr len = Enum (zero, [ Tuple [ Ptr (ptr, Len len) ] ]) in
-    if%sat size ==@ zero then
+    let mk_res ptr len =
+      let out_res = ty_as_adt fun_sig.output in
+      let ptr = mk_ptr ptr (Len len) in
+      let nonnull = mk_tuple [ ptr ] in
+      Checked.mk_enum out_res "Ok" [ nonnull ]
+    in
+    if%sat size ==@ Usize.(0s) then
       let dangling = Sptr.of_address align in
-      ok (mk_res dangling zero)
+      ok (mk_res dangling Usize.(0s))
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
-      let+ ptr = Alloc.alloc ~zeroed [ Int size; Int align ] in
-      let ptr =
-        match ptr with Ptr (p, _) -> p | _ -> L.failwith "Expected Ptr"
-      in
+      let+ ptr = Alloc.alloc ~zeroed [ mk_int size; mk_int align ] in
+      let ptr, _ = as_ptr ptr in
       mk_res ptr size
 
   let handle_alloc_error ~layout:_ = do_panic ()
@@ -115,7 +137,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let panic_nounwind_fmt ~fmt:_ ~force_no_backtrace:_ = do_panic ()
 
   let begin_panic ~m:_ ~msg =
-    match msg with Ptr msg -> do_panic ~msg () | _ -> do_panic ()
+    match get_ty msg with
+    | `Ptr -> do_panic ~msg:(as_ptr msg) ()
+    | _ -> do_panic ()
 
   (* ---- hashing ---- *)
 

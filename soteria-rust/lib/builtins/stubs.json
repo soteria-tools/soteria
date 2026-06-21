@@ -30,7 +30,8 @@
     "patterns": [
       {
         "pattern": "alloc::alloc::Global::alloc_impl",
-        "aliases": ["std::alloc::Global::alloc_impl"]
+        "aliases": ["std::alloc::Global::alloc_impl"],
+        "extra_args": ["sig"]
       },
       "core::f16::_::is_finite",
       "core::f16::_::is_infinite",

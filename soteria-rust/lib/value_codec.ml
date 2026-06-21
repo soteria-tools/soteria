@@ -90,9 +90,9 @@ let ptr_of_box v =
 (** Given a pointer, allocator and marker, returns a value of type [Box<T, A>]
 *)
 let mk_box ptr allocator marker =
-  let nonnull = Tuple [ ptr ] in
-  let unique = Tuple [ nonnull; marker ] in
-  let box = Tuple [ unique; allocator ] in
+  let nonnull = mk_tuple [ ptr ] in
+  let unique = mk_tuple [ nonnull; marker ] in
+  let box = mk_tuple [ unique; allocator ] in
   box
 
 module Decoder (State_tys : sig
@@ -276,7 +276,7 @@ struct
       fold_iter fields ~init:[] ~f:(fun vs (ty, o) ->
           let+ v = decode ~meta ~offset:(offset +!!@ o) ty in
           v :: vs)
-      |> map (fun vs -> Tuple (List.rev vs))
+      |> map List.rev
     in
     let* ty = normalise ty in
     let* layout = layout_of ty in
@@ -284,7 +284,7 @@ struct
     | _ when layout.uninhabited -> error (`RefToUninhabited ty)
     | _, TDynTrait _ -> L.failwith "decode: cannot decode an unsized dyn value"
     | _, TAdt adt when Crate.is_union adt ->
-        if%sat layout.size ==@ Usize.(0s) then ok (Union [])
+        if%sat layout.size ==@ Usize.(0s) then ok (mk_union adt [])
         else
           (* FIXME: this isn't exactly correct; union actually doesn't copy the
              padding bytes (i.e. the intersection of the padding bytes of all
@@ -294,41 +294,47 @@ struct
              a proper implementation is here:
              https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
           let+ blocks = get_all (Typed.cast layout.size, offset) in
-          Union blocks
-    | Primitive, TFnDef _ -> ok (Tuple [])
+          mk_union adt blocks
+    | Primitive, TFnDef _ -> ok (mk_tuple [])
     | Primitive, TVar (Free id) ->
-        if%sat layout.size ==@ Usize.(0s) then ok (PolyVal id)
+        if%sat layout.size ==@ Usize.(0s) then ok (mk_poly id)
         else query (ty, offset)
     | Primitive, _ -> query (ty, offset)
-    | Array { is_ptr = true; _ }, _ -> (
+    | Array { is_ptr = true; _ }, _ ->
         let+ vs = iter (iter_fields ~meta layout ty) offset in
-        let vs = as_tuple vs in
-        let pointee = get_pointee ty in
-        match (dst_kind pointee, vs) with
-        | LenKind, [ Ptr (base, Thin); Int len ] -> Ptr (base, Len len)
-        | VTableKind, [ Ptr (base, Thin); Ptr (vtable, Thin) ] ->
-            Ptr (base, VTable vtable)
-        | _ -> L.failwith "decode: invalid metadata for pointer type")
+        let ptr, meta =
+          match vs with
+          | [ ptr; meta ] -> (as_ptr ptr, meta)
+          | _ -> L.failwith "decode: unexpected values"
+        in
+        let ptr, _ = ptr in
+        let meta =
+          match get_ty meta with
+          | `BitVec -> Len (as_base_i Usize meta)
+          | `Ptr -> VTable (fst (as_ptr meta))
+          | _ -> L.failwith "read invalid meta?"
+        in
+        mk_ptr ptr meta
     | Array { is_ptr = false; _ }, _ ->
-        iter (iter_fields ~meta layout ty) offset
-    | Arbitrary (variant, _), _ -> (
         let+ vs = iter (iter_fields ~meta layout ty) offset in
+        mk_tuple vs
+    | Arbitrary (variant, _), _ -> (
+        let+ fields = iter (iter_fields ~meta layout ty) offset in
         match ty with
+        (* HACK: we don't want enums to be handled in arbitrary. *)
         | TAdt adt when Crate.is_enum adt ->
             let variants = Crate.as_enum adt in
             let variant = Types.VariantId.nth variants variant in
-            let fields = as_tuple vs in
             let discr = BV.of_literal variant.discriminant in
-            Enum (discr, fields)
-        | _ -> vs)
+            mk_enum adt discr fields
+        | _ -> mk_tuple fields)
     | Enum _, TAdt adt ->
         let variants = Crate.as_enum adt in
         let* variant = variant_of_enum ~offset ty in
         let+ fields = iter (iter_fields ~variant ~meta layout ty) offset in
-        let fields = as_tuple fields in
         let variant = Types.VariantId.nth variants variant in
         let discr = BV.of_literal variant.discriminant in
-        Enum (discr, fields)
+        mk_enum adt discr fields
     | Enum _, _ -> L.failwith "decode: expected enum type for enum layout"
 end
 
@@ -343,15 +349,8 @@ let rec encode ~offset (value : rust_val) (ty : Types.ty) :
   let open Rustsymex in
   let open Syntax in
   let open Result in
-  let chain iter =
-    (match value with
-      | Tuple vals | Enum (_, vals) -> vals
-      | Ptr (base, VTable vt) -> [ Ptr (base, Thin); Ptr (vt, Thin) ]
-      | Ptr (base, Len len) -> [ Ptr (base, Thin); Int len ]
-      | Ptr (_, Thin) | Int _ | Float _ | PolyVal _ ->
-          L.failwith "Cannot split primitive: %a for %a" pp_rust_val value pp_ty
-            ty
-      | Union _ -> L.failwith "Cannot encode union directly")
+  let chain fields iter =
+    fields
     |> Iter.combine_list iter
     |> Result.fold_iter ~init:Iter.empty ~f:(fun acc ((ty, ofs), v) ->
         let offset = offset +!!@ ofs in
@@ -362,27 +361,45 @@ let rec encode ~offset (value : rust_val) (ty : Types.ty) :
   let** layout = Layout.layout_of ty in
   if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
   else
-    match (layout.fields, value) with
-    | _, Union blocks ->
-        ok
-          (Iter.of_list blocks
-          |> Iter.map (fun (v, o, s) -> (v, offset +!!@ o, s)))
-    | Primitive, _ ->
+    match layout.fields with
+    | Primitive ->
         ok (Iter.singleton (value, offset, BV.cast_nonzero layout.size))
-    | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
-    | Enum (_, layouts), Enum (disc, _) -> (
+    | Arbitrary _ ->
         let adt = ty_as_adt ty in
-        let* variant = variant_for_discr disc adt in
+        if Crate.is_union adt then
+          let blocks = as_union value in
+          ok
+            (Iter.of_list blocks
+            |> Iter.map (fun (v, o, s) -> (v, offset +!!@ o, s)))
+        else
+          let fields = as_tuple value in
+          chain fields (iter_fields layout ty)
+    | Array { is_ptr = false; _ } ->
+        let fields = as_tuple value in
+        chain fields (iter_fields layout ty)
+    | Array { is_ptr = true; _ } ->
+        let ptr, meta = as_ptr value in
+        let ptr = mk_ptr ptr Thin in
+        let meta =
+          match meta with
+          | Len len -> mk_int len
+          | VTable vt -> mk_ptr vt Thin
+          | Thin -> L.failwith "invalid meta"
+        in
+        chain [ ptr; meta ] (iter_fields layout ty)
+    | Enum (_, layouts) -> (
+        let adt = ty_as_adt ty in
+        let discr = discriminant_of value in
+        let* variant = variant_for_discr discr adt in
         let variant = variant.id in
-        let++ fields = chain (iter_fields ~variant layout ty) in
+        let fields = as_enum_of_variant variant value in
+        let++ fields = chain fields (iter_fields ~variant layout ty) in
         match fst layouts.(Types.VariantId.to_int variant) with
         | None -> fields
         | Some (ofs, tag) ->
             let size = BV.usizeinz (Typed.size_of_int tag / 8) in
             let offset = ofs +!!@ offset in
-            Iter.cons (Int tag, offset, size) fields)
-    | Enum _, _ ->
-        not_impl "encode: expected enum value for enum type %a" pp_ty ty
+            Iter.cons (mk_int tag, offset, size) fields)
 
 (** Iterates over the validity constraints of this particular value for a given
     type, traversing it recursively. For every requirement, this associates to
@@ -462,58 +479,71 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
           Typed.v_false pats
   in
   let** ty = Layout.normalise ty in
-  match (v, (ty : Types.ty)) with
+  match (ty : Types.ty) with
   (* undefined.validity.bool *)
-  | Int v, TLiteral TBool ->
+  | TLiteral TBool ->
+      let v = as_base TBool v in
       f U8.(0s <=@ v &&@ (v <=@ 1s)) (`UBTransmute "Invalid bool value")
   (* undefined.validity.fn-pointer *)
-  | Ptr (p, _), TFnPtr _ -> f (Typed.not (Sptr.is_null p)) `UBDanglingPointer
+  | TFnPtr _ ->
+      let ptr, _ = as_ptr v in
+      f (Typed.not (Sptr.is_null ptr)) `UBDanglingPointer
   (* undefined.validity.char *)
-  | Int v, TLiteral TChar ->
+  | TLiteral TChar ->
+      let v = as_base TChar v in
       let is_surrogate = U32.(0xD800s <=@ v &&@ (v <=@ 0xDFFFs)) in
       let is_valid = U32.(v <=@ 0x10FFFFs) &&@ Typed.not is_surrogate in
       f is_valid (`UBTransmute "Invalid char value")
   (* undefined.validity.never *)
-  | _, TNever -> f Typed.v_false (`RefToUninhabited ty)
+  | TNever -> f Typed.v_false (`RefToUninhabited ty)
   (* undefined.validity.scalar *)
-  | Int _, TLiteral (TInt _ | TUInt _) -> ok ()
-  | Float _, TLiteral (TFloat _) -> ok ()
+  | TLiteral (TInt _ | TUInt _) -> ok ()
+  | TLiteral (TFloat _) -> ok ()
   (* undefined.validity.str *)
-  | Tuple _, TAdt { id = TBuiltin TStr; _ } -> ok ()
-  (* undefined.validity.enum *)
-  | Enum (discr, vs), TAdt adt ->
-      let* variant = variant_for_discr discr adt in
-      List.combine (field_tys variant.fields) vs
-      |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
-  (* undefined.validity.struct *)
-  | Tuple vs, TAdt adt ->
-      Iter.of_list_combine (Crate.as_struct_or_tuple adt) vs
-      |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
-  | Tuple vs, (TArray (ty, _) | TSlice ty) ->
-      iter_list vs ~f:(fun v -> validity ~check_ref ty v f)
-  (* undefined.validity.union *)
-  | Union _, TAdt _ -> ok ()
+  | TAdt { id = TBuiltin TStr; _ } -> ok ()
   (* undefined.validity.reference-box *)
-  | Ptr ptr, TRef (_, pointee, _) -> ref_box_validity ptr pointee
-  | _, TAdt adt when adt_is_box adt ->
+  | TRef (_, pointee, _) ->
+      let ptr = as_ptr v in
+      ref_box_validity ptr pointee
+  (* NOTE: this check must go before the struct check, since boxes are
+     structs *)
+  | TAdt adt when adt_is_box adt ->
       let pointee = get_pointee ty in
       let ptr = ptr_of_box v in
       ref_box_validity ptr pointee
   (* undefined.validity.wide *)
-  | Ptr (_, meta), TRawPtr (pointee, _) ->
+  | TRawPtr (pointee, _) ->
+      let _, meta = as_ptr v in
       metadata_validity ~is_raw_ptr:true pointee meta
+  (* undefined.validity.enum *)
+  | TAdt adt when Crate.is_enum adt ->
+      let discr = discriminant_of v in
+      let* variant = variant_for_discr discr adt in
+      Iter.of_list (field_tys variant.fields)
+      |> Iter.mapi (fun i ty -> (ty, field_of_variant variant.id i v))
+      |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
+  (* undefined.validity.struct *)
+  | TAdt adt when Crate.is_struct_or_tuple adt ->
+      Iter.of_list (Crate.as_struct_or_tuple adt)
+      |> Iter.mapi (fun i ty -> (ty, field_of i v))
+      |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
+  | TArray (ty, _) | TSlice ty ->
+      let vs = as_tuple v in
+      iter_list vs ~f:(fun v -> validity ~check_ref ty v f)
+  (* undefined.validity.union *)
+  | TAdt adt when Crate.is_union adt -> ok ()
   (* fndefs are ZSTs *)
-  | Tuple [], TFnDef _ -> ok ()
+  | TFnDef _ -> ok ()
   (* we assume polymorphic data has no validity requirement *)
-  | PolyVal _, TVar (Free _) -> ok ()
+  | TVar (Free _) -> ok ()
   (* undefined.validity.pattern-type *)
-  | _, TPattern (inner_ty, pat) ->
+  | TPattern (inner_ty, pat) ->
       let** () = validity ~check_ref inner_ty v f in
       f
         (pattern_valid_cond inner_ty v pat)
         (`UBTransmute "Value violates pattern type constraint")
   (* we fail loudly to avoid missing cases *)
-  | _ -> L.failwith "validity: unhandled %a / %a" pp_rust_val v pp_ty ty
+  | _ -> L.failwith "validity: unhandled %a" pp_ty ty
 
 (** Applies a validity check for a value, given a [check_ref] state monad
     operation. This assumes [check_ref] is effect-free: the returned state is
@@ -541,21 +571,21 @@ let check_validity ~check_ref ty value st =
 let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
     (v : Typed.([< T.cval ] t)) =
   match (from_ty, to_ty) with
-  | _, TFloat _ when from_ty = to_ty -> Float (Typed.cast v)
+  | _, TFloat _ when from_ty = to_ty -> mk_float (Typed.cast v)
   | _, (TInt _ | TUInt _ | TBool | TChar) when from_ty = to_ty ->
-      Int (Typed.cast v)
+      mk_int (Typed.cast v)
   | TFloat fty, ((TInt _ | TUInt _) as lit_ty) ->
       let sv = Typed.cast_f fty v in
       let signed = Layout.is_signed lit_ty in
       let size = 8 * size_of_literal_ty lit_ty in
       let sv' = BV.of_float ~rounding:Truncate ~signed ~size sv in
-      Int sv'
+      mk_int sv'
   | (TInt _ | TUInt _), TFloat fp ->
       let sv = Typed.cast_lit from_ty v in
       let fp = float_precision fp in
       let signed = Layout.is_signed from_ty in
       let sv' = BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv in
-      Float sv'
+      mk_float sv'
   | TFloat _, _ | _, TFloat _ ->
       L.failwith "Unhandled float transmute: %a -> %a" pp_literal_ty from_ty
         pp_literal_ty to_ty
@@ -566,11 +596,10 @@ let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
       let from_signed = Layout.is_signed from_ty in
       let to_bits = 8 * Layout.size_of_literal_ty to_ty in
       let v = Typed.cast_lit from_ty v in
-
-      if from_bits = to_bits then Int v
+      if from_bits = to_bits then mk_int v
       else if from_bits < to_bits then
-        Int (BV.extend ~signed:from_signed (to_bits - from_bits) v)
-      else Int (BV.extract 0 (to_bits - 1) v)
+        mk_int (BV.extend ~signed:from_signed (to_bits - from_bits) v)
+      else mk_int (BV.extract 0 (to_bits - 1) v)
 
 (** Converts a floating value to a bitvector, preserving it's bit
     representation. This is a symbolic process, because SMT-Lib has no operation
@@ -593,34 +622,37 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
     assumption that [size_of to_ty = size_of v], and both are primitives
     (literal or pointer). *)
 let rec transmute_one ~(to_ty : Types.ty) (v : rust_val) =
-  match (to_ty, v) with
-  | TLiteral (TFloat _), Float _ -> return v
-  | TLiteral (TFloat _), Int v -> return (Float (BV.to_float_raw v))
-  | TLiteral (TInt _ | TUInt _ | TBool | TChar), Int _ -> return v
-  | TLiteral (TInt _ | TUInt _ | TBool | TChar), Ptr (p, Thin) ->
-      let+ p = Sptr.decay p in
-      Int p
-  | TLiteral (TInt _ | TUInt _ | TBool | TChar), Float f ->
-      let+ v = float_to_bv_bits f in
-      Int v
-  | (TRawPtr _ | TRef _ | TFnPtr _), Ptr (_, Thin) -> return v
-  | (TRawPtr _ | TRef _ | TFnPtr _), Int v ->
-      return (Ptr (Sptr.of_address v, Thin))
-  | TPattern (inner_ty, _), v -> transmute_one ~to_ty:inner_ty v
-  | TVar (Free type_var_id), (PolyVal tid as v) ->
+  match (get_ty v, to_ty) with
+  (* Same-kind transmutes are the identity. *)
+  | `BitVec, TLiteral (TInt _ | TUInt _ | TBool | TChar) -> return v
+  | `Float, TLiteral (TFloat _) -> return v
+  | `Ptr, (TRawPtr _ | TRef _ | TFnPtr _) -> return v
+  | `BitVec, TLiteral (TFloat _) ->
+      return (mk_float (BV.to_float_raw (as_any_int v)))
+  | `Ptr, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
+      let ptr, _ = as_ptr v in
+      let+ p = Sptr.decay ptr in
+      mk_int p
+  | `Float, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
+      let+ v = float_to_bv_bits (as_any_float v) in
+      mk_int v
+  | `BitVec, (TRawPtr _ | TRef _ | TFnPtr _) ->
+      return (mk_ptr (Sptr.of_address (as_any_int v)) Thin)
+  | _, TPattern (inner_ty, _) -> transmute_one ~to_ty:inner_ty v
+  | `Poly, TVar (Free type_var_id) ->
+      let tid = as_type_var v in
       if Types.TypeVarId.equal_id type_var_id tid then return v
       else
         not_impl "transmute_one: mismatched type variables %a -> %a"
           Types.pp_type_var_id type_var_id Types.pp_type_var_id tid
-  | TVar (Bound _), _ ->
+  | _, TVar (Bound _) ->
       L.failwith "transmute_one: bound type variable encountered?"
-  | TVar _, _ ->
+  | _, TVar (Free _) ->
       L.failwith
         "losing concrete value in %a -> %a; somewhere we lost track of generics"
-        pp_rust_val v pp_ty to_ty
+        Rust_val.pp v pp_ty to_ty
   | _ ->
-      L.failwith "unsupported transmute of value %a to type %a" pp_rust_val v
-        pp_ty to_ty
+      L.failwith "transmute_one: unexpected %a -> %a" Rust_val.pp v pp_ty to_ty
 
 (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
     [ty]: the returned value will have the right structure, and any required
@@ -640,21 +672,21 @@ let rec nondet_raw : Types.ty -> (rust_val, 'e, 'f) Rustsymex.Result.t =
   function
   | TLiteral (TFloat fp) ->
       let+ f = nondet (Typed.t_float fp) in
-      Ok (Float f)
+      Ok (mk_float f)
   | TLiteral lit ->
       let+ i = nondet (Typed.t_lit lit) in
-      Ok (Int (Typed.cast i))
+      Ok (mk_int (Typed.cast i))
   | (TRef (_, pointee, _) | TRawPtr (pointee, _))
     when not (Layout.is_dst pointee) ->
       let++ p = Sptr.nondet pointee in
-      Ptr (p, Thin)
+      mk_ptr p Thin
   | TAdt { id = TTuple; generics = { types; _ } } ->
       let++ fields = nondets_raw types in
-      Tuple fields
+      mk_tuple fields
   | TArray (ty, len) ->
       let size = int_of_constant_expr len in
       let++ fields = nondets_raw @@ List.init size (fun _ -> ty) in
-      Tuple fields
+      mk_tuple fields
   | TAdt adt as ty -> (
       let type_decl = Crate.get_adt adt in
       match type_decl.kind with
@@ -670,13 +702,13 @@ let rec nondet_raw : Types.ty -> (rust_val, 'e, 'f) Rustsymex.Result.t =
             match variant with Some v -> return v | None -> vanish ()
           in
           let++ fields = nondets_raw @@ field_tys variant.fields in
-          Enum (BV.of_literal variant.discriminant, fields)
+          mk_enum adt (BV.of_literal variant.discriminant) fields
       | Struct fields ->
           let++ fields = nondets_raw @@ field_tys fields in
-          Tuple fields
+          mk_tuple fields
       | Union _ ->
           let** size = Layout.size_of ty in
-          if%sat size ==@ Usize.(0s) then Result.ok (Union [])
+          if%sat size ==@ Usize.(0s) then Result.ok (mk_union adt [])
           else
             let* sizei =
               match BV.to_z size with
@@ -684,15 +716,15 @@ let rec nondet_raw : Types.ty -> (rust_val, 'e, 'f) Rustsymex.Result.t =
               | None -> vanish ()
             in
             let+ bytes = nondet (Typed.t_int (sizei * 8)) in
-            Ok (Union [ (Int bytes, Usize.(0s), BV.cast_nonzero size) ])
+            Ok
+              (mk_union adt
+                 [ (mk_int bytes, Usize.(0s), BV.cast_nonzero size) ])
       | _ ->
           Rustsymex.not_impl
             "cannot create a symbolic value of unsupported type %a" pp_ty ty)
   | TPattern (inner, _) -> nondet_raw inner
-  | TVar (Free id) -> Result.ok (PolyVal id)
-  | ty ->
-      Rustsymex.not_impl "cannot create a symbolic value of unsupported type %a"
-        pp_ty ty
+  | TVar (Free id) -> Result.ok (mk_poly id)
+  | ty -> not_impl "nondet: unsupported type %a" pp_ty ty
 
 (** Much like {!nondet_raw}, but also assumes validity invariants for the value,
     with {!validity}. Note this uses "stateless" validity: references are not
@@ -743,24 +775,25 @@ let rec ref_tys_in
   let* ty = Poly.subst_ty ty in
   match ty with
   | TRef (_, _, _) | TAdt { id = TBuiltin TBox; _ } ->
-      let++ ptr, acc = fn init ty (as_ptr v) in
-      (Ptr ptr, acc)
+      let++ (ptr, meta), acc = fn init ty (as_ptr v) in
+      (mk_ptr ptr meta, acc)
   | TAdt adt when adt_is_box adt ->
       (* a box has only one non ZST, the pointer *)
       let ptr, allocator, marker = unwrap_box v in
-      let++ ptr, acc = fn init ty ptr in
-      (mk_box (Ptr ptr) allocator marker, acc)
+      let++ (ptr, meta), acc = fn init ty ptr in
+      (mk_box (mk_ptr ptr meta) allocator marker, acc)
   | TAdt adt when Crate.is_struct_or_tuple adt ->
       let++ vs, acc = fs' init (Crate.as_struct_or_tuple adt) (as_tuple v) in
-      (Tuple vs, acc)
+      (mk_tuple vs, acc)
   | TArray (ty, _) | TSlice ty ->
       let++ vs, acc = fs init ty (as_tuple v) in
-      (Tuple vs, acc)
+      (mk_tuple vs, acc)
   | TAdt adt when Crate.is_enum adt ->
-      let d, vs = as_enum v in
-      let* var = variant_for_discr d adt in
+      let discr = discriminant_of v in
+      let* var = variant_for_discr discr adt in
+      let vs = as_enum_of_variant var.id v in
       let++ vs, acc = fs' init (field_tys Types.(var.fields)) vs in
-      (Enum (d, vs), acc)
+      (mk_enum adt discr vs, acc)
   | TPattern (inner, _) -> f init inner v
   | _ -> Result.ok (v, init)
 

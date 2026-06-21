@@ -38,16 +38,16 @@ module Place = struct
   let rec update_val { kind; _ } ~f v =
     match kind with
     | Local _ -> Some (f v)
-    | Field (base, ProjAdt (_, Some _var), field) ->
-        (* TODO: check the variant matches *)
+    | Field (base, ProjAdt (_, Some var), field) ->
+        let idx = Types.FieldId.to_int field in
         update_val base
-          ~f:(Rust_val.update_field (Types.FieldId.to_int field) ~f)
+          ~f:(fun v -> Rust_val.update_field_of_variant var idx f v)
           v
     | Field (base, _, field) ->
-        update_val base
-          ~f:(Rust_val.update_field (Types.FieldId.to_int field) ~f)
-          v
-    | Index (base, idx) -> update_val base ~f:(Rust_val.update_field idx ~f) v
+        let idx = Types.FieldId.to_int field in
+        update_val base ~f:(fun v -> Rust_val.update_field idx f v) v
+    | Index (base, idx) ->
+        update_val base ~f:(fun v -> Rust_val.update_field idx f v) v
     (* metadata isn't navigable for in-place writes; spill to the heap *)
     | Metadata _ -> None
 
@@ -129,24 +129,17 @@ let iter_bindings (store : t) = Iter.of_iter_bindings Map.iter store
 let rec try_load (place : Place.t) (store : t) : Binding.kind option =
   match place.kind with
   | Local v -> Some (find v store).kind
-  | Field (base, ProjAdt (_, Some _var), field) -> (
-      (* TODO: check the variant matches *)
-      let field_idx = Types.FieldId.to_int field in
+  | Field (base, ProjAdt (_, Some var), field) ->
+      let idx = Types.FieldId.to_int field in
       try_load base store
-      |> bind_value @@ function
-         | Enum (_, vs) -> Value (List.nth vs field_idx)
-         | _ -> L.failwith "tried loading field of non-enum")
-  | Field (base, _, field) -> (
-      let field_idx = Types.FieldId.to_int field in
+      |> bind_value @@ fun v -> Value (Rust_val.field_of_variant var idx v)
+  | Field (base, _, field) ->
+      let idx = Types.FieldId.to_int field in
       try_load base store
-      |> bind_value @@ function
-         | Tuple vs -> Value (List.nth vs field_idx)
-         | _ -> L.failwith "tried loading field of non-struct")
-  | Index (base, idx) -> (
+      |> bind_value @@ fun v -> Value (Rust_val.field_of idx v)
+  | Index (base, idx) ->
       try_load base store
-      |> bind_value @@ function
-         | Tuple vs -> Value (List.nth vs idx)
-         | _ -> L.failwith "tried loading index of non-tuple")
+      |> bind_value @@ fun v -> Value (Rust_val.field_of idx v)
   | Metadata base -> (
       try_load base store
       |> bind_value @@ fun v ->
@@ -164,15 +157,15 @@ let rec try_load (place : Place.t) (store : t) : Binding.kind option =
                  base.origin.ty
          in
          match meta with
-         | Thin -> Value (Tuple [])
-         | Len len -> Value (Int len)
+         | Thin -> Value (Rust_val.mk_tuple [])
+         | Len len -> Value (Rust_val.mk_int len)
          | VTable vt ->
-             let vt = Rust_val.Ptr (vt, Thin) in
+             let vt = Rust_val.mk_ptr vt Thin in
              if
                Option.is_some_and
                  (Crate.adt_has_lang_item "dyn_metadata")
                  (ty_as_adt_opt place.origin.ty)
-             then Value (Tuple [ Tuple [ vt ]; Tuple [] ])
+             then Value Rust_val.(mk_tuple [ mk_tuple [ vt ]; mk_tuple [] ])
              else Value vt)
 
 let try_store (place : Place.t) store value =
