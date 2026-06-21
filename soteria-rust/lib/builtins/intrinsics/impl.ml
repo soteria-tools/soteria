@@ -566,8 +566,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     else
       let size, overflowed = ty_size *?@ count in
       let* () = assert_not overflowed `Overflow in
-      let* () = Sptr.check_non_dangling_untyped fsrc size in
-      let* () = Sptr.check_non_dangling_untyped fdst size in
+      let* () = Sptr.check_non_dangling_untyped src size in
+      let* () = Sptr.check_non_dangling_untyped dst size in
       (* Here we can cheat a little: for copy_nonoverlapping we need to check
          for overlap, but otherwise the copy is the exact same; since the State
          makes a copy of the src tree before storing into dst, the semantics are
@@ -833,8 +833,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* () =
       if%sat off ==@ zero then ok ()
       else
-        let* () = Sptr.check_non_dangling_untyped (base, Thin) off in
-        Sptr.check_non_dangling_untyped (ptr, Thin) (cast ~-off)
+        let* () = Sptr.check_non_dangling_untyped base off in
+        Sptr.check_non_dangling_untyped ptr (cast ~-off)
     in
     (* UB conditions:
      * 1. must be at the same address, OR derived from the same allocation

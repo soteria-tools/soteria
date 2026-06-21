@@ -36,7 +36,7 @@ module type S = sig
     (** Same as {!check_non_dangling}, but for untyped ranges, where only a size
         is known. The size is signed: if less than 0, the range preceding the
         pointer is checked. *)
-    val check_non_dangling_untyped : t full_ptr -> Typed.(T.sint t) -> unit ret
+    val check_non_dangling_untyped : t -> Typed.(T.sint t) -> unit ret
 
     (** Checks this pointer is sufficiently aligned for the given type. This
         takes into account the metadata: for a [&dyn Trait], it will access the

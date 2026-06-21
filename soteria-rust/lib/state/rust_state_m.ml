@@ -139,9 +139,7 @@ module type S = sig
     val check_non_dangling :
       t Rust_val.full_ptr -> Types.ty -> (unit, 'env) monad
 
-    val check_non_dangling_untyped :
-      t Rust_val.full_ptr -> Typed.(T.sint t) -> (unit, 'env) monad
-
+    val check_non_dangling_untyped : t -> Typed.(T.sint t) -> (unit, 'env) monad
     val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
     val decay : t -> (Typed.T.sint Typed.t, 'env) monad
     val expose : t -> (Typed.T.sint Typed.t, 'env) monad

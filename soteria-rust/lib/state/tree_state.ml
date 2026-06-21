@@ -554,7 +554,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       else Result.error (`MisalignedPointer (exp_align, align, ofs))
     else Result.ok ()
 
-  and check_non_dangling_untyped ((ptr : Sptr_base.t), _) size =
+  and check_non_dangling_untyped (ptr : Sptr_base.t) size =
     if%sat size ==@ Usize.(0s) then Result.ok ()
     else
       let** ptr, size =
@@ -570,7 +570,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       in
       `UBDanglingPointer
 
-  and check_non_dangling ((_, meta) as ptr) (ty : Types.ty) =
+  and check_non_dangling (ptr, meta) (ty : Types.ty) =
     let**^ layout = Layout.layout_of ty in
     if layout.uninhabited then Result.error (`RefToUninhabited ty)
     else
@@ -781,7 +781,7 @@ module Make (Borrows : Tree_borrows.T) = struct
                     &&@ Typed.not ofs_unsigned_neg))
                 `PointerArithmeticOverflow
             in
-            let++ () = check_non_dangling_untyped (fptr, Thin) off_by in
+            let++ () = check_non_dangling_untyped fptr off_by in
             off
         | None ->
             (* we use the unchecked, possibly overflowing version of the
