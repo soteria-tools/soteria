@@ -809,7 +809,7 @@ module Make (StateImpl : State.S) = struct
                 | BitXor -> ok (Int (v1 ^@ v2))
                 | _ -> assert false)
             | Offset -> L.failwith "impossible: offset on integers")
-        | (TRawPtr _ | TRef _), (TRawPtr _ | TRef _) ->
+        | (TRawPtr _ | TRef _ | TFnPtr _), (TRawPtr _ | TRef _ | TFnPtr _) ->
             let p1 = as_ptr v1 in
             let p2 = as_ptr v2 in
             let+ res = Core.eval_ptr_binop op p1 p2 in
