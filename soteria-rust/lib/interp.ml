@@ -948,6 +948,10 @@ module Make (StateImpl : State.S) = struct
           | TLiteral (TInt Isize | TUInt Usize) ->
               ok (Len (as_base_i Usize meta))
           | TRawPtr _ | TRef _ -> ok (VTable (fst (as_ptr meta)))
+          | TAdt adt when Crate.adt_has_lang_item "dyn_metadata" adt ->
+              let nonnull, _marker = as_tuple2 meta in
+              let vt = as_tuple1 nonnull in
+              ok (VTable (fst (as_ptr vt)))
           | _ ->
               L.failwith "Unexpected meta type AggregatedRawPtr: %a" pp_ty
                 meta_ty
