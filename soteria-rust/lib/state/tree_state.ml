@@ -690,8 +690,8 @@ module Make (Borrows : Tree_borrows.T) = struct
           (* We uninitialise the whole range before writing, to ensure padding
              bytes are copied if there are any. *)
           let** () = Tree_block.uninit_range ofs size in
-          Result.iter_iter parts ~f:(fun (value, offset) ->
-              Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
+          Result.iter_iter parts ~f:(fun (value, offset, size) ->
+              Tree_block.store (offset +!!@ ofs) size value ptr.tag tb))
 
   (** We can't use {!Heap.Decoder} for [transmute], since the transmute happens
       regardless of the heap's state, so we need to re-instantiate it for tree
@@ -720,8 +720,8 @@ module Make (Borrows : Tree_borrows.T) = struct
             let open Tree_block_decoder in
             (* first, we write *)
             let** () =
-              Result.iter_iter blocks ~f:(fun (value, offset) ->
-                  Tree_block.store offset value None None)
+              Result.iter_iter blocks ~f:(fun (value, offset, size) ->
+                  Tree_block.store offset size value None None)
             in
             (* next, we read *)
             let handler (ty, ofs) =
@@ -756,8 +756,9 @@ module Make (Borrows : Tree_borrows.T) = struct
     [%l.debug
       "Transmuting (raw) %a -> %a"
         Fmt.(
-          list ~sep:(any ", ") (fun ft (v, ofs) ->
-              pf ft "(%a: %a)" (pp_rust_val Sptr_base.pp) v Typed.ppa ofs))
+          list ~sep:(any ", ") (fun ft (v, ofs, sz) ->
+              pf ft "(%a: %a-%a)" (pp_rust_val Sptr_base.pp) v Typed.ppa ofs
+                Typed.ppa sz))
         blocks pp_ty to_];
     let@ () = with_loc_err ~trace:"Transmute" () in
     let**^ size = Layout.size_of to_ in

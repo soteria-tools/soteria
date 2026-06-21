@@ -78,7 +78,9 @@ module type S = sig
   val transmute : from:Types.ty -> to_:Types.ty -> rust_val -> rust_val ret
 
   val transmute_raw :
-    to_:Types.ty -> (rust_val * Typed.(T.sint t)) list -> rust_val ret
+    to_:Types.ty ->
+    Typed.(rust_val * T.sint t * T.nonzero t) list ->
+    rust_val ret
 
   val uninit : full_ptr -> Types.ty -> unit ret
   val zeros : full_ptr -> sint Typed.t -> unit ret

@@ -74,20 +74,6 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
       let _, fields = variant_layouts.(Types.VariantId.to_int variant) in
       aux ~variant fields ty
 
-let size_of =
-  let open Rustsymex.Result in
-  function
-  | Int v -> ok (BV.usizei (Typed.size_of_int v / 8))
-  | Float f ->
-      ok (BV.usizei (Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8))
-  | Ptr (_, Thin) -> ok (BV.usizei (Crate.pointer_size ()))
-  | Ptr (_, (Len _ | VTable _)) -> ok (BV.usizei (Crate.pointer_size () * 2))
-  | PolyVal tid -> Layout.size_of (TVar (Free tid))
-  (* We can't know the size of a union/tuple/enum, because of e.g. niches, or
-     padding *)
-  | Union _ | Enum _ | Tuple _ ->
-      L.failwith "Impossible to get size of Enum/Tuple rust_val"
-
 (** Given a value of type [Box<T, A>], returns as a triple the inner pointer,
     the allocator object, and the marker value. *)
 let unwrap_box v =
@@ -138,7 +124,7 @@ struct
     type handler = query -> rust_val res
 
     type get_all_handler =
-      get_all_query -> (rust_val * Typed.(T.sint t)) list res
+      get_all_query -> Typed.(rust_val * T.sint t * T.nonzero t) list res
 
     (* A parser monad is an object such that, given a query handler with state
        ['state], returns a state monad-ish for that state which may fail or
@@ -359,7 +345,10 @@ module Encoder (Sptr : Sptr.S) = struct
       iterator over its sub values, along with their offset. Offsets all blocks
       by [offset] if specified *)
   let rec encode ~offset (value : rust_val) (ty : Types.ty) :
-      ((rust_val * Typed.(T.sint t)) Iter.t, 'e, 'f) Rustsymex.Result.t =
+      ( Typed.(rust_val * T.sint t * T.nonzero t) Iter.t,
+        'e,
+        'f )
+      Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
     let open Result in
@@ -384,8 +373,11 @@ module Encoder (Sptr : Sptr.S) = struct
     else
       match (layout.fields, value) with
       | _, Union blocks ->
-          ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
-      | Primitive, _ -> ok (Iter.singleton (value, offset))
+          ok
+            (Iter.of_list blocks
+            |> Iter.map (fun (v, o, s) -> (v, offset +!!@ o, s)))
+      | Primitive, _ ->
+          ok (Iter.singleton (value, offset, BV.cast_nonzero layout.size))
       | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
       | Enum (_, layouts), Enum (disc, _) -> (
           let adt = ty_as_adt ty in
@@ -395,8 +387,9 @@ module Encoder (Sptr : Sptr.S) = struct
           match fst layouts.(Types.VariantId.to_int variant) with
           | None -> fields
           | Some (ofs, tag) ->
+              let size = BV.usizeinz (Typed.size_of_int tag / 8) in
               let offset = ofs +!!@ offset in
-              Iter.cons (Int tag, offset) fields)
+              Iter.cons (Int tag, offset, size) fields)
       | Enum _, _ ->
           not_impl "encode: expected enum value for enum type %a" pp_ty ty
 
@@ -706,13 +699,15 @@ module Encoder (Sptr : Sptr.S) = struct
             Tuple fields
         | Union _ ->
             let** size = Layout.size_of ty in
-            let* sizei =
-              match BV.to_z size with
-              | Some s -> return (Z.to_int s)
-              | None -> vanish ()
-            in
-            let+ bytes = nondet (Typed.t_int (sizei * 8)) in
-            Ok (Union [ (Int bytes, Usize.(0s)) ])
+            if%sat size ==@ Usize.(0s) then Result.ok (Union [])
+            else
+              let* sizei =
+                match BV.to_z size with
+                | Some s -> return (Z.to_int s)
+                | None -> vanish ()
+              in
+              let+ bytes = nondet (Typed.t_int (sizei * 8)) in
+              Ok (Union [ (Int bytes, Usize.(0s), BV.cast_nonzero size) ])
         | _ ->
             Rustsymex.not_impl
               "cannot create a symbolic value of unsupported type %a" pp_ty ty)

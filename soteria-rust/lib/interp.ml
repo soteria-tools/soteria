@@ -257,17 +257,19 @@ module Make (StateImpl : State.S) = struct
         let* blocks =
           map_list blocks ~f:(fun block ->
               match block with
-              | `Byte (b, ofs) -> ok (Int b, BV.usizei ofs)
+              | `Byte (b, ofs) ->
+                  ok
+                    (Int b, BV.usizei ofs, BV.usizeinz (Typed.size_of_int b / 8))
               | `Ptr (p, from_, size, ofs) ->
                   let* ptr, _ = ptr_of_provenance p in
                   if from_ = 0 && size = ptr_size then
-                    ok (Ptr (ptr, Thin), BV.usizei ofs)
+                    ok (Ptr (ptr, Thin), BV.usizei ofs, BV.usizeinz size)
                   else
                     let+ ptr_int = Sptr.decay ptr in
                     let ptr_frag =
                       BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
                     in
-                    (Int ptr_frag, BV.usizei ofs))
+                    (Int ptr_frag, BV.usizei ofs, BV.usizeinz size))
         in
         (* let the value decoder handle it *)
         State.transmute_raw ~to_:const.ty blocks

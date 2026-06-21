@@ -87,6 +87,7 @@ module BitVec = struct
     if i = 0 then L.failwith "Zero value in mki_nonzero" else mki_masked n i
 
   let no_ovf_unsafe x = x
+  let cast_nonzero x = x
 
   let add_checked ~signed l r =
     (add ~checked:(checked_of_signed signed) l r, add_overflows ~signed l r)

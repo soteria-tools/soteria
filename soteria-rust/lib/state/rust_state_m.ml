@@ -172,7 +172,7 @@ module type S = sig
       offset:Typed.T.sint Typed.t ->
       rust_val ->
       Types.ty ->
-      ((rust_val * Typed.T.sint Typed.t) Iter.t, 'env) monad
+      (Typed.(rust_val * T.sint t * T.nonzero t) Iter.t, 'env) monad
 
     val cast_literal :
       from_ty:Values.literal_type ->
@@ -219,7 +219,9 @@ module type S = sig
       from:Types.ty -> to_:Types.ty -> rust_val -> (rust_val, 'env) t
 
     val transmute_raw :
-      to_:Types.ty -> (rust_val * Typed.(T.sint t)) list -> (rust_val, 'env) t
+      to_:Types.ty ->
+      Typed.(rust_val * T.sint t * T.nonzero t) list ->
+      (rust_val, 'env) t
 
     val uninit : full_ptr -> Types.ty -> (unit, 'env) t
     val free : full_ptr -> (unit, 'env) t

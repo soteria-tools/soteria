@@ -184,6 +184,10 @@ module BitVec : sig
   val bv_to_z : bool -> int -> Z.t -> Z.t
   val to_z : [< any ] t -> Z.t option
 
+  (** Reinterprets an integer as known to be non-zero. The caller is responsible
+      for ensuring the value is indeed non-zero (e.g. an alignment). *)
+  val cast_nonzero : [< T.sint ] t -> [> T.nonzero ] t
+
   (* arithmetic *)
   val add :
     ?checked:Svalue.checked -> [< sint ] t -> [< sint ] t -> [> sint_ovf ] t
