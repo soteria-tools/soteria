@@ -813,9 +813,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let maxnumf32 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf64 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf128 ~x ~y = float_minmax ~is_min:false ~x ~y
-
-  let ptr_guaranteed_cmp ~t:_ ~ptr ~other =
-    Core.eval_ptr_binop Eq (Ptr ptr) (Ptr other)
+  let ptr_guaranteed_cmp ~t:_ ~ptr ~other = Core.eval_ptr_binop Eq ptr other
 
   let ptr_mask ~t:_ ~ptr:(ptr, meta) ~mask =
     let* addr = Sptr.decay ptr in

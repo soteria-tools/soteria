@@ -779,12 +779,14 @@ module Make (StateImpl : State.S) = struct
     | BinaryOp (op, e1, e2) -> (
         let* v1 = eval_operand e1 in
         let* v2 = eval_operand e2 in
-        match (v1, v2) with
-        | Int v1, Int v2 -> (
+        match (type_of_operand e1, type_of_operand e2) with
+        | ( TLiteral ((TInt _ | TUInt _ | TChar | TBool) as ty),
+            TLiteral ((TInt _ | TUInt _ | TChar | TBool) as ty_r) ) -> (
+            let v1 = as_base ty v1 in
+            let v2 = as_base ty_r v2 in
             match op with
             | Ge | Gt | Lt | Le ->
-                let lit_ty = TypesUtils.ty_as_literal (type_of_operand e1) in
-                let signed = Layout.is_signed lit_ty in
+                let signed = Layout.is_signed ty in
                 let op =
                   match op with
                   | Ge -> BV.geq
@@ -795,39 +797,14 @@ module Make (StateImpl : State.S) = struct
                 in
                 let v = op ~signed v1 v2 |> BV.of_bool in
                 ok (Int v)
-            | Eq | Ne ->
-                let v1, v2, _ = Typed.cast_checked2 v1 v2 in
-                let+ res = Core.equality_check v1 v2 in
-                let res = if op = Eq then res else BV.not_bool res in
-                Int res
+            | Eq -> ok (Int (BV.of_bool (v1 ==@ v2)))
+            | Ne -> ok (Int (BV.of_bool (Typed.not (v1 ==@ v2))))
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
-                let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
                 let+ res = Core.eval_lit_binop op ty v1 v2 in
                 Int (Typed.cast res)
             | AddChecked | SubChecked | MulChecked ->
-                let ty =
-                  match type_of_operand e1 with
-                  | TLiteral ty -> ty
-                  | ty -> L.failwith "Unexpected type in binop: %a" pp_ty ty
-                in
                 Core.eval_checked_lit_binop op ty v1 v2
-            | Cmp ->
-                let v1, v2, _ = Typed.cast_checked2 v1 v2 in
-                let ty = type_of_operand e1 in
-                let ty = TypesUtils.ty_as_literal ty in
-                ok (Core.cmp ~signed:(Layout.is_signed ty) v1 v2)
-            | Offset ->
-                (* non-zero offset on integer pointer is not permitted, as these
-                   are always dangling *)
-                let v2 = Typed.cast_i Usize v2 in
-                let ty = get_pointee (type_of_operand e1) in
-                let* size = Layout.size_of ty in
-                let+ () =
-                  assert_
-                    (v2 ==@ Usize.(0s) ||@ (size ==@ Usize.(0s)))
-                    `UBDanglingPointer
-                in
-                Int v1
+            | Cmp -> ok (Core.cmp ~signed:(Layout.is_signed ty) v1 v2)
             | BitOr | BitAnd | BitXor -> (
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
                 let v1 = Typed.cast_lit ty v1 in
@@ -836,20 +813,24 @@ module Make (StateImpl : State.S) = struct
                 | BitOr -> ok (Int (v1 |@ v2))
                 | BitAnd -> ok (Int (v1 &@ v2))
                 | BitXor -> ok (Int (v1 ^@ v2))
-                | _ -> assert false))
-        | (Ptr (p, meta) as ptr1), ((Ptr _ | Int _) as p2) -> (
-            match op with
-            | Offset ->
-                let off = as_base_i Usize p2 in
-                let ty = get_pointee (type_of_operand e1) in
-                let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
-                let check_signed = Layout.is_signed off_ty in
-                let+ p' = Sptr.offset ~check_signed ~ty off p in
-                Ptr (p', meta)
-            | _ ->
-                let+ res = Core.eval_ptr_binop op ptr1 p2 in
-                Int res)
-        | Float v1, Float v2 -> (
+                | _ -> assert false)
+            | Offset -> L.failwith "impossible: offset on integers")
+        | (TRawPtr _ | TRef _), (TRawPtr _ | TRef _) ->
+            let p1 = as_ptr v1 in
+            let p2 = as_ptr v2 in
+            let+ res = Core.eval_ptr_binop op p1 p2 in
+            Int res
+        | ( (TRawPtr (pointee, _) | TRef (_, pointee, _)),
+            TLiteral ((TInt Isize | TUInt Usize) as lit) ) ->
+            assert (op = Offset);
+            let p, meta = as_ptr v1 in
+            let off = as_base lit v2 in
+            let check_signed = Layout.is_signed lit in
+            let+ p' = Sptr.offset ~check_signed ~ty:pointee off p in
+            Ptr (p', meta)
+        | TLiteral (TFloat fp), TLiteral (TFloat _) -> (
+            let v1 = as_base_f fp v1 in
+            let v2 = as_base_f fp v2 in
             match op with
             | Eq -> ok (Int (BV.of_bool (v1 ==.@ v2)))
             | Ne -> ok (Int (BV.of_bool (Typed.not (v1 ==.@ v2))))
@@ -865,9 +846,10 @@ module Make (StateImpl : State.S) = struct
             | _ ->
                 L.failwith "unexpected float binary operator (%a)"
                   Expressions.pp_binop op)
-        | v1, v2 ->
-            L.failwith "Unexpected values for binary operator (%a): %a / %a"
-              Expressions.pp_binop op pp_rust_val v1 pp_rust_val v2)
+        | ty1, ty2 ->
+            L.failwith "Invalid types for binary operator (%a %a %a): %a / %a"
+              pp_ty ty1 Expressions.pp_binop op pp_ty ty2 pp_rust_val v1
+              pp_rust_val v2)
     | NullaryOp (op, ty) -> (
         match op with
         | UbChecks ->
@@ -929,7 +911,7 @@ module Make (StateImpl : State.S) = struct
         let+ vals = eval_operand_list vals in
         Enum (discr, vals)
     (* Union aggregate *)
-    | Aggregate (AggregatedAdt (ty, None, Some field), ops) ->
+    | Aggregate (AggregatedAdt (adt, None, Some field), ops) ->
         let op =
           match ops with
           | [ op ] -> op
@@ -938,7 +920,7 @@ module Make (StateImpl : State.S) = struct
         in
         let* value = eval_operand op in
         let field = Types.FieldId.to_int field in
-        let* layout = Layout.layout_of (TAdt ty) in
+        let* layout = Layout.layout_of (TAdt adt) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
         let+ op_blocks = Encoder.encode ~offset value (type_of_operand op) in
         let op_blocks = Iter.to_list op_blocks in
@@ -948,9 +930,8 @@ module Make (StateImpl : State.S) = struct
         let+ values = eval_operand_list operands in
         Tuple values
     (* Invalid aggregate (not sure, but seems like it) *)
-    | Aggregate ((AggregatedAdt _ as v), _) ->
-        L.failwith "Invalid ADT aggregate kind: %a"
-          Expressions.pp_aggregate_kind v
+    | Aggregate (AggregatedAdt (_, Some _, Some _), _) ->
+        L.failwith "Invalid ADT aggregate kind"
     (* Array aggregate *)
     | Aggregate (AggregatedArray (_ty, _size), operands) ->
         let+ values = eval_operand_list operands in
@@ -1042,14 +1023,9 @@ module Make (StateImpl : State.S) = struct
         let src = as_ptr_or ~make:Sptr.of_address src in
         let dst = as_ptr_or ~make:Sptr.of_address dst in
         let count = as_base_i Usize count in
-        let* () =
-          with_env ~env:()
-          @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
-        in
-        ok ()
-    | PlaceMention place ->
-        let+ _ = resolve_place place in
-        ()
+        with_env ~env:()
+        @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
+    | PlaceMention place -> map ignore @@ resolve_place place
     | SetDiscriminant (_, _) ->
         not_impl "writing enum discriminant directly is not yet supported"
 
@@ -1131,19 +1107,14 @@ module Make (StateImpl : State.S) = struct
             [%l.info
               "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
                 UllbcAst.pp_block_id else_block pp_rust_val discr];
-            let bool_discr =
-              match discr with
-              | Int discr -> BV.to_bool (Typed.cast_lit TBool discr)
-              | Ptr (ptr, _) -> Typed.not (Sptr.is_null ptr)
-              | _ -> L.failwith "Expected base value for if discriminant"
-            in
+            let bool_discr = BV.to_bool (as_base TBool discr) in
             if%sat[@lname "if case"] [@rname "else case"] bool_discr then
               let block = UllbcAst.BlockId.nth body.body if_block in
               exec_block ~body block
             else
               let block = UllbcAst.BlockId.nth body.body else_block in
               exec_block ~body block
-        | SwitchInt (_, options, default) ->
+        | SwitchInt (lit, options, default) ->
             [%l.info
               "Switch options %a (else %a) for %a"
                 Fmt.(
@@ -1153,21 +1124,8 @@ module Make (StateImpl : State.S) = struct
                    (fun (v, b) -> (Print.literal_to_string v, b))
                    options)
                 UllbcAst.pp_block_id default pp_rust_val discr];
-            let compare_discr =
-              match discr with
-              | Int discr -> fun (v, _) -> discr ==@ BV.of_literal v
-              | Ptr (ptr, _) ->
-                  fun (v, _) ->
-                    if Z.equal Z.zero (z_of_literal v) then Sptr.is_null ptr
-                    else L.failwith "Can't compare pointer with non-0 scalar"
-              | _ ->
-                  fun (v, _) ->
-                    L.failwith
-                      "Didn't know how to compare discriminant %a with scalar \
-                       %s"
-                      pp_rust_val discr
-                      (Print.literal_to_string v)
-            in
+            let discr = as_base lit discr in
+            let compare_discr = fun (v, _) -> discr ==@ BV.of_literal v in
             let*^ block = match_on options ~constr:compare_discr in
             let block = Option.fold ~none:default ~some:snd block in
             let block = UllbcAst.BlockId.nth body.body block in
@@ -1228,9 +1186,9 @@ module Make (StateImpl : State.S) = struct
                    locals, and figure out why we need this in the first
                    place. *)
                 let protected_address =
-                  match (fundef.signature.output, value) with
-                  | (TRef (RStatic, _, _) | TRawPtr _), Ptr (addr, _) ->
-                      Some addr
+                  match fundef.signature.output with
+                  | TRef (RStatic, _, _) | TRawPtr _ ->
+                      Some (fst (as_ptr value))
                   | _ -> None
                 in
                 let+ () = dealloc_stack ?protected_address protected in
@@ -1303,6 +1261,7 @@ module Make (StateImpl : State.S) = struct
   let exec_fun_as_whole_prog ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
     let* value = exec_fun ~args ~state fundef in
+    let value = Rust_val.to_syn Sptr.to_syn value in
     let* () = State.run_thread_exits () in
     if (Config.get ()).ignore_leaks then ok value
     else
