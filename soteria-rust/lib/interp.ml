@@ -254,7 +254,7 @@ module Make (StateImpl : State.S) = struct
           | ProvFunction f -> State.declare_fn (Real f)
           | ProvUnknown -> not_impl "Unknown provenance in RawMemory"
         in
-        let+ blocks =
+        let* blocks =
           map_list blocks ~f:(fun block ->
               match block with
               | `Byte (b, ofs) -> ok (Int b, BV.usizei ofs)
@@ -269,7 +269,8 @@ module Make (StateImpl : State.S) = struct
                     in
                     (Int ptr_frag, BV.usizei ofs))
         in
-        Union blocks
+        (* let the value decoder handle it *)
+        State.transmute_raw ~to_:const.ty blocks
     | CGlobal glob ->
         let* ptr = resolve_global glob in
         State.load ptr const.ty

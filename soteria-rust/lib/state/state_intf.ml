@@ -76,6 +76,10 @@ module type S = sig
     src:full_ptr -> dst:full_ptr -> size:sint Typed.t -> unit ret
 
   val transmute : from:Types.ty -> to_:Types.ty -> rust_val -> rust_val ret
+
+  val transmute_raw :
+    to_:Types.ty -> (rust_val * Typed.(T.sint t)) list -> rust_val ret
+
   val uninit : full_ptr -> Types.ty -> unit ret
   val zeros : full_ptr -> sint Typed.t -> unit ret
   val with_pointers_sym : 'a DecayMap.SM.t -> 'a SM.t

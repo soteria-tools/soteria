@@ -218,6 +218,9 @@ module type S = sig
     val transmute :
       from:Types.ty -> to_:Types.ty -> rust_val -> (rust_val, 'env) t
 
+    val transmute_raw :
+      to_:Types.ty -> (rust_val * Typed.(T.sint t)) list -> (rust_val, 'env) t
+
     val uninit : full_ptr -> Types.ty -> (unit, 'env) t
     val free : full_ptr -> (unit, 'env) t
     val borrow : ?protect:bool -> full_ptr -> Types.ty -> (full_ptr, 'env) t
@@ -535,6 +538,10 @@ module Make (State : State_intf.S) :
       ESM.lift (copy_nonoverlapping ~src ~dst ~size)
 
     let[@inline] transmute ~from ~to_ v = ESM.lift (transmute ~from ~to_ v)
+
+    let[@inline] transmute_raw ~to_ blocks =
+      ESM.lift (transmute_raw ~to_ blocks)
+
     let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
     let[@inline] free ptr = ESM.lift (free ptr)
     let[@inline] borrow ?protect ptr ty = ESM.lift (borrow ?protect ptr ty)

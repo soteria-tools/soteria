@@ -705,18 +705,10 @@ module Make (Borrows : Tree_borrows.T) = struct
         type fix = Tree_block.syn list
       end)
 
-  let transmute ~from ~to_ v =
+  let transmute_raw_inner ~to_ ~size blocks =
     (* a transmute is just a write of one type with a read of another type; we
        provide a function to do it that avoids allocating, checking alignment
        etc. *)
-    [%l.debug
-      "Transmuting %a: %a -> %a" (pp_rust_val Sptr_base.pp) v pp_ty from pp_ty
-        to_];
-    let@ () = with_loc_err ~trace:"Transmute" () in
-    (* We pick [from] rather than [to_], because we can transmute to a smaller
-       type, but not to a larger one, so it's guaranteed that [size(from) >=
-       size(to_)] *)
-    let**^ size = Layout.size_of from in
     let** value =
       with_pointers
         (let open DecayMap.SM in
@@ -727,11 +719,8 @@ module Make (Borrows : Tree_borrows.T) = struct
             let open Syntax in
             let open Tree_block_decoder in
             (* first, we write *)
-            let**^ parts =
-              DecayMap.SM.lift @@ Encoder.encode ~offset:Usize.(0s) v from
-            in
             let** () =
-              Result.iter_iter parts ~f:(fun (value, offset) ->
+              Result.iter_iter blocks ~f:(fun (value, offset) ->
                   Tree_block.store offset value None None)
             in
             (* next, we read *)
@@ -750,6 +739,29 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     let++ () = check_validity ~check_refs:true to_ value in
     value
+
+  let transmute ~from ~to_ v =
+    [%l.debug
+      "Transmuting %a: %a -> %a" (pp_rust_val Sptr_base.pp) v pp_ty from pp_ty
+        to_];
+    let@ () = with_loc_err ~trace:"Transmute" () in
+    (* We pick [from] rather than [to_], because we can transmute to a smaller
+       type, but not to a larger one, so it's guaranteed that [size(from) >=
+       size(to_)] *)
+    let**^ size = Layout.size_of from in
+    let**^ blocks = Encoder.encode ~offset:Usize.(0s) v from in
+    transmute_raw_inner ~to_ ~size blocks
+
+  let transmute_raw ~to_ blocks =
+    [%l.debug
+      "Transmuting (raw) %a -> %a"
+        Fmt.(
+          list ~sep:(any ", ") (fun ft (v, ofs) ->
+              pf ft "(%a: %a)" (pp_rust_val Sptr_base.pp) v Typed.ppa ofs))
+        blocks pp_ty to_];
+    let@ () = with_loc_err ~trace:"Transmute" () in
+    let**^ size = Layout.size_of to_ in
+    transmute_raw_inner ~to_ ~size (Iter.of_list blocks)
 
   module Sptr = struct
     include Sptr_base
