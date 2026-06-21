@@ -736,36 +736,27 @@ module Make (StateImpl : State.S) = struct
               | _ -> L.failwith "Invalid value for CastScalar"
             in
             Encoder.cast_literal ~from_ty ~to_ty v
-        | Cast (CastUnsize (from_ty, to_ty, meta)) ->
-            let rec with_ptr_meta : rust_val -> rust_val t = function
-              | Ptr (v, prev) ->
-                  let+ meta =
-                    resolve_unsizing_metadata
-                      ~help:(fun () ->
-                        Fmt.str "don't know how to unsize %a -> %a" pp_ty
-                          from_ty pp_ty to_ty)
-                      ~prev meta
+        | Cast (CastUnsize (from_ty, to_ty, meta)) -> (
+            let rec with_ptr_meta v = function
+              | [] ->
+                  let v, prev = as_ptr v in
+                  let help () =
+                    Fmt.str "don't know how to unsize %a -> %a" pp_ty from_ty
+                      pp_ty to_ty
                   in
+                  let+ meta = resolve_unsizing_metadata ~help ~prev meta in
                   Ptr (v, meta)
-              | Tuple (_ :: _ as fs) as v -> (
-                  let rec split_at_non_empty fs left =
-                    match fs with
-                    | [] -> None
-                    | f :: rest when Rust_val.is_empty f ->
-                        split_at_non_empty rest (f :: left)
-                    | f :: rest -> Some (List.rev left, f, rest)
-                  in
-                  let opt_nonempty = split_at_non_empty (List.rev fs) [] in
-                  match opt_nonempty with
-                  | Some (left, nonempty, right) -> (
-                      let+ nonempty = with_ptr_meta nonempty in
-                      let fs = List.rev (left @ [ nonempty ] @ right) in
-                      match v with Tuple _ -> Tuple fs | _ -> assert false)
-                  | None -> L.failwith "Couldn't set pointer meta in CastUnsize"
-                  )
-              | _ -> L.failwith "Couldn't set pointer meta in CastUnsize"
+              | idx :: rest ->
+                  let fs = as_tuple v in
+                  let before, target, after = List.split_around fs idx in
+                  let+ target = with_ptr_meta target rest in
+                  let fs = before @ (target :: after) in
+                  Tuple fs
             in
-            with_ptr_meta v
+            let* unsize_path = Layout.unsize_path from_ty in
+            match unsize_path with
+            | Some path -> with_ptr_meta v path
+            | None -> not_impl "don't know how to unsize through %a" pp_ty ty)
         | Cast (CastConcretize (_from, _to)) ->
             not_impl "Unsupported: dyn (concretize)"
         | Cast (CastFnPtr (_from, _to)) -> (

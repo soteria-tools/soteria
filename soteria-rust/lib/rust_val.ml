@@ -261,6 +261,6 @@ let mk_struct ~ty fields =
     [i] is out of bound or [v] is not a [Tuple] or [Enum]. *)
 let update_field i ~f v =
   match v with
-  | Tuple vs -> Tuple (List.update_at f i vs)
-  | Enum (d, vs) -> Enum (d, List.update_at f i vs)
+  | Tuple vs -> Tuple (List.update_at i f vs)
+  | Enum (d, vs) -> Enum (d, List.update_at i f vs)
   | _ -> L.failwith "update_field with a non-aggregate value"

@@ -160,9 +160,13 @@ module type S = sig
     val layout_of : Types.ty -> (Layout.t, 'env) monad
     val size_of : Types.ty -> ([> Typed.T.sint ] Typed.t, 'env) monad
     val align_of : Types.ty -> ([> Typed.T.nonzero ] Typed.t, 'env) monad
+    val is_zst : Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
+    val is_1zst : Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
 
     val is_abi_compatible :
       Types.ty -> Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
+
+    val unsize_path : Types.ty -> (int list option, 'env) monad
   end
 
   module Encoder : sig
@@ -476,9 +480,13 @@ module Make (State : State_intf.S) :
     let[@inline] layout_of ty = lift_err (layout_of ty)
     let[@inline] size_of ty = lift_err (size_of ty)
     let[@inline] align_of ty = lift_err (align_of ty)
+    let[@inline] is_zst ty = lift_err (is_zst ty)
+    let[@inline] is_1zst ty = lift_err (is_1zst ty)
 
     let[@inline] is_abi_compatible ty1 ty2 =
       lift_err (is_abi_compatible ty1 ty2)
+
+    let[@inline] unsize_path ty = lift_err (unsize_path ty)
   end
 
   module Encoder = struct
