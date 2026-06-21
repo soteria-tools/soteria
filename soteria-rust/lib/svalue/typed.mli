@@ -89,6 +89,7 @@ module BitVec : sig
   val of_bool : sbool t -> [> T.sint ] t
   val of_literal : Values.literal -> [> T.sint ] t
   val of_constant_expr : Types.constant_expr -> [> T.sint ] t
+  val of_constant_expr_opt : Types.constant_expr -> [> T.sint ] t option
   val of_scalar : Values.scalar_value -> [> T.sint ] t
 
   (* from Z/int *)

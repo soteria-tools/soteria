@@ -195,6 +195,11 @@ module BitVec = struct
         Fmt.failwith "Cannot convert non-value const expr %a to bitvector"
           Types.pp_constant_expr c
 
+  let of_constant_expr_opt : Types.constant_expr -> [> T.sint ] t option =
+    function
+    | { kind = CLiteral lit; _ } -> Some (of_literal lit)
+    | _ -> None
+
   let max ~signed l r = ite (gt ~signed l r) l r
   let min ~signed l r = ite (lt ~signed l r) l r
   let sure_is_zero v = Option.is_some_and Z.(equal zero) (to_z v)
@@ -337,25 +342,17 @@ module Adt = struct
     | _ -> todo_migration "as_tuple unop"
 
   let as_tuple1 v =
-    match as_tuple v with
-    | [ a ] -> a
-    | vs ->
-        L.failwith "Expected a 1-tuple, got %d fields in %a" (List.length vs)
-          ppa v
+    match as_tuple v with [ a ] -> a | _ -> cast_error v (t_tuple [ t_int 1 ])
 
   let as_tuple2 v =
     match as_tuple v with
     | [ a; b ] -> (a, b)
-    | vs ->
-        L.failwith "Expected a 2-tuple, got %d fields in %a" (List.length vs)
-          ppa v
+    | _ -> cast_error v (t_tuple [ t_int 2 ])
 
   let as_tuple3 v =
     match as_tuple v with
     | [ a; b; c ] -> (a, b, c)
-    | vs ->
-        L.failwith "Expected a 3-tuple, got %d fields in %a" (List.length vs)
-          ppa v
+    | _ -> cast_error v (t_tuple [ t_int 3 ])
 
   (* HACK: for a symbolic enum, this branches; this means we can't implement
      this at the value level. we might have to get rid of [as_enum], and instead
