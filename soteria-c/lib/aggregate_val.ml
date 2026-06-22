@@ -46,6 +46,6 @@ let basic_or_unsupported ~msg v =
 
 let rec iter_vars v f =
   match v with
-  | Basic v -> Svalue.iter_vars v f
+  | Basic v -> Typed.Svalue.iter_vars v f
   | Struct values | Array values ->
       List.iter (fun value -> iter_vars value f) values

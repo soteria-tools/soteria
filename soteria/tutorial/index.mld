@@ -34,4 +34,4 @@ define your own!
 
 Our built-in library to interact with SMT-LIB solvers.
 
-{!modules:Soteria_smt}
+{!modules:Soteria.Soteria_smt}
