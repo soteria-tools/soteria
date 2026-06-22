@@ -30,6 +30,11 @@ let pp_meta_raw pp_v pp_ptr fmt = function
   | Len v -> Fmt.pf fmt "%a" pp_v v
   | VTable p -> Fmt.pf fmt "%a" pp_ptr p
 
+let pp_meta_kind fmt = function
+  | Thin -> Fmt.pf fmt "unit"
+  | Len _ -> Fmt.pf fmt "length"
+  | VTable _ -> Fmt.pf fmt "vtable"
+
 let pp_meta pp_ptr = pp_meta_raw Typed.ppa pp_ptr
 let pp_meta_syn pp_ptr_syn = pp_meta_raw Expr.pp pp_ptr_syn
 

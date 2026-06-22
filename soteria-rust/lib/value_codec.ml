@@ -438,22 +438,10 @@ module Encoder (Sptr : Sptr.S) = struct
              Will require a new input to this function (?) *)
           f (Typed.not (Sptr.is_null vt)) (`UBTransmute "Null vtable pointer")
       | _, dst_kind ->
-          let got =
-            match meta with
-            | Thin -> "unit"
-            | Len _ -> "length"
-            | VTable _ -> "vtable"
-          in
-          let expected =
-            match dst_kind with
-            | NoneKind -> "unit"
-            | LenKind -> "length"
-            | VTableKind -> "vtable"
-          in
           let msg =
             Fmt.str
-              "Mismatch between metadata and DST kind; expected %s, got %s"
-              expected got
+              "Mismatch between metadata and DST kind; expected %a, got %a"
+              Layout.pp_meta_kind dst_kind Rust_val.pp_meta_kind meta
           in
           f Typed.v_false (`UBTransmute msg)
     in

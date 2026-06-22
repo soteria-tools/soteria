@@ -55,6 +55,11 @@ let align_of_literal_ty = size_of_literal_ty
 
 type meta_kind = LenKind | VTableKind | NoneKind
 
+let pp_meta_kind ft = function
+  | LenKind -> Fmt.string ft "length"
+  | VTableKind -> Fmt.string ft "vtable"
+  | NoneKind -> Fmt.string ft "unit"
+
 let rec dst_kind : Types.ty -> meta_kind = function
   | TAdt { id = TBuiltin TStr; _ } | TSlice _ -> LenKind
   | TDynTrait _ -> VTableKind
