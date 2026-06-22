@@ -35,6 +35,11 @@ let with_exn_and_config mode config f =
       Analyses.Outcome.exit Error
   | Exn.Config_error err ->
       fatal ~name:"Config" ~code:Cmdliner.Cmd.Exit.cli_error err
+  | Analyses.Outcome.EarlyExit code -> Analyses.Outcome.exit code
+
+let pp_path ft = function
+  | `Dir path -> Fmt.pf ft "%s" path
+  | `File path -> Fmt.pf ft "%s" path
 
 (* Prints the list of testing entry points as a one-line JSON list to stdout, if
    [--list-tests] is set. This is the only thing printed to stdout by [compile],
@@ -51,21 +56,52 @@ let maybe_list_tests (crate, entry_points) =
     in
     print_endline (Yojson.Safe.to_string (`List names))
 
-let do_compilation config target =
-  let compile () = Frontend.parse_ullbc_with_entry_points target in
-  let targets = wrap_step "Compiling" compile in
-  maybe_list_tests targets;
-  targets
+let compile_target path target =
+  let compile () = Frontend.compile_target ~target path in
+  let compiled =
+    Fmt.kstr wrap_step "Compiling %a" Frontend.pp_target target compile
+  in
+  maybe_list_tests compiled;
+  compiled
 
-let compile config target =
+let compile config path =
   let@ () = with_exn_and_config Whole_program config in
-  let _ = do_compilation config target in
-  Analyses.Outcome.Ok
+  let targets = Frontend.targets_to_run path in
+  List.iter (fun target -> ignore @@ compile_target path target) targets;
+  Ok
 
-let exec_wpst config target =
+let exec_wpst config path =
   let@ () = with_exn_and_config Whole_program config in
-  let targets = do_compilation config target in
-  Analyses.Wpst.exec targets
+  let targets = Frontend.targets_to_run path in
+  if List.is_empty targets then (
+    Fmt.epr "No targets found for %a@." pp_path path;
+    Analyses.Outcome.raise_outcome Fatal);
+
+  (* only print out targets if a target was specified *)
+  let specified_targets = targets <> [ Default ] in
+
+  (* iterate over targets, compiling then running them *)
+  let found_non_empty = ref false in
+  let res =
+    Iter.of_list targets
+    |> Iter.map (fun target ->
+        let crate, entry_points = compile_target path target in
+        if not (List.is_empty entry_points) then found_non_empty := true
+        else
+          Fmt.epr "No entry points found in %a, skipping@."
+            Fmt.(list ~sep:(any ", ") Frontend.pp_target)
+            [ target ];
+        (crate, entry_points, if specified_targets then Some target else None))
+    |> Analyses.Wpst.exec
+  in
+
+  (* ensure we ran something *)
+  if !found_non_empty then res
+  else (
+    Fmt.epr "No entry points found for %a in %a@." pp_path path
+      Fmt.(list ~sep:(any ", ") Frontend.pp_target)
+      targets;
+    Fatal)
 
 let build_plugins config =
   let@ () = with_exn_and_config Whole_program config in

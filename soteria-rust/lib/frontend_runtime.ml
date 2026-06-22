@@ -147,6 +147,9 @@ module Cmd = struct
         (** DEPRECATED?: rustc flags. For Cargo we use RUSTFLAGS, but when
             possible it would be nicer to use the Cargo-specific command (as
             with features)? *)
+    cargo : string list; [@default []]
+        (** Arguments passed to Cargo to select the target being compiled, e.g.
+            [--lib] or [--test tests] (only used in [Cargo] mode). *)
     entry_points : entry list; [@default []]
         (** Functions to mark as entry points, e.g.
             [Attrib "soteriatool::test"], when we are interested in filtering
@@ -169,6 +172,7 @@ module Cmd = struct
       obol = c1.obol @ c2.obol;
       features = c1.features @ c2.features;
       rustc = c1.rustc @ c2.rustc;
+      cargo = c1.cargo @ c2.cargo;
       entry_points = c1.entry_points @ c2.entry_points;
       expect_error = c1.expect_error @ c2.expect_error;
     }
@@ -218,7 +222,7 @@ module Cmd = struct
     if List.is_empty args then [] else [ "RUSTFLAGS=" ^ String.concat " " args ]
 
   let build_cmd ~mode
-      { charon; obol; features; rustc; entry_points; expect_error = _ } =
+      { charon; obol; features; rustc; cargo; entry_points; expect_error = _ } =
     let features = List.concat_map (fun f -> [ "--cfg"; f ]) features in
     let user_specified = current_rustc_flags () in
     let rustc =
@@ -254,12 +258,6 @@ module Cmd = struct
         in
         (cmd, ("rustc" :: args) @ [ "--" ] @ rustc @ target_flag, [])
     | Cargo ->
-        let cargo =
-          match (Config.get ()).test with
-          | Some "lib" -> [ "--lib" ]
-          | Some test -> [ "--test"; test ]
-          | None -> []
-        in
         let cargo = cargo @ cargo_flags () @ target_flag in
         let rustc = flags_for_cargo rustc in
         let env = rustc_as_env () @ flags_as_rustc_env rustc in

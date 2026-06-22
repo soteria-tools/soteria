@@ -1,6 +1,6 @@
 Test kani::any
   $ soteria-rust exec any.rs --kani
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running any::any_bool...
   note: any::any_bool: done in <time>, ran 2 branches
   PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
@@ -14,7 +14,7 @@ Test kani::any
   
 Test kani::assume
   $ soteria-rust exec assume.rs --kani
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running assume::assume_bool...
   note: assume::assume_bool: done in <time>, ran 1 branch
   PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
@@ -25,14 +25,14 @@ Test kani::assume
   
 Test #[kani::should_panic]
   $ soteria-rust exec should_panic.rs --kani
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running should_panic::when_at_the_disco...
   note: should_panic::when_at_the_disco: done in <time>, ran 1 branch
   PC 1: empty
   
 Test kani::assert
   $ soteria-rust exec assert.rs --kani
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running assert::assert_false...
   error: assert::assert_false: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion: Expected true! in assert::assert_false
@@ -96,7 +96,7 @@ Test kani::assert
 
 Test kani::slice::any_slice_of_array
   $ soteria-rust exec any_slice.rs --kani
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running any_slice::main...
   note: any_slice::main: done in <time>, ran 8 branches
   PC 1: (V|1| <=u V|2|) /\ (0x0000000000000000 == V|1|) /\
@@ -140,7 +140,7 @@ Test kani::slice::any_slice_of_array
 
 Test kani::vec::any_vec
   $ soteria-rust exec any_vec.rs --kani
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running any_vec::len_capacity_invariant...
   note: any_vec::len_capacity_invariant: done in <time>, ran 17 branches
   PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
@@ -194,7 +194,7 @@ Test kani::vec::any_vec
   
 Test our simple Kani demo works
   $ soteria-rust exec demo.rs --kani
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running demo::saturating_add_overflow...
   error: demo::saturating_add_overflow: found issues in <time>, errors in 1 branch (out of 3)
   error: Overflow in demo::saturating_add_overflow

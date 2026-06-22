@@ -16,3 +16,6 @@ name = "tests"
 
 [[test]]
 name = "soteria"
+
+[[example]]
+name = "example"

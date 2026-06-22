@@ -1,6 +1,6 @@
 Test memory leaks
   $ soteria-rust exec leak.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running leak::main...
   error: leak::main: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak in leak::main
@@ -33,21 +33,21 @@ Test memory leaks
 
 Test reading the max and min chars (used to crash Charon-ML)
   $ soteria-rust exec char_min_max.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running char_min_max::main...
   note: char_min_max::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test casting between integer types
   $ soteria-rust exec int_casting.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running int_casting::main...
   note: int_casting::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Splitting and merging, via a union
   $ soteria-rust exec split_merges.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running split_merges::endianness...
   note: split_merges::endianness: done in <time>, ran 1 branch
   PC 1: empty
@@ -73,7 +73,7 @@ Splitting and merging, via a union
   [1]
 Test unwinding, and catching that unwind; we need to ignore leaks as this uses a Box.
   $ soteria-rust exec unwind.rs --ignore-leaks
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running unwind::main...
   note: unwind::main: done in <time>, ran 2 branches
   PC 1: (0x01 == V|1|) /\ (0x0000000000000001 <=u V|2|) /\
@@ -82,14 +82,14 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
   
 Test that we properly handle the niche optimisation
   $ soteria-rust exec niche_optim.rs --ignore-leaks
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running niche_optim::main...
   note: niche_optim::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test function calls on function pointers
   $ soteria-rust exec fn_ptr.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running fn_ptr::fn_ptr_call...
   note: fn_ptr::fn_ptr_call: done in <time>, ran 1 branch
   PC 1: empty
@@ -120,7 +120,7 @@ Test function calls on function pointers
 
 Check strict provenance disables int to ptr casts
   $ soteria-rust exec provenance.rs --provenance strict
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running provenance::with_exposed...
   error: provenance::with_exposed: found issues in <time>, errors in 1 branch (out of 1)
   bug: Attempted to cast an integer to an pointer with strict provenance in provenance::with_exposed
@@ -139,21 +139,21 @@ Check strict provenance disables int to ptr casts
 
 Check permissive provenance allows int to ptr casts
   $ soteria-rust exec provenance.rs --provenance permissive
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running provenance::with_exposed...
   note: provenance::with_exposed: done in <time>, ran 1 branch
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd)
   
 Distinct allocations get distinct base addresses, so they can never alias
   $ soteria-rust exec distinct_allocs.rs --stats stats.json && check_stat stats.json decayed_pointers 0
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running distinct_allocs::distinct_allocs_dont_alias...
   note: distinct_allocs::distinct_allocs_dont_alias: done in <time>, ran 1 branch
   PC 1: empty
   
 Check corner cases with permissive provenance, around transmutes
   $ soteria-rust exec provenance_transmute.rs --provenance permissive
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running provenance_transmute::addr_doesnt_expose...
   error: provenance_transmute::addr_doesnt_expose: found issues in <time>, errors in 1 branch (out of 1)
   bug: Dangling pointer in provenance_transmute::addr_doesnt_expose
@@ -180,7 +180,7 @@ Check corner cases with permissive provenance, around transmutes
 
 Test transmutations keeping the bit-patterns the same
   $ soteria-rust exec transmute_roundtrip.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running transmute_roundtrip::one_way_u32_f32...
   note: transmute_roundtrip::one_way_u32_f32: done in <time>, ran 1 branch
   PC 1: !(fis(NaN)(bv2f[F32](V|1|))) /\ (V|1| == V|2|) /\
@@ -201,7 +201,7 @@ Test transmutations keeping the bit-patterns the same
   
 Test null and dangling pointers
   $ soteria-rust exec dangling_ptrs.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running dangling_ptrs::null_ptr_zst...
   note: dangling_ptrs::null_ptr_zst: done in <time>, ran 1 branch
   PC 1: empty
@@ -232,7 +232,7 @@ Test null and dangling pointers
 
 Test exposing function pointers
   $ soteria-rust exec expose_fn_ptr.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running expose_fn_ptr::main...
   note: expose_fn_ptr::main: done in <time>, ran 1 branch
   PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffe) /\
@@ -240,7 +240,7 @@ Test exposing function pointers
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
   $ soteria-rust exec thread_local.rs --target aarch64-apple-darwin
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
   PC 1: empty
@@ -267,7 +267,7 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
 
 This test must be run separtely on linux and macos as it yields different error messages.
   $ soteria-rust exec thread_local.rs --target x86_64-unknown-linux-gnu
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
   PC 1: empty
@@ -294,14 +294,14 @@ This test must be run separtely on linux and macos as it yields different error 
 
 Test cloning ZSTs works; in particular, this generates a function with an empty body that just returns, so if we don't handle the ZST case we get an uninit access.
   $ soteria-rust exec clone_zst.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running clone_zst::main...
   note: clone_zst::main: done in <time>, ran 1 branch
   PC 1: empty
   
 --fail-fast should stop symbolic execution upon the first error encountered
   $ soteria-rust exec fail_fast.rs --fail-fast
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running fail_fast::main...
   error: fail_fast::main: found an issue in <time> after exploring 1 branch -- stopped immediately (fail-fast)
   error: Panic: ok in fail_fast::main
@@ -320,7 +320,7 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
 
 Test recursive validity check for references; disabled
   $ soteria-rust exec ref_validity.rs --recursive-validity=allow
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running ref_validity::test_uninit_ref...
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
   PC 1: empty
@@ -352,7 +352,7 @@ Test recursive validity check for references; disabled
 
 Test recursive validity check for references; enabled
   $ soteria-rust exec ref_validity.rs --recursive-validity=deny
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running ref_validity::test_uninit_ref...
   error: ref_validity::test_uninit_ref: found issues in <time>, errors in 1 branch (out of 1)
   bug: Invalid reference: Uninitialized memory access in ref_validity::test_uninit_ref
@@ -391,7 +391,7 @@ Test recursive validity check for references; enabled
 
 Test recursive validity check for references; warn
   $ soteria-rust exec ref_validity.rs --recursive-validity=warn
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running ref_validity::test_uninit_ref...
   warning: Invalid reference: Uninitialized memory access
       --> $TESTCASE_ROOT/ref_validity.rs:7:33
@@ -430,7 +430,7 @@ Test recursive validity check for references; warn
 
 Test approximation of complex float operations -- warn (default)
   $ soteria-rust exec approx_float.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running approx_float::main...
   warning: A complex floating point intrinsic was encountered; it will be executed with a significant over-approximation.
   note: approx_float::main: done in <time>, ran 1 branch
@@ -441,7 +441,7 @@ Test approximation of complex float operations -- warn (default)
 
 Test approximation of complex float operations -- denied
   $ soteria-rust exec approx_float.rs --approx-floating-ops deny
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running approx_float::main...
   note: approx_float::main: done in <time>, ran 0 branches
   
@@ -449,7 +449,7 @@ Test approximation of complex float operations -- denied
 
 Test approximation of complex float operations -- allowed
   $ soteria-rust exec approx_float.rs --approx-floating-ops allow
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running approx_float::main...
   note: approx_float::main: done in <time>, ran 1 branch
   PC 1: !(fis(Infinite)(V|1|)) /\ !(fis(NaN)(V|1|)) /\
@@ -458,14 +458,14 @@ Test approximation of complex float operations -- allowed
   
 Test enum constructors as functions; this broke with a rust toolchain update
   $ soteria-rust exec enum_constructor.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running enum_constructor::main...
   note: enum_constructor::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Print the callgraph
   $ soteria-rust exec callgraph.rs --dump-callgraph callgraph.dot && cat callgraph.dot
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running callgraph::main...
   note: callgraph::main: done in <time>, ran 1 branch
   PC 1: empty
@@ -512,7 +512,7 @@ Print the callgraph
 
 Check we trust addresses for pointer alignment
   $ soteria-rust exec assumed_align.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running assumed_align::main...
   note: assumed_align::main: done in <time>, ran 2 branches
   PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb) /\
@@ -522,14 +522,14 @@ Check we trust addresses for pointer alignment
   
 Check that nondet_raw for unions work
   $ soteria-rust exec union_nondet.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running union_nondet::read_d0...
   note: union_nondet::read_d0: done in <time>, ran 1 branch
   PC 1: empty
   
 Check we handle pattern types correctly
   $ soteria-rust exec pattern_types.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running pattern_types::nonnull_ok...
   note: pattern_types::nonnull_ok: done in <time>, ran 1 branch
   PC 1: empty
@@ -567,7 +567,7 @@ Check we handle pattern types correctly
 
 Test that it's UB to write to a const (regardless of aliasing checks), and that we don't detect const refs as leaks
   $ soteria-rust exec write_to_const.rs  --ignore-aliasing
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running write_to_const::write_to_const...
   error: write_to_const::write_to_const: found issues in <time>, errors in 1 branch (out of 1)
   bug: Write to read-only location in write_to_const::write_to_const
@@ -594,7 +594,7 @@ Test that it's UB to write to a const (regardless of aliasing checks), and that 
 
 Ensure we implement the caller_location intrinsic correctly; this used to cause a null pointer deref, rather than a proper panic from the handler.
   $ soteria-rust exec unreachable.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running unreachable::main...
   error: unreachable::main: found issues in <time>, errors in 1 branch (out of 1)
   error: Panic in unreachable::main
@@ -618,7 +618,7 @@ Ensure we implement the caller_location intrinsic correctly; this used to cause 
 
 Boolean BitOr must not be assumed true; both operands can be false (issue #376).
   $ soteria-rust exec bool_or.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running bool_or::main...
   error: bool_or::main: found issues in <time>, errors in 1 branch (out of 2)
   error: Panic: assertion failed: output in bool_or::main
@@ -638,7 +638,7 @@ Boolean BitOr must not be assumed true; both operands can be false (issue #376).
 Test that allocating a box only requires two heap allocation (thanks to the store optimisation): one for the contents of the box, and one for the box that we pass to the drop glue.
 FIXME: now that named consts are globals, there is in fact a third allocation: the one for <i32 as SizedTypeProperties>::LAYOUT. We should extend the store optimisation to handle globals; in particular we have a guarantee they can't be written to, so it's likely the optimisation will perform really well.
   $ soteria-rust exec box.rs --stats stats.json && check_stat stats.json allocs 2
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running box::main...
   note: box::main: done in <time>, ran 1 branch
   PC 1: empty
@@ -648,34 +648,34 @@ FIXME: now that named consts are globals, there is in fact a third allocation: t
 
 Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.
   $ soteria-rust exec zst_ref.rs --stats stats.json && check_stat stats.json allocs 0
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running zst_ref::main...
   note: zst_ref::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test that indexing arrays with a constant index does not allocate; the value is updated in place in the store.
   $ soteria-rust exec store_struct.rs --stats stats.json && check_stat stats.json allocs 0
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running store_struct::main...
   note: store_struct::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test that reading the metadata of a store-hosted pointer does not allocate; the pointer stays in the store.
   $ soteria-rust exec ptr_metadata.rs --stats stats.json && check_stat stats.json allocs 0
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running ptr_metadata::main...
   note: ptr_metadata::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test we can use ptr::metadata to get the metadata of a trait object; this used to crash
   $ soteria-rust exec ptr_dyn_metadata.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running ptr_dyn_metadata::main...
   note: ptr_dyn_metadata::main: done in <time>, ran 1 branch
   PC 1: empty
   
   $ soteria-rust exec nonnull.rs --stats stats.json && check_stat stats.json decayed_pointers 0
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running nonnull::match_niched_enums...
   note: nonnull::match_niched_enums: done in <time>, ran 1 branch
   PC 1: empty
@@ -698,7 +698,7 @@ Test we can use ptr::metadata to get the metadata of a trait object; this used t
   PC 2: (0x0000000000000001 <=u V|1|)
   
   $ soteria-rust exec btreeset_small.rs --stats stats.json && check_stat stats.json decayed_pointers 0
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running btreeset_small::test_treeset_is_ordered...
   note: btreeset_small::test_treeset_is_ordered: done in <time>, ran 3 branches
   PC 1: (V|2| <u V|1|)
@@ -710,7 +710,7 @@ Pointers are compared by their addresses. Two pointer with equal addresses
 but different provenance should be decayed, compared, and checked to be equal
 successfuly.
   $ soteria-rust exec ptr_diff_prov.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running ptr_diff_prov::diff_prov_same_address...
   note: ptr_diff_prov::diff_prov_same_address: done in <time>, ran 1 branch
   PC 1: Distinct(V|1-2|) /\ (0x0000000000000001 <=u V|1|) /\
@@ -724,14 +724,14 @@ successfuly.
   
 Test calls to FnOnce trait objects.
   $ soteria-rust exec box_fnonce.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running box_fnonce::main...
   note: box_fnonce::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test the atomic read-modify-write intrinsics (fetch_and/or/xor/nand/sub/min/max), on both integers and pointers.
   $ soteria-rust exec atomics.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running atomics::bitwise...
   warning: An atomic intrinsic was encountered; it will be executed as sequential code
   note: atomics::bitwise: done in <time>, ran 1 branch
@@ -748,14 +748,14 @@ Test the atomic read-modify-write intrinsics (fetch_and/or/xor/nand/sub/min/max)
 Test a pointer constant into a larger, over-aligned allocation (à la hashbrown's
 Group::static_empty); the allocation must keep its full size and alignment.
   $ soteria-rust exec oversized_const_alloc.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running oversized_const_alloc::main...
   note: oversized_const_alloc::main: done in <time>, ran 1 branch
   PC 1: empty
   
 Test a field access through a pointer derived from ptr.sub with a symbolic index; used to error
   $ soteria-rust exec ptr_sub_field.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running ptr_sub_field::main...
   note: ptr_sub_field::main: done in <time>, ran 4 branches
   PC 1: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
@@ -788,7 +788,7 @@ Test a field access through a pointer derived from ptr.sub with a symbolic index
   
 Test the SIMD intrinsics used by hashbrown's NEON control group.
   $ soteria-rust exec simd.rs --target aarch64-apple-darwin
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running simd::main...
   note: simd::main: done in <time>, ran 1 branch
   PC 1: empty
@@ -797,7 +797,7 @@ Test a HashMap with concrete keys (insert/get/len) and a symbolic key. The
 stubbed (constant) hasher keeps bucket indices concrete even for the symbolic
 key, so the only branch is its equality with the concrete entry.
   $ soteria-rust exec hashmap.rs --target aarch64-apple-darwin
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running hashmap::main...
   warning: std::sys::random::hashmap_random_keys was stubbed to constant random keys, to avoid path explosion. This is an under-approximation, some paths may be missed.
   warning: std::hash::BuildHasher::hash_one was stubbed to always hash to 0, to avoid path explosion. This is an under-approximation, some paths may be missed.
