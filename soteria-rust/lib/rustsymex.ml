@@ -15,7 +15,9 @@ module StatKeys = struct
           (Float.of_int n, Float.of_int store_loads));
     register_int_printer ~name:"Function calls" function_calls (fun _ ->
         Fmt.int);
-    register_int_printer ~name:"Allocations" allocs (fun _ -> Fmt.int)
+    register_int_printer ~name:"Allocations" allocs (fun _ -> Fmt.int);
+    register_int_printer ~name:"Decayed pointers" decayed_pointers (fun _ ->
+        Fmt.int)
 end
 
 module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver)
