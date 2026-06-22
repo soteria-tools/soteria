@@ -131,7 +131,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | Nop (Distinct, vs) ->
         let vs = List.map encode_value_memo vs in
         distinct vs
-    | Extension x -> Typed.Ext.encode_value encode_value x
+    | Extension x -> Typed.Ext.encode_value encode_value_memo x
 
   and encode_value_memo v =
     match Hashtbl.Hint.find_opt memo_encode_value_tbl v.Hc.tag with
