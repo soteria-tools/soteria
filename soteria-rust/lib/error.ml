@@ -192,11 +192,15 @@ let replace_subpath_opt sub_str replacement path =
 (** Converts a file path to a user-friendly string by replacing known internal
     subpaths. Returns [None] if no substitution is needed. *)
 let file_to_user_string_opt (file : string) =
+  let open Syntaxes.Option in
   let ( / ) = Filename.concat in
-  match replace_subpath_opt "rustc" "$RUSTLIB" file with
-  | Some f -> Some f
-  | None ->
-      replace_subpath_opt ("soteria-rust" / "plugins") "$SOTERIA-RUST" file
+  let/ () = replace_subpath_opt "rustc" "$RUSTLIB" file in
+  let/ () =
+    replace_subpath_opt
+      ("lib" / "rustlib" / "src" / "rust" / "library")
+      "$RUSTLIB" file
+  in
+  replace_subpath_opt ("soteria-rust" / "plugins") "$SOTERIA-RUST" file
 
 (** Same as {!file_to_user_string_opt}, but returns the original file if no
     substitution is needed. *)
