@@ -110,18 +110,19 @@ module M (StateM : State.StateM.S) = struct
     let r = cast_lit ty r in
     let signed = Layout.is_signed ty in
     let wrapped, overflowed =
-      match (op, signed) with
-      | AddChecked, false -> l +?@ r
-      | AddChecked, true -> l +$?@ r
-      | SubChecked, false -> l -?@ r
-      | SubChecked, true -> l -$?@ r
-      | MulChecked, false -> l *?@ r
-      | MulChecked, true -> l *$?@ r
+      (* Note here we cannot use the checked operators, as they are meant for
+         library developers that promise to check overflow didn't happen. Here,
+         the user code is the one responsible for the check, so we cannot
+         guarantee it happened! We must be pessimistic. *)
+      match op with
+      | AddChecked -> (BV.add l r, BV.add_overflows ~signed l r)
+      | SubChecked -> (BV.sub l r, BV.sub_overflows ~signed l r)
+      | MulChecked -> (BV.mul l r, BV.mul_overflows ~signed l r)
       | _ ->
           L.failwith "Invalid checked op: (%a, %b)" Expressions.pp_binop op
             signed
     in
-    ok (Tuple [ Int wrapped; Int (BV.of_bool overflowed) ])
+    ok (Tuple [ Int (BV.no_ovf_unsafe wrapped); Int (BV.of_bool overflowed) ])
 
   let meta_as_int = function
     | Len l -> ok (Some l)
