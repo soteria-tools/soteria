@@ -792,9 +792,23 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let forget ~t:_ ~arg:_ = ok ()
 
   let is_val_statically_known ~t:_ ~arg:_ =
-    (* see:
-       https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
-    lift_symex @@ Rustsymex.nondet Typed.t_bool
+    (* This function should return a nondeterministic boolean, as documented in
+       https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html
+
+       Unfortunately, this leads to path explosion, in particular with
+       [format!], which uses this. This means code that uses [format!] N times
+       will have 2^N paths.
+
+       As such, we under-approximate for calls coming from formatting code, and
+       assume values are never statically known. We choose not to warn the user
+       about this, under the assumption that formatting code is part of the TCB
+       and missing a path here is completely irrelevant. *)
+    let* trace = get_trace () in
+    match trace.loc with
+    | Some { file = { name = Local path; _ }; _ }
+      when String.ends_with ~suffix:"core/src/fmt/mod.rs" path ->
+        ok Typed.v_false
+    | _ -> lift_symex @@ Rustsymex.nondet Typed.t_bool
 
   let float_minmax ~is_min ~x ~y : T.sfloat Typed.t ret =
     let x = (x :> T.sfloat Typed.t) in
