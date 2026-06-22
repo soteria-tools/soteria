@@ -1260,7 +1260,9 @@ and BitVec : BitVec = struct
         BitVec mask )
     | ( BitVec mask,
         (Binop (LShr, _, { node = { kind = BitVec shift; _ }; _ }) as base) )
-      when let shift_i = Z.to_int shift in
+      when Z.fits_int shift
+           &&
+           let shift_i = Z.to_int shift in
            shift_i >= 0
            && shift_i < n
            &&
@@ -1455,7 +1457,7 @@ and BitVec : BitVec = struct
           ( Shl,
             { node = { kind = Unop (BvExtend (false, _), tail); _ }; _ },
             { node = { kind = BitVec shift; _ }; _ } ) )
-      when Z.to_int shift = size_of base.node.ty ->
+      when Z.fits_int shift && Z.to_int shift = size_of base.node.ty ->
         let tail_size = size_of tail.node.ty in
         if nx = tail_size then concat tail base
         else if nx > tail_size then
@@ -1496,7 +1498,7 @@ and BitVec : BitVec = struct
         | BitOr -> or_ v1 v2
         | BitXor -> xor v1 v2
         | _ -> L.failwith "unreachable binop")
-    | Binop (Shl, v1, { node = { kind = BitVec x; _ }; _ }) ->
+    | Binop (Shl, v1, { node = { kind = BitVec x; _ }; _ }) when Z.fits_int x ->
         (* extract[from_, to_](v1 << x) *)
         let shift = Z.to_int x in
         if from_ >= shift then
@@ -1511,7 +1513,8 @@ and BitVec : BitVec = struct
           let high_part = extract 0 (to_ - shift) v1 in
           let low_zeros = zero (shift - from_) in
           concat high_part low_zeros
-    | Binop (LShr, v1, { node = { kind = BitVec x; _ }; _ }) ->
+    | Binop (LShr, v1, { node = { kind = BitVec x; _ }; _ }) when Z.fits_int x
+      ->
         (* extract[from_, to_](v1 >> x) *)
         (* After right shift by x, bit i of result = bit (i+x) of original if i+x < prev_size, else 0 *)
         let shift = Z.to_int x in
@@ -1666,14 +1669,16 @@ and BitVec : BitVec = struct
 
   and shl v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l lsl to_int r)
+    | BitVec l, BitVec r when Z.fits_int r ->
+        mk_masked (size_of v1.node.ty) Z.(l lsl to_int r)
     | _, BitVec s when Z.equal s Z.zero -> v1
     | _, BitVec s when Z.geq s (Z.of_int (size_of v1.node.ty)) ->
         zero (size_of v1.node.ty)
     | Binop (Shl, v, { node = { kind = BitVec s1; _ }; _ }), BitVec s2 ->
         let n = size_of v1.node.ty in
         shl v (mk n Z.(s1 + s2))
-    | Binop (LShr, x, { node = { kind = BitVec sr; _ }; _ }), BitVec sl ->
+    | Binop (LShr, x, { node = { kind = BitVec sr; _ }; _ }), BitVec sl
+      when Z.fits_int sr && Z.fits_int sl ->
         if Z.leq sl sr then
           (* (x >> s1) << s2 where s2 < s1 = x >> (s1 - s2) & (mask with lower
              bits cleared) *)
@@ -1688,13 +1693,15 @@ and BitVec : BitVec = struct
           let mask = Z.(lognot (pred (one lsl to_int sr))) in
           shl (and_ x (mk_masked n mask)) (mk n shift)
     | Binop (BitAnd, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
-    | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
+    | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s
+      when Z.fits_int s ->
         (* (x & mask) << s = (x << s) & (mask << s) *)
         let n = size_of v1.node.ty in
         let shifted_mask = Z.(mask lsl to_int s) in
         and_ (shl x v2) (mk_masked n shifted_mask)
     | Binop (BitOr, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
-    | Binop (BitOr, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
+    | Binop (BitOr, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s
+      when Z.fits_int s ->
         (* (x | mask) << s = (x << s) | (mask << s) *)
         let n = size_of v1.node.ty in
         let shifted_mask = Z.(mask lsl to_int s) in
@@ -1703,7 +1710,8 @@ and BitVec : BitVec = struct
 
   and lshr v1 v2 =
     match (v1.node.kind, v2.node.kind) with
-    | BitVec l, BitVec r -> mk_masked (size_of v1.node.ty) Z.(l asr to_int r)
+    | BitVec l, BitVec r when Z.fits_int r ->
+        mk_masked (size_of v1.node.ty) Z.(l asr to_int r)
     | _, BitVec s when Z.equal s Z.zero -> v1
     | _, BitVec s when Z.geq s (Z.of_int (size_of v1.node.ty)) ->
         zero (size_of v1.node.ty)
@@ -1711,13 +1719,15 @@ and BitVec : BitVec = struct
         let n = size_of v1.node.ty in
         lshr v (mk n Z.(s1 + s2))
     | Binop (BitAnd, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
-    | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
+    | Binop (BitAnd, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s
+      when Z.fits_int s ->
         (* (x & mask) >> s = (x >> s) & (mask >> s) *)
         let n = size_of v1.node.ty in
         let shifted_mask = Z.(mask asr to_int s) in
         and_ (lshr x v2) (mk n shifted_mask)
     | Binop (BitOr, x, { node = { kind = BitVec mask; _ }; _ }), BitVec s
-    | Binop (BitOr, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s ->
+    | Binop (BitOr, { node = { kind = BitVec mask; _ }; _ }, x), BitVec s
+      when Z.fits_int s ->
         (* (x | mask) >> s = (x >> s) | (mask >> s) *)
         let n = size_of v1.node.ty in
         let shifted_mask = Z.(mask asr to_int s) in
@@ -1728,7 +1738,7 @@ and BitVec : BitVec = struct
     let size = size_of v1.node.ty in
     let size_z = Z.of_int (size_of v1.node.ty) in
     match (v1.node.kind, v2.node.kind) with
-    | BitVec l, BitVec r ->
+    | BitVec l, BitVec r when Z.fits_int r ->
         let n = size_of v1.node.ty in
         mk_masked n Z.(Z.signed_extract l 0 n asr to_int r)
     | _, BitVec s when Z.equal s Z.zero -> v1
