@@ -922,18 +922,18 @@
 one-line JSON list; the compilation progress goes to stderr, so stdout only
 contains the JSON list and can be piped into e.g. jq
   $ soteria-rust compile --list-tests tests.rs 2>/dev/null
-  ["tests::first_test","tests::second_test","tests::third_test"]
+  [{"test":"tests::first_test","target":{"kind":"crate","name":null}},{"test":"tests::second_test","target":{"kind":"crate","name":null}},{"test":"tests::third_test","target":{"kind":"crate","name":null}}]
 
 The list respects --filter, so it can be used to isolate a single test
   $ soteria-rust compile --list-tests --filter second tests.rs 2>/dev/null
-  ["tests::second_test"]
+  [{"test":"tests::second_test","target":{"kind":"crate","name":null}}]
 
 In `exec` mode, --list-tests prints the list and still runs the analysis
   $ soteria-rust exec --list-tests --filter first tests.rs
   Compiling crate... done in <time>
-  ["tests::first_test"]
   => Running tests::first_test...
   note: tests::first_test: done in <time>, ran 1 branch
   PC 1: empty
   
+  [{"test":"tests::first_test","target":{"kind":"crate","name":null}}]
 

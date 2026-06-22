@@ -193,16 +193,12 @@ points (here the lib, whose unit test is behind a feature) are skipped.
 --test and --example can be repeated to compile and analyse several targets, one
 after the other (shown with --list-tests for brevity).
   $ soteria-rust compile . --test tests --test soteria --list-tests 2>/dev/null
-  ["tests::test_ok","tests::test_nok","tests::test_nok_expected"]
-  ["soteria::tests::test_ok","soteria::tests::test_nok","soteria::tests::test_nok_ok"]
+  [{"test":"tests::test_ok","target":{"kind":"test","name":"tests"}},{"test":"tests::test_nok","target":{"kind":"test","name":"tests"}},{"test":"tests::test_nok_expected","target":{"kind":"test","name":"tests"}},{"test":"soteria::tests::test_ok","target":{"kind":"test","name":"soteria"}},{"test":"soteria::tests::test_nok","target":{"kind":"test","name":"soteria"}},{"test":"soteria::tests::test_nok_ok","target":{"kind":"test","name":"soteria"}}]
 
 --tests selects every test target; --example can be added on top to also analyse
 an example (shown with --list-tests for brevity; the lib has no tests here).
   $ soteria-rust compile . --tests --example example --list-tests 2>/dev/null
-  []
-  ["soteria::tests::test_ok","soteria::tests::test_nok","soteria::tests::test_nok_ok"]
-  ["tests::test_ok","tests::test_nok","tests::test_nok_expected"]
-  ["example::example_ok","example::example_nok"]
+  [{"test":"soteria::tests::test_ok","target":{"kind":"test","name":"soteria"}},{"test":"soteria::tests::test_nok","target":{"kind":"test","name":"soteria"}},{"test":"soteria::tests::test_nok_ok","target":{"kind":"test","name":"soteria"}},{"test":"tests::test_ok","target":{"kind":"test","name":"tests"}},{"test":"tests::test_nok","target":{"kind":"test","name":"tests"}},{"test":"tests::test_nok_expected","target":{"kind":"test","name":"tests"}},{"test":"example::example_ok","target":{"kind":"example","name":"example"}},{"test":"example::example_nok","target":{"kind":"example","name":"example"}}]
 
 --all-targets cannot be combined with any target, and --tests is redundant with
 --test.

@@ -111,6 +111,21 @@ let pp_target ft = function
   | Example name -> Fmt.pf ft "example \"%s\"" name
   | Bin name -> Fmt.pf ft "bin \"%s\"" name
 
+(** A machine-readable JSON description of the target, as
+    [{ "kind": ..., "name": ... }] (the [name] is omitted for [crate]/[lib]).
+    Used to tag entry points in [--list-tests] output. *)
+let target_to_yojson target : Yojson.Safe.t =
+  let kind, name =
+    match target with
+    | Default -> ("crate", None)
+    | Lib -> ("lib", None)
+    | Test name -> ("test", Some name)
+    | Example name -> ("example", Some name)
+    | Bin name -> ("bin", Some name)
+  in
+  let name = Option.fold ~none:`Null ~some:(fun n -> `String n) name in
+  `Assoc [ ("kind", `String kind); ("name", name) ]
+
 (** The Cargo flags selecting this target. *)
 let target_cargo_flags = function
   | Default -> []
