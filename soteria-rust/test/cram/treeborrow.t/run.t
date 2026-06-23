@@ -1,6 +1,6 @@
 Basic code, reference gets invalidated
   $ soteria-rust exec raw-ptrs.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running raw_ptrs::main...
   note: raw_ptrs::main: done in <time>, ran 1 branch
   PC 1: empty
@@ -8,7 +8,7 @@ Basic code, reference gets invalidated
 
 Simple tree borrow violation
   $ soteria-rust exec simple-fail.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running simple_fail::main...
   error: simple_fail::main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Aliasing error in simple_fail::main
@@ -24,7 +24,7 @@ Simple tree borrow violation
 
 Raw pointers don't get new tags
   $ soteria-rust exec raw-ptrs.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running raw_ptrs::main...
   note: raw_ptrs::main: done in <time>, ran 1 branch
   PC 1: empty
@@ -32,7 +32,7 @@ Raw pointers don't get new tags
 
 Raw pointers can access outside the parent's range, with offsets
   $ soteria-rust exec offsets.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running offsets::main...
   note: offsets::main: done in <time>, ran 1 branch
   PC 1: empty
@@ -40,7 +40,7 @@ Raw pointers can access outside the parent's range, with offsets
 
 Can have two mutable protected refs to the same allocation, if they don't overlap
   $ soteria-rust exec two-mut-protected.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running two_mut_protected::main...
   note: two_mut_protected::main: done in <time>, ran 1 branch
   PC 1: empty
@@ -48,7 +48,7 @@ Can have two mutable protected refs to the same allocation, if they don't overla
 
 UnsafeCell allow foreign writes followed by local writes
   $ soteria-rust exec cell.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running cell::main...
   note: cell::main: done in <time>, ran 1 branch
   PC 1: empty
@@ -56,7 +56,7 @@ UnsafeCell allow foreign writes followed by local writes
 
 Nested UnsafeCells work too -- skipped for now, due to Charon changing the translation of IS_ZST
   $ soteria-rust exec nested.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running nested::main...
   note: nested::main: done in <time>, ran 1 branch
   PC 1: empty
@@ -64,7 +64,7 @@ Nested UnsafeCells work too -- skipped for now, due to Charon changing the trans
 
 Test --ignore-aliasing flag
   $ soteria-rust exec simple-fail.rs --ignore-aliasing
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running simple_fail::main...
   note: simple_fail::main: done in <time>, ran 1 branch
   PC 1: empty

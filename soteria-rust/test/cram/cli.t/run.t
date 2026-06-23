@@ -115,6 +115,10 @@
              Disables coloured output.
   
   FRONTEND OPTIONS
+         --all-targets
+             Compile and analyse every target of the crate (lib, bins, examples
+             and tests), one after the other.
+  
          --cargo=[,…] (absent CARGO_FLAGS env)
              Additional flags to pass to Cargo when analysing a crate
   
@@ -124,6 +128,12 @@
   
          --clean (absent SOTERIA_RUST_CLEANUP env)
              Clean up compiled files after execution
+  
+         --example=VAL
+             The example targets to compile and analyse; this only has an
+             effect if analysing a crate. As with [--test], the [#[test]]
+             functions of the example are used as entry points, and the flag
+             can be repeated.
   
          --exclude=REGEX[,…]
              Filter the entrypoints to exclude, by name. If empty, no
@@ -180,9 +190,14 @@
              the current machine is used.
   
          --test=VAL
-             The test profile to use to compile the crate; this only has an
-             effect if analysing a crate. Use [lib] for unit tests in [src/].
-             By default, the crate's source is analysed, not the tests.
+             The test targets to compile and analyse; this only has an effect
+             if analysing a crate. Use [lib] for unit tests in [src/]. Can be
+             repeated to analyse several test targets, one after the other. By
+             default, the crate's source is analysed, not the tests.
+  
+         --tests
+             Compile and analyse every test target of the crate (the [src/]
+             unit tests and all integration tests), one after the other.
   
   ANALYSIS OPTIONS
          --approx-floating-ops=ENUM (absent=warn)
@@ -396,6 +411,10 @@
              Disables coloured output.
   
   FRONTEND OPTIONS
+         --all-targets
+             Compile and analyse every target of the crate (lib, bins, examples
+             and tests), one after the other.
+  
          --cargo=[,…] (absent CARGO_FLAGS env)
              Additional flags to pass to Cargo when analysing a crate
   
@@ -405,6 +424,12 @@
   
          --clean (absent SOTERIA_RUST_CLEANUP env)
              Clean up compiled files after execution
+  
+         --example=VAL
+             The example targets to compile and analyse; this only has an
+             effect if analysing a crate. As with [--test], the [#[test]]
+             functions of the example are used as entry points, and the flag
+             can be repeated.
   
          --exclude=REGEX[,…]
              Filter the entrypoints to exclude, by name. If empty, no
@@ -461,9 +486,14 @@
              the current machine is used.
   
          --test=VAL
-             The test profile to use to compile the crate; this only has an
-             effect if analysing a crate. Use [lib] for unit tests in [src/].
-             By default, the crate's source is analysed, not the tests.
+             The test targets to compile and analyse; this only has an effect
+             if analysing a crate. Use [lib] for unit tests in [src/]. Can be
+             repeated to analyse several test targets, one after the other. By
+             default, the crate's source is analysed, not the tests.
+  
+         --tests
+             Compile and analyse every test target of the crate (the [src/]
+             unit tests and all integration tests), one after the other.
   
   ANALYSIS OPTIONS
          --approx-floating-ops=ENUM (absent=warn)
@@ -673,6 +703,10 @@
              Disables coloured output.
   
   FRONTEND OPTIONS
+         --all-targets
+             Compile and analyse every target of the crate (lib, bins, examples
+             and tests), one after the other.
+  
          --cargo=[,…] (absent CARGO_FLAGS env)
              Additional flags to pass to Cargo when analysing a crate
   
@@ -682,6 +716,12 @@
   
          --clean (absent SOTERIA_RUST_CLEANUP env)
              Clean up compiled files after execution
+  
+         --example=VAL
+             The example targets to compile and analyse; this only has an
+             effect if analysing a crate. As with [--test], the [#[test]]
+             functions of the example are used as entry points, and the flag
+             can be repeated.
   
          --exclude=REGEX[,…]
              Filter the entrypoints to exclude, by name. If empty, no
@@ -738,9 +778,14 @@
              the current machine is used.
   
          --test=VAL
-             The test profile to use to compile the crate; this only has an
-             effect if analysing a crate. Use [lib] for unit tests in [src/].
-             By default, the crate's source is analysed, not the tests.
+             The test targets to compile and analyse; this only has an effect
+             if analysing a crate. Use [lib] for unit tests in [src/]. Can be
+             repeated to analyse several test targets, one after the other. By
+             default, the crate's source is analysed, not the tests.
+  
+         --tests
+             Compile and analyse every test target of the crate (the [src/]
+             unit tests and all integration tests), one after the other.
   
   ANALYSIS OPTIONS
          --approx-floating-ops=ENUM (absent=warn)
@@ -871,24 +916,24 @@
 
 `compile` compiles the code without running any analysis
   $ soteria-rust compile tests.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
 
 `compile --list-tests` additionally prints the testing entry points as a
 one-line JSON list; the compilation progress goes to stderr, so stdout only
 contains the JSON list and can be piped into e.g. jq
   $ soteria-rust compile --list-tests tests.rs 2>/dev/null
-  ["tests::first_test","tests::second_test","tests::third_test"]
+  [{"test":"tests::first_test","target":{"kind":"crate","name":null}},{"test":"tests::second_test","target":{"kind":"crate","name":null}},{"test":"tests::third_test","target":{"kind":"crate","name":null}}]
 
 The list respects --filter, so it can be used to isolate a single test
   $ soteria-rust compile --list-tests --filter second tests.rs 2>/dev/null
-  ["tests::second_test"]
+  [{"test":"tests::second_test","target":{"kind":"crate","name":null}}]
 
 In `exec` mode, --list-tests prints the list and still runs the analysis
   $ soteria-rust exec --list-tests --filter first tests.rs
-  Compiling... done in <time>
-  ["tests::first_test"]
+  Compiling crate... done in <time>
   => Running tests::first_test...
   note: tests::first_test: done in <time>, ran 1 branch
   PC 1: empty
   
+  [{"test":"tests::first_test","target":{"kind":"crate","name":null}}]
 

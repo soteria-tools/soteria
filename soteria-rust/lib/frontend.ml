@@ -94,6 +94,58 @@ module Lib = struct
     { config with rustc = config.rustc @ lib_imports }
 end
 
+(** A single Cargo target to compile and analyse. [Default] analyses the crate's
+    source (with [main] as the entry point); the others build a test harness, so
+    their entry points are the [#[test]] functions. *)
+type target =
+  | Default
+  | Lib
+  | Test of string
+  | Example of string
+  | Bin of string
+
+let pp_target ft = function
+  | Default -> Fmt.pf ft "crate"
+  | Lib -> Fmt.pf ft "lib tests"
+  | Test name -> Fmt.pf ft "test \"%s\"" name
+  | Example name -> Fmt.pf ft "example \"%s\"" name
+  | Bin name -> Fmt.pf ft "bin \"%s\"" name
+
+(** A machine-readable JSON description of the target, as
+    [{ "kind": ..., "name": ... }] (the [name] is omitted for [crate]/[lib]).
+    Used to tag entry points in [--list-tests] output. *)
+let target_to_yojson target : Yojson.Safe.t =
+  let kind, name =
+    match target with
+    | Default -> ("crate", None)
+    | Lib -> ("lib", None)
+    | Test name -> ("test", Some name)
+    | Example name -> ("example", Some name)
+    | Bin name -> ("bin", Some name)
+  in
+  let name = Option.fold ~none:`Null ~some:(fun n -> `String n) name in
+  `Assoc [ ("kind", `String kind); ("name", name) ]
+
+(** The Cargo flags selecting this target. *)
+let target_cargo_flags = function
+  | Default -> []
+  | Lib -> [ "--lib" ]
+  | Test name -> [ "--test"; name ]
+  | Example name -> [ "--example"; name ]
+  | Bin name -> [ "--bin"; name ]
+
+(** Whether this target builds a test harness, in which case the entry points
+    are the [#[test]] functions rather than [main]. *)
+let target_is_test = function Default -> false | _ -> true
+
+(** A filesystem-safe name for the ULLBC output of this target. *)
+let target_filename = function
+  | Default -> "crate.ullbc"
+  | Lib -> "test-lib.ullbc"
+  | Test name -> "test-" ^ name ^ ".ullbc"
+  | Example name -> "example-" ^ name ^ ".ullbc"
+  | Bin name -> "bin-" ^ name ^ ".ullbc"
+
 type entry_point_filter = {
   filter : Cmd.entry list;
   expect_error : Cmd.entry list;
@@ -211,7 +263,7 @@ let get_entry_point (filter : entry_point_filter) crate
   in
   Some { fun_decl = decl; expect_error; fuel }
 
-let create_using_current_config () : mk_cmd * entry_point_filter =
+let create_using_current_config ~target () : mk_cmd * entry_point_filter =
   let config = Config.get () in
   let cmd_parts =
     [ default () ]
@@ -220,19 +272,19 @@ let create_using_current_config () : mk_cmd * entry_point_filter =
   in
   let cmd = List.fold_left Cmd.concat_cmd Cmd.empty cmd_parts in
   let cmd =
-    match config.test with
-    | None -> cmd
-    | Some _ ->
-        (* HACK: if we're in test mode, we want to ignore main because Rust will
-           compile it in a quirky way and it requires having a sysroot. Instead
-           we want to look for the tests directly! So we add #[test] *)
-        let entry_points =
-          Cmd.Attrib "test" :: cmd.entry_points
-          |> List.filter (function Cmd.Pub | Name "main" -> false | _ -> true)
-        in
-        let expect_error = Cmd.Attrib "should_panic" :: cmd.expect_error in
-        { cmd with entry_points; expect_error }
+    if not (target_is_test target) then cmd
+    else
+      (* HACK: if we're in test mode, we want to ignore main because Rust will
+         compile it in a quirky way and it requires having a sysroot. Instead we
+         want to look for the tests directly! So we add #[test] *)
+      let entry_points =
+        Cmd.Attrib "test" :: cmd.entry_points
+        |> List.filter (function Cmd.Pub | Name "main" -> false | _ -> true)
+      in
+      let expect_error = Cmd.Attrib "should_panic" :: cmd.expect_error in
+      { cmd with entry_points; expect_error }
   in
+  let cmd = { cmd with cargo = target_cargo_flags target } in
   let mk_cmd =
    fun ?input ~output () ->
     let input =
@@ -297,38 +349,75 @@ let parse_ullbc_of_file ~(mk_cmd : mk_cmd) file_name =
   parse_ullbc ~mode:Rustc ~cmd ~output ~pwd:parent_folder ()
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
-let parse_ullbc_of_crate ~(mk_cmd : mk_cmd) crate_dir =
-  let filename =
-    match (Config.get ()).test with
-    | Some test -> "test-" ^ test ^ ".ullbc"
-    | None -> "crate.ullbc"
-  in
-  let output = crate_dir / filename in
+let parse_ullbc_of_crate ~(mk_cmd : mk_cmd) ~target crate_dir =
+  let output = crate_dir / target_filename target in
   let cmd = mk_cmd ~output () in
   parse_ullbc ~mode:Cargo ~cmd ~output ~pwd:crate_dir ()
 
-let parse_ullbc_raw ~mk_cmd = function
+let parse_ullbc_raw ~mk_cmd ~target = function
   | `File file -> parse_ullbc_of_file ~mk_cmd file
-  | `Dir path -> parse_ullbc_of_crate ~mk_cmd path
+  | `Dir path -> parse_ullbc_of_crate ~mk_cmd ~target path
 
 (** Given a path, if it's a file will parse the ULLBC of that single file using
     rustc; otherwise will assume it's a path to a crate and use cargo.
     {b Will translate all functions in the crate, without filtering
        entry-points.} *)
 let parse_ullbc path =
-  let mk_cmd, _filter = create_using_current_config () in
+  let mk_cmd, _filter = create_using_current_config ~target:Default () in
   let mk_cmd =
     modify_mk_cmd (fun c -> Cmd.{ c with entry_points = [] }) mk_cmd
   in
-  parse_ullbc_raw ~mk_cmd path
+  parse_ullbc_raw ~mk_cmd ~target:Default path
 
-(** Given a path, will check if it has a [.rs] extension, in which case it will
-    parse the ULLBC of that single file using rustc; otherwise will assume it's
-    a path to a crate and use cargo.
-    {b Will only start translation from functions considered entry-points.} *)
-let parse_ullbc_with_entry_points path =
-  let mk_cmd, filter = create_using_current_config () in
-  parse_ullbc_raw path ~mk_cmd |> with_entry_points ~filter
+(** Query Obol for the targets of the crate at [dir], keeping those relevant for
+    analysis: the [src/] unit tests and integration tests, plus examples and
+    bins when [~only_tests:false]. *)
+let list_targets ~only_tests dir =
+  let output =
+    let@ () = Exe.run_in dir in
+    Exe.exec_exn (Cmd.frontend_cmd ()) [ "list-targets" ]
+  in
+  let parse_target item =
+    let open Yojson.Safe.Util in
+    let name = item |> member "name" |> to_string in
+    match item |> member "kind" |> to_string with
+    | "lib" -> Some Lib
+    | "test" -> Some (Test name)
+    | "example" when not only_tests -> Some (Example name)
+    | "bin" when not only_tests -> Some (Bin name)
+    | _ -> None
+  in
+  match Yojson.Safe.from_string (String.concat "" output) with
+  | `List items -> List.filter_map parse_target items
+  | _ | (exception _) ->
+      compilation_err "listing targets"
+        "Could not parse the targets returned by Obol"
+
+(** The list of targets to compile and analyse for [path], as determined by the
+    current configuration ([--example], [--test], [--tests], [--all-targets]).
+    Single files always yield a single [Default] target. *)
+let targets_to_run path =
+  let config = Config.get () in
+  match path with
+  | `File _ -> [ Default ]
+  | `Dir dir when config.all_targets -> list_targets ~only_tests:false dir
+  | `Dir dir ->
+      let all_tests =
+        if config.tests then list_targets ~only_tests:true dir else []
+      in
+      let targets =
+        all_tests
+        @ List.map (function "lib" -> Lib | name -> Test name) config.test
+        @ List.map (fun name -> Example name) config.example
+      in
+      if List.is_empty targets then [ Default ] else targets
+
+(** Compile [path] for the given [target] and return the crate along with its
+    entry points. Only starts translation from functions considered
+    entry-points. *)
+let compile_target ~target path =
+  let mk_cmd, filter = create_using_current_config ~target () in
+  parse_ullbc_raw ~mk_cmd ~target path |> with_entry_points ~filter
 
 let compile_all_plugins () =
   List.iter

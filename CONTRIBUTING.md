@@ -109,12 +109,12 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
 
 **Manual installation:**
 1. **Clone Obol at the correct commit:**
-   <!-- [versionsync: OBOL_COMMIT_HASH=bdf52aa2082fbda85bb6b3bdb5a0d9c2b2c55a69] -->
+   <!-- [versionsync: OBOL_COMMIT_HASH=806bd6f58a051ae474e4670c5e7ac2641bd2e424] -->
    ```sh
    cd ..
    git clone https://github.com/soteria-tools/obol.git
    cd obol
-   git checkout bdf52aa2082fbda85bb6b3bdb5a0d9c2b2c55a69
+   git checkout 806bd6f58a051ae474e4670c5e7ac2641bd2e424
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `OBOL_COMMIT_HASH`.
 

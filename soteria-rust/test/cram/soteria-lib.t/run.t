@@ -1,6 +1,6 @@
 Test base functions
   $ soteria-rust exec lib-fns.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running lib_fns::main...
   note: lib_fns::main: done in <time>, ran 1 branch
   PC 1: (0x01 == V|1|) /\ (0x01 == V|1|)
@@ -8,7 +8,7 @@ Test base functions
 
 Test #[soteria::*] annotations
   $ soteria-rust exec annots.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running annots::test1...
   note: annots::test1: done in <time>, ran 1 branch
   PC 1: empty

@@ -1,26 +1,26 @@
   $ soteria-rust exec array_init.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running array_init::main...
   note: array_init::main: done in <time>, ran 1 branch
   PC 1: empty
   
 
   $ soteria-rust exec reborrow_chain.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running reborrow_chain::main...
   note: reborrow_chain::main: done in <time>, ran 1 branch
   PC 1: empty
   
 
   $ soteria-rust exec reborrow_tree.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running reborrow_tree::main...
   note: reborrow_tree::main: done in <time>, ran 1 branch
   PC 1: empty
   
 
   $ soteria-rust exec btreeset_sort.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running btreeset_sort::test_treeset_is_ordered...
   note: btreeset_sort::test_treeset_is_ordered: done in <time>, ran 75 branches
   PC 1: (V|2| <u V|1|) /\ (V|3| <u V|1|) /\ (V|3| <u V|2|) /\ (V|4| <u V|1|) /\
@@ -180,13 +180,13 @@
   
 
   $ soteria-rust exec writealot.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running writealot::main...
   note: writealot::main: done in <time>, ran 1 branch
   PC 1: empty
   
   $ soteria-rust exec writealotloop.rs
-  Compiling... done in <time>
+  Compiling crate... done in <time>
   => Running writealotloop::main...
   note: writealotloop::main: done in <time>, ran 1 branch
   PC 1: empty

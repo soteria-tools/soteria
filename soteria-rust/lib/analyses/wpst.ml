@@ -78,26 +78,23 @@ let print_outcomes entry_name f =
 
 let flamegraph_name = Str.global_replace (Str.regexp_string "::") "-"
 
-let exec_crate (crate : Charon.UllbcAst.crate)
+let exec_crate ?target (crate : Charon.UllbcAst.crate)
     (entry_points : Frontend.entry_point list) =
   let@ () = Crate.with_crate crate in
   let@ () = Call_graph.with_dumped () in
-  (* get entry points to the crate *)
-  if List.is_empty entry_points then fatal "No entry points found";
 
   (* prepare executing the entry points *)
   let exec_fun = Interp.exec_fun_as_whole_prog ~state:State.empty in
-
-  (* Aggregate statistics over all entry points, then dump them once. *)
-  let@ () = Stats.As_ctx.with_dumped () in
   let@ { fuel; fun_decl; expect_error } : Frontend.entry_point =
-    (Fun.flip List.map) entry_points
+    Fun.flip List.map entry_points
   in
+
   (* execute! *)
   let entry_name = Fmt.to_to_string Crate.pp_name fun_decl.item_meta.name in
   let@ () = print_outcomes entry_name in
-  Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
-    ("Running " ^ entry_name ^ "...");
+  Fmt.pr "%a Running %a%a...@." (pp_clr `Teal) "=>" (pp_style `Bold) entry_name
+    Fmt.(option (any " in " ++ Frontend.pp_target))
+    target;
   let args : State.Sptr.t Rust_val.t list =
     if entry_name = "miri_start" then
       [ Int (Typed.BV.usizei 0); Ptr (State.Sptr.null (), Thin) ]
@@ -167,7 +164,14 @@ let print_outcomes_summary outcomes =
     (list ~sep:(any "@\n") pp_outcome)
     outcomes
 
-let exec (crate, entry_points) =
-  let outcomes = exec_crate crate entry_points in
+let exec crates_iter =
+  (* Aggregate statistics over all entry points, then dump them once. *)
+  let@ () = Stats.As_ctx.with_dumped () in
+  let outcomes =
+    crates_iter
+    |> Iter.map (fun (crate, entry_points, target) ->
+        exec_crate ?target crate entry_points)
+    |> Iter.concat_to_list
+  in
   if (Config.get ()).print_summary then print_outcomes_summary outcomes;
   Outcome.merge_list outcomes

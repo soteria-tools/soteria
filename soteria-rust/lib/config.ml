@@ -99,10 +99,25 @@ type t = {
       [@env "SOTERIA_OFFLINE"]
       (** Whether to compile without accessing the network, which can be useful
           for reproducibility. This will pass --offline to Cargo.. *)
-  test : string option; [@docs Sections.frontend] [@names [ "test" ]]
-      (** The test profile to use to compile the crate; this only has an effect
-          if analysing a crate. Use [lib] for unit tests in [src/]. By default,
-          the crate's source is analysed, not the tests. *)
+  test : string list;
+      [@docs Sections.frontend] [@default []] [@opt_all] [@names [ "test" ]]
+      (** The test targets to compile and analyse; this only has an effect if
+          analysing a crate. Use [lib] for unit tests in [src/]. Can be repeated
+          to analyse several test targets, one after the other. By default, the
+          crate's source is analysed, not the tests. *)
+  example : string list;
+      [@docs Sections.frontend] [@default []] [@opt_all] [@names [ "example" ]]
+      (** The example targets to compile and analyse; this only has an effect if
+          analysing a crate. As with [--test], the [#[test]] functions of the
+          example are used as entry points, and the flag can be repeated. *)
+  tests : bool;
+      [@docs Sections.frontend] [@make.default false] [@names [ "tests" ]]
+      (** Compile and analyse every test target of the crate (the [src/] unit
+          tests and all integration tests), one after the other. *)
+  all_targets : bool;
+      [@docs Sections.frontend] [@make.default false] [@names [ "all-targets" ]]
+      (** Compile and analyse every target of the crate (lib, bins, examples and
+          tests), one after the other. *)
   (* Plugins *)
   with_kani : bool;
       [@docs Sections.frontend] [@make.default false] [@names [ "kani" ]]
@@ -214,8 +229,17 @@ let global_term = global_cmdliner_term ()
 
 let set_and_lock_global (mode : mode) (config : global) =
   Soteria.Config.set_and_lock config.soteria;
-  if config.soteria_rust.polymorphic && config.soteria_rust.frontend = Obol then
+  let sr = config.soteria_rust in
+  if sr.polymorphic && sr.frontend = Obol then
     Exn.config_error
       "Obol does not support polymorphic analyses; use --frontend charon";
+  if (sr.tests || sr.all_targets) && sr.frontend = Charon then
+    Exn.config_error
+      "--tests and --all-targets are only supported with the Obol frontend";
+  if sr.all_targets && (sr.test <> [] || sr.example <> [] || sr.tests) then
+    Exn.config_error
+      "--all-targets cannot be combined with --test, --example or --tests";
+  if sr.tests && sr.test <> [] then
+    Exn.config_error "--tests cannot be combined with --test";
   set_mode_and_lock mode;
   set_and_lock config.soteria_rust
