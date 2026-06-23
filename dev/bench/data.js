@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782222566522,
+  "lastUpdate": 1782234968508,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -4329,6 +4329,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 104.8414,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75cb62825f6f60043c372be463f9235e947d6ed1",
+          "message": "OCaml 5.5.0 (#341)\n\n* ocaml 5.5\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* map_leaves using modular explicit 👀\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Use OCaml's new function Hashtbl.find_and_replace\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* use new String functions\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* more modular explicits\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Opale's comments\n\nCo-authored-by: N1ark <opale.sjostedt@gmail.com>\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* upgrade format\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* promote opammmmm\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* test-lib uses opam\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\nCo-authored-by: N1ark <opale.sjostedt@gmail.com>",
+          "timestamp": "2026-06-23T16:29:34Z",
+          "tree_id": "565d7f65492a6f4a62c686348be91778d2b58515",
+          "url": "https://github.com/soteria-tools/soteria/commit/75cb62825f6f60043c372be463f9235e947d6ed1"
+        },
+        "date": 1782234966243,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.3211160455999997,
+            "range": "± 0.0226",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.1346424850399999,
+            "range": "± 0.0123",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6464052816199999,
+            "range": "± 0.0201",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.42019723248000007,
+            "range": "± 0.0036",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.7209015859800005,
+            "range": "± 0.0258",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.7527883924000001,
+            "range": "± 0.0037",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.4327630977,
+            "range": "± 0.0047",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.02817375446,
+            "range": "± 0.03",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.952902816934511,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 372,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 120.2238,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 458,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 101,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 41,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 105.9951,
             "unit": "s"
           }
         ]
