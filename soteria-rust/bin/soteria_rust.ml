@@ -86,9 +86,32 @@ module Build_plugins = struct
       term
 end
 
+module Version = struct
+  let print_version () =
+    Fmt.pr "%s@.@.charon: %s@.charon hash: %s@.obol hash: %s@."
+      Soteria.Version.version Charon.CharonVersion.supported_charon_version
+      Soteria_rust_lib.Version.charon_commit
+      Soteria_rust_lib.Version.obol_commit
+
+  let term = Term.(const print_version $ const ())
+
+  let cmd =
+    Cmd.make
+      (Cmd.info ~exits ~doc:"Print version information"
+         ~man:
+           [
+             `S Cmdliner.Manpage.s_description;
+             `P
+               "Print the version of Soteria Rust, Charon, and the git commit \
+                hashes of the Soteria Rust and Obol repositories.";
+           ]
+         "version")
+      term
+end
+
 let cmd =
   Cmd.group
-    (Cmd.info ~exits "soteria-rust")
-    [ Exec.cmd; Compile.cmd; Build_plugins.cmd ]
+    (Cmd.info ~exits ~version:Soteria.Version.version "soteria-rust")
+    [ Exec.cmd; Compile.cmd; Build_plugins.cmd; Version.cmd ]
 
 let () = exit @@ Cmd.eval cmd
