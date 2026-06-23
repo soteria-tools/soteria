@@ -14,6 +14,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-test-lib
   cancel-in-progress: true
 
+env:
+  # [versionsync: OCAML_VERSION=5.5.0]
+  OCAML_VERSION: 5.5.0
+
 jobs:
   test-soteria-as-lib:
     name: Test soteria as library
@@ -24,25 +28,34 @@ jobs:
         with:
           path: soteria
 
-      # Written before setup-dune so that setup-dune can cache tmp/_build and
-      # key the cache on tmp/dune-project (stable across commits).
+      - name: Setup OCaml
+        uses: ocaml/setup-ocaml@e32b06a3e831ff2fbc6f08cf35be2085e3918014 #[actionpin: v3]
+        with:
+          ocaml-compiler: ${{ env.OCAML_VERSION }}
+          dune-cache: true
+          opam-pin: false
+
+      - name: Restore opam cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #[actionpin: v5]
+        with:
+          path: _opam
+          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-${{ hashFiles('soteria/*.opam') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-
+
+      - name: Update opam
+        run: opam update
+
+      # Install soteria as an opam package, exactly as an external consumer would.
+      - name: Install soteria
+        run: opam install ./soteria/soteria.opam -y
+
       - name: Write minimal test project
         run: |
-          SOTERIA_PATH="$GITHUB_WORKSPACE/soteria"
-
           mkdir -p tmp
-          cat > tmp/dune-project << EOF
+
+          cat > tmp/dune-project << 'EOF'
           (lang dune 3.14)
-          (name soteria_test)
-
-          (pin
-           (package (name soteria))
-           (url "file://$SOTERIA_PATH"))
-
-          (package
-           (name soteria_test)
-           (allow_empty)
-           (depends soteria))
           EOF
 
           cat > tmp/dune << 'EOF'
@@ -52,11 +65,13 @@ jobs:
           EOF
 
           cat > tmp/main.ml << 'EOF'
-          let () = ()
+          module M = Soteria.Symex.Make
           EOF
 
-      - name: Setup dune
-        uses: ocaml-dune/setup-dune@2201fa80f49561672943e7960e5f918c887ab0dc #[actionpin: v2]
-        with:
-          directory: tmp
-          display: short
+      # Build a project that depends on the installed soteria library.
+      - name: Build test project
+        working-directory: tmp
+        run: opam exec -- dune build
+
+      - name: Opam Cleanup
+        run: opam clean -a -r
