@@ -42,7 +42,7 @@ depends: [
   "yojson" {< "3.0"}
   "unionFind"
   "ppx_deriving_yojson"
-  "ocamlformat" {with-dev-setup & = "0.28.1"}
+  "ocamlformat" {with-dev-setup & = "0.29.0"}
   "ocaml-lsp-server" {with-dev-setup}
 ]
 build: [
