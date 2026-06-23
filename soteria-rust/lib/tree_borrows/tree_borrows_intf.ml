@@ -7,30 +7,19 @@ module M (Symex : Rust_symex) = struct
   module Base = Soteria.Sym_states.Base.M (Symex)
 
   module type S = sig
-    (** {2 Pointer "tags", i.e. whatever gets stored inside pointers} *)
-
-    module Tag : sig
-      type t [@@mixins D_abstr.S_with_syn]
-
-      (** Generates a nondeterministic tag, for a nondeterministic pointer. May
-          return [None] if this tree borrows implementation doesn't support
-          symbolic tags. *)
-      val nondet : unit -> t option Symex.t
-    end
-
     module Tree : sig
       (** {2 Tree Borrows trees (the general structure)} *)
       type t [@@mixins Base.S]
 
-      val init : unit -> (Tag.t * t) Symex.t
+      val init : unit -> (Ptr_tag.t * t) Symex.t
 
       val borrow :
         ?protector:protector ->
-        Tag.t ->
+        Ptr_tag.t ->
         state:state ->
-        (Tag.t, 'e, syn list) SM.Result.t
+        (Ptr_tag.t, 'e, syn list) SM.Result.t
 
-      val unprotect : Tag.t -> (unit, 'e, syn list) SM.Result.t
+      val unprotect : Ptr_tag.t -> (unit, 'e, syn list) SM.Result.t
       val strong_protector_exists : t option -> bool
       val assert_exclusively_owned : unit -> (unit, 'e, syn list) SM.Result.t
     end
@@ -53,7 +42,7 @@ module M (Symex : Rust_symex) = struct
 
       val set_protector :
         protected:bool ->
-        Tag.t ->
+        Ptr_tag.t ->
         Tree.t option ->
         t option ->
         (t option, 'e, syn_full list) Symex.Result.t
@@ -62,7 +51,7 @@ module M (Symex : Rust_symex) = struct
           [state] for the tree rooted at [root] with an event [e], that happened
           at [accessed]. *)
       val access :
-        Tag.t ->
+        Ptr_tag.t ->
         access ->
         Tree.t option ->
         t option ->

@@ -18,7 +18,7 @@ module Make (StateImpl : State.S) = struct
   open StateM
   open Syntax
 
-  type 'a t = ('a, Sptr.t Store.t) StateM.t
+  type 'a t = ('a, Store.t) StateM.t
   type 'err fun_exec = rust_val list -> (rust_val, unit) StateM.t
 
   type lazy_ptr = Store of Store.Place.t | Heap of full_ptr
@@ -77,7 +77,7 @@ module Make (StateImpl : State.S) = struct
     |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
         (* Passed (nested) references must be protected and be valid. *)
         let* value, protected' =
-          Encoder.ref_tys_in local.local_ty value ~init:acc
+          Value_codec.ref_tys_in local.local_ty value ~init:acc
             ~f:(fun acc ptr_ty ptr ->
               let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
               let pointee = Charon_util.get_pointee ptr_ty in
@@ -481,7 +481,7 @@ module Make (StateImpl : State.S) = struct
       the operation fails (returns [None]), uses [heap] instead. *)
   and try_lazy :
       'a.
-      store:(Store.Place.t -> _ Store.t -> 'a option t) ->
+      store:(Store.Place.t -> Store.t -> 'a option t) ->
       heap:(full_ptr -> 'a t) ->
       lazy_ptr ->
       'a t =
@@ -707,7 +707,7 @@ module Make (StateImpl : State.S) = struct
                 (* expose provenance *)
                 let v, _ = as_ptr v in
                 let+ v' = Sptr.expose v in
-                Encoder.cast_literal ~from_ty:(TUInt Usize) ~to_ty v'
+                Value_codec.cast_literal ~from_ty:(TUInt Usize) ~to_ty v'
             | TLiteral _, (TRef _ | TRawPtr _ | TFnPtr _) ->
                 (* with provenance *)
                 let v = as_base_i Usize v in
@@ -738,7 +738,7 @@ module Make (StateImpl : State.S) = struct
               | Float f -> ok (f :> T.cval Typed.t)
               | _ -> L.failwith "Invalid value for CastScalar"
             in
-            Encoder.cast_literal ~from_ty ~to_ty v
+            Value_codec.cast_literal ~from_ty ~to_ty v
         | Cast (CastUnsize (from_ty, to_ty, meta)) -> (
             let rec with_ptr_meta v = function
               | [] ->
@@ -916,7 +916,9 @@ module Make (StateImpl : State.S) = struct
         let field = Types.FieldId.to_int field in
         let* layout = Layout.layout_of (TAdt adt) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
-        let+ op_blocks = Encoder.encode ~offset value (type_of_operand op) in
+        let+ op_blocks =
+          Value_codec.encode ~offset value (type_of_operand op)
+        in
         let op_blocks = Iter.to_list op_blocks in
         Union op_blocks
     (* Struct aggregate *)
@@ -1093,7 +1095,8 @@ module Make (StateImpl : State.S) = struct
         let ret_place = Charon_util.return_place body in
         let* loc = resolve_place_lazy ret_place in
         let* value = load_lazy loc ret_place.ty in
-        Encoder.ref_tys_in ret_place.ty value ~init:() ~f:(fun () ptr_ty ptr ->
+        Value_codec.ref_tys_in ret_place.ty value ~init:()
+          ~f:(fun () ptr_ty ptr ->
             let pointee = get_pointee ptr_ty in
             let+ () = State.tb_load ptr pointee in
             (ptr, ()))
@@ -1259,7 +1262,7 @@ module Make (StateImpl : State.S) = struct
   let exec_fun_as_whole_prog ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
     let* value = exec_fun ~args ~state fundef in
-    let value = Rust_val.to_syn Sptr.to_syn value in
+    let value = Rust_val.to_syn value in
     let* () = State.run_thread_exits () in
     if (Config.get ()).ignore_leaks then ok value
     else

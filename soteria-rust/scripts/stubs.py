@@ -211,7 +211,7 @@ let[@inline] as_ptr (v : rust_val) =
       let v = Typed.cast_i Usize v in
       let ptr = Sptr.of_address v in
       (ptr, Thin)
-  | _ -> failwith "expected pointer"
+  | _ -> L.failwith "expected pointer"
 
 let as_base ty (v : rust_val) = Rust_val.as_base ty v
 let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
@@ -722,7 +722,6 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     intrinsics_info.sort(key=lambda x: x["ocaml_name"])
 
     type_utils = """
-        type rust_val := StateM.Sptr.t Rust_val.t
         type 'a ret := ('a, unit) StateM.t
         type fun_exec :=
             Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
@@ -758,11 +757,11 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
 
         open Charon
         open Common
+        open Rust_val
 
         module M (StateM : State.StateM.S) = struct
           module type Impl = sig
             {type_utils}
-            type full_ptr := StateM.Sptr.t Rust_val.full_ptr
             {interface_entries}
         end
 
@@ -794,8 +793,6 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         module M (StateM : State.StateM.S): Intf.M(StateM).S = struct
             open StateM
             open Syntax
-
-            type rust_val = Sptr.t Rust_val.t
 
             {OCAML_HELPERS}
 
@@ -1161,14 +1158,13 @@ def generate_custom_stubs() -> None:
 
             open Charon
             open Common
+            open Rust_val
 
             module M (StateM : State.StateM.S) = struct
               open StateM
 
-              type rust_val = Sptr.t Rust_val.t
               type 'a ret = ('a, unit) StateM.t
               type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-              type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
               module type S = sig {intf_entries_str} end
             end
@@ -1191,10 +1187,8 @@ def generate_custom_stubs() -> None:
                 open StateM
                 open Syntax
 
-                type rust_val = Sptr.t Rust_val.t
                 type 'a ret = ('a, unit) StateM.t
                 type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-                type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
                 {OCAML_HELPERS}
 

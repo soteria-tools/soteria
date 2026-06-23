@@ -3,69 +3,12 @@
 
 open Common
 
-module Tag : sig
-  type t [@@deriving show, eq]
-
-  val fresh_tag : unit -> t
-  val zero : t
-
-  module WeakMap : PatriciaTree.MAP with type key = t
-
-  module WeakSet : sig
-    include Weak.S with type data = t
-    include Sigs.Printable with type t := t
-  end
-end = struct
-  type t = Tag of int [@@ocaml.boxed]
-
-  let[@inline] equal (Tag t1) (Tag t2) = Int.equal t1 t2
-  let pp fmt (Tag tag) = Fmt.pf fmt "‖%d‖" tag
-  let show = Fmt.to_to_string pp
-  let zero = Tag 0
-  let tag_counter = ref 0
-
-  let fresh_tag () =
-    incr tag_counter;
-    Tag !tag_counter
-
-  module Key = struct
-    type nonrec t = t
-
-    let[@inline] to_int (Tag tag) = tag
-  end
-
-  module MapNode =
-    PatriciaTree.WeakNode
-      (struct
-        type 'k t = Key.t
-      end)
-      (PatriciaTree.WrappedHomogeneousValue)
-
-  module SetNode = PatriciaTree.WeakSetNode (struct
-    type 'k t = Key.t
-  end)
-
-  module WeakMap =
-    PatriciaTree.MakeCustomMap (Key) (PatriciaTree.Value) (MapNode)
-
-  module WeakSet = struct
-    include Weak.Make (struct
-      type nonrec t = t
-
-      let[@inline] hash (Tag tag) = tag
-      let equal = equal
-    end)
-
-    let pp = Fmt.iter ~sep:(Fmt.any ", ") iter pp
-  end
-end
-
 (** Whether this node has a protector (this is distinct from having the
     protector toggled!), its parents (including this node's ID!), and its
     initial state if it doesn't exist in the state. *)
 type node = {
   protector : protector option;
-  parents : Tag.WeakSet.t;
+  parents : Ptr_tag.WeakSet.t;
   initial_state : state;
 }
 [@@deriving show { with_path = false }]
@@ -133,23 +76,27 @@ let transition =
    size rather than tag count means small maps (e.g. a freshly allocated
    variable with few borrows) never pay the GC cost. *)
 let compact_threshold = 128
-let compact_map = Tag.WeakMap.filter_map_no_share (Fun.const Option.some)
+let compact_map = Ptr_tag.WeakMap.filter_map_no_share (Fun.const Option.some)
 
-type t = { tags : node Tag.WeakMap.t; known_size : int; next_compact_at : int }
+type t = {
+  tags : node Ptr_tag.WeakMap.t;
+  known_size : int;
+  next_compact_at : int;
+}
 
 let pp ft { tags; _ } =
-  Fmt.iter_bindings Tag.WeakMap.iter
-    (fun ft (tag, node) -> Fmt.pf ft "%a -> %a" Tag.pp tag pp_node node)
+  Fmt.iter_bindings Ptr_tag.WeakMap.iter
+    (fun ft (tag, node) -> Fmt.pf ft "%a -> %a" Ptr_tag.pp tag pp_node node)
     ft tags
 
 let show = Fmt.to_to_string pp
 
 let init ?(initial_state = Unique) () =
-  let tag = Tag.fresh_tag () in
-  let parents = Tag.WeakSet.create 1 in
-  Tag.WeakSet.add parents tag;
+  let tag = Ptr_tag.fresh_tag () in
+  let parents = Ptr_tag.WeakSet.create 1 in
+  Ptr_tag.WeakSet.add parents tag;
   let node = { protector = None; parents; initial_state } in
-  let tags = Tag.WeakMap.singleton tag node in
+  let tags = Ptr_tag.WeakMap.singleton tag node in
   (tag, { tags; known_size = 1; next_compact_at = compact_threshold })
 
 let ub_state = fst @@ init ~initial_state:Disabled ()
@@ -159,14 +106,14 @@ let[@inline] compact ({ tags; known_size; next_compact_at } as st : t) =
   else (
     Gc.minor ();
     let tags = compact_map tags in
-    let known_size = Tag.WeakMap.cardinal tags in
+    let known_size = Ptr_tag.WeakMap.cardinal tags in
     if known_size < next_compact_at then
       { tags; known_size; next_compact_at = compact_threshold }
     else (
       (* Tags survived minor GC — they are promoted; need a full cycle. *)
       Gc.full_major ();
       let tags = compact_map tags in
-      let known_size = Tag.WeakMap.cardinal tags in
+      let known_size = Ptr_tag.WeakMap.cardinal tags in
       (* If still large after a full GC all entries are genuinely live; back off
          exponentially so we don't retry on every subsequent borrow. *)
       let next_compact_at =
@@ -176,21 +123,21 @@ let[@inline] compact ({ tags; known_size; next_compact_at } as st : t) =
       { tags; known_size; next_compact_at }))
 
 let borrow ?protector parent ~state (st : t) =
-  let tag = Tag.fresh_tag () in
+  let tag = Ptr_tag.fresh_tag () in
   let ({ tags; known_size; _ } as st) = compact st in
-  let node_parent = Tag.WeakMap.find parent tags in
+  let node_parent = Ptr_tag.WeakMap.find parent tags in
   let parents =
-    Tag.WeakSet.create (Tag.WeakSet.count node_parent.parents + 1)
+    Ptr_tag.WeakSet.create (Ptr_tag.WeakSet.count node_parent.parents + 1)
   in
-  Tag.WeakSet.add parents tag;
-  Tag.WeakSet.iter (Tag.WeakSet.add parents) node_parent.parents;
+  Ptr_tag.WeakSet.add parents tag;
+  Ptr_tag.WeakSet.iter (Ptr_tag.WeakSet.add parents) node_parent.parents;
   let node = { protector; parents; initial_state = state } in
-  let tags = Tag.WeakMap.add tag node tags in
+  let tags = Ptr_tag.WeakMap.add tag node tags in
   (tag, { st with tags; known_size = known_size + 1 })
 
 let unprotect tag ({ tags; _ } as st) =
   let tags =
-    Tag.WeakMap.update tag
+    Ptr_tag.WeakMap.update tag
       (function
         | None -> raise Not_found | Some n -> Some { n with protector = None })
       tags
@@ -200,34 +147,34 @@ let unprotect tag ({ tags; _ } as st) =
 let strong_protector_exists { tags; _ } =
   (* Annoyingly, there is no [exists], only [for_all] *)
   not
-    (Tag.WeakMap.for_all
+    (Ptr_tag.WeakMap.for_all
        (fun _ { protector; _ } -> protector <> Some Strong)
        tags)
 
 (** [tag -> (protected * state)], [protected] indicating the tag's protector
     (managed outside [tb_state]) was toggled. *)
-type tb_state = (bool * state) Tag.WeakMap.t
+type tb_state = (bool * state) Ptr_tag.WeakMap.t
 
 (* Lets [access] walk the [root] trie (the structure, mapping tags to nodes) and
    the [tb_state] trie together in a single pass. *)
-module WeakMap_with_root = Tag.WeakMap.WithForeign (Tag.WeakMap.BaseMap)
+module WeakMap_with_root = Ptr_tag.WeakMap.WithForeign (Ptr_tag.WeakMap.BaseMap)
 
 let pp_tb_state =
-  Fmt.iter_bindings ~sep:(Fmt.any ", ") Tag.WeakMap.iter
+  Fmt.iter_bindings ~sep:(Fmt.any ", ") Ptr_tag.WeakMap.iter
     (fun ft (tag, (protected, st)) ->
-      Fmt.pf ft "%a -> %a%s" Tag.pp tag pp_state st
+      Fmt.pf ft "%a -> %a%s" Ptr_tag.pp tag pp_state st
         (if protected then " (p)" else ""))
 
-let empty_state = Tag.WeakMap.empty
-let is_empty_state = Tag.WeakMap.is_empty
+let empty_state = Ptr_tag.WeakMap.empty
+let is_empty_state = Ptr_tag.WeakMap.is_empty
 
 let equal_state =
-  Tag.WeakMap.reflexive_equal (Pair.equal Bool.equal equal_state)
+  Ptr_tag.WeakMap.reflexive_equal (Pair.equal Bool.equal equal_state)
 
 let set_protector ~protected tag ({ tags; _ } : t) =
-  Tag.WeakMap.update tag (function
+  Ptr_tag.WeakMap.update tag (function
     | None ->
-        let node = Tag.WeakMap.find tag tags in
+        let node = Ptr_tag.WeakMap.find tag tags in
         Some (protected, node.initial_state)
     | Some (_, st) -> Some (protected, st))
 
@@ -235,7 +182,7 @@ let set_protector ~protected tag ({ tags; _ } : t) =
     [state] for the tree structure [structure] with an event [e], that happened
     at [accessed]. *)
 let access accessed e ({ tags; _ } as root : t) (st : tb_state) =
-  let accessed_node = Tag.WeakMap.find accessed tags in
+  let accessed_node = Ptr_tag.WeakMap.find accessed tags in
   let parents = accessed_node.parents in
   try
     WeakMap_with_root.update_multiple_from_foreign tags
@@ -245,11 +192,14 @@ let access accessed e ({ tags; _ } as root : t) (st : tb_state) =
             let protected0, st0 =
               match old with None -> (false, initial_state) | Some ps -> ps
             in
-            let rel = if Tag.WeakSet.mem parents tag then Local else Foreign in
+            let rel =
+              if Ptr_tag.WeakSet.mem parents tag then Local else Foreign
+            in
             (* if the tag has a protector and is accessed, this toggles the
                protector! *)
             let protected =
-              (protected0 || Tag.equal tag accessed) && Option.is_some protector
+              (protected0 || Ptr_tag.equal tag accessed)
+              && Option.is_some protector
             in
             let st' = transition ~protected st0 rel e in
             if (not protected) && Common.equal_state st' initial_state then None
@@ -262,7 +212,7 @@ let access accessed e ({ tags; _ } as root : t) (st : tb_state) =
   with AliasingError ->
     [%l.debug
       "TB: Undefined behavior encountered for %a at %a in structure@.%a"
-        pp_access e Tag.pp accessed pp root];
+        pp_access e Ptr_tag.pp accessed pp root];
     Result.error `AliasingError
 
-let merge = Tag.WeakMap.idempotent_union @@ fun _ -> meet'
+let merge = Ptr_tag.WeakMap.idempotent_union @@ fun _ -> meet'

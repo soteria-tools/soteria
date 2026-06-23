@@ -5,14 +5,13 @@
 
 open Charon
 open Common
+open Rust_val
 
 module M (StateM : State.StateM.S) = struct
   open StateM
 
-  type rust_val = Sptr.t Rust_val.t
   type 'a ret = ('a, unit) StateM.t
   type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-  type full_ptr = StateM.Sptr.t Rust_val.full_ptr
 
   module type S = sig
     val cleanup : payload:full_ptr -> rust_val ret

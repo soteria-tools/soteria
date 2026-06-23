@@ -181,65 +181,149 @@ module DecayMap : DecayMapS = struct
 end
 
 module D_abstr = Soteria.Data.Abstr.M (DecayMap.SM)
+module Tag = Tree_borrows.Ptr_tag
 
-(** The base type of pointers, permitting simple operations on the pointer type.
-    The majority of relevant operations are exposed via the state monad's
-    pointer module, {{!State.StateM.S.Sptr}Sptr}. *)
-module type S = sig
-  (** pointer type *)
-  type t [@@mixins D_abstr.S_with_syn]
+type ('sptr, 'snonzero, 'sint, 'tag) base = {
+  ptr : 'sptr;
+  tag : 'tag option;
+  align : 'snonzero;
+  size : 'sint;
+}
 
-  (** Converts an address into a pointer, without provenance. *)
-  val of_address : [< sint ] Typed.t -> t
+type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t, Tag.t) base
+type syn = (Typed.Expr.t, Typed.Expr.t, Typed.Expr.t, Tag.t) base
 
-  (** Creates a dangling pointer to the given type, if that type is a ZST;
-      returns [None] otherwise. *)
-  val dangling_if_zst : Types.ty -> (t option, [> Error.t ], 'f) Result.t
+let pp' pp_v pp_tag fmt { ptr; tag; _ } =
+  Fmt.pf fmt "%a[%a]" pp_v ptr Fmt.(option ~none:(any "*") pp_tag) tag
 
-  (** The null pointer, which always decays to 0, and has no provenance.
-      Equivalent to [of_address 0]. *)
-  val null : unit -> t
+let pp ft x = pp' Typed.ppa Tag.pp ft x
+let show x = Fmt.to_to_string pp x
+let pp_syn ft x = pp' Typed.Expr.pp Tag.pp ft x
+let show_syn x = Fmt.to_to_string pp_syn x
 
-  (** Whether this is the null pointer, meaning it always decays to 0. *)
-  val is_null : t -> sbool Typed.t
+let to_syn { ptr; tag; align; size } =
+  {
+    ptr = Typed.Expr.of_value ptr;
+    align = Typed.Expr.of_value align;
+    size = Typed.Expr.of_value size;
+    tag;
+  }
 
-  (** The offset of this pointer within its allocation. *)
-  val ofs : t -> [> sint ] Typed.t
+(** Returns a symbolic boolean characterising whether the pointer is in bound to
+    its allocation. *)
+let in_bound { ptr; size; _ } =
+  let ofs = Typed.Ptr.ofs ptr in
+  Usize.(0s) <=@ ofs &&@ (ofs <@ size)
 
-  (** Returns a symbolic boolean characterising whether the pointer is in bound
-      to its allocation. *)
-  val in_bound : t -> sbool Typed.t
+let learn_eq syn t =
+  let open DecayMap.SM.Consumer in
+  let open Syntax in
+  let* () =
+    if Option.equal Tag.equal syn.tag t.tag then ok () else lfail Typed.v_false
+  in
+  let* () = learn_eq syn.ptr t.ptr in
+  let* () = learn_eq syn.align t.align in
+  learn_eq syn.size t.size
 
-  (** Whether this pointer has provenance, i.e. points to some allocation. *)
-  val has_provenance : t -> sbool Typed.t
+let exprs_syn { ptr; align; size; tag } = [ ptr; align; size ]
+let fresh () = L.failwith "Fresh unimplemented for sptr (for now)"
 
-  (** If these two pointers have the same provenance, i.e. point to the same
-      allocation (or if they both have no provenance). *)
-  val have_same_provenance : t -> t -> sbool Typed.t
+let subst subst_val p =
+  let se = Typed.Expr.subst subst_val in
+  let ptr = se p.ptr in
+  let align = se p.align in
+  let size = se p.size in
+  { ptr; align; size; tag = p.tag }
 
-  (** The distance, in bytes, between two pointers; if they point to different
-      allocations, they are decayed and substracted. *)
-  val distance : t -> t -> sint Typed.t DecayMap.SM.t
+(** The null pointer, which always decays to 0, and has no provenance.
+    Equivalent to [of_address 0]. *)
+let null () =
+  { ptr = Typed.Ptr.null (); tag = None; align = Usize.(1s); size = Usize.(0s) }
 
-  (** Generates a nondeterministic pointer, that is valid for accesses to the
-      given type. The location of the pointer is nondeterministic; it could
-      point to any allocation. *)
-  val nondet : Types.ty -> (t, [> Error.t ], 'a) Result.t
+(** Converts an address into a pointer, without provenance. *)
+let of_address ofs =
+  let null_ptr = null () in
+  let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
+  { null_ptr with ptr }
 
-  (** Decay a pointer into an integer value, losing provenance.
-      {b This does not expose the address of the allocation; for that, use
-         [expose]} *)
-  val decay : t -> [> sint ] Typed.t DecayMap.SM.t
+(** Creates a dangling pointer to the given type, if that type is a ZST; returns
+    [None] otherwise. *)
+let dangling_if_zst ty =
+  let open Rustsymex in
+  let open Syntax in
+  let** layout = Layout.layout_of ty in
+  if%sat layout.size ==@ Usize.(0s) then
+    (* UX: really any address that is well-aligned is valid, we
+       under-approximate here to make our life easier. *)
+    Result.ok (Some (of_address layout.align))
+  else Result.ok None
 
-  (** Decay a pointer into an integer value, exposing the address of the
-      allocation, allowing it to be retrieved with [DecayMapS.from_exposed]
-      later. *)
-  val expose : t -> [> sint ] Typed.t DecayMap.SM.t
+(** Whether this is the null pointer, meaning it always decays to 0. *)
+let is_null { ptr; _ } = Typed.Ptr.is_null ptr
 
-  (** For Miri: the allocation ID of this location, as a u64 *)
-  val as_id : t -> [> sint ] Typed.t
+(** The offset of this pointer within its allocation. *)
+let ofs { ptr; _ } = Typed.Ptr.ofs ptr
 
-  (** For Miri: get the allocation info for this pointer: its size and alignment
-  *)
-  val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
-end
+(** Whether this pointer has provenance, i.e. points to some allocation. *)
+let has_provenance { ptr; _ } = Typed.not (Typed.Ptr.is_at_null_loc ptr)
+
+(** If these two pointers have the same provenance, i.e. point to the same
+    allocation (or if they both have no provenance). *)
+let have_same_provenance { ptr = ptr1; _ } { ptr = ptr2; _ } =
+  Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
+
+(** A simplified (and unsafe) version of [offset], that adds a signed bitvector
+    to this pointer's offset. *)
+let raw_offset ptr off_by =
+  let open Rustsymex.Syntax in
+  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+  let ofs', ovf = ofs +$?@ off_by in
+  let++ () = assert_or_error (Typed.not ovf) `UBDanglingPointer in
+  { ptr with ptr = Typed.Ptr.mk loc ofs' }
+
+let[@inline] _decay ~expose { ptr; align; size; _ } =
+  let open DecayMap.SM.Syntax in
+  let loc, ofs = Typed.Ptr.decompose ptr in
+  let+ loc_int = DecayMap.decay ~expose ~size ~align loc in
+  [%l.debug "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int];
+  loc_int +!!@ ofs
+
+(** Decay a pointer into an integer value, losing provenance.
+    {b This does not expose the address of the allocation; for that, use
+       {!expose}} *)
+let decay p = _decay ~expose:false p
+
+(** Decay a pointer into an integer value, exposing the address of the
+    allocation, allowing it to be retrieved with [DecayMapS.from_exposed] later.
+*)
+let expose p = _decay ~expose:true p
+
+(** The distance, in bytes, between two pointers; if they point to different
+    allocations, they are decayed and substracted. *)
+let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
+  let open DecayMap.SM.Syntax in
+  if%sat have_same_provenance p1 p2 then
+    DecayMap.SM.return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
+  else
+    let* ptr1 = decay p1 in
+    let+ ptr2 = decay p2 in
+    ptr1 -!@ ptr2
+
+(** For Miri: the allocation ID of this location, as a u64 *)
+let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
+
+(** For Miri: get the allocation info for this pointer: its size and alignment
+*)
+let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
+
+(** Generates a nondeterministic pointer, that is valid for accesses to the
+    given type. The location of the pointer is nondeterministic; it could point
+    to any allocation. *)
+let nondet ty =
+  let open Rustsymex.Syntax in
+  let** layout = Layout.layout_of ty in
+  let* loc = nondet (Typed.t_loc ()) in
+  let* ofs = nondet (Typed.t_usize ()) in
+  let ptr = Typed.Ptr.mk loc ofs in
+  let ptr = { ptr; tag = None; align = layout.align; size = layout.size } in
+  Result.ok ptr

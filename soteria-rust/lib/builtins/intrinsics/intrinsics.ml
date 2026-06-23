@@ -8,8 +8,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
   open Syntax
 
-  type rust_val = Sptr.t Rust_val.t
-
   let[@inline] as_ptr (v : rust_val) =
     match v with
     | Ptr ptr -> ptr
@@ -17,7 +15,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let v = Typed.cast_i Usize v in
         let ptr = Sptr.of_address v in
         (ptr, Thin)
-    | _ -> L.failwith "expected pointer"
+    | _ -> failwith "expected pointer"
 
   let as_base ty (v : rust_val) = Rust_val.as_base ty v
   let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v

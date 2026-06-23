@@ -98,7 +98,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let@ () = print_outcomes entry_name in
   Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
     ("Running " ^ entry_name ^ "...");
-  let args : State.Sptr.t Rust_val.t list =
+  let args : Rust_val.t list =
     if entry_name = "miri_start" then
       [ Int (Typed.BV.usizei 0); Ptr (State.Sptr.null (), Thin) ]
     else []

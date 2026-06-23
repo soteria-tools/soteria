@@ -1,10 +1,10 @@
 open Typed
 
 type ('v, 'ptr) meta_raw = Thin | Len of 'v | VTable of 'ptr
-type 'ptr meta = (T.sint Typed.t, 'ptr) meta_raw
-type 'ptr meta_syn = (Expr.t, 'ptr) meta_raw
+type meta = (T.sint Typed.t, Sptr.t) meta_raw
+type meta_syn = (Expr.t, Sptr.syn) meta_raw
 type ('v, 'ptr) full_ptr_raw = 'ptr * ('v, 'ptr) meta_raw
-type 'ptr full_ptr = 'ptr * 'ptr meta
+type full_ptr = (T.sint Typed.t, Sptr.t) full_ptr_raw
 
 type ('sint, 'snz, 'sfloat, 'ptr) raw =
   | Int of 'sint
@@ -21,9 +21,9 @@ type ('sint, 'snz, 'sfloat, 'ptr) raw =
       (** The opaque value of a type variable, identified by (type variable
           index, unique identifier). *)
 
-type 'ptr t = (T.sint Typed.t, T.nonzero Typed.t, T.sfloat Typed.t, 'ptr) raw
-type 'ptr rust_val = 'ptr t
-type 'ptr syn = (Expr.t, Expr.t, Expr.t, 'ptr) raw
+type t = (T.sint Typed.t, T.nonzero Typed.t, T.sfloat Typed.t, Sptr.t) raw
+type rust_val = t
+type syn = (Expr.t, Expr.t, Expr.t, Sptr.syn) raw
 
 let pp_meta_raw pp_v pp_ptr fmt = function
   | Thin -> Fmt.pf fmt "-"
@@ -35,22 +35,21 @@ let pp_meta_kind fmt = function
   | Len _ -> Fmt.pf fmt "length"
   | VTable _ -> Fmt.pf fmt "vtable"
 
-let pp_meta pp_ptr = pp_meta_raw Typed.ppa pp_ptr
-let pp_meta_syn pp_ptr_syn = pp_meta_raw Expr.pp pp_ptr_syn
+let pp_meta ft x = pp_meta_raw Typed.ppa Sptr.pp ft x
+let pp_meta_syn ft x = pp_meta_raw Expr.pp Sptr.pp ft x
 
 let pp_full_ptr_raw pp_v pp_ptr fmt = function
   | p, Thin -> Fmt.pf fmt "(%a)" pp_ptr p
   | p, meta -> Fmt.pf fmt "(%a, %a)" pp_ptr p (pp_meta_raw pp_v pp_ptr) meta
 
-let pp_full_ptr pp_ptr = pp_full_ptr_raw Typed.ppa pp_ptr
-let pp_full_ptr_syn pp_ptr_syn = pp_full_ptr_raw Expr.pp pp_ptr_syn
+let pp_full_ptr ft x = pp_full_ptr_raw Typed.ppa Sptr.pp ft x
+let pp_full_ptr_syn ft x = pp_full_ptr_raw Expr.pp Sptr.pp_syn ft x
 
-let rec pp pp_ptr fmt t =
-  let pp = pp pp_ptr in
+let rec pp fmt t =
   match t with
   | Int v -> Typed.ppa fmt v
   | Float v -> Typed.ppa fmt v
-  | Ptr ptr -> Fmt.pf fmt "Ptr%a" (pp_full_ptr pp_ptr) ptr
+  | Ptr ptr -> Fmt.pf fmt "Ptr%a" pp_full_ptr ptr
   | Enum (disc, vals) ->
       Fmt.pf fmt "Enum(%a: %a)" Typed.ppa disc
         (Fmt.list ~sep:(Fmt.any ", ") pp)
@@ -65,12 +64,11 @@ let rec pp pp_ptr fmt t =
 
 let pp_rust_val = pp
 
-let rec pp_syn pp_ptr fmt t =
-  let pp_syn = pp_syn pp_ptr in
+let rec pp_syn fmt t =
   match t with
   | Int v -> Expr.pp fmt v
   | Float v -> Expr.pp fmt v
-  | Ptr ptr -> Fmt.pf fmt "Ptr%a" (pp_full_ptr_raw Expr.pp pp_ptr) ptr
+  | Ptr ptr -> Fmt.pf fmt "Ptr%a" pp_full_ptr_syn ptr
   | Enum (disc, vals) ->
       Fmt.pf fmt "Enum(%a: %a)" Expr.pp disc
         (Fmt.list ~sep:(Fmt.any ", ") @@ pp_syn)
@@ -84,35 +82,33 @@ let rec pp_syn pp_ptr fmt t =
       Fmt.pf fmt "Union(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_block) vs
   | PolyVal tid -> Fmt.pf fmt "PolyVal(%a)" Charon.Types.pp_type_var_id tid
 
-let ppa_syn ft t = pp_syn (Fmt.any "?") ft t
-let ppa ft rv = pp (Fmt.any "?") ft rv
+let ppa_syn = pp_syn
+let ppa = pp
 let unit_ = Tuple []
 
-let meta_exprs_syn ptr_exprs_syn : 'ptr meta_syn -> Expr.t list = function
+let meta_exprs_syn : meta_syn -> Expr.t list = function
   | Thin -> []
   | Len v -> [ v ]
-  | VTable p -> ptr_exprs_syn p
+  | VTable p -> Sptr.exprs_syn p
 
-let rec exprs_syn ptr_exprs_syn x =
-  let exprs_syn = exprs_syn ptr_exprs_syn in
+let rec exprs_syn x =
   match x with
   | Int v | Float v -> [ v ]
-  | Ptr (p, meta) -> ptr_exprs_syn p @ meta_exprs_syn ptr_exprs_syn meta
+  | Ptr (p, meta) -> Sptr.exprs_syn p @ meta_exprs_syn meta
   | Enum (disc, vals) -> disc :: List.concat_map exprs_syn vals
   | Tuple vals -> List.concat_map exprs_syn vals
   | Union vs ->
       List.concat_map (fun (v, ofs, sz) -> ofs :: sz :: exprs_syn v) vs
   | PolyVal _ -> []
 
-let rec to_syn ptr_to_syn x =
-  let meta_to_syn (m : 'ptr meta) =
+let rec to_syn x =
+  let meta_to_syn (m : meta) =
     match m with
     | Thin -> Thin
     | Len v -> Len (Expr.of_value v)
-    | VTable p -> VTable (ptr_to_syn p)
+    | VTable p -> VTable (Sptr.to_syn p)
   in
-  let full_ptr_to_syn (ptr, meta) = (ptr_to_syn ptr, meta_to_syn meta) in
-  let to_syn = to_syn ptr_to_syn in
+  let full_ptr_to_syn (ptr, meta) = (Sptr.to_syn ptr, meta_to_syn meta) in
   match x with
   | Int v -> Int (Expr.of_value v)
   | Float v -> Float (Expr.of_value v)
@@ -131,19 +127,18 @@ let rec to_syn ptr_to_syn x =
   | Ptr p -> Ptr (full_ptr_to_syn p)
   | PolyVal v -> PolyVal v
 
-module Learn_eq (Symex : Soteria.Symex.Base with module Value = Rustsymex.Value) =
-struct
-  let learn_eq_meta learn_eq_ptr s t =
-    let open Symex.Consumer in
+module Learn_eq = struct
+  let learn_eq_meta s t =
+    let open Sptr.DecayMap.SM.Consumer in
     match (s, t) with
     | Thin, Thin -> ok ()
     | Len s, Len v -> learn_eq s v
-    | VTable ps, VTable p -> learn_eq_ptr ps p
+    | VTable ps, VTable p -> Sptr.learn_eq ps p
     | _ -> lfail Typed.v_false
 
-  let rec learn_eq learn_eq_ptr syn t =
-    let rec_call = learn_eq learn_eq_ptr in
-    let open Symex.Consumer in
+  let rec learn_eq syn t =
+    let rec_call = learn_eq in
+    let open Sptr.DecayMap.SM.Consumer in
     let open Syntax in
     let learn_list ~learn ls l =
       let* combined =
@@ -155,8 +150,8 @@ struct
     | Int s, Int v -> learn_eq s v
     | Float s, Float v -> learn_eq s v
     | Ptr (ps, meta_s), Ptr (p, meta) ->
-        let* () = learn_eq_ptr ps p in
-        learn_eq_meta learn_eq_ptr meta_s meta
+        let* () = Sptr.learn_eq ps p in
+        learn_eq_meta meta_s meta
     | Enum (disc_s, vals_s), Enum (disc, vals) ->
         let* () = learn_eq disc_s disc in
         learn_list ~learn:rec_call vals_s vals
@@ -169,7 +164,8 @@ struct
             learn_eq ofs1 ofs2)
           vs1 vs2
     | PolyVal _, PolyVal _ ->
-        lift @@ Symex.give_up "Learning equality of polymorphic values"
+        lift
+        @@ Sptr.DecayMap.SM.give_up "Learning equality of polymorphic values"
     | _ -> L.failwith "Mismatching rust_val kinds: %a vs %a" ppa_syn syn ppa t
 end
 
@@ -237,8 +233,8 @@ let as_enum = function
   | Enum (disc, vals) -> (disc, vals)
   | v -> L.failwith "Unexpected rust_val kind, expected an enum, got: %a" ppa v
 
-let rec subst subst_ptr subst_val rv =
-  let subst = subst subst_ptr subst_val in
+let rec subst subst_val rv =
+  let subst = subst subst_val in
   let subst_expr = Expr.subst subst_val in
   match rv with
   | Int v -> Int (subst_expr v)
@@ -256,9 +252,9 @@ let rec subst subst_ptr subst_val rv =
         match meta with
         | Thin -> Thin
         | Len len -> Len (subst_expr len)
-        | VTable ptr -> VTable (subst_ptr subst_val ptr)
+        | VTable ptr -> VTable (Sptr.subst subst_val ptr)
       in
-      Ptr (subst_ptr subst_val p, meta)
+      Ptr (Sptr.subst subst_val p, meta)
 
 let mk_enum ~ty variant fields =
   let open Charon in
