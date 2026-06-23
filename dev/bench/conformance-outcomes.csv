@@ -817,7 +817,7 @@ miri,pass/both_borrows/issue-miri-2389.rs,pass
 miri,pass/both_borrows/maybe_dangling.rs,fail
 miri,pass/both_borrows/smallvec.rs,pass
 miri,pass/both_borrows/unsafe_pinned.rs,fail
-miri,pass/box-custom-alloc.rs,fail
+miri,pass/box-custom-alloc.rs,unsupported
 miri,pass/box.rs,pass
 miri,pass/btreemap.rs,timeout
 miri,pass/c-variadic.rs,unsupported
