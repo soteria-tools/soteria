@@ -158,7 +158,7 @@ end
 
     Apply it {b once} per tool and reuse the result:
     {[
-      module Typed = Bv_values.Typed.Make (Bv_values.Svalue.Dummy_ext) ()
+    module Typed = Bv_values.Typed.Make (Bv_values.Svalue.Dummy_ext) ()
     ]}
     Like {!Svalue.Make} it is generative (final [()]): distinct applications
     yield type-incompatible values, so do not re-apply it to share values — pass

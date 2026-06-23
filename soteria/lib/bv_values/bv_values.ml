@@ -19,7 +19,7 @@
 
     A tool instantiates the typed layer {b once} and reuses it everywhere:
     {@ocaml[
-      module Typed = Bv_values.Typed.Make (Bv_values.Svalue.Dummy_ext) ()
+    module Typed = Bv_values.Typed.Make (Bv_values.Svalue.Dummy_ext) ()
     ]}
     From {!Typed} one then gets {{!Typed.Make.Svalue}[Typed.Svalue]} (the
     untyped layer and its constructors), {{!Typed.Make.Eval}[Typed.Eval]}

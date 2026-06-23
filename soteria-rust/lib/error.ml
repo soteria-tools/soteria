@@ -181,10 +181,10 @@ let decorate (where : Trace.t) (e : t) : with_trace =
       (e, List.rev @@ (elem :: where.stack))
   | None -> (e, List.rev where.stack)
 
-let replace_subpath_opt sub_str replacement path =
-  match String.index_of ~sub_str path with
+let replace_subpath_opt sub replacement path =
+  match String.find_first ~sub path with
   | Some idx ->
-      let idx = idx + String.length sub_str in
+      let idx = idx + String.length sub in
       let rel_path = String.sub path idx (String.length path - idx) in
       Some (replacement ^ rel_path)
   | None -> None

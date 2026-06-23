@@ -15,6 +15,8 @@
     any node, the height of its left and right children can differ by at most 1.
     This is for obvious performance reasons. *)
 
+open Soteria_std
+
 (** Type describing the information associated to a range tree, such as its
     height and whether it is balanced. Opaque because it is optimised. *)
 type info
@@ -76,17 +78,9 @@ val offset :
     right to left. *)
 val iter_leaves_rev : ('a, 'sint) t -> (('a, 'sint) t -> unit) -> unit
 
-module With_monad3 (M : sig
-  type ('ok, 'err, 'fix) t
-
-  val bind :
-    ('ok -> ('a, 'err, 'fix) t) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
-
-  val map : ('ok -> 'a) -> ('ok, 'err, 'fix) t -> ('a, 'err, 'fix) t
-end) : sig
-  (** [map_leaves f t] receives a mapping function [f] operating within the
-      monad [M], as well as a tree, and applys [f] to all {b leaves} of the tree
-      (not the inner nodes). *)
-  val map_leaves :
-    ('a -> ('a, 'b, 'c) M.t) -> ('a, 'sint) t -> (('a, 'sint) t, 'b, 'c) M.t
-end
+(** [map_leaves M f t] receives a mapping function [f] operating within the
+    monad [M], as well as a tree, and applys [f] to all {b leaves} of the tree
+    (not the inner nodes). *)
+val map_leaves :
+  (module M : Compo_res.Base) ->
+  ('a -> ('a, 'b, 'c) M.t) -> ('a, 'sint) t -> (('a, 'sint) t, 'b, 'c) M.t
