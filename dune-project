@@ -74,11 +74,11 @@
    (< 3.0))
   unionFind
   ppx_deriving_yojson
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.28.1)))
+    (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -113,11 +113,11 @@
    (and
     :build
     (>= 3.14.0)))
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.28.1)))
+    (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -155,9 +155,9 @@
    (and
     :build
     (>= 3.14.0)))
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.28.1)))
+    (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))
