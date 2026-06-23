@@ -32,7 +32,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
       | [ ty ] -> ty
       | _ -> L.failwith "unexpected type args in nondet_bytes"
     in
-    Encoder.nondet_valid output
+    Value_codec.nondet_valid output
 
   let soteria_panic ~args =
     let* msg =

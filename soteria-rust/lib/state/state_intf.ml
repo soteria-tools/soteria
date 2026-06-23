@@ -12,7 +12,7 @@ module type S = sig
   type 'a ret := ('a, Error.with_trace, syn list) SM.Result.t
 
   module Sptr : sig
-    include Sptr.S
+    include module type of Sptr
 
     (** [offset ?check_signed ?ty ptr off] Offsets [ptr] by the size of [ty] *
         [off]. [ty] defaults to u8.
@@ -31,7 +31,7 @@ module type S = sig
     (** Checks this pointer isn't dangling for the given pointee type, i.e. it
         points to an allocation and doesn't range outside of it. This also
         checks the allocation is live, and that the type is inhabited, *)
-    val check_non_dangling : t full_ptr -> Types.ty -> unit ret
+    val check_non_dangling : full_ptr -> Types.ty -> unit ret
 
     (** Same as {!check_non_dangling}, but for untyped ranges, where only a size
         is known. The size is signed: if less than 0, the range preceding the
@@ -41,11 +41,8 @@ module type S = sig
     (** Checks this pointer is sufficiently aligned for the given type. This
         takes into account the metadata: for a [&dyn Trait], it will access the
         VTable to check alignment. *)
-    val check_aligned : t full_ptr -> Types.ty -> unit ret
+    val check_aligned : full_ptr -> Types.ty -> unit ret
   end
-
-  type full_ptr := Sptr.t full_ptr
-  type rust_val := Sptr.t rust_val
 
   (** Prettier but expensive printing. *)
   val pp_pretty : ignore_freed:bool -> t Fmt.t
@@ -68,7 +65,7 @@ module type S = sig
   val free : full_ptr -> unit ret
 
   val size_and_align_of_val :
-    Types.ty -> Sptr.t Rust_val.meta -> (T.sint Typed.t * T.nonzero Typed.t) ret
+    Types.ty -> Rust_val.meta -> (T.sint Typed.t * T.nonzero Typed.t) ret
 
   val fake_read : full_ptr -> Types.ty -> unit ret
 

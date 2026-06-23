@@ -69,29 +69,27 @@ module Binding = struct
       - Uninit: the symbol is bound to an immediate, uninitialized value.
       - Dead: the symbol is dead; it doesn't exist (e.g. after a [StorageDead]).
   *)
-  type 'a kind =
-    | Stackptr of 'a Rust_val.full_ptr
-    | Value of 'a Rust_val.t
+  type kind =
+    | Stackptr of Rust_val.full_ptr
+    | Value of Rust_val.t
     | Uninit
     | Dead
   [@@deriving show { with_path = false }]
 
-  type 'a t = { kind : 'a kind; ty : Types.ty }
+  type t = { kind : kind; ty : Types.ty }
 
   let pp ft { kind; ty } =
     match kind with
     | Stackptr ptr ->
-        Fmt.pf ft "Stackptr(%a) : %a"
-          (Rust_val.pp_full_ptr Fmt.nop)
-          ptr pp_ty ty
-    | Value v -> Fmt.pf ft "Value(%a) : %a" (Rust_val.pp Fmt.nop) v pp_ty ty
+        Fmt.pf ft "Stackptr(%a) : %a" Rust_val.pp_full_ptr ptr pp_ty ty
+    | Value v -> Fmt.pf ft "Value(%a) : %a" Rust_val.pp v pp_ty ty
     | Uninit -> Fmt.pf ft "Uninit : %a" pp_ty ty
     | Dead -> Fmt.pf ft "Dead : %a" pp_ty ty
 
   let as_value = function { kind = Value v; _ } -> Some v | _ -> None
 
-  let bind_value (f : 'a Rust_val.t -> 'a kind) :
-      'a kind option -> 'a kind option = function
+  let bind_value (f : Rust_val.t -> kind) : kind option -> kind option =
+    function
     | Some (Value v) -> Some (f v)
     | (Some Uninit | Some Dead) as v -> v
     | Some (Stackptr _) | None -> None
@@ -99,7 +97,7 @@ end
 
 open Binding
 
-type 'a t = 'a Binding.t Map.t
+type t = Binding.t Map.t
 
 let pp ft s =
   Fmt.(
@@ -121,13 +119,13 @@ let declare_ptr sym ptr t = declare sym (Stackptr ptr) t
 let declare_uninit sym t = declare sym Uninit t
 let dealloc sym t = declare sym Dead t
 let get_ty sym t = (Map.find sym t).ty
-let find local (store : 'a t) = Map.find local store
+let find local (store : t) = Map.find local store
 let empty = Map.empty
-let bindings (store : 'a t) = Map.bindings store
+let bindings (store : t) = Map.bindings store
 
 (** [try_load p s] tries loading [p] from the [s], returning [Some v] if it
     succeded, and [None] if it has to be spilled into the heap. *)
-let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
+let rec try_load (place : Place.t) (store : t) : Binding.kind option =
   match place.kind with
   | Local v -> Some (find v store).kind
   | Field (base, ProjAdt (_, Some _var), field) -> (
