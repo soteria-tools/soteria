@@ -11,6 +11,8 @@ request.
 
 ## [Unreleased]
 
+This is our first release! We will be releasing regularly, under the `0.x` series.
+
 ### Added
 
 - `soteria-c --version` and `soteria-rust --version` now print the release
