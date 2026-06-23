@@ -1,4 +1,4 @@
-open Soteria_smt
+open Smt
 open Logs.Import
 
 module StatKeys = struct
@@ -13,7 +13,7 @@ end
     {!Config}. *)
 module Make (Value : Value.S) :
   Solver_interface.S with type value = Value.t and type ty = Value.ty = struct
-  let initialize_solver : (Soteria_smt.solver -> unit) ref =
+  let initialize_solver : (Smt.solver -> unit) ref =
     ref (fun solver ->
         command solver (set_option ":produce-models" "true");
         List.iter (command solver) Value.init_commands)
@@ -73,7 +73,7 @@ module Make (Value : Value.S) :
       match channel () with
       | None -> ()
       | Some oc ->
-          Soteria_smt.output_sexp oc sexp;
+          Smt.output_sexp oc sexp;
           flush oc
 
     let log_response response elapsed =
@@ -81,11 +81,11 @@ module Make (Value : Value.S) :
       | None -> ()
       | Some oc ->
           let fmt = Format.formatter_of_out_channel oc in
-          Fmt.pf fmt " ; -> %a (%a)\n@?" Soteria_smt.pp_sexp response
+          Fmt.pf fmt " ; -> %a (%a)\n@?" Smt.pp_sexp response
             Logs.Printers.pp_time elapsed
   end
 
-  type t = Soteria_smt.solver
+  type t = Smt.solver
   type value = Value.t
   type ty = Value.ty
 
@@ -118,15 +118,15 @@ module Make (Value : Value.S) :
 
   let add_constraint solver v =
     let v = Value.encode_value v in
-    let sexp = Soteria_smt.assume v in
+    let sexp = Smt.assume v in
     command solver sexp
 
   let check_sat solver : Symex.Solver_result.t =
     Stats.As_ctx.incr StatKeys.check_sats;
     let smt_res =
       try check solver
-      with Soteria_smt.UnexpectedSolverResponse s ->
-        [%l.error "Unexpected solver response: %s" (Soteria_smt.to_string s)];
+      with Smt.UnexpectedSolverResponse s ->
+        [%l.error "Unexpected solver response: %s" (Smt.to_string s)];
         Unknown
     in
     match smt_res with
@@ -136,8 +136,8 @@ module Make (Value : Value.S) :
         [%l.info "Solver returned unknown"];
         Unknown
 
-  let push solver n = command solver (Soteria_smt.push n)
-  let pop solver n = command solver (Soteria_smt.pop n)
+  let push solver n = command solver (Smt.push n)
+  let pop solver n = command solver (Smt.pop n)
   let save solver = push solver 1
   let backtrack_n solver n = pop solver n
 
@@ -145,6 +145,5 @@ module Make (Value : Value.S) :
     command solver reset;
     !initialize_solver solver
 
-  let get_model solver =
-    try Some (Soteria_smt.get_model solver) with _ -> None
+  let get_model solver = try Some (Smt.get_model solver) with _ -> None
 end

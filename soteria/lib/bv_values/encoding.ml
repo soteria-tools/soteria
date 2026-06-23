@@ -1,6 +1,6 @@
 open Logs.Import
 open Soteria_std
-open Soteria_smt
+open Smt
 open Svalue
 
 (** Lowers the svalues of a built typed layer [Typed] (from {!Typed.Make}) into
@@ -28,7 +28,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
 
   let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
 
-  let rm_to_smt : RoundingMode.t -> Soteria_smt.RoundingMode.t = function
+  let rm_to_smt : RoundingMode.t -> Smt.RoundingMode.t = function
     | NearestTiesToEven -> NearestTiesToEven
     | NearestTiesToAway -> NearestTiesToAway
     | Ceil -> Ceil
