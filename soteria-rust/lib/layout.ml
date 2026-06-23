@@ -55,6 +55,11 @@ let align_of_literal_ty = size_of_literal_ty
 
 type meta_kind = LenKind | VTableKind | NoneKind
 
+let pp_meta_kind ft = function
+  | LenKind -> Fmt.string ft "length"
+  | VTableKind -> Fmt.string ft "vtable"
+  | NoneKind -> Fmt.string ft "unit"
+
 let rec dst_kind : Types.ty -> meta_kind = function
   | TAdt { id = TBuiltin TStr; _ } | TSlice _ -> LenKind
   | TDynTrait _ -> VTableKind
@@ -411,13 +416,23 @@ let normalise (ty : Types.ty) =
   let+ ty = Poly.subst_ty ty in
   Ok ty
 
-let size_of ty =
+let[@inline] size_of ty =
   let++ { size; _ } = layout_of ty in
   (Typed.cast size :> Typed.([> T.sint ] t))
 
-let align_of ty =
+let[@inline] align_of ty =
   let++ { align; _ } = layout_of ty in
   (Typed.cast align :> Typed.([> T.nonzero ] t))
+
+(** Whether the given type is a 1ZST: it must have size 0 and alignment 1. *)
+let[@inline] is_1zst ty =
+  let++ layout = layout_of ty in
+  layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
+
+(** Whether the given type is a ZST: it must have size 0. *)
+let[@inline] is_zst ty =
+  let++ layout = layout_of ty in
+  layout.size ==@ Usize.(0s)
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero
@@ -473,10 +488,6 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
     | TAdt { id = TBuiltin TBox; _ } -> true
     | TAdt adt -> adt_is_box adt
     | _ -> false
-  in
-  let[@inline] is_1zst ty =
-    let++ layout = layout_of ty in
-    layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
   in
   let is_repr_transparent (adt : Types.type_decl_ref) =
     match adt.id with
@@ -544,3 +555,31 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
       (* 1ZSTs are exclusively compatible with themselves; otherwise type
          equality! *)
       ty1_1zst &&@ ty2_1zst
+
+(** Returns the path through an ADT to the pointer that is the target of an
+    unsizing operation, returning [None] if no path was found. If the path is
+    [Some], it is guaranteed that following the path leads to a pointer type.
+
+    The path is found by recursively exploring the last non-ZST field of the
+    structure, until a pointer is found. *)
+let rec unsize_path ty : (int list option, _, _) Result.t =
+  let ( let*** ) x f = bind (function Some x -> f x | None -> ok None) x in
+  let ( let**/ ) x f = bind (function Some _ as x -> ok x | None -> f ()) x in
+  let rec find_last_non_zst_field idx tys =
+    match tys with
+    | [] -> ok None
+    | ty :: rest ->
+        let**/ () = find_last_non_zst_field (idx + 1) rest in
+        let** is_zst = is_zst ty in
+        if%sat is_zst then ok None else ok (Some (idx, ty))
+  in
+  let rec aux acc = function
+    | Types.TRawPtr _ | TRef _ -> ok (Some acc)
+    | TPattern (ty, _) -> aux acc ty
+    | TAdt adt when Crate.is_struct_or_tuple adt ->
+        let tys = Crate.as_struct_or_tuple adt in
+        let*** idx, ty = find_last_non_zst_field 0 tys in
+        aux (idx :: acc) ty
+    | ty -> ok None
+  in
+  map (Option.map List.rev) @@ aux [] ty

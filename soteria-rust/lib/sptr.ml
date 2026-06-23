@@ -16,6 +16,22 @@ open T
 module type DecayMapS = sig
   include Soteria.Sym_states.Base.M(Rustsymex).S
 
+  module SM : sig
+    include module type of SM
+
+    val not_impl :
+      ?tip:string * string option ->
+      ?issue:int ->
+      ('a, Format.formatter, unit, 'b t) format4 ->
+      'a
+
+    val of_opt_not_impl :
+      ?tip:string * string option -> ?issue:int -> string -> 'a option -> 'a t
+
+    val match_on : 'a list -> constr:('a -> sbool Typed.t) -> 'a option t
+    val get_where : unit -> Trace.t t
+  end
+
   val empty : t
 
   (** Decays the given location into an integer, updating the decay map
@@ -26,7 +42,7 @@ module type DecayMapS = sig
     expose:bool ->
     size:[< sint ] Typed.t ->
     align:[< nonzero ] Typed.t ->
-    [< sloc ] Typed.t ->
+    sloc Typed.t ->
     sint Typed.t SM.t
 
   (** Tries finding, for the given integer, the matching provenance in the decay
@@ -36,7 +52,7 @@ module type DecayMapS = sig
     [< sint ] Typed.t -> (sloc Typed.t * sint Typed.t) option SM.t
 end
 
-module DecayMap = struct
+module DecayMap : DecayMapS = struct
   module MapKey = struct
     include Typed
 

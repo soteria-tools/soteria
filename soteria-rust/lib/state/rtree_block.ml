@@ -378,16 +378,17 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs (range, v, _tb) ->
         let offset, _ = range in
         let offset = offset -!@ fst t.range in
+        let size = BV.cast_nonzero (Range.size range) in
         match v with
         | Uninit -> (
             match uninit with
             | `Ignore -> ok vs
             | `Error -> error `UninitializedMemoryAccess)
         | Zeros ->
-            let+ size = sint_to_int (Range.size range) in
-            let value = BV.zero (size * 8) in
-            Ok ((Rust_val.Int value, offset) :: vs)
-        | Init value -> ok ((value, offset) :: vs)
+            let+ sizei = sint_to_int size in
+            let value = BV.zero (sizei * 8) in
+            Ok ((Rust_val.Int value, offset, size) :: vs)
+        | Init value -> ok ((value, offset, size) :: vs)
         | Any -> (
             match uninit with
             | `Ignore -> ok vs
@@ -427,7 +428,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
        concatenate them and call the encoder to decode the full value. *)
     let** leaves = collect_leaves ~uninit:`Error t in
     let* leaves =
-      DecayMap.SM.map_list leaves ~f:(fun (v, _) ->
+      DecayMap.SM.map_list leaves ~f:(fun (v, _, _) ->
           match v with
           | Int bv -> return bv
           | Ptr (ptr, Thin) -> Sptr.decay ptr
@@ -517,11 +518,13 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let++ sval = decode_tree ~ty framed in
         (sval, tree))
 
-  let store (ofs : Typed.([< T.sint ] t)) (value : rust_val)
-      (tag : Borrows.Tag.t option) (tb : Borrows.Tree.t option) :
-      (unit, 'err, 'fix) SM.Result.t =
+  let store (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.nonzero ] t))
+      (value : rust_val) (tag : Borrows.Tag.t option)
+      (tb : Borrows.Tree.t option) : (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
-    let** size = lift_symex @@ Value_codec.size_of value in
+    (* manually coerce so types line up *)
+    let ofs = (ofs :> Typed.(T.sint t)) in
+    let size = (size :> Typed.(T.sint t)) in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
@@ -547,7 +550,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
 
   let get_init_leaves (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) :
-      ((rust_val * Typed.(T.sint t)) list, 'err, 'fix) SM.Result.t =
+      (Typed.(rust_val * T.sint t * T.nonzero t) list, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs (Typed.cast size) in
     with_bound_check bound (fun t ->
         let open DecayMap.SM.Syntax in

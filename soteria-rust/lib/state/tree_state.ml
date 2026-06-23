@@ -554,7 +554,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       else Result.error (`MisalignedPointer (exp_align, align, ofs))
     else Result.ok ()
 
-  and check_non_dangling_untyped ((ptr : Sptr_base.t), _) size =
+  and check_non_dangling_untyped (ptr : Sptr_base.t) size =
     if%sat size ==@ Usize.(0s) then Result.ok ()
     else
       let** ptr, size =
@@ -570,7 +570,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       in
       `UBDanglingPointer
 
-  and check_non_dangling ((_, meta) as ptr) (ty : Types.ty) =
+  and check_non_dangling (ptr, meta) (ty : Types.ty) =
     let**^ layout = Layout.layout_of ty in
     if layout.uninhabited then Result.error (`RefToUninhabited ty)
     else
@@ -690,8 +690,8 @@ module Make (Borrows : Tree_borrows.T) = struct
           (* We uninitialise the whole range before writing, to ensure padding
              bytes are copied if there are any. *)
           let** () = Tree_block.uninit_range ofs size in
-          Result.iter_iter parts ~f:(fun (value, offset) ->
-              Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
+          Result.iter_iter parts ~f:(fun (value, offset, size) ->
+              Tree_block.store (offset +!!@ ofs) size value ptr.tag tb))
 
   (** We can't use {!Heap.Decoder} for [transmute], since the transmute happens
       regardless of the heap's state, so we need to re-instantiate it for tree
@@ -705,18 +705,10 @@ module Make (Borrows : Tree_borrows.T) = struct
         type fix = Tree_block.syn list
       end)
 
-  let transmute ~from ~to_ v =
+  let transmute_raw_inner ~to_ ~size blocks =
     (* a transmute is just a write of one type with a read of another type; we
        provide a function to do it that avoids allocating, checking alignment
        etc. *)
-    [%l.debug
-      "Transmuting %a: %a -> %a" (pp_rust_val Sptr_base.pp) v pp_ty from pp_ty
-        to_];
-    let@ () = with_loc_err ~trace:"Transmute" () in
-    (* We pick [from] rather than [to_], because we can transmute to a smaller
-       type, but not to a larger one, so it's guaranteed that [size(from) >=
-       size(to_)] *)
-    let**^ size = Layout.size_of from in
     let** value =
       with_pointers
         (let open DecayMap.SM in
@@ -727,12 +719,9 @@ module Make (Borrows : Tree_borrows.T) = struct
             let open Syntax in
             let open Tree_block_decoder in
             (* first, we write *)
-            let**^ parts =
-              DecayMap.SM.lift @@ Encoder.encode ~offset:Usize.(0s) v from
-            in
             let** () =
-              Result.iter_iter parts ~f:(fun (value, offset) ->
-                  Tree_block.store offset value None None)
+              Result.iter_iter blocks ~f:(fun (value, offset, size) ->
+                  Tree_block.store offset size value None None)
             in
             (* next, we read *)
             let handler (ty, ofs) =
@@ -750,6 +739,30 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     let++ () = check_validity ~check_refs:true to_ value in
     value
+
+  let transmute ~from ~to_ v =
+    [%l.debug
+      "Transmuting %a: %a -> %a" (pp_rust_val Sptr_base.pp) v pp_ty from pp_ty
+        to_];
+    let@ () = with_loc_err ~trace:"Transmute" () in
+    (* We pick [from] rather than [to_], because we can transmute to a smaller
+       type, but not to a larger one, so it's guaranteed that [size(from) >=
+       size(to_)] *)
+    let**^ size = Layout.size_of from in
+    let**^ blocks = Encoder.encode ~offset:Usize.(0s) v from in
+    transmute_raw_inner ~to_ ~size blocks
+
+  let transmute_raw ~to_ blocks =
+    [%l.debug
+      "Transmuting (raw) %a -> %a"
+        Fmt.(
+          list ~sep:(any ", ") (fun ft (v, ofs, sz) ->
+              pf ft "(%a: %a-%a)" (pp_rust_val Sptr_base.pp) v Typed.ppa ofs
+                Typed.ppa sz))
+        blocks pp_ty to_];
+    let@ () = with_loc_err ~trace:"Transmute" () in
+    let**^ size = Layout.size_of to_ in
+    transmute_raw_inner ~to_ ~size (Iter.of_list blocks)
 
   module Sptr = struct
     include Sptr_base
@@ -781,7 +794,7 @@ module Make (Borrows : Tree_borrows.T) = struct
                     &&@ Typed.not ofs_unsigned_neg))
                 `PointerArithmeticOverflow
             in
-            let++ () = check_non_dangling_untyped (fptr, Thin) off_by in
+            let++ () = check_non_dangling_untyped fptr off_by in
             off
         | None ->
             (* we use the unchecked, possibly overflowing version of the

@@ -28,8 +28,11 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
         let sub_ty =
           match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
         in
+        let meta =
+          Option.get ~msg:"meta required for unsized iter_fields" meta
+        in
         match meta with
-        | Some (Len len) -> (
+        | Len len -> (
             (* TODO: strings and slices of symbolic length *)
             match BV.to_z len with
             | Some len -> Iter.repeatz len sub_ty
@@ -71,19 +74,26 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
       let _, fields = variant_layouts.(Types.VariantId.to_int variant) in
       aux ~variant fields ty
 
-let size_of =
-  let open Rustsymex.Result in
-  function
-  | Int v -> ok (BV.usizei (Typed.size_of_int v / 8))
-  | Float f ->
-      ok (BV.usizei (Svalue.FloatPrecision.size (Typed.Float.fp_of f) / 8))
-  | Ptr (_, Thin) -> ok (BV.usizei (Crate.pointer_size ()))
-  | Ptr (_, (Len _ | VTable _)) -> ok (BV.usizei (Crate.pointer_size () * 2))
-  | PolyVal tid -> Layout.size_of (TVar (Free tid))
-  (* We can't know the size of a union/tuple/enum, because of e.g. niches, or
-     padding *)
-  | Union _ | Enum _ | Tuple _ ->
-      L.failwith "Impossible to get size of Enum/Tuple rust_val"
+(** Given a value of type [Box<T, A>], returns as a triple the inner pointer,
+    the allocator object, and the marker value. *)
+let unwrap_box v =
+  let unique, allocator = as_tuple2 v in
+  let nonnull, marker = as_tuple2 unique in
+  let ptr = as_tuple1 nonnull in
+  (as_ptr ptr, allocator, marker)
+
+(** Given a value of type [Box<T, A>], returns the container pointer *)
+let ptr_of_box v =
+  let ptr, _, _ = unwrap_box v in
+  ptr
+
+(** Given a pointer, allocator and marker, returns a value of type [Box<T, A>]
+*)
+let mk_box ptr allocator marker =
+  let nonnull = Tuple [ ptr ] in
+  let unique = Tuple [ nonnull; marker ] in
+  let box = Tuple [ unique; allocator ] in
+  box
 
 module Decoder
     (Sptr : Sptr.S)
@@ -114,7 +124,7 @@ struct
     type handler = query -> rust_val res
 
     type get_all_handler =
-      get_all_query -> (rust_val * Typed.(T.sint t)) list res
+      get_all_query -> Typed.(rust_val * T.sint t * T.nonzero t) list res
 
     (* A parser monad is an object such that, given a query handler with state
        ['state], returns a state monad-ish for that state which may fail or
@@ -335,7 +345,10 @@ module Encoder (Sptr : Sptr.S) = struct
       iterator over its sub values, along with their offset. Offsets all blocks
       by [offset] if specified *)
   let rec encode ~offset (value : rust_val) (ty : Types.ty) :
-      ((rust_val * Typed.(T.sint t)) Iter.t, 'e, 'f) Rustsymex.Result.t =
+      ( Typed.(rust_val * T.sint t * T.nonzero t) Iter.t,
+        'e,
+        'f )
+      Rustsymex.Result.t =
     let open Rustsymex in
     let open Syntax in
     let open Result in
@@ -360,8 +373,11 @@ module Encoder (Sptr : Sptr.S) = struct
     else
       match (layout.fields, value) with
       | _, Union blocks ->
-          ok (Iter.of_list blocks |> Iter.map (fun (v, o) -> (v, offset +!!@ o)))
-      | Primitive, _ -> ok (Iter.singleton (value, offset))
+          ok
+            (Iter.of_list blocks
+            |> Iter.map (fun (v, o, s) -> (v, offset +!!@ o, s)))
+      | Primitive, _ ->
+          ok (Iter.singleton (value, offset, BV.cast_nonzero layout.size))
       | Array _, _ | Arbitrary (_, _), _ -> chain (iter_fields layout ty)
       | Enum (_, layouts), Enum (disc, _) -> (
           let adt = ty_as_adt ty in
@@ -371,8 +387,9 @@ module Encoder (Sptr : Sptr.S) = struct
           match fst layouts.(Types.VariantId.to_int variant) with
           | None -> fields
           | Some (ofs, tag) ->
+              let size = BV.usizeinz (Typed.size_of_int tag / 8) in
               let offset = ofs +!!@ offset in
-              Iter.cons (Int tag, offset) fields)
+              Iter.cons (Int tag, offset, size) fields)
       | Enum _, _ ->
           not_impl "encode: expected enum value for enum type %a" pp_ty ty
 
@@ -420,14 +437,13 @@ module Encoder (Sptr : Sptr.S) = struct
           (* TODO: the vtable must always match the trait type of the pointee.
              Will require a new input to this function (?) *)
           f (Typed.not (Sptr.is_null vt)) (`UBTransmute "Null vtable pointer")
-      | Thin, (LenKind | VTableKind) ->
-          f Typed.v_false (`UBTransmute "Thin pointer to DST")
-      | (Len _ | VTable _), NoneKind ->
-          f Typed.v_false (`UBTransmute "Metadata for non-DST pointee")
-      | Len _, VTableKind ->
-          f Typed.v_false (`UBTransmute "Length metadata when VTable expected")
-      | VTable _, LenKind ->
-          f Typed.v_false (`UBTransmute "VTable metadata when length expected")
+      | _, dst_kind ->
+          let msg =
+            Fmt.str
+              "Mismatch between metadata and DST kind; expected %a, got %a"
+              Layout.pp_meta_kind dst_kind Rust_val.pp_meta_kind meta
+          in
+          f Typed.v_false (`UBTransmute msg)
     in
     (* undefined.validity.reference-box *)
     let ref_box_validity ((_, meta) as fptr) pointee =
@@ -491,8 +507,8 @@ module Encoder (Sptr : Sptr.S) = struct
     | Ptr ptr, TRef (_, pointee, _) -> ref_box_validity ptr pointee
     | _, TAdt adt when adt_is_box adt ->
         let pointee = get_pointee ty in
-        let ptr, meta = as_ptr @@ List.hd @@ flatten v in
-        ref_box_validity (ptr, meta) pointee
+        let ptr = ptr_of_box v in
+        ref_box_validity ptr pointee
     (* undefined.validity.wide *)
     | Ptr (_, meta), TRawPtr (pointee, _) ->
         metadata_validity ~is_raw_ptr:true pointee meta
@@ -609,12 +625,12 @@ module Encoder (Sptr : Sptr.S) = struct
     | TVar (Bound _), _ ->
         L.failwith "transmute_one: bound type variable encountered?"
     | TVar _, _ ->
-        not_impl
+        L.failwith
           "losing concrete value in %a -> %a; somewhere we lost track of \
            generics"
           pp_rust_val v pp_ty to_ty
     | _ ->
-        not_impl "unsupported transmute of value %a to type %a" pp_rust_val v
+        L.failwith "unsupported transmute of value %a to type %a" pp_rust_val v
           pp_ty to_ty
 
   (** [nondet_raw ty] returns a nondeterministic value for [ty], by traversing
@@ -671,13 +687,15 @@ module Encoder (Sptr : Sptr.S) = struct
             Tuple fields
         | Union _ ->
             let** size = Layout.size_of ty in
-            let* sizei =
-              match BV.to_z size with
-              | Some s -> return (Z.to_int s)
-              | None -> vanish ()
-            in
-            let+ bytes = nondet (Typed.t_int (sizei * 8)) in
-            Ok (Union [ (Int bytes, Usize.(0s)) ])
+            if%sat size ==@ Usize.(0s) then Result.ok (Union [])
+            else
+              let* sizei =
+                match BV.to_z size with
+                | Some s -> return (Z.to_int s)
+                | None -> vanish ()
+              in
+              let+ bytes = nondet (Typed.t_int (sizei * 8)) in
+              Ok (Union [ (Int bytes, Usize.(0s), BV.cast_nonzero size) ])
         | _ ->
             Rustsymex.not_impl
               "cannot create a symbolic value of unsupported type %a" pp_ty ty)
@@ -733,21 +751,16 @@ module Encoder (Sptr : Sptr.S) = struct
       in
       (List.rev vs, acc)
     in
+    let* ty = Poly.subst_ty ty in
     match ty with
     | TRef (_, _, _) | TAdt { id = TBuiltin TBox; _ } ->
         let++ ptr, acc = fn init ty (as_ptr v) in
         (Ptr ptr, acc)
     | TAdt adt when adt_is_box adt ->
         (* a box has only one non ZST, the pointer *)
-        let ptr = as_ptr @@ List.hd @@ flatten v in
+        let ptr, allocator, marker = unwrap_box v in
         let++ ptr, acc = fn init ty ptr in
-        (* recursively look for where the pointer is and replace it *)
-        let rec subst_ptr = function
-          | Tuple vs -> Tuple (List.map subst_ptr vs)
-          | Ptr _ -> Ptr ptr
-          | v -> v
-        in
-        (subst_ptr v, acc)
+        (mk_box (Ptr ptr) allocator marker, acc)
     | TAdt adt when Crate.is_struct_or_tuple adt ->
         let++ vs, acc = fs' init (Crate.as_struct_or_tuple adt) (as_tuple v) in
         (Tuple vs, acc)

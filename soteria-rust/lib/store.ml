@@ -33,11 +33,16 @@ module Place = struct
     | Local v -> v
     | Field (base, _, _) | Index (base, _) | Metadata base -> root base
 
-  (** The root value [v] with the value at [sp] replaced by [f] applied to it;
-      [None] if not navigable. *)
+  (** [update_val sp inner' v] updates the root value [v] with the value at [sp]
+      replaced by [inner']; [None] if [sp] is not navigable. *)
   let rec update_val { kind; _ } ~f v =
     match kind with
     | Local _ -> Some (f v)
+    | Field (base, ProjAdt (_, Some _var), field) ->
+        (* TODO: check the variant matches *)
+        update_val base
+          ~f:(Rust_val.update_field (Types.FieldId.to_int field) ~f)
+          v
     | Field (base, _, field) ->
         update_val base
           ~f:(Rust_val.update_field (Types.FieldId.to_int field) ~f)
@@ -125,12 +130,19 @@ let bindings (store : 'a t) = Map.bindings store
 let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
   match place.kind with
   | Local v -> Some (find v store).kind
+  | Field (base, ProjAdt (_, Some _var), field) -> (
+      (* TODO: check the variant matches *)
+      let field_idx = Types.FieldId.to_int field in
+      try_load base store
+      |> bind_value @@ function
+         | Enum (_, vs) -> Value (List.nth vs field_idx)
+         | _ -> L.failwith "tried loading field of non-enum")
   | Field (base, _, field) -> (
       let field_idx = Types.FieldId.to_int field in
       try_load base store
       |> bind_value @@ function
-         | Tuple vs | Enum (_, vs) -> Value (List.nth vs field_idx)
-         | _ -> L.failwith "tried loading field of non-aggregate")
+         | Tuple vs -> Value (List.nth vs field_idx)
+         | _ -> L.failwith "tried loading field of non-struct")
   | Index (base, idx) -> (
       try_load base store
       |> bind_value @@ function
@@ -144,17 +156,25 @@ let rec try_load (place : Place.t) (store : 'a t) : 'a Binding.kind option =
             likes to sometimes treat the metadata as a raw pointer, so we much
             check for that. Additionally, we must flatten the value, because a
             valid metadata target can be e.g. [Box<T>]. *)
-         match Rust_val.flatten v with
-         | [ Ptr (_, Thin) ] -> Value Rust_val.unit_
-         | [ Ptr (_, Len len) ] -> Value (Int len)
-         | [ Ptr (_, VTable vt) ] ->
+         let ptr, meta =
+           match base.origin.ty with
+           | TRawPtr _ | TRef _ -> Rust_val.as_ptr v
+           | TAdt adt when adt_is_box adt -> Value_codec.ptr_of_box v
+           | _ ->
+               L.failwith "tried loading metadata of non-pointer: %a" pp_ty
+                 base.origin.ty
+         in
+         match meta with
+         | Thin -> Value (Tuple [])
+         | Len len -> Value (Int len)
+         | VTable vt ->
+             let vt = Rust_val.Ptr (vt, Thin) in
              if
                Option.is_some_and
                  (Crate.adt_has_lang_item "dyn_metadata")
                  (ty_as_adt_opt place.origin.ty)
-             then Value (Tuple [ Tuple [ Ptr (vt, Thin) ]; Tuple [] ])
-             else Value (Ptr (vt, Thin))
-         | _ -> L.failwith "tried loading metadata of non-pointer")
+             then Value (Tuple [ Tuple [ vt ]; Tuple [] ])
+             else Value vt)
 
 let try_store (place : Place.t) store value =
   let open Syntaxes.Option in

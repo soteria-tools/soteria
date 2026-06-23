@@ -139,9 +139,7 @@ module type S = sig
     val check_non_dangling :
       t Rust_val.full_ptr -> Types.ty -> (unit, 'env) monad
 
-    val check_non_dangling_untyped :
-      t Rust_val.full_ptr -> Typed.(T.sint t) -> (unit, 'env) monad
-
+    val check_non_dangling_untyped : t -> Typed.(T.sint t) -> (unit, 'env) monad
     val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
     val decay : t -> (Typed.T.sint Typed.t, 'env) monad
     val expose : t -> (Typed.T.sint Typed.t, 'env) monad
@@ -160,9 +158,13 @@ module type S = sig
     val layout_of : Types.ty -> (Layout.t, 'env) monad
     val size_of : Types.ty -> ([> Typed.T.sint ] Typed.t, 'env) monad
     val align_of : Types.ty -> ([> Typed.T.nonzero ] Typed.t, 'env) monad
+    val is_zst : Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
+    val is_1zst : Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
 
     val is_abi_compatible :
       Types.ty -> Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
+
+    val unsize_path : Types.ty -> (int list option, 'env) monad
   end
 
   module Encoder : sig
@@ -170,7 +172,7 @@ module type S = sig
       offset:Typed.T.sint Typed.t ->
       rust_val ->
       Types.ty ->
-      ((rust_val * Typed.T.sint Typed.t) Iter.t, 'env) monad
+      (Typed.(rust_val * T.sint t * T.nonzero t) Iter.t, 'env) monad
 
     val cast_literal :
       from_ty:Values.literal_type ->
@@ -215,6 +217,11 @@ module type S = sig
 
     val transmute :
       from:Types.ty -> to_:Types.ty -> rust_val -> (rust_val, 'env) t
+
+    val transmute_raw :
+      to_:Types.ty ->
+      Typed.(rust_val * T.sint t * T.nonzero t) list ->
+      (rust_val, 'env) t
 
     val uninit : full_ptr -> Types.ty -> (unit, 'env) t
     val free : full_ptr -> (unit, 'env) t
@@ -476,9 +483,13 @@ module Make (State : State_intf.S) :
     let[@inline] layout_of ty = lift_err (layout_of ty)
     let[@inline] size_of ty = lift_err (size_of ty)
     let[@inline] align_of ty = lift_err (align_of ty)
+    let[@inline] is_zst ty = lift_err (is_zst ty)
+    let[@inline] is_1zst ty = lift_err (is_1zst ty)
 
     let[@inline] is_abi_compatible ty1 ty2 =
       lift_err (is_abi_compatible ty1 ty2)
+
+    let[@inline] unsize_path ty = lift_err (unsize_path ty)
   end
 
   module Encoder = struct
@@ -529,6 +540,10 @@ module Make (State : State_intf.S) :
       ESM.lift (copy_nonoverlapping ~src ~dst ~size)
 
     let[@inline] transmute ~from ~to_ v = ESM.lift (transmute ~from ~to_ v)
+
+    let[@inline] transmute_raw ~to_ blocks =
+      ESM.lift (transmute_raw ~to_ blocks)
+
     let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
     let[@inline] free ptr = ESM.lift (free ptr)
     let[@inline] borrow ?protect ptr ty = ESM.lift (borrow ?protect ptr ty)

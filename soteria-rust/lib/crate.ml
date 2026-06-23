@@ -98,6 +98,7 @@ let pp_place = mk_pp PrintFmt.pp_place
 let pp_region_binder pp = mk_pp (PrintFmt.pp_region_binder (fun _ -> pp))
 let pp_trait_decl_ref = mk_pp PrintFmt.pp_trait_decl_ref
 let pp_trait_impl_ref = mk_pp PrintFmt.pp_trait_impl_ref
+let pp_type_decl_ref = mk_pp PrintFmt.pp_type_decl_ref
 let pp_trait_ref = mk_pp PrintFmt.pp_trait_ref
 let pp_statement = mk_pp_indent PrintFmt.Ullbc.pp_statement
 let pp_terminator = mk_pp_indent PrintFmt.Ullbc.pp_terminator
@@ -134,6 +135,11 @@ let get_adt_lang_item lang_item =
         then raise (Found adt));
     raise (MissingDecl ("Missing ADT with lang item: " ^ lang_item))
   with Found adt -> adt
+
+let get_adt_lang_item_ref lang_item =
+  let adt = get_adt_lang_item lang_item in
+  let generics = TypesUtils.generic_args_of_params () adt.generics in
+  ({ id = TAdtId adt.def_id; generics } : Types.type_decl_ref)
 
 let adt_has_lang_item lang_item (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with

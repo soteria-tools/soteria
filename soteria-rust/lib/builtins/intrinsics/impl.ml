@@ -566,8 +566,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     else
       let size, overflowed = ty_size *?@ count in
       let* () = assert_not overflowed `Overflow in
-      let* () = Sptr.check_non_dangling_untyped fsrc size in
-      let* () = Sptr.check_non_dangling_untyped fdst size in
+      let* () = Sptr.check_non_dangling_untyped src size in
+      let* () = Sptr.check_non_dangling_untyped dst size in
       (* Here we can cheat a little: for copy_nonoverlapping we need to check
          for overlap, but otherwise the copy is the exact same; since the State
          makes a copy of the src tree before storing into dst, the semantics are
@@ -813,9 +813,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let maxnumf32 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf64 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf128 ~x ~y = float_minmax ~is_min:false ~x ~y
-
-  let ptr_guaranteed_cmp ~t:_ ~ptr ~other =
-    Core.eval_ptr_binop Eq (Ptr ptr) (Ptr other)
+  let ptr_guaranteed_cmp ~t:_ ~ptr ~other = Core.eval_ptr_binop Eq ptr other
 
   let ptr_mask ~t:_ ~ptr:(ptr, meta) ~mask =
     let* addr = Sptr.decay ptr in
@@ -835,8 +833,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* () =
       if%sat off ==@ zero then ok ()
       else
-        let* () = Sptr.check_non_dangling_untyped (base, Thin) off in
-        Sptr.check_non_dangling_untyped (ptr, Thin) (cast ~-off)
+        let* () = Sptr.check_non_dangling_untyped base off in
+        Sptr.check_non_dangling_untyped ptr (cast ~-off)
     in
     (* UB conditions:
      * 1. must be at the same address, OR derived from the same allocation

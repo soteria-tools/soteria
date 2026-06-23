@@ -19,22 +19,6 @@ module M (StateM : State.StateM.S) = struct
     in
     Enum (discr, [])
 
-  let rec equality_check (v1 : [< T.sint | T.sptr ] Typed.t)
-      (v2 : [< T.sint | T.sptr ] Typed.t) =
-    match (get_ty v1, get_ty v2) with
-    | TBitVector _, TBitVector _ | TPointer _, TPointer _ ->
-        ok (BV.of_bool (v1 ==@ v2))
-    | TPointer _, TBitVector _ ->
-        let v2 : T.sint Typed.t = cast v2 in
-        if%sat v2 ==@ Usize.(0s) then
-          let res = cast v1 ==@ Ptr.null () in
-          ok (BV.of_bool res)
-        else error `UBPointerComparison
-    | TBitVector _, TPointer _ -> equality_check v2 v1
-    | _ ->
-        not_impl "Unexpected types in cval equality: %a and %a" Typed.ppa v1
-          Typed.ppa v2
-
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
       hand side. *)
@@ -138,15 +122,17 @@ module M (StateM : State.StateM.S) = struct
     | None, None -> v_true
     | _, _ -> v_false
 
-  let rec eval_ptr_binop (bop : Expressions.binop) l r =
-    let null_or_in_bound p = Sptr.is_null p ||@ Sptr.in_bound p in
-    match (bop, l, r) with
-    | Ne, _, _ ->
+  let rec eval_ptr_binop (bop : Expressions.binop) (l : full_ptr) (r : full_ptr)
+      =
+    match bop with
+    | Ne ->
         let+ res = eval_ptr_binop Eq l r in
         BV.not_bool (cast res)
-    | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
+    | Eq ->
         (* Pointer comparison just uses the address! See
            https://doc.rust-lang.org/std/ptr/index.html#provenance *)
+        let null_or_in_bound p = Sptr.is_null p ||@ Sptr.in_bound p in
+        let l, meta_l = l and r, meta_r = r in
         let same_provenance = Sptr.have_same_provenance l r in
         if%sure same_provenance then
           (* Fast path: if two pointer have the same provenance, it's enough to
@@ -173,12 +159,8 @@ module M (StateM : State.StateM.S) = struct
           let+ distance = Sptr.distance l r in
           let ptr_eq = distance ==@ Usize.(0s) in
           BV.of_bool (meta_eq &&@ ptr_eq)
-    | Eq, Ptr (p, _), Int v | Eq, Int v, Ptr (p, _) ->
-        let v = cast_i Usize v in
-        if%sat v ==@ Usize.(0s) then ok (BV.of_bool (Sptr.is_null p))
-        else not_impl "Don't know how to eval %a == %a" Sptr.pp p Typed.ppa v
-    | Eq, Int v1, Int v2 -> ok (BV.of_bool (v1 ==@ v2))
-    | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) -> (
+    | Lt | Le | Gt | Ge -> (
+        let l, meta_l = l and r, meta_r = r in
         let* dist = Sptr.distance l r in
         let bop =
           match bop with
@@ -189,21 +171,21 @@ module M (StateM : State.StateM.S) = struct
           | _ -> assert false
         in
         let v = bop dist Usize.(0s) in
-        match (ml, mr) with
+        match (meta_l, meta_r) with
         | Thin, Thin -> ok (BV.of_bool v)
         (* is the below line correct? *)
         | Thin, _ | _, Thin -> ok (BV.of_bool v)
         | _, _ ->
             if%sat dist ==@ Usize.(0s) then
-              let* ml = meta_as_int ml in
-              let* mr = meta_as_int mr in
+              let* ml = meta_as_int meta_l in
+              let* mr = meta_as_int meta_r in
               let ml = Option.get ml in
               let mr = Option.get mr in
               ok (BV.of_bool (bop ml mr))
             else ok (BV.of_bool v))
-    | op, l, r ->
-        not_impl "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"
-          Expressions.pp_binop op pp_rust_val l pp_rust_val r
+    | op ->
+        L.failwith "Unexpected operation in eval_ptr_binop: %a"
+          Expressions.pp_binop op
 
   let zero_valid ~ty =
     let+^ res =

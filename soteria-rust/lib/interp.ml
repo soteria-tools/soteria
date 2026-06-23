@@ -254,22 +254,25 @@ module Make (StateImpl : State.S) = struct
           | ProvFunction f -> State.declare_fn (Real f)
           | ProvUnknown -> not_impl "Unknown provenance in RawMemory"
         in
-        let+ blocks =
+        let* blocks =
           map_list blocks ~f:(fun block ->
               match block with
-              | `Byte (b, ofs) -> ok (Int b, BV.usizei ofs)
+              | `Byte (b, ofs) ->
+                  ok
+                    (Int b, BV.usizei ofs, BV.usizeinz (Typed.size_of_int b / 8))
               | `Ptr (p, from_, size, ofs) ->
                   let* ptr, _ = ptr_of_provenance p in
                   if from_ = 0 && size = ptr_size then
-                    ok (Ptr (ptr, Thin), BV.usizei ofs)
+                    ok (Ptr (ptr, Thin), BV.usizei ofs, BV.usizeinz size)
                   else
                     let+ ptr_int = Sptr.decay ptr in
                     let ptr_frag =
                       BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
                     in
-                    (Int ptr_frag, BV.usizei ofs))
+                    (Int ptr_frag, BV.usizei ofs, BV.usizeinz size))
         in
-        Union blocks
+        (* let the value decoder handle it *)
+        State.transmute_raw ~to_:const.ty blocks
     | CGlobal glob ->
         let* ptr = resolve_global glob in
         State.load ptr const.ty
@@ -736,36 +739,27 @@ module Make (StateImpl : State.S) = struct
               | _ -> L.failwith "Invalid value for CastScalar"
             in
             Encoder.cast_literal ~from_ty ~to_ty v
-        | Cast (CastUnsize (from_ty, to_ty, meta)) ->
-            let rec with_ptr_meta : rust_val -> rust_val t = function
-              | Ptr (v, prev) ->
-                  let+ meta =
-                    resolve_unsizing_metadata
-                      ~help:(fun () ->
-                        Fmt.str "don't know how to unsize %a -> %a" pp_ty
-                          from_ty pp_ty to_ty)
-                      ~prev meta
+        | Cast (CastUnsize (from_ty, to_ty, meta)) -> (
+            let rec with_ptr_meta v = function
+              | [] ->
+                  let v, prev = as_ptr v in
+                  let help () =
+                    Fmt.str "don't know how to unsize %a -> %a" pp_ty from_ty
+                      pp_ty to_ty
                   in
+                  let+ meta = resolve_unsizing_metadata ~help ~prev meta in
                   Ptr (v, meta)
-              | Tuple (_ :: _ as fs) as v -> (
-                  let rec split_at_non_empty fs left =
-                    match fs with
-                    | [] -> None
-                    | f :: rest when Rust_val.is_empty f ->
-                        split_at_non_empty rest (f :: left)
-                    | f :: rest -> Some (List.rev left, f, rest)
-                  in
-                  let opt_nonempty = split_at_non_empty (List.rev fs) [] in
-                  match opt_nonempty with
-                  | Some (left, nonempty, right) -> (
-                      let+ nonempty = with_ptr_meta nonempty in
-                      let fs = List.rev (left @ [ nonempty ] @ right) in
-                      match v with Tuple _ -> Tuple fs | _ -> assert false)
-                  | None -> L.failwith "Couldn't set pointer meta in CastUnsize"
-                  )
-              | _ -> L.failwith "Couldn't set pointer meta in CastUnsize"
+              | idx :: rest ->
+                  let fs = as_tuple v in
+                  let before, target, after = List.split_around fs idx in
+                  let+ target = with_ptr_meta target rest in
+                  let fs = before @ (target :: after) in
+                  Tuple fs
             in
-            with_ptr_meta v
+            let* unsize_path = Layout.unsize_path from_ty in
+            match unsize_path with
+            | Some path -> with_ptr_meta v path
+            | None -> not_impl "don't know how to unsize through %a" pp_ty ty)
         | Cast (CastConcretize (_from, _to)) ->
             not_impl "Unsupported: dyn (concretize)"
         | Cast (CastFnPtr (_from, _to)) -> (
@@ -779,12 +773,14 @@ module Make (StateImpl : State.S) = struct
     | BinaryOp (op, e1, e2) -> (
         let* v1 = eval_operand e1 in
         let* v2 = eval_operand e2 in
-        match (v1, v2) with
-        | Int v1, Int v2 -> (
+        match (type_of_operand e1, type_of_operand e2) with
+        | ( TLiteral ((TInt _ | TUInt _ | TChar | TBool) as ty),
+            TLiteral ((TInt _ | TUInt _ | TChar | TBool) as ty_r) ) -> (
+            let v1 = as_base ty v1 in
+            let v2 = as_base ty_r v2 in
             match op with
             | Ge | Gt | Lt | Le ->
-                let lit_ty = TypesUtils.ty_as_literal (type_of_operand e1) in
-                let signed = Layout.is_signed lit_ty in
+                let signed = Layout.is_signed ty in
                 let op =
                   match op with
                   | Ge -> BV.geq
@@ -795,39 +791,14 @@ module Make (StateImpl : State.S) = struct
                 in
                 let v = op ~signed v1 v2 |> BV.of_bool in
                 ok (Int v)
-            | Eq | Ne ->
-                let v1, v2, _ = Typed.cast_checked2 v1 v2 in
-                let+ res = Core.equality_check v1 v2 in
-                let res = if op = Eq then res else BV.not_bool res in
-                Int res
+            | Eq -> ok (Int (BV.of_bool (v1 ==@ v2)))
+            | Ne -> ok (Int (BV.of_bool (Typed.not (v1 ==@ v2))))
             | Add _ | Sub _ | Mul _ | Div _ | Rem _ | Shl _ | Shr _ ->
-                let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
                 let+ res = Core.eval_lit_binop op ty v1 v2 in
                 Int (Typed.cast res)
             | AddChecked | SubChecked | MulChecked ->
-                let ty =
-                  match type_of_operand e1 with
-                  | TLiteral ty -> ty
-                  | ty -> L.failwith "Unexpected type in binop: %a" pp_ty ty
-                in
                 Core.eval_checked_lit_binop op ty v1 v2
-            | Cmp ->
-                let v1, v2, _ = Typed.cast_checked2 v1 v2 in
-                let ty = type_of_operand e1 in
-                let ty = TypesUtils.ty_as_literal ty in
-                ok (Core.cmp ~signed:(Layout.is_signed ty) v1 v2)
-            | Offset ->
-                (* non-zero offset on integer pointer is not permitted, as these
-                   are always dangling *)
-                let v2 = Typed.cast_i Usize v2 in
-                let ty = get_pointee (type_of_operand e1) in
-                let* size = Layout.size_of ty in
-                let+ () =
-                  assert_
-                    (v2 ==@ Usize.(0s) ||@ (size ==@ Usize.(0s)))
-                    `UBDanglingPointer
-                in
-                Int v1
+            | Cmp -> ok (Core.cmp ~signed:(Layout.is_signed ty) v1 v2)
             | BitOr | BitAnd | BitXor -> (
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
                 let v1 = Typed.cast_lit ty v1 in
@@ -836,20 +807,24 @@ module Make (StateImpl : State.S) = struct
                 | BitOr -> ok (Int (v1 |@ v2))
                 | BitAnd -> ok (Int (v1 &@ v2))
                 | BitXor -> ok (Int (v1 ^@ v2))
-                | _ -> assert false))
-        | (Ptr (p, meta) as ptr1), ((Ptr _ | Int _) as p2) -> (
-            match op with
-            | Offset ->
-                let off = as_base_i Usize p2 in
-                let ty = get_pointee (type_of_operand e1) in
-                let off_ty = TypesUtils.ty_as_literal (type_of_operand e2) in
-                let check_signed = Layout.is_signed off_ty in
-                let+ p' = Sptr.offset ~check_signed ~ty off p in
-                Ptr (p', meta)
-            | _ ->
-                let+ res = Core.eval_ptr_binop op ptr1 p2 in
-                Int res)
-        | Float v1, Float v2 -> (
+                | _ -> assert false)
+            | Offset -> L.failwith "impossible: offset on integers")
+        | (TRawPtr _ | TRef _ | TFnPtr _), (TRawPtr _ | TRef _ | TFnPtr _) ->
+            let p1 = as_ptr v1 in
+            let p2 = as_ptr v2 in
+            let+ res = Core.eval_ptr_binop op p1 p2 in
+            Int res
+        | ( (TRawPtr (pointee, _) | TRef (_, pointee, _)),
+            TLiteral ((TInt Isize | TUInt Usize) as lit) ) ->
+            assert (op = Offset);
+            let p, meta = as_ptr v1 in
+            let off = as_base lit v2 in
+            let check_signed = Layout.is_signed lit in
+            let+ p' = Sptr.offset ~check_signed ~ty:pointee off p in
+            Ptr (p', meta)
+        | TLiteral (TFloat fp), TLiteral (TFloat _) -> (
+            let v1 = as_base_f fp v1 in
+            let v2 = as_base_f fp v2 in
             match op with
             | Eq -> ok (Int (BV.of_bool (v1 ==.@ v2)))
             | Ne -> ok (Int (BV.of_bool (Typed.not (v1 ==.@ v2))))
@@ -865,9 +840,10 @@ module Make (StateImpl : State.S) = struct
             | _ ->
                 L.failwith "unexpected float binary operator (%a)"
                   Expressions.pp_binop op)
-        | v1, v2 ->
-            L.failwith "Unexpected values for binary operator (%a): %a / %a"
-              Expressions.pp_binop op pp_rust_val v1 pp_rust_val v2)
+        | ty1, ty2 ->
+            L.failwith "Invalid types for binary operator (%a %a %a): %a / %a"
+              pp_ty ty1 Expressions.pp_binop op pp_ty ty2 pp_rust_val v1
+              pp_rust_val v2)
     | NullaryOp (op, ty) -> (
         match op with
         | UbChecks ->
@@ -929,7 +905,7 @@ module Make (StateImpl : State.S) = struct
         let+ vals = eval_operand_list vals in
         Enum (discr, vals)
     (* Union aggregate *)
-    | Aggregate (AggregatedAdt (ty, None, Some field), ops) ->
+    | Aggregate (AggregatedAdt (adt, None, Some field), ops) ->
         let op =
           match ops with
           | [ op ] -> op
@@ -938,7 +914,7 @@ module Make (StateImpl : State.S) = struct
         in
         let* value = eval_operand op in
         let field = Types.FieldId.to_int field in
-        let* layout = Layout.layout_of (TAdt ty) in
+        let* layout = Layout.layout_of (TAdt adt) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
         let+ op_blocks = Encoder.encode ~offset value (type_of_operand op) in
         let op_blocks = Iter.to_list op_blocks in
@@ -948,9 +924,8 @@ module Make (StateImpl : State.S) = struct
         let+ values = eval_operand_list operands in
         Tuple values
     (* Invalid aggregate (not sure, but seems like it) *)
-    | Aggregate ((AggregatedAdt _ as v), _) ->
-        L.failwith "Invalid ADT aggregate kind: %a"
-          Expressions.pp_aggregate_kind v
+    | Aggregate (AggregatedAdt (_, Some _, Some _), _) ->
+        L.failwith "Invalid ADT aggregate kind"
     (* Array aggregate *)
     | Aggregate (AggregatedArray (_ty, _size), operands) ->
         let+ values = eval_operand_list operands in
@@ -958,32 +933,28 @@ module Make (StateImpl : State.S) = struct
     (* Raw pointer construction *)
     | Aggregate (AggregatedRawPtr (_, _), operands) ->
         let* values = eval_operand_list operands in
-        let ptr, meta =
-          match values with
-          | [ ptr; meta ] -> (ptr, meta)
+        let* ptr, meta, meta_ty =
+          match operands with
+          | [ ptr_op; meta_op ] ->
+              let* ptr = eval_operand ptr_op in
+              let* meta = eval_operand meta_op in
+              ok (ptr, meta, type_of_operand meta_op)
           | _ -> L.failwith "Non-2 arguments in AggregatedRawPtr?"
         in
-        let* ptr =
-          match ptr with
-          | Ptr (ptr, _) -> ok ptr
-          | Int v ->
-              let v = Typed.cast_i Usize v in
-              ok (Sptr.of_address v)
-          | _ ->
-              L.failwith "Unexpected ptr in AggregatedRawPtr: %a" pp_rust_val
-                ptr
-        in
-        (* we flatten the meta, to simplify processing stuff like
-           [std::ptr::DynMetadata] *)
+        let ptr, _ = as_ptr ptr in
         let+ meta =
-          match Rust_val.flatten meta with
-          | [] -> ok Thin
-          | [ Int meta ] -> ok (Len (Typed.cast_i Usize meta))
-          | [ Ptr (ptr, Thin) ] -> ok (VTable ptr)
-          | elms ->
-              L.failwith "Unexpected meta in AggregatedRawPtr: %a"
-                Fmt.(list ~sep:comma pp_rust_val)
-                elms
+          match meta_ty with
+          | TAdt { id = TTuple; generics = { types = []; _ } } -> ok Thin
+          | TLiteral (TInt Isize | TUInt Usize) ->
+              ok (Len (as_base_i Usize meta))
+          | TRawPtr _ | TRef _ -> ok (VTable (fst (as_ptr meta)))
+          | TAdt adt when Crate.adt_has_lang_item "dyn_metadata" adt ->
+              let nonnull, _marker = as_tuple2 meta in
+              let vt = as_tuple1 nonnull in
+              ok (VTable (fst (as_ptr vt)))
+          | _ ->
+              L.failwith "Unexpected meta type AggregatedRawPtr: %a" pp_ty
+                meta_ty
         in
         Ptr (ptr, meta)
     (* Array repetition *)
@@ -1050,14 +1021,9 @@ module Make (StateImpl : State.S) = struct
         let src = as_ptr_or ~make:Sptr.of_address src in
         let dst = as_ptr_or ~make:Sptr.of_address dst in
         let count = as_base_i Usize count in
-        let* () =
-          with_env ~env:()
-          @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
-        in
-        ok ()
-    | PlaceMention place ->
-        let+ _ = resolve_place place in
-        ()
+        with_env ~env:()
+        @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
+    | PlaceMention place -> map ignore @@ resolve_place place
     | SetDiscriminant (_, _) ->
         not_impl "writing enum discriminant directly is not yet supported"
 
@@ -1139,19 +1105,14 @@ module Make (StateImpl : State.S) = struct
             [%l.info
               "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
                 UllbcAst.pp_block_id else_block pp_rust_val discr];
-            let bool_discr =
-              match discr with
-              | Int discr -> BV.to_bool (Typed.cast_lit TBool discr)
-              | Ptr (ptr, _) -> Typed.not (Sptr.is_null ptr)
-              | _ -> L.failwith "Expected base value for if discriminant"
-            in
+            let bool_discr = BV.to_bool (as_base TBool discr) in
             if%sat[@lname "if case"] [@rname "else case"] bool_discr then
               let block = UllbcAst.BlockId.nth body.body if_block in
               exec_block ~body block
             else
               let block = UllbcAst.BlockId.nth body.body else_block in
               exec_block ~body block
-        | SwitchInt (_, options, default) ->
+        | SwitchInt (lit, options, default) ->
             [%l.info
               "Switch options %a (else %a) for %a"
                 Fmt.(
@@ -1161,21 +1122,8 @@ module Make (StateImpl : State.S) = struct
                    (fun (v, b) -> (Print.literal_to_string v, b))
                    options)
                 UllbcAst.pp_block_id default pp_rust_val discr];
-            let compare_discr =
-              match discr with
-              | Int discr -> fun (v, _) -> discr ==@ BV.of_literal v
-              | Ptr (ptr, _) ->
-                  fun (v, _) ->
-                    if Z.equal Z.zero (z_of_literal v) then Sptr.is_null ptr
-                    else L.failwith "Can't compare pointer with non-0 scalar"
-              | _ ->
-                  fun (v, _) ->
-                    L.failwith
-                      "Didn't know how to compare discriminant %a with scalar \
-                       %s"
-                      pp_rust_val discr
-                      (Print.literal_to_string v)
-            in
+            let discr = as_base lit discr in
+            let compare_discr = fun (v, _) -> discr ==@ BV.of_literal v in
             let*^ block = match_on options ~constr:compare_discr in
             let block = Option.fold ~none:default ~some:snd block in
             let block = UllbcAst.BlockId.nth body.body block in
@@ -1236,9 +1184,9 @@ module Make (StateImpl : State.S) = struct
                    locals, and figure out why we need this in the first
                    place. *)
                 let protected_address =
-                  match (fundef.signature.output, value) with
-                  | (TRef (RStatic, _, _) | TRawPtr _), Ptr (addr, _) ->
-                      Some addr
+                  match fundef.signature.output with
+                  | TRef (RStatic, _, _) | TRawPtr _ ->
+                      Some (fst (as_ptr value))
                   | _ -> None
                 in
                 let+ () = dealloc_stack ?protected_address protected in
@@ -1311,6 +1259,7 @@ module Make (StateImpl : State.S) = struct
   let exec_fun_as_whole_prog ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
     let* value = exec_fun ~args ~state fundef in
+    let value = Rust_val.to_syn Sptr.to_syn value in
     let* () = State.run_thread_exits () in
     if (Config.get ()).ignore_leaks then ok value
     else
