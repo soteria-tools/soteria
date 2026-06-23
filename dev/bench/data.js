@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782170124135,
+  "lastUpdate": 1782206209441,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -4075,6 +4075,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 104.3808,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "99712cb3ac01613892869c761f8ee6de6c4a22f3",
+          "message": "Tidy Soteria Rust (#425)\n\n* utilities\n\n* Remove  `Rust_val.flatten`, match on types\n\n* Split off enum case in Store\n\n* Use `DecayMapS`\n\n* simplify unreachable cases\n\n* type-oriented unsizing rather than structural\n\n* tweak `check_non_dangling_untyped`\n\n* Add `transmute_raw` for raw bytes constants\n\n* remove Value_codec.size_of, make blocks sized\n\n* handle `dyn_metadata` in `AggregatedRawPtr`\n\n* function pointers can also appear in binops\n\n* Review comment",
+          "timestamp": "2026-06-23T08:46:06Z",
+          "tree_id": "db9637b21d41bea0a4ac9ef86cc7effde09b9f37",
+          "url": "https://github.com/soteria-tools/soteria/commit/99712cb3ac01613892869c761f8ee6de6c4a22f3"
+        },
+        "date": 1782206207313,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.3480701627400005,
+            "range": "± 0.0203",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.1218912214199999,
+            "range": "± 0.0107",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6446169543,
+            "range": "± 0.0152",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.41186245362000007,
+            "range": "± 0.0024",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.7072960706800004,
+            "range": "± 0.0334",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.72019601832,
+            "range": "± 0.0061",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.43290984812,
+            "range": "± 0.0033",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9539884715,
+            "range": "± 0.0253",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.91118234093301,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 372,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 119.5167,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 459,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 100,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 41,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 104.9482,
             "unit": "s"
           }
         ]
