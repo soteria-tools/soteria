@@ -22,11 +22,17 @@
              Parse and link the ail program and print its AST (for debugging
              purposes)
   
+         version [OPTION]…
+             Print version information
+  
   COMMON OPTIONS
          --help[=FMT] (default=auto)
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-c exits with:
@@ -169,6 +175,9 @@
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-c capture-db exits with:
@@ -400,6 +409,9 @@
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
   
+         --version
+             Show version information.
+  
   EXIT STATUS
          soteria-c exec exits with:
   
@@ -627,6 +639,9 @@
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
   
+         --version
+             Show version information.
+  
   EXIT STATUS
          soteria-c gen-summaries exits with:
   
@@ -841,6 +856,9 @@
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-c show-ail exits with:

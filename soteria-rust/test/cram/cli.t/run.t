@@ -15,11 +15,17 @@
          exec [OPTION]… PATH
              Run symbolic execution
   
+         version [OPTION]…
+             Print version information
+  
   COMMON OPTIONS
          --help[=FMT] (default=auto)
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-rust exits with:
@@ -231,6 +237,9 @@
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-rust exec exits with:
@@ -508,6 +517,9 @@
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-rust build-plugins exits with:
@@ -789,6 +801,9 @@
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-rust compile exits with:
