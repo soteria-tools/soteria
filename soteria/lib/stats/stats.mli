@@ -161,9 +161,7 @@ module As_ctx : sig
       only inside a function wrapped with {!val:with_}, ensuring that the
       statistics are properly passed around. *)
 
-  type nonrec t = t
-
-  include Effects.Bookkeeping with type arg = unit and type t := t
+  include Effects.Bookkeeping.S with type arg = unit and type t = t
 
   (** [push_entry name entry] adds the given statistic [entry] under the given
       name [name] to the current statistics context. *)
