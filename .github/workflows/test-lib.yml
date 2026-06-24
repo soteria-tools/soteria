@@ -39,9 +39,9 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #[actionpin: v5]
         with:
           path: _opam
-          key: ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-${{ hashFiles('soteria/*.opam') }}
+          key: ${{ runner.os }}-${{ runner.arch }}-opam-testlib-${{ env.OCAML_VERSION }}-${{ hashFiles('soteria/*.opam') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-opam-${{ env.OCAML_VERSION }}-
+            ${{ runner.os }}-${{ runner.arch }}-opam-testlib-${{ env.OCAML_VERSION }}-
 
       - name: Update opam
         run: opam update
