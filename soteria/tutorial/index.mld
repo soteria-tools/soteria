@@ -31,5 +31,3 @@ The two built-in symbolic value implementations, to get started; you can also
 define your own!
 
 {!modules:Soteria.Tiny_values Soteria.Bv_values}
-
-Our built-in library to interact with SMT-LIB solvers.
