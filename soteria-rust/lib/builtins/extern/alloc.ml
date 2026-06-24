@@ -33,8 +33,11 @@ module M (StateM : State.StateM.S) = struct
   let ptr_of_nonnull nonull = as_ptr @@ as_tuple1 nonull
 
   let align_of_enum align : [> T.nonzero ] Typed.t =
-    let align_enum = as_tuple1 align in
-    let discr = discriminant_of align_enum in
+    let discr =
+      match Rust_val.get_ty align with
+      | `Tuple -> discriminant_of (as_tuple1 align)
+      | _ -> as_any_int align
+    in
     BV.cast_nonzero @@ Typed.cast_i Usize discr
 
   let alloc ?(zeroed = false) args =
