@@ -6,6 +6,10 @@ open Soteria.Logs.Printers
 open Soteria.Terminal.Warn
 module Wpst_interp = Interp.Make (SState)
 
+(* Type-checking that the state satisfies its interface since we removed its mli
+   file. *)
+module _ : State_intf.S = SState
+
 exception Tool_error
 
 let tool_error msg =
