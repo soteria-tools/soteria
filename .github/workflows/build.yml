@@ -31,7 +31,7 @@ jobs:
     name: Build and Test
     strategy:
       matrix:
-        operating-system: [macos-latest, ubuntu-latest]
+        operating-system: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["macos-latest", "ubuntu-latest"]') }}
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3,  ocaml and opam
@@ -48,7 +48,8 @@ jobs:
         uses: ocaml/setup-ocaml@e32b06a3e831ff2fbc6f08cf35be2085e3918014 #[actionpin: v3]
         with:
           ocaml-compiler: ${{ env.OCAML_VERSION }}
-          dune-cache: true
+          # Disabled: we get dune from the opam cache already
+          dune-cache: false
           opam-pin: false
       - name: Restore opam cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #[actionpin: v5]
@@ -179,6 +180,7 @@ jobs:
 
       - name: Build API documentation
         run: make doc
+        if: runner.os == 'Linux'
 
       - name: Upload documentation artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
@@ -192,7 +194,7 @@ jobs:
 
       - name: Build JSON documentation
         run: make doc-json
-        if: runner.os == 'linux'
+        if: runner.os == 'linux' && github.ref == 'refs/heads/main'
 
       - name: Upload JSON documentation artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
@@ -200,7 +202,7 @@ jobs:
           name: odoc-json
           path: _build/default/_doc/_html
           if-no-files-found: error
-        if: runner.os == 'linux'
+        if: runner.os == 'linux' && github.ref == 'refs/heads/main'
 
       - name: Opam Cleanup
         run: opam clean -a -r

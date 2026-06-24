@@ -32,7 +32,7 @@ jobs:
         uses: ocaml/setup-ocaml@e32b06a3e831ff2fbc6f08cf35be2085e3918014 #[actionpin: v3]
         with:
           ocaml-compiler: ${{ env.OCAML_VERSION }}
-          dune-cache: true
+          dune-cache: false
           opam-pin: false
 
       - name: Restore opam cache
