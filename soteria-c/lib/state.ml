@@ -210,6 +210,7 @@ let produce_tree_block
   let open Csymex.Syntax in
   let* cerb_loc = Csymex.get_loc () in
   let t = match t with None -> { heap = None; globs = None } | Some t -> t in
+  let* () = Csymex.assume Typed.[ not (Ptr.is_null_loc loc) ] in
   let+ heap =
     Heap.produce' loc
       (Block.produce' ~info:cerb_loc
@@ -219,6 +220,7 @@ let produce_tree_block
   to_opt { t with heap }
 
 let produce_init_val' loc offset ty v =
+  (* TODO: alignment constraints *)
   produce_tree_block (Ctree_block.produce_init offset ty v) loc
 
 let produce_uninit' loc offset len =
