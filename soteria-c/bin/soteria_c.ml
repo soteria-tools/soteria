@@ -118,8 +118,34 @@ module Capture_db = struct
       (Term.map Exit_code.to_int term)
 end
 
+module Version = struct
+  let print_version () =
+    Fmt.pr "%s@." Soteria.Version.version;
+    0
+
+  let term = Term.(const print_version $ const ())
+
+  let cmd =
+    Cmd.make
+      (Cmd.info ~exits ~doc:"Print version information"
+         ~man:
+           [
+             `S Cmdliner.Manpage.s_description;
+             `P "Print the version of Soteria C.";
+           ]
+         "version")
+      term
+end
+
 let cmd =
-  Cmd.group (Cmd.info "soteria-c")
-    [ Exec_main.cmd; Show_ail.cmd; Generate_summaries.cmd; Capture_db.cmd ]
+  Cmd.group
+    (Cmd.info ~version:Soteria.Version.version "soteria-c")
+    [
+      Exec_main.cmd;
+      Show_ail.cmd;
+      Generate_summaries.cmd;
+      Capture_db.cmd;
+      Version.cmd;
+    ]
 
 let () = exit @@ Cmd.eval' cmd

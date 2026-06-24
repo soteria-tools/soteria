@@ -2,6 +2,15 @@ name: Build
 
 on:
   workflow_call:
+    inputs:
+      version_override:
+        description: >-
+          When set, stamp this string as the build's version so `--version`
+          prints it (used by the nightly workflow to stamp nightly-<date>).
+          Empty keeps the in-repo version from scripts/versions.json.
+        type: string
+        required: false
+        default: ""
 
 env:
   # [versionsync: OCAML_VERSION=5.5.0]
@@ -29,6 +38,9 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
       - name: Check versions.json sync
         run: python3 scripts/versionsync.py check
+      - name: Stamp build version
+        if: inputs.version_override != ''
+        run: python3 scripts/versionsync.py set SOTERIA_VERSION "${{ inputs.version_override }}"
       - name: Setup Z3
         uses: cda-tum/setup-z3@7bfe87519f27304460db44284cb8cc59f50f5fc9 #[actionpin: v1]
         id: z3
