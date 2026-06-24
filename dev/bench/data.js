@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782306932398,
+  "lastUpdate": 1782311444540,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -4710,6 +4710,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 106.4223,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "61f10719eb64cacd821d66c34b2d69f83aa3b32a",
+          "message": "Simplify `Foldable`, more monad helpers (#434)",
+          "timestamp": "2026-06-24T14:07:52Z",
+          "tree_id": "97f98c036eb1f1f08144f2efbff3d05f3da2e6db",
+          "url": "https://github.com/soteria-tools/soteria/commit/61f10719eb64cacd821d66c34b2d69f83aa3b32a"
+        },
+        "date": 1782311442198,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.3044892490800004,
+            "range": "± 0.0097",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.11922194896,
+            "range": "± 0.0128",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6445741481199998,
+            "range": "± 0.0153",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.41923738446000003,
+            "range": "± 0.0026",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.7325558775200003,
+            "range": "± 0.0481",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.7326788000200001,
+            "range": "± 0.0031",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.43333241682,
+            "range": "± 0.0049",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.98232797014,
+            "range": "± 0.0175",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 10.072265481110662,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 372,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 120.3772,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 458,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 101,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 41,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 106.2347,
             "unit": "s"
           }
         ]
