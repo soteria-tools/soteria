@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782301432902,
+  "lastUpdate": 1782306932398,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -4583,6 +4583,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 105.2979,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "01da9441ae18a095b49781673bce599a4d408360",
+          "message": "Move `Soteria.Soteria_smt` to `Soteria.Smt` (#432)\n\n* Move `Soteria.Soteria_smt` to `Soteria.Smt`\n\n* oops",
+          "timestamp": "2026-06-24T12:46:16Z",
+          "tree_id": "ff669691cf43581ed8b442bb7929aaed51f97344",
+          "url": "https://github.com/soteria-tools/soteria/commit/01da9441ae18a095b49781673bce599a4d408360"
+        },
+        "date": 1782306930205,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.38076140072,
+            "range": "± 0.0239",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.14084630162,
+            "range": "± 0.0147",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.65035290294,
+            "range": "± 0.0183",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.42780838294,
+            "range": "± 0.0056",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.8383622077600004,
+            "range": "± 0.0395",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.7531677461200001,
+            "range": "± 0.0018",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.44147693414000005,
+            "range": "± 0.0065",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.99111750524,
+            "range": "± 0.0257",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 10.019142565084621,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 372,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 120.3573,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 458,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 101,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 41,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 106.4223,
             "unit": "s"
           }
         ]
