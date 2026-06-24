@@ -78,8 +78,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       | _, _ -> Lazy
 
     let rec split_rval (v : Rust_val.t) at =
-      match v with
-      | Ptr (ptr, meta) ->
+      match Rust_val.get_ty v with
+      | `Ptr ->
+          let ptr, meta = Rust_val.as_ptr v in
           let* v = Sptr.decay ptr in
           let* v =
             match meta with
@@ -89,12 +90,14 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
                 let+ v2 = Sptr.decay ptr in
                 BV.concat v v2
           in
-          split_rval (Int v) at
-      | Float f ->
+          split_rval (Rust_val.mk_int v) at
+      | `Float ->
+          let f = Rust_val.as_any_float v in
           let* v = Value_codec.float_to_bv_bits f in
-          split_rval (Int v) at
-      | Int v ->
+          split_rval (Rust_val.mk_int v) at
+      | `BitVec ->
           (* get our starting size and unsigned integer *)
+          let v = Rust_val.as_any_int v in
           let size = Typed.size_of_int v / 8 in
           let+ at =
             match BV.to_z at with
@@ -111,7 +114,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           in
           let mask_l = BV.extract 0 ((at * 8) - 1) v in
           let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
-          (Rust_val.Int mask_l, Rust_val.Int mask_r)
+          (Rust_val.mk_int mask_l, Rust_val.mk_int mask_r)
       | _ -> not_impl "Split unsupported: %a at %a" Rust_val.pp v Typed.ppa at
 
     let split ~at node =
@@ -381,7 +384,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         | Zeros ->
             let+ sizei = sint_to_int size in
             let value = BV.zero (sizei * 8) in
-            Ok ((Rust_val.Int value, offset, size) :: vs)
+            Ok ((Rust_val.mk_int value, offset, size) :: vs)
         | Init value -> ok ((value, offset, size) :: vs)
         | Any -> (
             match uninit with
@@ -401,7 +404,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         let**^ size = Layout.size_of ty in
         let* size = sint_to_int size in
         let zero = BV.zero (size * 8) in
-        let+ res = Value_codec.transmute_one ~to_ty:ty (Int zero) in
+        let+ res = Value_codec.transmute_one ~to_ty:ty (Rust_val.mk_int zero) in
         Ok res
     | Uninit -> error `UninitializedMemoryAccess
     | Any ->
@@ -423,17 +426,17 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     let** leaves = collect_leaves ~uninit:`Error t in
     let* leaves =
       DecayMap.SM.map_list leaves ~f:(fun (v, _, _) ->
-          match v with
-          | Int bv -> return bv
-          | Ptr (ptr, Thin) -> Sptr.decay ptr
-          | Float f -> Value_codec.float_to_bv_bits f
+          match Rust_val.get_ty v with
+          | `BitVec -> return (Rust_val.as_any_int v)
+          | `Ptr -> Sptr.decay (fst (Rust_val.as_ptr v))
+          | `Float -> Value_codec.float_to_bv_bits (Rust_val.as_any_float v)
           | _ ->
               not_impl "Unexpected rust_val in lazy decoding: %a" Rust_val.pp v)
     in
     match List.rev leaves with
     | hd :: tl ->
         let bv = List.fold_left BV.concat hd tl in
-        let+ res = Value_codec.transmute_one ~to_ty:ty (Int bv) in
+        let+ res = Value_codec.transmute_one ~to_ty:ty (Rust_val.mk_int bv) in
         Ok res
     | _ -> L.failwith "Impossible"
 

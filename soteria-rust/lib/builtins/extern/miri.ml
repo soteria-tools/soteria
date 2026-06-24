@@ -28,21 +28,21 @@ module M (StateM : State.StateM.S) = struct
 
   let alloc_id args =
     match args with
-    | [ Ptr (ptr, _) ] -> ok (Int (Sptr.as_id ptr))
+    | [ ptr ] -> ok (mk_int (Sptr.as_id (fst (as_ptr ptr))))
     | _ -> not_impl "alloc_id: invalid arguments"
 
   let promise_alignement args =
     match args with
-    | [ Ptr (ptr, _); Int align ] ->
-        let align = Typed.cast @@ Typed.cast_i Usize align in
-        let* addr = Sptr.decay ptr in
+    | [ ptr; align ] ->
+        let align = Typed.cast @@ as_base_i Usize align in
+        let* addr = Sptr.decay (fst (as_ptr ptr)) in
         let+ () = assume [ (addr %@ align ==@ Usize.(0s)) ] in
-        Tuple []
+        mk_tuple []
     | _ -> not_impl "miri_promise_symbolic_alignment: invalid arguments"
 
   let alloc args = Alloc.alloc ~zeroed:false args
   let dealloc args = Alloc.dealloc args
-  let nop _ = ok (Tuple [])
+  let nop _ = ok (mk_tuple [])
 
   let[@inline] fn_to_stub = function
     | Nop -> nop

@@ -100,7 +100,10 @@ let exec_crate (crate : Charon.UllbcAst.crate)
     ("Running " ^ entry_name ^ "...");
   let args : Rust_val.t list =
     if entry_name = "miri_start" then
-      [ Int (Typed.BV.usizei 0); Ptr (State.Sptr.null (), Thin) ]
+      [
+        Rust_val.mk_int (Typed.BV.usizei 0);
+        Rust_val.mk_ptr (State.Sptr.null ()) Thin;
+      ]
     else []
   in
   let branches =
@@ -126,7 +129,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
        | Missing _ -> execution_err "Miss encountered in WPST"
        | Error e -> (
            match Soteria.Symex.Or_gave_up.unwrap_exn e with
-           | (`OkExit, _), st -> Ok (Rust_val.unit_, st)
+           | (`OkExit, _), st -> Ok (Rust_val.mk_tuple [] |> Rust_val.to_syn, st)
            | e -> Error e)
   in
   (* inverse ok and errors if we expect a failure *)
@@ -142,7 +145,8 @@ let exec_crate (crate : Charon.UllbcAst.crate)
                    ~loc:fun_decl.item_meta.span.data ()
                in
                Left (Error ((`MetaExpectedError, trace), st), pcs)
-           | Error (_, st), pcs -> Right (Ok (Rust_val.unit_, st), pcs)
+           | Error (_, st), pcs ->
+               Right (Ok (Rust_val.mk_tuple [] |> Rust_val.to_syn, st), pcs)
       in
       if List.is_empty errors then oks else errors
   in

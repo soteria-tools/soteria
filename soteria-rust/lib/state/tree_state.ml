@@ -296,7 +296,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         [@sym_state.ignore
           {
             empty = Types.ConstGenericVarId.Map.empty;
-            pp = Types.ConstGenericVarId.Map.pp pp_rust_val;
+            pp = Types.ConstGenericVarId.Map.pp Rust_val.pp;
           }]
   }
   [@@deriving sym_state { symex = Rustsymex }]
@@ -463,7 +463,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let adt = Charon_util.ty_as_adt ty in
     let variants = Crate.as_enum adt in
     let variant = Types.VariantId.nth variants variant_id in
-    Int (Typed.BV.of_literal variant.discriminant)
+    Rust_val.mk_int (Typed.BV.of_literal variant.discriminant)
 
   (** Performs a side-effect free ghost read -- this does not modify the state
       or the tree-borrow state. Returns [Some error] if an error occurred, and

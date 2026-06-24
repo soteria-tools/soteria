@@ -30,19 +30,17 @@ module M (StateM : State.StateM.S) = struct
 
   (* NonNull<u8> is a struct { pointer: *const u8 is !null }. Extract the inner
      ptr. *)
-  let ptr_of_nonnull = function
-    | Tuple [ Ptr ptr ] -> ptr
-    | v -> L.failwith "alloc: invalid NonNull argument: %a" pp_rust_val v
+  let ptr_of_nonnull nonull = as_ptr @@ as_tuple1 nonull
 
-  let align_of_enum = function
-    | Tuple [ Enum (disc, []) ] -> disc
-    | Int align -> align
-    | v -> L.failwith "alloc: invalid align argument: %a" pp_rust_val v
+  let align_of_enum align : [> T.nonzero ] Typed.t =
+    let align_enum = as_tuple1 align in
+    let discr = discriminant_of align_enum in
+    BV.cast_nonzero @@ Typed.cast_i Usize discr
 
   let alloc ?(zeroed = false) args =
     let size, align =
       match args with
-      | [ Int size; align ] -> (size, align_of_enum align)
+      | [ size; align ] -> (as_base_i Usize size, align_of_enum align)
       | _ -> L.failwith "alloc: invalid arguments"
     in
     let align = Typed.cast_i Usize align in
@@ -54,13 +52,13 @@ module M (StateM : State.StateM.S) = struct
     in
     let align = Typed.cast align in
     let+ ptr = State.alloc_untyped ~zeroed ~size ~align () in
-    Ptr ptr
+    mk_ptr' ptr
 
   let dealloc args =
     let ((ptr_in, _) as ptr), size, align =
       match args with
-      | [ ptr_val; Int size; align ] ->
-          (ptr_of_nonnull ptr_val, size, align_of_enum align)
+      | [ ptr_val; size; align ] ->
+          (ptr_of_nonnull ptr_val, as_base_i Usize size, align_of_enum align)
       | _ -> L.failwith "dealloc: invalid arguments"
     in
     let alloc_size, alloc_align = Sptr.allocation_info ptr_in in
@@ -68,13 +66,16 @@ module M (StateM : State.StateM.S) = struct
       assert_ (alloc_align ==?@ align &&@ (alloc_size ==?@ size)) `InvalidFree
     in
     let+ () = State.free ptr in
-    Tuple []
+    mk_tuple []
 
   let realloc args =
     let ptr, old_size, align, size =
       match args with
-      | [ ptr; Int old_size; align; Int size ] ->
-          (ptr_of_nonnull ptr, old_size, align_of_enum align, size)
+      | [ ptr; old_size; align; size ] ->
+          ( ptr_of_nonnull ptr,
+            as_base_i Usize old_size,
+            align_of_enum align,
+            as_base_i Usize size )
       | _ -> L.failwith "realloc: invalid arguments"
     in
     let ptr_in, _ = ptr in
@@ -90,9 +91,9 @@ module M (StateM : State.StateM.S) = struct
     let copy_size = BV.min ~signed:false size prev_size in
     let* () = State.copy_nonoverlapping ~src:ptr ~dst:new_ptr ~size:copy_size in
     let+ () = State.free ptr in
-    Ptr new_ptr
+    mk_ptr' new_ptr
 
-  let no_alloc_shim_is_unstable _ = ok (Tuple [])
+  let no_alloc_shim_is_unstable _ = ok (mk_tuple [])
   let error_handler _ = error `InvalidAlloc
 
   let[@inline] fn_to_stub = function

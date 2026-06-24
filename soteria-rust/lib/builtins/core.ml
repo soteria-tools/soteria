@@ -13,11 +13,12 @@ module M (StateM : State.StateM.S) = struct
   open Syntax
 
   let cmp ~signed l r =
+    let ordering = Crate.get_adt_lang_item_ref "Ordering" in
     let ( < ) = if signed then ( <$@ ) else ( <@ ) in
     let discr =
       Typed.ite (l < r) U8.(-1s) (Typed.ite (l ==@ r) U8.(0s) U8.(1s))
     in
-    Enum (discr, [])
+    mk_enum ordering discr []
 
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
@@ -105,7 +106,7 @@ module M (StateM : State.StateM.S) = struct
           L.failwith "Invalid checked op: (%a, %b)" Expressions.pp_binop op
             signed
     in
-    ok (Tuple [ Int wrapped; Int (BV.of_bool overflowed) ])
+    ok (mk_tuple [ mk_int wrapped; mk_int (BV.of_bool overflowed) ])
 
   let meta_as_int = function
     | Len l -> ok (Some l)
@@ -202,9 +203,8 @@ module M (StateM : State.StateM.S) = struct
         { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
     in
     let+ str_data = State.load ptr str_ty in
-    (match str_data with Tuple bytes -> Some bytes | _ -> None)
-    |> (Option.bind @@ Monad.OptionM.all
-       @@ function Int b -> Typed.BitVec.to_z b | _ -> None)
+    as_tuple str_data
+    |> (Monad.OptionM.all @@ fun b -> Typed.BitVec.to_z @@ as_base_i U8 b)
     |> Option.map (fun cs ->
         let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
         let str = String.of_seq @@ List.to_seq cs in
@@ -224,10 +224,10 @@ module M (StateM : State.StateM.S) = struct
         let len = String.length str in
         let chars =
           String.to_bytes str
-          |> Bytes.fold_left (fun l c -> Int (BV.u8i (Char.code c)) :: l) []
+          |> Bytes.fold_left (fun l c -> mk_int (BV.u8i (Char.code c)) :: l) []
           |> List.rev
         in
-        let char_arr = Tuple chars in
+        let char_arr = mk_tuple chars in
         let str_ty : Types.ty =
           Common.Charon_util.mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
         in

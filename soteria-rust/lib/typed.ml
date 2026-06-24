@@ -13,10 +13,12 @@ let () =
              expected ppa_ty got ppa v)
     | _ -> None)
 
-let cast_error (v : [< T.any ] t) (ty : [< T.any ] ty) =
+let cast_error (v : 'a t) (ty : 'b ty) =
   raise
     (CastError
-       ((v :> T.any t), (ty :> T.any ty), (type_type @@ get_ty v :> T.any ty)))
+       ( (cast v :> T.any t),
+         (type_type @@ untype_type ty :> T.any ty),
+         (type_type @@ get_ty v :> T.any ty) ))
 
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
@@ -45,7 +47,7 @@ let cast_lit ty (v : 'a t) : [> T.sint ] t =
   cast_checked ~ty:(t_int size) v
 
 let cast_i uty = cast_lit (TUInt uty)
-let cast_f fty v = cast_checked ~ty:(t_float fty) v
+let cast_f fty v : [> T.sfloat ] t = cast @@ cast_checked ~ty:(t_float fty) v
 
 let cast_float v =
   match cast_float v with Some v -> v | None -> cast_error v (t_float F64)
