@@ -224,6 +224,51 @@ let produce_init_val' loc offset ty v =
 let produce_uninit' loc offset len =
   produce_tree_block (Ctree_block.produce_uninit offset len) loc
 
+let rec produce_aggregate' (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) st =
+  let open Csymex.Syntax in
+  let loc = Typed.Ptr.loc ptr in
+  let offset = Typed.Ptr.ofs ptr in
+  match (v, ty) with
+  | Basic v, _ -> produce_init_val' loc offset ty v st
+  | Array elems, ty ->
+      let* elem_ty, _ =
+        Layout.get_array_info ty
+        |> Csymex.of_opt_not_impl ~msg:"Array element type"
+      in
+      let+ _, st =
+        fold_list elems ~init:(ptr, st) ~f:(fun (ptr, st) elem ->
+            let* st = produce_aggregate' ptr elem_ty elem st in
+            let+ elem_size = Layout.size_of_s elem_ty in
+            (Typed.Ptr.add_ofs ptr elem_size, st))
+      in
+      st
+  | Struct values, ty ->
+      let* members, _ =
+        Layout.get_struct_fields_ty ty
+        |> Csymex.of_opt_not_impl ~msg:"Members of struct"
+      in
+      let* layout =
+        Layout.layout_of ty |> Csymex.of_opt_not_impl ~msg:"Layout"
+      in
+      let rec aux members_ofs members values st =
+        match (members_ofs, members, values) with
+        | [], [], [] -> return st
+        | (Layout.Padding size, ofs) :: rest_ofs, members, values ->
+            let* st = produce_uninit' loc (BV.usizei ofs) (BV.usizei size) st in
+            aux rest_ofs members values st
+        | ( (Field _, ofs) :: rest_ofs,
+            (_, (_, _, _, mem_ty)) :: rest_mems,
+            value :: rest_values ) ->
+            let* st =
+              produce_aggregate'
+                (Typed.Ptr.mk loc (BV.usizei ofs))
+                mem_ty value st
+            in
+            aux rest_ofs rest_mems rest_values st
+        | _ -> L.failwith "Struct field mismatch"
+      in
+      aux layout.members_ofs members values st
+
 let produce_basic_val loc offset ty v t =
   let open Producer.Syntax in
   let*^ len = Layout.size_of_s ty in
