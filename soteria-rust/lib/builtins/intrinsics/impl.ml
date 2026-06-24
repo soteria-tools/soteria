@@ -871,14 +871,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
        transmutations to be read from again later. *)
     let* l = State.load a bytes in
     let* r = State.load b bytes in
-    let l = as_tuple l in
-    let r = as_tuple r in
-    let byte_pairs = List.combine l r in
-    let rec aux = function
-      | [] -> Typed.v_true
-      | (l, r) :: rest -> as_any_int l ==@ as_any_int r &&@ aux rest
-    in
-    ok (aux byte_pairs)
+    Iter.of_list_combine (as_tuple l) (as_tuple r)
+    |> Iter.fold
+         (fun acc (l, r) ->
+           Typed.and_lazy acc (fun () -> as_any_int l ==@ as_any_int r))
+         Typed.v_true
+    |> ok
 
   let rotate_ ~(side : [ `Left | `Right ]) ~t ~x ~shift : rust_val ret =
     let t = TypesUtils.ty_as_literal t in

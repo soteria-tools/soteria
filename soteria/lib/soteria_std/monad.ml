@@ -39,6 +39,7 @@ module type Extension = sig
   val iter_list : 'elem list -> f:('elem -> unit t) -> unit t
   val iter_iter : 'elem Iter.t -> f:('elem -> unit t) -> unit t
   val map_list : 'elem list -> f:('elem -> 'a t) -> 'a list t
+  val map_iter : 'elem Iter.t -> f:('elem -> 'a t) -> 'a list t
   val all : ('a -> 'b t) -> 'a list -> 'b list t
 end
 
@@ -96,6 +97,7 @@ module type Extension2 = sig
   val iter_list : 'elem list -> f:('elem -> (unit, 'b) t) -> (unit, 'b) t
   val iter_iter : 'elem Iter.t -> f:('elem -> (unit, 'b) t) -> (unit, 'b) t
   val map_list : 'elem list -> f:('elem -> ('a, 'b) t) -> ('a list, 'b) t
+  val map_iter : 'elem Iter.t -> f:('elem -> ('a, 'b) t) -> ('a list, 'b) t
   val all : ('a -> ('b, 'c) t) -> 'a list -> ('b list, 'c) t
 end
 
@@ -116,9 +118,9 @@ let[@inline] foldM (module M : Sigs.Foldable) ~return ~bind xs ~init ~f =
 let[@inline] iterM (module M : Sigs.Foldable) ~return ~bind xs ~f =
   M.fold (fun acc x -> bind (fun () -> f x) acc) (return ()) xs
 
-let[@inline] mapM ~return ~bind ~map xs ~f =
+let[@inline] mapM (module M : Sigs.Foldable) ~return ~bind ~map xs ~f =
   foldM
-    (module List)
+    (module M)
     ~return ~bind xs ~init:[]
     ~f:(fun acc x -> map (fun y -> y :: acc) (f x))
   |> bind (fun l -> return (List.rev l))
@@ -149,7 +151,10 @@ struct
   let[@inline] iter_iter xs ~f = iter (module Iter) xs ~f
 
   let[@inline] map_list xs ~f =
-    mapM ~return:Base.return ~bind:Base.bind ~map:Base.map xs ~f
+    mapM (module List) ~return:Base.return ~bind:Base.bind ~map:Base.map xs ~f
+
+  let[@inline] map_iter xs ~f =
+    mapM (module Iter) ~return:Base.return ~bind:Base.bind ~map:Base.map xs ~f
 
   let[@inline] all fn xs = all ~return:Base.return ~bind:Base.bind fn xs
 end
@@ -195,7 +200,10 @@ end) : Extension2 with type ('a, 'b) t := ('a, 'b) Base.t = struct
   let[@inline] iter_iter xs ~f = iter (module Iter) xs ~f
 
   let[@inline] map_list xs ~f =
-    mapM ~return:Base.ok ~bind:Base.bind ~map:Base.map xs ~f
+    mapM (module List) ~return:Base.ok ~bind:Base.bind ~map:Base.map xs ~f
+
+  let[@inline] map_iter xs ~f =
+    mapM (module Iter) ~return:Base.ok ~bind:Base.bind ~map:Base.map xs ~f
 
   let[@inline] all fn xs = all ~return:Base.ok ~bind:Base.bind fn xs
 end

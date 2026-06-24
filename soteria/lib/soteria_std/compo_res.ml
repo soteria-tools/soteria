@@ -150,6 +150,9 @@ module type S = sig
   val map_list :
     'elem list -> f:('elem -> ('a, 'b, 'c) t) -> ('a list, 'b, 'c) t
 
+  val map_iter :
+    'elem Iter.t -> f:('elem -> ('a, 'b, 'c) t) -> ('a list, 'b, 'c) t
+
   val all : ('a -> ('b, 'c, 'd) t) -> 'a list -> ('b list, 'c, 'd) t
 end
 
@@ -170,7 +173,13 @@ module Extend (M : Base) :
 
   let[@inline] iter_list xs ~f = iter (module List) xs ~f
   let[@inline] iter_iter xs ~f = iter (module Iter) xs ~f
-  let[@inline] map_list xs ~f = Monad.mapM ~return:ok ~bind ~map ~f xs
+
+  let[@inline] map_list xs ~f =
+    Monad.mapM (module List) ~return:ok ~bind ~map ~f xs
+
+  let[@inline] map_iter xs ~f =
+    Monad.mapM (module Iter) ~return:ok ~bind ~map ~f xs
+
   let[@inline] all f xs = Monad.all ~return:ok ~bind f xs
 end
 

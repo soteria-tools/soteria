@@ -764,9 +764,9 @@ let rec ref_tys_in
     (List.rev vs, acc)
   in
   let fs' acc tys vs =
-    let vs = List.combine tys vs in
     let++ vs, acc =
-      Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) (v, ty) ->
+      Iter.of_list_combine tys vs
+      |> Result.fold_iter ~init:([], acc) ~f:(fun (vs, acc) (v, ty) ->
           let++ v, acc = f acc v ty in
           (v :: vs, acc))
     in
