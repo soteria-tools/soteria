@@ -162,8 +162,8 @@ module M (Symex : Symex.Base) = struct
       else
         let* subst = Consumer.expose_subst () in
         let* exprs =
-          Consumer.fold_list remaining ~init:[] ~f:(fun exprs -> function
-            | Pure expr -> Consumer.ok (expr :: exprs)
+          Consumer.map_list remaining ~f:(function
+            | Pure expr -> Consumer.ok expr
             | Spatial _ ->
                 [%l.info
                   "@[<v>Failed to consume assertion because I can't find any \

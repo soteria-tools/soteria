@@ -25,13 +25,9 @@ user-friendly reporting, and more.
 
 {!modules:Soteria.Symex Soteria.Data Soteria.Sym_states Soteria.Logic
 Soteria.Solvers Soteria.Logs Soteria.Terminal Soteria.Stats Soteria.Config
-Soteria.Soteria_std}
+Soteria.Smt Soteria.Soteria_std}
 
 The two built-in symbolic value implementations, to get started; you can also
 define your own!
 
 {!modules:Soteria.Tiny_values Soteria.Bv_values}
-
-Our built-in library to interact with SMT-LIB solvers.
-
-{!modules:Soteria.Soteria_smt}

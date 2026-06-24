@@ -235,7 +235,7 @@ module Make (State : State_intf.S) = struct
 
   let dealloc_store () : unit InterpM.t =
     let* store = InterpM.get_store () in
-    InterpM.iter_list (Store.bindings store) ~f:(fun (_, { kind; _ }) ->
+    InterpM.iter_iter (Store.iter_bindings store) ~f:(fun (_, { kind; _ }) ->
         match kind with
         | Stackptr ptr -> InterpM.IState.free ptr
         | _ -> InterpM.ok ())

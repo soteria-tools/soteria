@@ -17,6 +17,7 @@ val add_stackptr :
 val reserve : Ail_tys.sym -> Ail_tys.ctype -> t -> t
 val remove : Ail_tys.sym -> t -> t
 val bindings : t -> (Ail_tys.sym * binding) list
+val iter_bindings : t -> (Ail_tys.sym * binding) Iter.t
 val is_empty : t -> bool
 val mem : Ail_tys.sym -> t -> bool
 val find_opt : Ail_tys.sym -> t -> binding option

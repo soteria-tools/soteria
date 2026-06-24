@@ -45,7 +45,7 @@ struct
       acc Symex.t =
     let open Symex in
     let st = of_opt st in
-    fold_iter (Iter.of_seq @@ M.to_seq st) ~init ~f
+    fold (module Soteria_std.Seq) (M.to_seq st) ~init ~f
 end
 
 module Build_base

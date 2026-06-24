@@ -73,8 +73,9 @@ module Make (StateImpl : State.S) = struct
     in
 
     (* store the arguments *)
-    List.combine (List.sub ~from:1 ~len:locals.arg_count locals.locals) args
-    |> fold_list ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
+    let arg_locals = List.sub ~from:1 ~len:locals.arg_count locals.locals in
+    Iter.of_list_combine arg_locals args
+    |> fold_iter ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
         (* Passed (nested) references must be protected and be valid. *)
         let* value, protected' =
           Value_codec.ref_tys_in local.local_ty value ~init:acc
@@ -97,7 +98,7 @@ module Make (StateImpl : State.S) = struct
       iter_list protected ~f:(fun (ptr, ty) -> State.unprotect ptr ty)
     in
     let* store = get_env () in
-    iter_list (Store.bindings store) ~f:(fun (_, binding) ->
+    iter_iter (Store.iter_bindings store) ~f:(fun (_, binding) ->
         match (binding.kind, protected_address) with
         | (Dead | Uninit | Value _), _ -> ok ()
         | Stackptr ptr, None -> State.free ptr

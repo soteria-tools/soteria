@@ -122,6 +122,7 @@ let get_ty sym t = (Map.find sym t).ty
 let find local (store : t) = Map.find local store
 let empty = Map.empty
 let bindings (store : t) = Map.bindings store
+let iter_bindings (store : t) = Iter.of_iter_bindings Map.iter store
 
 (** [try_load p s] tries loading [p] from the [s], returning [Some v] if it
     succeded, and [None] if it has to be spilled into the heap. *)

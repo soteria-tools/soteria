@@ -200,3 +200,7 @@ let split_around l i =
     | [], _ -> invalid_arg "Index out of bounds in split_around"
   in
   aux [] l i
+
+(** Equivalent to {!fold_left}; we re-export is as [fold] for compatibility with
+    {!Sigs.Foldable}. *)
+let fold = fold_left
