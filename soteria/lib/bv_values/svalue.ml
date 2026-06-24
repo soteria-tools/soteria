@@ -295,8 +295,8 @@ module type Value_ext = sig
     t ->
     t * 'subst
 
-  val encode_ty : (super_ty -> Soteria_smt.sexp) -> ty -> Soteria_smt.sexp
-  val encode_value : (_ super_t -> Soteria_smt.sexp) -> t -> Soteria_smt.sexp
+  val encode_ty : (super_ty -> Smt.sexp) -> ty -> Smt.sexp
+  val encode_value : (_ super_t -> Smt.sexp) -> t -> Smt.sexp
 end
 
 (** The empty extension: [t] and [ty] are uninhabited, so an svalue built with

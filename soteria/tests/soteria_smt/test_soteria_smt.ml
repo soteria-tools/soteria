@@ -1,4 +1,4 @@
-open Soteria.Soteria_smt
+open Soteria.Smt
 
 let sexp = Alcotest.testable pp_sexp ( = )
 
