@@ -59,9 +59,7 @@ ocaml-very-slow-tests:
 
 .PHONY: doc
 doc:
-	$(DUNE) build @doc
-	chmod u+w _build/default/_doc/_html/odoc.support/odoc.css
-	cp doc/odoc-theme/odoc.css _build/default/_doc/_html/odoc.support/odoc.css
+	DUNE="$(DUNE)" python3 scripts/doc.py
 
 .PHONY: doc-json
 doc-json:

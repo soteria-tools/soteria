@@ -338,9 +338,10 @@ module type S = sig
         handled and ignored by this function (default).
       - [flamegraph] specifies whether a flamegraph should be created from this
         symbolic process or if it should be ignored (default). The value passed
-        in the {{!effect_handling.Dump}[Dump]} variant is the name of the
-        created file (while the {{!Profiling.Config}configuration} for
-        flamegraphs specifies the directory in which flamegraphs are saved).
+        in the {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Dump}[Dump]}
+        variant is the name of the created file (while the
+        {{!Profiling.Config}configuration} for flamegraphs specifies the
+        directory in which flamegraphs are saved).
 
       @raise Symex.Gave_up
         if the symbolic process calls [give_up] and the mode is
