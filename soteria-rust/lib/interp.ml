@@ -1035,8 +1035,8 @@ module Make (StateImpl : State.S) = struct
         (* the expected types of the function may differ to those passed, e.g.
            with function pointers or dyn calls, so we transmute here. *)
         let* args =
-          map_list (List.combine3 args in_tys exp_tys)
-            ~f:(fun (arg, from, to_) ->
+          Iter.of_list_combine3 args in_tys exp_tys
+          |> map_iter ~f:(fun (arg, from, to_) ->
               (* An unsized value cannot be passed by value: the ABI passes a
                  thin pointer to its data instead, and the callee (a vtable
                  shim) takes the receiver by pointer. This happens for calls to
@@ -1044,7 +1044,7 @@ module Make (StateImpl : State.S) = struct
                  FnOnce>::call_once]. *)
               if Layout.is_dst from then
                 let place =
-                  match arg with
+                  match (arg : Expressions.operand) with
                   | Move place | Copy place -> place
                   | Constant _ -> L.failwith "unsized constant argument"
                 in

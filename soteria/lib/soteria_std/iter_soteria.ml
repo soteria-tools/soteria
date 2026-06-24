@@ -13,6 +13,16 @@ let rec of_list_combine l1 l2 k =
       of_list_combine l1 l2 k
   | _, _ -> invalid_arg "Iter.of_list_combine"
 
+let rec of_list_combine3 l1 l2 l3 k =
+  match (l1, l2, l3) with
+  | [], [], [] -> ()
+  | [ a1 ], [ a2 ], [ a3 ] -> k (a1, a2, a3)
+  | a1 :: b1 :: l1, a2 :: b2 :: l2, a3 :: b3 :: l3 ->
+      k (a1, a2, a3);
+      k (b1, b2, b3);
+      of_list_combine3 l1 l2 l3 k
+  | _, _, _ -> invalid_arg "Iter.of_list_combine3"
+
 (** [combine_list i l] will combine the iterator [i] with the list [l],
     returning a new iterator over the values of both [i] and [l]. If [l] is
     smaller than [i], will raise a [Invalid_argument] at the end of the

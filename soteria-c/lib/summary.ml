@@ -236,9 +236,9 @@ let rec analyse : type a. fid:Ail_tys.sym -> a t -> analysed t =
             let producer =
               let open Csymex.Producer in
               let open Syntax in
-              let args = List.combine summary.args arg_tys in
               let* constrs =
-                fold_list args ~init:[] ~f:(fun acc (arg, ty) ->
+                Iter.of_list_combine summary.args arg_tys
+                |> fold_iter ~init:[] ~f:(fun acc (arg, ty) ->
                     let+ arg = apply_subst Agv.subst arg in
                     let constr = Option.get (Layout.constraints ~ty arg) in
                     constr @ acc)
