@@ -711,6 +711,28 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
         Some { bound = Some bound; root }
     | Some { bound = Some _; _ } -> vanish ()
 
+  let produce'
+      (produce_inner :
+        (MemVal.t, MemVal.S_int.t) tree ->
+        (MemVal.t, MemVal.S_int.t) tree Symex.t)
+      (range : MemVal.S_int.t * MemVal.S_int.t) (t : t option) :
+      t option Symex.t =
+    let low, high = range in
+    let* () = assume MemVal.S_int.[ is_in_bound low; is_in_bound high ] in
+    let t =
+      match t with
+      | Some t -> t
+      | None -> { bound = None; root = Tree.not_owned range }
+    in
+    let* () =
+      match t.bound with
+      | None -> Symex.return ()
+      | Some bound -> assume [ high <=@ bound ]
+    in
+    let+ root = produce_inner t.root in
+    to_opt { t with root }
+
+  (* Lots of repetition happening here... *)
   let produce_mem_val (offset : MemVal.S_int.syn) (len : MemVal.S_int.syn)
       (v : MemVal.syn) (t : t option) : t option Producer.t =
     let open Producer in

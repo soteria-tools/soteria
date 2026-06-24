@@ -60,6 +60,14 @@ struct
     in
     lift ~info node_opt'
 
+  let produce' ?info (prod_inner : B.t option -> B.t option Symex.t)
+      (st : t option) : t option Symex.t =
+    let open Symex.Syntax in
+    let t_opt, t_orig = lower st in
+    let info = Option.merge (fun a _ -> a) t_orig info in
+    let+ node_opt = prod_inner t_opt in
+    lift ~info node_opt
+
   let produce syn st : t option Symex.Producer.t =
     let open Symex.Producer.Syntax in
     let t_opt, t_orig = lower st in

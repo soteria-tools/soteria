@@ -66,6 +66,18 @@ struct
     let** () = wrap (I.assert_exclusively_owned ()) in
     SM.Result.set_state (Some Freed)
 
+  let produce_alive (prod_inner : I.t option -> I.t option Symex.t) (t : SM.st)
+      : SM.st Symex.t =
+    let open Symex.Syntax in
+    match t with
+    | None ->
+        let+ inner = prod_inner None in
+        Option.map (fun x -> Alive x) inner
+    | Some (Alive v) ->
+        let+ inner = prod_inner (Some v) in
+        Option.map (fun x -> Alive x) inner
+    | Some Freed -> Symex.vanish ()
+
   let produce (syn : syn) st : st Symex.Producer.t =
     let open Symex.Producer in
     let open Symex.Producer.Syntax in

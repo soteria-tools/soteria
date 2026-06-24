@@ -66,6 +66,12 @@ struct
 
     val wrap : Key.t -> ('a, 'err) codom_res -> ('a, 'err) res
 
+    val produce' :
+      Key.t ->
+      (codom option -> codom option Symex.t) ->
+      t option ->
+      t option Symex.t
+
     val fold :
       ('acc -> Key.t * codom -> 'acc Symex.t) ->
       'acc ->

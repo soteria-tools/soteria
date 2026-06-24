@@ -104,6 +104,15 @@ struct
     | Error e -> SM.Result.error e
     | Missing fixes -> SM.Result.miss (lift_fixes ~key fixes)
 
+  let produce' (key : Key.t)
+      (prod_inner : Codom.t option -> Codom.t option Symex.t) (st : SM.st) :
+      SM.st Symex.t =
+    let open Symex.Syntax in
+    let st = of_opt st in
+    let* key, codom = find_opt key st in
+    let+ codom = prod_inner codom in
+    to_opt (syntactic_add_opt key codom st)
+
   open Symex
 
   let produce (syn : syn) (st : Codom.t S_map.t option) :

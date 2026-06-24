@@ -205,6 +205,25 @@ let free (ptr : [< T.sptr ] Typed.t) : (unit, 'err, syn list) SM.Result.t =
     with_heap @@ Heap.wrap (Typed.Ptr.loc ptr) (Block.free ())
   else SM.Result.error `InvalidFree
 
+let produce_tree_block
+    (p : Ctree_block.t option -> Ctree_block.t option Csymex.t) loc t =
+  let open Csymex.Syntax in
+  let* cerb_loc = Csymex.get_loc () in
+  let t = match t with None -> { heap = None; globs = None } | Some t -> t in
+  let+ heap =
+    Heap.produce' loc
+      (Block.produce' ~info:cerb_loc
+         (Block.Freeable_ctree_block.produce_alive p))
+      t.heap
+  in
+  to_opt { t with heap }
+
+let produce_init_val' loc offset ty v =
+  produce_tree_block (Ctree_block.produce_init offset ty v) loc
+
+let produce_uninit' loc offset len =
+  produce_tree_block (Ctree_block.produce_uninit offset len) loc
+
 let produce_basic_val loc offset ty v t =
   let open Producer.Syntax in
   let*^ len = Layout.size_of_s ty in

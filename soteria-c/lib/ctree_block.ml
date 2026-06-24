@@ -189,17 +189,33 @@ module MemVal = struct
         [%l.info "Consuming zero but not zero, logical failure"];
         lfail Typed.v_false
 
+  let produce_if_empty mem_val (t : tree) : tree Csymex.t =
+    match t.node with
+    | NotOwned Totally -> return (owned t mem_val)
+    | Owned _ | NotOwned Partially ->
+        (* Duplicated resource *)
+        vanish ()
+
+  let produce_init v ty (t : tree) : tree Csymex.t =
+    produce_if_empty (Init (v, ty)) t
+
+  let produce_zeros (t : tree) : tree Csymex.t = produce_if_empty Zeros t
+
+  let produce_uninit (t : tree) : tree Csymex.t =
+    produce_if_empty (Uninit Totally) t
+
+  let produce_any (t : tree) : tree Csymex.t = produce_if_empty Any t
+
   let produce (s : syn) (t : tree) : tree Producer.t =
     let open Producer in
     let open Syntax in
-    match (s, t.node) with
-    | _, (Owned _ | NotOwned Partially) -> vanish ()
-    | SInit (v, ty), NotOwned Totally ->
-        let+ v = Producer.apply_subst Expr.subst v in
-        owned t (Init (v, ty))
-    | SZeros, NotOwned Totally -> return (owned t Zeros)
-    | SUninit, NotOwned Totally -> return (owned t (Uninit Totally))
-    | SAny, NotOwned Totally -> return (owned t Any)
+    match s with
+    | SInit (v, ty) ->
+        let* v = Producer.apply_subst Expr.subst v in
+        Producer.lift @@ produce_init v ty t
+    | SZeros -> Producer.lift @@ produce_zeros t
+    | SUninit -> Producer.lift @@ produce_uninit t
+    | SAny -> Producer.lift @@ produce_any t
 
   let assert_exclusively_owned (t : tree) =
     match t.node with
@@ -320,3 +336,15 @@ let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t) :
       ((), tree))
 
 let alloc ~zeroed size = alloc (if zeroed then Zeros else Uninit Totally) size
+
+let produce_init (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
+    (sval : [< T.cval ] Typed.t) (tree : t option) : t option Csymex.t =
+  let open Csymex.Syntax in
+  let* range = range_of_low_and_type low ty in
+  produce' (produce_init sval ty) range tree
+
+let produce_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
+    (tree : t option) : t option Csymex.t =
+  let open Csymex.Syntax in
+  let range = Range.of_low_and_size low len in
+  produce' produce_uninit range tree
