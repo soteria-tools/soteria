@@ -767,6 +767,12 @@ module M (StateM : State.StateM.S) = struct
     val panic_nounwind_fmt :
       fmt:rust_val -> force_no_backtrace:[< Typed.T.sbool ] Typed.t -> unit ret
 
+    val pointer_fmt_inner :
+      fun_exec:fun_exec ->
+      ptr_addr:[< Typed.T.sint ] Typed.t ->
+      f:full_ptr ->
+      rust_val ret
+
     val print_to :
       t:Types.ty ->
       args:rust_val ->

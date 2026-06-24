@@ -148,6 +148,26 @@ let get_fun id =
   | Some fn -> fn
   | None -> raise (MissingDecl "Fun")
 
+(** Finds a function declaration whose name matches the given path pattern. *)
+let find_fun pattern =
+  let ctx = as_namematcher_ctx () in
+  let match_config =
+    NameMatcher.{ map_vars_to_vars = false; match_with_trait_decl_refs = false }
+  in
+  let pattern = NameMatcher.parse_pattern pattern in
+  let matches = NameMatcher.match_name ctx match_config pattern in
+  let crate = get_crate () in
+  [%l.warn "LOOKING FOR %a@." NameMatcher.pp_pattern pattern];
+  UllbcAst.FunDeclId.Map.bindings crate.fun_decls
+  |> List.find_map (fun (_, (fn : UllbcAst.fun_decl)) ->
+      [%l.warn
+        "%a / @.%a / @.%a@.@." pp_name fn.item_meta.name NameMatcher.pp_pattern
+          (NameMatcher.name_to_pattern ctx
+             { tgt = TkPattern; use_trait_decl_refs = false }
+             fn.item_meta.name)
+          Types.pp_name fn.item_meta.name];
+      if matches fn.item_meta.name then Some fn else None)
+
 let get_global id =
   let crate = get_crate () in
   match UllbcAst.GlobalDeclId.Map.find_opt id crate.global_decls with

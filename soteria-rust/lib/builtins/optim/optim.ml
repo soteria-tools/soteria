@@ -38,6 +38,7 @@ type fn =
   | CoreF64IsSignNegative
   | CoreF64IsSignPositive
   | CoreF64IsSubnormal
+  | CoreFmtPointerFmtInner
   | CoreHashBuildHasherHashOne
   | CoreOptionUnwrapFailed
   | CorePanickingAssertFailedInner
@@ -85,6 +86,7 @@ let fn_pats : (string * fn) list =
     ("core::f64::_::is_sign_negative", CoreF64IsSignNegative);
     ("core::f64::_::is_sign_positive", CoreF64IsSignPositive);
     ("core::f64::_::is_subnormal", CoreF64IsSubnormal);
+    ("core::fmt::pointer_fmt_inner", CoreFmtPointerFmtInner);
     ("core::hash::BuildHasher::hash_one", CoreHashBuildHasherHashOne);
     ("std::hash::BuildHasher::hash_one", CoreHashBuildHasherHashOne);
     ("core::option::unwrap_failed", CoreOptionUnwrapFailed);
@@ -254,6 +256,10 @@ module M (StateM : State.StateM.S) = struct
         let arg = as_base_f F64 arg in
         let+ ret = f64_is_subnormal ~arg in
         Int (Typed.BitVec.of_bool ret)
+    | CoreFmtPointerFmtInner, [], [], [ ptr_addr; f ] ->
+        let ptr_addr = as_base_i Usize ptr_addr in
+        let f = as_ptr f in
+        pointer_fmt_inner ~fun_exec:_fun_exec ~ptr_addr ~f
     | CoreHashBuildHasherHashOne, [ t_self; t ], [], [ self; x ] ->
         let self = as_ptr self in
         let+ ret = hash_one ~types:generics.types ~t_self ~t ~self ~x in

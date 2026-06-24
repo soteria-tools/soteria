@@ -32,6 +32,10 @@
         "pattern": "alloc::alloc::Global::alloc_impl",
         "aliases": ["std::alloc::Global::alloc_impl"]
       },
+      {
+        "pattern": "core::fmt::pointer_fmt_inner",
+        "extra_args": ["fun_exec"]
+      },
       "core::f16::_::is_finite",
       "core::f16::_::is_infinite",
       "core::f16::_::is_nan",

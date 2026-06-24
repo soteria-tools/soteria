@@ -102,6 +102,32 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let f128_is_sign_positive ~arg = ok (float_is_sign `Pos arg)
   let f128_is_subnormal ~arg = ok (float_is Subnormal arg)
 
+  (* ---- formatting ---- *)
+
+  (** Stub for [core::fmt::pointer_fmt_inner], which formats a pointer's address
+      in hexadecimal. The default implementation branches on every bit of the
+      address, leading to path explosion when the address is symbolic, so we
+      instead write the symbolic value's textual representation directly. *)
+  let pointer_fmt_inner ~fun_exec ~ptr_addr ~f =
+    let str = Fmt.str "%a" Typed.ppa ptr_addr in
+    let* s = Core.string_to_ptr str in
+    let* write_str =
+      match Crate.find_fun "core::fmt::{Formatter<'_>}::write_str<'_>" with
+      | Some fn -> ok fn
+      | None ->
+          not_impl ~issue:199
+            "Stub pointer_fmt_inner: could not find \
+             core::fmt::Formatter::write_str"
+    in
+    let fn_ref : Charon.Types.fun_decl_ref =
+      {
+        id = write_str.def_id;
+        generics =
+          Charon.TypesUtils.generic_args_of_params () write_str.generics;
+      }
+    in
+    fun_exec (Common.Fun_kind.Real fn_ref) [ Ptr f; Ptr s ]
+
   (* ---- panics ---- *)
 
   let option_unwrap_failed () = do_panic ()

@@ -211,7 +211,7 @@ let[@inline] as_ptr (v : rust_val) =
       let v = Typed.cast_i Usize v in
       let ptr = Sptr.of_address v in
       (ptr, Thin)
-  | _ -> failwith "expected pointer"
+  | _ -> L.failwith "expected pointer"
 
 let as_base ty (v : rust_val) = Rust_val.as_base ty v
 let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
