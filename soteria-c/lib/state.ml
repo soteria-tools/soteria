@@ -219,19 +219,29 @@ let produce_tree_block
   in
   to_opt { t with heap }
 
-let produce_init_val' loc offset ty v =
+let consume_tree_block c loc =
+  with_heap (Heap.wrap loc (Block.wrap (Block.Freeable_ctree_block.wrap c)))
+  |> SM.Result.map_error (fun _ -> `Lfail Typed.v_false)
+
+let produce_init' loc offset ty v =
   (* TODO: alignment constraints *)
   produce_tree_block (Ctree_block.produce_init offset ty v) loc
 
 let produce_uninit' loc offset len =
   produce_tree_block (Ctree_block.produce_uninit offset len) loc
 
+let consume_init' loc offset ty =
+  consume_tree_block (Ctree_block.consume_init offset ty) loc
+
+let consume_uninit' loc offset len =
+  consume_tree_block (Ctree_block.consume_uninit offset len) loc
+
 let rec produce_aggregate' (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) st =
   let open Csymex.Syntax in
   let loc = Typed.Ptr.loc ptr in
   let offset = Typed.Ptr.ofs ptr in
   match (v, ty) with
-  | Basic v, _ -> produce_init_val' loc offset ty v st
+  | Basic v, _ -> produce_init' loc offset ty v st
   | Array elems, ty ->
       let* elem_ty, _ =
         Layout.get_array_info ty

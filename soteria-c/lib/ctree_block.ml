@@ -196,7 +196,7 @@ module MemVal = struct
         (* Duplicated resource *)
         vanish ()
 
-  let produce_init v ty (t : tree) : tree Csymex.t =
+  let produce_init ty v (t : tree) : tree Csymex.t =
     produce_if_empty (Init (v, ty)) t
 
   let produce_zeros (t : tree) : tree Csymex.t = produce_if_empty Zeros t
@@ -212,7 +212,7 @@ module MemVal = struct
     match s with
     | SInit (v, ty) ->
         let* v = Producer.apply_subst Expr.subst v in
-        Producer.lift @@ produce_init v ty t
+        Producer.lift @@ produce_init ty v t
     | SZeros -> Producer.lift @@ produce_zeros t
     | SUninit -> Producer.lift @@ produce_uninit t
     | SAny -> Producer.lift @@ produce_any t
@@ -341,10 +341,45 @@ let produce_init (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
     (sval : [< T.cval ] Typed.t) (tree : t option) : t option Csymex.t =
   let open Csymex.Syntax in
   let* range = range_of_low_and_type low ty in
-  produce' (produce_init sval ty) range tree
+  produce' (produce_init ty sval) range tree
 
 let produce_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
     (tree : t option) : t option Csymex.t =
   let open Csymex.Syntax in
   let range = Range.of_low_and_size low len in
   produce' produce_uninit range tree
+
+let consume_init ofs ty =
+  let open SM.Result in
+  let open SM.Syntax in
+  let* t = SM.get_state () in
+  let*^ ((_, bound) as range) = range_of_low_and_type ofs ty in
+  with_bound_check ~mk_fixes:(mk_fix_typed ofs ty) bound (fun t ->
+      let open Csymex.Syntax in
+      let replace_node tree = Csymex.Result.ok (not_owned tree) in
+      let rebuild_parent = Tree.with_children in
+      let** framed, tree =
+        Tree.frame_range t ~replace_node ~rebuild_parent range
+      in
+      let++ sval = decode ~ty ~ofs framed.node in
+      ((sval :> T.cval Typed.t), tree))
+
+let consume_uninit ofs ty : (unit, _, _) SM.Result.t =
+  let open SM.Result in
+  let open SM.Syntax in
+  let* t = SM.get_state () in
+  let*^ ((_, bound) as range) = range_of_low_and_type ofs ty in
+  with_bound_check ~mk_fixes:(mk_fix_typed ofs ty) bound (fun t ->
+      let open Csymex.Syntax in
+      let open Csymex.Result in
+      let replace_node tree = ok (not_owned tree) in
+      let rebuild_parent = Tree.with_children in
+      let** framed, tree =
+        Tree.frame_range t ~replace_node ~rebuild_parent range
+      in
+      match framed.node with
+      | Owned (Uninit Totally) -> ok ((), tree)
+      | NotOwned _ -> miss_no_fix ~reason:"ctree_block consume uninit" ()
+      | Owned _ ->
+          [%l.info "Consuming uninit but no uninit, logical failure"];
+          error (`Lfail Typed.v_false))

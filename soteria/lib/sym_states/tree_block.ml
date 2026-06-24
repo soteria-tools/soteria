@@ -517,6 +517,23 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
         Producer_frame_range.frame_range st ~replace_node ~rebuild_parent range
       in
       tree
+
+    module Symex_frame_range = Frame_range (struct
+      include Symex
+
+      type ('a, 'b, 'c) t = 'a Symex.t
+
+      let lift = Fun.id
+    end)
+
+    let produce' produce_inner range st : t Symex.t =
+      let open Symex.Syntax in
+      let replace_node t = produce_inner t in
+      let rebuild_parent = of_children in
+      let+ _, tree =
+        Symex_frame_range.frame_range st ~replace_node ~rebuild_parent range
+      in
+      tree
   end
 
   type t = {
@@ -729,7 +746,7 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
       | None -> Symex.return ()
       | Some bound -> assume [ high <=@ bound ]
     in
-    let+ root = produce_inner t.root in
+    let+ root = Tree.produce' produce_inner range t.root in
     to_opt { t with root }
 
   (* Lots of repetition happening here... *)
