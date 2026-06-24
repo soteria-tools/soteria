@@ -17,3 +17,11 @@ module type Yojsonable = sig
   val to_yojson : t -> Yojson.Safe.t
   val of_yojson : Yojson.Safe.t -> (t, string) result
 end
+
+(** A foldable interface for uniform iteration over different container types.*)
+module type Foldable = sig
+  type 'a t
+
+  (** Fold over the elements of the data structure. *)
+  val fold : ('b -> 'a -> 'b) -> 'b -> 'a t -> 'b
+end

@@ -183,7 +183,7 @@ struct
       DecayMap.SM.Result.map (fun () -> ((), state)) (assert_or_error cond err)
 
     let fold_iter x ~init ~f =
-      Monad.foldM ~bind ~return:ok ~fold:Foldable.Iter.fold x ~init ~f
+      Monad.foldM (module Iter) ~bind ~return:ok x ~init ~f
 
     module Syntax = struct
       let ( let* ) x f = bind f x
@@ -487,8 +487,8 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   (* undefined.validity.struct *)
   | Tuple vs, TAdt adt ->
-      List.combine (Crate.as_struct_or_tuple adt) vs
-      |> iter_list ~f:(fun (ty, v) -> validity ~check_ref ty v f)
+      Iter.of_list_combine (Crate.as_struct_or_tuple adt) vs
+      |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   | Tuple vs, (TArray (ty, _) | TSlice ty) ->
       iter_list vs ~f:(fun v -> validity ~check_ref ty v f)
   (* undefined.validity.union *)
