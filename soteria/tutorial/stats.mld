@@ -246,12 +246,12 @@ See {{!Soteria.Symex.StatKeys}[Symex.StatKeys]} for all available entries.
 The {{!Soteria.Symex.S.run}[Symex.S.run]} function receives an optional [stats]
 parameter that allows deciding how statistics should be tracked during symbolic
 execution:
-- {{!Soteria.Symex.effect_handling.Ignore}[~stats:Ignore]}: Don't track any
+- {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Ignore}[~stats:Ignore]}: Don't track any
   statistics (default)
-- {{!Soteria.Symex.effect_handling.Dump}[~stats:(Dump ())]}: Track statistics
+- {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Dump}[~stats:(Dump ())]}: Track statistics
   and print them after execution according to the current
   {{!Soteria.Stats.Config}configuration} (see below)
-- {{!Soteria.Symex.effect_handling.Caller}[~stats:Caller]}: Statistics are
+- {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Caller}[~stats:Caller]}: Statistics are
   already tracked, and the effects they raise don't need to be handled here
   (using {{!Soteria.Stats.As_ctx.with_}[with_]},
   {{!Soteria.Stats.As_ctx.with_ignored}[with_ignored]}, or

@@ -57,7 +57,7 @@ The function receives a symbolic process to execute, an
 {{!Soteria.Symex.Approx.t}approximation mode}; an optional
 {{!Soteria.Symex.Fuel_gauge.t}fuel gauge} should the user desire to limit the
 breadth or depth of execution; and
-{{!Soteria_std.Effects.Bookkeeping.mode}bookkeeping modes} ([Dump _], [Ignore],
+{{!Soteria.Soteria_std.Effects.Bookkeeping.mode}bookkeeping modes} ([Dump _], [Ignore],
 or [Caller]) for the aggregated statistics and flamegraphs
 {{:https://github.com/brendangregg/flamegraph}[.collapsed]} files.
 
