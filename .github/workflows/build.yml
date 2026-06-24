@@ -31,7 +31,7 @@ jobs:
     name: Build and Test
     strategy:
       matrix:
-        operating-system: [macos-latest, ubuntu-latest]
+        operating-system: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["macos-latest", "ubuntu-latest"]') }}
     runs-on: ${{ matrix.operating-system }}
     steps:
       # Setup steps: checkout, z3,  ocaml and opam
@@ -180,6 +180,7 @@ jobs:
 
       - name: Build API documentation
         run: make doc
+        if: runner.os == 'Linux'
 
       - name: Upload documentation artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
