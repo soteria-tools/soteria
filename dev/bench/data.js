@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782311444540,
+  "lastUpdate": 1782320084834,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -4837,6 +4837,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 106.2347,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "01ae795f2134b8d31dd686b84ecdd5bf3805cfa1",
+          "message": "Avoid `List.combine` as much as possible (#435)",
+          "timestamp": "2026-06-24T16:36:01Z",
+          "tree_id": "c7d38d1cb40024d73eeb57288e58922235a9261c",
+          "url": "https://github.com/soteria-tools/soteria/commit/01ae795f2134b8d31dd686b84ecdd5bf3805cfa1"
+        },
+        "date": 1782320082135,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.336295529,
+            "range": "± 0.0366",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.1120942209,
+            "range": "± 0.0126",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.63017090132,
+            "range": "± 0.0117",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.42527334960000013,
+            "range": "± 0.005",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.800105909639999,
+            "range": "± 0.0304",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.7301449934,
+            "range": "± 0.0089",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.42904201512,
+            "range": "± 0.0045",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.0195298572600002,
+            "range": "± 0.021",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.952888628002256,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 308,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 24,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 69,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 119.085,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 397,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 85,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 123,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 86.2478,
             "unit": "s"
           }
         ]
