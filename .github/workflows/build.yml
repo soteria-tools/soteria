@@ -194,7 +194,7 @@ jobs:
 
       - name: Build JSON documentation
         run: make doc-json
-        if: runner.os == 'linux'
+        if: runner.os == 'linux' && github.ref == 'refs/heads/main'
 
       - name: Upload JSON documentation artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
@@ -202,7 +202,7 @@ jobs:
           name: odoc-json
           path: _build/default/_doc/_html
           if-no-files-found: error
-        if: runner.os == 'linux'
+        if: runner.os == 'linux' && github.ref == 'refs/heads/main'
 
       - name: Opam Cleanup
         run: opam clean -a -r
