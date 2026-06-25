@@ -171,6 +171,7 @@ module type Core = sig
   (** {2 Fuel} *)
 
   val consume_fuel_steps : int -> unit t
+  val log_solver_state : level:Logs.Level.t -> unit -> unit
 end
 
 module type Base = sig
@@ -532,6 +533,9 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     | Not_exhausted ->
         Stats.As_ctx.add_int StatKeys.steps n;
         f ()
+
+  let log_solver_state ~level () =
+    L.log ~level (fun m -> m "@[Path condition:@ %a@]" Solver.pp ())
 
   (** [Solver.simplify] throws an effect to ask the solver for simplification.
       When the value is already a concrete boolean literal, we can skip the
