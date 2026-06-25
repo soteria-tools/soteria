@@ -236,6 +236,22 @@ let consume_init' loc offset ty =
 let consume_uninit' loc offset len =
   consume_tree_block (Ctree_block.consume_uninit offset len) loc
 
+let rec consume_aggregate' ptr (ty : Cerb_frontend.Ctype.ctype) =
+  let open SM.Result in
+  let open SM.Syntax in
+  let loc = Typed.Ptr.loc ptr in
+  let offset = Typed.Ptr.ofs ptr in
+  let (Ctype (_, ty_)) = ty in
+  match ty_ with
+  | Basic _ | Byte | Pointer (_, _) ->
+      let++ v = consume_init' loc offset ty in
+      Agv.Basic v
+  | Array (_, _) -> SM.lift @@ Csymex.not_impl "consume_aggregate' for arrays"
+  | Struct _ -> SM.lift @@ Csymex.not_impl "consume_aggregate' for structs"
+  | Union _ -> SM.lift @@ Csymex.not_impl "consume_aggregate' for unions"
+  | Void | Function (_, _, _) | FunctionNoParams _ | Atomic _ ->
+      L.failwith "Cannot consume this type %a" Fmt_ail.pp_ty ty
+
 let rec produce_aggregate' (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) st =
   let open Csymex.Syntax in
   let loc = Typed.Ptr.loc ptr in
