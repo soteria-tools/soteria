@@ -174,8 +174,21 @@ class FunDecl(TypedDict):
     body: Body
 
 
+class TypeDeclStruct(TypedDict):
+    Struct: list[Any]
+
+
+class TypeDeclUnion(TypedDict):
+    Union: list[Any]
+
+
+class TypeDeclEnum(TypedDict):
+    Enum: list[Any]
+
+
 class TypeDecl(TypedDict):
     item_meta: ItemMeta
+    kind: TypeDeclStruct | TypeDeclUnion | TypeDeclEnum
 
 
 InterpTypeBase = Literal[
@@ -184,6 +197,9 @@ InterpTypeBase = Literal[
     "bool",
     "float",
     "ptr",
+    "union",
+    "tuple",
+    "enum",
     "unknown",
     "fun_exec",
     "meta_ty",
@@ -202,12 +218,6 @@ USER_IMPL_START = "(* BEGIN USER IMPLEMENTATION *)"
 USER_IMPL_END = "(* END USER IMPLEMENTATION *)"
 
 GENERATED_WARNING = "(** This file was generated with [scripts/stubs.py] -- do not edit it manually, instead modify the script and re-run it. *)"
-
-OCAML_HELPERS = """\
-let as_ptr (v : rust_val) = Rust_val.as_ptr v
-let as_base ty (v : rust_val) = Rust_val.as_base ty v
-let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
-let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v"""
 
 
 def charon_type_of(unique_ty: UniqueType) -> Type:
@@ -246,10 +256,27 @@ def type_of(unique_ty: UniqueType) -> InterpType:
         return "ptr", None
 
     if "Adt" in ty:
-        if ty["Adt"]["id"] == "Tuple" and len(ty["Adt"]["generics"]["types"]) == 0:
-            return "unit", None
+        adt_id = ty["Adt"]["id"]
+        if adt_id == "Tuple":
+            if len(ty["Adt"]["generics"]["types"]) == 0:
+                return "unit", None
+            return "tuple", None
+        if "Adt" in adt_id:
+            ty_decl_id = cast(AdtId, adt_id)["Adt"]
+            ty_decl = type_decls[ty_decl_id]
+            if "Struct" in ty_decl["kind"]:
+                return "tuple", None
+            if "Union" in ty_decl["kind"]:
+                return "union", None
+            if "Enum" in ty_decl["kind"]:
+                return "enum", None
 
-    ignored = ["TypeVar", "Adt", "TraitType", "Array"]
+        return "unknown", None
+
+    if "Array" in ty:
+        return "tuple", None
+
+    ignored = ["TypeVar", "TraitType"]
     if any(kind in ty for kind in ignored):
         return "unknown", None
 
@@ -287,54 +314,68 @@ def traverse_types(x: Any, prev_key: Optional[str] = None) -> None:
         traverse_types(v, k)
 
 
+def traverse_ty_decls(ullbc: Any) -> None:
+    for id, ty_decl in enumerate(ullbc["translated"]["type_decls"]):
+        if ty_decl is not None:
+            type_decls[id] = ty_decl
+
+
 input_type: dict[InterpTypeBase, str] = {
     "unit": "unit",
-    "int": "[< Typed.T.sint ] Typed.t",
-    "float": "[< Typed.T.sfloat ] Typed.t",
-    "bool": "[< Typed.T.sbool ] Typed.t",
-    "ptr": "full_ptr",
-    "unknown": "rust_val",
+    "int": "Typed.([< T.sint ] t)",
+    "float": "Typed.([< T.sfloat ] t)",
+    "bool": "Typed.([< T.sbool ] t)",
+    "ptr": "Typed.([< T.sptr_f ] t)",
+    "tuple": "Typed.([< T.tuple ] t)",
+    "union": "Typed.([< T.union ] t)",
+    "enum": "Typed.([< T.enum ] t)",
+    "unknown": "Typed.([< T.any ] t)",
     "fun_exec": "fun_exec",
     "meta_ty": "Types.ty",
     "meta_tys": "Types.ty list",
     "meta_const": "Types.constant_expr",
     "meta_sig": "Types.fun_sig",
-    "meta_args": "rust_val list",
+    "meta_args": "Typed.(T.any t) list",
 }
 
 
 output_type: dict[InterpTypeBase, str] = {
     **input_type,
-    "int": "Typed.T.sint Typed.t",
-    "float": "Typed.T.sfloat Typed.t",
-    "bool": "Typed.T.sbool Typed.t",
+    "int": "Typed.([> T.sint] t)",
+    "float": "Typed.([> T.sfloat] t)",
+    "bool": "Typed.([> T.sbool] t)",
+    "ptr": "Typed.([> T.sptr_f] t)",
+    "tuple": "Typed.([> T.tuple ] t)",
+    "union": "Typed.([> T.union ] t)",
+    "enum": "Typed.([> T.enum ] t)",
+    "unknown": "Typed.([> T.any] t)",
 }
 
 
 def input_type_cast(arg: str, ty: InterpType) -> str:
     if ty[0] == "int":
         int_ty = cast(str, ty[1]).replace("I", "U")
-        return f"let {arg} = as_base_i {int_ty} {arg} in "
+        return f"let {arg} = Typed.cast_i {int_ty} {arg} in "
     if ty[0] == "float":
-        return f"let {arg} = as_base_f {ty[1]} {arg} in "
+        return f"let {arg} = Typed.cast_f {ty[1]} {arg} in "
     if ty[0] == "ptr":
-        return f"let {arg} = as_ptr {arg} in "
+        return f"let {arg} = Typed.cast_ptr_f {arg} in "
     if ty[0] == "bool":
-        return f"let {arg} = Typed.BitVec.to_bool (as_base TBool {arg}) in "
+        return f"let {arg} = Typed.BitVec.to_bool (Typed.cast_lit TBool {arg}) in "
+    if ty[0] == "tuple":
+        return f"let {arg} = Typed.cast_tuple {arg} in "
+    if ty[0] == "enum":
+        return f"let {arg} = Typed.cast_enum {arg} in "
+    if ty[0] == "union":
+        return f"let {arg} = Typed.cast_union {arg} in "
     return ""
 
 
 def output_type_cast(ty: InterpType) -> tuple[str, str]:
-    if ty[0] == "int":
-        return ("let+ ret = ", " in mk_int ret")
-    if ty[0] == "float":
-        return ("let+ ret = ", " in mk_float ret")
     if ty[0] == "bool":
-        return "let+ ret = ", " in mk_int (Typed.BitVec.of_bool ret)"
-    if ty[0] == "ptr":
-        return "let+ ret = ", " in mk_ptr (fst ret) (snd ret)"
+        return "let+ ret = ", " in Typed.BitVec.of_bool ret"
     if ty[0] == "unit":
-        return "let+ () = ", " in mk_tuple []"
+        return "let+ () = ", " in Typed.Adt.unit"
     return "", ""
 
 
@@ -591,13 +632,15 @@ def get_intrinsics() -> dict[str, FunDecl]:
         pprint("Loading intrinsics...")
         file_rs = (PWD / "intrinsics.rs").resolve()
         file_rs.touch(exist_ok=True)
-
+        # only include intrinsics
+        # we must also manually include the ADTs we care about
         charon_cmd = f"charon rustc --ullbc \
             --dest-file {file_json} \
             --start-from core::intrinsics \
             --include core::intrinsics \
             --exclude core::intrinsics::const_allocate \
-            --exclude core \
+            --include core \
+            --preset fast \
             -- {file_rs} --cfg miri --crate-type=lib"
 
         proc = subprocess.run(charon_cmd, shell=True, stderr=subprocess.STDOUT)
@@ -609,6 +652,7 @@ def get_intrinsics() -> dict[str, FunDecl]:
         file_rs.unlink(missing_ok=True)
 
     ullbc = json.loads(file_json.read_text())
+    traverse_ty_decls(ullbc)
     traverse_types(ullbc)
 
     def intrinsic_key(name: list[PathElem]) -> Optional[str]:
@@ -681,9 +725,7 @@ def get_stubs(patterns: list[str], crate_path: Path) -> list[FunDecl]:
             )
 
     ullbc = json.loads(file_json.read_text())
-    for id, ty_decl in enumerate(ullbc["translated"]["type_decls"]):
-        if ty_decl is not None:
-            type_decls[id] = ty_decl
+    traverse_ty_decls(ullbc)
     traverse_types(ullbc)
     return [fun for fun in ullbc["translated"]["fun_decls"] if fun is not None]
 
@@ -716,7 +758,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     type_utils = """
         type 'a ret := ('a, unit) StateM.t
         type fun_exec :=
-            Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+            Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
     """
 
     interface_entries = ""
@@ -748,8 +790,8 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         {GENERATED_WARNING}
 
         open Charon
+        open Svalue
         open Common
-        open Rust_val
 
         module M (StateM : State.StateM.S) = struct
           module type Impl = sig
@@ -760,7 +802,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
         module type S = sig
             include Impl
             {type_utils}
-            val eval_fun : string -> fun_exec -> Types.generic_args -> rust_val list -> rust_val ret
+            val eval_fun : string -> fun_exec -> Types.generic_args -> Typed.([< T.any ] t) list -> Typed.([> T.any ] t) ret
         end
     end
     """
@@ -779,14 +821,12 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
     main_str = f"""
         {GENERATED_WARNING}
 
-        open Rust_val
+        open Svalue
         open Common
 
         module M (StateM : State.StateM.S): Intf.M(StateM).S = struct
             open StateM
             open Syntax
-
-            {OCAML_HELPERS}
 
             include Impl.M (StateM)
 
@@ -799,7 +839,7 @@ def generate_interface(intrinsics: dict[str, FunDecl]) -> tuple[str, str, str]:
                         name
                         Fmt.(list ~sep:comma Charon_util.pp_ty) tys
                         Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
-                        Fmt.(list ~sep:comma Rust_val.pp) args
+                        Fmt.(list ~sep:comma Typed.ppa) args
         end
     """
 
@@ -1149,14 +1189,14 @@ def generate_custom_stubs() -> None:
             [@@@warning "-unused-open"]
 
             open Charon
+            open Svalue
             open Common
-            open Rust_val
 
             module M (StateM : State.StateM.S) = struct
               open StateM
 
               type 'a ret = ('a, unit) StateM.t
-              type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+              type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
               module type S = sig {intf_entries_str} end
             end
@@ -1170,7 +1210,7 @@ def generate_custom_stubs() -> None:
             [@@@warning "-unused-open"]
 
             open Common
-            open Rust_val
+            open Svalue
 
             type fn = {fn_variants_str}
             let fn_pats : (string * fn) list = [ {fn_map_entries} ]
@@ -1180,9 +1220,7 @@ def generate_custom_stubs() -> None:
                 open Syntax
 
                 type 'a ret = ('a, unit) StateM.t
-                type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-
-                {OCAML_HELPERS}
+                type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
                 include Impl.M(StateM)
 
@@ -1194,7 +1232,7 @@ def generate_custom_stubs() -> None:
                             "Custom stub found but called with the wrong arguments; got:@.Types: %a@.Consts: %a@.Args: %a"
                             Fmt.(list ~sep:comma Charon_util.pp_ty) tys
                             Fmt.(list ~sep:comma Crate.pp_constant_expr) cs
-                            Fmt.(list ~sep:comma Rust_val.pp)args
+                            Fmt.(list ~sep:comma Typed.ppa) args
             end
         """
         write_ocaml_file(entry_file, entry_generated)
