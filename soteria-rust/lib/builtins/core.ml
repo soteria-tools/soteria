@@ -2,10 +2,10 @@
     share them here for convenience. *)
 
 open Charon
+open Svalue
 open Typed
 open Typed.Syntax
 open Typed.Infix
-open Rust_val
 open Syntaxes.FunctionWrap
 
 module M (StateM : State.StateM.S) = struct
@@ -18,7 +18,7 @@ module M (StateM : State.StateM.S) = struct
     let discr =
       Typed.ite (l < r) U8.(-1s) (Typed.ite (l ==@ r) U8.(0s) U8.(1s))
     in
-    mk_enum ordering discr []
+    Typed.Adt.mk_enum ordering discr []
 
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
@@ -106,25 +106,29 @@ module M (StateM : State.StateM.S) = struct
           L.failwith "Invalid checked op: (%a, %b)" Expressions.pp_binop op
             signed
     in
-    ok (mk_tuple [ mk_int wrapped; mk_int (BV.of_bool overflowed) ])
+    ok (Typed.Adt.mk_tuple [ wrapped; BV.of_bool overflowed ])
 
-  let meta_as_int = function
-    | Len l -> ok (Some l)
-    | VTable ptr ->
-        let+ ptr = Sptr.decay ptr in
-        Some ptr
-    | Thin -> ok None
+  let meta_as_int meta =
+    match%ty meta with
+    | TBitVector _ -> ok meta
+    | TExtension TThinPtr -> Sptr.decay meta
+    | _ -> failwith "invalid metadata type"
 
-  let eval_meta_eq l r =
-    let* meta_l = meta_as_int l in
-    let+ meta_r = meta_as_int r in
+  let opt_meta_as_int = function
+    | None -> ok None
+    | Some meta -> map Option.some (meta_as_int meta)
+
+  let eval_meta_eq (l : [< T.ptr_meta ] Typed.t option)
+      (r : [< T.ptr_meta ] Typed.t option) =
+    let* meta_l = opt_meta_as_int l in
+    let+ meta_r = opt_meta_as_int r in
     match (meta_l, meta_r) with
     | Some l, Some r -> l ==@ r
     | None, None -> v_true
-    | _, _ -> v_false
+    | _, _ -> L.failwith "Comparing pointers with mismatched metadata"
 
-  let rec eval_ptr_binop (bop : Expressions.binop) (l : full_ptr) (r : full_ptr)
-      =
+  let rec eval_ptr_binop (bop : Expressions.binop) (l : Typed.([< T.sptr_f ] t))
+      (r : Typed.([< T.sptr_f ] t)) =
     match bop with
     | Ne ->
         let+ res = eval_ptr_binop Eq l r in
@@ -132,14 +136,15 @@ module M (StateM : State.StateM.S) = struct
     | Eq ->
         (* Pointer comparison just uses the address! See
            https://doc.rust-lang.org/std/ptr/index.html#provenance *)
-        let null_or_in_bound p = Sptr.is_null p ||@ Sptr.in_bound p in
-        let l, meta_l = l and r, meta_r = r in
-        let same_provenance = Sptr.have_same_provenance l r in
+        let null_or_in_bound p = Typed.Ptr.is_null p ||@ Typed.Ptr.in_bound p in
+        let l, meta_l = Typed.Ptr.split l in
+        let r, meta_r = Typed.Ptr.split r in
+        let same_provenance = Typed.Ptr.have_same_provenance l r in
         if%sure same_provenance then
           (* Fast path: if two pointer have the same provenance, it's enough to
              compare their offsets *)
           let+ meta_eq = eval_meta_eq meta_l meta_r in
-          BV.of_bool (meta_eq &&@ (Sptr.ofs l ==@ Sptr.ofs r))
+          BV.of_bool (meta_eq &&@ (Typed.Ptr.ofs l ==@ Typed.Ptr.ofs r))
         else if%sure
           (not same_provenance) &&@ null_or_in_bound l &&@ null_or_in_bound r
         then
@@ -161,7 +166,8 @@ module M (StateM : State.StateM.S) = struct
           let ptr_eq = distance ==@ Usize.(0s) in
           BV.of_bool (meta_eq &&@ ptr_eq)
     | Lt | Le | Gt | Ge -> (
-        let l, meta_l = l and r, meta_r = r in
+        let l, ml = Typed.Ptr.split l in
+        let r, mr = Typed.Ptr.split r in
         let* dist = Sptr.distance l r in
         let bop =
           match bop with
@@ -172,23 +178,22 @@ module M (StateM : State.StateM.S) = struct
           | _ -> assert false
         in
         let v = bop dist Usize.(0s) in
-        match (meta_l, meta_r) with
-        | Thin, Thin -> ok (BV.of_bool v)
-        (* is the below line correct? *)
-        | Thin, _ | _, Thin -> ok (BV.of_bool v)
-        | _, _ ->
+        match (ml, mr) with
+        | None, None -> ok (BV.of_bool v)
+        | Some ml, Some mr ->
             if%sat dist ==@ Usize.(0s) then
-              let* ml = meta_as_int meta_l in
-              let* mr = meta_as_int meta_r in
-              let ml = Option.get ml in
-              let mr = Option.get mr in
+              let* ml = meta_as_int ml in
+              let* mr = meta_as_int mr in
               ok (BV.of_bool (bop ml mr))
-            else ok (BV.of_bool v))
+            else ok (BV.of_bool v)
+        | _ -> L.failwith "Comparing pointers with mismatched metadata")
     | op ->
         L.failwith "Unexpected operation in eval_ptr_binop: %a"
           Expressions.pp_binop op
 
   let zero_valid ~ty =
+    (* FIXME: this creates an unnecessary allocation; see how we handle
+       transmute. *)
     let+^ res =
       let@ () = run ~env:() ~state:State.empty in
       let* { size; align; _ } = Layout.layout_of ty in
@@ -203,8 +208,8 @@ module M (StateM : State.StateM.S) = struct
         { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
     in
     let+ str_data = State.load ptr str_ty in
-    as_tuple str_data
-    |> (Monad.OptionM.all @@ fun b -> Typed.BitVec.to_z @@ as_base_i U8 b)
+    Typed.Adt.as_tuple @@ Typed.cast_tuple str_data
+    |> (Monad.OptionM.all @@ fun b -> Typed.BitVec.to_z @@ Typed.cast_i U8 b)
     |> Option.map (fun cs ->
         let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
         let str = String.of_seq @@ List.to_seq cs in
@@ -224,16 +229,17 @@ module M (StateM : State.StateM.S) = struct
         let len = String.length str in
         let chars =
           String.to_bytes str
-          |> Bytes.fold_left (fun l c -> mk_int (BV.u8i (Char.code c)) :: l) []
+          |> Bytes.fold_left (fun l c -> BV.u8i (Char.code c) :: l) []
           |> List.rev
         in
-        let char_arr = mk_tuple chars in
+        let char_arr = Typed.Adt.mk_tuple chars in
         let str_ty : Types.ty =
           Common.Charon_util.mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
         in
         let@ () = with_alloc_kind ~kind:StaticString in
-        let* ptr, _ = State.alloc_ty str_ty in
-        let ptr = (ptr, Len (BV.usizei len)) in
+        let* ptr = State.alloc_ty str_ty in
+        let ptr = Typed.Ptr.ptr_of ptr in
+        let ptr = Typed.Ptr.mk_ptr_f ptr (Some (BV.usizei len)) in
         let* () = State.store ptr str_ty char_arr in
         let+ () = State.store_str_global str ptr in
         ptr

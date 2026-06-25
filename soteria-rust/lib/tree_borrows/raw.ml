@@ -2,6 +2,7 @@
     symbolic reasoning or anything fancy, it's just the raw logic. *)
 
 open Common
+module Ptr_tag = Svalue.Ptr_tag
 
 (** Whether this node has a protector (this is distinct from having the
     protector toggled!), its parents (including this node's ID!), and its

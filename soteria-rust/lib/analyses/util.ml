@@ -12,7 +12,7 @@ let pp_functions = pp_plural ~sing:"function" ~plur:"functions"
 let pp_pc ft pc =
   let open Fmt in
   if List.is_empty pc then string ft "empty"
-  else (list ~sep:(any " /\\@, ") Typed.Svalue.pp) ft pc
+  else (list ~sep:(any " /\\@, ") Svalue.Typed.Svalue.pp) ft pc
 
 let print_pcs pcs =
   let open Fmt in

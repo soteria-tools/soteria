@@ -1,5 +1,11 @@
+(** The base type of pointers, permitting simple operations on the pointer type.
+    The majority of relevant operations are exposed via the state monad's
+    pointer module, {{!Soteria_rust_lib.State.StateM.S.Sptr}[StateM.Sptr]}, or
+    the {{!Svalue.Typed.Ptr}[Svalue.Ptr]} module. *)
+
 open Rustsymex
 open Charon
+open Svalue
 open Typed
 open Typed.Syntax
 open Typed.Infix
@@ -180,71 +186,9 @@ module DecayMap : DecayMapS = struct
     |> Iter.to_opt
 end
 
-module D_abstr = Soteria.Data.Abstr.M (DecayMap.SM)
-module Tag = Tree_borrows.Ptr_tag
+type t = Typed.(T.sptr_t t)
 
-type ('sptr, 'snonzero, 'sint, 'tag) base = {
-  ptr : 'sptr;
-  tag : 'tag option;
-  align : 'snonzero;
-  size : 'sint;
-}
-
-type t = (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t, Tag.t) base
-type syn = (Typed.Expr.t, Typed.Expr.t, Typed.Expr.t, Tag.t) base
-
-let pp' pp_v pp_tag fmt { ptr; tag; _ } =
-  Fmt.pf fmt "%a[%a]" pp_v ptr Fmt.(option ~none:(any "*") pp_tag) tag
-
-let pp ft x = pp' Typed.ppa Tag.pp ft x
-let show x = Fmt.to_to_string pp x
-let pp_syn ft x = pp' Typed.Expr.pp Tag.pp ft x
-let show_syn x = Fmt.to_to_string pp_syn x
-
-let to_syn { ptr; tag; align; size } =
-  {
-    ptr = Typed.Expr.of_value ptr;
-    align = Typed.Expr.of_value align;
-    size = Typed.Expr.of_value size;
-    tag;
-  }
-
-(** Returns a symbolic boolean characterising whether the pointer is in bound to
-    its allocation. *)
-let in_bound { ptr; size; _ } =
-  let ofs = Typed.Ptr.ofs ptr in
-  Usize.(0s) <=@ ofs &&@ (ofs <@ size)
-
-let learn_eq syn t =
-  let open DecayMap.SM.Consumer in
-  let open Syntax in
-  let* () =
-    if Option.equal Tag.equal syn.tag t.tag then ok () else lfail Typed.v_false
-  in
-  let* () = learn_eq syn.ptr t.ptr in
-  let* () = learn_eq syn.align t.align in
-  learn_eq syn.size t.size
-
-let exprs_syn { ptr; align; size; tag } = [ ptr; align; size ]
-let fresh () = L.failwith "Fresh unimplemented for sptr (for now)"
-
-let subst subst_val p =
-  let se = Typed.Expr.subst subst_val in
-  let ptr = se p.ptr in
-  let align = se p.align in
-  let size = se p.size in
-  { ptr; align; size; tag = p.tag }
-
-(** The null pointer, which always decays to 0, and has no provenance.
-    Equivalent to [of_address 0]. *)
-let null () =
-  { ptr = Typed.Ptr.null (); tag = None; align = Usize.(1s); size = Usize.(0s) }
-
-(** Converts an address into a pointer, without provenance. *)
-let of_address ofs =
-  let null_ptr = null () in
-  let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
-  { null_ptr with ptr }
+let pp = Typed.ppa
 
 (** Creates a dangling pointer to the given type, if that type is a ZST; returns
     [None] otherwise. *)
@@ -255,35 +199,24 @@ let dangling_if_zst ty =
   if%sat layout.size ==@ Usize.(0s) then
     (* UX: really any address that is well-aligned is valid, we
        under-approximate here to make our life easier. *)
-    Result.ok (Some (of_address layout.align))
+    Result.ok (Some (Typed.Ptr.of_address layout.align))
   else Result.ok None
 
-(** Whether this is the null pointer, meaning it always decays to 0. *)
-let is_null { ptr; _ } = Typed.Ptr.is_null ptr
-
-(** The offset of this pointer within its allocation. *)
-let ofs { ptr; _ } = Typed.Ptr.ofs ptr
-
-(** Whether this pointer has provenance, i.e. points to some allocation. *)
-let has_provenance { ptr; _ } = Typed.not (Typed.Ptr.is_at_null_loc ptr)
-
-(** If these two pointers have the same provenance, i.e. point to the same
-    allocation (or if they both have no provenance). *)
-let have_same_provenance { ptr = ptr1; _ } { ptr = ptr2; _ } =
-  Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
-
-(** A simplified (and unsafe) version of [offset], that adds a signed bitvector
-    to this pointer's offset. *)
+(** A simplified, untyped (and {b unsafe}) version of [offset], that adds a
+    signed integer to this pointer's offset. This offset doesn't check whether
+    the resulting pointer is dangling after being offset. *)
 let raw_offset ptr off_by =
   let open Rustsymex.Syntax in
-  let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-  let ofs', ovf = ofs +$?@ off_by in
+  let ofs', ovf = Typed.Ptr.ofs ptr +$?@ off_by in
   let++ () = assert_or_error (Typed.not ovf) `UBDanglingPointer in
-  { ptr with ptr = Typed.Ptr.mk loc ofs' }
+  Typed.Ptr.set_ofs ptr ofs'
 
-let[@inline] _decay ~expose { ptr; align; size; _ } =
+let[@inline] _decay ~expose p =
   let open DecayMap.SM.Syntax in
-  let loc, ofs = Typed.Ptr.decompose ptr in
+  let size = Typed.Ptr.size_of p in
+  let align = Typed.Ptr.align_of p in
+  let loc = Typed.Ptr.loc p in
+  let ofs = Typed.Ptr.ofs p in
   let+ loc_int = DecayMap.decay ~expose ~size ~align loc in
   [%l.debug "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int];
   loc_int +!!@ ofs
@@ -300,30 +233,11 @@ let expose p = _decay ~expose:true p
 
 (** The distance, in bytes, between two pointers; if they point to different
     allocations, they are decayed and substracted. *)
-let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
+let distance p1 p2 : [> sint ] Typed.t DecayMap.SM.t =
   let open DecayMap.SM.Syntax in
-  if%sat have_same_provenance p1 p2 then
-    DecayMap.SM.return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
+  if%sat Typed.Ptr.have_same_provenance p1 p2 then
+    DecayMap.SM.return (Typed.Ptr.ofs p1 -!@ Typed.Ptr.ofs p2)
   else
     let* ptr1 = decay p1 in
     let+ ptr2 = decay p2 in
     ptr1 -!@ ptr2
-
-(** For Miri: the allocation ID of this location, as a u64 *)
-let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
-
-(** For Miri: get the allocation info for this pointer: its size and alignment
-*)
-let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
-
-(** Generates a nondeterministic pointer, that is valid for accesses to the
-    given type. The location of the pointer is nondeterministic; it could point
-    to any allocation. *)
-let nondet ty =
-  let open Rustsymex.Syntax in
-  let** layout = Layout.layout_of ty in
-  let* loc = nondet (Typed.t_loc ()) in
-  let* ofs = nondet (Typed.t_usize ()) in
-  let ptr = Typed.Ptr.mk loc ofs in
-  let ptr = { ptr; tag = None; align = layout.align; size = layout.size } in
-  Result.ok ptr

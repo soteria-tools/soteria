@@ -4,4 +4,3 @@ include Common
 module M = Tree_borrows_intf.M
 module Concrete = Concrete
 module Raw = Raw
-module Ptr_tag = Ptr_tag

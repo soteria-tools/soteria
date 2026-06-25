@@ -220,12 +220,6 @@ let rec get_pointee : Types.ty -> Types.ty = function
         | _ -> L.failwith "Box with non instantiates args in monomorphic mode?")
   | _ -> L.failwith "Non-pointer type given to get_pointee"
 
-let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
-  | F16 -> F16
-  | F32 -> F32
-  | F64 -> F64
-  | F128 -> F128
-
 let ty_as_adt : Types.ty -> Types.type_decl_ref = function
   | TAdt tref -> tref
   | _ -> invalid_arg "ty_as_adt: not an ADT type"
@@ -247,13 +241,32 @@ let ty_is_monomorphic ty =
   let ty_visitor =
     object (_)
       inherit [_] Types.iter_ty
-      method! visit_TVar _ _ = raise FoundGeneric
+      method! visit_TVar _ _ = raise_notrace FoundGeneric
     end
   in
   try
     ty_visitor#visit_ty () ty;
     true
   with FoundGeneric -> false
+
+(** Whether the given type decl ref is properly substituted, i.e. it contains no
+    bound type variables. This can still return [true] for polymorphic type decl
+    refs, e.g. [Option<@Free0>], but we guarantee all type variables are free.
+*)
+let tyref_is_substituted ty =
+  let exception FoundBoundVar in
+  let ty_visitor =
+    object (_)
+      inherit [_] Types.iter_ty
+
+      method! visit_TVar _ =
+        function Free _ -> () | Bound _ -> raise_notrace FoundBoundVar
+    end
+  in
+  try
+    ty_visitor#visit_type_decl_ref () ty;
+    true
+  with FoundBoundVar -> false
 
 let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
   let clean_filename name =
