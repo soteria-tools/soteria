@@ -282,14 +282,18 @@ let rec produce_aggregate' (ptr : [< T.sptr ] Typed.t) ty (v : Agv.t) st =
         match (members_ofs, members, values) with
         | [], [], [] -> return st
         | (Layout.Padding size, ofs) :: rest_ofs, members, values ->
-            let* st = produce_uninit' loc (BV.usizei ofs) (BV.usizei size) st in
+            let* st =
+              produce_uninit' loc
+                (BV.usizei ofs +!!@ offset)
+                (BV.usizei size) st
+            in
             aux rest_ofs members values st
         | ( (Field _, ofs) :: rest_ofs,
             (_, (_, _, _, mem_ty)) :: rest_mems,
             value :: rest_values ) ->
             let* st =
               produce_aggregate'
-                (Typed.Ptr.mk loc (BV.usizei ofs))
+                (Typed.Ptr.mk loc (BV.usizei ofs +!!@ offset))
                 mem_ty value st
             in
             aux rest_ofs rest_mems rest_values st
