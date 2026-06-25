@@ -1,6 +1,6 @@
 open Syntaxes.FunctionWrap
 open Common
-open Rust_val
+open Svalue
 open Typed.Infix
 open Typed.Syntax
 
@@ -14,25 +14,26 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
      can inspect the panic payload. See
      https://doc.rust-lang.org/src/std/panicking.rs.html#557-565 *)
   let cleanup ~payload =
-    let ptr, _ = payload in
+    let ptr = Typed.Ptr.ptr_of payload in
     let* usize_size = Layout.size_of (TLiteral (TUInt Usize)) in
     let@ () = with_alloc_kind ~kind:(VTable Charon.TypesUtils.mk_unit_ty) in
-    let* vtable, _ =
+    let* vtable =
       State.alloc_untyped ~zeroed:true
         ~size:Usize.(usize_size *!!@ 3s)
-        ~align:(Typed.cast usize_size) ()
+        ~align:(Typed.cast_nonzero usize_size)
+        ()
     in
     let* drop_fn = State.declare_fn (Synthetic GenericDropInPlace) in
-    let* () =
-      State.store (vtable, Thin) Charon_util.unit_ptr (mk_ptr' drop_fn)
-    in
+    let* () = State.store vtable Charon_util.unit_ptr drop_fn in
+    let vtable = Typed.Ptr.ptr_of vtable in
     let* align_ptr =
       Sptr.offset ~ty:(TLiteral (TUInt Usize)) ~check_signed:true
         Usize.(2s)
         vtable
     in
-    let+ () =
-      State.store (align_ptr, Thin) Charon_util.unit_ptr (mk_int Usize.(1s))
-    in
-    Value_codec.mk_box (mk_ptr ptr (VTable vtable)) (mk_tuple []) (mk_tuple [])
+    let align_ptr = Typed.Ptr.mk_ptr_f align_ptr None in
+    let+ () = State.store align_ptr Charon_util.unit_ptr Usize.(1s) in
+    Value_codec.mk_box
+      (Typed.Ptr.mk_ptr_f ptr (Some vtable))
+      Typed.Adt.unit Typed.Adt.unit
 end

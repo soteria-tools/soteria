@@ -1,5 +1,5 @@
 open Charon
-open Rust_val
+open Svalue
 open Common.Charon_util
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
@@ -19,8 +19,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
       Soteria.Terminal.Warn.warn_once hashmap_random_keys_ux;
     let k0 = 0x0123456789abcdefL in
     let k1 = 0x94D049BB133111EBL in
-    let to_u64 i = Rust_val.mk_int (Typed.BV.u64 (Z.of_int64 i)) in
-    ok (Rust_val.mk_tuple [ to_u64 k0; to_u64 k1 ])
+    let to_u64 i = Typed.BV.u64 (Z.of_int64 i) in
+    ok (Typed.Adt.mk_tuple [ to_u64 k0; to_u64 k1 ])
 
   (** {@rust[
         fn inner(key: &OsStr) -> Result<String, VarError>
@@ -48,18 +48,18 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
        So the variant of NotPresent is 0 *)
 
-    let var_error = Rust_val.Checked.mk_enum var_error_ty "NotPresent" [] in
-    ok @@ Rust_val.Checked.mk_enum out_res "Err" [ var_error ]
+    let var_error = Typed.Adt.Checked.mk_enum var_error_ty "NotPresent" [] in
+    ok @@ Typed.Adt.Checked.mk_enum out_res "Err" [ var_error ]
 
   (** HACK: We under-approximate and always return 1. *)
   let available_parallelism ~(fun_sig : Types.fun_sig) =
     (* We return 1, to under-approximate the behaviour. *)
-    let one = mk_int (Typed.BV.usize Z.one) in
+    let one = Typed.BV.usize Z.one in
     (* `NonZero(1)` *)
-    let nonzero_one = mk_tuple [ mk_tuple [ one ] ] in
+    let nonzero_one = Typed.Adt.(mk_tuple [ mk_tuple [ one ] ]) in
     (* `Ok(Nonzero(1))` *)
     let out = ty_as_adt fun_sig.output in
-    ok @@ Checked.mk_enum out "Ok" [ nonzero_one ]
+    ok @@ Typed.Adt.Checked.mk_enum out "Ok" [ nonzero_one ]
 
   let now () =
     (* We need to return a Instant where
@@ -76,7 +76,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let now = Unix.time () in
     let sec = Int.of_float now in
     let nsec = Int.of_float ((now -. Float.of_int sec) *. 1_000_000_000.) in
-    let sec = mk_int (Typed.BitVec.u64i sec) in
-    let nsec = mk_int (Typed.BitVec.u32i nsec) in
-    ok (mk_tuple [ mk_tuple [ sec; mk_tuple [ nsec ] ] ])
+    let sec = Typed.BitVec.u64i sec in
+    let nsec = Typed.BitVec.u32i nsec in
+    ok Typed.Adt.(mk_tuple [ mk_tuple [ sec; mk_tuple [ nsec ] ] ])
 end

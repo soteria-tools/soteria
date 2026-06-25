@@ -1,4 +1,4 @@
-open Rust_val
+open Svalue
 open Typed.Syntax
 open Typed.Infix
 
@@ -14,7 +14,7 @@ module M (StateM : State.StateM.S) = struct
   let exit args =
     match args with
     | [ code ] ->
-        let code = as_base_i U32 code in
+        let code = Typed.cast_i U32 code in
         if%sat code ==@ U32.(0s) then error `OkExit else error (`Exit code)
     | _ -> L.failwith "exit: invalid arguments"
 
@@ -23,7 +23,7 @@ module M (StateM : State.StateM.S) = struct
   let malloc args =
     let size =
       match args with
-      | [ size ] -> as_base_i Usize size
+      | [ size ] -> Typed.cast_i Usize size
       | _ -> failwith "malloc: invalid arguments"
     in
     let max_size = Typed.BitVec.usize (Layout.max_value_z (TInt Isize)) in
@@ -31,25 +31,25 @@ module M (StateM : State.StateM.S) = struct
     (* we under-approximate here: the alignment can be smaller (its min size is
        the first power of 2 greater than or equal to the requested size) *)
     let align = Typed.BitVec.usizeinz (2 * Crate.pointer_size ()) in
-    let+ ptr = State.alloc_untyped ~zeroed:false ~size ~align () in
-    mk_ptr' ptr
+    State.alloc_untyped ~zeroed:false ~size ~align ()
 
   let free args =
     match args with
     | [ ptr ] ->
         (* [free(NULL)] is a no-op. *)
-        let ((ptr_in, _) as ptr) = as_ptr ptr in
-        if%sat Sptr.is_null ptr_in then ok (mk_tuple [])
+        let ptr = Typed.cast_ptr_f ptr in
+        let ptr_in = Typed.Ptr.ptr_of ptr in
+        if%sat Typed.Ptr.is_null ptr_in then ok Typed.Adt.unit
         else
           let+ () = State.free ptr in
-          mk_tuple []
+          Typed.Adt.unit
     | _ -> failwith "free: invalid arguments"
 
   let sysconf args =
     (* https://man7.org/linux/man-pages/man3/sysconf.3.html
      * It is basically ok to always return the i64 `-1` saying "I don't know"
      *)
-    ok (mk_int (Typed.BitVec.u64i (-1)))
+    ok (Typed.BitVec.u64i (-1))
 
   let[@inline] fn_to_stub = function
     | Exit -> exit

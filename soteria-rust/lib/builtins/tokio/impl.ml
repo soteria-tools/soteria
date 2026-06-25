@@ -1,6 +1,8 @@
+open Svalue
+
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
 
   let new_ ~(fun_sig : Charon.Types.fun_sig) =
-    Value_codec.nondet_valid fun_sig.output
+    map Typed.cast_tuple @@ Value_codec.nondet_valid fun_sig.output
 end

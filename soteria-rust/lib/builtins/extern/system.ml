@@ -1,5 +1,5 @@
 open Charon
-open Rust_val
+open Svalue
 open Typed.Syntax
 open Typed.Infix
 open Common.Charon_util
@@ -38,10 +38,10 @@ module M (StateM : State.StateM.S) = struct
   let tlv_atexit ~fun_exec args =
     let* dtor, arg =
       match args with
-      | [ dtor_ptr; arg_ptr ] -> ok (as_ptr dtor_ptr, arg_ptr)
+      | [ dtor_ptr; arg_ptr ] -> ok (Typed.cast_ptr_f dtor_ptr, arg_ptr)
       | _ ->
           not_impl "tlv_atexit: unexpected arguments: %a"
-            Fmt.(list Rust_val.pp)
+            Fmt.(list Typed.ppa)
             args
     in
     let+ () =
@@ -49,17 +49,17 @@ module M (StateM : State.StateM.S) = struct
           let* fn = State.lookup_fn dtor in
           map ignore @@ fun_exec fn [ arg ])
     in
-    mk_tuple []
+    Typed.Adt.unit
 
   (** [__cxa_thread_atexit_impl: Option<extern "C" fn(...)>] is a weak symbol we
       don't link against, so it reads as [None]; the destructor registration
       then takes its fallback (`register_dtor_fallback`) path. *)
   let cxa_thread_atexit_impl ~(fun_sig : Types.fun_sig) _args =
     let adt = ty_as_adt fun_sig.output in
-    ok (Checked.mk_enum adt "None" [])
+    ok (Typed.Adt.Checked.mk_enum adt "None" [])
 
   (** [__dso_handle: *mut u8] is likewise an unlinked weak symbol, i.e. null. *)
-  let dso_handle _args = ok (mk_ptr (Sptr.null ()) Thin)
+  let dso_handle _args = ok (Typed.Ptr.null_f ())
 
   (** [pthread_key_create] takes a key out-pointer and an optional destructor.
       We don't model pthread TLS storage, so any non-sentinel key works; std
@@ -69,26 +69,27 @@ module M (StateM : State.StateM.S) = struct
   let pthread_key_create ~(fun_sig : Types.fun_sig) ~fun_exec args =
     let key, dtor =
       match args with
-      | [ key; dtor ] -> (as_ptr key, dtor)
+      | [ key; dtor ] -> (Typed.cast_ptr_f key, dtor)
       | _ -> failwith "pthread_key_create: unexpected arguments"
     in
-    let* () = State.store key (TLiteral (TUInt U32)) (mk_int U32.(1s)) in
+    let* () = State.store key (TLiteral (TUInt U32)) U32.(1s) in
     let* dtor =
       State.transmute ~from:(List.nth fun_sig.inputs 1) ~to_:unit_ptr dtor
     in
-    let ((dtor_inner, _) as dtor) = as_ptr dtor in
-    if%sat Sptr.is_null dtor_inner then ok (mk_int U32.(0s))
+    let dtor = Typed.cast_ptr_f dtor in
+    let dtor_inner = Typed.Ptr.ptr_of dtor in
+    if%sat Typed.Ptr.is_null dtor_inner then ok U32.(0s)
     else
       let+ () =
         State.register_thread_exit (fun () ->
             let* fn = State.lookup_fn dtor in
-            map ignore @@ fun_exec fn [ mk_ptr (Sptr.null ()) Thin ])
+            map ignore @@ fun_exec fn [ Typed.Ptr.null_f () ])
       in
-      mk_int U32.(0s)
+      U32.(0s)
 
   (** [pthread_setspecific]/[pthread_key_delete] only manage the (unmodelled)
       TLS storage and marker; returning success is enough. *)
-  let pthread_key_noop _args = ok (mk_int U32.(0s))
+  let pthread_key_noop _args = ok U32.(0s)
 
   let[@inline] fn_to_stub fun_sig fun_exec = function
     | TlvAtexit -> tlv_atexit ~fun_exec
