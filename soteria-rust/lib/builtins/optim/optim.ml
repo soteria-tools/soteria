@@ -4,7 +4,7 @@
 [@@@warning "-unused-open"]
 
 open Common
-open Rust_val
+open Svalue
 
 type fn =
   | AllocAllocGlobalAllocImpl
@@ -108,12 +108,7 @@ module M (StateM : State.StateM.S) = struct
   open Syntax
 
   type 'a ret = ('a, unit) StateM.t
-  type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
-
-  let as_ptr (v : rust_val) = Rust_val.as_ptr v
-  let as_base ty (v : rust_val) = Rust_val.as_base ty v
-  let as_base_i ty (v : rust_val) = Rust_val.as_base_i ty v
-  let as_base_f ty (v : rust_val) = Rust_val.as_base_f ty v
+  type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   include Impl.M (StateM)
 
@@ -123,174 +118,174 @@ module M (StateM : State.StateM.S) = struct
       (stub, generics.types, generics.const_generics, args)
     with
     | AllocAllocGlobalAllocImpl, [], [], [ self; layout; zeroed ] ->
-        let self = as_ptr self in
-        let zeroed = Typed.BitVec.to_bool (as_base TBool zeroed) in
+        let self = Typed.cast_ptr_f self in
+        let zeroed = Typed.BitVec.to_bool (Typed.cast_lit TBool zeroed) in
         alloc_impl ~fun_sig:_fun_sig ~self ~layout ~zeroed
     | AllocAllocHandleAllocError, [], [], [ layout ] ->
         let+ () = handle_alloc_error ~layout in
-        mk_tuple []
+        Typed.Adt.unit
     | AllocRawVecHandleError, [], [], [ e ] ->
+        let e = Typed.cast_tuple e in
         let+ () = handle_error ~e in
-        mk_tuple []
+        Typed.Adt.unit
     | CoreF128IsFinite, [], [], [ arg ] ->
-        let arg = as_base_f F128 arg in
+        let arg = Typed.cast_f F128 arg in
         let+ ret = f128_is_finite ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF128IsInfinite, [], [], [ arg ] ->
-        let arg = as_base_f F128 arg in
+        let arg = Typed.cast_f F128 arg in
         let+ ret = f128_is_infinite ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF128IsNan, [], [], [ arg ] ->
-        let arg = as_base_f F128 arg in
+        let arg = Typed.cast_f F128 arg in
         let+ ret = f128_is_nan ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF128IsNormal, [], [], [ arg ] ->
-        let arg = as_base_f F128 arg in
+        let arg = Typed.cast_f F128 arg in
         let+ ret = f128_is_normal ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF128IsSignNegative, [], [], [ arg ] ->
-        let arg = as_base_f F128 arg in
+        let arg = Typed.cast_f F128 arg in
         let+ ret = f128_is_sign_negative ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF128IsSignPositive, [], [], [ arg ] ->
-        let arg = as_base_f F128 arg in
+        let arg = Typed.cast_f F128 arg in
         let+ ret = f128_is_sign_positive ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF128IsSubnormal, [], [], [ arg ] ->
-        let arg = as_base_f F128 arg in
+        let arg = Typed.cast_f F128 arg in
         let+ ret = f128_is_subnormal ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF16IsFinite, [], [], [ arg ] ->
-        let arg = as_base_f F16 arg in
+        let arg = Typed.cast_f F16 arg in
         let+ ret = f16_is_finite ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF16IsInfinite, [], [], [ arg ] ->
-        let arg = as_base_f F16 arg in
+        let arg = Typed.cast_f F16 arg in
         let+ ret = f16_is_infinite ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF16IsNan, [], [], [ arg ] ->
-        let arg = as_base_f F16 arg in
+        let arg = Typed.cast_f F16 arg in
         let+ ret = f16_is_nan ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF16IsNormal, [], [], [ arg ] ->
-        let arg = as_base_f F16 arg in
+        let arg = Typed.cast_f F16 arg in
         let+ ret = f16_is_normal ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF16IsSignNegative, [], [], [ arg ] ->
-        let arg = as_base_f F16 arg in
+        let arg = Typed.cast_f F16 arg in
         let+ ret = f16_is_sign_negative ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF16IsSignPositive, [], [], [ arg ] ->
-        let arg = as_base_f F16 arg in
+        let arg = Typed.cast_f F16 arg in
         let+ ret = f16_is_sign_positive ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF16IsSubnormal, [], [], [ arg ] ->
-        let arg = as_base_f F16 arg in
+        let arg = Typed.cast_f F16 arg in
         let+ ret = f16_is_subnormal ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF32IsFinite, [], [], [ arg ] ->
-        let arg = as_base_f F32 arg in
+        let arg = Typed.cast_f F32 arg in
         let+ ret = f32_is_finite ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF32IsInfinite, [], [], [ arg ] ->
-        let arg = as_base_f F32 arg in
+        let arg = Typed.cast_f F32 arg in
         let+ ret = f32_is_infinite ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF32IsNan, [], [], [ arg ] ->
-        let arg = as_base_f F32 arg in
+        let arg = Typed.cast_f F32 arg in
         let+ ret = f32_is_nan ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF32IsNormal, [], [], [ arg ] ->
-        let arg = as_base_f F32 arg in
+        let arg = Typed.cast_f F32 arg in
         let+ ret = f32_is_normal ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF32IsSignNegative, [], [], [ arg ] ->
-        let arg = as_base_f F32 arg in
+        let arg = Typed.cast_f F32 arg in
         let+ ret = f32_is_sign_negative ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF32IsSignPositive, [], [], [ arg ] ->
-        let arg = as_base_f F32 arg in
+        let arg = Typed.cast_f F32 arg in
         let+ ret = f32_is_sign_positive ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF32IsSubnormal, [], [], [ arg ] ->
-        let arg = as_base_f F32 arg in
+        let arg = Typed.cast_f F32 arg in
         let+ ret = f32_is_subnormal ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF64IsFinite, [], [], [ arg ] ->
-        let arg = as_base_f F64 arg in
+        let arg = Typed.cast_f F64 arg in
         let+ ret = f64_is_finite ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF64IsInfinite, [], [], [ arg ] ->
-        let arg = as_base_f F64 arg in
+        let arg = Typed.cast_f F64 arg in
         let+ ret = f64_is_infinite ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF64IsNan, [], [], [ arg ] ->
-        let arg = as_base_f F64 arg in
+        let arg = Typed.cast_f F64 arg in
         let+ ret = f64_is_nan ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF64IsNormal, [], [], [ arg ] ->
-        let arg = as_base_f F64 arg in
+        let arg = Typed.cast_f F64 arg in
         let+ ret = f64_is_normal ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF64IsSignNegative, [], [], [ arg ] ->
-        let arg = as_base_f F64 arg in
+        let arg = Typed.cast_f F64 arg in
         let+ ret = f64_is_sign_negative ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF64IsSignPositive, [], [], [ arg ] ->
-        let arg = as_base_f F64 arg in
+        let arg = Typed.cast_f F64 arg in
         let+ ret = f64_is_sign_positive ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreF64IsSubnormal, [], [], [ arg ] ->
-        let arg = as_base_f F64 arg in
+        let arg = Typed.cast_f F64 arg in
         let+ ret = f64_is_subnormal ~arg in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | CoreHashBuildHasherHashOne, [ t_self; t ], [], [ self; x ] ->
-        let self = as_ptr self in
-        let+ ret = hash_one ~types:generics.types ~t_self ~t ~self ~x in
-        mk_int ret
+        let self = Typed.cast_ptr_f self in
+        hash_one ~types:generics.types ~t_self ~t ~self ~x
     | CoreOptionUnwrapFailed, [], [], [] ->
         let+ () = option_unwrap_failed () in
-        mk_tuple []
+        Typed.Adt.unit
     | CorePanickingAssertFailedInner, [], [], [ kind; left; right; args ] ->
-        let left = as_ptr left in
-        let right = as_ptr right in
+        let left = Typed.cast_ptr_f left in
+        let right = Typed.cast_ptr_f right in
         let+ () = assert_failed_inner ~kind ~left ~right ~args in
-        mk_tuple []
+        Typed.Adt.unit
     | CorePanickingPanic, [], [], [ expr ] ->
-        let expr = as_ptr expr in
+        let expr = Typed.cast_ptr_f expr in
         let+ () = panic ~expr in
-        mk_tuple []
+        Typed.Adt.unit
     | CorePanickingPanicFmt, [], [], [ fmt ] ->
         let+ () = panic_fmt ~fmt in
-        mk_tuple []
+        Typed.Adt.unit
     | CorePanickingPanicNounwindFmt, [], [], [ fmt; force_no_backtrace ] ->
         let force_no_backtrace =
-          Typed.BitVec.to_bool (as_base TBool force_no_backtrace)
+          Typed.BitVec.to_bool (Typed.cast_lit TBool force_no_backtrace)
         in
         let+ () = panic_nounwind_fmt ~fmt ~force_no_backtrace in
-        mk_tuple []
+        Typed.Adt.unit
     | CoreResultUnwrapFailed, [], [], [ msg; error ] ->
-        let msg = as_ptr msg in
-        let error = as_ptr error in
+        let msg = Typed.cast_ptr_f msg in
+        let error = Typed.cast_ptr_f error in
         let+ () = result_unwrap_failed ~msg ~error in
-        mk_tuple []
+        Typed.Adt.unit
     | StdIoStdioEprint, [], [], [ args ] ->
         let+ () = _eprint ~args in
-        mk_tuple []
+        Typed.Adt.unit
     | StdIoStdioPrint, [], [], [ args ] ->
         let+ () = _print ~args in
-        mk_tuple []
+        Typed.Adt.unit
     | StdIoStdioPrintTo, [ t ], [], [ args; global_s; label ] ->
-        let global_s = as_ptr global_s in
-        let label = as_ptr label in
+        let global_s = Typed.cast_ptr_f global_s in
+        let label = Typed.cast_ptr_f label in
         let+ () = print_to ~t ~args ~global_s ~label in
-        mk_tuple []
+        Typed.Adt.unit
     | StdIoStdioPrintToBufferIfCaptureUsed, [], [], [ args ] ->
         let+ ret = print_to_buffer_if_capture_used ~args in
-        mk_int (Typed.BitVec.of_bool ret)
+        Typed.BitVec.of_bool ret
     | StdPanickingBeginPanic, [ m ], [], [ msg ] ->
         let+ () = begin_panic ~m ~msg in
-        mk_tuple []
+        Typed.Adt.unit
     | _, tys, cs, args ->
         not_impl
           "Custom stub found but called with the wrong arguments; got:@.Types: \
@@ -299,6 +294,6 @@ module M (StateM : State.StateM.S) = struct
           tys
           Fmt.(list ~sep:comma Crate.pp_constant_expr)
           cs
-          Fmt.(list ~sep:comma Rust_val.pp)
+          Fmt.(list ~sep:comma Typed.ppa)
           args
 end
