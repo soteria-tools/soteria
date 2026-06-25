@@ -363,7 +363,7 @@ let consume_init ofs ty =
   with_bound_check ~mk_fixes:(mk_fix_typed ofs ty) bound (fun t ->
       let open Csymex.Syntax in
       let replace_node tree = Csymex.Result.ok (not_owned tree) in
-      let rebuild_parent = Tree.with_children in
+      let rebuild_parent = Tree.of_children in
       let** framed, tree =
         Tree.frame_range t ~replace_node ~rebuild_parent range
       in
@@ -379,7 +379,7 @@ let consume_uninit ofs len : (unit, _, _) SM.Result.t =
       let open Csymex.Syntax in
       let open Csymex.Result in
       let replace_node tree = ok (not_owned tree) in
-      let rebuild_parent = Tree.with_children in
+      let rebuild_parent = Tree.of_children in
       let** framed, tree =
         Tree.frame_range t ~replace_node ~rebuild_parent range
       in
