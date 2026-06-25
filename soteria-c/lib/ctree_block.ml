@@ -253,6 +253,12 @@ let mk_fix_any_s ofs len () =
   let fixes = mk_fix_any ofs len () in
   Csymex.return (log_fixes fixes)
 
+let mk_fix_uninit offset len () = [ lift_fixes ~offset ~len [ SUninit ] ]
+
+let mk_fix_uninit_s ofs len () =
+  let fixes = mk_fix_uninit ofs len () in
+  Csymex.return (log_fixes fixes)
+
 let decode ~ty ~ofs node =
   match node with
   | TB.Owned node -> MemVal.decode ~ty node
@@ -364,12 +370,12 @@ let consume_init ofs ty =
       let++ sval = decode ~ty ~ofs framed.node in
       ((sval :> T.cval Typed.t), tree))
 
-let consume_uninit ofs ty : (unit, _, _) SM.Result.t =
+let consume_uninit ofs len : (unit, _, _) SM.Result.t =
   let open SM.Result in
   let open SM.Syntax in
   let* t = SM.get_state () in
-  let*^ ((_, bound) as range) = range_of_low_and_type ofs ty in
-  with_bound_check ~mk_fixes:(mk_fix_typed ofs ty) bound (fun t ->
+  let ((_, bound) as range) = Range.of_low_and_size ofs len in
+  with_bound_check ~mk_fixes:(mk_fix_uninit_s ofs len) bound (fun t ->
       let open Csymex.Syntax in
       let open Csymex.Result in
       let replace_node tree = ok (not_owned tree) in

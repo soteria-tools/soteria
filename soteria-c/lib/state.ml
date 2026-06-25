@@ -247,7 +247,33 @@ let rec consume_aggregate' ptr (ty : Cerb_frontend.Ctype.ctype) =
       let++ v = consume_init' loc offset ty in
       Agv.Basic v
   | Array (_, _) -> SM.lift @@ Csymex.not_impl "consume_aggregate' for arrays"
-  | Struct _ -> SM.lift @@ Csymex.not_impl "consume_aggregate' for structs"
+  | Struct _ ->
+      let*^ members, _ =
+        Layout.get_struct_fields_ty ty
+        |> Csymex.of_opt_not_impl ~msg:"Members of struct"
+      in
+      let*^ layout =
+        Layout.layout_of ty |> Csymex.of_opt_not_impl ~msg:"Layout"
+      in
+      let rec aux members_ofs members values_acc =
+        match (members_ofs, members) with
+        | [], [] -> ok (List.rev values_acc)
+        | (Layout.Padding size, ofs) :: rest_ofs, members ->
+            let** () =
+              consume_uninit' loc (BV.usizei ofs +!!@ offset) (BV.usizei size)
+            in
+            aux rest_ofs members values_acc
+        | (Field _, ofs) :: rest_ofs, (_, (_, _, _, mem_ty)) :: rest_mems ->
+            let** v =
+              consume_aggregate'
+                (Typed.Ptr.mk loc (BV.usizei ofs +!!@ offset))
+                mem_ty
+            in
+            aux rest_ofs rest_mems (v :: values_acc)
+        | _ -> L.failwith "Struct field mismatch"
+      in
+      let++ r = aux layout.members_ofs members [] in
+      Agv.Struct r
   | Union _ -> SM.lift @@ Csymex.not_impl "consume_aggregate' for unions"
   | Void | Function (_, _, _) | FunctionNoParams _ | Atomic _ ->
       L.failwith "Cannot consume this type %a" Fmt_ail.pp_ty ty
