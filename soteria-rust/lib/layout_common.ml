@@ -36,9 +36,8 @@ module Fields_shape = struct
 
   type t =
     | Primitive  (** No fields present *)
-    | Arbitrary of Types.variant_id * T.sint Typed.t Array.t
-        (** Arbitrary field placement (structs, unions...), with the variant
-            (e.g. enums with a single inhabited variant) *)
+    | Arbitrary of T.sint Typed.t Array.t
+        (** Arbitrary field placement (structs, tuple, unions). *)
     | Enum of discriminator * (tagger * t) Array.t
         (** Enum fields: for each variant, a possible tag with [tagger], along
             with an array of field shapes for each variant (indexed by variant
@@ -51,10 +50,8 @@ module Fields_shape = struct
 
   let rec pp ft = function
     | Primitive -> Fmt.string ft "()"
-    | Arbitrary (var, arr) ->
-        Fmt.pf ft "{%a: %a}" Types.VariantId.pp_id var
-          Fmt.(braces @@ array ~sep:comma Typed.ppa)
-          arr
+    | Arbitrary arr ->
+        Fmt.pf ft "{%a}" Fmt.(braces @@ array ~sep:comma Typed.ppa) arr
     | Enum (discriminator, shapes) ->
         Fmt.pf ft "Enum (%a, %a)" pp_discriminator discriminator
           Fmt.(brackets @@ array ~sep:comma (pair ~sep:comma pp_tagger pp))
@@ -64,12 +61,12 @@ module Fields_shape = struct
   let offset_of f = function
     | Primitive -> L.failwith "This layout has no fields"
     | Enum _ -> L.failwith "Can't get fields of enum; use `shape_for_variant`"
-    | Arbitrary (_, arr) -> arr.(f)
+    | Arbitrary arr -> arr.(f)
     | Array { stride; _ } -> BV.usizei f *!!@ stride
 
   let shape_for_variant variant = function
     | Enum (_, shapes) -> snd shapes.(Types.VariantId.to_int variant)
-    | Arbitrary (v, _) as fs when Types.VariantId.equal_id v variant -> fs
+    | Arbitrary _ as fs when Types.VariantId.(equal_id zero variant) -> fs
     | s ->
         L.failwith "Shape %a has no variant %a" pp s Types.VariantId.pp_id
           variant
@@ -97,7 +94,7 @@ module Fields_shape = struct
   let rec iter_vars fields f : unit =
     match fields with
     | Primitive -> ()
-    | Arbitrary (_, fields) -> Array.iter (fun v -> Typed.iter_vars v f) fields
+    | Arbitrary fields -> Array.iter (fun v -> Typed.iter_vars v f) fields
     | Enum (discr, layouts) ->
         iter_vars_discriminator discr f;
         Array.iter

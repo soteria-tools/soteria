@@ -67,8 +67,7 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
   in
   match layout.fields with
   | Primitive -> Iter.singleton (ty, Usize.(0s))
-  | Array _ -> aux ?variant layout.fields ty
-  | Arbitrary (variant, _) -> aux ~variant layout.fields ty
+  | Array _ | Arbitrary _ -> aux ?variant layout.fields ty
   | Enum (_, variant_layouts) ->
       let variant = Option.get ~msg:"variant required for enum" variant in
       let _, fields = variant_layouts.(Types.VariantId.to_int variant) in
@@ -261,9 +260,9 @@ struct
     in
     let* layout = layout_of ty in
     match layout.fields with
-    | Arbitrary (vid, _) -> ok vid
     | Enum (discriminator, _) -> exec discriminator
-    | Array _ | Primitive -> L.failwith "Unexpected layout for enum"
+    | Arbitrary _ | Array _ | Primitive ->
+        L.failwith "Unexpected layout for enum"
 
   (** [decode ~meta ~offset ty] Parses a rust value of type [ty] at the given
       offset, using the provided metadata for DSTs, and returns the associated
@@ -318,16 +317,9 @@ struct
     | Array { is_ptr = false; _ }, _ ->
         let+ vs = iter (iter_fields ~meta layout ty) offset in
         mk_tuple vs
-    | Arbitrary (variant, _), _ -> (
+    | Arbitrary _, _ ->
         let+ fields = iter (iter_fields ~meta layout ty) offset in
-        match ty with
-        (* HACK: we don't want enums to be handled in arbitrary. *)
-        | TAdt adt when Crate.is_enum adt ->
-            let variants = Crate.as_enum adt in
-            let variant = Types.VariantId.nth variants variant in
-            let discr = BV.of_literal variant.discriminant in
-            mk_enum adt discr fields
-        | _ -> mk_tuple fields)
+        mk_tuple fields
     | Enum _, TAdt adt ->
         let variants = Crate.as_enum adt in
         let* variant = variant_of_enum ~offset ty in
@@ -840,7 +832,7 @@ let rec size_and_align_of_val ~load_vtable ~t ~meta =
         let** layout = Layout.layout_of t in
         let last_field_ofs =
           match layout.fields with
-          | Arbitrary (_, offsets) -> offsets.(Array.length offsets - 1)
+          | Arbitrary offsets -> offsets.(Array.length offsets - 1)
           | _ -> L.failwith "size_and_align_of_val: Unexpected layout for ADT"
         in
         let++ unsized_size, unsized_align =
