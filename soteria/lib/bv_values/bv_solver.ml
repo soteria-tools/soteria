@@ -174,12 +174,16 @@ struct
             [%l.info "Solver returned unknown"];
             Unknown)
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let pp (ft : Format.formatter) (solver : t) : unit =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) ft solver
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
 end
 
 module Make
@@ -493,12 +497,16 @@ struct
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let pp fmt solver =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) fmt solver
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
 end
 
 module Analysis (Typed : Typed_intf.Solver_value) = struct

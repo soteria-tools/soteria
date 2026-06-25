@@ -121,12 +121,16 @@ struct
             [%l.info "Solver returned unknown"];
             Unknown)
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
+
+  let pp fmt solver =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) fmt solver
 end
 
 module Make
@@ -458,12 +462,16 @@ struct
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
+
+  let pp fmt solver =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) fmt solver
 end
 
 module Z3 = Solvers.Z3.Make (Encoding)
