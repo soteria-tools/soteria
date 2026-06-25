@@ -1,6 +1,7 @@
 type t = Tag of int [@@ocaml.boxed]
 
 let[@inline] equal (Tag t1) (Tag t2) = Int.equal t1 t2
+let[@inline] compare (Tag t1) (Tag t2) = Int.compare t1 t2
 let pp fmt (Tag tag) = Fmt.pf fmt "‖%d‖" tag
 let show = Fmt.to_to_string pp
 let zero = Tag 0

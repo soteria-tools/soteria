@@ -1,4 +1,4 @@
-type t [@@deriving show, eq]
+type t [@@deriving show, eq, ord]
 
 val fresh_tag : unit -> t
 val zero : t
