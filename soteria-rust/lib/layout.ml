@@ -165,7 +165,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
          types, even if one is provided. This avoids inconsistent layouts. *)
       | [ (_triple, layout) ], _
         when (not (Config.get ()).polymorphic) || ty_is_monomorphic ty ->
-          translate_layout ty layout
+          translate_layout adt.kind ty layout
       | _ :: _ :: _, _ -> L.failwith "multiple layouts for the same ADT"
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
       | _, Union fields -> compute_union_layout ty (field_tys fields)
@@ -239,7 +239,7 @@ and translate_discriminator : Types.discriminator -> Fields_shape.discriminator
       let fallback = translate_discriminator fallback in
       Branch { offset; tag_ty; children; fallback }
 
-and translate_layout ty (layout : Types.layout) =
+and translate_layout adt_kind ty (layout : Types.layout) =
   let size = compute_size ty layout.size in
   let align = compute_align ty layout.align in
   let uninhabited = layout.uninhabited in
@@ -257,17 +257,20 @@ and translate_layout ty (layout : Types.layout) =
               | [ (ofs, value) ] -> Some (BV.usizei ofs, BV.of_scalar value)
               | _ :: _ :: _ -> L.failwith "unsupported: >1 tagger values"
             in
-            (tagger, Arbitrary (Types.VariantId.of_int i, ofs)))
+            (tagger, Arbitrary ofs))
       layout.variant_layouts
   in
+  let is_enum = match adt_kind with Enum _ -> true | _ -> false in
   let fields : Fields_shape.t =
     match (discriminator, variant_layouts) with
-    (* tag layouts only exist on enum layouts *)
-    | Some (Branch _ as d), _ -> Enum (d, Array.of_list variant_layouts)
     (* no variants/invalid, so this is uninhabited; we can use primitive *)
     | _, [] | Some Invalid, _ -> Primitive
-    (* there is only one inhabited (non-Primitive) variant *)
-    | Some (Known v), _ -> snd (Types.VariantId.nth variant_layouts v)
+    (* struct/union: there is only one inhabited variant *)
+    | Some (Known v), _ when not is_enum ->
+        snd (Types.VariantId.nth variant_layouts v)
+    (* enums *)
+    | Some ((Known _ | Branch _) as d), _ ->
+        Enum (d, Array.of_list variant_layouts)
     (* we didn't translate a discriminator; we hope it's a struct-like! *)
     | None, [ (_, v) ] -> v
     | None, _ -> L.failwith "no discriminator and >1 variant layouts?"
@@ -290,8 +293,7 @@ and compute_align ty align =
       layout_warning "Inferred align=1" ty;
       BV.usizeinz 1
 
-and compute_arbitrary_layout ?fst_size ?fst_align
-    ?(variant = Types.VariantId.zero) ty members =
+and compute_arbitrary_layout ?fst_size ?fst_align ty members =
   (* Note: here we manually calculate a layout, à la [repr(C)]. We should avoid doing this,
      and make it clearer when we do. *)
   (* Calculates the offsets, size and alignment for a tuple-like type with fields of
@@ -316,9 +318,7 @@ and compute_arbitrary_layout ?fst_size ?fst_align
   let++ () = assert_or_error (Typed.not overflowed) (`InvalidLayout ty) in
   let size = size_to_fit ~size ~align in
   let layout =
-    mk ~size ~align ~uninhabited
-      ~fields:(Arbitrary (variant, Array.of_list offsets))
-      ()
+    mk ~size ~align ~uninhabited ~fields:(Arbitrary (Array.of_list offsets)) ()
   in
   Fmt.kstr layout_warning "Computed an arbitrary layout:@.%a" pp layout ty;
   layout
@@ -360,7 +360,7 @@ and compute_enum_layout ty (variants : Types.variant list) =
           ~f:(fun (size, align, variants, uninhabited) v ->
             let++ l =
               compute_arbitrary_layout ty ~fst_size:tag.size
-                ~fst_align:tag.align ~variant:v.id (field_tys v.fields)
+                ~fst_align:tag.align (field_tys v.fields)
             in
             let tagger =
               if l.uninhabited then None
@@ -391,7 +391,7 @@ and compute_union_layout ty members =
           BV.max ~signed:false align member.align ))
   in
   let fields = Array.make (List.length members) (BV.usizei 0) in
-  mk ~size ~align ~fields:(Arbitrary (Types.VariantId.zero, fields)) ()
+  mk ~size ~align ~fields:(Arbitrary fields) ()
 
 and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
   match tref.kind with
