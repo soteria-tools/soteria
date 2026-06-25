@@ -22,6 +22,7 @@
    ppx_deriving_yojson
    ppx_subliner
    soteria.ppx
+   soteria-rust.ppx
    ppx_deriving_hash
    ppx_mixins))
  (instrumentation

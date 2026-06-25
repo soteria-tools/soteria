@@ -1,0 +1,21 @@
+(executable
+ (name standalone)
+ (modules standalone)
+ (libraries ppxlib ppx_typed_match))
+
+(cram
+ (deps
+  ./standalone.exe
+  ./test.sh
+  ./ty/prelude.ml
+  ./ty/simple.ml
+  ./ty/payload.ml
+  ./ty/nested.ml
+  ./ty/or_ok.ml
+  ./ty/multi.ml
+  ./ty/err_or.ml
+  ./ty/err_multi.ml
+  ./ty/err_scrutinee.ml
+  ./ty/err_unknown.ml
+  ./ty/err_ext_unknown.ml)
+ (applies_to :whole_subtree))
