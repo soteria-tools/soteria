@@ -259,44 +259,44 @@ module type Value_ext = sig
   type 'ty super_ty := 'ty ty
 
   (** Extension value leaves; appear in svalues through [Extension]. *)
-  type t [@@deriving eq, ord]
+  type 'ghost t [@@deriving eq, ord]
 
   (** Extension types; appear in svalue types through [TExtension]. *)
-  type ty [@@deriving eq, ord]
+  type 'ghost ty [@@deriving eq, ord]
 
-  type super_ty := ty super_ty
-  type 'g super_t := ('g, t, ty) super_t
+  type 'g super_ty := 'g ty super_ty
+  type 'g super_t := ('g, 'g t, 'g ty) super_t
 
-  val pp : _ super_t Fmt.t -> t Fmt.t
-  val pp_ty : ty Fmt.t
-  val iter_vars : (_ super_t -> unit) -> t -> unit
-  val hash : t -> int
-  val hash_ty : ty -> int
+  val pp : 'g super_t Fmt.t -> 'g t Fmt.t
+  val pp_ty : 'g ty Fmt.t
+  val iter_vars : ('g super_t -> unit) -> 'g t -> unit
+  val hash : 'g t -> int
+  val hash_ty : 'g ty -> int
 
   (** [mk ty x] is the svalue node-kind representing extension value [x] at type
       [ty] — typically [Extension x], but the extension may normalise to another
       kind. {{!Soteria.Bv_values.Svalue.Make}[Make]} hash-conses the result.
       Called when an svalue carrying an extension is rebuilt (e.g. after its
       children are evaluated). *)
-  val mk : super_ty -> t -> (_, t, ty) t_kind
+  val mk : 'g super_ty -> 'g t -> ('g, 'g t, 'g ty) t_kind
 
   (** [eval eval_super x] returns [x] with every enclosing svalue nested in it
       replaced by [eval_super] applied to it — the extension's contribution to
       the {{!Soteria.Bv_values.Eval}[Eval]} pass. *)
-  val eval : (_ super_t -> _ super_t) -> t -> t
+  val eval : ('g super_t -> 'g super_t) -> 'g t -> 'g t
 
   val apply_subst :
-    (missing_var:(Var.t -> super_ty -> _ super_t) ->
+    (missing_var:(Var.t -> 'g super_ty -> 'g super_t) ->
     'subst ->
-    _ super_t ->
-    _ super_t * 'subst) ->
-    missing_var:(Var.t -> super_ty -> _ super_t) ->
+    'g super_t ->
+    'g super_t * 'subst) ->
+    missing_var:(Var.t -> 'g super_ty -> 'g super_t) ->
     'subst ->
-    t ->
-    t * 'subst
+    'g t ->
+    'g t * 'subst
 
-  val encode_ty : (super_ty -> Smt.sexp) -> ty -> Smt.sexp
-  val encode_value : (_ super_t -> Smt.sexp) -> t -> Smt.sexp
+  val encode_ty : ('g super_ty -> Smt.sexp) -> 'g ty -> Smt.sexp
+  val encode_value : ('g super_t -> Smt.sexp) -> 'g t -> Smt.sexp
 end
 
 (** The empty extension: [t] and [ty] are uninhabited, so an svalue built with
@@ -305,19 +305,19 @@ end
     as soteria-c and soteria-rust) whose values need nothing beyond the built-in
     bit-vector / float / pointer grammar. *)
 module Dummy_ext : Value_ext = struct
-  type t = | [@@deriving eq, ord]
-  type ty = | [@@deriving eq, ord]
+  type 'ghost t = | [@@deriving eq, ord]
+  type 'ghost ty = | [@@deriving eq, ord]
 
-  let iter_vars _ (x : t) = match x with _ -> .
-  let hash (x : t) = match x with _ -> .
-  let hash_ty (x : ty) = match x with _ -> .
-  let pp _ _ (x : t) = match x with _ -> .
-  let pp_ty _ (x : ty) = match x with _ -> .
-  let mk _ (x : t) = match x with _ -> .
-  let eval _ (x : t) = match x with _ -> .
-  let apply_subst _ ~missing_var:_ _ (x : t) = match x with _ -> .
-  let encode_ty _ (x : ty) = match x with _ -> .
-  let encode_value _ (x : t) = match x with _ -> .
+  let iter_vars _ (x : _ t) = match x with _ -> .
+  let hash (x : _ t) = match x with _ -> .
+  let hash_ty (x : _ ty) = match x with _ -> .
+  let pp _ _ (x : _ t) = match x with _ -> .
+  let pp_ty _ (x : _ ty) = match x with _ -> .
+  let mk _ (x : _ t) = match x with _ -> .
+  let eval _ (x : _ t) = match x with _ -> .
+  let apply_subst _ ~missing_var:_ _ (x : _ t) = match x with _ -> .
+  let encode_ty _ (x : _ ty) = match x with _ -> .
+  let encode_value _ (x : _ t) = match x with _ -> .
 end
 
 (** Builds the untyped svalue layer for extension [V]: the value/type
@@ -346,15 +346,19 @@ module Make (V : Value_ext) () = struct
   (** The fresh, abstract ghost identifying this application of {!Make}. *)
   type ghost
 
+  let equal_ghost _ _ = true
+
   (* lift everything *)
-  type nonrec ty = V.ty ty
-  type nonrec t = (ghost, V.t, V.ty) t
-  type nonrec t_kind = (ghost, V.t, V.ty) t_kind
-  type nonrec t_node = (ghost, V.t, V.ty) t_node
+  type nonrec ty = ghost V.ty ty
+  type nonrec t = (ghost, ghost V.t, ghost V.ty) t
+  type nonrec t_kind = (ghost, ghost V.t, ghost V.ty) t_kind
+  type nonrec t_node = (ghost, ghost V.t, ghost V.ty) t_node
 
   let pp_ty = pp_ty V.pp_ty
-  let equal_ty = equal_ty V.equal_ty
-  let equal_t_node = equal_t_node (fun _ _ -> true) V.equal V.equal_ty
+  let equal_ty = equal_ty (V.equal_ty equal_ghost)
+
+  let equal_t_node =
+    equal_t_node equal_ghost (V.equal equal_ghost) (V.equal_ty equal_ghost)
 
   (* actual decls *)
 
