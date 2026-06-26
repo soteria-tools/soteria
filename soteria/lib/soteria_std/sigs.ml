@@ -4,6 +4,12 @@ module type Printable = sig
   val pp : Format.formatter -> t -> unit
 end
 
+module type Eq = sig
+  type t
+
+  val equal : t -> t -> bool
+end
+
 module type String_encodable = sig
   type t
 
