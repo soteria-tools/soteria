@@ -125,20 +125,24 @@ module Rust_ext :
 
   (* TODO: so derivable *)
   let hash = function
-    | Ptr (ptr, None) -> Hashtbl.hash (ptr.tag, 0, 0)
-    | Ptr (ptr, Some meta) -> Hashtbl.hash (ptr.tag, 1, meta.tag)
+    | Ptr (ptr, None) -> combine (combine ptr.tag 1) 0
+    | Ptr (ptr, Some meta) -> combine (combine ptr.tag 2) meta.tag
     | ThinPtr { ptr; tag; size; align } ->
-        Hashtbl.hash (ptr.tag, size.tag, align.tag, tag)
+        combine
+          (combine (combine (combine ptr.tag 3) size.tag) align.tag)
+          (Hashtbl.hash tag)
     | Enum (disc, vals) ->
-        Hashtbl.hash (disc, List.map (fun (v : _ sv) -> v.tag) vals)
-    | Tuple vals -> Hashtbl.hash (List.map (fun (v : _ sv) -> v.tag) vals)
+        List.fold_left
+          (fun acc (v : _ sv) -> combine acc v.tag)
+          (combine disc.tag 4) vals
+    | Tuple vals ->
+        List.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 5 vals
     | Union vs ->
-        Hashtbl.hash
-          (List.map
-             (fun ((v : _ sv), (ofs : _ sv), (size : _ sv)) ->
-               (v.tag, ofs.tag, size.tag))
-             vs)
-    | PolyVal x -> Hashtbl.hash x
+        List.fold_left
+          (fun acc ((v : _ sv), (ofs : _ sv), (size : _ sv)) ->
+            combine (combine (combine acc v.tag) ofs.tag) size.tag)
+          6 vs
+    | PolyVal x -> combine 7 (Types.TypeVarId.to_int x)
 
   (* TODO: re-apply the smart constructors here *)
   let mk _ty v : _ Sv.t_kind = Extension v
