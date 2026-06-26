@@ -351,9 +351,12 @@ let produce_init (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
 
 let produce_uninit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t)
     (tree : t option) : t option Csymex.t =
-  let open Csymex.Syntax in
   let range = Range.of_low_and_size low len in
   produce' produce_uninit range tree
+
+let produce_any low len tree =
+  let range = Range.of_low_and_size low len in
+  produce' produce_any range tree
 
 let consume_init ofs ty =
   let open SM.Result in
@@ -389,3 +392,21 @@ let consume_uninit ofs len : (unit, _, _) SM.Result.t =
       | Owned _ ->
           [%l.info "Consuming uninit but no uninit, logical failure"];
           error (`Lfail Typed.v_false))
+
+let consume_any ofs len : (unit, _, _) SM.Result.t =
+  let open SM.Result in
+  let open SM.Syntax in
+  let* t = SM.get_state () in
+  let ((_, bound) as range) = Range.of_low_and_size ofs len in
+  with_bound_check ~mk_fixes:(mk_fix_uninit_s ofs len) bound (fun t ->
+      let open Csymex.Syntax in
+      let open Csymex.Result in
+      let replace_node tree = ok (not_owned tree) in
+      let rebuild_parent = Tree.of_children in
+      let** framed, tree =
+        Tree.frame_range t ~replace_node ~rebuild_parent range
+      in
+      match framed.node with
+      (* consume_any can read literally anything *)
+      | Owned _ -> ok ((), tree)
+      | NotOwned _ -> miss_no_fix ~reason:"ctree_block consume any" ())

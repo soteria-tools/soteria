@@ -230,11 +230,17 @@ let produce_init' loc offset ty v =
 let produce_uninit' loc offset len =
   produce_tree_block (Ctree_block.produce_uninit offset len) loc
 
+let produce_any' loc offset len =
+  produce_tree_block (Ctree_block.produce_any offset len) loc
+
 let consume_init' loc offset ty =
   consume_tree_block (Ctree_block.consume_init offset ty) loc
 
 let consume_uninit' loc offset len =
   consume_tree_block (Ctree_block.consume_uninit offset len) loc
+
+let consume_any' loc offset len =
+  consume_tree_block (Ctree_block.consume_any offset len) loc
 
 let rec consume_aggregate' ptr (ty : Cerb_frontend.Ctype.ctype) =
   let open SM.Result in
