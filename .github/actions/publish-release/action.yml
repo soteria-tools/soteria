@@ -8,9 +8,9 @@ description: >-
 inputs:
   github-token:
     description: >-
-      Token for the gh CLI (release create/delete). Pass ${{ github.token }}.
-      Supplied as an input because composite actions do not inherit env set on
-      the calling step.
+      Token for the gh CLI (release create/delete). Pass the github.token
+      expression. Supplied as an input because composite actions do not inherit
+      env set on the calling step.
     required: true
   tag:
     description: Git tag for the release (e.g. nightly or v0.1.0).
