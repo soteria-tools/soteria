@@ -76,7 +76,7 @@ let transition =
    [root] in [access] O(total borrows) instead of O(live). Triggering on map
    size rather than tag count means small maps (e.g. a freshly allocated
    variable with few borrows) never pay the GC cost. *)
-let compact_threshold = 128
+let compact_threshold = 256
 let compact_map = Ptr_tag.WeakMap.filter_map_no_share (Fun.const Option.some)
 
 type t = {
@@ -105,23 +105,16 @@ let ub_state = fst @@ init ~initial_state:Disabled ()
 let[@inline] compact ({ tags; known_size; next_compact_at } as st : t) =
   if known_size < next_compact_at then st
   else (
-    Gc.minor ();
+    Gc.full_major ();
     let tags = compact_map tags in
     let known_size = Ptr_tag.WeakMap.cardinal tags in
-    if known_size < next_compact_at then
-      { tags; known_size; next_compact_at = compact_threshold }
-    else (
-      (* Tags survived minor GC — they are promoted; need a full cycle. *)
-      Gc.full_major ();
-      let tags = compact_map tags in
-      let known_size = Ptr_tag.WeakMap.cardinal tags in
-      (* If still large after a full GC all entries are genuinely live; back off
-         exponentially so we don't retry on every subsequent borrow. *)
-      let next_compact_at =
-        if known_size >= next_compact_at then known_size * 2
-        else compact_threshold
-      in
-      { tags; known_size; next_compact_at }))
+    (* If still large after a full GC all entries are genuinely live; back off
+       exponentially so we don't retry on every subsequent borrow. *)
+    let next_compact_at =
+      if known_size >= next_compact_at then known_size * 2
+      else compact_threshold
+    in
+    { tags; known_size; next_compact_at })
 
 let borrow ?protector parent ~state (st : t) =
   let tag = Ptr_tag.fresh_tag () in
