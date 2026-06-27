@@ -57,10 +57,6 @@ module type S = sig
     [> sptr_f ] v ret
 
   val alloc_ty : ?span:Meta.span_data -> Types.ty -> [> sptr_f ] v ret
-
-  val alloc_tys :
-    ?span:Meta.span_data -> Types.ty list -> [> sptr_f ] v list ret
-
   val free : [< sptr_f ] v -> unit ret
 
   val size_and_align_of_val :

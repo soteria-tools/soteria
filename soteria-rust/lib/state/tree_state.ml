@@ -803,26 +803,6 @@ module Make (Borrows : Tree_borrows.T) = struct
     let**^ layout = Layout.layout_of ty in
     alloc ?span layout.size layout.align
 
-  let alloc_tys ?span tys : ('a, Error.with_trace, syn list) Result.t =
-    let@ () = with_loc_err ~trace:"Allocation" () in
-    let**^ layouts = Rustsymex.Result.map_list tys ~f:Layout.layout_of in
-    let layouts = List.rev layouts in
-    with_heap
-      (Heap.allocs ~els:layouts ~fn:(fun layout loc ->
-           let open DecayMap.SM in
-           let open DecayMap.SM.Syntax in
-           (* make Tree_block *)
-           let { size; align; _ } : Layout.t = layout in
-           let* block, tag =
-             Freeable_block_with_meta.make ?span ~align ~size ()
-           in
-           (* create pointer *)
-           let* () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-           let ptr =
-             Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag ~align ~size
-           in
-           return (Typed.Ptr.mk_ptr_f ptr None, block)))
-
   let free (ptr : Typed.([< T.sptr_f ] t)) =
     [%l.debug "Executing Free with pointer %a" Typed.ppa ptr];
     let@ () = with_loc_err ~trace:"Freeing memory" () in
