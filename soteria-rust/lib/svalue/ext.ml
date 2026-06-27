@@ -130,7 +130,7 @@ module Rust_ext :
     | ThinPtr { ptr; tag; size; align } ->
         combine
           (combine (combine (combine ptr.tag 3) size.tag) align.tag)
-          (Hashtbl.hash tag)
+          (Option.fold ~none:(-1) ~some:Ptr_tag.hash tag)
     | Enum (disc, vals) ->
         List.fold_left
           (fun acc (v : _ sv) -> combine acc v.tag)
