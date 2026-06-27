@@ -672,7 +672,7 @@ miri,fail/tree_borrows/protector-write-lazy.rs,fail
 miri,fail/tree_borrows/repeated_foreign_read_lazy_conflicted.rs,fail
 miri,fail/tree_borrows/reserved/cell-protected-write.rs,fail
 miri,fail/tree_borrows/reserved/int-protected-write.rs,pass
-miri,fail/tree_borrows/return_invalid_mut.rs,fail
+miri,fail/tree_borrows/return_invalid_mut.rs,pass
 miri,fail/tree_borrows/strongly-protected.rs,fail
 miri,fail/tree_borrows/subtree_traversal_skipping_diagnostics.rs,pass
 miri,fail/tree_borrows/wildcard/cross_tree_from_main.rs,fail
