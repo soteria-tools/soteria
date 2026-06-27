@@ -9,6 +9,7 @@ module M (Symex : Symex.Base) = struct
 
     type t [@@deriving show]
 
+    (* FIXME: fresh should probably not be required by default anymore. *)
     val fresh : unit -> t Symex.t
   end
 
