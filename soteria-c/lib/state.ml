@@ -266,7 +266,7 @@ let rec consume_aggregate' ptr (ty : Cerb_frontend.Ctype.ctype) =
         | [], [] -> ok (List.rev values_acc)
         | (Layout.Padding size, ofs) :: rest_ofs, members ->
             let** () =
-              consume_uninit' loc (BV.usizei ofs +!!@ offset) (BV.usizei size)
+              consume_any' loc (BV.usizei ofs +!!@ offset) (BV.usizei size)
             in
             aux rest_ofs members values_acc
         | (Field _, ofs) :: rest_ofs, (_, (_, _, _, mem_ty)) :: rest_mems ->
