@@ -11,6 +11,9 @@ request.
 
 ## [Unreleased]
 
+
+## [0.1.0] - 2026-06-27
+
 This is our first release! We will be releasing regularly, under the `0.x` series.
 
 ### Added
@@ -18,3 +21,7 @@ This is our first release! We will be releasing regularly, under the `0.x` serie
 - Switched to [OCaml 5.5.0](https://ocaml.org/releases/5.5.0)! 
 - `soteria-c version` and `soteria-rust version` now print the release
   version.
+
+### Changed
+
+- Minor performance improvements in Soteria Rust.
