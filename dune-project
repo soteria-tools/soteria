@@ -61,9 +61,7 @@
   (qcheck-core :with-test)
   (qcheck-alcotest :with-test)
   (dune
-   (and
-    :build
-    (>= 3.14.0)))
+   (>= 3.23))
   (ppxlib
    (>= 0.38.0))
   (ppx_mixins
@@ -72,7 +70,8 @@
    (>= 0.5))
   (yojson
    (< 3.0))
-  unionFind
+  (unionFind
+   (>= 20220109))
   ppx_deriving_yojson
   ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
@@ -110,9 +109,7 @@
   (yojson
    (< 3.0))
   (dune
-   (and
-    :build
-    (>= 3.14.0)))
+   (>= 3.23))
   ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
@@ -143,7 +140,8 @@
   (ppx_mixins
    (>= 0.2.0))
   fmt
-  unionFind
+  (unionFind
+   (>= 20220109))
   charon
   name_matcher_parser
   ppx_deriving_hash
@@ -152,9 +150,7 @@
   (yojson
    (< 3.0))
   (dune
-   (and
-    :build
-    (>= 3.14.0)))
+   (>= 3.23))
   ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and

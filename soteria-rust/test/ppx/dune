@@ -4,6 +4,7 @@
  (libraries ppxlib ppx_typed_match))
 
 (cram
+ (package soteria-rust)
  (deps
   ./standalone.exe
   ./test.sh
