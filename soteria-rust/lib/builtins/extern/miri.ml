@@ -3,7 +3,7 @@
     See https://github.com/rust-lang/miri/blob/master/tests/utils/miri_extern.rs
 *)
 
-open Rust_val
+open Svalue
 open Typed.Infix
 open Typed.Syntax
 
@@ -28,21 +28,26 @@ module M (StateM : State.StateM.S) = struct
 
   let alloc_id args =
     match args with
-    | [ ptr ] -> ok (mk_int (Sptr.as_id (fst (as_ptr ptr))))
+    | [ ptr ] ->
+        let ptr = Typed.cast_ptr_f ptr in
+        let ptr = Typed.Ptr.ptr_of ptr in
+        ok (Typed.Ptr.as_id ptr)
     | _ -> not_impl "alloc_id: invalid arguments"
 
   let promise_alignement args =
     match args with
     | [ ptr; align ] ->
-        let align = Typed.cast @@ as_base_i Usize align in
-        let* addr = Sptr.decay (fst (as_ptr ptr)) in
+        let ptr = Typed.cast_ptr_f ptr in
+        let ptr = Typed.Ptr.ptr_of ptr in
+        let align = Typed.cast_nonzero @@ Typed.cast_i Usize align in
+        let* addr = Sptr.decay ptr in
         let+ () = assume [ (addr %@ align ==@ Usize.(0s)) ] in
-        mk_tuple []
+        Typed.Adt.unit
     | _ -> not_impl "miri_promise_symbolic_alignment: invalid arguments"
 
   let alloc args = Alloc.alloc ~zeroed:false args
   let dealloc args = Alloc.dealloc args
-  let nop _ = ok (mk_tuple [])
+  let nop _ = ok Typed.Adt.unit
 
   let[@inline] fn_to_stub = function
     | Nop -> nop

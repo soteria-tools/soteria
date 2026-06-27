@@ -1,4 +1,4 @@
-open Rust_val
+open Svalue
 open Common.Charon_util
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
@@ -39,25 +39,27 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let alloc_impl ~(fun_sig : Charon.Types.fun_sig) ~self:_ ~layout ~zeroed =
     let zeroed = (zeroed :> Typed.T.sbool Typed.t) in
     let size, align =
-      let size, align = as_tuple2 layout in
-      let size = as_base_i Usize size in
-      let align_enum = as_tuple1 align in
-      let align = discriminant_of align_enum in
+      let size, align = Typed.Adt.as_tuple2 (Typed.cast_tuple layout) in
+      let size = Typed.cast_i Usize size in
+      let align_enum =
+        Typed.cast_enum (Typed.Adt.as_tuple1 (Typed.cast_tuple align))
+      in
+      let align = Typed.Adt.discriminant_of align_enum in
       (size, Typed.cast_i Usize align)
     in
     let mk_res ptr len =
       let out_res = ty_as_adt fun_sig.output in
-      let ptr = mk_ptr ptr (Len len) in
-      let nonnull = mk_tuple [ ptr ] in
-      Checked.mk_enum out_res "Ok" [ nonnull ]
+      let ptr = Typed.Ptr.mk_ptr_f ptr (Some len) in
+      let nonnull = Typed.Adt.mk_tuple [ ptr ] in
+      Typed.Adt.Checked.mk_enum out_res "Ok" [ nonnull ]
     in
     if%sat size ==@ Usize.(0s) then
-      let dangling = Sptr.of_address align in
+      let dangling = Typed.Ptr.of_address align in
       ok (mk_res dangling Usize.(0s))
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
-      let+ ptr = Alloc.alloc ~zeroed [ mk_int size; mk_int align ] in
-      let ptr, _ = as_ptr ptr in
+      let+ ptr = Alloc.alloc ~zeroed [ size; align ] in
+      let ptr, _ = Typed.Ptr.split (Typed.cast_ptr_f ptr) in
       mk_res ptr size
 
   let handle_alloc_error ~layout:_ = do_panic ()
@@ -65,7 +67,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   (* ---- float helpers ---- *)
 
-  let float_is (fp : Svalue.FloatClass.t) =
+  let float_is (fp : Typed.FloatClass.t) =
     match fp with
     | Zero -> Typed.Float.is_zero
     | NaN -> Typed.Float.is_nan
@@ -137,8 +139,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let panic_nounwind_fmt ~fmt:_ ~force_no_backtrace:_ = do_panic ()
 
   let begin_panic ~m:_ ~msg =
-    match get_ty msg with
-    | `Ptr -> do_panic ~msg:(as_ptr msg) ()
+    match%ty msg with
+    | TExtension TFullPtr -> do_panic ~msg ()
     | _ -> do_panic ()
 
   (* ---- hashing ---- *)

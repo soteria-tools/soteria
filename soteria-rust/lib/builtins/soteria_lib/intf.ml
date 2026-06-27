@@ -4,22 +4,27 @@
 [@@@warning "-unused-open"]
 
 open Charon
+open Svalue
 open Common
-open Rust_val
 
 module M (StateM : State.StateM.S) = struct
   open StateM
 
   type 'a ret = ('a, unit) StateM.t
-  type fun_exec = Fun_kind.t -> rust_val list -> (rust_val, unit) StateM.t
+  type fun_exec = Fun_kind.t -> Typed.(T.any t) list -> Typed.(T.any t) ret
 
   module type S = sig
-    val kani_assert : args:rust_val list -> rust_val ret
-    val kani_assume : args:rust_val list -> rust_val ret
-    val kani_panic : args:rust_val list -> rust_val ret
-    val nondet_bytes : types:Types.ty list -> args:rust_val list -> rust_val ret
-    val soteria_assert : args:rust_val list -> rust_val ret
-    val soteria_assume : args:rust_val list -> rust_val ret
-    val soteria_panic : args:rust_val list -> rust_val ret
+    val kani_assert : args:Typed.(T.any t) list -> Typed.([> T.any ] t) ret
+    val kani_assume : args:Typed.(T.any t) list -> Typed.([> T.any ] t) ret
+    val kani_panic : args:Typed.(T.any t) list -> Typed.([> T.any ] t) ret
+
+    val nondet_bytes :
+      types:Types.ty list ->
+      args:Typed.(T.any t) list ->
+      Typed.([> T.any ] t) ret
+
+    val soteria_assert : args:Typed.(T.any t) list -> Typed.([> T.any ] t) ret
+    val soteria_assume : args:Typed.(T.any t) list -> Typed.([> T.any ] t) ret
+    val soteria_panic : args:Typed.(T.any t) list -> Typed.([> T.any ] t) ret
   end
 end

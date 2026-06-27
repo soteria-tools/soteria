@@ -18,7 +18,7 @@ module StatKeys = struct
     register_int_printer ~name:"Allocations" allocs (fun _ -> Fmt.int)
 end
 
-module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver (Typed))
+module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver (Svalue.Typed))
 
 module TypeMap = Map.Make (struct
   type t = Charon.Types.ty [@@deriving show]
@@ -137,7 +137,7 @@ module Poly = struct
         { st with generic_layouts = TypeMap.add ty layout generic_layouts })
 end
 
-let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
+let match_on (elements : 'a list) ~(constr : 'a -> Svalue.Typed.(T.sbool t)) :
     'a option t =
   let open Syntax in
   let rec aux = function

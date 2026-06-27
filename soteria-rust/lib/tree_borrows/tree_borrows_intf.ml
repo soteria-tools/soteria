@@ -1,4 +1,5 @@
 open Common
+module Ptr_tag = Svalue.Ptr_tag
 
 module type Rust_symex = Soteria.Symex.Base with module Value = Rustsymex.Value
 

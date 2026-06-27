@@ -2,7 +2,7 @@ open Compo_res
 open Rustsymex
 open Charon
 open Common
-open Rust_val
+open Svalue
 
 module Compo_resT2 (I : sig
   type fix
@@ -40,16 +40,19 @@ struct
 end
 
 module type S = sig
+  open Typed.T
+
   type syn
   type st
   type ('a, 'env) t
   type ('a, 'env) monad := ('a, 'env) t
+  type 'a v := 'a Typed.t
 
   val ok : 'a -> ('a, 'env) t
   val error : Error.t -> ('a, 'env) t
   val error_raw : Error.with_trace -> ('a, 'env) t
-  val assert_ : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
-  val assert_not : [< Typed.T.sbool ] Typed.t -> Error.t -> (unit, 'env) t
+  val assert_ : [< sbool ] v -> Error.t -> (unit, 'env) t
+  val assert_not : [< sbool ] v -> Error.t -> (unit, 'env) t
   val miss : syn list list -> ('a, 'env) t
   val vanish : unit -> ('a, 'env) t
 
@@ -77,7 +80,7 @@ module type S = sig
     'a option ->
     ('a, 'env) t
 
-  val assume : Typed.T.sbool Typed.t list -> (unit, 'env) t
+  val assume : sbool v list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
 
   val with_alloc_kind :
@@ -132,16 +135,19 @@ module type S = sig
     val offset :
       ?check_signed:bool ->
       ?ty:Charon.Types.ty ->
-      [< Typed.T.sint ] Typed.t ->
+      [< sint ] v ->
       t ->
       (t, 'env) monad
 
-    val check_aligned : Rust_val.full_ptr -> Types.ty -> (unit, 'env) monad
-    val check_non_dangling : Rust_val.full_ptr -> Types.ty -> (unit, 'env) monad
-    val check_non_dangling_untyped : t -> Typed.(T.sint t) -> (unit, 'env) monad
-    val distance : t -> t -> (Typed.T.sint Typed.t, 'env) monad
-    val decay : t -> (Typed.T.sint Typed.t, 'env) monad
-    val expose : t -> (Typed.T.sint Typed.t, 'env) monad
+    val check_aligned : [< sptr_f ] v -> Types.ty -> (unit, 'env) monad
+    val check_non_dangling : [< sptr_f ] v -> Types.ty -> (unit, 'env) monad
+
+    val check_non_dangling_untyped :
+      [< sptr_t ] v -> sint v -> (unit, 'env) monad
+
+    val distance : t -> t -> (sint v, 'env) monad
+    val decay : t -> (sint v, 'env) monad
+    val expose : t -> (sint v, 'env) monad
     val dangling_if_zst : Types.ty -> (t option, 'env) monad
   end
 
@@ -149,14 +155,11 @@ module type S = sig
     include module type of Layout
 
     val layout_of : Types.ty -> (Layout.t, 'env) monad
-    val size_of : Types.ty -> ([> Typed.T.sint ] Typed.t, 'env) monad
-    val align_of : Types.ty -> ([> Typed.T.nonzero ] Typed.t, 'env) monad
-    val is_zst : Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
-    val is_1zst : Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
-
-    val is_abi_compatible :
-      Types.ty -> Types.ty -> ([> Typed.T.sbool ] Typed.t, 'env) monad
-
+    val size_of : Types.ty -> ([> sint ] v, 'env) monad
+    val align_of : Types.ty -> ([> nonzero ] v, 'env) monad
+    val is_zst : Types.ty -> ([> sbool ] v, 'env) monad
+    val is_1zst : Types.ty -> ([> sbool ] v, 'env) monad
+    val is_abi_compatible : Types.ty -> Types.ty -> ([> sbool ] v, 'env) monad
     val unsize_path : Types.ty -> (int list option, 'env) monad
   end
 
@@ -164,90 +167,94 @@ module type S = sig
     include module type of Value_codec
 
     val encode :
-      offset:Typed.T.sint Typed.t ->
-      Rust_val.t ->
+      offset:sint v ->
+      any v ->
       Types.ty ->
-      (Typed.(Rust_val.t * T.sint t * T.nonzero t) Iter.t, 'env) monad
+      ((any v * sint v * nonzero v) Iter.t, 'env) monad
 
     val cast_literal :
       from_ty:Values.literal_type ->
       to_ty:Values.literal_type ->
-      [< Typed.T.cval ] Typed.t ->
-      Rust_val.t
+      [< sint | sfloat ] v ->
+      [> sint | sfloat ] v
 
-    val nondet_valid : Types.ty -> (Rust_val.t, 'env) monad
+    val nondet_valid : Types.ty -> (any v, 'env) monad
 
     val ref_tys_in :
-      f:('acc -> Types.ty -> full_ptr -> (full_ptr * 'acc, 'env) monad) ->
+      f:
+        ('acc ->
+        Types.ty ->
+        [< sptr_f ] v ->
+        ([> sptr_f ] v * 'acc, 'env) monad) ->
       init:'acc ->
       Types.ty ->
-      Rust_val.t ->
-      (Rust_val.t * 'acc, 'env) monad
+      any v ->
+      (any v * 'acc, 'env) monad
   end
 
   module State : sig
     val empty : st
 
     val load :
-      ?ignore_borrow:bool -> full_ptr -> Types.ty -> (Rust_val.t, 'env) t
+      ?ignore_borrow:bool -> [< sptr_f ] v -> Types.ty -> ([> any ] v, 'env) t
 
-    val load_discriminant : full_ptr -> Types.ty -> (Rust_val.t, 'env) t
-    val store : full_ptr -> Types.ty -> Rust_val.t -> (unit, 'env) t
-    val zeros : full_ptr -> Typed.T.sint Typed.t -> (unit, 'env) t
-    val alloc_ty : ?span:Meta.span_data -> Types.ty -> (full_ptr, 'env) t
+    val load_discriminant : [< sptr_f ] v -> Types.ty -> ([> sint ] v, 'env) t
+    val store : [< sptr_f ] v -> Types.ty -> [< any ] v -> (unit, 'env) t
+    val zeros : [< sptr_f ] v -> sint v -> (unit, 'env) t
+    val alloc_ty : ?span:Meta.span_data -> Types.ty -> ([> sptr_f ] v, 'env) t
 
     val alloc_tys :
-      ?span:Meta.span_data -> Types.ty list -> (full_ptr list, 'env) t
+      ?span:Meta.span_data -> Types.ty list -> ([> sptr_f ] v list, 'env) t
 
     val alloc_untyped :
       ?span:Meta.span_data ->
       zeroed:bool ->
-      size:Typed.T.sint Typed.t ->
-      align:Typed.T.nonzero Typed.t ->
+      size:sint v ->
+      align:nonzero v ->
       unit ->
-      (full_ptr, 'env) t
+      ([> sptr_f ] v, 'env) t
 
     val copy_nonoverlapping :
-      src:full_ptr ->
-      dst:full_ptr ->
-      size:Typed.T.sint Typed.t ->
-      (unit, 'env) t
+      src:[< sptr_f ] v -> dst:[< sptr_f ] v -> size:sint v -> (unit, 'env) t
 
     val transmute :
-      from:Types.ty -> to_:Types.ty -> Rust_val.t -> (Rust_val.t, 'env) t
+      from:Types.ty -> to_:Types.ty -> [< any ] v -> ([> any ] v, 'env) t
 
     val transmute_raw :
       to_:Types.ty ->
-      Typed.(rust_val * T.sint t * T.nonzero t) list ->
-      (rust_val, 'env) t
+      ([< any ] v * [< sint ] v * [< nonzero ] v) list ->
+      ([> any ] v, 'env) t
 
-    val uninit : full_ptr -> Types.ty -> (unit, 'env) t
-    val free : full_ptr -> (unit, 'env) t
-    val borrow : ?protect:bool -> full_ptr -> Types.ty -> (full_ptr, 'env) t
-    val unprotect : full_ptr -> Types.ty -> (unit, 'env) t
-    val with_exposed : [< Typed.T.sint ] Typed.t -> (full_ptr, 'env) t
-    val tb_load : full_ptr -> Types.ty -> (unit, 'env) t
-    val load_global : Types.global_decl_id -> (full_ptr option, 'env) t
-    val store_global : Types.global_decl_id -> full_ptr -> (unit, 'env) t
-    val load_str_global : string -> (full_ptr option, 'env) t
-    val store_str_global : string -> full_ptr -> (unit, 'env) t
-    val declare_fn : Fun_kind.t -> (full_ptr, 'env) t
-    val lookup_fn : full_ptr -> (Fun_kind.t, 'env) t
+    val uninit : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
+    val free : [< sptr_f ] v -> (unit, 'env) t
+
+    val borrow :
+      ?protect:bool -> [< sptr_f ] v -> Types.ty -> ([> sptr_f ] v, 'env) t
+
+    val unprotect : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
+    val with_exposed : [< sint ] v -> ([> sptr_f ] v, 'env) t
+    val tb_load : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
+    val load_global : Types.global_decl_id -> ([> sptr_f ] v option, 'env) t
+    val store_global : Types.global_decl_id -> [< sptr_f ] v -> (unit, 'env) t
+    val load_str_global : string -> ([> sptr_f ] v option, 'env) t
+    val store_str_global : string -> [< sptr_f ] v -> (unit, 'env) t
+    val declare_fn : Fun_kind.t -> ([> sptr_f ] v, 'env) t
+    val lookup_fn : [< sptr_f ] v -> (Fun_kind.t, 'env) t
 
     val lookup_const_generic :
-      Types.const_generic_var_id -> Types.ty -> (Rust_val.t, 'env) t
+      Types.const_generic_var_id -> Types.ty -> ([> any ] v, 'env) t
 
     val register_thread_exit : (unit -> (unit, unit) t) -> (unit, 'env) t
     val run_thread_exits : unit -> (unit, 'env) t
     val add_error : Error.with_trace -> (unit, 'env) t
     val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
-    val fake_read : full_ptr -> Types.ty -> (unit, 'env) t
+    val fake_read : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
 
     val size_and_align_of_val :
       Types.ty ->
-      Rust_val.meta ->
-      (Typed.T.sint Typed.t * Typed.T.nonzero Typed.t, 'env) t
+      [< ptr_meta ] v option ->
+      ([> sint ] v * [> nonzero ] v, 'env) t
   end
 
   module Syntax : sig
@@ -260,7 +267,7 @@ module type S = sig
       val branch_on :
         ?left_branch_name:string ->
         ?right_branch_name:string ->
-        Typed.T.sbool Typed.t ->
+        sbool v ->
         then_:(unit -> ('a, 'env) t) ->
         else_:(unit -> ('a, 'env) t) ->
         ('a, 'env) t
@@ -268,7 +275,7 @@ module type S = sig
       val branch_on_take_one :
         ?left_branch_name:string ->
         ?right_branch_name:string ->
-        Typed.T.sbool Typed.t ->
+        sbool v ->
         then_:(unit -> ('a, 'env) t) ->
         else_:(unit -> ('a, 'env) t) ->
         ('a, 'env) t
@@ -276,7 +283,7 @@ module type S = sig
       val if_sure :
         ?left_branch_name:string ->
         ?right_branch_name:string ->
-        Typed.T.sbool Typed.t ->
+        sbool v ->
         then_:(unit -> ('a, 'env) t) ->
         else_:(unit -> ('a, 'env) t) ->
         ('a, 'env) t
@@ -301,10 +308,7 @@ module type S = sig
 end
 
 module Make (State : State_intf.S) :
-  S
-    with type st = State.t option
-     and type syn = State.syn
-     and type Sptr.t = State.Sptr.t = struct
+  S with type st = State.t option and type syn = State.syn = struct
   (* utilities *)
 
   type st = State.t option
@@ -393,7 +397,8 @@ module Make (State : State_intf.S) :
     let+ res, _ = f env in
     (res, old_env)
 
-  let[@inline] with_pointers_sym (f : 'a Sptr.DecayMap.SM.t) : ('a, 'env) t =
+  let[@inline] with_pointers_sym (f : 'a State.Sptr.DecayMap.SM.t) :
+      ('a, 'env) t =
     ESM.lift @@ State.SM.map Compo_res.ok @@ State.with_pointers_sym f
 
   let[@inline] lift_symex (s : 'a Rustsymex.t) : ('a, 'env) t =
@@ -495,9 +500,13 @@ module Make (State : State_intf.S) :
     (* We painfully lift [Layout.ref_tys_in] to make it nicer to use without
        having to re-define. *)
     let ref_tys_in
-        ~(f : 'acc -> Types.ty -> full_ptr -> (full_ptr * 'acc, 'env) monad)
-        ~(init : 'acc) (ty : Types.ty) (v : Rust_val.t) :
-        (Rust_val.t * 'acc, 'env) monad =
+        ~(f :
+           'acc ->
+           Types.ty ->
+           Typed.([< T.sptr_f ] t) ->
+           (Typed.([> T.sptr_f ] t) * 'acc, 'env) monad) ~(init : 'acc)
+        (ty : Types.ty) (v : Typed.([< T.any ] t)) :
+        (Typed.([< T.any ] t) * 'acc, 'env) monad =
      fun env state ->
       let open Rustsymex.Syntax in
       (* The inner function operates in Rustsymex.Result.t, carrying (acc, env,
