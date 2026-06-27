@@ -354,8 +354,13 @@ struct
             else
               let others = fun () -> Seq.Cons (slot, others) in
               aux_checked others rest
-        | Seq.Cons ({ value = Dirty _; _ }, rest) ->
-            (* A dirty checked variable can be ignored *)
+        | Seq.Cons ({ value = Dirty vars; _ }, rest) ->
+            let vars = Fun.flip Var.Set.iter vars in
+            if relevant vars then
+              (* Variables that are together in a Dirty slot might indicate a
+                 relationship between the variables. We need to consider them
+                 connected. *)
+              add_vars vars;
             aux_checked others rest
       in
       let rec aux seq =
