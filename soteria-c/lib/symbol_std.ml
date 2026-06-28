@@ -13,7 +13,7 @@ module SELF = struct
   let pp ft (Symbol (_, n, sd)) =
     let pp_id = Soteria.Logs.Printers.pp_unstable ~name:"id" Fmt.int in
     match sd with
-    | SD_Id str | SD_ObjectAddress str | SD_FunArgValue str ->
+    | SD_Id str | SD_ObjectAddress str | SD_FunArgValue str | SD_CN_Id str ->
         Fmt.pf ft "%s_%a" str pp_id n
     | _ -> Fmt.pf ft "a_%a" pp_id n
 
@@ -22,9 +22,13 @@ end
 
 include SELF
 
-let pp_sym_hum ft sym =
+let pp_hum ft sym =
   match sym with
-  | Cerb_frontend.Symbol.Symbol (_digest, _i, SD_Id id) -> Fmt.string ft id
+  | Cerb_frontend.Symbol.Symbol
+      ( _digest,
+        _i,
+        (SD_Id id | SD_ObjectAddress id | SD_FunArgValue id | SD_CN_Id id) ) ->
+      Fmt.string ft id
   | _ -> pp ft sym
 
 module Set = Set.Make (SELF)

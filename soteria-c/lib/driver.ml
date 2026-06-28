@@ -430,7 +430,7 @@ let generate_summaries ~functions_to_analyse prog =
     already_signaled := remaining_to_signal @ !already_signaled;
     let@ error, call_trace = list_iter remaining_to_signal in
     found_bugs := true;
-    let fid_str = Fmt.to_to_string Ail_helpers.pp_sym_hum fid in
+    let fid_str = Fmt.to_to_string Ail_helpers.pp_hum fid in
     Error.Diagnostic.print_diagnostic ~fid:fid_str ~call_trace ~error;
     (* Collect diagnostic for JSON report *)
     let diag_json = Error.Diagnostic.to_json ~fid:fid_str ~call_trace ~error in
