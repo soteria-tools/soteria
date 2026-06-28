@@ -20,7 +20,7 @@ let t_ptr, mk_ptr, get_loc, get_ofs, init_commands =
     [ cmd ] )
 
 let sort_of_ty : ty -> sexp = function TBool -> t_bool | TInt -> t_int
-let memo_encode_value_tbl : sexp Hashtbl.Hint.t = Hashtbl.Hint.create 1023
+let memo_encode_value_tbl : sexp Svalue.Hashtbl.t = Svalue.Hashtbl.create 1023
 let smt_of_unop : Svalue.Unop.t -> sexp -> sexp = function Not -> bool_not
 
 let smt_of_binop : Svalue.Binop.t -> sexp -> sexp -> sexp = function
@@ -55,11 +55,11 @@ let rec encode_value (v : Svalue.t) =
       distinct vs
 
 and encode_value_memo v =
-  match Hashtbl.Hint.find_opt memo_encode_value_tbl v.Hc.tag with
+  match Svalue.Hashtbl.find_opt memo_encode_value_tbl v with
   | Some k -> k
   | None ->
       let k = encode_value v in
-      Hashtbl.Hint.add memo_encode_value_tbl v.Hc.tag k;
+      Svalue.Hashtbl.add memo_encode_value_tbl v k;
       k
 
 let encode_value (v : Svalue.t) =

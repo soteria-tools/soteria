@@ -150,6 +150,13 @@ module Hcons = Hc.Make (struct
     | Ite (c, t, e) -> Hashtbl.hash (c.tag, t.tag, e.tag, hty)
 end)
 
+module Hashtbl = Hashtbl.Make (struct
+  type nonrec t = t
+
+  let equal = equal
+  let hash = hash
+end)
+
 let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
 let mk_var v ty = Var v <| ty
 
