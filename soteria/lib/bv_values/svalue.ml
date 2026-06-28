@@ -203,6 +203,17 @@ type 'ty ty =
   | TExtension of 'ty
 [@@deriving eq, show { with_path = false }, ord]
 
+let[@inline] hash_combine h x = (h * 65599) + x
+
+let rec hash_ty hash_ext = function
+  | TBool -> 1
+  | TFloat p -> hash_combine 2 (FloatPrecision.size p)
+  | TLoc n -> hash_combine 3 n
+  | TPointer n -> hash_combine 4 n
+  | TSeq ty -> hash_combine 5 (hash_ty hash_ext ty)
+  | TBitVector n -> hash_combine 6 n
+  | TExtension e -> hash_combine 7 (hash_ext e)
+
 let pp_hash_consed pp_node ft t = pp_node ft t.node
 let equal_hash_consed _ t1 t2 = Int.equal t1.tag t2.tag
 let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
@@ -472,18 +483,8 @@ module Make (V : Value_ext) () = struct
     type t = t_node
 
     let equal = equal_t_node
-
-    (* Allocation-free structural hash *)
-    let[@inline] combine h x = (h * 65599) + x
-
-    let rec hash_ty = function
-      | TBool -> 1
-      | TFloat p -> combine 2 (FloatPrecision.size p)
-      | TLoc n -> combine 3 n
-      | TPointer n -> combine 4 n
-      | TSeq ty -> combine 5 (hash_ty ty)
-      | TBitVector n -> combine 6 n
-      | TExtension e -> combine 7 (V.hash_ty e)
+    let combine = hash_combine
+    let hash_ty ty = hash_ty V.hash_ty ty
 
     let hash { kind; ty } =
       let h = hash_ty ty in

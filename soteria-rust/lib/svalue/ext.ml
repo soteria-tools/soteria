@@ -114,11 +114,11 @@ module Rust_ext :
   (* Allocation-free structural hash *)
   let[@inline] combine h x = (h * 65599) + x
 
-  let hash_ty : 'ghost ty -> int = function
+  let rec hash_ty : 'ghost ty -> int = function
     | TEnum ty -> combine 0 (Hashtbl.hash ty)
     | TUnion ty -> combine 1 (Hashtbl.hash ty)
     | TTuple tys ->
-        List.fold_left (fun acc ty -> combine acc (Hashtbl.hash ty)) 2 tys
+        List.fold_left (fun acc ty -> combine acc (Sv.hash_ty hash_ty ty)) 2 tys
     | TThinPtr -> 3
     | TFullPtr -> 4
     | TPolyType -> 5
