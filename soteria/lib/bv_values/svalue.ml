@@ -514,6 +514,13 @@ module Make (V : Value_ext) () = struct
       | Extension e -> combine (combine h 12) (V.hash e)
   end)
 
+  module Hashtbl = Hashtbl.Make (struct
+    type nonrec t = t
+
+    let equal = equal
+    let hash = hash
+  end)
+
   let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
   let mk_var v ty = Var v <| ty
 

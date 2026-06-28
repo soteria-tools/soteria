@@ -407,8 +407,8 @@ struct
     if not (Var.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
 
-  let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
-    Hashtbl.Hint.create 1023
+  let memo_sat_check_tbl : Symex.Solver_result.t Svalue.Hashtbl.t =
+    Svalue.Hashtbl.create 1023
 
   let trivial_model_works solver to_check var_tys =
     let exception No_model in
@@ -476,11 +476,11 @@ struct
 
   let check_sat_raw_memo solver to_check =
     let to_check = Typed.untyped to_check in
-    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
+    match Svalue.Hashtbl.find_opt memo_sat_check_tbl to_check with
     | Some result -> result
     | None ->
         let result = check_sat_raw solver to_check in
-        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
+        Svalue.Hashtbl.add memo_sat_check_tbl to_check result;
         result
 
   let sat solver =
