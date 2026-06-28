@@ -48,6 +48,10 @@ val subseteq : 'a t -> 'a t -> bool
 (** Test whether two sets are equal. *)
 val equal : 'a t -> 'a t -> bool
 
+(** [inter s1 s2] returns a new set containing the elements present in both [s1]
+    and [s2]. *)
+val inter : 'a t -> 'a t -> 'a t
+
 (** Pretty-printer for the set. *)
 val pp : (Format.formatter -> 'a -> unit) -> Format.formatter -> 'a t -> unit
 
@@ -100,6 +104,10 @@ module type S = sig
 
   (** Test whether two sets are equal. *)
   val equal : t -> t -> bool
+
+  (** [inter s1 s2] returns a new set containing the elements present in both
+      [s1] and [s2]. *)
+  val inter : t -> t -> t
 
   (** Pretty-printer for the set. *)
   val pp : Format.formatter -> t -> unit

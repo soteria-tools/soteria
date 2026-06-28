@@ -30,6 +30,14 @@ let copy tbl = Hashtbl.copy tbl
 let subseteq lset rset = to_seq lset |> Seq.for_all (fun x -> mem rset x)
 let equal lset rset = cardinal lset = cardinal rset && subseteq lset rset
 
+let inter lset rset =
+  let small, large =
+    if cardinal lset <= cardinal rset then (lset, rset) else (rset, lset)
+  in
+  let tbl = with_capacity (cardinal small) in
+  iter (fun x -> if mem large x then add tbl x) small;
+  tbl
+
 let pp pp_elt : Format.formatter -> 'a t -> unit =
   Fmt.braces @@ Fmt.iter ~sep:Fmt.comma iter pp_elt
 
@@ -54,6 +62,7 @@ module type S = sig
   val copy : t -> t
   val subseteq : t -> t -> bool
   val equal : t -> t -> bool
+  val inter : t -> t -> t
   val pp : Format.formatter -> t -> unit
 end
 
@@ -91,6 +100,15 @@ module Make (Elt : PrintableHashedType) : S with type elt = Elt.t = struct
   let copy tbl = Hashtbl.copy tbl
   let subseteq lset rset = to_seq lset |> Seq.for_all (fun x -> mem rset x)
   let equal lset rset = cardinal lset = cardinal rset && subseteq lset rset
+
+  let inter lset rset =
+    let small, large =
+      if cardinal lset <= cardinal rset then (lset, rset) else (rset, lset)
+    in
+    let tbl = with_capacity (cardinal small) in
+    iter (fun x -> if mem large x then add tbl x) small;
+    tbl
+
   let pp = Fmt.braces @@ Fmt.iter ~sep:Fmt.comma iter Elt.pp
 end
 
