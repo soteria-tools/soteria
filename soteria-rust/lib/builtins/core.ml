@@ -209,7 +209,8 @@ module M (StateM : State.StateM.S) = struct
     in
     let+ str_data = State.load ptr str_ty in
     Typed.Adt.as_tuple @@ Typed.cast_tuple str_data
-    |> (Monad.OptionM.all @@ fun b -> Typed.BitVec.to_z @@ Typed.cast_i U8 b)
+    |> ( Monad.OptionM.map_list @@ fun b ->
+         Typed.BitVec.to_z @@ Typed.cast_i U8 b )
     |> Option.map (fun cs ->
         let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
         let str = String.of_seq @@ List.to_seq cs in

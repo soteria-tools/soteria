@@ -147,13 +147,15 @@ module type S = sig
   val iter_iter :
     'elem Iter.t -> f:('elem -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
 
+  val map_m :
+    (module M : Sigs.Foldable) ->
+    'elem M.t -> f:('elem -> ('a, 'b, 'c) t) -> ('a list, 'b, 'c) t
+
   val map_list :
     'elem list -> f:('elem -> ('a, 'b, 'c) t) -> ('a list, 'b, 'c) t
 
   val map_iter :
     'elem Iter.t -> f:('elem -> ('a, 'b, 'c) t) -> ('a list, 'b, 'c) t
-
-  val all : ('a -> ('b, 'c, 'd) t) -> 'a list -> ('b list, 'c, 'd) t
 end
 
 (** {2 Functors} *)
@@ -174,13 +176,11 @@ module Extend (M : Base) :
   let[@inline] iter_list xs ~f = iter (module List) xs ~f
   let[@inline] iter_iter xs ~f = iter (module Iter) xs ~f
 
-  let[@inline] map_list xs ~f =
-    Monad.mapM (module List) ~return:ok ~bind ~map ~f xs
+  let[@inline] map_m (module M : Sigs.Foldable) xs ~f =
+    Monad.mapM (module M) ~return:ok ~bind ~map ~f xs
 
-  let[@inline] map_iter xs ~f =
-    Monad.mapM (module Iter) ~return:ok ~bind ~map ~f xs
-
-  let[@inline] all f xs = Monad.all ~return:ok ~bind f xs
+  let[@inline] map_list xs ~f = map_m (module List) ~f xs
+  let[@inline] map_iter xs ~f = map_m (module Iter) ~f xs
 end
 
 module Make_syntax (M : Base) :
