@@ -170,7 +170,7 @@ module Make (StateImpl : State.S) = struct
     | CArray cs ->
         let+ vals = map_list cs ~f:resolve_constant in
         let elem_ty = Layout.index_ty const.ty in
-        Typed.Adt.mk_array elem_ty vals
+        Typed.Adt.mk_array elem_ty (Iarray.of_list vals)
     | CAdt (None, fields) ->
         let+ vals = map_list fields ~f:resolve_constant in
         Typed.Adt.mk_tuple vals
@@ -934,7 +934,7 @@ module Make (StateImpl : State.S) = struct
     (* Array aggregate *)
     | Aggregate (AggregatedArray (ty, _size), operands) ->
         let+ values = eval_operand_list operands in
-        Typed.Adt.mk_array ty values
+        Typed.Adt.mk_array ty (Iarray.of_list values)
     (* Raw pointer construction *)
     | Aggregate (AggregatedRawPtr (_, _), operands) ->
         let* values = eval_operand_list operands in
@@ -970,7 +970,7 @@ module Make (StateImpl : State.S) = struct
         let+ value = eval_operand value in
         let len = int_of_constant_expr len in
         (* FIXME: this is horrible for large arrays! *)
-        let els = List.init len (fun _ -> value) in
+        let els = Iarray.init len (fun _ -> value) in
         Typed.Adt.mk_array ty els
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) -> (

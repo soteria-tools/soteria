@@ -210,8 +210,9 @@ module M (StateM : State.StateM.S) = struct
     in
     let+ str_data = State.load ptr str_ty in
     Typed.Adt.as_array @@ Typed.cast_array str_data
-    |> Monad.OptionM.map_list ~f:(fun b ->
-        Typed.BitVec.to_z @@ Typed.cast_i U8 b)
+    |> Monad.OptionM.map_m
+         (module Iarray)
+         ~f:(fun b -> Typed.BitVec.to_z @@ Typed.cast_i U8 b)
     |> Option.map (fun cs ->
         let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
         let str = String.of_seq @@ List.to_seq cs in
@@ -229,10 +230,9 @@ module M (StateM : State.StateM.S) = struct
     | Some ptr -> ok ptr
     | None ->
         let len = String.length str in
+        let bytes = Bytes.of_string str in
         let chars =
-          String.to_bytes str
-          |> Bytes.fold_left (fun l c -> BV.u8i (Char.code c) :: l) []
-          |> List.rev
+          Iarray.init len (fun i -> BV.u8i (Bytes.get_uint8 bytes i))
         in
         let char_arr = Typed.Adt.mk_array u8_ty chars in
         let str_ty : Types.ty =

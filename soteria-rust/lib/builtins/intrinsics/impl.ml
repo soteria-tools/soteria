@@ -892,7 +892,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* r = State.load b bytes in
     let l = Typed.cast_array l in
     let r = Typed.cast_array r in
-    Iter.of_list_combine (Typed.Adt.as_array l) (Typed.Adt.as_array r)
+    Iter.of_iarray2 (Typed.Adt.as_array l) (Typed.Adt.as_array r)
     |> Iter.fold
          (fun acc (l, r) ->
            Typed.and_lazy acc (fun () ->
@@ -1075,7 +1075,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     | TExtension (TTuple [ TExtension (TArray _) ]) ->
         let wrapper = Typed.Adt.as_tuple1 @@ lanes in
         let elems = Typed.Adt.as_array @@ Typed.cast_array wrapper in
-        ok (List.map (Typed.cast_lit elem_ty) elems)
+        ok (Iarray.map (Typed.cast_lit elem_ty) elems)
     | _ ->
         not_impl
           "unsupported SIMD type definition, expected a struct wrapping a [T; \
@@ -1115,7 +1115,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let lane a b = Typed.ite (cmp a b) ones zeros in
     let* x = simd_lanes lit x in
     let+ y = simd_lanes lit y in
-    simd_of_lanes lit (List.map2 lane x y)
+    simd_of_lanes lit (Iarray.map2 lane x y)
 
   let simd_eq ~t:_ ~u ~x ~y = simd_cmp Typed.sem_eq ~u ~x ~y
   let simd_ne ~t:_ ~u ~x ~y = simd_cmp (fun a b -> Typed.not (a ==@ b)) ~u ~x ~y
@@ -1135,7 +1135,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let lane a b = op a b in
     let* x = simd_lanes lit x in
     let+ y = simd_lanes lit y in
-    simd_of_lanes lit (List.map2 lane x y)
+    simd_of_lanes lit (Iarray.map2 lane x y)
 
   let simd_and ~t ~x ~y = simd_binop t BV.and_ x y
   let simd_or ~t ~x ~y = simd_binop t BV.or_ x y
@@ -1153,7 +1153,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let simd_unop t op x =
     let lit = simd_elem_lit t in
     let+ x = simd_lanes lit x in
-    simd_of_lanes lit (List.map (fun a -> op a) x)
+    simd_of_lanes lit (Iarray.map op x)
 
   let simd_neg ~t ~x = simd_unop t ( ~-! ) x
 
@@ -1163,10 +1163,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     let lit = TypesUtils.ty_as_literal u in
     let+ x = simd_lanes lit x in
-    List.nth x (Z.to_int idx)
+    Iarray.get x (Z.to_int idx)
 
   let simd_splat ~t ~u ~value =
     let ty = TypesUtils.ty_as_literal u in
     let+ len = simd_len t in
-    simd_of_lanes ty (List.init len (fun _ -> value))
+    simd_of_lanes ty (Iarray.init len (fun _ -> value))
 end

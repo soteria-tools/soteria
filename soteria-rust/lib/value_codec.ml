@@ -329,7 +329,7 @@ struct
         Typed.Ptr.mk_ptr_f ptr (Some meta)
     | Array { is_ptr = false; _ }, _ ->
         let+ vs = iter (iter_fields ?meta layout ty) offset in
-        Typed.Adt.mk_array (index_ty ty) vs
+        Typed.Adt.mk_array (index_ty ty) (Iarray.of_list vs)
     | Arbitrary _, _ ->
         let+ fields = iter (iter_fields ?meta layout ty) offset in
         Typed.Adt.mk_tuple fields
@@ -354,7 +354,7 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
   let open Result in
   let chain fields iter =
     fields
-    |> Iter.combine_list iter
+    |> Iter.combine_iarray iter
     |> Result.fold_iter ~init:Iter.empty ~f:(fun acc ((ty, ofs), v) ->
         let offset = offset +!!@ ofs in
         let++ ys = encode ~offset v ty in
@@ -390,7 +390,7 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
           | TExtension TThinPtr -> Typed.Ptr.mk_ptr_f meta None
           | _ -> L.failwith "invalid meta"
         in
-        chain [ ptr; meta ] (iter_fields layout ty)
+        chain (Iarray.of_list [ ptr; meta ]) (iter_fields layout ty)
     | Enum (_, layouts) -> (
         let adt = ty_as_adt ty in
         let value = Typed.cast_enum ~adt value in
@@ -541,7 +541,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   | TArray (ty, _) | TSlice ty ->
       Typed.Adt.as_array (Typed.cast_array v)
-      |> iter_list ~f:(fun v -> validity ~check_ref ty v f)
+      |> iter (module Iarray) ~f:(fun v -> validity ~check_ref ty v f)
   (* undefined.validity.union *)
   | TAdt adt when Crate.is_union adt -> ok ()
   (* fndefs are ZSTs *)
@@ -698,7 +698,7 @@ let rec nondet_raw :
   | TArray (ty, len) ->
       let size = int_of_constant_expr len in
       let++ fields = nondets_raw @@ List.init size (fun _ -> ty) in
-      Typed.Adt.mk_array ty fields
+      Typed.Adt.mk_array ty (Iarray.of_list fields)
   | TAdt adt as ty -> (
       let type_decl = Crate.get_adt adt in
       match type_decl.kind with
@@ -769,7 +769,10 @@ let rec ref_tys_in
   let f = ref_tys_in fn in
   let fs acc ty vs =
     let++ vs, acc =
-      Result.fold_list vs ~init:([], acc) ~f:(fun (vs, acc) v ->
+      Result.fold
+        (module Iarray)
+        vs ~init:([], acc)
+        ~f:(fun (vs, acc) v ->
           let++ v, acc = f acc ty v in
           (v :: vs, acc))
     in
@@ -777,7 +780,7 @@ let rec ref_tys_in
   in
   let fs' acc tys vs =
     let++ vs, acc =
-      Iter.of_list_combine tys vs
+      Iter.combine_iarray (Iter.of_list tys) vs
       |> Result.fold_iter ~init:([], acc) ~f:(fun (vs, acc) (v, ty) ->
           let++ v, acc = f acc v ty in
           (v :: vs, acc))
@@ -804,7 +807,7 @@ let rec ref_tys_in
   | TArray (ty, _) | TSlice ty ->
       let v = Typed.cast_array v in
       let++ vs, acc = fs init ty (Typed.Adt.as_array v) in
-      (Typed.Adt.mk_array ty vs, acc)
+      (Typed.Adt.mk_array ty (Iarray.of_list vs), acc)
   | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_enum ~adt v in
       let discr = Typed.Adt.discriminant_of v in

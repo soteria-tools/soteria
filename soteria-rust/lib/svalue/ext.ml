@@ -37,9 +37,10 @@ and 'ghost ext_t =
   | Ptr of 'ghost sv * 'ghost sv option  (** pointer, with optional meta *)
   | ThinPtr of 'ghost ptr
       (** thin pointer, without metadata but with extra info on the pointer *)
-  | Enum of 'ghost sv * 'ghost sv list  (** discriminant * values *)
-  | Tuple of 'ghost sv list  (** structs and tuples: ordered values *)
-  | Array of 'ghost sv list  (** arrays: ordered values, all of the same type *)
+  | Enum of 'ghost sv * 'ghost sv Iarray.t  (** discriminant * values *)
+  | Tuple of 'ghost sv Iarray.t  (** structs and tuples: ordered values *)
+  | Array of 'ghost sv Iarray.t
+      (** arrays: ordered values, all of the same type *)
   | Union of ('ghost sv * 'ghost sv * 'ghost sv) list
       (** list of blocks in the union, with their offset and size *)
   | PolyVal of Charon.Types.type_var_id
@@ -80,9 +81,9 @@ module Rust_ext :
           Fmt.(option ~none:(any "*") Ptr_tag.pp)
           ptr.tag
     | Enum (disc, vals) ->
-        Fmt.pf ft "Enum(%a: %a)" pp disc (Fmt.list ~sep:(Fmt.any ", ") pp) vals
-    | Tuple vals -> Fmt.pf ft "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp) vals
-    | Array vals -> Fmt.pf ft "[%a]" (Fmt.list ~sep:(Fmt.any ", ") pp) vals
+        Fmt.pf ft "Enum(%a: %a)" pp disc (Iarray.pp ~sep:(Fmt.any ", ") pp) vals
+    | Tuple vals -> Fmt.pf ft "(%a)" (Iarray.pp ~sep:(Fmt.any ", ") pp) vals
+    | Array vals -> Fmt.pf ft "[%a]" (Iarray.pp ~sep:(Fmt.any ", ") pp) vals
     | Union vs ->
         let pp_block ft (v, ofs, size) =
           Fmt.pf ft "(%a: %a-%a)" pp ofs pp v pp size
@@ -104,8 +105,8 @@ module Rust_ext :
     | ThinPtr ptr -> iter_vars_ptr iter_vars ptr
     | Enum (disc, vals) ->
         iter_vars disc;
-        List.iter iter_vars vals
-    | Tuple vals | Array vals -> List.iter iter_vars vals
+        Iarray.iter iter_vars vals
+    | Tuple vals | Array vals -> Iarray.iter iter_vars vals
     | Union vs ->
         List.iter
           (fun (v, ofs, size) ->
@@ -137,13 +138,13 @@ module Rust_ext :
           (combine (combine (combine ptr.tag 3) size.tag) align.tag)
           (Option.fold ~none:(-1) ~some:Ptr_tag.hash tag)
     | Enum (disc, vals) ->
-        List.fold_left
+        Iarray.fold_left
           (fun acc (v : _ sv) -> combine acc v.tag)
           (combine disc.tag 4) vals
     | Tuple vals ->
-        List.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 5 vals
+        Iarray.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 5 vals
     | Array vals ->
-        List.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 8 vals
+        Iarray.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 8 vals
     | Union vs ->
         List.fold_left
           (fun acc ((v : _ sv), (ofs : _ sv), (size : _ sv)) ->
@@ -201,13 +202,13 @@ module Rust_ext :
         (ThinPtr ptr, s)
     | Enum (discr, vs) ->
         let discr, s = apply ~missing_var s discr in
-        let vs, s = apply_list apply ~missing_var s vs in
+        let vs, s = apply_iarray apply ~missing_var s vs in
         (Enum (discr, vs), s)
     | Tuple vs ->
-        let vs, s = apply_list apply ~missing_var s vs in
+        let vs, s = apply_iarray apply ~missing_var s vs in
         (Tuple vs, s)
     | Array vs ->
-        let vs, s = apply_list apply ~missing_var s vs in
+        let vs, s = apply_iarray apply ~missing_var s vs in
         (Array vs, s)
     | Union vs ->
         let apply ~missing_var s (v, ofs, size) =

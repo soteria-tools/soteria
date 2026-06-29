@@ -171,7 +171,7 @@ module Adt : sig
   val mk_tuple : [< T.any ] t list -> [> T.tuple ] t
 
   (** Creates an array value with the given element type and elements. *)
-  val mk_array : Types.ty -> [< T.any ] t list -> [> T.tuple ] t
+  val mk_array : Types.ty -> [< T.any ] t iarray -> [> T.tuple ] t
 
   (** Creates an enum value with the given discriminant and fields. *)
   val mk_enum :
@@ -194,11 +194,11 @@ module Adt : sig
   val as_union :
     [< T.union ] t -> ([> T.any ] t * [> T.sint ] t * [> T.nonzero ] t) list
 
-  val as_tuple : [< T.tuple ] t -> [> T.any ] t list
-  val as_array : [< T.tuple ] t -> [> T.any ] t list
+  val as_tuple : [< T.tuple ] t -> [> T.any ] t iarray
+  val as_array : [< T.tuple ] t -> [> T.any ] t iarray
 
   val as_enum_of_variant :
-    Types.variant_id -> [< T.enum ] t -> [> T.any ] t list
+    Types.variant_id -> [< T.enum ] t -> [> T.any ] t iarray
 
   (** Like {!as_tuple}, but casts to a fixed-arity tuple, failing if the tuple
       does not have exactly that many fields. Avoids partial list pattern
