@@ -17,16 +17,15 @@ module type Mutable = sig
   val reset : t -> unit
 end
 
-(** Functor to create a mutable reversible state from a default value. *)
+(** Functor to create a mutable reversible state. The content itself can be
+    mutable. *)
 module Make_mutable (M : sig
   type t
 
-  val default : t
+  val default : unit -> t
+  val copy : t -> t
 end) : sig
   include Mutable with type t = M.t Dynarray.t
-
-  (** Set the default value used when initializing new states. *)
-  val set_default : M.t -> unit
 
   (** Apply function [f] to the current state, updating it with the returned
       value. *)
@@ -37,24 +36,22 @@ end) : sig
 end = struct
   type t = M.t Dynarray.t
 
-  let default = ref M.default
-
   let init () =
     let d = Dynarray.create () in
-    Dynarray.add_last d !default;
+    Dynarray.add_last d (M.default ());
     d
-
-  let set_default v = default := v
 
   let backtrack_n d n =
     let len = Dynarray.length d in
     Dynarray.truncate d (len - n)
 
-  let save d = Dynarray.add_last d (Dynarray.get_last d)
+  let save d =
+    let copied = M.copy (Dynarray.get_last d) in
+    Dynarray.add_last d copied
 
   let reset d =
     Dynarray.clear d;
-    Dynarray.add_last d !default
+    Dynarray.add_last d (M.default ())
 
   let wrap (f : M.t -> 'a * M.t) d =
     let e = Dynarray.pop_last d in
