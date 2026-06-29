@@ -528,7 +528,7 @@ module Make (V : Value_ext) () = struct
   (** We put commutative n-ary operators in some sort of normal form where
       elements are sorted by ud, to increase cache hits. If [idem] is true, will
       also remove duplicates. *)
-  let mk_commut_nop ?(idem = true) op vs =
+  let mk_commut_nop ?(idem = false) op vs =
     let sort = if idem then List.sort_uniq else List.sort in
     let vs = sort (fun l r -> Int.compare l.tag r.tag) vs in
     Nop (op, vs)
@@ -1100,21 +1100,29 @@ module Make (V : Value_ext) () = struct
       match Seq.compare_length_with s 2 with
       | -1 -> v_true
       | _ -> (
-          let cross_product = Seq.self_cross_product s in
-          let rec aux seq =
-            match seq () with
-            | Seq.Nil -> Some true
-            | Seq.Cons ((a, b), rest) ->
-                if equal a b then Some false
-                else if sure_neq a b then aux rest
-                else None
-          in
-          let res = aux cross_product in
-          match (res, l) with
-          | Some true, _ -> v_true
-          | Some false, _ -> v_false
-          | None, Some l -> mk_commut_nop Distinct l <| TBool
-          | None, None -> mk_commut_nop Distinct (List.of_seq s) <| TBool)
+          match l with
+          | Some l ->
+              let length = List.length l in
+              let sorted = List.sort_uniq compare l in
+              if List.length sorted <> length then v_false
+              else
+                (* Already sorted, no nede to call mk_commut_nop*)
+                Nop (Distinct, sorted) <| TBool
+          | None ->
+              let a = Array.of_seq s in
+              Array.fast_sort (fun v1 v2 -> v1.tag - v2.tag) a;
+              let exception FoundDuplicate in
+              let duplicates =
+                try
+                  Array.iteri
+                    (fun i v ->
+                      if i > 0 && equal a.(i - 1) v then raise FoundDuplicate)
+                    a;
+                  false
+                with FoundDuplicate -> true
+              in
+              if duplicates then v_false
+              else mk_commut_nop Distinct (List.of_seq s) <| TBool)
 
     let distinct_seq s = distinct_raw s ()
     let distinct l = distinct_raw (List.to_seq l) ~l ()
