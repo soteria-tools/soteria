@@ -465,10 +465,9 @@ let rec is_unsafe_cell : Types.ty -> bool = function
       List.exists is_unsafe_cell types
   | TAdt { id = TBuiltin _; _ } -> false
   | TAdt adt -> (
-      let adt = Crate.get_adt adt in
-      if adt.item_meta.lang_item = Some "unsafe_cell" then true
+      if adt_is_unsafe_cell adt then true
       else
-        match adt.kind with
+        match (Crate.get_adt adt).kind with
         | Struct fs | Union fs -> List.exists is_unsafe_cell (field_tys fs)
         | Enum vs ->
             Iter.exists is_unsafe_cell

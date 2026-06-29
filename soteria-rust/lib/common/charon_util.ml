@@ -198,12 +198,15 @@ let meta_get_attr (meta : Types.item_meta) attr =
 let decl_get_attr (decl : GAst.fun_decl) attr =
   meta_get_attr decl.item_meta attr
 
-let adt_is_box (adt : Types.type_decl_ref) =
+let adt_is_lang_item lang_item (adt : Types.type_decl_ref) =
   match adt.id with
   | TAdtId id ->
       let adt = Crate.get_adt_raw id in
-      adt.item_meta.lang_item = Some "owned_box"
+      Option.is_some_and (String.equal lang_item) adt.item_meta.lang_item
   | _ -> false
+
+let adt_is_box = adt_is_lang_item "owned_box"
+let adt_is_unsafe_cell = adt_is_lang_item "unsafe_cell"
 
 let rec get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
