@@ -2,6 +2,7 @@
     share them here for convenience. *)
 
 open Charon
+open Common.Charon_util
 open Svalue
 open Typed
 open Typed.Syntax
@@ -208,9 +209,9 @@ module M (StateM : State.StateM.S) = struct
         { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
     in
     let+ str_data = State.load ptr str_ty in
-    Typed.Adt.as_tuple @@ Typed.cast_tuple str_data
-    |> ( Monad.OptionM.map_list @@ fun b ->
-         Typed.BitVec.to_z @@ Typed.cast_i U8 b )
+    Typed.Adt.as_array @@ Typed.cast_array str_data
+    |> Monad.OptionM.map_list ~f:(fun b ->
+        Typed.BitVec.to_z @@ Typed.cast_i U8 b)
     |> Option.map (fun cs ->
         let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
         let str = String.of_seq @@ List.to_seq cs in
@@ -233,9 +234,9 @@ module M (StateM : State.StateM.S) = struct
           |> Bytes.fold_left (fun l c -> BV.u8i (Char.code c) :: l) []
           |> List.rev
         in
-        let char_arr = Typed.Adt.mk_tuple chars in
+        let char_arr = Typed.Adt.mk_array u8_ty chars in
         let str_ty : Types.ty =
-          Common.Charon_util.mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
+          Common.Charon_util.mk_array_ty u8_ty (Z.of_int len)
         in
         let@ () = with_alloc_kind ~kind:StaticString in
         let* ptr = State.alloc_ty str_ty in

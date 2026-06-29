@@ -520,14 +520,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let r = Typed.Ptr.ptr_of right in
     let zero = Usize.(0s) in
     let one = Usize.(1s) in
-    let byte = Types.TLiteral (TUInt U8) in
     let rec aux ?res ?(inc = one) l r len =
       if%sat len ==@ zero then ok @@ Option.value res ~default:U32.(0s)
       else
         let* l = Sptr.offset inc l in
         let* r = Sptr.offset inc r in
-        let* bl = State.load (Typed.Ptr.mk_ptr_f l None) byte in
-        let* br = State.load (Typed.Ptr.mk_ptr_f r None) byte in
+        let* bl = State.load (Typed.Ptr.mk_ptr_f l None) u8_ty in
+        let* br = State.load (Typed.Ptr.mk_ptr_f r None) u8_ty in
         (* compare_bytes reads all bytes and mustn't short-circuit, so we must
            keep reading; here we only modify the result if we haven't reached a
            conclusion yet *)
@@ -885,15 +884,15 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* size =
       of_opt_not_impl "raw_eq with nondet size" @@ BV.to_z layout.size
     in
-    let bytes = mk_array_ty (TLiteral (TUInt U8)) size in
+    let bytes = mk_array_ty u8_ty size in
     (* TODO: figure out if for these two reads we should ignore the modified
        state, as its leaves may be split in bytes which will require ugly
        transmutations to be read from again later. *)
     let* l = State.load a bytes in
     let* r = State.load b bytes in
-    let l = Typed.cast_tuple l in
-    let r = Typed.cast_tuple r in
-    Iter.of_list_combine (Typed.Adt.as_tuple l) (Typed.Adt.as_tuple r)
+    let l = Typed.cast_array l in
+    let r = Typed.cast_array r in
+    Iter.of_list_combine (Typed.Adt.as_array l) (Typed.Adt.as_array r)
     |> Iter.fold
          (fun acc (l, r) ->
            Typed.and_lazy acc (fun () ->
@@ -1056,7 +1055,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         ~f:(fun i ->
           let off = BV.usizei i in
           let* ptr = Sptr.offset ~check_signed:true off ptr in
-          State.store (Typed.Ptr.mk_ptr_f ptr None) (TLiteral (TUInt U8)) val_)
+          State.store (Typed.Ptr.mk_ptr_f ptr None) u8_ty val_)
 
   let volatile_load ~t ~src = State.load src t
   let volatile_set_memory = write_bytes
@@ -1073,16 +1072,17 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      value is [Tuple [ Tuple lanes ]]. *)
   let simd_lanes elem_ty (lanes : Typed.([< T.any ] t)) =
     match%ty lanes with
-    | TExtension (TTuple [ TExtension (TTuple _) ]) ->
+    | TExtension (TTuple [ TExtension (TArray _) ]) ->
         let wrapper = Typed.Adt.as_tuple1 @@ lanes in
-        let elems = Typed.Adt.as_tuple @@ Typed.cast_tuple wrapper in
+        let elems = Typed.Adt.as_array @@ Typed.cast_array wrapper in
         ok (List.map (Typed.cast_lit elem_ty) elems)
     | _ ->
         not_impl
           "unsupported SIMD type definition, expected a struct wrapping a [T; \
            N] array"
 
-  let simd_of_lanes lanes = Typed.Adt.mk_tuple [ Typed.Adt.mk_tuple lanes ]
+  let simd_of_lanes ty lanes =
+    Typed.Adt.mk_tuple [ Typed.Adt.mk_array (TLiteral ty) lanes ]
 
   (* The element type of a SIMD vector, i.e. the [T] in its `[T; N]` field. *)
   let simd_elem_lit (ty : Types.ty) : Types.literal_type =
@@ -1115,7 +1115,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let lane a b = Typed.ite (cmp a b) ones zeros in
     let* x = simd_lanes lit x in
     let+ y = simd_lanes lit y in
-    simd_of_lanes (List.map2 lane x y)
+    simd_of_lanes lit (List.map2 lane x y)
 
   let simd_eq ~t:_ ~u ~x ~y = simd_cmp Typed.sem_eq ~u ~x ~y
   let simd_ne ~t:_ ~u ~x ~y = simd_cmp (fun a b -> Typed.not (a ==@ b)) ~u ~x ~y
@@ -1135,7 +1135,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let lane a b = op a b in
     let* x = simd_lanes lit x in
     let+ y = simd_lanes lit y in
-    simd_of_lanes (List.map2 lane x y)
+    simd_of_lanes lit (List.map2 lane x y)
 
   let simd_and ~t ~x ~y = simd_binop t BV.and_ x y
   let simd_or ~t ~x ~y = simd_binop t BV.or_ x y
@@ -1153,7 +1153,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let simd_unop t op x =
     let lit = simd_elem_lit t in
     let+ x = simd_lanes lit x in
-    simd_of_lanes (List.map (fun a -> op a) x)
+    simd_of_lanes lit (List.map (fun a -> op a) x)
 
   let simd_neg ~t ~x = simd_unop t ( ~-! ) x
 
@@ -1165,7 +1165,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let+ x = simd_lanes lit x in
     List.nth x (Z.to_int idx)
 
-  let simd_splat ~t ~u:_ ~value =
+  let simd_splat ~t ~u ~value =
+    let ty = TypesUtils.ty_as_literal u in
     let+ len = simd_len t in
-    simd_of_lanes (List.init len (fun _ -> value))
+    simd_of_lanes ty (List.init len (fun _ -> value))
 end

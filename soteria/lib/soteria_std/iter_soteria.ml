@@ -36,6 +36,32 @@ let[@inline] combine_list (i : 'a t) (l : 'b list) k =
           l := b;
           k (x, a))
 
+(** Iterates over the elements of an immutable array. *)
+let[@inline] of_iarray a k = Iarray.iter k a
+
+(** Iterates over the elements of two immutable arrays in parallel.
+
+    @raise Invalid_argument if the arrays are not of the same length. *)
+let[@inline] of_iarray2 a1 a2 k =
+  let n = Iarray.length a1 in
+  if n <> Iarray.length a2 then invalid_arg "Iter.of_iarray2";
+  for i = 0 to n - 1 do
+    k (Iarray.unsafe_get a1 i, Iarray.unsafe_get a2 i)
+  done
+
+(** Like {!combine_list}, but combines the iterator [i] with an immutable array
+    [a] element-wise.
+
+    @raise Invalid_argument if [a] is smaller than [i]. *)
+let[@inline] combine_iarray (i : 'a t) (a : 'b Iarray.t) k =
+  let n = Iarray.length a in
+  let idx = ref 0 in
+  i (fun x ->
+      if !idx >= n then invalid_arg "Iter.combine_iarray";
+      let v = Iarray.unsafe_get a !idx in
+      incr idx;
+      k (x, v))
+
 let[@inline] repeati n x k =
   let i = ref 0 in
   while !i < n do

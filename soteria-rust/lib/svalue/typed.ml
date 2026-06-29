@@ -1,3 +1,4 @@
+open Iarray.Infix
 open Charon
 open Common.Charon_util
 open Soteria.Bv_values.Svalue
@@ -55,13 +56,6 @@ let float_precision :
   | F64 -> F64
   | F128 -> F128
 
-type ptr = {
-  ptr : T.sptr t;
-  size : T.sint t;
-  align : T.nonzero t;
-  tag : Ptr_tag.t option;
-}
-
 (* The raw pointer type; only used to materialise a fully-symbolic nondet
    pointer in [Value_codec] (see {!Ptr.of_raw}). *)
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
@@ -77,7 +71,9 @@ let t_lit : Types.literal_type -> [> T.sint ] ty = function
 let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
   t_float (float_precision ty)
 
+let t_unit : [> T.tuple ] ty = TExtension (TTuple [])
 let t_tuple tys : [> T.tuple ] ty = TExtension (TTuple tys)
+let t_array ty n : [> T.tuple ] ty = TExtension (TArray (ty, n))
 
 let t_enum adt : [> T.enum ] ty =
   assert (Common.Charon_util.tyref_is_substituted adt);
@@ -88,6 +84,29 @@ let t_union adt : [> T.union ] ty =
   TExtension (TUnion adt)
 
 let t_poly () : [> T.poly ] ty = TExtension TPolyType
+
+let rec ty_of_rust : Types.ty -> _ ty = function
+  | TLiteral (TFloat ft) -> t_float ft
+  | TLiteral lit -> t_lit lit
+  | TRef _ | TRawPtr _ | TFnPtr _ -> t_ptr_f ()
+  | TNever | TFnDef _ -> t_unit
+  | TVar _ -> t_poly ()
+  | TPattern (ty, _) -> ty_of_rust ty
+  | TArray (ty, n) -> t_array (ty_of_rust ty) (z_of_constant_expr n)
+  | TAdt { id = TTuple; generics = { types; _ } } ->
+      t_tuple (List.map ty_of_rust types)
+  | TAdt ({ id = TAdtId _; _ } as adt) -> (
+      match (Crate.get_adt adt).kind with
+      | Struct fs ->
+          t_tuple (List.map (fun (f : Types.field) -> ty_of_rust f.field_ty) fs)
+      | Enum _ -> t_enum adt
+      | Union _ -> t_union adt
+      | kind ->
+          L.failwith "ty_of_rust unexpected adt kind %a" Types.pp_type_decl_kind
+            kind)
+  | ( TError _ | TPtrMetadata _ | TTraitType _ | TDynTrait _ | TSlice _
+    | TAdt { id = TBuiltin _; _ } ) as ty ->
+      L.failwith "ty_of_rust unexpected type %a" Common.Charon_util.pp_ty ty
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -112,6 +131,11 @@ let cast_tuple v =
   match get_ty v with
   | TExtension (TTuple _) -> v
   | _ -> cast_error v (t_tuple [])
+
+let cast_array v =
+  match get_ty v with
+  | TExtension (TArray _) -> v
+  | _ -> cast_error v (t_array (t_int 1) Z.zero)
 
 (* The [adt] ref, when given, additionally checks the value is that precise
    enum/union; callers that only know the kind (e.g. the generic store
@@ -319,6 +343,12 @@ end
 module Adt = struct
   let unit = Extension (Tuple []) <| t_tuple []
   let mk_tuple vs = Extension (Tuple vs) <| t_tuple (List.map get_ty vs)
+
+  let mk_array elem_ty vs =
+    let len = List.length vs in
+    let elem_ty = if len = 0 then ty_of_rust elem_ty else get_ty (List.hd vs) in
+    Extension (Array vs) <| t_array elem_ty (Z.of_int len)
+
   let mk_enum adt discr vs = Extension (Enum (discr, vs)) <| t_enum adt
   let mk_union adt blocks = Extension (Union blocks) <| t_union adt
   let mk_poly ty_id = Extension (PolyVal ty_id) <| t_poly ()
@@ -338,7 +368,12 @@ module Adt = struct
     | Extension (Tuple vs) -> vs
     | _ -> todo_migration "as_tuple unop"
 
-  let as_enum_of_variant var_id v =
+  let as_array v =
+    match kind v with
+    | Extension (Array vs) -> vs
+    | _ -> todo_migration "as_array unop"
+
+  let as_enum_of_variant _var_id v =
     match kind v with
     | Extension (Enum (_, vs)) -> vs
     | _ -> todo_migration "as_enum_of_variant unop"
@@ -370,16 +405,24 @@ module Adt = struct
     match kind v with
     | Extension (Tuple vs) -> (
         try List.nth vs idx
-        with Failure _ ->
+        with Invalid_argument _ ->
           L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "field_of op"
+
+  let array_field_of idx v =
+    match kind v with
+    | Extension (Array vs) -> (
+        try List.nth vs idx
+        with Invalid_argument _ ->
+          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
+    | _ -> todo_migration "array_field_of op"
 
   let field_of_variant _var_id idx v =
     (* TODO: assert the variant? *)
     match kind v with
     | Extension (Enum (_, vs)) -> (
         try List.nth vs idx
-        with Failure _ ->
+        with Invalid_argument _ ->
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "field_of_variant op"
 
@@ -387,7 +430,7 @@ module Adt = struct
     match kind v with
     | Extension (Tuple vs) -> (
         try Extension (Tuple (List.set_nth idx f vs)) <| v.node.ty
-        with Failure _ ->
+        with Invalid_argument _ ->
           L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "set_field op"
 
@@ -396,11 +439,22 @@ module Adt = struct
     match kind v with
     | Extension (Enum (discr, vs)) -> (
         try Extension (Enum (discr, List.set_nth idx f vs)) <| v.node.ty
-        with Failure _ ->
+        with Invalid_argument _ ->
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "set_field_of_variant op"
 
+  let set_array_field idx x v =
+    match kind v with
+    | Extension (Array vs) -> (
+        try Extension (Array (List.set_nth idx x vs)) <| v.node.ty
+        with Invalid_argument _ ->
+          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
+    | _ -> todo_migration "set_array_field op"
+
   let update_field idx f v = set_field idx (f (field_of idx v)) v
+
+  let update_array_field idx f v =
+    set_array_field idx (f (array_field_of idx v)) v
 
   let update_field_of_variant var idx f v =
     set_field_of_variant var idx (f (field_of_variant var idx v)) v

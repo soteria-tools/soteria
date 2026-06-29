@@ -26,8 +26,9 @@ and 'ghost ext_ty =
       (** the type decl ref of an {b enum} *)
   | TUnion of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
       (** the type decl ref of a {b union} *)
-  | TTuple of 'ghost svty list
-      (** structs, tuples and arrays (ordered fields) *)
+  | TTuple of 'ghost svty list  (** structs and tuples (ordered fields) *)
+  | TArray of 'ghost svty * Z.t
+      (** arrays (all elements share the same type) *)
   | TThinPtr
   | TFullPtr
   | TPolyType
@@ -37,7 +38,8 @@ and 'ghost ext_t =
   | ThinPtr of 'ghost ptr
       (** thin pointer, without metadata but with extra info on the pointer *)
   | Enum of 'ghost sv * 'ghost sv list  (** discriminant * values *)
-  | Tuple of 'ghost sv list  (** contains ordered values *)
+  | Tuple of 'ghost sv list  (** structs and tuples: ordered values *)
+  | Array of 'ghost sv list  (** arrays: ordered values, all of the same type *)
   | Union of ('ghost sv * 'ghost sv * 'ghost sv) list
       (** list of blocks in the union, with their offset and size *)
   | PolyVal of Charon.Types.type_var_id
@@ -49,6 +51,7 @@ let rec pp_ext_ty ft : 'ghost ext_ty -> unit = function
   | TEnum ty -> Crate.pp_type_decl_ref ft ty
   | TUnion ty -> Crate.pp_type_decl_ref ft ty
   | TTuple tys -> Fmt.(brackets (list ~sep:semi pp_svty)) ft tys
+  | TArray (ty, n) -> Fmt.pf ft "[%a; %a]" pp_svty ty Z.pp n
   | TThinPtr -> Fmt.string ft "TThinPtr"
   | TFullPtr -> Fmt.string ft "TFullPtr"
   | TPolyType -> Fmt.string ft "TPolyType"
@@ -79,6 +82,7 @@ module Rust_ext :
     | Enum (disc, vals) ->
         Fmt.pf ft "Enum(%a: %a)" pp disc (Fmt.list ~sep:(Fmt.any ", ") pp) vals
     | Tuple vals -> Fmt.pf ft "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp) vals
+    | Array vals -> Fmt.pf ft "[%a]" (Fmt.list ~sep:(Fmt.any ", ") pp) vals
     | Union vs ->
         let pp_block ft (v, ofs, size) =
           Fmt.pf ft "(%a: %a-%a)" pp ofs pp v pp size
@@ -101,7 +105,7 @@ module Rust_ext :
     | Enum (disc, vals) ->
         iter_vars disc;
         List.iter iter_vars vals
-    | Tuple vals -> List.iter iter_vars vals
+    | Tuple vals | Array vals -> List.iter iter_vars vals
     | Union vs ->
         List.iter
           (fun (v, ofs, size) ->
@@ -122,6 +126,7 @@ module Rust_ext :
     | TThinPtr -> 3
     | TFullPtr -> 4
     | TPolyType -> 5
+    | TArray (ty, n) -> combine (combine 6 (Sv.hash_ty hash_ty ty)) (Z.hash n)
 
   (* TODO: so derivable *)
   let hash = function
@@ -137,6 +142,8 @@ module Rust_ext :
           (combine disc.tag 4) vals
     | Tuple vals ->
         List.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 5 vals
+    | Array vals ->
+        List.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 8 vals
     | Union vs ->
         List.fold_left
           (fun acc ((v : _ sv), (ofs : _ sv), (size : _ sv)) ->
@@ -157,6 +164,22 @@ module Rust_ext :
         let v, s = apply ~missing_var s v in
         let vs, s = apply_list apply ~missing_var s vs in
         (v :: vs, s)
+
+  let apply_iarray apply ~missing_var s arr =
+    let n = Iarray.length arr in
+    if n = 0 then (arr, s)
+    else begin
+      let s = ref s in
+      let out =
+        Iarray.map
+          (fun prev ->
+            let v, s' = apply ~missing_var !s prev in
+            s := s';
+            v)
+          arr
+      in
+      (out, !s)
+    end
 
   let apply_subst_ptr apply ~missing_var s { ptr; size; align; tag } =
     let ptr, s = apply ~missing_var s ptr in
@@ -183,6 +206,9 @@ module Rust_ext :
     | Tuple vs ->
         let vs, s = apply_list apply ~missing_var s vs in
         (Tuple vs, s)
+    | Array vs ->
+        let vs, s = apply_list apply ~missing_var s vs in
+        (Array vs, s)
     | Union vs ->
         let apply ~missing_var s (v, ofs, size) =
           let v, s = apply ~missing_var s v in

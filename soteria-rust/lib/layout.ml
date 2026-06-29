@@ -71,15 +71,22 @@ let rec dst_kind : Types.ty -> meta_kind = function
   | _ -> NoneKind
 
 (** If this is a DST type with a slice tail, return the type of the slice's
-    element. *)
-let rec dst_slice_ty : Types.ty -> Types.ty option = function
-  | TAdt { id = TBuiltin TStr; _ } -> Some (TLiteral (TUInt U8))
-  | TSlice sub_ty -> Some sub_ty
+    element. Errors otherwise. *)
+let rec dst_slice_ty : Types.ty -> Types.ty = function
+  | TAdt { id = TBuiltin TStr; _ } -> TLiteral (TUInt U8)
+  | TSlice sub_ty -> sub_ty
   | TAdt adt when Crate.is_struct adt -> (
       match List.last_opt (Crate.as_struct adt) with
-      | None -> None
+      | None -> L.failwith "dst_slice_ty: unexpected type"
       | Some last -> dst_slice_ty Types.(last.field_ty))
-  | _ -> None
+  | ty -> L.failwith "dst_slice_ty: unexpected type: %a" pp_ty ty
+
+(** Returns the resulting type obtained when indexing into the given type. Only
+    valid for arrays, slices and [str]. *)
+let index_ty : Types.ty -> Types.ty = function
+  | TAdt { id = TBuiltin TStr; _ } -> TLiteral (TUInt U8)
+  | TSlice ty | TArray (ty, _) -> ty
+  | ty -> L.failwith "slice_ty: unexpected type: %a" pp_ty ty
 
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let is_dst ty = dst_kind ty <> NoneKind

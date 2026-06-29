@@ -329,7 +329,7 @@ struct
         Typed.Ptr.mk_ptr_f ptr (Some meta)
     | Array { is_ptr = false; _ }, _ ->
         let+ vs = iter (iter_fields ?meta layout ty) offset in
-        Typed.Adt.mk_tuple vs
+        Typed.Adt.mk_array (index_ty ty) vs
     | Arbitrary _, _ ->
         let+ fields = iter (iter_fields ?meta layout ty) offset in
         Typed.Adt.mk_tuple fields
@@ -378,7 +378,7 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
           let fields = Typed.Adt.as_tuple (Typed.cast_tuple value) in
           chain fields (iter_fields layout ty)
     | Array { is_ptr = false; _ } ->
-        let fields = Typed.Adt.as_tuple (Typed.cast_tuple value) in
+        let fields = Typed.Adt.as_array (Typed.cast_array value) in
         chain fields (iter_fields layout ty)
     | Array { is_ptr = true; _ } ->
         let ptr, meta = Typed.Ptr.split (Typed.cast_ptr_f value) in
@@ -540,8 +540,8 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of i v))
       |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   | TArray (ty, _) | TSlice ty ->
-      let vs = Typed.Adt.as_tuple (Typed.cast_tuple v) in
-      iter_list vs ~f:(fun v -> validity ~check_ref ty v f)
+      Typed.Adt.as_array (Typed.cast_array v)
+      |> iter_list ~f:(fun v -> validity ~check_ref ty v f)
   (* undefined.validity.union *)
   | TAdt adt when Crate.is_union adt -> ok ()
   (* fndefs are ZSTs *)
@@ -698,7 +698,7 @@ let rec nondet_raw :
   | TArray (ty, len) ->
       let size = int_of_constant_expr len in
       let++ fields = nondets_raw @@ List.init size (fun _ -> ty) in
-      Typed.Adt.mk_tuple fields
+      Typed.Adt.mk_array ty fields
   | TAdt adt as ty -> (
       let type_decl = Crate.get_adt adt in
       match type_decl.kind with
@@ -802,9 +802,9 @@ let rec ref_tys_in
       in
       (Typed.Adt.mk_tuple vs, acc)
   | TArray (ty, _) | TSlice ty ->
-      let v = Typed.cast_tuple v in
-      let++ vs, acc = fs init ty (Typed.Adt.as_tuple v) in
-      (Typed.Adt.mk_tuple vs, acc)
+      let v = Typed.cast_array v in
+      let++ vs, acc = fs init ty (Typed.Adt.as_array v) in
+      (Typed.Adt.mk_array ty vs, acc)
   | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_enum ~adt v in
       let discr = Typed.Adt.discriminant_of v in
@@ -831,9 +831,6 @@ let rec size_and_align_of_val ~load_vtable ~t
     match t with
     | TSlice _ | TAdt { id = TBuiltin TStr; _ } ->
         let sub_ty = Layout.dst_slice_ty t in
-        let* sub_ty =
-          of_opt_not_impl "size_of_val: missing a DST slice type" sub_ty
-        in
         let** layout = Layout.layout_of sub_ty in
         let meta = Option.get ~msg:"size_of_val: missing slice meta" meta in
         let len = Typed.cast_i Usize meta in

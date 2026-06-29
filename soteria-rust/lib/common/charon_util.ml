@@ -182,7 +182,11 @@ let mk_tuple_ty types : Types.ty =
 (** The type [*const ()] *)
 let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)
 
+(** The type [&()] *)
 let unit_ref = Types.TRef (RErased, TypesUtils.mk_unit_ty, RShared)
+
+(** The type [u8] *)
+let u8_ty = Types.TLiteral (TUInt U8)
 
 let decl_has_attr (decl : GAst.fun_decl) attr =
   List.exists
