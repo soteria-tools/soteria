@@ -82,8 +82,17 @@ module Make_patricia_tree
 
 (** Sound to use when the keys of the map may depend on symbolic variables *)
 
-module Build_direct_access
+module Build_direct_or_lazy
     (Symex : Symex.Base)
+    (B : sig
+      open Symex
+
+      (** [if_not_in_map outside_map ~then_ ~else_] decides how to handle
+          branching when asking if the object is outside the map (captured by
+          the [outside_map] symbolic boolean.)*)
+      val if_not_in_map :
+        Value.(sbool t) -> then_:(unit -> 'a t) -> else_:(unit -> 'a t) -> 'a t
+    end)
     (Key : Key(Symex).S)
     (M : MapS with type key = Key.t) =
 struct
@@ -103,8 +112,58 @@ struct
     | Some v -> Symex.return (key, Some v)
     | None ->
         let not_in_map = M.to_seq st |> Seq.map fst |> Key.distinct_seq in
-        if%sat1 not_in_map then Symex.return (key, None)
-        else M.to_seq st |> find_bindings
+        B.if_not_in_map not_in_map
+          ~then_:(fun () -> Symex.return (key, None))
+          ~else_:(fun () -> M.to_seq st |> find_bindings)
+end
+
+module Build_direct_access
+    (Symex : Symex.Base)
+    (Key : Key(Symex).S)
+    (M : MapS with type key = Key.t) =
+struct
+  include
+    Build_direct_or_lazy
+      (Symex)
+      (struct
+        open Symex
+
+        (** In the direct access map, we check if it's possible that the key is
+            outside the map, and if it is, we only take that branch in UX.
+            However, we keep the information that the value is not in the map,
+            we have entirely dropped the other branch. *)
+        let if_not_in_map guard ~then_ ~else_ =
+          branch_on_take_one guard ~then_ ~else_
+      end)
+      (Key)
+      (M)
+end
+
+(** An S_map where all keys are not guaranteed to be disjoint. *)
+module Build_lazy
+    (Symex : Symex.Base)
+    (Key : Key(Symex).S)
+    (M : MapS with type key = Key.t) =
+struct
+  include
+    Build_direct_or_lazy
+      (Symex)
+      (struct
+        open Symex
+
+        (** In the lazy map, we see if we know the value is inside the map. If
+            it is, then we take that branch, knowing that fact. Otherwise, we
+            consider a new binding. This changes the interpretation of a map:
+            two different bindings are not necessarily semantically different
+            keys!
+
+            This is well modelled with the existing `if_sure` of Symex. *)
+        let if_not_in_map not_in_map ~then_ ~else_ =
+          let in_map = Value.not not_in_map in
+          if_sure in_map ~then_:else_ ~else_:then_
+      end)
+      (Key)
+      (M)
 end
 
 module Direct_access (Symex : Symex.Base) (Key : Key(Symex).S) =
@@ -114,6 +173,14 @@ module Direct_access_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) =
   Build_direct_access (Symex) (Key) (PatriciaTree.MakeMap (Key))
+
+module Lazy (Symex : Symex.Base) (Key : Key(Symex).S) =
+  Build_lazy (Symex) (Key) (Stdlib.Map.Make (Key))
+
+module Lazy_patricia_tree
+    (Symex : Symex.Base)
+    (Key : Key(Symex).S_patricia_tree) =
+  Build_lazy (Symex) (Key) (PatriciaTree.MakeMap (Key))
 
 module Concrete (Symex : Symex.Base) (Key : Key(Symex).S) = struct
   include Build (Symex) (Key) (Stdlib.Map.Make (Key))

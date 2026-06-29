@@ -149,6 +149,14 @@ module Make_patricia_tree
 module Direct_access (Symex : Symex.Base) (Key : Key(Symex).S) =
   Build (Symex) (Key) (S_map.Direct_access (Symex) (Key))
 
+module Lazy (Symex : Symex.Base) (Key : Key(Symex).S) =
+  Build (Symex) (Key) (S_map.Lazy (Symex) (Key))
+
+module Lazy_patricia_tree
+    (Symex : Symex.Base)
+    (Key : Key(Symex).S_patricia_tree) =
+  Build (Symex) (Key) (S_map.Lazy_patricia_tree (Symex) (Key))
+
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) =

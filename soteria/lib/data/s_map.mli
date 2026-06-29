@@ -24,15 +24,24 @@ module Make_patricia_tree
     (Key : Key(Symex).S_patricia_tree) : S(Symex)(Key).S
 
 (** Makes a symbolic map. The algorithm for {{!S.S.find_opt}[find_opt]} will
-    first look for a syntactic match. If none is found, it will check if the
-    given key is {{!Key.S.distinct_seq}distinct} from all other existing keys
-    (in which case [None] is returned) before iterating over all entries. *)
+    first look for a syntactic match. In UX, if none is found, it will check if
+    the given key is {{!Key.S.distinct_seq}distinct} from all other existing
+    keys (in which case [None] is returned) before iterating over all entries.
+*)
 module Direct_access (Symex : Symex.Base) (Key : Key(Symex).S) : S(Symex)(Key).S
 
 (** Same as {!Direct_access}, but backed by a
     {{:https://ocaml.org/p/patricia-tree/latest/doc/index.html}Patricia Tree},
     which may offer performance benefits. *)
 module Direct_access_patricia_tree
+    (Symex : Symex.Base)
+    (Key : Key(Symex).S_patricia_tree) : S(Symex)(Key).S
+
+(** Makes a symbolic map similar to {!Direct_access}, but even in OX, if it is
+    possible that the key is outside the map, only this path will be taken. *)
+module Lazy (Symex : Symex.Base) (Key : Key(Symex).S) : S(Symex)(Key).S
+
+module Lazy_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) : S(Symex)(Key).S
 
