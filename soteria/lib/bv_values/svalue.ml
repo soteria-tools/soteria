@@ -532,7 +532,7 @@ module Make (V : Value_ext) () = struct
   (** We put commutative n-ary operators in some sort of normal form where
       elements are sorted by ud, to increase cache hits. If [idem] is true, will
       also remove duplicates. *)
-  let mk_commut_nop ?(idem = true) op vs =
+  let mk_commut_nop ~idem op vs =
     let sort = if idem then List.sort_uniq else List.sort in
     let vs = sort (fun l r -> Int.compare l.tag r.tag) vs in
     Nop (op, vs)
@@ -1099,6 +1099,7 @@ module Make (V : Value_ext) () = struct
           split_ands s2 f
       | _ -> f sv
 
+    (* If l is not none, it is the list represented by the sequence S *)
     let distinct_raw s ?l () =
       (* [Distinct l] when l is empty or of size 1 is always true *)
       match Seq.compare_length_with s 2 with
@@ -1117,8 +1118,9 @@ module Make (V : Value_ext) () = struct
           match (res, l) with
           | Some true, _ -> v_true
           | Some false, _ -> v_false
-          | None, Some l -> mk_commut_nop Distinct l <| TBool
-          | None, None -> mk_commut_nop Distinct (List.of_seq s) <| TBool)
+          | None, Some l -> mk_commut_nop ~idem:false Distinct l <| TBool
+          | None, None ->
+              mk_commut_nop ~idem:false Distinct (List.of_seq s) <| TBool)
 
     let distinct_seq s = distinct_raw s ()
     let distinct l = distinct_raw (List.to_seq l) ~l ()
