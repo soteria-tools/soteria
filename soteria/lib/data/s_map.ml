@@ -111,7 +111,9 @@ struct
     match M.find_opt key st with
     | Some v -> Symex.return (key, Some v)
     | None ->
-        let not_in_map = M.to_seq st |> Seq.map fst |> Key.distinct_seq in
+        let not_in_map =
+          M.to_seq st |> Seq.map fst |> Seq.cons key |> Key.distinct_seq
+        in
         B.if_not_in_map not_in_map
           ~then_:(fun () -> Symex.return (key, None))
           ~else_:(fun () -> M.to_seq st |> find_bindings)
