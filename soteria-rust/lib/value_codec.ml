@@ -352,9 +352,9 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
   let open Rustsymex in
   let open Syntax in
   let open Result in
-  let chain fields iter =
+  let chain combine fields iter =
     fields
-    |> Iter.combine_iarray iter
+    |> combine iter
     |> Result.fold_iter ~init:Iter.empty ~f:(fun acc ((ty, ofs), v) ->
         let offset = offset +!!@ ofs in
         let++ ys = encode ~offset v ty in
@@ -376,10 +376,10 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
             |> Iter.map (fun (v, o, s) -> (v, offset +!!@ o, s)))
         else
           let fields = Typed.Adt.as_tuple (Typed.cast_tuple value) in
-          chain fields (iter_fields layout ty)
+          chain Iter.combine_list fields (iter_fields layout ty)
     | Array { is_ptr = false; _ } ->
         let fields = Typed.Adt.as_array (Typed.cast_array value) in
-        chain fields (iter_fields layout ty)
+        chain Iter.combine_iarray fields (iter_fields layout ty)
     | Array { is_ptr = true; _ } ->
         let ptr, meta = Typed.Ptr.split (Typed.cast_ptr_f value) in
         let ptr = Typed.Ptr.mk_ptr_f ptr None in
@@ -390,7 +390,7 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
           | TExtension TThinPtr -> Typed.Ptr.mk_ptr_f meta None
           | _ -> L.failwith "invalid meta"
         in
-        chain (Iarray.of_list [ ptr; meta ]) (iter_fields layout ty)
+        chain Iter.combine_list [ ptr; meta ] (iter_fields layout ty)
     | Enum (_, layouts) -> (
         let adt = ty_as_adt ty in
         let value = Typed.cast_enum ~adt value in
@@ -398,7 +398,9 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         let* variant = variant_for_discr discr adt in
         let variant = variant.id in
         let fields = Typed.Adt.as_enum_of_variant variant value in
-        let++ fields = chain fields (iter_fields ~variant layout ty) in
+        let++ fields =
+          chain Iter.combine_list fields (iter_fields ~variant layout ty)
+        in
         match fst layouts.(Types.VariantId.to_int variant) with
         | None -> fields
         | Some (ofs, tag) ->
@@ -780,7 +782,7 @@ let rec ref_tys_in
   in
   let fs' acc tys vs =
     let++ vs, acc =
-      Iter.combine_iarray (Iter.of_list tys) vs
+      Iter.of_list_combine tys vs
       |> Result.fold_iter ~init:([], acc) ~f:(fun (vs, acc) (v, ty) ->
           let++ v, acc = f acc v ty in
           (v :: vs, acc))

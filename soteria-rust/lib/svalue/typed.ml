@@ -341,21 +341,15 @@ module Ptr = struct
 end
 
 module Adt = struct
-  let unit = Extension (Tuple [||]) <| t_unit
-
-  let mk_tuple vs =
-    let tuple_ty = t_tuple @@ List.map get_ty vs in
-    let vs = Iarray.of_list vs in
-    Extension (Tuple vs) <| tuple_ty
+  let unit = Extension (Tuple []) <| t_tuple []
+  let mk_tuple vs = Extension (Tuple vs) <| t_tuple (List.map get_ty vs)
 
   let mk_array elem_ty arr =
     let len = Iarray.length arr in
     let elem_ty = if len = 0 then ty_of_rust elem_ty else get_ty arr.%(0) in
     Extension (Array arr) <| t_array elem_ty (Z.of_int len)
 
-  let mk_enum adt discr vs =
-    Extension (Enum (discr, Iarray.of_list vs)) <| t_enum adt
-
+  let mk_enum adt discr vs = Extension (Enum (discr, vs)) <| t_enum adt
   let mk_union adt blocks = Extension (Union blocks) <| t_union adt
   let mk_poly ty_id = Extension (PolyVal ty_id) <| t_poly ()
 
@@ -385,18 +379,16 @@ module Adt = struct
     | _ -> todo_migration "as_enum_of_variant unop"
 
   let as_tuple1 v =
-    match as_tuple v with
-    | [| a |] -> a
-    | _ -> cast_error v (t_tuple [ t_int 1 ])
+    match as_tuple v with [ a ] -> a | _ -> cast_error v (t_tuple [ t_int 1 ])
 
   let as_tuple2 v =
     match as_tuple v with
-    | [| a; b |] -> (a, b)
+    | [ a; b ] -> (a, b)
     | _ -> cast_error v (t_tuple [ t_int 2 ])
 
   let as_tuple3 v =
     match as_tuple v with
-    | [| a; b; c |] -> (a, b, c)
+    | [ a; b; c ] -> (a, b, c)
     | _ -> cast_error v (t_tuple [ t_int 3 ])
 
   let as_type_var v =
@@ -412,7 +404,7 @@ module Adt = struct
   let field_of idx v =
     match kind v with
     | Extension (Tuple vs) -> (
-        try vs.%(idx)
+        try List.nth vs idx
         with Invalid_argument _ ->
           L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "field_of op"
@@ -429,7 +421,7 @@ module Adt = struct
     (* TODO: assert the variant? *)
     match kind v with
     | Extension (Enum (_, vs)) -> (
-        try vs.%(idx)
+        try List.nth vs idx
         with Invalid_argument _ ->
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "field_of_variant op"
@@ -437,7 +429,7 @@ module Adt = struct
   let set_field idx f v =
     match kind v with
     | Extension (Tuple vs) -> (
-        try Extension (Tuple (Iarray.copy_and_set idx f vs)) <| v.node.ty
+        try Extension (Tuple (List.set_nth idx f vs)) <| v.node.ty
         with Invalid_argument _ ->
           L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "set_field op"
@@ -446,7 +438,7 @@ module Adt = struct
     (* TODO: assert the variant *)
     match kind v with
     | Extension (Enum (discr, vs)) -> (
-        try Extension (Enum (discr, Iarray.copy_and_set idx f vs)) <| v.node.ty
+        try Extension (Enum (discr, List.set_nth idx f vs)) <| v.node.ty
         with Invalid_argument _ ->
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "set_field_of_variant op"
