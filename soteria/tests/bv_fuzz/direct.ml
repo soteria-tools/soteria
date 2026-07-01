@@ -28,15 +28,15 @@ module Var_pool = struct
   (* We want to generate at most [max_var_per_ty] variables per type. This
      avoids generating expressions with only different variables, which cannot
      be reduced interestingly. *)
-  let var_pool : (int * ty, t) Hashtbl.t = Hashtbl.create 1024
+  let var_pool : (int * ty, t) Stdlib.Hashtbl.t = Stdlib.Hashtbl.create 1024
 
   let get_from_pool idx ty =
     let key = (idx, ty) in
-    match Hashtbl.find_opt var_pool key with
+    match Stdlib.Hashtbl.find_opt var_pool key with
     | None ->
         let name = get_next_name () in
         let v = mk_var name ty in
-        Hashtbl.replace var_pool key v;
+        Stdlib.Hashtbl.replace var_pool key v;
         v
     | Some v -> v
 end

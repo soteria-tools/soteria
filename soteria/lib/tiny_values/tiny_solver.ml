@@ -121,12 +121,16 @@ struct
             [%l.info "Solver returned unknown"];
             Unknown)
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
+
+  let pp fmt solver =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) fmt solver
 end
 
 module Make
@@ -380,8 +384,8 @@ struct
     if not (Var.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
 
-  let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
-    Hashtbl.Hint.create 1023
+  let memo_sat_check_tbl : Symex.Solver_result.t Svalue.Hashtbl.t =
+    Svalue.Hashtbl.create 1023
 
   let trivial_model_works to_check =
     (* We try a trivial model where replacing each variable with name [|n|] with
@@ -432,11 +436,11 @@ struct
 
   let check_sat_raw_memo solver relevant_vars to_check =
     let to_check = Typed.untyped to_check in
-    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
+    match Svalue.Hashtbl.find_opt memo_sat_check_tbl to_check with
     | Some result -> result
     | None ->
         let result = check_sat_raw solver relevant_vars to_check in
-        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
+        Svalue.Hashtbl.add memo_sat_check_tbl to_check result;
         result
 
   let sat solver : Symex.Solver_result.t =
@@ -458,12 +462,16 @@ struct
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
+
+  let pp fmt solver =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) fmt solver
 end
 
 module Z3 = Solvers.Z3.Make (Encoding)

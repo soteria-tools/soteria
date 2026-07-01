@@ -174,12 +174,16 @@ struct
             [%l.info "Solver returned unknown"];
             Unknown)
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let pp (ft : Format.formatter) (solver : t) : unit =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) ft solver
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
 end
 
 module Make
@@ -350,8 +354,13 @@ struct
             else
               let others = fun () -> Seq.Cons (slot, others) in
               aux_checked others rest
-        | Seq.Cons ({ value = Dirty _; _ }, rest) ->
-            (* A dirty checked variable can be ignored *)
+        | Seq.Cons ({ value = Dirty vars; _ }, rest) ->
+            let vars = Fun.flip Var.Set.iter vars in
+            if relevant vars then
+              (* Variables that are together in a Dirty slot might indicate a
+                 relationship between the variables. We need to consider them
+                 connected. *)
+              add_vars vars;
             aux_checked others rest
       in
       let rec aux seq =
@@ -398,8 +407,8 @@ struct
     if not (Var.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
 
-  let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
-    Hashtbl.Hint.create 1023
+  let memo_sat_check_tbl : Symex.Solver_result.t Svalue.Hashtbl.t =
+    Svalue.Hashtbl.create 1023
 
   let trivial_model_works solver to_check var_tys =
     let exception No_model in
@@ -467,11 +476,11 @@ struct
 
   let check_sat_raw_memo solver to_check =
     let to_check = Typed.untyped to_check in
-    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
+    match Svalue.Hashtbl.find_opt memo_sat_check_tbl to_check with
     | Some result -> result
     | None ->
         let result = check_sat_raw solver to_check in
-        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
+        Svalue.Hashtbl.add memo_sat_check_tbl to_check result;
         result
 
   let sat solver =
@@ -493,12 +502,16 @@ struct
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let pp fmt solver =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) fmt solver
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
 end
 
 module Analysis (Typed : Typed_intf.Solver_value) = struct

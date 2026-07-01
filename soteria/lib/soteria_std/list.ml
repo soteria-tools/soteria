@@ -170,6 +170,18 @@ let rec find_with_rest f l =
         | None -> None
         | Some (found, rest) -> Some (found, x :: rest))
 
+let rec take_nth_exn n l =
+  if n < 0 then raise (Invalid_argument "take_nth: negative n");
+  let rec aux n l =
+    match (n, l) with
+    | _, [] -> raise (Invalid_argument "take_nth: index out of bounds")
+    | 0, x :: xs -> (x, xs)
+    | n, x :: xs ->
+        let found, rest = take_nth_exn (n - 1) xs in
+        (found, x :: rest)
+  in
+  aux n l
+
 (** [update_at i f l] updates the element at index [i] in list [l] with function
     [f]. This is more efficient than e.g. {!mapi}, as it only traverses and
     rebuilds the list up to index [i]; the list is shared after index [i].

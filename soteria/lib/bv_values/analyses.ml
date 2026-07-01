@@ -251,7 +251,8 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     include Reversible.Make_mutable (struct
       type t = st
 
-      let default = Var.Map.empty
+      let default () = Var.Map.empty
+      let copy = Fun.id
     end)
 
     let get n v st =
@@ -558,13 +559,9 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     include Reversible.Make_mutable (struct
       type t = Svalue.t UnionFind.store * Svalue.t UnionFind.rref VMap.t
 
-      let default = (UnionFind.new_store (), VMap.empty)
+      let default () = (UnionFind.new_store (), VMap.empty)
+      let copy (uf, refs) = (UnionFind.copy uf, refs)
     end)
-
-    (* override to account for UnionFind *)
-    let save d =
-      let uf, st = Dynarray.get_last d in
-      Dynarray.add_last d (UnionFind.copy uf, st)
 
     let rec cost (v : Svalue.t) : int =
       match v.node.kind with

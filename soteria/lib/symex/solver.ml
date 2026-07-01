@@ -27,6 +27,8 @@ module type Mutable_incremental = sig
   (** Converts the current solver state into the list of constraints it
       contains. These are {e syntactic} constraints, not semantic ones. *)
   val as_exprs : t -> Value.Expr.t list
+
+  val pp : Format.formatter -> t -> unit
 end
 
 (** Converts a mutable incremental solver into an effectful one. See the
@@ -43,6 +45,7 @@ module Mutable_to_effectful (M : Mutable_incremental) = struct
   let simplify x = wrap (fun st -> M.simplify st x) ()
   let fresh_var x = wrap (fun st -> M.fresh_var st x) ()
   let as_exprs () = wrap M.as_exprs ()
+  let pp fmt () = wrap (M.pp fmt) ()
 end
 
 (** Converts a mutable incremental solver into a pooled one. See the
@@ -59,4 +62,5 @@ module Mutable_to_pooled (M : Mutable_incremental) = struct
   let simplify x = wrap (fun st -> M.simplify st x) ()
   let fresh_var x = wrap (fun st -> M.fresh_var st x) ()
   let as_exprs () = wrap M.as_exprs ()
+  let pp fmt () = wrap (M.pp fmt) ()
 end
