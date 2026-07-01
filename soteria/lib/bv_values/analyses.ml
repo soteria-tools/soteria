@@ -252,7 +252,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
       type t = st
 
       let default () = Var.Map.empty
-      let copy t = t
+      let copy = Fun.id
     end)
 
     let get n v st =

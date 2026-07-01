@@ -170,16 +170,15 @@ let rec find_with_rest f l =
         | None -> None
         | Some (found, rest) -> Some (found, x :: rest))
 
-let rec take_nth n l =
+let rec take_nth_exn n l =
   if n < 0 then raise (Invalid_argument "take_nth: negative n");
   let rec aux n l =
     match (n, l) with
-    | _, [] -> None
-    | 0, x :: xs -> Some (x, xs)
-    | n, x :: xs -> (
-        match take_nth (n - 1) xs with
-        | None -> None
-        | Some (found, rest) -> Some (found, x :: rest))
+    | _, [] -> raise (Invalid_argument "take_nth: index out of bounds")
+    | 0, x :: xs -> (x, xs)
+    | n, x :: xs ->
+        let found, rest = take_nth_exn (n - 1) xs in
+        (found, x :: rest)
   in
   aux n l
 

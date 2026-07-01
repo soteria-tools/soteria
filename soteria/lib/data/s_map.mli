@@ -41,6 +41,9 @@ module Direct_access_patricia_tree
     possible that the key is outside the map, only this path will be taken. *)
 module Lazy (Symex : Symex.Base) (Key : Key(Symex).S) : S(Symex)(Key).S
 
+(** Same as {!Lazy}, but backed by a
+    {{:https://ocaml.org/p/patricia-tree/latest/doc/index.html}Patricia Tree},
+    which may offer performance benefits. *)
 module Lazy_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) : S(Symex)(Key).S

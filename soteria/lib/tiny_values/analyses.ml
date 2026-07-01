@@ -106,7 +106,7 @@ module Interval : S = struct
     type t = Range.t Var.Map.t
 
     let default () : t = Var.Map.empty
-    let copy t = t
+    let copy = Fun.id
   end)
 
   (** Union of two interval mappings, doing the union of the intervals *)

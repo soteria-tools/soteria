@@ -171,6 +171,8 @@ module type Core = sig
   (** {2 Fuel} *)
 
   val consume_fuel_steps : int -> unit t
+
+  (** Logs the current solver state, at the given log level *)
   val log_solver_state : level:Logs.Level.t -> unit -> unit
 end
 

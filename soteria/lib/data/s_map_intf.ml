@@ -48,10 +48,6 @@ struct
   module type S = sig
     type 'a t
 
-    (** Indicates whether the map has a lazy behaviour. If true, it means that:
-        - finding a hit does not mean it is the only possible hit, and
-        - not finding a hit does not mean there is no match. *)
-
     val empty : 'a t
     val is_empty : 'a t -> bool
     val syntactic_bindings : 'a t -> (Key.t * 'a) Seq.t
