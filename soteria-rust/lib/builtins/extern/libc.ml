@@ -28,8 +28,8 @@ module M (StateM : State.StateM.S) = struct
     in
     let max_size = Typed.BitVec.usize (Layout.max_value_z (TInt Isize)) in
     let* () = assert_ (size <=@ max_size) `InvalidAlloc in
-    (* we under-approximate here: the alignment can be smaller (its min size is
-       the first power of 2 greater than or equal to the requested size) *)
+    (* UX: the alignment can be smaller (its min size is the first power of 2
+       greater than or equal to the requested size) *)
     let align = Typed.BitVec.usizeinz (2 * Crate.pointer_size ()) in
     State.alloc_untyped ~zeroed:false ~size ~align ()
 
