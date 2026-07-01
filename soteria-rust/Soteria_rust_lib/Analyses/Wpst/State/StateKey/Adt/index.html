@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Adt (soteria-rust.Soteria_rust_lib.Analyses.Wpst.State.StateKey.Adt)</title><meta charset="utf-8"/><link rel="stylesheet" href="../../../../../../../odoc.support/odoc.css"/><meta name="generator" content="odoc 3.2.1"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../../../../../../../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script><script>let base_url = '../../../../../../../';
+let search_urls = ['../../../../../../db.js','../../../../../../../sherlodoc.js'];
+</script><script src="../../../../../../../odoc.support/odoc_search.js" defer="defer"></script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – <a href="../../../../../../../index.html">Index</a> &#x00BB; <a href="../../../../../../index.html">soteria-rust</a> &#x00BB; <a href="../../../../../index.html">Soteria_rust_lib</a> &#x00BB; <a href="../../../../index.html">Analyses</a> &#x00BB; <a href="../../../index.html">Wpst</a> &#x00BB; <a href="../../index.html">State</a> &#x00BB; <a href="../index.html">StateKey</a> &#x00BB; Adt</nav><div class="odoc-search"><div class="search-inner"><input class="search-bar" placeholder="🔎 Type '/' to search..."/><div class="search-snake"></div><div class="search-result"></div></div></div><header class="odoc-preamble"><h1>Module <code><span>StateKey.Adt</span></code></h1></header><div class="odoc-content"><div class="odoc-spec"><div class="spec value anchored" id="val-mk_tuple"><a href="#val-mk_tuple" class="anchor"></a><code><span><span class="keyword">val</span> mk_tuple : 
+  <span><span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+    list</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates a tuple value with the given fields. This may be an array, struct, or tuple.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_array"><a href="#val-mk_array" class="anchor"></a><code><span><span class="keyword">val</span> mk_array : 
+  <span><span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+    iarray</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates an array value with the given element type and elements.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_enum"><a href="#val-mk_enum" class="anchor"></a><code><span><span class="keyword">val</span> mk_enum : 
+  <span><span class="xref-unresolved">Charon</span>.Types.type_decl_ref <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+    list</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates an enum value with the given discriminant and fields.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_union"><a href="#val-mk_union" class="anchor"></a><code><span><span class="keyword">val</span> mk_union : 
+  <span><span class="xref-unresolved">Charon</span>.Types.type_decl_ref <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>(<span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+   * <span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span>
+       <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+   * <span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.nonzero</span> ]</span>
+       <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span>
+    list</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.union</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates a union value with the given value blocks.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_poly"><a href="#val-mk_poly" class="anchor"></a><code><span><span class="keyword">val</span> mk_poly : 
+  <span><span class="xref-unresolved">Charon</span>.Types.type_var_id <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.poly</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates an unknown polymorphic value. <b>HACK: what does this even mean?</b></p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-unit"><a href="#val-unit" class="anchor"></a><code><span><span class="keyword">val</span> unit : 
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>The unit tuple value.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_union"><a href="#val-as_union" class="anchor"></a><code><span><span class="keyword">val</span> as_union : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.union</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+   * <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span>
+       <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+   * <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.nonzero</span> ]</span>
+       <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span>
+    list</span></span></code></div><div class="spec-doc"><p>Gets the value blocks of a union.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_tuple"><a href="#val-as_tuple" class="anchor"></a><code><span><span class="keyword">val</span> as_tuple : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+    list</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_array"><a href="#val-as_array" class="anchor"></a><code><span><span class="keyword">val</span> as_array : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+    iarray</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_enum_of_variant"><a href="#val-as_enum_of_variant" class="anchor"></a><code><span><span class="keyword">val</span> as_enum_of_variant : 
+  <span><span class="xref-unresolved">Charon</span>.Types.variant_id <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+    list</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_tuple1"><a href="#val-as_tuple1" class="anchor"></a><code><span><span class="keyword">val</span> as_tuple1 : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Like <a href="#val-as_tuple"><code>as_tuple</code></a>, but casts to a fixed-arity tuple, failing if the tuple does not have exactly that many fields. Avoids partial list pattern matches at call sites.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_tuple2"><a href="#val-as_tuple2" class="anchor"></a><code><span><span class="keyword">val</span> as_tuple2 : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+  * <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span>
+      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_tuple3"><a href="#val-as_tuple3" class="anchor"></a><code><span><span class="keyword">val</span> as_tuple3 : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+  * <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span>
+      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+  * <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span>
+      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_type_var"><a href="#val-as_type_var" class="anchor"></a><code><span><span class="keyword">val</span> as_type_var : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.poly</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span class="xref-unresolved">Charon</span>.Types.type_var_id</span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-discriminant_of"><a href="#val-discriminant_of" class="anchor"></a><code><span><span class="keyword">val</span> discriminant_of : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-field_of"><a href="#val-field_of" class="anchor"></a><code><span><span class="keyword">val</span> field_of : 
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Get the field of a tuple</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-array_field_of"><a href="#val-array_field_of" class="anchor"></a><code><span><span class="keyword">val</span> array_field_of : 
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Get the field of an array</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-field_of_variant"><a href="#val-field_of_variant" class="anchor"></a><code><span><span class="keyword">val</span> field_of_variant : 
+  <span><span class="xref-unresolved">Charon</span>.Types.variant_id <span class="arrow">&#45;&gt;</span></span>
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Get the field of a enum with the given variant</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-set_field"><a href="#val-set_field" class="anchor"></a><code><span><span class="keyword">val</span> set_field : 
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-set_field_of_variant"><a href="#val-set_field_of_variant" class="anchor"></a><code><span><span class="keyword">val</span> set_field_of_variant : 
+  <span><span class="xref-unresolved">Charon</span>.Types.variant_id <span class="arrow">&#45;&gt;</span></span>
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-update_field"><a href="#val-update_field" class="anchor"></a><code><span><span class="keyword">val</span> update_field : 
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span>
+      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-set_array_field"><a href="#val-set_array_field" class="anchor"></a><code><span><span class="keyword">val</span> set_array_field : 
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-update_array_field"><a href="#val-update_array_field" class="anchor"></a><code><span><span class="keyword">val</span> update_array_field : 
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span>
+      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-update_field_of_variant"><a href="#val-update_field_of_variant" class="anchor"></a><code><span><span class="keyword">val</span> update_field_of_variant : 
+  <span><span class="xref-unresolved">Charon</span>.Types.variant_id <span class="arrow">&#45;&gt;</span></span>
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span>
+      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec module anchored" id="module-Checked"><a href="#module-Checked" class="anchor"></a><code><span><span class="keyword">module</span> <a href="Checked/index.html">Checked</a></span><span> : <span class="keyword">sig</span> ... <span class="keyword">end</span></span></code></div></div></div></body></html>
