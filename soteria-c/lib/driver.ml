@@ -187,7 +187,7 @@ let parse_and_link_ail ~includes files =
   | files ->
       let* parsed =
         if (Config.current ()).no_ignore_parse_failures then
-          Monad.ResultM.all parse_and_signal files
+          Monad.ResultM.map_list ~f:parse_and_signal files
         else
           let parsed =
             List.filter_map

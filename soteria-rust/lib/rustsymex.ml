@@ -114,9 +114,12 @@ module Poly = struct
       (res, { st with subst = prev_subst })
 
   let subst f x =
-    let* { subst; _ } = get_state () in
-    try return (f subst x)
-    with Not_found -> give_up "Substitution failed -- wrong poly environment"
+    if not (Config.get ()).polymorphic then return x
+    else
+      let* { subst; _ } = get_state () in
+      try return (f subst x)
+      with Not_found ->
+        give_up "Substitution failed -- wrong poly environment"
 
   let subst_ty = subst ty_substitute
   let subst_tys = subst (fun subst -> List.map (ty_substitute subst))

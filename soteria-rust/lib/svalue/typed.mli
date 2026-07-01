@@ -57,6 +57,7 @@ val cast_lit : Types.literal_type -> _ t -> [> T.sint ] t
 val cast_ptr_f : _ t -> [< T.sptr_f ] t
 val cast_ptr_t : _ t -> [< T.sptr_t ] t
 val cast_tuple : _ t -> [> T.tuple ] t
+val cast_array : _ t -> [> T.tuple ] t
 val cast_enum : ?adt:Types.type_decl_ref -> _ t -> [> T.enum ] t
 val cast_union : ?adt:Types.type_decl_ref -> _ t -> [> T.union ] t
 
@@ -169,6 +170,9 @@ module Adt : sig
       or tuple. *)
   val mk_tuple : [< T.any ] t list -> [> T.tuple ] t
 
+  (** Creates an array value with the given element type and elements. *)
+  val mk_array : Types.ty -> [< T.any ] t iarray -> [> T.tuple ] t
+
   (** Creates an enum value with the given discriminant and fields. *)
   val mk_enum :
     Types.type_decl_ref -> [< T.sint ] t -> [< T.any ] t list -> [> T.enum ] t
@@ -191,6 +195,7 @@ module Adt : sig
     [< T.union ] t -> ([> T.any ] t * [> T.sint ] t * [> T.nonzero ] t) list
 
   val as_tuple : [< T.tuple ] t -> [> T.any ] t list
+  val as_array : [< T.tuple ] t -> [> T.any ] t iarray
 
   val as_enum_of_variant :
     Types.variant_id -> [< T.enum ] t -> [> T.any ] t list
@@ -205,10 +210,13 @@ module Adt : sig
   val as_type_var : [< T.poly ] t -> Types.type_var_id
   val discriminant_of : [< T.enum ] t -> [> T.sint ] t
 
-  (* Field access is split by kind: tuples/structs/arrays and enum variants
-     store their fields differently (an enum also keeps its discriminant). *)
+  (** Get the field of a tuple *)
   val field_of : int -> [< T.tuple ] t -> [> T.any ] t
 
+  (** Get the field of an array *)
+  val array_field_of : int -> [< T.tuple ] t -> [> T.any ] t
+
+  (** Get the field of a enum with the given variant *)
   val field_of_variant :
     Types.variant_id -> int -> [< T.enum ] t -> [> T.any ] t
 
@@ -218,6 +226,11 @@ module Adt : sig
     Types.variant_id -> int -> [< T.any ] t -> [< T.enum ] t -> [> T.enum ] t
 
   val update_field :
+    int -> ([< T.any ] t -> [> T.any ] t) -> [< T.tuple ] t -> [> T.tuple ] t
+
+  val set_array_field : int -> [< T.any ] t -> [< T.tuple ] t -> [> T.tuple ] t
+
+  val update_array_field :
     int -> ([< T.any ] t -> [> T.any ] t) -> [< T.tuple ] t -> [> T.tuple ] t
 
   val update_field_of_variant :
