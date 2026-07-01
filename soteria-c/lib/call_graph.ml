@@ -40,7 +40,7 @@ let rec expr_callees d (e : Ail_tys.expr) =
   | AilEmemberof (expr, _)
   | AilEmemberofptr (expr, _)
   | AilEatomic expr
-  | AilEgeneric (expr, _) ->
+  | AilEgeneric (expr, _, _) ->
       expr_callees expr
   | AilEva_copy (expr1, expr2)
   | AilEbinary (expr1, _, expr2)

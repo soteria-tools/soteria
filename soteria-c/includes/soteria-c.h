@@ -5,12 +5,18 @@ void __soteria___assert(int x);
 #define restrict
 #define __extension__
 #define __PRETTY_FUNCTION__ "__PRETTY_FUNCTION__"
+#define __restrict
+#define __inline
 
 // Dealing with Apple extensions
 // Uncomment this or pass "-fno-blocks" to clang's cpp
 #undef __BLOCKS__
 #define _Nonnull
 #define _Nullable
+
+// Apple's libc uses `__asm` (e.g. via __DARWIN_ALIAS) for asm labels, but
+// Cerberus' lexer only recognises `asm` and `__asm__` as the asm keyword.
+#define __asm __asm__
 
 // Non standard 128 bits type
 #define __uint128_t __cerbty_uint128_t

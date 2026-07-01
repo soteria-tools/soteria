@@ -34,6 +34,7 @@ FILES_TO_SCAN = [
     ".github/workflows/test-packages.yml",
     ".github/workflows/benchmarks.yml",
     "soteria-rust.opam.template",
+    "soteria-c.opam.template",
     "dune-project",
     ".ocamlformat",
     "Makefile",
@@ -122,9 +123,14 @@ def find_tags_in_file(
     for i, line in enumerate(content.splitlines()):
         for match in TAG_PATTERN.finditer(line):
             filters = find_filters_on_line(line)
-            tags.append(
-                (i, match.start(), match.group(1), match.group(2), line, filters)
-            )
+            tags.append((
+                i,
+                match.start(),
+                match.group(1),
+                match.group(2),
+                line,
+                filters,
+            ))
     return tags
 
 
@@ -407,7 +413,8 @@ def validate_git_repo(
             remote_url = parts[1]
             # Normalize remote URLs (handle both https and git@ formats)
             normalized = (
-                remote_url.replace("https://github.com/", "")
+                remote_url
+                .replace("https://github.com/", "")
                 .replace("git@github.com:", "")
                 .replace(".git", "")
             )

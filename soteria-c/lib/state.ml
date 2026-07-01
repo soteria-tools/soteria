@@ -28,6 +28,11 @@ module Heap = struct
                  locations. *)
               return (Csymex.Concrete_alloc_id.get_next ())
 
+        let distinct_seq vs =
+          match Config.current_mode () with
+          | Compositional -> distinct_seq vs
+          | Whole_program -> v_true
+
         let simplify = Csymex.simplify
         let to_int = unique_tag
       end)
