@@ -273,7 +273,7 @@ kani,Intrinsics/RawEq/uninit_eq.rs,pass
 kani,Intrinsics/RawEq/uninit_ne.rs,pass
 kani,Intrinsics/Rotate/rotate_left.rs,pass
 kani,Intrinsics/Rotate/rotate_right.rs,pass
-kani,Intrinsics/Saturating/main.rs,timeout
+kani,Intrinsics/Saturating/main.rs,pass
 kani,Intrinsics/SizeOfVal/size_of_basic.rs,pass
 kani,Intrinsics/SizeOfVal/size_of_fat_ptr.rs,pass
 kani,Intrinsics/Transmute/arr_to_struct.rs,pass
