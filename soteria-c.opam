@@ -30,7 +30,7 @@ depends: [
   "odoc" {with-doc}
   "alcotest" {with-test}
   "yojson" {< "3.0"}
-  "dune" {>= "3.23" & build & >= "3.14.0"}
+  "dune" {>= "3.23"}
   "ocamlformat" {with-dev-setup & = "0.29.0"}
   "ocaml-lsp-server" {with-dev-setup}
 ]

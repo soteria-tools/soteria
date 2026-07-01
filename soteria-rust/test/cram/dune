@@ -17,6 +17,7 @@
    (run ../../bin/soteria_rust.exe build-plugins))))
 
 (cram
+ (package soteria-rust)
  (deps
   ../../bin/soteria_rust.exe
   (alias plugins-warmup))
