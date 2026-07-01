@@ -6,8 +6,10 @@ process over pipes, so the three things worth profiling are **OCaml CPU**,
 **OCaml allocations/GC**, and **the Z3 subprocess boundary**. Living
 document — add rows/recipes that worked.
 
-Tree-Borrows-specific findings live in `tree-borrows.md` (kept separate because
-that subsystem accreted a lot of detail).
+Tree-Borrows-specific findings live in `tree-borrows.md`, and everything about
+the **Z3 solver boundary** — spawn/round-trip instrumentation and solver-side
+findings — in `z3-solver.md` (both kept separate because those areas accreted a
+lot of detail).
 
 ## 0. First look — macOS `sample` (zero setup)
 
@@ -20,7 +22,7 @@ sample <pid> 3       -file /tmp/soteria.sample.txt
 Read the aggregated tree for the **syscall vs. compute split**:
 
 - dominated by `read`/`__read`/`waitpid`/`select` → bottleneck is the Z3
-  boundary or process lifecycle, go to §3;
+  boundary or process lifecycle, see `z3-solver.md`;
 - dominated by OCaml symbols (`caml_*`, `Soteria_*`, `camlZ3*`) → CPU/alloc
   in the engine, go to §1/§2.
 
@@ -137,43 +139,102 @@ A useful experiment: rerun the benchmark with a much larger minor heap
 (`OCAMLRUNPARAM=s=4M`). If wall-clock drops markedly, allocation pressure is
 the bottleneck and §2-style work will pay; if not, look elsewhere.
 
-## 3. The Z3 subprocess boundary
+## 3. Findings log — realized wins, levers, dead ends
 
-If §0 showed `read`/`waitpid` dominance, the cost is *waiting on Z3*, not
-solving math, and not OCaml. Quantify the boundary instead of inferring it.
+Soteria-specific results below, kept so nobody re-runs a settled experiment.
+(Z3 **solver-boundary** profiling — spawn counting, round-trip instrumentation —
+and the solver-side findings now live in `z3-solver.md`.)
 
-### Count Z3 spawns per run (wrapper shim)
+### Realized win: structural type hash, not polymorphic `Hashtbl.hash` (2026-06, soteria-rust)
 
-```sh
-#!/bin/sh
-# /tmp/z3trace.sh  — chmod +x, then put earlier on PATH or pass as solver path
-echo "z3 spawn $(date +%s.%N)" >> /tmp/z3spawns.log
-exec /absolute/path/to/real/z3 "$@"
-```
+`sample` on an array-heavy workload (a `[u32; N]` filled + RMW'd in a loop)
+showed `caml_hash` as the single hottest leaf (~25% self-time). Attribution:
+the Rust svalue extension's `hash_ty` (`soteria-rust/lib/svalue/ext.ml`) hashed
+each element type of a `TTuple` with the **polymorphic `Hashtbl.hash`** over the
+whole `Sv.ty` ADT. A large array is stored as one N-field tuple value, so every
+hash-cons of that value walked all N element types through `caml_hash`. Fix:
+expose the structural `hash_ty` the hash-cons table already uses from `Svalue`
+(`soteria/lib/bv_values/svalue.ml`, parameterised by the extension's hasher) and
+call it for embedded element types. `caml_hash` drops out of the profile;
+~1.17x on a 2048-element array bench, 1.03–1.10x on smaller aggregates, cram
+outputs unchanged. Commit `36d439217`. Lesson: any `Hashtbl.hash`/polymorphic
+`compare`/`(=)` on a Charon-or-svalue ADT in a hot path is suspect — it walks
+the whole structure in C; replace with a derived/structural function.
 
-```bash
-: > /tmp/z3spawns.log
-# point Soteria at the wrapper (PATH order, or its solver-path option),
-# run one experiment, then:
-wc -l /tmp/z3spawns.log     # spawns per analysis
-```
+### Open lever (uncommitted): `Gc` `space_overhead`
 
-This is how "3 spawns where 1 suffices" was found. A spawn count that scales
-with work units (instead of being ~1) means a pooling/lifetime bug — usually
-a bigger win than any solving micro-optimization.
+Allocation/GC churn is the dominant self-time bucket on allocation-heavy rust
+benches (`do_some_marking`/`caml_perform`/`pool_sweep`/`oldify`). A pure runtime
+knob helps a little: `OCAMLRUNPARAM=o=240` (space_overhead 120→240) gave a
+**consistent ~2–4%** (btreeset −2.9%, writealot −2–3%, heavy ~−2%) — and
+isolation showed it's **entirely `o`, not `s`** (minor-heap size `s=4M`/`16M`/`64M`
+did nothing; `s=64M` was worse). It's at the noise floor and trades heap memory
+for CPU, so it's a maintainer policy call (a `Gc.set { (Gc.get ()) with
+space_overhead = 240 }` at startup) rather than an autonomous commit. Recorded so
+the next run doesn't re-sweep it: `o` ≈ +2–4% ceiling, `s` ≈ nothing.
 
-### See the round-trips / wait time
+### Within-noise (reverted): sharing in `Range_tree.map_leaves`
 
-| Tool | Invocation | Notes |
-|---|---|---|
-| `strace -c -f` (Linux) | `strace -c -f soteria-c capture-db <db> ...` | Per-syscall counts/time; confirms write/read round-trip volume to the Z3 pipes. |
-| `dtruss` / `ktrace` (macOS) | `sudo dtruss -c soteria-c ...` | macOS equivalent; SIP may restrict — use `sample` as fallback. |
-| SMT dump | Soteria's `--dump-smt-file` (if available) | Inspect the actual command stream: redundant declares/asserts, unnecessary `reset`, unbatched commands are visible structural wins. |
+`map_leaves` (`soteria/lib/data/range_tree.ml`, used by every TB access via
+`Rtree_block.Tree.map_leaves_tb`) unconditionally rebuilt every node
+(`{t with node}` / `{t with children=Some(l,r)}`) even when `f` changed nothing.
+Adding physical-eq sharing (return `t` when `node==t.node` / `l'==l && r'==r`),
+plus making `map_leaves_tb` return the original node when `tb' == tb`, is a clean
+rebuild→share in the style of the TB `access` wins — but measured **within noise**
+on the TB sentinels (`reborrow_chain` 0.52→0.52, `reborrow_tree` 0.34→0.33,
+btreeset 2.49→2.45). Reason: in the hot path the leaves being mapped are exactly
+the accessed ones, whose `tb` state *does* change, so `tb' == tb` rarely holds and
+little gets shared. Reverted per the within-noise rule.
 
-The reusable conclusion to aim for: **N round-trips/spawns per run at ~M ms
-each**. Then the fix is one of: pool the process, pipeline fire-and-forget
-commands and only block on the answers you need (`check`/`get-model`),
-cache/dedupe encodings, or avoid a redundant `reset`.
+### Realized win: homogeneous `TArray` type for arrays (2026-06, soteria-rust)
+
+A `[T; N]` array was a `Tuple` value with a `TTuple` type carrying *one svty per
+element* — so the array's **type** was O(N) to hash/compare. Hash-consing a value
+re-hashes its type, so each element write into a large array paid an O(N) type
+hash on top of the O(N) value copy → O(N²) per pass. Fix: a dedicated
+`TArray of svty * int` (element type + length) svalue ext-type, O(1) regardless
+of length, **plus a matching first-class `Array of sv array` value** (NOT a
+re-typed `Tuple`: a value must be well-typed against its type or the SMT-LIB
+encoding in `value_codec` mismatches). This means dedicated `as_array` /
+`array_field_of` / `set_array_field` / `cast_array`, and *every generic
+aggregate site that can see an array must dispatch to them*: store `Index`
+navigation, `value_codec` encode/decode/validity/nondet/`ref_tys_in`, string
+literals (`string_to_ptr`/`parse_string`), and the SIMD lane wrapper
+(`simd_of_lanes`/`simd_lanes`/`raw_eq`). The cram suite is the gate that finds
+missed sites (each surfaces as a `cast`/`as_tuple` failure on an array value).
+`mk_array` takes the element type explicitly (callers read it off an element
+when present, else derive it structurally via `value_codec.svty_of_ty`), so even
+a length-0 array — whose element type is otherwise unobservable — stays correctly
+typed rather than carrying a placeholder. **heavy 2048-RMW bench
+4.58→~4.18s (~9%), memwrite ~7%**, cram unchanged. Commits `75e56911f` (type) +
+the first-class-value follow-up. Scaling experiment that justified it: same
+store count, halving per-store N (`N=2048,p=24` → `1024,48` → `512,96`) gave
+4.57→3.99→3.61s, i.e. the O(N)-per-update was ~⅓ of the array bench.
+
+**Next step (not yet done): tree-ify the array *value*.** The win above removes
+only the O(N) *type* hash; the value copy + value hash are still O(N) per write.
+Representing a large array as a balanced tree of hash-consed sub-arrays would
+make updates O(log N) (rebuild only the path; root hash folds child tags). The
+homogeneity of `TArray` already removes the type-nesting/distinguishability
+blockers that sink a chunked-*tuple* (genuine nested tuples are
+indistinguishable from chunk-trees; `impl.ml` SIMD matches exact tuple shapes).
+Sound by construction as long as nodes are built immutably (never mutate a
+shared node — the rule that sank the old `tb_state` array change). It's the
+natural substrate for issue #383's "level 2".
+
+### Dead end: guarding the logging closure allocation (PR #405, CLOSED)
+
+Tempting and *almost* worth it, but already tried and rejected — do not
+re-explore. `[%l.debug "fmt" args]` expands (see `soteria/ppx/logs.ml`) to
+`L.debug (fun m -> m "fmt" args)`, allocating a closure on every call even when
+the level is off (flambda is **off**, so it isn't sunk). PR #405 changed the ppx
+to emit `if L.<level>_enabled () then L.debug (fun m -> ...)`. Microbenchmark:
+4 words → 0, −40% CPU *on the closure in isolation*. But the real per-file
+benches **regressed +0.8% to +2.3% across the board** (write-a-lot, ctpop,
+btreeset, array_init, reborrow chain/tree): a minor-heap closure that's never
+promoted is nearly free, while the `should_log` branch + `Config.get`
+(`Write_once`) deref is a real cost paid on every hot-path log site even when
+off. Net negative; the PR was approved-but-closed.
 
 ## What we already tried: compiler-level levers (flambda, `[@inline]`/`[@cold]`)
 

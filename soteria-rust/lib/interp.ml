@@ -169,7 +169,8 @@ module Make (StateImpl : State.S) = struct
     | CPtrNoProvenance v -> ok (Typed.Ptr.of_address_f (BV.usize v))
     | CArray cs ->
         let+ vals = map_list cs ~f:resolve_constant in
-        Typed.Adt.mk_tuple vals
+        let elem_ty = Layout.index_ty const.ty in
+        Typed.Adt.mk_array elem_ty (Iarray.of_list vals)
     | CAdt (None, fields) ->
         let+ vals = map_list fields ~f:resolve_constant in
         Typed.Adt.mk_tuple vals
@@ -759,11 +760,8 @@ module Make (StateImpl : State.S) = struct
                   Typed.Ptr.mk_ptr_f v (Some meta)
               | idx :: rest ->
                   let v = Typed.cast_tuple v in
-                  let fs = Typed.Adt.as_tuple v in
-                  let before, target, after = List.split_around fs idx in
-                  let+ target = with_ptr_meta target rest in
-                  let fs = before @ (target :: after) in
-                  Typed.Adt.mk_tuple fs
+                  let+ target = with_ptr_meta (Typed.Adt.field_of idx v) rest in
+                  Typed.Adt.set_field idx target v
             in
             let* unsize_path = Layout.unsize_path from_ty in
             match unsize_path with
@@ -934,9 +932,9 @@ module Make (StateImpl : State.S) = struct
     | Aggregate (AggregatedAdt (_, Some _, Some _), _) ->
         L.failwith "Invalid ADT aggregate kind"
     (* Array aggregate *)
-    | Aggregate (AggregatedArray (_ty, _size), operands) ->
+    | Aggregate (AggregatedArray (ty, _size), operands) ->
         let+ values = eval_operand_list operands in
-        Typed.Adt.mk_tuple values
+        Typed.Adt.mk_array ty (Iarray.of_list values)
     (* Raw pointer construction *)
     | Aggregate (AggregatedRawPtr (_, _), operands) ->
         let* values = eval_operand_list operands in
@@ -968,12 +966,12 @@ module Make (StateImpl : State.S) = struct
         in
         Typed.Ptr.mk_ptr_f ptr meta
     (* Array repetition *)
-    | Repeat (value, _, len) ->
+    | Repeat (value, ty, len) ->
         let+ value = eval_operand value in
         let len = int_of_constant_expr len in
         (* FIXME: this is horrible for large arrays! *)
-        let els = List.init len (fun _ -> value) in
-        Typed.Adt.mk_tuple els
+        let els = Iarray.init len (fun _ -> value) in
+        Typed.Adt.mk_array ty els
     (* Length of a &[T;N] or &[T] *)
     | Len (place, _, size_opt) -> (
         let* ptr = resolve_place place in

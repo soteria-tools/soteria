@@ -52,7 +52,7 @@ module Place = struct
           v
     | Index (base, idx) ->
         update_val base
-          ~f:(fun v -> Typed.Adt.update_field idx f (Typed.cast_tuple v))
+          ~f:(fun v -> Typed.Adt.update_array_field idx f (Typed.cast_array v))
           v
     (* metadata isn't navigable for in-place writes; spill to the heap *)
     | Metadata _ -> None
@@ -147,7 +147,7 @@ let rec try_load (place : Place.t) (store : t) : Binding.kind option =
   | Index (base, idx) ->
       try_load base store
       |> bind_value @@ fun v ->
-         Value (Typed.Adt.field_of idx (Typed.cast_tuple v))
+         Value (Typed.Adt.array_field_of idx (Typed.cast_array v))
   | Metadata base -> (
       try_load base store
       |> bind_value @@ fun v ->

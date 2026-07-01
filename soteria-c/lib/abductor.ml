@@ -29,7 +29,7 @@ let generate_summaries_for (fundef : fundef) =
   in
   let process =
     let open Csymex.Syntax in
-    let* args = Csymex.all Layout.nondet_c_ty_aggregate arg_tys in
+    let* args = Csymex.map_list ~f:Layout.nondet_c_ty_aggregate arg_tys in
     let* result, state = Bi_interp.exec_fun fundef ~args Bi_state.empty in
     match result with
     | Ok ret -> Csymex.return (args, Ok ret, state)

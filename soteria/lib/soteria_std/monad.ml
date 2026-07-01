@@ -38,9 +38,12 @@ module type Extension = sig
 
   val iter_list : 'elem list -> f:('elem -> unit t) -> unit t
   val iter_iter : 'elem Iter.t -> f:('elem -> unit t) -> unit t
+
+  val map_m :
+    (module M : Sigs.Foldable) -> 'elem M.t -> f:('elem -> 'a t) -> 'a list t
+
   val map_list : 'elem list -> f:('elem -> 'a t) -> 'a list t
   val map_iter : 'elem Iter.t -> f:('elem -> 'a t) -> 'a list t
-  val all : ('a -> 'b t) -> 'a list -> 'b list t
 end
 
 module type S = sig
@@ -96,9 +99,13 @@ module type Extension2 = sig
 
   val iter_list : 'elem list -> f:('elem -> (unit, 'b) t) -> (unit, 'b) t
   val iter_iter : 'elem Iter.t -> f:('elem -> (unit, 'b) t) -> (unit, 'b) t
+
+  val map_m :
+    (module M : Sigs.Foldable) ->
+    'elem M.t -> f:('elem -> ('a, 'b) t) -> ('a list, 'b) t
+
   val map_list : 'elem list -> f:('elem -> ('a, 'b) t) -> ('a list, 'b) t
   val map_iter : 'elem Iter.t -> f:('elem -> ('a, 'b) t) -> ('a list, 'b) t
-  val all : ('a -> ('b, 'c) t) -> 'a list -> ('b list, 'c) t
 end
 
 module type S2 = sig
@@ -125,15 +132,6 @@ let[@inline] mapM (module M : Sigs.Foldable) ~return ~bind ~map xs ~f =
     ~f:(fun acc x -> map (fun y -> y :: acc) (f x))
   |> bind (fun l -> return (List.rev l))
 
-(** Generic monadic map function that collects results. *)
-let all ~return ~bind fn xs =
-  let rec aux acc rs =
-    match rs with
-    | [] -> return (List.rev acc)
-    | r :: rs -> bind (fun x -> aux (x :: acc) rs) (fn r)
-  in
-  aux [] xs
-
 module Make_extension (Base : Base) : Extension with type 'a t := 'a Base.t =
 struct
   (** Functor to create generic monadic operations for a basic monad. *)
@@ -150,13 +148,11 @@ struct
   let[@inline] iter_list xs ~f = iter (module List) xs ~f
   let[@inline] iter_iter xs ~f = iter (module Iter) xs ~f
 
-  let[@inline] map_list xs ~f =
-    mapM (module List) ~return:Base.return ~bind:Base.bind ~map:Base.map xs ~f
+  let[@inline] map_m (module M : Sigs.Foldable) xs ~f =
+    mapM (module M) ~return:Base.return ~bind:Base.bind ~map:Base.map xs ~f
 
-  let[@inline] map_iter xs ~f =
-    mapM (module Iter) ~return:Base.return ~bind:Base.bind ~map:Base.map xs ~f
-
-  let[@inline] all fn xs = all ~return:Base.return ~bind:Base.bind fn xs
+  let[@inline] map_list xs ~f = map_m (module List) xs ~f
+  let[@inline] map_iter xs ~f = map_m (module Iter) xs ~f
 end
 
 module Make_syntax (Base : Base) : Syntax with type 'a t = 'a Base.t = struct
@@ -199,13 +195,11 @@ end) : Extension2 with type ('a, 'b) t := ('a, 'b) Base.t = struct
   let[@inline] iter_list xs ~f = iter (module List) xs ~f
   let[@inline] iter_iter xs ~f = iter (module Iter) xs ~f
 
-  let[@inline] map_list xs ~f =
-    mapM (module List) ~return:Base.ok ~bind:Base.bind ~map:Base.map xs ~f
+  let[@inline] map_m (module M : Sigs.Foldable) xs ~f =
+    mapM (module M) ~return:Base.ok ~bind:Base.bind ~map:Base.map xs ~f
 
-  let[@inline] map_iter xs ~f =
-    mapM (module Iter) ~return:Base.ok ~bind:Base.bind ~map:Base.map xs ~f
-
-  let[@inline] all fn xs = all ~return:Base.ok ~bind:Base.bind fn xs
+  let[@inline] map_list xs ~f = map_m (module List) xs ~f
+  let[@inline] map_iter xs ~f = map_m (module Iter) xs ~f
 end
 
 module Make_syntax2 (Base : Base2) :

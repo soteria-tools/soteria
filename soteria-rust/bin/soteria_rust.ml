@@ -114,4 +114,7 @@ let cmd =
     (Cmd.info ~exits ~version:Soteria.Version.version "soteria-rust")
     [ Exec.cmd; Compile.cmd; Build_plugins.cmd; Version.cmd ]
 
-let () = exit @@ Cmd.eval cmd
+let () =
+  (* Trade extra memory for better performance (~2% across benchmarks) *)
+  Gc.set { (Gc.get ()) with space_overhead = 240 };
+  exit @@ Cmd.eval cmd
