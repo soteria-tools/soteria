@@ -5,7 +5,12 @@ let search_urls = ['../../../../../../db.js','../../../../../../../sherlodoc.js'
   <span><span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
     list</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
-    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates a tuple value with the given fields. This may be an array, struct, or tuple.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_enum"><a href="#val-mk_enum" class="anchor"></a><code><span><span class="keyword">val</span> mk_enum : 
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates a tuple value with the given fields. This may be an array, struct, or tuple.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_array"><a href="#val-mk_array" class="anchor"></a><code><span><span class="keyword">val</span> mk_array : 
+  <span><span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+    iarray</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates an array value with the given element type and elements.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_enum"><a href="#val-mk_enum" class="anchor"></a><code><span><span class="keyword">val</span> mk_enum : 
   <span><span class="xref-unresolved">Charon</span>.Types.type_decl_ref <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
@@ -35,7 +40,11 @@ let search_urls = ['../../../../../../db.js','../../../../../../../sherlodoc.js'
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
-    list</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_enum_of_variant"><a href="#val-as_enum_of_variant" class="anchor"></a><code><span><span class="keyword">val</span> as_enum_of_variant : 
+    list</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_array"><a href="#val-as_array" class="anchor"></a><code><span><span class="keyword">val</span> as_array : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
+    iarray</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_enum_of_variant"><a href="#val-as_enum_of_variant" class="anchor"></a><code><span><span class="keyword">val</span> as_enum_of_variant : 
   <span><span class="xref-unresolved">Charon</span>.Types.variant_id <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
@@ -62,11 +71,15 @@ let search_urls = ['../../../../../../db.js','../../../../../../../sherlodoc.js'
   <span>int <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-field_of_variant"><a href="#val-field_of_variant" class="anchor"></a><code><span><span class="keyword">val</span> field_of_variant : 
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Get the field of a tuple</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-array_field_of"><a href="#val-array_field_of" class="anchor"></a><code><span><span class="keyword">val</span> array_field_of : 
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Get the field of an array</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-field_of_variant"><a href="#val-field_of_variant" class="anchor"></a><code><span><span class="keyword">val</span> field_of_variant : 
   <span><span class="xref-unresolved">Charon</span>.Types.variant_id <span class="arrow">&#45;&gt;</span></span>
   <span>int <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-set_field"><a href="#val-set_field" class="anchor"></a><code><span><span class="keyword">val</span> set_field : 
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Get the field of a enum with the given variant</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-set_field"><a href="#val-set_field" class="anchor"></a><code><span><span class="keyword">val</span> set_field : 
   <span>int <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
@@ -78,6 +91,20 @@ let search_urls = ['../../../../../../db.js','../../../../../../../sherlodoc.js'
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-update_field"><a href="#val-update_field" class="anchor"></a><code><span><span class="keyword">val</span> update_field : 
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+    <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span>
+      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-set_array_field"><a href="#val-set_array_field" class="anchor"></a><code><span><span class="keyword">val</span> set_array_field : 
+  <span>int <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-update_array_field"><a href="#val-update_array_field" class="anchor"></a><code><span><span class="keyword">val</span> update_array_field : 
   <span>int <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
     <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span>
