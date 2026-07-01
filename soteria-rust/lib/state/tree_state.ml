@@ -52,7 +52,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       size : Typed.T.sint Typed.t;
       tb_root : Ptr_tag.t;
       kind : Alloc_kind.t;
-      trace : Trace.t;
+      trace : Trace.t; [@printer Trace.pp_short]
     }
     [@@deriving show { with_path = false }]
   end

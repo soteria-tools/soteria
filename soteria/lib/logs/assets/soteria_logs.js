@@ -113,7 +113,8 @@ function populateFilter() {
   const filterBox = document.getElementById("filters");
   const filterClasses = Array.from(document.querySelectorAll(".log-msg"))
     .map((msg) => msg.className.split(" "))
-    .flat();
+    .flat()
+    .filter((c) => c !== "");
   const uniqueClasses = [...new Set(filterClasses)];
   const prio = {
     SMT: 0,
