@@ -52,7 +52,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       size : Typed.T.sint Typed.t;
       tb_root : Ptr_tag.t;
       kind : Alloc_kind.t;
-      trace : Trace.t;
+      trace : Trace.t; [@printer Trace.pp_short]
     }
     [@@deriving show { with_path = false }]
   end
@@ -784,17 +784,22 @@ module Make (Borrows : Tree_borrows.T) = struct
     [%l.debug
       "Executing Alloc of size %a (align %a)" Typed.ppa size Typed.ppa align];
     Soteria.Stats.As_ctx.incr StatKeys.allocs;
-    with_heap
-      (let open Heap.SM in
-       let open Heap.SM.Syntax in
-       let*^ block, tag =
-         Freeable_block_with_meta.make ?span ?zeroed ~align ~size ()
-       in
-       let** loc = Heap.alloc ~new_codom:block in
-       let ptr = Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag ~align ~size in
-       (* The pointer is necessarily not null *)
-       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-       ok (Typed.Ptr.mk_ptr_f ptr None))
+    if%sat size ==@ Usize.(0s) then
+      (* UX: we under-approximate and assume the address is align, though it can
+         in fact be any well-aligned address. *)
+      Result.ok @@ Typed.Ptr.mk_ptr_f (Typed.Ptr.of_address align) None
+    else
+      with_heap
+        (let open Heap.SM in
+         let open Heap.SM.Syntax in
+         let*^ block, tag =
+           Freeable_block_with_meta.make ?span ?zeroed ~align ~size ()
+         in
+         let** loc = Heap.alloc ~new_codom:block in
+         let ptr = Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag ~align ~size in
+         (* The pointer is necessarily not null *)
+         let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
+         ok (Typed.Ptr.mk_ptr_f ptr None))
 
   let alloc_untyped ?span ~zeroed ~size ~align = alloc ?span ~zeroed size align
 
@@ -802,26 +807,6 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ () = with_loc_err ~trace:"Allocation" () in
     let**^ layout = Layout.layout_of ty in
     alloc ?span layout.size layout.align
-
-  let alloc_tys ?span tys : ('a, Error.with_trace, syn list) Result.t =
-    let@ () = with_loc_err ~trace:"Allocation" () in
-    let**^ layouts = Rustsymex.Result.map_list tys ~f:Layout.layout_of in
-    let layouts = List.rev layouts in
-    with_heap
-      (Heap.allocs ~els:layouts ~fn:(fun layout loc ->
-           let open DecayMap.SM in
-           let open DecayMap.SM.Syntax in
-           (* make Tree_block *)
-           let { size; align; _ } : Layout.t = layout in
-           let* block, tag =
-             Freeable_block_with_meta.make ?span ~align ~size ()
-           in
-           (* create pointer *)
-           let* () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-           let ptr =
-             Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag ~align ~size
-           in
-           return (Typed.Ptr.mk_ptr_f ptr None, block)))
 
   let free (ptr : Typed.([< T.sptr_f ] t)) =
     [%l.debug "Executing Free with pointer %a" Typed.ppa ptr];
@@ -1009,9 +994,12 @@ module Make (Borrows : Tree_borrows.T) = struct
           | Real fn -> Some (Crate.get_fun fn.id).item_meta.span.data
           | Synthetic _ -> None
         in
+        (* NOTE: here we must allocate with a non-zero size, as otherwise we
+           skip creating an actual allocation and the function pointers will
+           thus have no provenance. *)
         let** ptr =
           with_alloc_kind (Function fn_def) @@ fun () ->
-          alloc_untyped ?span ~zeroed:false ~size:Usize.(0s) ~align
+          alloc_untyped ?span ~zeroed:false ~size:Usize.(1s) ~align
         in
         let ptr = Typed.Ptr.ptr_of ptr in
         let ptr = Typed.Ptr.with_tag ptr None in

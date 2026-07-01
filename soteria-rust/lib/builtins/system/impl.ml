@@ -12,7 +12,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
        keys, to avoid path explosion. This is an under-approximation, some \
        paths may be missed."
 
-  (* Returning *symbolic* keys makes every hash symbolic, causing branch
+  (* UX: Returning *symbolic* keys makes every hash symbolic, causing branch
      explosion; we instead stick to a concrete hash. *)
   let hashmap_random_keys ~fun_sig:_ =
     if Soteria.Symex.Approx.As_ctx.is_ox () then
@@ -30,8 +30,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
             NotUnicode(OsString),
         }
       ]}
-      HACK: we assume that hitting the environment never finds the variable
-      we're looking for. Under-approximating behaviour. *)
+      UX: we assume that hitting the environment never finds the variable we're
+      looking for. *)
   let inner ~(fun_sig : Types.fun_sig) ~key:_ =
     let out_res = ty_as_adt fun_sig.output in
     let var_error_ty =
@@ -51,7 +51,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     let var_error = Typed.Adt.Checked.mk_enum var_error_ty "NotPresent" [] in
     ok @@ Typed.Adt.Checked.mk_enum out_res "Err" [ var_error ]
 
-  (** HACK: We under-approximate and always return 1. *)
+  (** UX: We under-approximate and always return 1. *)
   let available_parallelism ~(fun_sig : Types.fun_sig) =
     (* We return 1, to under-approximate the behaviour. *)
     let one = Typed.BV.usize Z.one in
@@ -72,7 +72,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
      * // Max value of Nanoseconds is 999,999,999.
      * struct Nanoseconds(u32);
      *)
-    (* HACK: We use Unix.time for now, to be under-approximating. *)
+    (* UX: We use Unix.time for now, to be under-approximating. *)
     let now = Unix.time () in
     let sec = Int.of_float now in
     let nsec = Int.of_float ((now -. Float.of_int sec) *. 1_000_000_000.) in

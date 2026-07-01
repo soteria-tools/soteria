@@ -10,19 +10,19 @@ type t = {
       (** Current call stack *)
 }
 
+let pp_loc =
+  Soteria.Logs.Printers.pp_unstable ~name:"loc" Common.Charon_util.pp_span_data
+
+let pp_loc_opt : Charon.Meta.span_data option Fmt.t =
+  Fmt.option ~none:(Fmt.any "unknown location") pp_loc
+
 let pp ft t =
-  let pp_loc =
-    Soteria.Logs.Printers.pp_unstable ~name:"loc"
-      Common.Charon_util.pp_span_data
-  in
-  let pp_loc_opt : Charon.Meta.span_data option Fmt.t =
-    Fmt.option ~none:(Fmt.any "unknown location") pp_loc
-  in
   let pp_op ft = function Some op -> Fmt.pf ft " during %s" op | None -> () in
   let pp_stack = Soteria.Terminal.Call_trace.pp pp_loc in
   Fmt.pf ft "%a%a with trace@[<hov 1>@ %a@]" pp_loc_opt t.loc pp_op t.op
     pp_stack t.stack
 
+let pp_short ft t = Fmt.pf ft "%a" pp_loc_opt t.loc
 let move_to loc where = { where with loc = Some loc }
 
 let move_to_opt loc where =

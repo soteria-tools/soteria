@@ -203,9 +203,6 @@ module type S = sig
     val zeros : [< sptr_f ] v -> sint v -> (unit, 'env) t
     val alloc_ty : ?span:Meta.span_data -> Types.ty -> ([> sptr_f ] v, 'env) t
 
-    val alloc_tys :
-      ?span:Meta.span_data -> Types.ty list -> ([> sptr_f ] v list, 'env) t
-
     val alloc_untyped :
       ?span:Meta.span_data ->
       zeroed:bool ->
@@ -534,7 +531,6 @@ module Make (State : State_intf.S) :
     let[@inline] store ptr ty v = ESM.lift (store ptr ty v)
     let[@inline] zeros ptr size = ESM.lift (zeros ptr size)
     let[@inline] alloc_ty ?span ty = ESM.lift (alloc_ty ?span ty)
-    let[@inline] alloc_tys ?span tys = ESM.lift (alloc_tys ?span tys)
 
     let[@inline] alloc_untyped ?span ~zeroed ~size ~align () =
       ESM.lift (alloc_untyped ?span ~zeroed ~size ~align)

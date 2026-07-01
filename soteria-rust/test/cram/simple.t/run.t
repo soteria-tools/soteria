@@ -235,7 +235,7 @@ Test exposing function pointers
   Compiling... done in <time>
   => Running expose_fn_ptr::main...
   note: expose_fn_ptr::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffe) /\
+  PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd) /\
         (0x0 == extract[0-3](V|1|))
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
