@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782565480702,
+  "lastUpdate": 1782915169445,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -5472,6 +5472,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 105.702,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "082d78b4e4496c27fbfc1dcf57c2ab9a4cfde8ca",
+          "message": "Upstream fixes and minor features from the CN work (#445)\n\n* remove soteria-c/state.mli\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* ability to print solver state\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Eq in Sigs\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Dirty Vars actually indicate that they are linked to each other!\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* List.take_nth\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* memoisation with tags 🤦‍♂️\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* add lazy map\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Fix union-find leaking between executions\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* bigoof but the smap was always very wrong\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* add smap tests\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Fix distinct!\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n* Address comments\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>\n\n---------\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-07-01T13:51:17Z",
+          "tree_id": "5ef02d15b85ad358e2d84f7b51ff7134c781354d",
+          "url": "https://github.com/soteria-tools/soteria/commit/082d78b4e4496c27fbfc1dcf57c2ab9a4cfde8ca"
+        },
+        "date": 1782915166357,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.1197085487400003,
+            "range": "± 0.0252",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 1.13808270496,
+            "range": "± 0.0129",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.64641271108,
+            "range": "± 0.0095",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.39613634684000004,
+            "range": "± 0.0046",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.65327108388,
+            "range": "± 0.0363",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.6908704404000001,
+            "range": "± 0.0047",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.41511516092,
+            "range": "± 0.0051",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.03128060136,
+            "range": "± 0.0332",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 11.470854196231812,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 373,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 15,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 119.6047,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 460,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 99,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 41,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 104.4204,
             "unit": "s"
           }
         ]
