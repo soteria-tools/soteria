@@ -177,8 +177,10 @@
              Additional flags to pass to the Rustc compiler
   
          --sysroot=VAL (absent RUST_SYSROOT env)
-             The sysroot to use for compilation. If not provided, the default
-             sysroot is used.
+             The sysroot to use for compilation. If not provided, a sysroot is
+             set up automatically (building it if needed), so that the bodies
+             of all std functions are available for analysis. Pass [--sysroot
+             default] to opt out and use rustc's default sysroot instead.
   
          --target=VAL (absent TARGET env)
              The compilation target triple to use, e.g.
@@ -461,8 +463,10 @@
              Additional flags to pass to the Rustc compiler
   
          --sysroot=VAL (absent RUST_SYSROOT env)
-             The sysroot to use for compilation. If not provided, the default
-             sysroot is used.
+             The sysroot to use for compilation. If not provided, a sysroot is
+             set up automatically (building it if needed), so that the bodies
+             of all std functions are available for analysis. Pass [--sysroot
+             default] to opt out and use rustc's default sysroot instead.
   
          --target=VAL (absent TARGET env)
              The compilation target triple to use, e.g.
@@ -741,8 +745,10 @@
              Additional flags to pass to the Rustc compiler
   
          --sysroot=VAL (absent RUST_SYSROOT env)
-             The sysroot to use for compilation. If not provided, the default
-             sysroot is used.
+             The sysroot to use for compilation. If not provided, a sysroot is
+             set up automatically (building it if needed), so that the bodies
+             of all std functions are available for analysis. Pass [--sysroot
+             default] to opt out and use rustc's default sysroot instead.
   
          --target=VAL (absent TARGET env)
              The compilation target triple to use, e.g.

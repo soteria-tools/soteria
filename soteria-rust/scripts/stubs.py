@@ -646,7 +646,7 @@ def get_intrinsics() -> dict[str, FunDecl]:
         proc = subprocess.run(charon_cmd, shell=True, stderr=subprocess.STDOUT)
         if proc.returncode != 0:
             raise RuntimeError(
-                f"{YELLOW}{BOLD}Warning{RESET}: Charon returned exit code {proc.returncode}"
+                f"{YELLOW}{BOLD}Warning{RESET}: Charon returned exit code {proc.returncode}\nCommand: {charon_cmd}"
             )
 
         file_rs.unlink(missing_ok=True)

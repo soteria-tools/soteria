@@ -90,8 +90,10 @@ type t = {
           PATH. *)
   sysroot : string option;
       [@docs Sections.frontend] [@names [ "sysroot" ]] [@env "RUST_SYSROOT"]
-      (** The sysroot to use for compilation. If not provided, the default
-          sysroot is used. *)
+      (** The sysroot to use for compilation. If not provided, a sysroot is set
+          up automatically (building it if needed), so that the bodies of all
+          std functions are available for analysis. Pass [--sysroot default] to
+          opt out and use rustc's default sysroot instead. *)
   offline : bool;
       [@docs Sections.frontend]
       [@make.default false]

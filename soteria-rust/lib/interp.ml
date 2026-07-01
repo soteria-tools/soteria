@@ -384,7 +384,8 @@ module Make (StateImpl : State.S) = struct
         [%l.debug
           "Projecting ADT %a, field %d, with pointer %a to pointer %a"
             Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr'];
-        let meta = if Layout.is_dst place.ty then meta else None in
+        let* place_ty = Layout.normalise place.ty in
+        let meta = if Layout.is_dst place_ty then meta else None in
         ok (Typed.Ptr.mk_ptr_f ptr' meta)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr = resolve_place base in
@@ -712,6 +713,7 @@ module Make (StateImpl : State.S) = struct
                 ok (Typed.Float.neg v)
             | _ -> L.failwith "Invalid type for Neg")
         | Cast (CastRawPtr (from_ty, to_ty)) -> (
+            let* to_ty = Layout.normalise to_ty in
             match (from_ty, to_ty) with
             | (TRef _ | TRawPtr _ | TFnPtr _), TLiteral to_ty ->
                 (* expose provenance *)
@@ -943,7 +945,8 @@ module Make (StateImpl : State.S) = struct
           | [ ptr_op; meta_op ] ->
               let* ptr = eval_operand ptr_op in
               let* meta = eval_operand meta_op in
-              ok (ptr, meta, type_of_operand meta_op)
+              let+ meta_ty = Layout.normalise @@ type_of_operand meta_op in
+              (ptr, meta, meta_ty)
           | _ -> L.failwith "Non-2 arguments in AggregatedRawPtr?"
         in
         let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f ptr) in
@@ -1059,6 +1062,7 @@ module Make (StateImpl : State.S) = struct
                  shim) takes the receiver by pointer. This happens for calls to
                  dyn-compatible methods taking [self] by value, like [<dyn
                  FnOnce>::call_once]. *)
+              let* from = Layout.normalise from in
               if Layout.is_dst from then
                 let place =
                   match (arg : Expressions.operand) with
@@ -1219,7 +1223,7 @@ module Make (StateImpl : State.S) = struct
                   "can't execute function %a, this is a trait method stub"
                   Crate.pp_name name
             | MissingBody ->
-                if Option.is_some (Config.get ()).sysroot then
+                if (Config.get ()).sysroot <> Some "default" then
                   not_impl
                     "can't execute function %a, the function's body was not \
                      found while compiling"
@@ -1229,9 +1233,14 @@ module Make (StateImpl : State.S) = struct
                     Fmt.str "cargo +%s miri setup --print-sysroot"
                       (Lazy.force Frontend_runtime.Cmd.toolchain_version)
                   in
-                  let tip = ("to get a sysroot, run", Some cmd) in
+                  let tip =
+                    ( "either do not pass `--sysroot default`, or to get a \
+                       sysroot manually, run",
+                      Some cmd )
+                  in
                   (not_impl ~tip ~issue:322)
-                    "can't execute function %a, try using a sysroot (--sysroot)"
+                    "can't execute function %a, try not passing `--sysroot \
+                     default`"
                     Crate.pp_name name
             | ErrorBody err ->
                 not_impl
