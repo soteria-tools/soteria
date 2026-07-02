@@ -227,30 +227,24 @@ module Make (Borrows : Tree_borrows.T) = struct
       let open SM.Syntax in
       let* () = print_access access ptr in
       let** () =
-        assert_or_error Typed.(not (Typed.Ptr.is_null ptr)) `NullDereference
+        assert_or_error Typed.(not (Ptr.is_null ptr)) `NullDereference
+      in
+      let** () =
+        assert_or_error Typed.(Ptr.has_provenance ptr) `UBDanglingPointer
       in
       let loc, ofs = Typed.Ptr.decompose ptr in
-      let* res =
-        wrap loc
-          (let open Freeable_block_with_meta in
-           let open SM.Syntax in
-           let* block = SM.get_state () in
-           match (alloc_kind block, access) with
-           | Some (Function _), (Read | Write) ->
-               SM.Result.error `AccessedFnPointer
-           | Some ((Const _ | AnonConst | StaticString) as k), Write ->
-               let*^ cur_kind = DecayMap.SM.lift @@ get_alloc_kind () in
-               if cur_kind <> k then SM.Result.error `WriteToReadOnly
-               else Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs)
-           | _ -> Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs))
-      in
-      match (res, Config.get_mode ()) with
-      | (Missing _ as miss), Whole_program ->
-          (* HACK: a miss in WPST means there is a dangling pointer. *)
-          if%sat Typed.not (Typed.Ptr.has_provenance ptr) then
-            Result.error `UBDanglingPointer
-          else return miss
-      | ok_or_err, _ -> return ok_or_err
+      wrap loc
+        (let open Freeable_block_with_meta in
+         let open SM.Syntax in
+         let* block = SM.get_state () in
+         match (alloc_kind block, access) with
+         | Some (Function _), (Read | Write) ->
+             SM.Result.error `AccessedFnPointer
+         | Some ((Const _ | AnonConst | StaticString) as k), Write ->
+             let*^ cur_kind = DecayMap.SM.lift @@ get_alloc_kind () in
+             if cur_kind <> k then SM.Result.error `WriteToReadOnly
+             else wrap @@ Freeable_block.wrap (f ofs)
+         | _ -> wrap @@ Freeable_block.wrap (f ofs))
 
     let is_freed loc =
       wrap loc
