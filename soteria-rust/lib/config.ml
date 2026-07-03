@@ -159,10 +159,13 @@ type t = {
           is permissive. *)
   recursive_validity : (check_level[@conv check_level_cmdliner_conv ()]);
       [@docs Sections.analysis]
-      [@default Warn]
+      [@default Allow]
       [@names [ "recursive-validity" ]]
       (** Whether to check the validity of the addressed memory when obtaining a
-          reference to it. We only go one level deep. *)
+          reference to it. We only go one level deep. This does not cause UB,
+          but may cause UB down the line. This may also have a significant
+          impact on performance. For more information, see
+          https://github.com/rust-lang/unsafe-code-guidelines/issues/414 *)
   approx_floating_ops : (check_level[@conv check_level_cmdliner_conv ()]);
       [@docs Sections.analysis]
       [@default Warn]

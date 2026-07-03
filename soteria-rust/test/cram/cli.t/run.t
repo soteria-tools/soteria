@@ -220,9 +220,12 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
-         --recursive-validity=ENUM (absent=warn)
+         --recursive-validity=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
-             obtaining a reference to it. We only go one level deep.
+             obtaining a reference to it. We only go one level deep. This does
+             not cause UB, but may cause UB down the line. This may also have a
+             significant impact on performance. For more information, see
+             https://github.com/rust-lang/unsafe-code-guidelines/issues/414
   
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
@@ -504,9 +507,12 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
-         --recursive-validity=ENUM (absent=warn)
+         --recursive-validity=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
-             obtaining a reference to it. We only go one level deep.
+             obtaining a reference to it. We only go one level deep. This does
+             not cause UB, but may cause UB down the line. This may also have a
+             significant impact on performance. For more information, see
+             https://github.com/rust-lang/unsafe-code-guidelines/issues/414
   
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
@@ -784,9 +790,12 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
-         --recursive-validity=ENUM (absent=warn)
+         --recursive-validity=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
-             obtaining a reference to it. We only go one level deep.
+             obtaining a reference to it. We only go one level deep. This does
+             not cause UB, but may cause UB down the line. This may also have a
+             significant impact on performance. For more information, see
+             https://github.com/rust-lang/unsafe-code-guidelines/issues/414
   
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow

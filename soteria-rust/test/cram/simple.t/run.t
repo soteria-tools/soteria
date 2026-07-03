@@ -53,13 +53,6 @@ Splitting and merging, via a union
   PC 1: empty
   
   => Running split_merges::uninit_gap...
-  warning: Invalid reference: Uninitialized memory access
-      --> $TESTCASE_ROOT/split_merges.rs:64:9
-   52 |  fn uninit_gap() {
-      |  --------------- 1: Entry point
-      .  
-   64 |          assert_eq!(x.as_u32, 0x1234_5678);
-      |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering operation
   error: split_merges::uninit_gap: found issues in <time>, errors in 1 branch (out of 1)
   bug: Uninitialized memory access in split_merges::uninit_gap
       --> $TESTCASE_ROOT/split_merges.rs:64:9
