@@ -220,17 +220,23 @@ module Make (Borrows : Tree_borrows.T) = struct
         "%a access to the state at pointer %a" pp_access access Typed.ppa ptr];
       [%l.trace "STATE:@\n%a" (Fmt.Dump.option pp) st]
 
-    let with_ptr (access : access) (ptr : Typed.([< T.sptr_t ] t))
+    let check_ptr_deref (ptr : Typed.([< T.sptr_t ] t)) =
+      let open DecayMap.SM in
+      let open Syntax in
+      let** () =
+        assert_or_error Typed.(not (Ptr.is_null ptr)) `NullDereference
+      in
+      assert_or_error Typed.(Ptr.has_provenance ptr) `UBDanglingPointer
+
+    let with_ptr ?(check_ptr = true) (access : access)
+        (ptr : Typed.([< T.sptr_t ] t))
         (f : [< T.sint ] Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
         ('a, 'err, syn list) SM.Result.t =
       let open SM in
       let open SM.Syntax in
       let* () = print_access access ptr in
-      let** () =
-        assert_or_error Typed.(not (Ptr.is_null ptr)) `NullDereference
-      in
-      let** () =
-        assert_or_error Typed.(Ptr.has_provenance ptr) `UBDanglingPointer
+      let**^ () =
+        if check_ptr then check_ptr_deref ptr else DecayMap.SM.Result.ok ()
       in
       let loc, ofs = Typed.Ptr.decompose ptr in
       wrap loc
@@ -254,12 +260,6 @@ module Make (Borrows : Tree_borrows.T) = struct
          match block with
          | Some { node = Freed; _ } -> SM.Result.ok true
          | _ -> SM.Result.ok false)
-
-    module Decoder = Value_codec.Decoder (struct
-      module SM = SM
-
-      type fix = syn list
-    end)
   end
 
   type t = {
@@ -338,23 +338,19 @@ module Make (Borrows : Tree_borrows.T) = struct
     Error.log_at trace err;
     Error (Error.decorate trace err)
 
+  module Decoder = Value_codec.Decoder (Block)
+
   let apply_parser (type a) ?(ignore_borrow = false) ptr
-      (parser : offset:T.sint Typed.t -> a Heap.Decoder.ParserMonad.t) :
+      (parser : offset:T.sint Typed.t -> a Tree_block.Decoder.ParserMonad.t) :
       (a, Error.t, syn list) Result.t =
     let* () = log "load" ptr in
+    let open Block.SM.Syntax in
     let tag = Typed.Ptr.tag_of ptr in
-    let handler (ty, ofs) =
-      let@ _ofs = Heap.with_ptr Read ptr in
-      Block.with_block_read_tb (Tree_block.load ~ignore_borrow ofs ty tag)
-    in
-    let get_all (size, ofs) =
-      let@ _ofs = Heap.with_ptr Read ptr in
-      Block.with_block (Tree_block.get_init_leaves ofs size)
-    in
-    let offset = Typed.Ptr.ofs ptr in
-    with_heap
-    @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all
-    @@ parser ~offset
+    let@@ () = with_heap in
+    let@ offset = Heap.with_ptr ~check_ptr:false Read ptr in
+    let@ tb = Block.with_block_read_tb in
+    let on_access () = Heap.check_ptr_deref ptr in
+    Tree_block.apply_parser ~on_access ~ignore_borrow tag tb @@ parser ~offset
 
   let with_ptr access ptr f = with_heap @@ Heap.with_ptr access ptr f
 
@@ -456,7 +452,7 @@ module Make (Borrows : Tree_borrows.T) = struct
    fun ?ignore_borrow ?(check_refs = true) ptr ty ->
     let** () = check_ptr_align ptr ty in
     let ptr, meta = Typed.Ptr.split ptr in
-    let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
+    let parser ~offset = Tree_block.Decoder.decode ~meta ~offset ty in
     let** value = apply_parser ?ignore_borrow ptr parser in
     [%l.debug "Finished reading rust value %a" Typed.ppa value];
     let++ () = check_validity ~check_refs ty value in
@@ -464,7 +460,7 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   and load_discriminant (ptr : Typed.([< T.sptr_f ] t)) ty =
     let** () = check_ptr_align ptr ty in
-    let parser ~offset = Heap.Decoder.variant_of_enum ty ~offset in
+    let parser ~offset = Tree_block.Decoder.variant_of_enum ty ~offset in
     let++ variant_id = apply_parser (Typed.Ptr.ptr_of ptr) parser in
     let adt = Charon_util.ty_as_adt ty in
     let variants = Crate.as_enum adt in
@@ -559,15 +555,6 @@ module Make (Borrows : Tree_borrows.T) = struct
           Result.iter_iter parts ~f:(fun (value, offset, size) ->
               Tree_block.store (offset +!!@ ofs) size value tag tb))
 
-  (** We can't use {!Heap.Decoder} for [transmute], since the transmute happens
-      regardless of the heap's state, so we need to re-instantiate it for tree
-      block instead *)
-  module Tree_block_decoder = Value_codec.Decoder (struct
-    module SM = Tree_block.SM
-
-    type fix = Tree_block.syn list
-  end)
-
   let transmute_raw_inner ~to_ ~size blocks =
     (* a transmute is just a write of one type with a read of another type; we
        provide a function to do it that avoids allocating, checking alignment
@@ -580,19 +567,14 @@ module Make (Borrows : Tree_borrows.T) = struct
          Tree_block.SM.Result.run_with_state ~state:(Some block)
            (let open Tree_block.SM in
             let open Syntax in
-            let open Tree_block_decoder in
             (* first, we write *)
             let** () =
               Result.iter_iter blocks ~f:(fun (value, offset, size) ->
                   Tree_block.store offset size value None None)
             in
             (* next, we read *)
-            let handler (ty, ofs) =
-              Tree_block.load ~ignore_borrow:true ofs ty None None
-            in
-            let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
-            ParserMonad.parse ~handler ~get_all
-            @@ decode ~meta:None ~offset:Usize.(0s) to_)
+            Tree_block.apply_parser ~ignore_borrow:true None None
+            @@ Tree_block.Decoder.decode ~meta:None ~offset:Usize.(0s) to_)
          |> map (function
            | Ok (value, _block) -> Ok value
            | Error (e, _block) -> Error e

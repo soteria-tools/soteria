@@ -115,14 +115,14 @@ module Decoder (State_tys : sig
        and type 'a Symex.Value.ty = 'a Typed.ty
        and type Symex.Value.sbool = Typed.sbool
 
-  type fix
+  type syn
 end) =
 struct
   module ParserMonad = struct
     open State_tys
 
     type query = Types.ty * Typed.(T.sint t)
-    type 'a res = ('a, Error.t, fix) SM.Result.t
+    type 'a res = ('a, Error.t, syn list) SM.Result.t
 
     (* size * offset *)
     type get_all_query = Typed.(T.nonzero t) * Typed.(T.sint t)
