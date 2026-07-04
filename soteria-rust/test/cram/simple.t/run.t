@@ -202,29 +202,33 @@ Test transmutations keeping the bit-patterns the same
 Test null and dangling pointers
   $ soteria-rust exec dangling_ptrs.rs
   Compiling... done in <time>
-  => Running dangling_ptrs::null_ptr_zst...
-  note: dangling_ptrs::null_ptr_zst: done in <time>, ran 1 branch
+  => Running dangling_ptrs::access_zst...
+  note: dangling_ptrs::access_zst: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running dangling_ptrs::get_discriminant_zst...
+  note: dangling_ptrs::get_discriminant_zst: done in <time>, ran 1 branch
   PC 1: empty
   
   => Running dangling_ptrs::null_ptr_not_zst...
   error: dangling_ptrs::null_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
   error: Null dereference in dangling_ptrs::null_ptr_not_zst
-      --> $TESTCASE_ROOT/dangling_ptrs.rs:11:30
-    9 |  fn null_ptr_not_zst() {
+      --> $TESTCASE_ROOT/dangling_ptrs.rs:63:30
+   61 |  fn null_ptr_not_zst() {
       |  --------------------- 1: Entry point
-   10 |      let ptr: *const u32 = std::ptr::null();
-   11 |      let _val: u32 = unsafe { *ptr };
+   62 |      let ptr: *const u32 = std::ptr::null();
+   63 |      let _val: u32 = unsafe { *ptr };
       |                               ^^^^ Memory load
   PC 1: empty
   
   => Running dangling_ptrs::dangling_ptr_not_zst...
   error: dangling_ptrs::dangling_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
   bug: Dangling pointer in dangling_ptrs::dangling_ptr_not_zst
-      --> $TESTCASE_ROOT/dangling_ptrs.rs:17:29
-   15 |  fn dangling_ptr_not_zst() {
+      --> $TESTCASE_ROOT/dangling_ptrs.rs:69:29
+   67 |  fn dangling_ptr_not_zst() {
       |  ------------------------- 1: Entry point
-   16 |      let ptr: *const u8 = 0xdeadbeef as *const u8;
-   17 |      let _val: u8 = unsafe { *ptr };
+   68 |      let ptr: *const u8 = 0xdeadbeef as *const u8;
+   69 |      let _val: u8 = unsafe { *ptr };
       |                              ^^^^ Memory load
   PC 1: empty
   
