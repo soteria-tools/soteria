@@ -444,8 +444,8 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   and check_validity ~check_refs ty value =
     let default_check ptr ty =
-      let** _size = check_ptr_align ptr ty in
-      check_non_dangling ptr ty
+      let** size = check_ptr_align ptr ty in
+      check_non_dangling_untyped (Typed.Ptr.ptr_of ptr) size
     in
     let check_ref =
       if (Config.get ()).recursive_validity <> Allow && check_refs then
