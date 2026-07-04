@@ -442,6 +442,15 @@ let[@inline] is_zst ty =
   let++ layout = layout_of ty in
   layout.size ==@ Usize.(0s)
 
+(** If the given type is an enum with a single variant, return the variant's ID.
+    Otherwise, return None. Fails if the type is not an enum. *)
+let enum_single_variant (ty : Types.ty) =
+  let++ layout = layout_of ty in
+  match layout.fields with
+  | Enum (Known v, _) -> Some v
+  | Enum _ -> None
+  | _ -> L.failwith "enum_single_variant: not an enum type: %a" pp_ty ty
+
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero
   | TInt Isize -> Z.neg (Z.shift_left Z.one ((8 * Crate.pointer_size ()) - 1))

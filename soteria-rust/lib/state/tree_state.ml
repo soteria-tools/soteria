@@ -324,6 +324,16 @@ module Make (Borrows : Tree_borrows.T) = struct
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st]
 
+  let ignore_state x =
+    DecayMap.SM.map
+      (function
+        | Ok (value, _block) -> Ok value
+        | Error (e, _block) -> Error e
+        (* HACK: we add this because we can't lift misses for a part of state
+           that doesn't exist (and misses can't happen here anyways) *)
+        | Missing _ -> L.failwith "impossible : miss")
+      x
+
   let[@inline] with_alloc_kind kind (f : unit -> 'a t) : 'a t =
    fun st -> with_alloc_kind kind (f () st)
 
@@ -378,10 +388,14 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     lift @@ Value_codec.size_and_align_of_val ~load_vtable ~t ~meta
 
+  (** Checks the given pointer is well-aligned for the given type, possibly
+      reading in the heap to know what the alignment is (e.g. for [&dyn Trait]).
+      Returns the size of the type for that pointer (i.e. taking into account
+      metadata). *)
   and check_ptr_align (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     (* The expected alignment of a dyn pointer is stored inside the VTable *)
     let ptr, meta = Typed.Ptr.split ptr in
-    let** _, exp_align = size_and_align_of_val ty meta in
+    let** size, exp_align = size_and_align_of_val ty meta in
     [%l.debug
       "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
         exp_align pp_ty ty];
@@ -403,9 +417,9 @@ module Make (Borrows : Tree_borrows.T) = struct
          always be aligned; what matters most is whether it is guaranteed to be
          aligned. *)
       let* address = with_pointers_sym @@ Sptr.decay ptr in
-      if%sure address %@ exp_align ==@ Usize.(0s) then Result.ok ()
+      if%sure address %@ exp_align ==@ Usize.(0s) then Result.ok size
       else Result.error (`MisalignedPointer (exp_align, align, ofs))
-    else Result.ok ()
+    else Result.ok size
 
   and check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
     let check (ptr : Typed.([< T.sptr_t ] t)) size =
@@ -430,7 +444,7 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   and check_validity ~check_refs ty value =
     let default_check ptr ty =
-      let** () = check_ptr_align ptr ty in
+      let** _size = check_ptr_align ptr ty in
       check_non_dangling ptr ty
     in
     let check_ref =
@@ -450,18 +464,32 @@ module Make (Borrows : Tree_borrows.T) = struct
       Types.ty ->
       (Typed.([> T.any ] t), Error.t, syn list) Result.t =
    fun ?ignore_borrow ?(check_refs = true) ptr ty ->
-    let** () = check_ptr_align ptr ty in
+    let** size = check_ptr_align ptr ty in
     let ptr, meta = Typed.Ptr.split ptr in
     let parser ~offset = Tree_block.Decoder.decode ~meta ~offset ty in
-    let** value = apply_parser ?ignore_borrow ptr parser in
+    let** value =
+      if%sat size ==@ Usize.(0s) then
+        with_pointers
+          (Tree_block.SM.Result.run_with_state ~state:None
+             (Tree_block.apply_parser ~ignore_borrow:true None None
+                (parser ~offset:Usize.(0s)))
+          |> ignore_state)
+      else apply_parser ?ignore_borrow ptr parser
+    in
     [%l.debug "Finished reading rust value %a" Typed.ppa value];
     let++ () = check_validity ~check_refs ty value in
     Typed.as_any value
 
   and load_discriminant (ptr : Typed.([< T.sptr_f ] t)) ty =
-    let** () = check_ptr_align ptr ty in
-    let parser ~offset = Tree_block.Decoder.variant_of_enum ty ~offset in
-    let++ variant_id = apply_parser (Typed.Ptr.ptr_of ptr) parser in
+    let** _size = check_ptr_align ptr ty in
+    let**^ known_variant = Layout.enum_single_variant ty in
+    let++ variant_id =
+      match known_variant with
+      | Some variant -> Result.ok variant
+      | None ->
+          let parser ~offset = Tree_block.Decoder.variant_of_enum ty ~offset in
+          apply_parser (Typed.Ptr.ptr_of ptr) parser
+    in
     let adt = Charon_util.ty_as_adt ty in
     let variants = Crate.as_enum adt in
     let variant = Types.VariantId.nth variants variant_id in
@@ -536,13 +564,12 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     if Iter.is_empty parts then Result.ok ()
     else
-      let** () = check_ptr_align ptr ty in
+      let** size = check_ptr_align ptr ty in
       (* [%l.debug
        *   "Parsed to parts [%a]"
        *   Fmt.(list ~sep:comma Encoder.pp_cval_info)
        *   parts]; *)
       let* () = log "store" ptr in
-      let**^ size = Layout.size_of ty in
       let ptr = Typed.Ptr.ptr_of ptr in
       let tag = Typed.Ptr.tag_of ptr in
       let@ ofs = with_ptr Write ptr in
@@ -575,12 +602,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             (* next, we read *)
             Tree_block.apply_parser ~ignore_borrow:true None None
             @@ Tree_block.Decoder.decode ~meta:None ~offset:Usize.(0s) to_)
-         |> map (function
-           | Ok (value, _block) -> Ok value
-           | Error (e, _block) -> Error e
-           (* HACK: we add this because we can't lift misses for a part of state
-              that doesn't exist (and misses can't happen here anyways) *)
-           | Missing _ -> L.failwith "impossible : miss"))
+         |> ignore_state)
     in
     let++ () = check_validity ~check_refs:true to_ value in
     (value : Typed.T.any Typed.t :> Typed.([> T.any ] t))
@@ -647,7 +669,7 @@ module Make (Borrows : Tree_borrows.T) = struct
 
     let check_aligned ptr ty =
       let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
-      check_ptr_align ptr ty
+      SM.Result.map ignore @@ check_ptr_align ptr ty
 
     let check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
       let@ () = with_loc_err ~trace:"Dangling check" () in
