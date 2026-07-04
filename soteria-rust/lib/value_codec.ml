@@ -121,18 +121,17 @@ struct
   module ParserMonad = struct
     open State_tys
 
-    type query = Types.ty * Typed.(T.sint t)
     type 'a res = ('a, Error.t, syn list) SM.Result.t
 
-    (* size * offset *)
-    type get_all_query = Typed.(T.nonzero t) * Typed.(T.sint t)
-
-    (* The following is just query -> (rust_val, 'err, 'fix) StateResult.t where
-       StateResult = StateT (Result), but I need StateT1of3 urgh. *)
-    type handler = query -> Typed.T.any Typed.t res
+    (* The following is just [ty -> offset -> (rust_val, 'err, 'fix)
+       StateResult.t] where StateResult = StateT (Result), but I need StateT1of3
+       urgh. *)
+    type handler = Types.ty -> Typed.(T.sint t) -> Typed.T.any Typed.t res
 
     type get_all_handler =
-      get_all_query -> Typed.(T.any t * T.sint t * T.nonzero t) list res
+      Typed.(T.nonzero t) ->
+      Typed.(T.sint t) ->
+      Typed.(T.any t * T.sint t * T.nonzero t) list res
 
     (* A parser monad is an object such that, given a query handler with state
        ['state], returns a state monad-ish for that state which may fail or
@@ -167,10 +166,8 @@ struct
       let++ x = m handler get_all in
       f x
 
-    let query (q : query) : 'a t = fun (handler : handler) _ -> handler q
-
-    let get_all (q : get_all_query) : 'a t =
-     fun _ get_all state -> get_all q state
+    let query ty ofs : 'a t = fun (handler : handler) _ -> handler ty ofs
+    let get_all size ofs : 'a t = fun _ get_all -> get_all size ofs
 
     let[@inline] lift (m : 'a DecayMap.SM.t) : 'a t =
       let open SM.Syntax in
@@ -229,10 +226,10 @@ struct
           let* tag =
             if match tag_ty with TInt Isize | TUInt Usize -> true | _ -> false
             then
-              let+ v = query (unit_ptr, offset +!!@ tag_ofs) in
+              let+ v = query unit_ptr (offset +!!@ tag_ofs) in
               `Ptr (Typed.Ptr.ptr_of (Typed.cast_ptr_f v))
             else
-              let+ v = query (TLiteral tag_ty, offset +!!@ tag_ofs) in
+              let+ v = query (TLiteral tag_ty) (offset +!!@ tag_ofs) in
               `Int (Typed.cast_lit tag_ty v)
           in
           let pp_tag ft = function
@@ -305,13 +302,13 @@ struct
              https://github.com/rust-lang/unsafe-code-guidelines/issues/518 And
              a proper implementation is here:
              https://github.com/minirust/minirust/blob/master/tooling/minimize/src/chunks.rs *)
-          let+ blocks = get_all (Typed.cast_nonzero layout.size, offset) in
+          let+ blocks = get_all (Typed.cast_nonzero layout.size) offset in
           Typed.Adt.mk_union adt blocks
     | Primitive, TFnDef _ -> ok Typed.Adt.unit
     | Primitive, TVar (Free id) ->
         if%sat layout.size ==@ Usize.(0s) then ok (Typed.Adt.mk_poly id)
-        else query (ty, offset)
-    | Primitive, _ -> query (ty, offset)
+        else query ty offset
+    | Primitive, _ -> query ty offset
     | Array { is_ptr = true; _ }, _ ->
         let+ vs = iter (iter_fields ?meta layout ty) offset in
         let ptr, meta =

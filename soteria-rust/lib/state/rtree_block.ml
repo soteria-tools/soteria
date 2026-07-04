@@ -612,11 +612,11 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       tag tb (parser : a Decoder.ParserMonad.t) :
       (a, Error.t, syn list) SM.Result.t =
     let open SM.Syntax in
-    let handler (ty, ofs) =
+    let handler ty ofs =
       let**^ () = on_access () in
       load ~ignore_borrow ofs ty tag tb
     in
-    let get_all (size, ofs) =
+    let get_all size ofs =
       let**^ () = on_access () in
       get_init_leaves ofs size
     in
