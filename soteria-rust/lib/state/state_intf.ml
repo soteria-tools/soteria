@@ -74,7 +74,6 @@ module type S = sig
     ([< any ] v * [< sint ] v * [< nonzero ] v) list ->
     [> any ] v ret
 
-  val uninit : [< sptr_f ] v -> Types.ty -> unit ret
   val zeros : [< sptr_f ] v -> sint Typed.t -> unit ret
   val with_pointers_sym : 'a Sptr.DecayMap.SM.t -> 'a SM.t
   val store_str_global : string -> [< sptr_f ] v -> unit ret

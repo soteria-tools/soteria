@@ -364,16 +364,6 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   let with_ptr access ptr f = with_heap @@ Heap.with_ptr access ptr f
 
-  let uninit (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) :
-      (unit, 'err, 'fix) Result.t =
-    [%l.debug "Executing Uninit with pointer %a for %a" Typed.ppa ptr pp_ty ty];
-    let@ () = with_loc_err ~trace:"Uninitialising memory" () in
-    let ptr = Typed.Ptr.ptr_of ptr in
-    let* () = log "uninit" ptr in
-    let**^ size = Layout.size_of ty in
-    let@ ofs = with_ptr Write ptr in
-    Block.with_block @@ Tree_block.uninit_range ofs size
-
   let rec size_and_align_of_val t (meta : Typed.([< T.ptr_meta ] t) option) =
     let* st = get_state () in
     let load_vtable field ptr =
