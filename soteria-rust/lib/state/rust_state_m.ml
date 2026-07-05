@@ -200,7 +200,7 @@ module type S = sig
 
     val load_discriminant : [< sptr_f ] v -> Types.ty -> ([> sint ] v, 'env) t
     val store : [< sptr_f ] v -> Types.ty -> [< any ] v -> (unit, 'env) t
-    val zeros : [< sptr_f ] v -> sint v -> (unit, 'env) t
+    val zeros : [< sptr_f ] v -> [< nonzero ] v -> (unit, 'env) t
     val alloc_ty : ?span:Meta.span_data -> Types.ty -> ([> sptr_f ] v, 'env) t
 
     val alloc_untyped :

@@ -52,8 +52,8 @@ module type S = sig
   val alloc_untyped :
     ?span:Meta.span_data ->
     zeroed:bool ->
-    size:sint Typed.t ->
-    align:nonzero Typed.t ->
+    size:sint v ->
+    align:nonzero v ->
     [> sptr_f ] v ret
 
   val alloc_ty : ?span:Meta.span_data -> Types.ty -> [> sptr_f ] v ret
@@ -74,7 +74,7 @@ module type S = sig
     ([< any ] v * [< sint ] v * [< nonzero ] v) list ->
     [> any ] v ret
 
-  val zeros : [< sptr_f ] v -> sint Typed.t -> unit ret
+  val zeros : [< sptr_f ] v -> [< nonzero ] v -> unit ret
   val with_pointers_sym : 'a Sptr.DecayMap.SM.t -> 'a SM.t
   val store_str_global : string -> [< sptr_f ] v -> unit ret
   val store_global : Types.global_decl_id -> [< sptr_f ] v -> unit ret
