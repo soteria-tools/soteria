@@ -316,7 +316,7 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   [1]
 
 Test recursive validity check for references; disabled
-  $ soteria-rust exec ref_validity.rs --recursive-validity=allow
+  $ soteria-rust exec ref_validity.rs --reference-to-invalid-memory=allow
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
@@ -348,7 +348,7 @@ Test recursive validity check for references; disabled
   [1]
 
 Test recursive validity check for references; enabled
-  $ soteria-rust exec ref_validity.rs --recursive-validity=deny
+  $ soteria-rust exec ref_validity.rs --reference-to-invalid-memory=deny
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   error: ref_validity::test_uninit_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -387,7 +387,7 @@ Test recursive validity check for references; enabled
   [1]
 
 Test recursive validity check for references; warn
-  $ soteria-rust exec ref_validity.rs --recursive-validity=warn
+  $ soteria-rust exec ref_validity.rs --reference-to-invalid-memory=warn
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   warning: Invalid reference: Uninitialized memory access

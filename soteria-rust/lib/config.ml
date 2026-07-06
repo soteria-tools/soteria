@@ -157,10 +157,11 @@ type t = {
       [@docs Sections.analysis] [@default Permissive] [@names [ "provenance" ]]
       (** The provenance model to use for pointers. If not provided, the default
           is permissive. *)
-  recursive_validity : (check_level[@conv check_level_cmdliner_conv ()]);
+  reference_to_invalid_memory :
+    (check_level[@conv check_level_cmdliner_conv ()]);
       [@docs Sections.analysis]
       [@default Allow]
-      [@names [ "recursive-validity" ]]
+      [@names [ "reference-to-invalid-memory" ]]
       (** Whether to check the validity of the addressed memory when obtaining a
           reference to it. We only go one level deep.
 

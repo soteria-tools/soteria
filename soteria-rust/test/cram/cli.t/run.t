@@ -220,7 +220,7 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
-         --recursive-validity=ENUM (absent=allow)
+         --reference-to-invalid-memory=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
              obtaining a reference to it. We only go one level deep.
              Referencing invalid values is not considered UB, but is bad
@@ -509,7 +509,7 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
-         --recursive-validity=ENUM (absent=allow)
+         --reference-to-invalid-memory=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
              obtaining a reference to it. We only go one level deep.
              Referencing invalid values is not considered UB, but is bad
@@ -794,7 +794,7 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
-         --recursive-validity=ENUM (absent=allow)
+         --reference-to-invalid-memory=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
              obtaining a reference to it. We only go one level deep.
              Referencing invalid values is not considered UB, but is bad

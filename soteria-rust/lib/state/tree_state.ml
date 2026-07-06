@@ -502,8 +502,9 @@ module Make (Borrows : Tree_borrows.T) = struct
   *)
   and fake_read ptr ty =
     let open Syntax in
+    let lint_level = (Config.get ()).reference_to_invalid_memory in
     let skip_check =
-      match (Typed.Ptr.meta_of ptr, (Config.get ()).recursive_validity) with
+      match (Typed.Ptr.meta_of ptr, lint_level) with
       | _, Allow -> true
       | _, Warn when Config.get_mode () = Compositional -> true
       | None, _ -> false
@@ -521,10 +522,9 @@ module Make (Borrows : Tree_borrows.T) = struct
     else (
       [%l.debug "Checking validity of %a for %a" Typed.ppa ptr pp_ty ty];
       let*- err =
-        let++ _ = load ~ignore_borrow:true ~check_refs:false ptr ty in
-        ()
+        Result.map ignore @@ load ~ignore_borrow:true ~check_refs:false ptr ty
       in
-      match (Config.get ()).recursive_validity with
+      match lint_level with
       | Allow -> L.failwith "Unreachable, handled above"
       | Deny -> Result.error (`InvalidRef err)
       | Warn ->
