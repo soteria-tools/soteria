@@ -222,10 +222,12 @@
   
          --recursive-validity=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
-             obtaining a reference to it. We only go one level deep. This does
-             not cause UB, but may cause UB down the line. This may also have a
-             significant impact on performance. For more information, see
-             https://github.com/rust-lang/unsafe-code-guidelines/issues/414
+             obtaining a reference to it. We only go one level deep.
+             Referencing invalid values is not considered UB, but is bad
+             practice as it may cause UB down the line. For more information,
+             see https://github.com/rust-lang/unsafe-code-guidelines/issues/414
+             Enabling recursive validity checks may have a significant impact
+             on performance.
   
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
@@ -509,10 +511,12 @@
   
          --recursive-validity=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
-             obtaining a reference to it. We only go one level deep. This does
-             not cause UB, but may cause UB down the line. This may also have a
-             significant impact on performance. For more information, see
-             https://github.com/rust-lang/unsafe-code-guidelines/issues/414
+             obtaining a reference to it. We only go one level deep.
+             Referencing invalid values is not considered UB, but is bad
+             practice as it may cause UB down the line. For more information,
+             see https://github.com/rust-lang/unsafe-code-guidelines/issues/414
+             Enabling recursive validity checks may have a significant impact
+             on performance.
   
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
@@ -792,10 +796,12 @@
   
          --recursive-validity=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
-             obtaining a reference to it. We only go one level deep. This does
-             not cause UB, but may cause UB down the line. This may also have a
-             significant impact on performance. For more information, see
-             https://github.com/rust-lang/unsafe-code-guidelines/issues/414
+             obtaining a reference to it. We only go one level deep.
+             Referencing invalid values is not considered UB, but is bad
+             practice as it may cause UB down the line. For more information,
+             see https://github.com/rust-lang/unsafe-code-guidelines/issues/414
+             Enabling recursive validity checks may have a significant impact
+             on performance.
   
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
