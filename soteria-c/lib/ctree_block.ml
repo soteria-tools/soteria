@@ -210,13 +210,22 @@ end
 open MemVal
 include Tree_block (MemVal)
 
+module Range = struct
+  include Range
+
+  let of_low_and_size low (size : Typed.([< T.nonzero ] t)) =
+    of_low_and_size low (size :> Typed.(T.sint t))
+
+  let of_low_and_type low ty =
+    let+ size = Layout.size_of_s ty in
+    of_low_and_size low size
+
+  let size r = Typed.BitVec.cast_nonzero @@ size r
+end
+
 let log_fixes fixes =
   [%l.trace "MISSING WITH FIXES: %a" Fmt.Dump.(list @@ list pp_syn) fixes];
   fixes
-
-let range_of_low_and_type low ty =
-  let+ size = Layout.size_of_s ty in
-  Range.of_low_and_size low size
 
 let sval_leaf ~range ~value ~ty =
   if Typed.BitVec.sure_is_zero value then
@@ -231,7 +240,8 @@ let mk_fix_typed offset ty () =
   let+ fixes = mk_fix_typed ty () in
   [ lift_fixes ~offset ~len fixes ]
 
-let mk_fix_any offset len () = [ lift_fixes ~offset ~len [ SAny ] ]
+let mk_fix_any offset (len : Typed.([< T.nonzero ] t)) () =
+  [ lift_fixes ~offset ~len:(len :> Typed.(T.sint t)) [ SAny ] ]
 
 let mk_fix_any_s ofs len () =
   let fixes = mk_fix_any ofs len () in
@@ -247,7 +257,7 @@ let decode ~ty ~ofs node =
 let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
     (T.cval Typed.t, 'err, syn list) SM.Result.t =
   let open SM.Syntax in
-  let*^ ((_, bound) as range) = range_of_low_and_type ofs ty in
+  let*^ ((_, bound) as range) = Range.of_low_and_type ofs ty in
   with_bound_check ~mk_fixes:(mk_fix_typed ofs ty) bound (fun t ->
       let open Csymex.Syntax in
       let replace_node node = Result.ok node in
@@ -261,7 +271,7 @@ let load (ofs : [< T.sint ] Typed.t) (ty : Ctype.ctype) :
 let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
     (sval : [< T.cval ] Typed.t) : (unit, 'err, syn list) SM.Result.t =
   let open SM.Syntax in
-  let*^ ((_, bound) as range) = range_of_low_and_type low ty in
+  let*^ ((_, bound) as range) = Range.of_low_and_type low ty in
   let len = Range.size range in
   with_bound_check ~mk_fixes:(mk_fix_any_s low len) bound (fun t ->
       let open Csymex.Syntax in
@@ -281,7 +291,7 @@ let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
       in
       ((), tree))
 
-let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
+let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.nonzero ] Typed.t) :
     (unit, 'err, syn list) SM.Result.t =
   let ((_, bound) as range) = Range.of_low_and_size ofs size in
   let len = Range.size range in
@@ -299,7 +309,7 @@ let zero_range (ofs : [< T.sint ] Typed.t) (size : [< T.sint ] Typed.t) :
       let++ _, tree = Tree.frame_range t ~replace_node ~rebuild_parent range in
       ((), tree))
 
-let deinit (low : [< T.sint ] Typed.t) (len : [< T.sint ] Typed.t) :
+let deinit (low : [< T.sint ] Typed.t) (len : [< T.nonzero ] Typed.t) :
     (unit, 'err, 'fix) SM.Result.t =
   let ((_, bound) as range) = Range.of_low_and_size low len in
   with_bound_check ~mk_fixes:(mk_fix_any_s low len) bound (fun t ->

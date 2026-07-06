@@ -49,7 +49,7 @@ module Make (Borrows : Tree_borrows.T) = struct
   module Meta = struct
     type t = {
       align : Typed.T.nonzero Typed.t;
-      size : Typed.T.sint Typed.t;
+      size : Typed.T.nonzero Typed.t;
       tb_root : Ptr_tag.t;
       kind : Alloc_kind.t;
       trace : Trace.t; [@printer Trace.pp_short]
@@ -158,13 +158,16 @@ module Make (Borrows : Tree_borrows.T) = struct
         let**^ size = DecayMap.SM.lift @@ Layout.size_of pointee in
         if%sat size ==@ Usize.(0s) then Result.ok ptr_full'
         else
+          let size = Typed.BV.cast_nonzero size in
           let++ () = with_block_read_tb (Tree_block.tb_access ofs size tag) in
           ptr_full'
 
     let unprotect ofs tag size =
       let** () = with_borrow (Borrows.Tree.unprotect tag) in
       if%sat size ==@ Usize.(0s) then SM.Result.ok ()
-      else with_block_read_tb (Tree_block.unprotect ofs size tag)
+      else
+        let size = Typed.BV.cast_nonzero size in
+        with_block_read_tb (Tree_block.unprotect ofs size tag)
 
     let assert_exclusively_owned () =
       let** () = with_block (Tree_block.assert_exclusively_owned ()) in
@@ -364,16 +367,6 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   let with_ptr access ptr f = with_heap @@ Heap.with_ptr access ptr f
 
-  let uninit (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) :
-      (unit, 'err, 'fix) Result.t =
-    [%l.debug "Executing Uninit with pointer %a for %a" Typed.ppa ptr pp_ty ty];
-    let@ () = with_loc_err ~trace:"Uninitialising memory" () in
-    let ptr = Typed.Ptr.ptr_of ptr in
-    let* () = log "uninit" ptr in
-    let**^ size = Layout.size_of ty in
-    let@ ofs = with_ptr Write ptr in
-    Block.with_block @@ Tree_block.uninit_range ofs size
-
   let rec size_and_align_of_val t (meta : Typed.([< T.ptr_meta ] t) option) =
     let* st = get_state () in
     let load_vtable field ptr =
@@ -544,6 +537,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     | Some tag ->
         if%sat size ==@ Usize.(0s) then Result.ok ()
         else
+          let size = Typed.BV.cast_nonzero size in
           let* () = log "tb_load" ptr in
           let@ ofs = with_ptr Ghost ptr in
           Block.with_block_read_tb (Tree_block.tb_access ofs size tag)
@@ -572,6 +566,8 @@ module Make (Borrows : Tree_borrows.T) = struct
        *   Fmt.(list ~sep:comma Encoder.pp_cval_info)
        *   parts]; *)
       let* () = log "store" ptr in
+      (* the encoder returned parts, so the type can't be a ZST *)
+      let size = Typed.BV.cast_nonzero size in
       let ptr = Typed.Ptr.ptr_of ptr in
       let tag = Typed.Ptr.tag_of ptr in
       let@ ofs = with_ptr Write ptr in
@@ -592,8 +588,11 @@ module Make (Borrows : Tree_borrows.T) = struct
       with_pointers
         (let open DecayMap.SM in
          let open Syntax in
-         let* block = Tree_block.alloc size in
-         Tree_block.SM.Result.run_with_state ~state:(Some block)
+         let* state =
+           if%sat size ==@ Usize.(0s) then return None
+           else Tree_block.alloc (Typed.BV.cast_nonzero size) |> map Option.some
+         in
+         Tree_block.SM.Result.run_with_state ~state
            (let open Tree_block.SM in
             let open Syntax in
             (* first, we write *)
@@ -789,6 +788,7 @@ module Make (Borrows : Tree_borrows.T) = struct
          in fact be any well-aligned address. *)
       Result.ok @@ Typed.Ptr.mk_ptr_f (Typed.Ptr.of_address align) None
     else
+      let size = Typed.BV.cast_nonzero size in
       with_heap
         (let open Heap.SM in
          let open Heap.SM.Syntax in

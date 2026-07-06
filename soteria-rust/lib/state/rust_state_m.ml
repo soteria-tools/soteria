@@ -200,7 +200,7 @@ module type S = sig
 
     val load_discriminant : [< sptr_f ] v -> Types.ty -> ([> sint ] v, 'env) t
     val store : [< sptr_f ] v -> Types.ty -> [< any ] v -> (unit, 'env) t
-    val zeros : [< sptr_f ] v -> sint v -> (unit, 'env) t
+    val zeros : [< sptr_f ] v -> [< nonzero ] v -> (unit, 'env) t
     val alloc_ty : ?span:Meta.span_data -> Types.ty -> ([> sptr_f ] v, 'env) t
 
     val alloc_untyped :
@@ -222,7 +222,6 @@ module type S = sig
       ([< any ] v * [< sint ] v * [< nonzero ] v) list ->
       ([> any ] v, 'env) t
 
-    val uninit : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
     val free : [< sptr_f ] v -> (unit, 'env) t
 
     val borrow :
@@ -543,7 +542,6 @@ module Make (State : State_intf.S) :
     let[@inline] transmute_raw ~to_ blocks =
       ESM.lift (transmute_raw ~to_ blocks)
 
-    let[@inline] uninit ptr ty = ESM.lift (uninit ptr ty)
     let[@inline] free ptr = ESM.lift (free ptr)
     let[@inline] borrow ?protect ptr ty = ESM.lift (borrow ?protect ptr ty)
     let[@inline] unprotect ptr ty = ESM.lift (unprotect ptr ty)

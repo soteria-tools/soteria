@@ -1043,7 +1043,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      *   handle the symbolic size case yet.
      *)
     if%sat size ==@ zero then ok ()
-    else if%sure val_ ==@ U8.(0s) then State.zeros dst size
+    else if%sure val_ ==@ U8.(0s) then State.zeros dst (BV.cast_nonzero size)
     else
       let* bytes =
         of_opt_not_impl "write_bytes: don't know how to handle symbolic sizes"

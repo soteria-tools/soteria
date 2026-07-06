@@ -18,7 +18,7 @@ module type S = sig
   val empty : t option
   val load : [< sptr ] Typed.t -> Ctree_block.Ctype.ctype -> Agv.t res
   val store : sptr Typed.t -> Ctree_block.Ctype.ctype -> Agv.t -> unit res
-  val zero_range : [< sptr ] Typed.t -> sint Typed.t -> unit res
+  val zero_range : [< sptr ] Typed.t -> nonzero Typed.t -> unit res
   val alloc : ?zeroed:bool -> sint Typed.t -> [> sptr ] Typed.t res
   val alloc_ty : Ctree_block.Ctype.ctype -> [> sptr ] Typed.t res
   val free : [< sptr ] Typed.t -> unit res

@@ -324,6 +324,13 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   open MemVal
   include Soteria.Sym_states.Tree_block.Make (DecayMap.SM) (MemVal)
 
+  module Range = struct
+    include Range
+
+    let[@inline] of_low_and_size low (size : Typed.([< T.nonzero ] t)) =
+      of_low_and_size low (size :> Typed.(T.sint t))
+  end
+
   module Tree = struct
     include Tree
 
@@ -360,13 +367,15 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     let+ fixes = mk_fix_typed ty () in
     [ lift_fixes ~offset ~len fixes ]
 
-  let mk_fix_any offset len () = [ lift_fixes ~offset ~len [ SAny ] ]
+  let mk_fix_any offset (len : Typed.([< T.nonzero ] t)) () =
+    [ lift_fixes ~offset ~len:(len :> Typed.(T.sint t)) [ SAny ] ]
+
   let mk_fix_any_s ofs len () = return (mk_fix_any ofs len ())
 
-  let mk_fix_tb offset len () =
+  let mk_fix_tb offset (len : Typed.([< T.nonzero ] t)) () =
     return
       [
-        lift_fixes ~offset ~len
+        lift_fixes ~offset ~len:(len :> Typed.(T.sint t))
         @@ List.map MemVal.lift_tb_st_fix (Borrows.State.fix_empty ());
       ]
 
@@ -481,7 +490,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   let check_owned (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) =
     let open DecayMap.SM.Syntax in
-    let _, bound = Range.of_low_and_size ofs (size :> Typed.(T.sint t)) in
+    let _, bound = Range.of_low_and_size ofs size in
     let mk_fixes () =
       let+ bound = DecayMap.SM.nondet (Typed.t_usize ()) in
       [ [ Bound (Expr.of_value bound) ] ]
@@ -494,6 +503,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       (tag : Ptr_tag.t option) (tb : Borrows.Tree.t option) =
     let open SM.Syntax in
     let** size = lift_symex @@ Layout.size_of ty in
+    (* we expect ZSTs to never be read through here. *)
+    let size = Typed.BV.cast_nonzero size in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_typed ofs ty in
     with_bound_check ~mk_fixes bound (fun t ->
@@ -519,7 +530,6 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     let open SM.Syntax in
     (* manually coerce so types line up *)
     let ofs = (ofs :> Typed.(T.sint t)) in
-    let size = (size :> Typed.(T.sint t)) in
     let value = (value :> Typed.(T.any t)) in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
@@ -547,9 +557,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   let get_init_leaves (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) :
       (Typed.(T.any t * T.sint t * T.nonzero t) list, 'err, 'fix) SM.Result.t =
-    let ((_, bound) as range) =
-      Range.of_low_and_size ofs (size :> Typed.(T.sint t))
-    in
+    let ((_, bound) as range) = Range.of_low_and_size ofs size in
     with_bound_check bound (fun t ->
         let open DecayMap.SM.Syntax in
         let replace_node node = ok node in
@@ -560,8 +568,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         let++ leaves = collect_leaves ~uninit:`Ignore framed in
         (leaves, tree))
 
-  let uninit_range (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.sint ] t))
-      : (unit, 'err, 'fix) SM.Result.t =
+  let uninit_range (ofs : Typed.([< T.sint ] t))
+      (size : Typed.([< T.nonzero ] t)) : (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
@@ -577,8 +585,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         in
         ((), tree))
 
-  let zero_range (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.sint ] t)) :
-      (unit, 'err, 'fix) SM.Result.t =
+  let zero_range (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.nonzero ] t))
+      : (unit, 'err, 'fix) SM.Result.t =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
@@ -594,10 +602,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         in
         ((), tree))
 
-  let alloc ?(zeroed = false) size =
+  let alloc ?(zeroed = false) (size : Typed.([< T.nonzero ] t)) =
     let st = if zeroed then Zeros else Uninit in
     let+ tb_st = Borrows.State.init () in
-    alloc (Leaf (st, Some tb_st)) size
+    alloc (Leaf (st, Some tb_st)) (size :> Typed.(T.sint t))
 
   module Decoder = Value_codec.Decoder (struct
     module SM = SM
@@ -625,7 +633,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   (* Tree borrow updates *)
 
   let with_tb_access (ofs : Typed.([< T.sint ] t))
-      (size : Typed.([< T.sint ] t)) f =
+      (size : Typed.([< T.nonzero ] t)) f =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_tb ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
@@ -640,10 +648,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         in
         ((), tree))
 
-  let unprotect ofs size tag tb =
+  let unprotect ofs (size : Typed.([< T.nonzero ] t)) tag tb =
     with_tb_access ofs size
       (Borrows.State.set_protector ~protected:false tag tb)
 
-  let tb_access ofs size tag tb =
+  let tb_access ofs (size : Typed.([< T.nonzero ] t)) tag tb =
     with_tb_access ofs size (Borrows.State.access tag Read tb)
 end

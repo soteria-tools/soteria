@@ -155,7 +155,7 @@ let rec store (ptr : [< T.sptr ] Typed.t) ty v =
             aux rest_ofs rest_mems rest_values
         | (Layout.Padding size, ofs) :: rest_ofs, members, values ->
             let ptr = Typed.Ptr.add_ofs ptr (BV.usizei ofs) in
-            let** () = deinit ptr (BV.usizei size) in
+            let** () = deinit ptr (BV.usizeinz size) in
             aux rest_ofs members values
         | _ -> L.failwith "Struct field mismatch"
       in
