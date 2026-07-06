@@ -33,10 +33,9 @@ the {{!Soteria.Stats.Config.output_stats}[output_stats]} configuration is
 programmatically set to [Some _]).
 
 {@ocaml[
-  (* Manually initialising stats configuration, should be done using the
-     Cmdliner term in practice *)
-  let () =
-    Soteria.Stats.Config.set_and_lock { output_stats = Some "stats.json" }
+(* Manually initialising stats configuration, should be done using the Cmdliner
+   term in practice *)
+let () = Soteria.Stats.Config.set_and_lock { output_stats = Some "stats.json" }
 ]}
 
 {@ocaml[
@@ -246,14 +245,14 @@ See {{!Soteria.Symex.StatKeys}[Symex.StatKeys]} for all available entries.
 The {{!Soteria.Symex.S.run}[Symex.S.run]} function receives an optional [stats]
 parameter that allows deciding how statistics should be tracked during symbolic
 execution:
-- {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Ignore}[~stats:Ignore]}: Don't track any
-  statistics (default)
-- {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Dump}[~stats:(Dump ())]}: Track statistics
-  and print them after execution according to the current
+- {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Ignore}[~stats:Ignore]}: Don't
+  track any statistics (default)
+- {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Dump}[~stats:(Dump ())]}:
+  Track statistics and print them after execution according to the current
   {{!Soteria.Stats.Config}configuration} (see below)
-- {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Caller}[~stats:Caller]}: Statistics are
-  already tracked, and the effects they raise don't need to be handled here
-  (using {{!Soteria.Stats.As_ctx.with_}[with_]},
+- {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Caller}[~stats:Caller]}:
+  Statistics are already tracked, and the effects they raise don't need to be
+  handled here (using {{!Soteria.Stats.As_ctx.with_}[with_]},
   {{!Soteria.Stats.As_ctx.with_ignored}[with_ignored]}, or
   {{!Soteria.Stats.As_ctx.with_dumped}[with_dumped]})
 
@@ -277,23 +276,23 @@ module to centralize your stat key constants, document them, and register their
 printers — this makes the code maintainable as the number of statistics grows:
 
 {@ocaml[
-  module StatKeys = struct
-    let paths_explored = "analysis.paths_explored"
-    let total_time = "analysis.time"
-    let errors_found = "analysis.errors"
+module StatKeys = struct
+  let paths_explored = "analysis.paths_explored"
+  let total_time = "analysis.time"
+  let errors_found = "analysis.errors"
 
-    let () =
-      let open Soteria.Stats in
-      register_int_printer paths_explored ~name:"Paths Explored" (fun _ ft n ->
-          Fmt.pf ft "%d paths" n);
-      register_float_printer total_time ~name:"Analysis Time" (fun _ ->
-          Soteria.Logs.Printers.pp_time)
-  end
+  let () =
+    let open Soteria.Stats in
+    register_int_printer paths_explored ~name:"Paths Explored" (fun _ ft n ->
+        Fmt.pf ft "%d paths" n);
+    register_float_printer total_time ~name:"Analysis Time" (fun _ ->
+        Soteria.Logs.Printers.pp_time)
+end
 
-  let my_process () =
-    Soteria.Stats.As_ctx.incr StatKeys.paths_explored;
-    Soteria.Stats.As_ctx.add_float StatKeys.total_time 1.5;
-    ()
+let my_process () =
+  Soteria.Stats.As_ctx.incr StatKeys.paths_explored;
+  Soteria.Stats.As_ctx.add_float StatKeys.total_time 1.5;
+  ()
 ]}
 
 {2 That's it!}

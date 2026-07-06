@@ -21,7 +21,7 @@ whether a symbolic expression of type
 {{!Soteria.Symex.Value.S.sbool}[Value.sbool]} is satisfiable.
 
 {@ocaml[
-  module Symex = Symex.Make (Tiny_solver.Z3_solver)
+module Symex = Symex.Make (Tiny_solver.Z3_solver)
 ]}
 
 {2:return Write your first symbolic process}
@@ -57,16 +57,15 @@ The function receives a symbolic process to execute, an
 {{!Soteria.Symex.Approx.t}approximation mode}; an optional
 {{!Soteria.Symex.Fuel_gauge.t}fuel gauge} should the user desire to limit the
 breadth or depth of execution; and
-{{!Soteria.Soteria_std.Effects.Bookkeeping.mode}bookkeeping modes} ([Dump _], [Ignore],
-or [Caller]) for the aggregated statistics and flamegraphs
+{{!Soteria.Soteria_std.Effects.Bookkeeping.mode}bookkeeping modes} ([Dump _],
+[Ignore], or [Caller]) for the aggregated statistics and flamegraphs
 {{:https://github.com/brendangregg/flamegraph}[.collapsed]} files.
 
-It returns a list of branches, where each branch
-is a pair of the value returned by the symbolic process and the path condition
-that leads to this branch (in the form of a list of expressions). Note that the
-path condition uses {{!Soteria.Symex.Value.Expr}[Value.Expr]}, as this path
-condition is {e syntactic} now that it has left the context of the symbolic
-process.
+It returns a list of branches, where each branch is a pair of the value returned
+by the symbolic process and the path condition that leads to this branch (in the
+form of a list of expressions). Note that the path condition uses
+{{!Soteria.Symex.Value.Expr}[Value.Expr]}, as this path condition is
+{e syntactic} now that it has left the context of the symbolic process.
 
 For instance, let's execute the symbolic process we just created, using the
 {{!Soteria.Symex.Approx.OX}over-approximation} mode, and without providing any
@@ -119,16 +118,16 @@ computations. Without going into details about monads, Soteria provides a
  operators} ([let*]) to do exactly that.
 
 {@ocaml[
-  (* Puts the let* operator in scope *)
-  open Symex.Syntax
+(* Puts the let* operator in scope *)
+open Symex.Syntax
 
-  (* Puts infix operators for symbolic values in scope. These operators are
-     postifixed with "@" to avoid conflicts with the standard library. *)
-  open Typed.Infix
+(* Puts infix operators for symbolic values in scope. These operators are
+   postifixed with "@" to avoid conflicts with the standard library. *)
+open Typed.Infix
 
-  (* Puts the symbolic integer syntax in scope, so that we can write "2s" for
-     the symbolic integer 2, instead of "Typed.int 2" *)
-  open Typed.Syntax
+(* Puts the symbolic integer syntax in scope, so that we can write "2s" for the
+   symbolic integer 2, instead of "Typed.int 2" *)
+open Typed.Syntax
 ]}
 
 {@ocaml[

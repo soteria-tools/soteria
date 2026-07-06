@@ -23,8 +23,8 @@ Define a record type [t] where managed symbolic fields have type
 [<Module>.t option], then derive:
 
 {@ocaml[
-  type t = { heap : Heap.t option; globs : Globs.t option }
-  [@@deriving sym_state { symex = My_symex }]
+type t = { heap : Heap.t option; globs : Globs.t option }
+[@@deriving sym_state { symex = My_symex }]
 ]}
 
 The [symex] argument is required and indicates which symbolic monad family the
@@ -77,12 +77,12 @@ You can keep non-compositional auxiliary fields in [t] and still derive
 everything. Mark them with [@sym_state.ignore], providing their empty value:
 
 {@ocaml[
-  type t = {
-    heap : Heap.t option;
-    globs : Globs.t option;
-    functions : FunBiMap.t; [@sym_state.ignore { empty = FunBiMap.empty }]
-  }
-  [@@deriving sym_state { symex = My_symex }]
+type t = {
+  heap : Heap.t option;
+  globs : Globs.t option;
+  functions : FunBiMap.t; [@sym_state.ignore { empty = FunBiMap.empty }]
+}
+[@@deriving sym_state { symex = My_symex }]
 ]}
 
 Ignored fields are not serialized in [to_syn]. They are still considered in
@@ -91,9 +91,9 @@ and they still get a [with_field_sym] wrapper that operates over the underlying
 monad (e.g. [My_symex]).
 
 {@ocaml skip[
-  val with_functions_sym :
-    (FunBiMap.t -> ('a * FunBiMap.t, 'e, 'f) My_symex.Result.t) ->
-    ('a, 'e, 'f) SM.Result.t
+val with_functions_sym :
+  (FunBiMap.t -> ('a * FunBiMap.t, 'e, 'f) My_symex.Result.t) ->
+  ('a, 'e, 'f) SM.Result.t
 ]}
 
 If physical equality is not appropriate for the field, you can also provide a
@@ -101,16 +101,16 @@ custom equality function with [is_empty]. A custom printer can also be provided,
 with [pp] (by default the field is printed as "<ignored>").
 
 {@ocaml[
-  type t = {
-    functions : FunBiMap.t;
-        [@sym_state.ignore
-          {
-            empty = FunBiMap.empty;
-            is_empty = FunBiMap.is_empty;
-            pp = FunBiMap.pp;
-          }]
-  }
-  [@@deriving sym_state { symex = My_symex }]
+type t = {
+  functions : FunBiMap.t;
+      [@sym_state.ignore
+        {
+          empty = FunBiMap.empty;
+          is_empty = FunBiMap.is_empty;
+          pp = FunBiMap.pp;
+        }]
+}
+[@@deriving sym_state { symex = My_symex }]
 ]}
 
 {2 Using other fields as context}
@@ -128,33 +128,33 @@ This enables complex state shapes; for example, here [FancyHeap] is built on top
 of the [DecayedPointers.SM] state monad:
 
 {@ocaml[
-  type t = {
-    pointers : DecayedPointers.t option;
-    heap : FancyHeap.t option; [@sym_state.context { field = pointers }]
-    globs : Globs.t option;
-  }
-  [@@deriving sym_state { symex = My_symex }]
+type t = {
+  pointers : DecayedPointers.t option;
+  heap : FancyHeap.t option; [@sym_state.context { field = pointers }]
+  globs : Globs.t option;
+}
+[@@deriving sym_state { symex = My_symex }]
 ]}
 
 This makes the generated [with_heap] and [with_heap_sym] behave like this:
 
 {@ocaml[
-  let with_heap_sym f =
-    let open SM.Syntax in
-    let* st_opt = SM.get_state () in
-    let st = of_opt st_opt in
-    let { heap; pointers; _ } = st in
-    let*^ (res, heap), pointers =
-      DecayedPointers.SM.run_with_state ~state:pointers (f heap)
-    in
-    let+ () = SM.set_state (to_opt { st with heap; pointers }) in
-    res
+let with_heap_sym f =
+  let open SM.Syntax in
+  let* st_opt = SM.get_state () in
+  let st = of_opt st_opt in
+  let { heap; pointers; _ } = st in
+  let*^ (res, heap), pointers =
+    DecayedPointers.SM.run_with_state ~state:pointers (f heap)
+  in
+  let+ () = SM.set_state (to_opt { st with heap; pointers }) in
+  res
 ]}
 
 Which can then easily be used:
 
 {@ocaml[
-  let load addr ty = with_heap_sym (FancyHeap.load addr ty)
+let load addr ty = with_heap_sym (FancyHeap.load addr ty)
 ]}
 
 {2 [syn] type equality}
@@ -165,10 +165,10 @@ customising the generated [syn], it does allow asserting [syn] is equal to a
 user-defined one, using the [syn] option:
 
 {@ocaml[
-  type my_syn = Ser_heap of Heap.syn | Ser_globs of Globs.syn
+type my_syn = Ser_heap of Heap.syn | Ser_globs of Globs.syn
 
-  type t = { heap : Heap.t option; globs : Globs.t option }
-  [@@deriving sym_state { symex = My_symex; syn = my_syn }]
+type t = { heap : Heap.t option; globs : Globs.t option }
+[@@deriving sym_state { symex = My_symex; syn = my_syn }]
 ]}
 
 {b Note} this only asserts the generated [syn] type is equal to [my_syn], it
