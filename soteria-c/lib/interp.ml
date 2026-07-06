@@ -228,14 +228,13 @@ module Make (State : State_intf.S) = struct
     remove_bindings bindings
 
   let mk_store params =
-    ListLabels.fold_left params ~init:Store.empty
-      ~f:(fun store (pname, ty, value) ->
+    IterLabels.fold params ~init:Store.empty ~f:(fun store (pname, ty, value) ->
         [%l.trace "Putting variable to the store: %a" Fmt_ail.pp_sym pname];
         Store.add_value pname value ty store)
 
   let dealloc_store () : unit InterpM.t =
     let* store = InterpM.get_store () in
-    InterpM.iter_list (Store.bindings store) ~f:(fun (_, { kind; _ }) ->
+    InterpM.iter_iter (Store.iter_bindings store) ~f:(fun (_, { kind; _ }) ->
         match kind with
         | Stackptr ptr -> InterpM.IState.free ptr
         | _ -> InterpM.ok ())
@@ -523,7 +522,7 @@ module Make (State : State_intf.S) = struct
     | TPointer _, _ | _, TPointer _ -> error `UBPointerArithmetic
     | ty1, ty2 ->
         Fmt.kstr not_impl "Unexpected types in multiplication: %a and %a"
-          Svalue.pp_ty ty1 Svalue.pp_ty ty2
+          Typed.Svalue.pp_ty ty1 Typed.Svalue.pp_ty ty2
 
   let arith new_ty (v1, t1) a_op (v2, t2) : [> T.sint ] Typed.t InterpM.t =
     match ((a_op : AilSyntax.arithmeticOperator), unwrap_ctype new_ty) with
@@ -746,8 +745,8 @@ module Make (State : State_intf.S) = struct
           | None -> eval_expr_list args
           | Some arg_tys ->
               let arg_tys = Stubs.Arg_filter.apply filter arg_tys in
-              let args = List.combine args arg_tys in
-              InterpM.map_list args ~f:(fun (arg, ty) ->
+              Iter.of_list_combine args arg_tys
+              |> InterpM.map_iter ~f:(fun (arg, ty) ->
                   let* v = eval_expr arg in
                   lift_symex @@ cast ~old_ty:(type_of arg) ~new_ty:ty v)
         in
@@ -1054,9 +1053,9 @@ module Make (State : State_intf.S) = struct
           | Some (_, Some _) -> not_impl "flexible array member"
           | None -> not_impl "unknown struct tag"
         in
-        let fields = List.combine members fields in
         let+ fields_rev =
-          map_list fields ~f:(fun ((_, (_, _, _, new_ty)), (_, e_opt)) ->
+          Iter.of_list_combine members fields
+          |> map_iter ~f:(fun ((_, (_, _, _, new_ty)), (_, e_opt)) ->
               match e_opt with
               | None -> not_impl "Partial field initialization"
               | Some e ->
@@ -1346,7 +1345,7 @@ module Make (State : State_intf.S) = struct
     [%l.debug "Executing function %a" Fmt_ail.pp_sym name];
     [%l.trace "Was given arguments: %a" (Fmt.Dump.list Agv.pp) args];
     let* ptys = get_param_tys name in
-    let ps = List.combine3 params ptys args in
+    let ps = Iter.of_list_combine3 params ptys args in
     let store = mk_store ps in
     let subcall =
       let open InterpM.Syntax in

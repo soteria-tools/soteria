@@ -1,5 +1,4 @@
-(** A small, performance-focused SMT-LIB s-expression and solver-process
-    library, specialised to Soteria's needs.
+(** Performance-focused SMT-LIB s-expression and solver interface.
 
     Performance notes:
     - Serialization writes directly into a reused {!Buffer.t} (no

@@ -105,7 +105,8 @@ module Interval : S = struct
   include Reversible.Make_mutable (struct
     type t = Range.t Var.Map.t
 
-    let default : t = Var.Map.empty
+    let default () : t = Var.Map.empty
+    let copy = Fun.id
   end)
 
   (** Union of two interval mappings, doing the union of the intervals *)

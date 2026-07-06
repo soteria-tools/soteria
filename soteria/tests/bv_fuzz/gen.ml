@@ -7,8 +7,8 @@
 open QCheck2
 
 open Soteria.Bv_values
-module Sv = Svalue
 module D = Direct
+module Sv = Direct.Sv
 module Var = Soteria.Symex.Var
 
 (* ------------------------------------------------------------------ *)
@@ -110,7 +110,7 @@ let rec gen_bv ~bv_size : Sv.t Gen.sized =
         in
         let shrink_to_branches (ite : Sv.t) =
           match ite.node.kind with
-          | Sv.Ite (_, t, e) -> List.to_seq [ t; e ]
+          | Svalue.Ite (_, t, e) -> List.to_seq [ t; e ]
           | _ -> Seq.empty
         in
         Gen.set_shrink shrink_to_branches generator
@@ -189,7 +189,7 @@ and gen_bool ~bv_size : Sv.t Gen.sized =
         in
         let shrink_to_branches (ite : Sv.t) =
           match ite.node.kind with
-          | Sv.Ite (_, t, e) -> List.to_seq [ t; e ]
+          | Svalue.Ite (_, t, e) -> List.to_seq [ t; e ]
           | _ -> Seq.empty
         in
         Gen.set_shrink shrink_to_branches generator

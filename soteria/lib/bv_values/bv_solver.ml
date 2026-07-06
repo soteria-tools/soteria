@@ -1,13 +1,14 @@
 open Soteria_std
 open Logs.Import
+open Svalue
 module Var = Svalue.Var
 
 (** Returns [Some true] if PC slot [pc] implies query [q], [Some false] if [pc]
     implies the negation of [q], and [None] otherwise. Used to suppress
     redundant ordering constraints (e.g. [a <= b] becomes trivially true once
     [a < b] is in the PC). *)
-let[@inline] implies_or_contradicts ~(q : Svalue.t) ~(neg_q : Svalue.t)
-    (pc : Svalue.t) : bool option =
+let[@inline] implies_or_contradicts ~(q : _ Svalue.t) ~(neg_q : _ Svalue.t)
+    (pc : _ Svalue.t) : bool option =
   let open Svalue in
   if Svalue.equal q pc then Some true
   else if Svalue.equal neg_q pc then Some false
@@ -36,50 +37,55 @@ let[@inline] implies_or_contradicts ~(q : Svalue.t) ~(neg_q : Svalue.t)
         Some true
     | _ -> None
 
-let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
-  let simplify = simplify ~trivial_truthiness ~fallback in
-  match v.node.kind with
-  | Bool _ | BitVec _ | Float _ -> v
-  | _ -> (
-      match trivial_truthiness (Typed.type_ v) with
-      | Some true -> Svalue.Bool.v_true
-      | Some false -> Svalue.Bool.v_false
-      | None -> (
-          match v.node.kind with
-          | Unop (Not, e) ->
-              let e' = simplify e in
-              if Svalue.equal e e' then fallback v else Svalue.Bool.not e'
-          | Binop (Eq, e1, e2) ->
-              if Svalue.equal e1 e2 then Svalue.Bool.v_true
-              else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
-              else fallback v
-          | Binop (And, e1, e2) ->
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
-              else Svalue.Bool.and_ se1 se2
-          | Binop (Or, e1, e2) ->
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal se1 e1 && Svalue.equal se2 e2 then fallback v
-              else Svalue.Bool.or_ se1 se2
-          | Ite (g, e1, e2) ->
-              let sg = simplify g in
-              let se1 = simplify e1 in
-              let se2 = simplify e2 in
-              if Svalue.equal sg g && Svalue.equal se1 e1 && Svalue.equal se2 e2
-              then v
-              else Svalue.Bool.ite sg se1 se2
-          | _ -> fallback v))
-
 module Make_incremental
-    (Analysis : Analyses.S)
+    (Typed : Typed_intf.Solver_value)
+    (Analysis : Analyses.Make(Typed).S)
     (Intf :
       Solvers.Solver_interface.S
-        with type value = Svalue.t
-         and type ty = Svalue.ty) =
+        with type value = Typed.Svalue.t
+         and type ty = Typed.Svalue.ty) =
 struct
+  module Svalue = Typed.Svalue
   module Value = Typed
+
+  let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
+    let simplify = simplify ~trivial_truthiness ~fallback in
+    match v.node.kind with
+    | Bool _ | BitVec _ | Float _ -> v
+    | _ -> (
+        match trivial_truthiness (Typed.type_ v) with
+        | Some true -> Svalue.Bool.v_true
+        | Some false -> Svalue.Bool.v_false
+        | None -> (
+            match v.node.kind with
+            | Unop (Not, e) ->
+                let e' = simplify e in
+                if Svalue.equal e e' then fallback v else Svalue.Bool.not e'
+            | Binop (Eq, e1, e2) ->
+                if Svalue.equal e1 e2 then Svalue.Bool.v_true
+                else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
+                else fallback v
+            | Binop (And, e1, e2) ->
+                let se1 = simplify e1 in
+                let se2 = simplify e2 in
+                if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
+                else Svalue.Bool.and_ se1 se2
+            | Binop (Or, e1, e2) ->
+                let se1 = simplify e1 in
+                let se2 = simplify e2 in
+                if Svalue.equal se1 e1 && Svalue.equal se2 e2 then fallback v
+                else Svalue.Bool.or_ se1 se2
+            | Ite (g, e1, e2) ->
+                let sg = simplify g in
+                let se1 = simplify e1 in
+                let se2 = simplify e2 in
+                if
+                  Svalue.equal sg g
+                  && Svalue.equal se1 e1
+                  && Svalue.equal se2 e2
+                then v
+                else Svalue.Bool.ite sg se1 se2
+            | _ -> fallback v))
 
   module Var_counter = Var.Incr_counter_mut (struct
     let start_at = 0
@@ -168,21 +174,68 @@ struct
             [%l.info "Solver returned unknown"];
             Unknown)
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let pp (ft : Format.formatter) (solver : t) : unit =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) ft solver
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
 end
 
 module Make
-    (Analysis : Analyses.S)
+    (Typed : Typed_intf.Solver_value)
+    (Analysis : Analyses.Make(Typed).S)
     (Intf :
       Solvers.Solver_interface.S
-        with type value = Svalue.t
-         and type ty = Svalue.ty) =
+        with type value = Typed.Svalue.t
+         and type ty = Typed.Svalue.ty) =
 struct
+  module Svalue = Typed.Svalue
+  module Eval = Typed.Eval
+
+  let rec simplify ~trivial_truthiness ~fallback (v : Svalue.t) =
+    let simplify = simplify ~trivial_truthiness ~fallback in
+    match v.node.kind with
+    | Bool _ | BitVec _ | Float _ -> v
+    | _ -> (
+        match trivial_truthiness (Typed.type_ v) with
+        | Some true -> Svalue.Bool.v_true
+        | Some false -> Svalue.Bool.v_false
+        | None -> (
+            match v.node.kind with
+            | Unop (Not, e) ->
+                let e' = simplify e in
+                if Svalue.equal e e' then fallback v else Svalue.Bool.not e'
+            | Binop (Eq, e1, e2) ->
+                if Svalue.equal e1 e2 then Svalue.Bool.v_true
+                else if Svalue.sure_neq e1 e2 then Svalue.Bool.v_false
+                else fallback v
+            | Binop (And, e1, e2) ->
+                let se1 = simplify e1 in
+                let se2 = simplify e2 in
+                if Svalue.equal se1 e1 && Svalue.equal se2 e2 then v
+                else Svalue.Bool.and_ se1 se2
+            | Binop (Or, e1, e2) ->
+                let se1 = simplify e1 in
+                let se2 = simplify e2 in
+                if Svalue.equal se1 e1 && Svalue.equal se2 e2 then fallback v
+                else Svalue.Bool.or_ se1 se2
+            | Ite (g, e1, e2) ->
+                let sg = simplify g in
+                let se1 = simplify e1 in
+                let se2 = simplify e2 in
+                if
+                  Svalue.equal sg g
+                  && Svalue.equal se1 e1
+                  && Svalue.equal se2 e2
+                then v
+                else Svalue.Bool.ite sg se1 se2
+            | _ -> fallback v))
+
   module Value = Typed
 
   module Var_counter = Var.Incr_counter_mut (struct
@@ -281,10 +334,7 @@ struct
       let to_encode = Dynarray.create () in
       let add_vars_raw vars = Var.Hashset.add_iter var_set vars in
       let add_vars vars =
-        vars @@ fun v ->
-        let prev_size = Var.Hashset.cardinal var_set in
-        Var.Hashset.add var_set v;
-        if Var.Hashset.cardinal var_set <> prev_size then changed := true
+        vars @@ fun v -> changed := Var.Hashset.add_check var_set v || !changed
       in
       let relevant = Iter.exists (Var.Hashset.mem var_set) in
       (* We need to reach some kind of fixpoint *)
@@ -304,8 +354,13 @@ struct
             else
               let others = fun () -> Seq.Cons (slot, others) in
               aux_checked others rest
-        | Seq.Cons ({ value = Dirty _; _ }, rest) ->
-            (* A dirty checked variable can be ignored *)
+        | Seq.Cons ({ value = Dirty vars; _ }, rest) ->
+            let vars = Fun.flip Var.Set.iter vars in
+            if relevant vars then
+              (* Variables that are together in a Dirty slot might indicate a
+                 relationship between the variables. We need to consider them
+                 connected. *)
+              add_vars vars;
             aux_checked others rest
       in
       let rec aux seq =
@@ -352,8 +407,8 @@ struct
     if not (Var.Set.is_empty vars) then
       Solver_state.dirty_variable solver.state vars
 
-  let memo_sat_check_tbl : Symex.Solver_result.t Hashtbl.Hint.t =
-    Hashtbl.Hint.create 1023
+  let memo_sat_check_tbl : Symex.Solver_result.t Svalue.Hashtbl.t =
+    Svalue.Hashtbl.create 1023
 
   let trivial_model_works solver to_check var_tys =
     let exception No_model in
@@ -367,9 +422,9 @@ struct
       | TBool -> fun () -> Svalue.Bool.of_bool (Random.bool ())
       (* TODO: because we can't evaluate floats, we can never do a trivial check
          for them. *)
-      | TFloat _ -> raise No_model
+      | TFloat _ -> raise_notrace No_model
       (* TODO: figure this out *)
-      | TPointer _ | TSeq _ -> raise No_model
+      | TPointer _ | TSeq _ | TExtension _ -> raise_notrace No_model
     in
     let fuel = 3 in
     try
@@ -382,7 +437,7 @@ struct
               |> Iter.take fuel
               |> Iter.to_array
             in
-            if Array.length values = 0 then raise No_model;
+            if Array.length values = 0 then raise_notrace No_model;
             Var.Map.add v values acc)
           var_tys Var.Map.empty
       in
@@ -421,11 +476,11 @@ struct
 
   let check_sat_raw_memo solver to_check =
     let to_check = Typed.untyped to_check in
-    match Hashtbl.Hint.find_opt memo_sat_check_tbl to_check.Hc.tag with
+    match Svalue.Hashtbl.find_opt memo_sat_check_tbl to_check with
     | Some result -> result
     | None ->
         let result = check_sat_raw solver to_check in
-        Hashtbl.Hint.add memo_sat_check_tbl to_check.Hc.tag result;
+        Svalue.Hashtbl.add memo_sat_check_tbl to_check result;
         result
 
   let sat solver =
@@ -447,16 +502,28 @@ struct
         if answer = Sat then Solver_state.mark_checked solver.state;
         answer
 
-  let as_exprs solver =
+  let as_values_iter solver =
     Iter.append
       (Solver_state.iter solver.state)
       (Analysis.encode solver.analysis)
-    |> Iter.map Typed.Expr.of_value
-    |> Iter.to_list
+
+  let pp fmt solver =
+    (Fmt.Dump.iter (Fun.flip as_values_iter) Fmt.nop Typed.ppa) fmt solver
+
+  let as_exprs solver =
+    as_values_iter solver |> Iter.map Typed.Expr.of_value |> Iter.to_list
 end
 
-open Analyses
-module Analysis = Merge (Interval) (Equality)
-module Z3 = Solvers.Z3.Make (Encoding)
-module Z3_incremental_solver = Make_incremental (Analysis) (Z3)
-module Z3_solver = Make (Analysis) (Z3)
+module Analysis (Typed : Typed_intf.Solver_value) = struct
+  open Analyses.Make (Typed)
+  include Merge (Interval) (Equality)
+end
+
+module Z3 (Typed : Typed_intf.Solver_value) =
+  Solvers.Z3.Make (Encoding.Make (Typed))
+
+module Z3_incremental_solver (Typed : Typed_intf.Solver_value) =
+  Make_incremental (Typed) (Analysis (Typed)) (Z3 (Typed))
+
+module Z3_solver (Typed : Typed_intf.Solver_value) =
+  Make (Typed) (Analysis (Typed)) (Z3 (Typed))

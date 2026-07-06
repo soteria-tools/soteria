@@ -163,6 +163,9 @@ dune.lock
 # ocamlbuild working directory
 _build/
 
+# throwaway build dir used by scripts/doc.py for a forced doc rebuild
+.doc-force-build-*/
+
 # ocamlbuild targets
 *.byte
 *.native

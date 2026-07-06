@@ -1,5 +1,5 @@
 open Compo_res
-open Rust_val
+open Svalue
 open Typed.Infix
 open Typed.Syntax
 module T = Typed.T
@@ -11,145 +11,6 @@ open Sptr
 
 module Make (Borrows : Tree_borrows.T) = struct
   module Borrows = Borrows (DecayMap.SM)
-
-  (* Pointer implementation *)
-
-  module Sptr_base = struct
-    module Logic = Soteria.Logic.Make (DecayMap.SM)
-    module L_option = Logic.Util.Option
-
-    (* TODO: we need a derive for S_with_syn; with the right abstractions in
-       Logic.Util it should be very straightforward. *)
-
-    type ('sptr, 'snonzero, 'sint, 'tag) base = {
-      ptr : 'sptr;
-      tag : 'tag option;
-      align : 'snonzero;
-      size : 'sint;
-    }
-
-    type t =
-      (T.sptr Typed.t, T.nonzero Typed.t, T.sint Typed.t, Borrows.Tag.t) base
-
-    type syn = (Typed.Expr.t, Typed.Expr.t, Typed.Expr.t, Borrows.Tag.syn) base
-
-    let pp' pp_v pp_tag fmt { ptr; tag; _ } =
-      Fmt.pf fmt "%a[%a]" pp_v ptr Fmt.(option ~none:(any "*") pp_tag) tag
-
-    let pp = pp' Typed.ppa Borrows.Tag.pp
-    let show = Fmt.to_to_string pp
-    let pp_syn = pp' Typed.Expr.pp Borrows.Tag.pp_syn
-    let show_syn = Fmt.to_to_string pp_syn
-
-    let to_syn { ptr; tag; align; size } =
-      {
-        ptr = Typed.Expr.of_value ptr;
-        align = Typed.Expr.of_value align;
-        size = Typed.Expr.of_value size;
-        tag = L_option.to_syn Borrows.Tag.to_syn tag;
-      }
-
-    let in_bound { ptr; size; _ } =
-      let ofs = Typed.Ptr.ofs ptr in
-      Usize.(0s) <=@ ofs &&@ (ofs <@ size)
-
-    let learn_eq syn t =
-      let open DecayMap.SM.Consumer in
-      let open Syntax in
-      let* () = L_option.learn_eq Borrows.Tag.learn_eq syn.tag t.tag in
-      let* () = learn_eq syn.ptr t.ptr in
-      let* () = learn_eq syn.align t.align in
-      learn_eq syn.size t.size
-
-    let exprs_syn { ptr; align; size; tag } =
-      L_option.exprs_syn Borrows.Tag.exprs_syn tag @ [ ptr; align; size ]
-
-    let fresh () = L.failwith "Fresh unimplemented for sptr (for now)"
-
-    let subst subst_val p =
-      let se = Typed.Expr.subst subst_val in
-      let ptr = se p.ptr in
-      let align = se p.align in
-      let size = se p.size in
-      let tag = L_option.subst Borrows.Tag.subst subst_val p.tag in
-      { ptr; align; size; tag }
-
-    let null () =
-      {
-        ptr = Typed.Ptr.null ();
-        tag = None;
-        align = Usize.(1s);
-        size = Usize.(0s);
-      }
-
-    let of_address ofs =
-      let null_ptr = null () in
-      let ptr = Typed.Ptr.add_ofs null_ptr.ptr ofs in
-      { null_ptr with ptr }
-
-    let dangling_if_zst ty =
-      let open Rustsymex in
-      let open Syntax in
-      let** layout = Layout.layout_of ty in
-      if%sat layout.size ==@ Usize.(0s) then
-        (* UX: really any address that is well-aligned is valid, we
-           under-approximate here to make our life easier. *)
-        Result.ok (Some (of_address layout.align))
-      else Result.ok None
-
-    let is_null { ptr; _ } = Typed.Ptr.is_null ptr
-    let ofs { ptr; _ } = Typed.Ptr.ofs ptr
-    let has_provenance { ptr; _ } = Typed.not (Typed.Ptr.is_at_null_loc ptr)
-
-    let have_same_provenance { ptr = ptr1; _ } { ptr = ptr2; _ } =
-      Typed.Ptr.loc ptr1 ==@ Typed.Ptr.loc ptr2
-
-    (** A simplified (and unsafe) version of [offset], that adds a signed
-        bitvector to this pointer's offset. *)
-    let raw_offset ptr off_by =
-      let open Rustsymex.Syntax in
-      let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-      let ofs', ovf = ofs +$?@ off_by in
-      let++ () = assert_or_error (Typed.not ovf) `UBDanglingPointer in
-      { ptr with ptr = Typed.Ptr.mk loc ofs' }
-
-    let[@inline] _decay ~expose { ptr; align; size; _ } =
-      let open DecayMap.SM.Syntax in
-      let loc, ofs = Typed.Ptr.decompose ptr in
-      let+ loc_int = DecayMap.decay ~expose ~size ~align loc in
-      [%l.debug "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int];
-      loc_int +!!@ ofs
-
-    let decay p = _decay ~expose:false p
-    let expose p = _decay ~expose:true p
-
-    let distance ({ ptr = ptr1; _ } as p1) ({ ptr = ptr2; _ } as p2) =
-      let open DecayMap.SM.Syntax in
-      if%sat have_same_provenance p1 p2 then
-        DecayMap.SM.return (Typed.Ptr.ofs ptr1 -!@ Typed.Ptr.ofs ptr2)
-      else
-        let* ptr1 = decay p1 in
-        let+ ptr2 = decay p2 in
-        ptr1 -!@ ptr2
-
-    let as_id { ptr; _ } = Typed.cast @@ Typed.Ptr.loc ptr
-    let allocation_info { size; align; _ } = (Typed.cast size, Typed.cast align)
-
-    let nondet ty =
-      let open Rustsymex.Syntax in
-      let** layout = Layout.layout_of ty in
-      let* loc = nondet (Typed.t_loc ()) in
-      let* ofs = nondet (Typed.t_usize ()) in
-      let* tag, _ =
-        DecayMap.SM.run_with_state ~state:None @@ Borrows.Tag.nondet ()
-      in
-      let ptr = Typed.Ptr.mk loc ofs in
-      let ptr = { ptr; tag; align = layout.align; size = layout.size } in
-      Result.ok ptr
-  end
-
-  (* State details *)
-  module Encoder = Value_codec.Encoder (Sptr_base)
 
   (* State combinators *)
 
@@ -183,15 +44,15 @@ module Make (Borrows : Tree_borrows.T) = struct
   end
 
   module Freeable = Soteria.Sym_states.Freeable.Make (DecayMap.SM)
-  module Tree_block = Rtree_block.Make (Borrows) (Sptr_base)
+  module Tree_block = Rtree_block.Make (Borrows)
 
   module Meta = struct
     type t = {
       align : Typed.T.nonzero Typed.t;
       size : Typed.T.sint Typed.t;
-      tb_root : Borrows.Tag.t;
+      tb_root : Ptr_tag.t;
       kind : Alloc_kind.t;
-      trace : Trace.t;
+      trace : Trace.t; [@printer Trace.pp_short]
     }
     [@@deriving show { with_path = false }]
   end
@@ -265,8 +126,9 @@ module Make (Borrows : Tree_borrows.T) = struct
 
     (** Borrows a given pointer. [ty] is the type of the pointer/reference/box
         being reborrowed. *)
-    let borrow ?(protect = false) ((ptr : Sptr_base.t), meta) tag
+    let borrow ?(protect = false) (ptr_full : Typed.([< T.sptr_f ] t)) tag
         (ty : Types.ty) ofs =
+      let ptr, meta = Typed.Ptr.split ptr_full in
       let pointee = get_pointee ty in
       (* FIXME: this logic is tree borrows related and should be handled there.
          https://github.com/soteria-tools/soteria/issues/301 *)
@@ -285,18 +147,19 @@ module Make (Borrows : Tree_borrows.T) = struct
         | true, _ -> L.failwith "Non-ref or box in borrow?"
       in
       let** tag = with_borrow (Borrows.Tree.borrow ~state ?protector tag) in
-      let ptr' = { ptr with tag = Some tag } in
+      let ptr' = Typed.Ptr.with_tag ptr (Some tag) in
+      let ptr_full' = Typed.Ptr.mk_ptr_f ptr' meta in
       [%l.debug
         "%s pointer %a -> %a (%a)"
           (if protect then "Protecting" else "Borrowing")
-          Sptr_base.pp ptr Sptr_base.pp ptr' Tree_borrows.pp_state state];
-      if not protect then Result.ok (ptr', meta)
+          Sptr.pp ptr Sptr.pp ptr' Tree_borrows.pp_state state];
+      if not protect then Result.ok ptr_full'
       else
         let**^ size = DecayMap.SM.lift @@ Layout.size_of pointee in
-        if%sat size ==@ Usize.(0s) then Result.ok (ptr', meta)
+        if%sat size ==@ Usize.(0s) then Result.ok ptr_full'
         else
           let++ () = with_block_read_tb (Tree_block.tb_access ofs size tag) in
-          (ptr', meta)
+          ptr_full'
 
     let unprotect ofs tag size =
       let** () = with_borrow (Borrows.Tree.unprotect tag) in
@@ -329,7 +192,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       | _ -> None
 
     let make ?span ?zeroed ~size ~align () :
-        (t * Borrows.Tag.t option) DecayMap.SM.t =
+        (t * Ptr_tag.t option) DecayMap.SM.t =
       let open DecayMap.SM.Syntax in
       let* tag, block = Block.alloc ?zeroed size in
       let*^ kind = get_alloc_kind () in
@@ -354,40 +217,40 @@ module Make (Borrows : Tree_borrows.T) = struct
       let open SM.Syntax in
       let+ st = SM.get_state () in
       [%l.debug
-        "%a access to the state at pointer %a" pp_access access Sptr_base.pp ptr];
+        "%a access to the state at pointer %a" pp_access access Typed.ppa ptr];
       [%l.trace "STATE:@\n%a" (Fmt.Dump.option pp) st]
 
-    let with_ptr (access : access) (ptr : Sptr_base.t)
+    let check_ptr_deref (ptr : Typed.([< T.sptr_t ] t)) =
+      let open DecayMap.SM in
+      let open Syntax in
+      let** () =
+        assert_or_error Typed.(not (Ptr.is_null ptr)) `NullDereference
+      in
+      assert_or_error Typed.(Ptr.has_provenance ptr) `UBDanglingPointer
+
+    let with_ptr ?(check_ptr = true) (access : access)
+        (ptr : Typed.([< T.sptr_t ] t))
         (f : [< T.sint ] Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
         ('a, 'err, syn list) SM.Result.t =
       let open SM in
       let open SM.Syntax in
       let* () = print_access access ptr in
-      let** () =
-        assert_or_error Typed.(not (Typed.Ptr.is_null ptr.ptr)) `NullDereference
+      let**^ () =
+        if check_ptr then check_ptr_deref ptr else DecayMap.SM.Result.ok ()
       in
-      let loc, ofs = Typed.Ptr.decompose ptr.ptr in
-      let* res =
-        wrap loc
-          (let open Freeable_block_with_meta in
-           let open SM.Syntax in
-           let* block = SM.get_state () in
-           match (alloc_kind block, access) with
-           | Some (Function _), (Read | Write) ->
-               SM.Result.error `AccessedFnPointer
-           | Some ((Const _ | AnonConst | StaticString) as k), Write ->
-               let*^ cur_kind = DecayMap.SM.lift @@ get_alloc_kind () in
-               if cur_kind <> k then SM.Result.error `WriteToReadOnly
-               else Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs)
-           | _ -> Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs))
-      in
-      match (res, Config.get_mode ()) with
-      | (Missing _ as miss), Whole_program ->
-          (* HACK: a miss in WPST means there is a dangling pointer. *)
-          if%sat Typed.not (Sptr_base.has_provenance ptr) then
-            Result.error `UBDanglingPointer
-          else return miss
-      | ok_or_err, _ -> return ok_or_err
+      let loc, ofs = Typed.Ptr.decompose ptr in
+      wrap loc
+        (let open Freeable_block_with_meta in
+         let open SM.Syntax in
+         let* block = SM.get_state () in
+         match (alloc_kind block, access) with
+         | Some (Function _), (Read | Write) ->
+             SM.Result.error `AccessedFnPointer
+         | Some ((Const _ | AnonConst | StaticString) as k), Write ->
+             let*^ cur_kind = DecayMap.SM.lift @@ get_alloc_kind () in
+             if cur_kind <> k then SM.Result.error `WriteToReadOnly
+             else wrap @@ Freeable_block.wrap (f ofs)
+         | _ -> wrap @@ Freeable_block.wrap (f ofs))
 
     let is_freed loc =
       wrap loc
@@ -397,15 +260,6 @@ module Make (Borrows : Tree_borrows.T) = struct
          match block with
          | Some { node = Freed; _ } -> SM.Result.ok true
          | _ -> SM.Result.ok false)
-
-    module Decoder =
-      Value_codec.Decoder
-        (Sptr_base)
-        (struct
-          module SM = SM
-
-          type fix = syn list
-        end)
   end
 
   type t = {
@@ -417,12 +271,12 @@ module Make (Borrows : Tree_borrows.T) = struct
             is_empty = FunBiMap.is_empty;
             pp = FunBiMap.pp;
           }]
-    globals : Sptr_base.t Rust_val.full_ptr GlobMap.t;
+    globals : Typed.(T.sptr_f t) GlobMap.t;
         [@sym_state.ignore
           {
             empty = GlobMap.empty;
             is_empty = GlobMap.is_empty;
-            pp = GlobMap.pp (pp_full_ptr Sptr_base.pp);
+            pp = GlobMap.pp Typed.ppa;
           }]
     errors : Error.with_trace list;
         [@sym_state.ignore
@@ -434,11 +288,11 @@ module Make (Borrows : Tree_borrows.T) = struct
       ((unit, Error.with_trace, unit) Compo_res.t * t option) Rustsymex.t)
       option;
         [@sym_state.ignore { empty = None }]
-    const_generics : Sptr_base.t rust_val Types.ConstGenericVarId.Map.t;
+    const_generics : Typed.(T.any t) Types.ConstGenericVarId.Map.t;
         [@sym_state.ignore
           {
             empty = Types.ConstGenericVarId.Map.empty;
-            pp = Types.ConstGenericVarId.Map.pp (pp_rust_val Sptr_base.pp);
+            pp = Types.ConstGenericVarId.Map.pp Typed.ppa;
           }]
   }
   [@@deriving sym_state { symex = Rustsymex }]
@@ -466,10 +320,19 @@ module Make (Borrows : Tree_borrows.T) = struct
   let log action ptr =
     let+ st = SM.get_state () in
     [%l.trace
-      "About to execute action: %s (%a)@\n@[<2>STATE:@ %a@]" action Sptr_base.pp
-        ptr
+      "About to execute action: %s (%a)@\n@[<2>STATE:@ %a@]" action Sptr.pp ptr
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st]
+
+  let ignore_state x =
+    DecayMap.SM.map
+      (function
+        | Ok (value, _block) -> Ok value
+        | Error (e, _block) -> Error e
+        (* HACK: we add this because we can't lift misses for a part of state
+           that doesn't exist (and misses can't happen here anyways) *)
+        | Missing _ -> L.failwith "impossible : miss")
+      x
 
   let[@inline] with_alloc_kind kind (f : unit -> 'a t) : 'a t =
    fun st -> with_alloc_kind kind (f () st)
@@ -485,58 +348,62 @@ module Make (Borrows : Tree_borrows.T) = struct
     Error.log_at trace err;
     Error (Error.decorate trace err)
 
+  module Decoder = Value_codec.Decoder (Block)
+
   let apply_parser (type a) ?(ignore_borrow = false) ptr
-      (parser : offset:T.sint Typed.t -> a Heap.Decoder.ParserMonad.t) :
+      (parser : offset:T.sint Typed.t -> a Tree_block.Decoder.ParserMonad.t) :
       (a, Error.t, syn list) Result.t =
     let* () = log "load" ptr in
-    let handler (ty, ofs) =
-      let@ _ofs = Heap.with_ptr Read ptr in
-      Block.with_block_read_tb (Tree_block.load ~ignore_borrow ofs ty ptr.tag)
-    in
-    let get_all (size, ofs) =
-      let@ _ofs = Heap.with_ptr Read ptr in
-      Block.with_block (Tree_block.get_init_leaves ofs size)
-    in
-    let offset = Typed.Ptr.ofs ptr.ptr in
-    with_heap
-    @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all
-    @@ parser ~offset
+    let open Block.SM.Syntax in
+    let tag = Typed.Ptr.tag_of ptr in
+    let@@ () = with_heap in
+    let@ offset = Heap.with_ptr ~check_ptr:false Read ptr in
+    let@ tb = Block.with_block_read_tb in
+    let on_access () = Heap.check_ptr_deref ptr in
+    Tree_block.apply_parser ~on_access ~ignore_borrow tag tb @@ parser ~offset
 
   let with_ptr access ptr f = with_heap @@ Heap.with_ptr access ptr f
 
-  let uninit ((ptr, _) : Sptr_base.t * 'a) (ty : Types.ty) :
+  let uninit (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) :
       (unit, 'err, 'fix) Result.t =
-    [%l.debug
-      "Executing Uninit with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
+    [%l.debug "Executing Uninit with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Uninitialising memory" () in
+    let ptr = Typed.Ptr.ptr_of ptr in
     let* () = log "uninit" ptr in
     let**^ size = Layout.size_of ty in
     let@ ofs = with_ptr Write ptr in
     Block.with_block @@ Tree_block.uninit_range ofs size
 
-  let rec size_and_align_of_val t meta =
+  let rec size_and_align_of_val t (meta : Typed.([< T.ptr_meta ] t) option) =
     let* st = get_state () in
     let load_vtable field ptr =
       let open Rustsymex.Syntax in
       let usize : Types.ty = TLiteral (TUInt Usize) in
       let** field_size = Layout.size_of usize in
       let ofs = match field with `Size -> Usize.(1s) | `Align -> Usize.(2s) in
-      let** ptr' = Sptr_base.raw_offset ptr (ofs *!!@ field_size) in
-      let ptr' = (ptr', Thin) in
+      let** ptr' = Sptr.raw_offset ptr (ofs *!!@ field_size) in
+      let ptr' = Typed.Ptr.mk_ptr_f ptr' None in
       let+ res, _ = load ~ignore_borrow:true ~check_refs:false ptr' usize st in
-      res
+      Compo_res.map Typed.cast res
     in
-    lift @@ Encoder.size_and_align_of_val ~load_vtable ~t ~meta
+    lift @@ Value_codec.size_and_align_of_val ~load_vtable ~t ~meta
 
-  and check_ptr_align ((ptr, meta) : 'a full_ptr) (ty : Types.ty) =
+  (** Checks the given pointer is well-aligned for the given type, possibly
+      reading in the heap to know what the alignment is (e.g. for [&dyn Trait]).
+      Returns the size of the type for that pointer (i.e. taking into account
+      metadata). *)
+  and check_ptr_align (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     (* The expected alignment of a dyn pointer is stored inside the VTable *)
-    let** _, exp_align = size_and_align_of_val ty meta in
+    let ptr, meta = Typed.Ptr.split ptr in
+    let** size, exp_align = size_and_align_of_val ty meta in
     [%l.debug
-      "Checking pointer alignment of %a: expect %a for %a" Sptr_base.pp ptr
-        Typed.ppa exp_align pp_ty ty];
-    let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+      "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
+        exp_align pp_ty ty];
+    let loc, ofs = Typed.Ptr.decompose ptr in
     (* A pointer with no provenance is aligned to it's offset *)
-    let align = Typed.(ite (Ptr.is_null_loc loc) exp_align (cast ptr.align)) in
+    let align =
+      Typed.(ite (Ptr.is_null_loc loc) exp_align (Typed.Ptr.align_of ptr))
+    in
     let is_aligned =
       ofs %@ exp_align ==@ Usize.(0s) &&@ (align %@ exp_align ==@ Usize.(0s))
     in
@@ -549,28 +416,26 @@ module Make (Borrows : Tree_borrows.T) = struct
          This avoids going through extra branches, as a pointer can pretty much
          always be aligned; what matters most is whether it is guaranteed to be
          aligned. *)
-      let* address = with_pointers_sym @@ Sptr_base.decay ptr in
-      if%sure address %@ exp_align ==@ Usize.(0s) then Result.ok ()
+      let* address = with_pointers_sym @@ Sptr.decay ptr in
+      if%sure address %@ exp_align ==@ Usize.(0s) then Result.ok size
       else Result.error (`MisalignedPointer (exp_align, align, ofs))
-    else Result.ok ()
+    else Result.ok size
 
-  and check_non_dangling_untyped ((ptr : Sptr_base.t), _) size =
-    if%sat size ==@ Usize.(0s) then Result.ok ()
-    else
-      let** ptr, size =
-        if%sat size >$@ Usize.(0s) then Result.ok (ptr, size)
-        else
-          let++^ ptr' = Sptr_base.raw_offset ptr size in
-          (ptr', Typed.(cast (BV.neg size)))
-      in
+  and check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
+    let check (ptr : Typed.([< T.sptr_t ] t)) size =
       let open Block.SM.Syntax in
       let@ ofs = with_ptr Ghost ptr in
-      let+- _ =
-        Block.with_block (Tree_block.check_owned ofs (Typed.cast size))
-      in
+      let+- _ = Block.with_block @@ Tree_block.check_owned ofs size in
       `UBDanglingPointer
+    in
+    if%sat size ==@ Usize.(0s) then Result.ok ()
+    else if%sat size >$@ Usize.(0s) then check ptr (Typed.cast_nonzero size)
+    else
+      let**^ ptr' = Sptr.raw_offset ptr size in
+      check ptr' Typed.(cast_nonzero @@ BV.no_ovf_unsafe (BV.neg size))
 
-  and check_non_dangling ((_, meta) as ptr) (ty : Types.ty) =
+  and check_non_dangling (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
+    let ptr, meta = Typed.Ptr.split ptr in
     let**^ layout = Layout.layout_of ty in
     if layout.uninhabited then Result.error (`RefToUninhabited ty)
     else
@@ -579,79 +444,102 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   and check_validity ~check_refs ty value =
     let default_check ptr ty =
-      let** () = check_ptr_align ptr ty in
-      check_non_dangling ptr ty
+      let** size = check_ptr_align ptr ty in
+      check_non_dangling_untyped (Typed.Ptr.ptr_of ptr) size
     in
     let check_ref =
-      if (Config.get ()).recursive_validity <> Allow && check_refs then
-        fun ptr ty ->
+      if check_refs then fun ptr ty ->
         let** () = default_check ptr ty in
         fake_read ptr ty
       else default_check
     in
-    Encoder.check_validity ~check_ref ty value
+    Value_codec.check_validity ~check_ref ty value
 
-  and load ?ignore_borrow ?(check_refs = true) ((ptr, meta) as fptr) ty :
-      (Sptr_base.t rust_val, Error.t, syn list) Result.t =
-    let** () = check_ptr_align fptr ty in
-    let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
-    let** value = apply_parser ?ignore_borrow ptr parser in
-    [%l.debug "Finished reading rust value %a" (Rust_val.pp Sptr_base.pp) value];
+  and load :
+      'a.
+      ?ignore_borrow:bool ->
+      ?check_refs:bool ->
+      ([< T.sptr_f ] as 'a) Typed.t ->
+      Types.ty ->
+      (Typed.([> T.any ] t), Error.t, syn list) Result.t =
+   fun ?ignore_borrow ?(check_refs = true) ptr ty ->
+    let** size = check_ptr_align ptr ty in
+    let ptr, meta = Typed.Ptr.split ptr in
+    let parser ~offset = Tree_block.Decoder.decode ~meta ~offset ty in
+    let** value =
+      if%sat size ==@ Usize.(0s) then
+        with_pointers
+          (Tree_block.SM.Result.run_with_state ~state:None
+             (Tree_block.apply_parser ~ignore_borrow:true None None
+                (parser ~offset:Usize.(0s)))
+          |> ignore_state)
+      else apply_parser ?ignore_borrow ptr parser
+    in
+    [%l.debug "Finished reading rust value %a" Typed.ppa value];
     let++ () = check_validity ~check_refs ty value in
-    value
+    Typed.as_any value
 
-  and load_discriminant ((ptr, _) as fptr) ty =
-    let** () = check_ptr_align fptr ty in
-    let parser ~offset = Heap.Decoder.variant_of_enum ty ~offset in
-    let++ variant_id = apply_parser ptr parser in
+  and load_discriminant (ptr : Typed.([< T.sptr_f ] t)) ty =
+    let** _size = check_ptr_align ptr ty in
+    let**^ known_variant = Layout.enum_single_variant ty in
+    let++ variant_id =
+      match known_variant with
+      | Some variant -> Result.ok variant
+      | None ->
+          let parser ~offset = Tree_block.Decoder.variant_of_enum ty ~offset in
+          apply_parser (Typed.Ptr.ptr_of ptr) parser
+    in
     let adt = Charon_util.ty_as_adt ty in
     let variants = Crate.as_enum adt in
     let variant = Types.VariantId.nth variants variant_id in
-    Int (Typed.BV.of_literal variant.discriminant)
+    Typed.BV.of_literal variant.discriminant
 
   (** Performs a side-effect free ghost read -- this does not modify the state
       or the tree-borrow state. Returns [Some error] if an error occurred, and
-      [None] otherwise. Will wrap whatever error happened in [`InvalidRef]. *)
-  and fake_read ((ptr, meta) as fptr) ty =
+      [None] otherwise. Will wrap whatever error happened in [`InvalidRef].
+
+      Note that if {!Config.reference_to_invalid_memory} is [Allow] then this is
+      a no-op. *)
+  and fake_read ptr ty =
     let open Syntax in
+    let lint_level = (Config.get ()).reference_to_invalid_memory in
     let skip_check =
-      match (meta, (Config.get ()).recursive_validity) with
+      match (Typed.Ptr.meta_of ptr, lint_level) with
       | _, Allow -> true
       | _, Warn when Config.get_mode () = Compositional -> true
-      | Thin, _ -> false
-      | Len l, _ ->
-          (* TODO: we don't support symbolic slices *)
-          Option.is_none (Typed.BitVec.to_z l)
-      | VTable _, _ ->
-          (* FIXME: i am not certain how one checks for the validity of a
-             &dyn *)
-          true
+      | None, _ -> false
+      | Some l, _ -> (
+          match%ty l with
+          | TBitVector _ ->
+              (* TODO: we don't support symbolic slices *)
+              Option.is_none (Typed.BitVec.to_z l)
+          | _ ->
+              (* FIXME: i am not certain how one checks for the validity of a
+                 &dyn *)
+              true)
     in
     if skip_check then Result.ok ()
     else (
-      [%l.debug
-        "Checking validity of %a for %a" (pp_full_ptr Sptr_base.pp) fptr pp_ty
-          ty];
+      [%l.debug "Checking validity of %a for %a" Typed.ppa ptr pp_ty ty];
       let*- err =
-        let++ _ = load ~ignore_borrow:true ~check_refs:false fptr ty in
-        ()
+        Result.map ignore @@ load ~ignore_borrow:true ~check_refs:false ptr ty
       in
-      match (Config.get ()).recursive_validity with
+      match lint_level with
       | Allow -> L.failwith "Unreachable, handled above"
       | Deny -> Result.error (`InvalidRef err)
       | Warn ->
           let*^ trace = get_trace () in
           let err = Error.decorate trace (`InvalidRef err) in
-          let loc = Typed.Ptr.loc ptr.ptr in
+          let loc = Typed.Ptr.loc (Typed.Ptr.ptr_of ptr) in
           Error.Diagnostic.warn_trace_once ~reason:(InvalidReference loc) err;
           Result.ok ())
 
   (** Performs a load at the tree borrow level, by updating the borrow state,
       without attempting to validate the values or checking uninitialised memory
       accesses; all of these are ignored. *)
-  let tb_load_untyped (ptr : Sptr_base.t) size =
+  let tb_load_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
     let open SM in
-    match ptr.tag with
+    match Typed.Ptr.tag_of ptr with
     | None -> Result.ok ()
     | Some tag ->
         if%sat size ==@ Usize.(0s) then Result.ok ()
@@ -663,26 +551,29 @@ module Make (Borrows : Tree_borrows.T) = struct
   (** Performs a load at the tree borrow level, by updating the borrow state,
       without attempting to validate the values or checking uninitialised memory
       accesses; all of these are ignored. *)
-  let tb_load ((ptr : Sptr_base.t), _) ty =
-    [%l.debug
-      "Executing Tb_load with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
+  let tb_load (ptr : Typed.([< T.sptr_f ] t)) ty =
+    [%l.debug "Executing Tb_load with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Tree Borrow access" () in
     let**^ size = Layout.size_of ty in
-    tb_load_untyped ptr size
+    tb_load_untyped (Typed.Ptr.ptr_of ptr) size
 
-  let store ((ptr, _) as fptr) ty sval :
+  let store (ptr : Typed.([< T.sptr_f ] t)) ty sval :
       (unit, Error.with_trace, syn list) Result.t =
-    [%l.debug
-      "Executing Store with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
+    [%l.debug "Executing Store with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Memory store" () in
-    let**^ parts = Encoder.encode ~offset:Usize.(0s) sval ty in
+    let**^ parts =
+      Value_codec.encode ~offset:Usize.(0s) (sval :> Typed.T.any Typed.t) ty
+    in
     if Iter.is_empty parts then Result.ok ()
     else
-      let** () = check_ptr_align fptr ty in
-      (* [%l.debug "Parsed to parts [%a]" (Iter.pp_seq ~sep:", " (Fmt.Dump.pair
-         Encoder.pp_rust_val Typed.ppa)) parts]; *)
+      let** size = check_ptr_align ptr ty in
+      (* [%l.debug
+       *   "Parsed to parts [%a]"
+       *   Fmt.(list ~sep:comma Encoder.pp_cval_info)
+       *   parts]; *)
       let* () = log "store" ptr in
-      let**^ size = Layout.size_of ty in
+      let ptr = Typed.Ptr.ptr_of ptr in
+      let tag = Typed.Ptr.tag_of ptr in
       let@ ofs = with_ptr Write ptr in
       Block.with_block_read_tb (fun tb ->
           let open Tree_block.SM in
@@ -690,33 +581,13 @@ module Make (Borrows : Tree_borrows.T) = struct
           (* We uninitialise the whole range before writing, to ensure padding
              bytes are copied if there are any. *)
           let** () = Tree_block.uninit_range ofs size in
-          Result.iter_iter parts ~f:(fun (value, offset) ->
-              Tree_block.store (offset +!!@ ofs) value ptr.tag tb))
+          Result.iter_iter parts ~f:(fun (value, offset, size) ->
+              Tree_block.store (offset +!!@ ofs) size value tag tb))
 
-  (** We can't use {!Heap.Decoder} for [transmute], since the transmute happens
-      regardless of the heap's state, so we need to re-instantiate it for tree
-      block instead *)
-  module Tree_block_decoder =
-    Value_codec.Decoder
-      (Sptr_base)
-      (struct
-        module SM = Tree_block.SM
-
-        type fix = Tree_block.syn list
-      end)
-
-  let transmute ~from ~to_ v =
+  let transmute_raw_inner ~to_ ~size blocks =
     (* a transmute is just a write of one type with a read of another type; we
        provide a function to do it that avoids allocating, checking alignment
        etc. *)
-    [%l.debug
-      "Transmuting %a: %a -> %a" (pp_rust_val Sptr_base.pp) v pp_ty from pp_ty
-        to_];
-    let@ () = with_loc_err ~trace:"Transmute" () in
-    (* We pick [from] rather than [to_], because we can transmute to a smaller
-       type, but not to a larger one, so it's guaranteed that [size(from) >=
-       size(to_)] *)
-    let**^ size = Layout.size_of from in
     let** value =
       with_pointers
         (let open DecayMap.SM in
@@ -725,124 +596,133 @@ module Make (Borrows : Tree_borrows.T) = struct
          Tree_block.SM.Result.run_with_state ~state:(Some block)
            (let open Tree_block.SM in
             let open Syntax in
-            let open Tree_block_decoder in
             (* first, we write *)
-            let**^ parts =
-              DecayMap.SM.lift @@ Encoder.encode ~offset:Usize.(0s) v from
-            in
             let** () =
-              Result.iter_iter parts ~f:(fun (value, offset) ->
-                  Tree_block.store offset value None None)
+              Result.iter_iter blocks ~f:(fun (value, offset, size) ->
+                  Tree_block.store offset size value None None)
             in
             (* next, we read *)
-            let handler (ty, ofs) =
-              Tree_block.load ~ignore_borrow:true ofs ty None None
-            in
-            let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
-            ParserMonad.parse ~handler ~get_all
-            @@ decode ~meta:Thin ~offset:Usize.(0s) to_)
-         |> map (function
-           | Ok (value, _block) -> Ok value
-           | Error (e, _block) -> Error e
-           (* HACK: we add this because we can't lift misses for a part of state
-              that doesn't exist (and misses can't happen here anyways) *)
-           | Missing _ -> L.failwith "impossible : miss"))
+            Tree_block.apply_parser ~ignore_borrow:true None None
+            @@ Tree_block.Decoder.decode ~meta:None ~offset:Usize.(0s) to_)
+         |> ignore_state)
     in
     let++ () = check_validity ~check_refs:true to_ value in
-    value
+    (value : Typed.T.any Typed.t :> Typed.([> T.any ] t))
+
+  let transmute ~from ~to_ v =
+    [%l.debug "Transmuting %a: %a -> %a" Typed.ppa v pp_ty from pp_ty to_];
+    let@ () = with_loc_err ~trace:"Transmute" () in
+    (* We pick [from] rather than [to_], because we can transmute to a smaller
+       type, but not to a larger one, so it's guaranteed that [size(from) >=
+       size(to_)] *)
+    let**^ size = Layout.size_of from in
+    let**^ blocks =
+      Value_codec.encode ~offset:Usize.(0s) (v :> Typed.T.any Typed.t) from
+    in
+    transmute_raw_inner ~to_ ~size blocks
+
+  let transmute_raw ~to_ blocks =
+    [%l.debug
+      "Transmuting (raw) %a -> %a"
+        Fmt.(
+          list ~sep:(any ", ") (fun ft (v, ofs, size) ->
+              pf ft "(%a: %a->%a)" Typed.ppa v Typed.ppa ofs Typed.ppa size))
+        blocks pp_ty to_];
+    let@ () = with_loc_err ~trace:"Transmute" () in
+    let**^ size = Layout.size_of to_ in
+    transmute_raw_inner ~to_ ~size (Iter.of_list blocks)
 
   module Sptr = struct
-    include Sptr_base
+    include Sptr
 
     let offset ?check_signed ?(ty = Types.TLiteral (TUInt U8)) off_by
-        ({ ptr; _ } as fptr) =
+        (ptr : Typed.([< T.sptr_t ] t)) =
       [%l.debug
-        "Executing Offset of pointer %a by %a" Sptr_base.pp fptr Typed.ppa
-          off_by];
+        "Executing Offset of pointer %a by %a" Typed.ppa ptr Typed.ppa off_by];
       let@ () = with_loc_err ~trace:"Pointer offset" () in
       let**^ size = Layout.size_of ty in
-      let loc, off = Typed.Ptr.decompose ptr in
-      let++ off =
-        match check_signed with
-        | Some signed ->
-            (* the multiplication cannot overflow *)
-            let off_by, off_by_ovf = Typed.BV.mul_checked ~signed size off_by in
-            (* if the offset is unsigned, it cannot be negative *)
-            let ofs_unsigned_neg =
-              if not signed then off_by <$@ Usize.(0s) else Typed.v_false
-            in
-            let off, off_ovf = off +$?@ off_by in
-            let** () =
-              assert_or_error
-                (off_by
-                ==@ Usize.(0s)
-                ||@ (Typed.not off_by_ovf
-                    &&@ Typed.not off_ovf
-                    &&@ Typed.not ofs_unsigned_neg))
-                `PointerArithmeticOverflow
-            in
-            let++ () = check_non_dangling_untyped (fptr, Thin) off_by in
-            off
-        | None ->
-            (* we use the unchecked, possibly overflowing version of the
-               operators, as wrapping is permitted dhere. *)
-            let off_by = size *!@ off_by in
-            let off = off +!@ off_by in
-            Result.ok off
-      in
-      let ptr' = Typed.Ptr.mk loc off in
-      { fptr with ptr = ptr' }
+      let ofs = Typed.Ptr.ofs ptr in
+      match check_signed with
+      | Some signed ->
+          (* the multiplication cannot overflow *)
+          let off_by, off_by_ovf = Typed.BV.mul_checked ~signed size off_by in
+          (* if the offset is unsigned, it cannot be negative *)
+          let ofs_unsigned_neg =
+            if not signed then off_by <$@ Usize.(0s) else Typed.v_false
+          in
+          let ofs', off_ovf = ofs +$?@ off_by in
+          let** () =
+            assert_or_error
+              (off_by
+              ==@ Usize.(0s)
+              ||@ (Typed.not off_by_ovf
+                  &&@ Typed.not off_ovf
+                  &&@ Typed.not ofs_unsigned_neg))
+              `PointerArithmeticOverflow
+          in
+          let++ () = check_non_dangling_untyped ptr off_by in
+          Typed.Ptr.set_ofs ptr ofs'
+      | None ->
+          (* we use the unchecked, possibly overflowing version of the
+             operators, as wrapping is permitted dhere. *)
+          let off_by = size *!@ off_by in
+          let ofs' = ofs +!@ off_by in
+          Result.ok (Typed.Ptr.set_ofs ptr ofs')
 
     let check_aligned ptr ty =
       let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
-      check_ptr_align ptr ty
+      SM.Result.map ignore @@ check_ptr_align ptr ty
 
-    let check_non_dangling_untyped ptr size =
+    let check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
       let@ () = with_loc_err ~trace:"Dangling check" () in
-      check_non_dangling_untyped ptr size
+      check_non_dangling_untyped (ptr :> Typed.T.sptr_t Typed.t) size
 
     let check_non_dangling ptr ty =
       let@ () = with_loc_err ~trace:"Dangling check" () in
       check_non_dangling ptr ty
   end
 
-  let size_and_align_of_val ty meta =
+  let size_and_align_of_val ty (meta : Typed.([< T.ptr_meta ] t) option) =
     [%l.debug "Executing Size_and_align_of_val for %a" pp_ty ty];
     let@ () = with_loc_err ~trace:"Size and alignment check" () in
-    size_and_align_of_val ty meta
+    let++ size, align =
+      size_and_align_of_val ty (meta :> Typed.T.ptr_meta Typed.t option)
+    in
+    ( (size : Typed.T.sint Typed.t :> Typed.([> T.sint ] t)),
+      (align : Typed.T.nonzero Typed.t :> Typed.([> T.nonzero ] t)) )
 
-  let load ?ignore_borrow ((ptr, _) as fptr) ty =
-    [%l.debug "Executing Load with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
+  let load ?ignore_borrow ptr ty =
+    [%l.debug "Executing Load with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Memory load" () in
-    load ?ignore_borrow fptr ty
+    load ?ignore_borrow ptr ty
 
-  let load_discriminant ((ptr, _) as fptr) ty =
+  let load_discriminant ptr ty =
     [%l.debug
-      "Executing Load_discriminant with pointer %a for %a" Sptr_base.pp ptr
-        pp_ty ty];
+      "Executing Load_discriminant with pointer %a for %a" Typed.ppa ptr pp_ty
+        ty];
     let@ () = with_loc_err ~trace:"Memory load (discriminant)" () in
-    load_discriminant fptr ty
+    load_discriminant ptr ty
 
-  let fake_read ((ptr, _) as fptr) ty =
+  let fake_read ptr ty =
     [%l.debug
-      "Executing Fake_read with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
+      "Executing Fake_read with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Fake read" () in
-    fake_read fptr ty
+    fake_read ptr ty
 
-  let copy_nonoverlapping ~src:(src, _) ~dst:(dst, _) ~size :
+  let copy_nonoverlapping ~(src : Typed.([< T.sptr_f ] t))
+      ~(dst : Typed.([< T.sptr_f ] t)) ~size :
       (unit, Error.with_trace, syn list) Result.t =
     [%l.debug
-      "Executing Copy_nonoverlapping from %a to %a" Sptr_base.pp src
-        Sptr_base.pp dst];
+      "Executing Copy_nonoverlapping from %a to %a" Typed.ppa src Typed.ppa dst];
     let@ () = with_loc_err ~trace:"Non-overlapping copy" () in
     let** tree_to_write =
-      let@ ofs = with_ptr Read src in
+      let@ ofs = with_ptr Read (Typed.Ptr.ptr_of src) in
       Block.with_block (fun tree_block ->
           let open DecayMap.SM.Syntax in
           let+ res, _ = Tree_block.get_raw_tree_owned ofs size tree_block in
           (res, tree_block))
     in
-    let@ ofs = with_ptr Write dst in
+    let@ ofs = with_ptr Write (Typed.Ptr.ptr_of dst) in
     Block.with_block
       (let open Tree_block.SM in
        let open Tree_block.SM.Syntax in
@@ -904,18 +784,22 @@ module Make (Borrows : Tree_borrows.T) = struct
     [%l.debug
       "Executing Alloc of size %a (align %a)" Typed.ppa size Typed.ppa align];
     Soteria.Stats.As_ctx.incr StatKeys.allocs;
-    with_heap
-      (let open Heap.SM in
-       let open Heap.SM.Syntax in
-       let*^ block, tag =
-         Freeable_block_with_meta.make ?span ?zeroed ~align ~size ()
-       in
-       let** loc = Heap.alloc ~new_codom:block in
-       let ptr = Typed.Ptr.mk loc Usize.(0s) in
-       let ptr : Sptr_base.t = { ptr; tag; align; size } in
-       (* The pointer is necessarily not null *)
-       let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-       ok (ptr, Thin))
+    if%sat size ==@ Usize.(0s) then
+      (* UX: we under-approximate and assume the address is align, though it can
+         in fact be any well-aligned address. *)
+      Result.ok @@ Typed.Ptr.mk_ptr_f (Typed.Ptr.of_address align) None
+    else
+      with_heap
+        (let open Heap.SM in
+         let open Heap.SM.Syntax in
+         let*^ block, tag =
+           Freeable_block_with_meta.make ?span ?zeroed ~align ~size ()
+         in
+         let** loc = Heap.alloc ~new_codom:block in
+         let ptr = Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag ~align ~size in
+         (* The pointer is necessarily not null *)
+         let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
+         ok (Typed.Ptr.mk_ptr_f ptr None))
 
   let alloc_untyped ?span ~zeroed ~size ~align = alloc ?span ~zeroed size align
 
@@ -924,32 +808,17 @@ module Make (Borrows : Tree_borrows.T) = struct
     let**^ layout = Layout.layout_of ty in
     alloc ?span layout.size layout.align
 
-  let alloc_tys ?span tys : ('a, Error.with_trace, syn list) Result.t =
-    let@ () = with_loc_err ~trace:"Allocation" () in
-    let**^ layouts = Rustsymex.Result.map_list tys ~f:Layout.layout_of in
-    let layouts = List.rev layouts in
-    with_heap
-      (Heap.allocs ~els:layouts ~fn:(fun layout loc ->
-           let open DecayMap.SM in
-           let open DecayMap.SM.Syntax in
-           (* make Tree_block *)
-           let { size; align; _ } : Layout.t = layout in
-           let* block, tag =
-             Freeable_block_with_meta.make ?span ~align ~size ()
-           in
-           (* create pointer *)
-           let* () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-           let ptr = Typed.Ptr.mk loc Usize.(0s) in
-           let ptr : Sptr_base.t = { ptr; tag; align; size } in
-           return ((ptr, Thin), block)))
-
-  let free ((ptr : Sptr_base.t), _) =
-    [%l.debug "Executing Free with pointer %a" Sptr_base.pp ptr];
+  let free (ptr : Typed.([< T.sptr_f ] t)) =
+    [%l.debug "Executing Free with pointer %a" Typed.ppa ptr];
     let@ () = with_loc_err ~trace:"Freeing memory" () in
-    let loc, ofs = Typed.Ptr.decompose ptr.ptr in
+    let ptr = Typed.Ptr.ptr_of ptr in
+    let loc, ofs = Typed.Ptr.decompose ptr in
+    (* FIXME: why are we getting the pointer's size if we can just query the
+       block's size??? *)
+    let size = Typed.Ptr.size_of ptr in
     let** () = assert_or_error (ofs ==@ Usize.(0s)) `InvalidFree in
     (* Freeing encurs a write access on the whole allocation. *)
-    let** () = tb_load_untyped ptr ptr.size in
+    let** () = tb_load_untyped ptr size in
     (* Freeing also requires there to be no strong protectors in the tree. See:
        https://github.com/minirust/minirust/blob/master/spec/mem/tree_borrows/memory.md *)
 
@@ -965,62 +834,71 @@ module Make (Borrows : Tree_borrows.T) = struct
      *             Tree_block.SM.Result.error `InvalidFreeStrongProtector
      *           else Tree_block.SM.Result.ok ()))
      * in *)
-    [%l.debug "Freeing pointer %a" Sptr_base.pp ptr];
+    [%l.debug "Freeing pointer %a" Sptr.pp ptr];
     with_heap
       (Heap.wrap loc (Freeable_block_with_meta.wrap (Freeable_block.free ())))
 
-  let zeros (ptr, _) size =
+  let zeros (ptr : Typed.([< T.sptr_f ] t)) size =
     [%l.debug
-      "Executing Zeros with pointer %a (size %a)" Sptr_base.pp ptr Typed.ppa
-        size];
+      "Executing Zeros with pointer %a (size %a)" Typed.ppa ptr Typed.ppa size];
     let@ () = with_loc_err ~trace:"Memory store (0s)" () in
+    let ptr = Typed.Ptr.ptr_of ptr in
     let* () = log "zeroes" ptr in
     let@ ofs = with_ptr Write ptr in
     Block.with_block (Tree_block.zero_range ofs size)
 
-  let store_str_global str ptr =
+  let store_str_global str (ptr : Typed.([< T.sptr_f ] t)) =
     let@ globals = with_globals_sym in
-    let globals = GlobMap.add (String str) ptr globals in
+    let globals =
+      GlobMap.add (String str) (ptr :> Typed.T.sptr_f Typed.t) globals
+    in
     Rustsymex.Result.ok ((), globals)
 
-  let store_global g ptr =
+  let store_global g (ptr : Typed.([< T.sptr_f ] t)) =
     let@ globals = with_globals_sym in
-    let globals = GlobMap.add (Global g) ptr globals in
+    let globals =
+      GlobMap.add (Global g) (ptr :> Typed.T.sptr_f Typed.t) globals
+    in
     Rustsymex.Result.ok ((), globals)
 
   let load_str_global str =
     let@ globals = with_globals_sym in
     let ptr = GlobMap.find_opt (String str) globals in
-    Rustsymex.Result.ok (ptr, globals)
+    Rustsymex.Result.ok
+      ( (ptr : Typed.T.sptr_f Typed.t option :> Typed.([> T.sptr_f ] t) option),
+        globals )
 
   let load_global g =
     let@ globals = with_globals_sym in
     let ptr = GlobMap.find_opt (Global g) globals in
-    Rustsymex.Result.ok (ptr, globals)
+    Rustsymex.Result.ok
+      ( (ptr : Typed.T.sptr_f Typed.t option :> Typed.([> T.sptr_f ] t) option),
+        globals )
 
-  let borrow ?protect (((ptr : Sptr_base.t), _) as fptr) (ty : Types.ty) =
-    [%l.debug
-      "Executing Borrow with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
+  let borrow ?protect (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
+    [%l.debug "Executing Borrow with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Borrow" () in
-    match ptr.tag with
-    | None -> Result.ok fptr
+    let ptr_inner = Typed.Ptr.ptr_of ptr in
+    match Typed.Ptr.tag_of ptr_inner with
+    | None -> Typed.(Result.ok (ptr : [< T.sptr_f ] t :> [> T.sptr_f ] t))
     | Some tag ->
-        let@ ofs = with_ptr Ghost ptr in
-        Block.borrow ?protect fptr tag ty ofs
+        let@ ofs = with_ptr Ghost ptr_inner in
+        Block.borrow ?protect ptr tag ty ofs
 
-  let unprotect ((ptr : Sptr_base.t), _) (ty : Types.ty) =
+  let unprotect (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     [%l.debug
-      "Executing Unprotect with pointer %a for %a" Sptr_base.pp ptr pp_ty ty];
+      "Executing Unprotect with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Reference unprotection" () in
-    match ptr.tag with
+    let ptr = Typed.Ptr.ptr_of ptr in
+    match Typed.Ptr.tag_of ptr with
     | None -> Result.ok ()
     | Some tag ->
-        let** freed = with_heap @@ Heap.is_freed (Typed.Ptr.loc ptr.ptr) in
+        let** freed = with_heap @@ Heap.is_freed (Typed.Ptr.loc ptr) in
         if freed then Result.ok ()
         else
           let**^ size = Layout.size_of ty in
           let@ ofs = with_ptr Ghost ptr in
-          [%l.debug "Unprotecting pointer %a" Sptr_base.pp ptr];
+          [%l.debug "Unprotecting pointer %a" Sptr.pp ptr];
           Block.unprotect ofs tag size
 
   let with_exposed addr =
@@ -1034,10 +912,9 @@ module Make (Borrows : Tree_borrows.T) = struct
            let open Heap.SM.Syntax in
            let*^ res = DecayMap.from_exposed addr in
            match res with
-           | None -> Result.ok (Sptr_base.of_address addr, Thin)
+           | None -> Result.ok (Typed.Ptr.of_address_f addr)
            | Some (loc, ofs) -> (
                let ofs = addr -!@ ofs in
-               let ptr = Typed.Ptr.mk loc ofs in
                let** block =
                  Heap.wrap loc
                  @@ Freeable_block_with_meta.SM.Result.get_state ()
@@ -1048,8 +925,10 @@ module Make (Borrows : Tree_borrows.T) = struct
                      ~reason:
                        "Get a pointer from exposed with no matching allocation?"
                | Some { info = Some { size; align; _ }; _ } ->
-                   let ptr : Sptr_base.t = { ptr; tag = None; align; size } in
-                   Result.ok (ptr, Thin)))
+                   let ptr =
+                     Typed.Ptr.mk_ptr_t ~loc ~ofs ~align ~size ~tag:None
+                   in
+                   Result.ok (Typed.Ptr.mk_ptr_f ptr None)))
 
   let leak_check () : (unit, Error.with_trace, syn list) Result.t =
     [%l.debug "Executing Leak_check"];
@@ -1101,39 +980,42 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     match result with
     | Some loc ->
-        let ptr : Sptr_base.t =
-          {
-            ptr = Typed.Ptr.mk loc Usize.(0s);
-            tag = None;
-            align;
-            size = Usize.(0s);
-          }
+        let ptr =
+          Typed.Ptr.mk_ptr_t ~loc
+            ~ofs:Usize.(0s)
+            ~tag:None ~align
+            ~size:Usize.(0s)
         in
-        Result.ok (ptr, Thin)
+        let ptr = Typed.Ptr.mk_ptr_f ptr None in
+        Result.ok ptr
     | None ->
         let span =
           match fn_def with
           | Real fn -> Some (Crate.get_fun fn.id).item_meta.span.data
           | Synthetic _ -> None
         in
-        let** ptr, meta =
+        (* NOTE: here we must allocate with a non-zero size, as otherwise we
+           skip creating an actual allocation and the function pointers will
+           thus have no provenance. *)
+        let** ptr =
           with_alloc_kind (Function fn_def) @@ fun () ->
-          alloc_untyped ?span ~zeroed:false ~size:Usize.(0s) ~align
+          alloc_untyped ?span ~zeroed:false ~size:Usize.(1s) ~align
         in
-        let ptr = { ptr with tag = None } in
-        let loc = Typed.Ptr.loc ptr.ptr in
+        let ptr = Typed.Ptr.ptr_of ptr in
+        let ptr = Typed.Ptr.with_tag ptr None in
+        let loc = Typed.Ptr.loc ptr in
+        let ptr = Typed.Ptr.mk_ptr_f ptr None in
         with_functions_sym (fun fns ->
-            Rustsymex.Result.ok ((ptr, meta), FunBiMap.add loc fn_def fns))
+            Rustsymex.Result.ok (ptr, FunBiMap.add loc fn_def fns))
 
-  let lookup_fn (({ ptr; _ } : Sptr_base.t), _) =
+  let lookup_fn (ptr : Typed.([< T.sptr_f ] t)) =
     let open Rustsymex in
     let open Syntax in
     let@ () = with_loc_err ~trace:"Accessing function pointer" () in
     let@ functions = with_functions_sym in
-    let** () =
-      assert_or_error (Typed.Ptr.ofs ptr ==@ Usize.(0s)) `MisalignedFnPointer
-    in
-    let loc = Typed.Ptr.loc ptr in
+    let ptr = Typed.Ptr.ptr_of ptr in
+    let loc, ofs = Typed.Ptr.decompose ptr in
+    let** () = assert_or_error (ofs ==@ Usize.(0s)) `MisalignedFnPointer in
     match FunBiMap.get_fn loc functions with
     | Some fn -> Result.ok (fn, functions)
     | None -> Result.error `NotAFnPointer
@@ -1144,10 +1026,13 @@ module Make (Borrows : Tree_borrows.T) = struct
     let@ () = with_loc_err ~trace:"Accessing const generic" () in
     let@ const_generics = with_const_generics_sym in
     match Types.ConstGenericVarId.Map.find_opt id const_generics with
-    | Some v -> Result.ok (v, const_generics)
+    | Some v ->
+        Result.ok
+          ((v : Typed.T.any Typed.t :> Typed.([> T.any ] t)), const_generics)
     | None ->
-        let++ v = Encoder.nondet_valid ty in
-        (v, Types.ConstGenericVarId.Map.add id v const_generics)
+        let++ v = Value_codec.nondet_valid ty in
+        ( (v : Typed.T.any Typed.t :> Typed.([> T.any ] t)),
+          Types.ConstGenericVarId.Map.add id v const_generics )
 
   let register_thread_exit callback =
     (* HACK: we cannot expect thread exit callbacks to miss with syn, because

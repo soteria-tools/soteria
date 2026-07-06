@@ -91,9 +91,9 @@ module Make (State : State_intf.S) = struct
       let open Consumer in
       let open Syntax in
       let@@ () = run ~subst:Value.Expr.Subst.empty in
-      let pairs = List.combine params args in
       let* () =
-        iter_list pairs ~f:(fun (param, arg) -> S_val.learn_eq param arg)
+        Iter.of_list_combine params args
+        |> iter_iter ~f:(fun (param, arg) -> S_val.learn_eq param arg)
       in
       Asrt_executor.consume asrt st
     in

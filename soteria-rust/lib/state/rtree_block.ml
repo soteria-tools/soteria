@@ -1,4 +1,5 @@
 open Compo_res
+open Svalue
 open Typed.Infix
 module BV = Typed.BV
 open Charon
@@ -8,13 +9,7 @@ open DecayMap.SM
 open Result
 open Syntax
 
-module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
-  module Encoder = Value_codec.Encoder (Sptr)
-
-  type rust_val = Sptr.t Rust_val.t
-
-  let pp_rust_val = Rust_val.pp Sptr.pp
-
+module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   module MemVal = struct
     module TB = Soteria.Sym_states.Tree_block
     module S_bool = Typed.Bool
@@ -52,7 +47,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     end
 
     type qty = Totally | Partially [@@deriving show { with_path = false }]
-    type leaf = Init of rust_val | Zeros | Uninit | Any | Unowned
+    type leaf = Init of Typed.(T.any t) | Zeros | Uninit | Any | Unowned
     type t = Leaf of leaf * Borrows.State.t option | Lazy
 
     let pp_leaf ft =
@@ -60,7 +55,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       function
       | Zeros -> pf ft "Zeros"
       | Uninit -> pf ft "Uninit"
-      | Init mv -> pp_rust_val ft mv
+      | Init mv -> Typed.ppa ft mv
       | Any -> pf ft "Any"
       | Unowned -> pf ft "Unowned"
 
@@ -83,31 +78,34 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
           left
       | _, _ -> Lazy
 
-    let rec split_rval (v : rust_val) at =
-      match v with
-      | Ptr (ptr, meta) ->
+    let rec split_rval (v : Typed.([< T.any ] t)) at =
+      match%ty v with
+      | TExtension TFullPtr -> (
+          let ptr, meta = Typed.Ptr.split v in
           let* v = Sptr.decay ptr in
-          let* v =
-            match meta with
-            | Thin -> return v
-            | Len len -> return (BV.concat v len)
-            | VTable ptr ->
-                let+ v2 = Sptr.decay ptr in
-                BV.concat v v2
-          in
-          split_rval (Int v) at
-      | Float f ->
-          let* v = Encoder.float_to_bv_bits f in
-          split_rval (Int v) at
-      | Int v ->
+          match meta with
+          | None -> split_rval (Typed.as_any v) at
+          | Some meta -> (
+              match%ty meta with
+              | TBitVector _ -> split_rval (BV.concat v meta) at
+              | TExtension TThinPtr ->
+                  let* v2 = Sptr.decay meta in
+                  split_rval (BV.concat v v2) at
+              | _ -> failwith "unexpected meta type"))
+      | TFloat _ ->
+          let* v = Value_codec.float_to_bv_bits v in
+          split_rval v at
+      | TBitVector size ->
           (* get our starting size and unsigned integer *)
-          let size = Typed.size_of_int v / 8 in
+          let size = size / 8 in
           let+ at =
             match BV.to_z at with
             | Some at -> return (Z.to_int at)
             | _ -> (
-                (* as per the contract of [split], we assume [at] is in [[1,
-                   size)] *)
+                (* HACK: we need to branch on the concrete size, because the
+                   actual bitvector sort of the value must have a concrete size.
+
+                   As per the contract of [split], we know [at ∈ [1, size)] *)
                 let options = List.init (size - 1) (( + ) 1) in
                 let* res =
                   match_on options ~constr:(fun x ->
@@ -117,8 +115,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
           in
           let mask_l = BV.extract 0 ((at * 8) - 1) v in
           let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
-          (Rust_val.Int mask_l, Rust_val.Int mask_r)
-      | _ -> not_impl "Split unsupported: %a at %a" pp_rust_val v Typed.ppa at
+          (mask_l, mask_r)
+      | _ -> not_impl "Split unsupported: %a at %a" Typed.ppa v Typed.ppa at
 
     let split ~at node =
       match node with
@@ -132,7 +130,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       | Lazy -> L.failwith "Should never split an intermediate node"
 
     type syn =
-      | SInit of Sptr.syn Rust_val.syn
+      | SInit of Typed.Expr.t
       | SUninit
       | SZeros
       | SAny
@@ -141,7 +139,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     [@@deriving show { with_path = false }]
 
     let ins_outs = function
-      | SInit v -> ([], Rust_val.exprs_syn Sptr.exprs_syn v)
+      | SInit v -> ([], [ v ])
       | SUninit | SZeros | SAny -> ([], [])
       | STree_borrow_st s -> Borrows.State.ins_outs s
       | STree_borrow s -> Borrows.Tree.ins_outs s
@@ -170,7 +168,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       | Leaf (leaf, tb) ->
           let leaf_ser =
             match leaf with
-            | Init v -> SInit ((Rust_val.to_syn Sptr.to_syn) v)
+            | Init v -> SInit (Typed.Expr.of_value v)
             | Uninit -> SUninit
             | Zeros -> SZeros
             | Any -> SAny
@@ -185,11 +183,11 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
       | Lazy -> None
 
     let mk_fix_typed ty () =
-      let+^ v = Encoder.nondet_valid ty in
+      let+^ v = Value_codec.nondet_valid ty in
       (* we're basically guaranteed this won't error (ie. layout error) by now,
          so we can safely unwrap. *)
       let v = get_ok v in
-      [ SInit (Rust_val.to_syn Sptr.to_syn v) ]
+      [ SInit (Typed.Expr.of_value v) ]
 
     type tree = (t, Typed.(T.sint t)) TB.tree
 
@@ -200,8 +198,6 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         | _, _ -> TB.Owned (Leaf (v, tb))
       in
       TB.build_tree_leaf ~range:t.range ~node ()
-
-    module Rust_val_consumer = Rust_val.Learn_eq (DecayMap.SM)
 
     let consume (s : syn) (t : tree) : (tree, syn list) DecayMap.SM.Consumer.t =
       let open DecayMap.SM.Consumer in
@@ -216,7 +212,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         match (s, v) with
         (* init *)
         | SInit e, Init v ->
-            let+ () = Rust_val_consumer.learn_eq Sptr.learn_eq e v in
+            let+ () = learn_eq e v in
             Unowned
         | SInit _, Zeros -> lift @@ not_impl "Assume rust_val.syn == 0s"
         | SInit _, _ -> lfail Typed.v_false
@@ -254,7 +250,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
           let* v =
             match s with
             | SInit v ->
-                let+ v = Producer.apply_subst (Rust_val.subst Sptr.subst) v in
+                let+ v = Producer.apply_subst Typed.Expr.subst v in
                 Init v
             | SZeros -> return Zeros
             | SUninit -> return Uninit
@@ -276,15 +272,15 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
             match s with
             | SZeros | SUninit | SAny -> return (s, s)
             | SInit v ->
-                let* v = Producer.apply_subst (Rust_val.subst Sptr.subst) v in
+                let* v = Producer.apply_subst Typed.Expr.subst v in
                 let _, middle = l.range in
                 let+^ vl, vr = split_rval v middle in
                 (* HACK: is this sound? Doing it this way because we can't have
                    a split_rval for exprs, given it requires decaying pointers.
                    An alternative would be to have a [produce_leaf] which takes
                    in a [Leaf _], so we only subst once. *)
-                let vl = Rust_val.to_syn Sptr.to_syn vl in
-                let vr = Rust_val.to_syn Sptr.to_syn vr in
+                let vl = Typed.Expr.of_value vl in
+                let vr = Typed.Expr.of_value vr in
                 (SInit vl, SInit vr)
             | _ -> assert false
           in
@@ -378,16 +374,17 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     fold_iter (Tree.iter_leaves_rev t) ~init:[] ~f:(fun vs (range, v, _tb) ->
         let offset, _ = range in
         let offset = offset -!@ fst t.range in
+        let size = Typed.cast_nonzero @@ Range.size range in
         match v with
         | Uninit -> (
             match uninit with
             | `Ignore -> ok vs
             | `Error -> error `UninitializedMemoryAccess)
         | Zeros ->
-            let+ size = sint_to_int (Range.size range) in
-            let value = BV.zero (size * 8) in
-            Ok ((Rust_val.Int value, offset) :: vs)
-        | Init value -> ok ((value, offset) :: vs)
+            let+ sizei = sint_to_int size in
+            let value = BV.zero (sizei * 8) in
+            Ok ((value, offset, size) :: vs)
+        | Init value -> ok ((value, offset, size) :: vs)
         | Any -> (
             match uninit with
             | `Ignore -> ok vs
@@ -396,17 +393,17 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
                   [%l.info "Reading from Any memory, vanishing."];
                   vanish ())
                 else error `UninitializedMemoryAccess)
-        | Unowned -> miss (mk_fix_any offset (Range.size range) ()))
+        | Unowned -> miss (mk_fix_any offset size ()))
 
   let decode_mem_val ~ty = function
     | Init value ->
-        let+ res = Encoder.transmute_one ~to_ty:ty value in
+        let+ res = Value_codec.transmute_one ~to_ty:ty value in
         Ok res
     | Zeros ->
         let**^ size = Layout.size_of ty in
         let* size = sint_to_int size in
         let zero = BV.zero (size * 8) in
-        let+ res = Encoder.transmute_one ~to_ty:ty (Int zero) in
+        let+ res = Value_codec.transmute_one ~to_ty:ty zero in
         Ok res
     | Uninit -> error `UninitializedMemoryAccess
     | Any ->
@@ -424,21 +421,20 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     (* The tree spans the entire type we're interested in. Furthermore, we only
        read/write scalars (int, float, pointers...) which cover the whole range
        with no gaps. For lazy nodes, we convert all of these to bitvectors, the
-       concatenate them and call the encoder to decode the full value. *)
+       concatenate them and call the Value_codec to decode the full value. *)
     let** leaves = collect_leaves ~uninit:`Error t in
-    let* leaves =
-      DecayMap.SM.map_list leaves ~f:(fun (v, _) ->
-          match v with
-          | Int bv -> return bv
-          | Ptr (ptr, Thin) -> Sptr.decay ptr
-          | Float f -> Encoder.float_to_bv_bits f
-          | _ ->
-              not_impl "Unexpected rust_val in lazy decoding: %a" pp_rust_val v)
+    let* leaves : Typed.([< T.sint ] t) list =
+      DecayMap.SM.map_list leaves ~f:(fun (v, _, _) ->
+          match%ty v with
+          | TBitVector _ -> return v
+          | TExtension TFullPtr -> Sptr.decay (Typed.Ptr.ptr_of v)
+          | TFloat _ -> Value_codec.float_to_bv_bits v
+          | _ -> not_impl "Unexpected value in lazy decoding: %a" Typed.ppa v)
     in
     match List.rev leaves with
     | hd :: tl ->
         let bv = List.fold_left BV.concat hd tl in
-        let+ res = Encoder.transmute_one ~to_ty:ty (Int bv) in
+        let+ res = Value_codec.transmute_one ~to_ty:ty bv in
         Ok res
     | _ -> L.failwith "Impossible"
 
@@ -485,7 +481,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
   let check_owned (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) =
     let open DecayMap.SM.Syntax in
-    let _, bound = Range.of_low_and_size ofs (Typed.cast size) in
+    let _, bound = Range.of_low_and_size ofs (size :> Typed.(T.sint t)) in
     let mk_fixes () =
       let+ bound = DecayMap.SM.nondet (Typed.t_usize ()) in
       [ [ Bound (Expr.of_value bound) ] ]
@@ -495,7 +491,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
   (* Memory operations *)
 
   let load ~(ignore_borrow : bool) (ofs : Typed.([< T.sint ] t)) (ty : Types.ty)
-      (tag : Borrows.Tag.t option) (tb : Borrows.Tree.t option) =
+      (tag : Ptr_tag.t option) (tb : Borrows.Tree.t option) =
     let open SM.Syntax in
     let** size = lift_symex @@ Layout.size_of ty in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
@@ -517,11 +513,14 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
         let++ sval = decode_tree ~ty framed in
         (sval, tree))
 
-  let store (ofs : Typed.([< T.sint ] t)) (value : rust_val)
-      (tag : Borrows.Tag.t option) (tb : Borrows.Tree.t option) :
-      (unit, 'err, 'fix) SM.Result.t =
+  let store (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.nonzero ] t))
+      (value : Typed.([< T.any ] t)) (tag : Ptr_tag.t option)
+      (tb : Borrows.Tree.t option) : (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
-    let** size = lift_symex @@ Value_codec.size_of value in
+    (* manually coerce so types line up *)
+    let ofs = (ofs :> Typed.(T.sint t)) in
+    let size = (size :> Typed.(T.sint t)) in
+    let value = (value :> Typed.(T.any t)) in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
@@ -547,8 +546,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
 
   let get_init_leaves (ofs : Typed.([< T.sint ] t))
       (size : Typed.([< T.nonzero ] t)) :
-      ((rust_val * Typed.(T.sint t)) list, 'err, 'fix) SM.Result.t =
-    let ((_, bound) as range) = Range.of_low_and_size ofs (Typed.cast size) in
+      (Typed.(T.any t * T.sint t * T.nonzero t) list, 'err, 'fix) SM.Result.t =
+    let ((_, bound) as range) =
+      Range.of_low_and_size ofs (size :> Typed.(T.sint t))
+    in
     with_bound_check bound (fun t ->
         let open DecayMap.SM.Syntax in
         let replace_node node = ok node in
@@ -597,6 +598,29 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) (Sptr : Sptr.S) = struct
     let st = if zeroed then Zeros else Uninit in
     let+ tb_st = Borrows.State.init () in
     alloc (Leaf (st, Some tb_st)) size
+
+  module Decoder = Value_codec.Decoder (struct
+    module SM = SM
+
+    type nonrec syn = syn
+  end)
+
+  (** Applies the given parser. [on_access] is called at the start of any actual
+      access to memory (which means it may not be called, e.g. with ZSTs that
+      don't need any accesses to be parsed). *)
+  let apply_parser (type a) ?(on_access = DecayMap.SM.Result.ok) ~ignore_borrow
+      tag tb (parser : a Decoder.ParserMonad.t) :
+      (a, Error.t, syn list) SM.Result.t =
+    let open SM.Syntax in
+    let handler ty ofs =
+      let**^ () = on_access () in
+      load ~ignore_borrow ofs ty tag tb
+    in
+    let get_all size ofs =
+      let**^ () = on_access () in
+      get_init_leaves ofs size
+    in
+    Decoder.ParserMonad.parse ~handler ~get_all parser
 
   (* Tree borrow updates *)
 

@@ -18,7 +18,7 @@ module StatKeys = struct
     register_int_printer ~name:"Allocations" allocs (fun _ -> Fmt.int)
 end
 
-module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver)
+module MonoSymex = Soteria.Symex.Make (Bv_solver.Z3_solver (Svalue.Typed))
 
 module TypeMap = Map.Make (struct
   type t = Charon.Types.ty [@@deriving show]
@@ -114,13 +114,17 @@ module Poly = struct
       (res, { st with subst = prev_subst })
 
   let subst f x =
-    let* { subst; _ } = get_state () in
-    try return (f subst x)
-    with Not_found -> give_up "Substitution failed -- wrong poly environment"
+    if not (Config.get ()).polymorphic then return x
+    else
+      let* { subst; _ } = get_state () in
+      try return (f subst x)
+      with Not_found ->
+        give_up "Substitution failed -- wrong poly environment"
 
   let subst_ty = subst ty_substitute
   let subst_tys = subst (fun subst -> List.map (ty_substitute subst))
   let subst_tref = subst trait_ref_substitute
+  let subst_tyref = subst st_substitute_visitor#visit_type_decl_ref
   let subst_constant_expr = subst st_substitute_visitor#visit_constant_expr
   let subst_generic_args = subst generic_args_substitute
 
@@ -136,7 +140,7 @@ module Poly = struct
         { st with generic_layouts = TypeMap.add ty layout generic_layouts })
 end
 
-let match_on (elements : 'a list) ~(constr : 'a -> Typed.sbool Typed.t) :
+let match_on (elements : 'a list) ~(constr : 'a -> Svalue.Typed.(T.sbool t)) :
     'a option t =
   let open Syntax in
   let rec aux = function

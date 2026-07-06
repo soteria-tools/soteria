@@ -5,7 +5,11 @@
     pattern-matching simplification. This serves as the semantic ground truth
     when fuzz-testing that simplifications are correct. *)
 
-open Soteria.Bv_values.Svalue
+open Soteria.Bv_values
+open Svalue
+module Typed = Typed.Make (Svalue.Dummy_ext) ()
+module Sv = Typed.Svalue
+open Sv
 
 (* ------------------------------------------------------------------ *)
 (* Boolean operations                                                  *)
@@ -24,15 +28,15 @@ module Var_pool = struct
   (* We want to generate at most [max_var_per_ty] variables per type. This
      avoids generating expressions with only different variables, which cannot
      be reduced interestingly. *)
-  let var_pool : (int * ty, t) Hashtbl.t = Hashtbl.create 1024
+  let var_pool : (int * ty, t) Stdlib.Hashtbl.t = Stdlib.Hashtbl.create 1024
 
   let get_from_pool idx ty =
     let key = (idx, ty) in
-    match Hashtbl.find_opt var_pool key with
+    match Stdlib.Hashtbl.find_opt var_pool key with
     | None ->
         let name = get_next_name () in
         let v = mk_var name ty in
-        Hashtbl.replace var_pool key v;
+        Stdlib.Hashtbl.replace var_pool key v;
         v
     | Some v -> v
 end
@@ -186,6 +190,10 @@ let collect_checked_assumptions (v : t) : t list =
         failwith
           "collect_checked_assumptions: not implemented for quantifiers (we \
            don't generate quantifiers for fuzzing yet)"
+    | Extension _ ->
+        failwith
+          "collect_checked_assumptions: not implemented for extension (we \
+           don't generate extensions for fuzzing)"
   in
   go v;
   Dynarray.to_list assumptions |> List.sort_uniq compare

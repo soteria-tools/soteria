@@ -187,6 +187,8 @@ let output t =
   | Some file -> dump t file
 
 module As_ctx = struct
+  type nonrec t = t
+  type arg = unit
   type _ Effect.t += Apply : (t -> unit) -> unit Effect.t
 
   let with_ () f =

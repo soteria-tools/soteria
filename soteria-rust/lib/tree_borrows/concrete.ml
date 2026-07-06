@@ -8,23 +8,6 @@ module Make (Symex : Tree_borrows_intf.Rust_symex) :
   open Symex
   open Raw
 
-  module Tag = struct
-    include Tag
-
-    type syn = t [@@deriving show { with_path = false }]
-
-    let to_syn x = x
-    let fresh () = L.failwith "fresh tags not supported in concrete TB"
-    let subst _ x = x
-
-    let learn_eq syn tag =
-      if equal syn tag then Symex.Consumer.ok ()
-      else Symex.Consumer.lfail Typed.v_false
-
-    let exprs_syn _ = []
-    let nondet () = return None
-  end
-
   let[@inline] unwrap x = Option.get ~msg:"missing state in concrete TB" x
 
   module Tree = struct

@@ -23,7 +23,8 @@ end) =
 struct
   type nonrec t = t
 
-  let default = Start_at.start_at
+  let default () = Start_at.start_at
+  let copy i = i
   let[@inline] next i = (i, i + 1)
 end
 

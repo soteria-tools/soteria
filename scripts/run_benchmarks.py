@@ -123,11 +123,10 @@ def bench_rust(entry: dict, kind: str) -> dict:
     soteria_rust = os.environ.get("SOTERIA_RUST", SOTERIA_RUST)
     target = resolve(entry["path"])
     args = entry.get("args", [])
-    base = [soteria_rust, "exec", str(target), *args]
 
     # Compile once (untimed); analysis may exit non-zero on a found bug.
     log(f"pre-compiling {kind}: {target}")
-    run(base)
+    run([soteria_rust, "compile", str(target), *args])
 
     cmd = [soteria_rust, "exec", str(target), "--no-compile", *args]
     stats = measure(cmd, entry.get("no_hyperfine", False))

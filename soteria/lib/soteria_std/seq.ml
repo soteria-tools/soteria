@@ -40,3 +40,7 @@ let compare_length_with seq n =
       | Cons (_, seq) -> aux seq (n - 1)
   in
   aux seq n
+
+(** Equivalent to {!fold_left}; we re-export is as [fold] for compatibility with
+    {!Sigs.Foldable}. *)
+let fold = fold_left

@@ -14,7 +14,7 @@ license: "Apache-2.0"
 homepage: "https://github.com/soteria-tools/soteria"
 bug-reports: "https://github.com/soteria-tools/soteria/issues"
 depends: [
-  "ocaml" {>= "5.4.1"}
+  "ocaml" {>= "5.5.0"}
   "shexp" {build}
   "soteria"
   "dune-site"
@@ -26,15 +26,15 @@ depends: [
   "ppx_subliner" {>= "0.2.1"}
   "ppx_mixins" {>= "0.2.0"}
   "fmt"
-  "unionFind"
+  "unionFind" {>= "20220109"}
   "charon"
   "name_matcher_parser"
   "ppx_deriving_hash"
   "odoc" {with-doc}
   "alcotest" {with-test}
   "yojson" {< "3.0"}
-  "dune" {>= "3.23" & build & >= "3.14.0"}
-  "ocamlformat" {with-dev-setup & = "0.28.1"}
+  "dune" {>= "3.23"}
+  "ocamlformat" {with-dev-setup & = "0.29.0"}
   "ocaml-lsp-server" {with-dev-setup}
 ]
 build: [

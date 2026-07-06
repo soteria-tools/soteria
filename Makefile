@@ -1,7 +1,7 @@
-# [versionsync: OCAML_VERSION=5.4.1]
-OCAML_VERSION=5.4.1
-# [versionsync: OCAMLFORMAT_VERSION=0.28.1]
-OCAMLFORMAT_VERSION=0.28.1
+# [versionsync: OCAML_VERSION=5.5.0]
+OCAML_VERSION=5.5.0
+# [versionsync: OCAMLFORMAT_VERSION=0.29.0]
+OCAMLFORMAT_VERSION=0.29.0
 # [versionsync: DUNE_VERSION=3.23.1]
 DUNE_VERSION=3.23.1
 
@@ -59,9 +59,7 @@ ocaml-very-slow-tests:
 
 .PHONY: doc
 doc:
-	$(DUNE) build @doc
-	chmod u+w _build/default/_doc/_html/odoc.support/odoc.css
-	cp doc/odoc-theme/odoc.css _build/default/_doc/_html/odoc.support/odoc.css
+	DUNE="$(DUNE)" python3 scripts/doc.py
 
 .PHONY: doc-json
 doc-json:

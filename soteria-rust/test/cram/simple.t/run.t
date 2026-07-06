@@ -53,13 +53,6 @@ Splitting and merging, via a union
   PC 1: empty
   
   => Running split_merges::uninit_gap...
-  warning: Invalid reference: Uninitialized memory access
-      --> $TESTCASE_ROOT/split_merges.rs:64:9
-   52 |  fn uninit_gap() {
-      |  --------------- 1: Entry point
-      .  
-   64 |          assert_eq!(x.as_u32, 0x1234_5678);
-      |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering operation
   error: split_merges::uninit_gap: found issues in <time>, errors in 1 branch (out of 1)
   bug: Uninitialized memory access in split_merges::uninit_gap
       --> $TESTCASE_ROOT/split_merges.rs:64:9
@@ -202,29 +195,33 @@ Test transmutations keeping the bit-patterns the same
 Test null and dangling pointers
   $ soteria-rust exec dangling_ptrs.rs
   Compiling... done in <time>
-  => Running dangling_ptrs::null_ptr_zst...
-  note: dangling_ptrs::null_ptr_zst: done in <time>, ran 1 branch
+  => Running dangling_ptrs::access_zst...
+  note: dangling_ptrs::access_zst: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running dangling_ptrs::get_discriminant_zst...
+  note: dangling_ptrs::get_discriminant_zst: done in <time>, ran 1 branch
   PC 1: empty
   
   => Running dangling_ptrs::null_ptr_not_zst...
   error: dangling_ptrs::null_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
   error: Null dereference in dangling_ptrs::null_ptr_not_zst
-      --> $TESTCASE_ROOT/dangling_ptrs.rs:11:30
-    9 |  fn null_ptr_not_zst() {
+      --> $TESTCASE_ROOT/dangling_ptrs.rs:63:30
+   61 |  fn null_ptr_not_zst() {
       |  --------------------- 1: Entry point
-   10 |      let ptr: *const u32 = std::ptr::null();
-   11 |      let _val: u32 = unsafe { *ptr };
+   62 |      let ptr: *const u32 = std::ptr::null();
+   63 |      let _val: u32 = unsafe { *ptr };
       |                               ^^^^ Memory load
   PC 1: empty
   
   => Running dangling_ptrs::dangling_ptr_not_zst...
   error: dangling_ptrs::dangling_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
   bug: Dangling pointer in dangling_ptrs::dangling_ptr_not_zst
-      --> $TESTCASE_ROOT/dangling_ptrs.rs:17:29
-   15 |  fn dangling_ptr_not_zst() {
+      --> $TESTCASE_ROOT/dangling_ptrs.rs:69:29
+   67 |  fn dangling_ptr_not_zst() {
       |  ------------------------- 1: Entry point
-   16 |      let ptr: *const u8 = 0xdeadbeef as *const u8;
-   17 |      let _val: u8 = unsafe { *ptr };
+   68 |      let ptr: *const u8 = 0xdeadbeef as *const u8;
+   69 |      let _val: u8 = unsafe { *ptr };
       |                              ^^^^ Memory load
   PC 1: empty
   
@@ -235,7 +232,7 @@ Test exposing function pointers
   Compiling... done in <time>
   => Running expose_fn_ptr::main...
   note: expose_fn_ptr::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffe) /\
+  PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd) /\
         (0x0 == extract[0-3](V|1|))
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
@@ -319,7 +316,7 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   [1]
 
 Test recursive validity check for references; disabled
-  $ soteria-rust exec ref_validity.rs --recursive-validity=allow
+  $ soteria-rust exec ref_validity.rs --reference-to-invalid-memory=allow
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
@@ -351,7 +348,7 @@ Test recursive validity check for references; disabled
   [1]
 
 Test recursive validity check for references; enabled
-  $ soteria-rust exec ref_validity.rs --recursive-validity=deny
+  $ soteria-rust exec ref_validity.rs --reference-to-invalid-memory=deny
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   error: ref_validity::test_uninit_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -390,7 +387,7 @@ Test recursive validity check for references; enabled
   [1]
 
 Test recursive validity check for references; warn
-  $ soteria-rust exec ref_validity.rs --recursive-validity=warn
+  $ soteria-rust exec ref_validity.rs --reference-to-invalid-memory=warn
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   warning: Invalid reference: Uninitialized memory access

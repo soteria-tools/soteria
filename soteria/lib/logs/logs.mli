@@ -81,7 +81,7 @@ module L : sig
       For instance, one can log the string "The number is 42" at level [Info]
       with
       {[
-        log ~level:Level.Info (fun m -> m "The number is %d" 42)
+      log ~level:Level.Info (fun m -> m "The number is %d" 42)
       ]} *)
   val log : level:Level.t -> ('a, unit) msgf -> unit
 

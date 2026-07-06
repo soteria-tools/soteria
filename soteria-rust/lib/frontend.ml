@@ -42,7 +42,7 @@ module Lib = struct
   (** [exec_cargo ?env lib args] executes the command [cargo <args>] for the
       library [lib].
 
-      @raise PluginError
+      @raise CompilationError
         if the command fails, with the error message from Cargo. *)
   let exec_cargo ?(env = []) lib args =
     let path = path lib in

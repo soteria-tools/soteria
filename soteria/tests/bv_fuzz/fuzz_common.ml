@@ -4,7 +4,9 @@
     individual fuzz test executables. *)
 
 open Soteria.Bv_values
-module Z3_raw = Soteria.Solvers.Z3.Make (Encoding)
+module Svalue = Gen.Sv
+module Z3_raw = Soteria.Solvers.Z3.Make (Encoding.Make (Direct.Typed))
+module Eval = Eval.Make (Svalue.Ext) (Svalue)
 module Var = Soteria.Symex.Var
 
 let solver = Z3_raw.init ()
@@ -97,8 +99,7 @@ let print_test d =
   let model = z3_check_with_model ~vars_d:vars ~assumptions:checks s d in
   let pp_model fmt = function
     | None -> Format.fprintf fmt "Model unavailable"
-    | Some m ->
-        Fmt.pf fmt "Counterexample model:@,%a" Soteria.Soteria_smt.pp_sexp m
+    | Some m -> Fmt.pf fmt "Counterexample model:@,%a" Soteria.Smt.pp_sexp m
   in
   Format.asprintf
     "@[<v>full: %a@,\

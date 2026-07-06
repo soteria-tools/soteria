@@ -39,4 +39,5 @@ let get_ty sym t =
   | None -> L.failwith "Store: Getting type of unknown symbol?"
   | Some { ty; _ } -> ty
 
+let iter_bindings = Iter.of_iter_bindings iter
 let pp : t Fmt.t = Fmt.Dump.iter_bindings iter Fmt.nop Fmt_ail.pp_sym pp_binding

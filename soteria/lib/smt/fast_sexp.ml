@@ -1,6 +1,4 @@
-(** Fast s-expression type, serializer, and buffered reader.
-
-    This module is [include]d by {!Soteria_smt}; do not use it directly. *)
+(** Fast s-expression type, serializer, and buffered reader. *)
 
 (** {1 S-expressions} *)
 

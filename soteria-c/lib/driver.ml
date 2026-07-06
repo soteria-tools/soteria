@@ -6,6 +6,10 @@ open Soteria.Logs.Printers
 open Soteria.Terminal.Warn
 module Wpst_interp = Interp.Make (SState)
 
+(* Type-checking that the state satisfies its interface since we removed its mli
+   file. *)
+module _ : State_intf.S = SState
+
 exception Tool_error
 
 let tool_error msg =
@@ -187,7 +191,7 @@ let parse_and_link_ail ~includes files =
   | files ->
       let* parsed =
         if (Config.current ()).no_ignore_parse_failures then
-          Monad.ResultM.all parse_and_signal files
+          Monad.ResultM.map_list ~f:parse_and_signal files
         else
           let parsed =
             List.filter_map

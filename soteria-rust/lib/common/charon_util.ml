@@ -182,7 +182,11 @@ let mk_tuple_ty types : Types.ty =
 (** The type [*const ()] *)
 let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)
 
+(** The type [&()] *)
 let unit_ref = Types.TRef (RErased, TypesUtils.mk_unit_ty, RShared)
+
+(** The type [u8] *)
+let u8_ty = Types.TLiteral (TUInt U8)
 
 let decl_has_attr (decl : GAst.fun_decl) attr =
   List.exists
@@ -198,12 +202,15 @@ let meta_get_attr (meta : Types.item_meta) attr =
 let decl_get_attr (decl : GAst.fun_decl) attr =
   meta_get_attr decl.item_meta attr
 
-let adt_is_box (adt : Types.type_decl_ref) =
+let adt_is_lang_item lang_item (adt : Types.type_decl_ref) =
   match adt.id with
   | TAdtId id ->
       let adt = Crate.get_adt_raw id in
-      adt.item_meta.lang_item = Some "owned_box"
+      Option.is_some_and (String.equal lang_item) adt.item_meta.lang_item
   | _ -> false
+
+let adt_is_box = adt_is_lang_item "owned_box"
+let adt_is_unsafe_cell = adt_is_lang_item "unsafe_cell"
 
 let rec get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
@@ -219,12 +226,6 @@ let rec get_pointee : Types.ty -> Types.ty = function
         | PeInstantiated gargs -> List.hd gargs.binder_value.types
         | _ -> L.failwith "Box with non instantiates args in monomorphic mode?")
   | _ -> L.failwith "Non-pointer type given to get_pointee"
-
-let float_precision : Values.float_type -> Svalue.FloatPrecision.t = function
-  | F16 -> F16
-  | F32 -> F32
-  | F64 -> F64
-  | F128 -> F128
 
 let ty_as_adt : Types.ty -> Types.type_decl_ref = function
   | TAdt tref -> tref
@@ -247,13 +248,32 @@ let ty_is_monomorphic ty =
   let ty_visitor =
     object (_)
       inherit [_] Types.iter_ty
-      method! visit_TVar _ _ = raise FoundGeneric
+      method! visit_TVar _ _ = raise_notrace FoundGeneric
     end
   in
   try
     ty_visitor#visit_ty () ty;
     true
   with FoundGeneric -> false
+
+(** Whether the given type decl ref is properly substituted, i.e. it contains no
+    bound type variables. This can still return [true] for polymorphic type decl
+    refs, e.g. [Option<@Free0>], but we guarantee all type variables are free.
+*)
+let tyref_is_substituted ty =
+  let exception FoundBoundVar in
+  let ty_visitor =
+    object (_)
+      inherit [_] Types.iter_ty
+
+      method! visit_TVar _ =
+        function Free _ -> () | Bound _ -> raise_notrace FoundBoundVar
+    end
+  in
+  try
+    ty_visitor#visit_type_decl_ref () ty;
+    true
+  with FoundBoundVar -> false
 
 let pp_span_data ft ({ file; beg_loc; end_loc } : Meta.span_data) =
   let clean_filename name =

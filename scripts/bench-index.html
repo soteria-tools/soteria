@@ -295,10 +295,16 @@
             },
             tooltips: {
               callbacks: {
+                title: items => {
+                  const { index } = items[0];
+                  const commit = ref[index].commit;
+                  const name = commit.message.split('\n')[0];
+                  return name + ' (' + commit.id.slice(0, 7) + ')';
+                },
                 afterTitle: items => {
                   const { index } = items[0];
                   const commit = ref[index].commit;
-                  return '\n' + commit.message + '\n\n' + commit.timestamp + ' committed by @' + commit.committer.username + '\n';
+                  return '\n' + new Date(commit.timestamp).toLocaleString() + '\n';
                 },
                 label: item => {
                   const ds = datasets[item.datasetIndex];

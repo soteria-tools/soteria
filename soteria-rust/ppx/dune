@@ -1,0 +1,7 @@
+(library
+ (name ppx_typed_match)
+ (public_name soteria-rust.ppx)
+ (kind ppx_rewriter)
+ (libraries ppxlib)
+ (preprocess
+  (pps ppxlib.metaquot)))

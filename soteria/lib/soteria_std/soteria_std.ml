@@ -7,7 +7,6 @@ module Dynarray = Dynarray
 module Effects = Effects
 module Exn = Exn
 module Filename = Filename
-module Foldable = Foldable
 module Graph = Graph
 module Hashset = Hashset
 module Hashtbl = Hashtbl

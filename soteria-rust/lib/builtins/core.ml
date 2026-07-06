@@ -2,10 +2,11 @@
     share them here for convenience. *)
 
 open Charon
+open Common.Charon_util
+open Svalue
 open Typed
 open Typed.Syntax
 open Typed.Infix
-open Rust_val
 open Syntaxes.FunctionWrap
 
 module M (StateM : State.StateM.S) = struct
@@ -13,27 +14,12 @@ module M (StateM : State.StateM.S) = struct
   open Syntax
 
   let cmp ~signed l r =
+    let ordering = Crate.get_adt_lang_item_ref "Ordering" in
     let ( < ) = if signed then ( <$@ ) else ( <@ ) in
     let discr =
       Typed.ite (l < r) U8.(-1s) (Typed.ite (l ==@ r) U8.(0s) U8.(1s))
     in
-    Enum (discr, [])
-
-  let rec equality_check (v1 : [< T.sint | T.sptr ] Typed.t)
-      (v2 : [< T.sint | T.sptr ] Typed.t) =
-    match (get_ty v1, get_ty v2) with
-    | TBitVector _, TBitVector _ | TPointer _, TPointer _ ->
-        ok (BV.of_bool (v1 ==@ v2))
-    | TPointer _, TBitVector _ ->
-        let v2 : T.sint Typed.t = cast v2 in
-        if%sat v2 ==@ Usize.(0s) then
-          let res = cast v1 ==@ Ptr.null () in
-          ok (BV.of_bool res)
-        else error `UBPointerComparison
-    | TBitVector _, TPointer _ -> equality_check v2 v1
-    | _ ->
-        not_impl "Unexpected types in cval equality: %a and %a" Typed.ppa v1
-          Typed.ppa v2
+    Typed.Adt.mk_enum ordering discr []
 
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
@@ -121,38 +107,45 @@ module M (StateM : State.StateM.S) = struct
           L.failwith "Invalid checked op: (%a, %b)" Expressions.pp_binop op
             signed
     in
-    ok (Tuple [ Int wrapped; Int (BV.of_bool overflowed) ])
+    ok (Typed.Adt.mk_tuple [ wrapped; BV.of_bool overflowed ])
 
-  let meta_as_int = function
-    | Len l -> ok (Some l)
-    | VTable ptr ->
-        let+ ptr = Sptr.decay ptr in
-        Some ptr
-    | Thin -> ok None
+  let meta_as_int meta =
+    match%ty meta with
+    | TBitVector _ -> ok meta
+    | TExtension TThinPtr -> Sptr.decay meta
+    | _ -> failwith "invalid metadata type"
 
-  let eval_meta_eq l r =
-    let* meta_l = meta_as_int l in
-    let+ meta_r = meta_as_int r in
+  let opt_meta_as_int = function
+    | None -> ok None
+    | Some meta -> map Option.some (meta_as_int meta)
+
+  let eval_meta_eq (l : [< T.ptr_meta ] Typed.t option)
+      (r : [< T.ptr_meta ] Typed.t option) =
+    let* meta_l = opt_meta_as_int l in
+    let+ meta_r = opt_meta_as_int r in
     match (meta_l, meta_r) with
     | Some l, Some r -> l ==@ r
     | None, None -> v_true
-    | _, _ -> v_false
+    | _, _ -> L.failwith "Comparing pointers with mismatched metadata"
 
-  let rec eval_ptr_binop (bop : Expressions.binop) l r =
-    let null_or_in_bound p = Sptr.is_null p ||@ Sptr.in_bound p in
-    match (bop, l, r) with
-    | Ne, _, _ ->
+  let rec eval_ptr_binop (bop : Expressions.binop) (l : Typed.([< T.sptr_f ] t))
+      (r : Typed.([< T.sptr_f ] t)) =
+    match bop with
+    | Ne ->
         let+ res = eval_ptr_binop Eq l r in
         BV.not_bool (cast res)
-    | Eq, Ptr (l, meta_l), Ptr (r, meta_r) ->
+    | Eq ->
         (* Pointer comparison just uses the address! See
            https://doc.rust-lang.org/std/ptr/index.html#provenance *)
-        let same_provenance = Sptr.have_same_provenance l r in
+        let null_or_in_bound p = Typed.Ptr.is_null p ||@ Typed.Ptr.in_bound p in
+        let l, meta_l = Typed.Ptr.split l in
+        let r, meta_r = Typed.Ptr.split r in
+        let same_provenance = Typed.Ptr.have_same_provenance l r in
         if%sure same_provenance then
           (* Fast path: if two pointer have the same provenance, it's enough to
              compare their offsets *)
           let+ meta_eq = eval_meta_eq meta_l meta_r in
-          BV.of_bool (meta_eq &&@ (Sptr.ofs l ==@ Sptr.ofs r))
+          BV.of_bool (meta_eq &&@ (Typed.Ptr.ofs l ==@ Typed.Ptr.ofs r))
         else if%sure
           (not same_provenance) &&@ null_or_in_bound l &&@ null_or_in_bound r
         then
@@ -173,12 +166,9 @@ module M (StateM : State.StateM.S) = struct
           let+ distance = Sptr.distance l r in
           let ptr_eq = distance ==@ Usize.(0s) in
           BV.of_bool (meta_eq &&@ ptr_eq)
-    | Eq, Ptr (p, _), Int v | Eq, Int v, Ptr (p, _) ->
-        let v = cast_i Usize v in
-        if%sat v ==@ Usize.(0s) then ok (BV.of_bool (Sptr.is_null p))
-        else not_impl "Don't know how to eval %a == %a" Sptr.pp p Typed.ppa v
-    | Eq, Int v1, Int v2 -> ok (BV.of_bool (v1 ==@ v2))
-    | (Lt | Le | Gt | Ge), Ptr (l, ml), Ptr (r, mr) -> (
+    | Lt | Le | Gt | Ge -> (
+        let l, ml = Typed.Ptr.split l in
+        let r, mr = Typed.Ptr.split r in
         let* dist = Sptr.distance l r in
         let bop =
           match bop with
@@ -190,22 +180,21 @@ module M (StateM : State.StateM.S) = struct
         in
         let v = bop dist Usize.(0s) in
         match (ml, mr) with
-        | Thin, Thin -> ok (BV.of_bool v)
-        (* is the below line correct? *)
-        | Thin, _ | _, Thin -> ok (BV.of_bool v)
-        | _, _ ->
+        | None, None -> ok (BV.of_bool v)
+        | Some ml, Some mr ->
             if%sat dist ==@ Usize.(0s) then
               let* ml = meta_as_int ml in
               let* mr = meta_as_int mr in
-              let ml = Option.get ml in
-              let mr = Option.get mr in
               ok (BV.of_bool (bop ml mr))
-            else ok (BV.of_bool v))
-    | op, l, r ->
-        not_impl "Unexpected operation or value in eval_ptr_binop: %a, %a, %a"
-          Expressions.pp_binop op pp_rust_val l pp_rust_val r
+            else ok (BV.of_bool v)
+        | _ -> L.failwith "Comparing pointers with mismatched metadata")
+    | op ->
+        L.failwith "Unexpected operation in eval_ptr_binop: %a"
+          Expressions.pp_binop op
 
   let zero_valid ~ty =
+    (* FIXME: this creates an unnecessary allocation; see how we handle
+       transmute. *)
     let+^ res =
       let@ () = run ~env:() ~state:State.empty in
       let* { size; align; _ } = Layout.layout_of ty in
@@ -220,9 +209,10 @@ module M (StateM : State.StateM.S) = struct
         { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
     in
     let+ str_data = State.load ptr str_ty in
-    (match str_data with Tuple bytes -> Some bytes | _ -> None)
-    |> (Option.bind @@ Monad.OptionM.all
-       @@ function Int b -> Typed.BitVec.to_z b | _ -> None)
+    Typed.Adt.as_array @@ Typed.cast_array str_data
+    |> Monad.OptionM.map_m
+         (module Iarray)
+         ~f:(fun b -> Typed.BitVec.to_z @@ Typed.cast_i U8 b)
     |> Option.map (fun cs ->
         let cs = List.map (fun z -> Char.chr (Z.to_int z)) cs in
         let str = String.of_seq @@ List.to_seq cs in
@@ -240,18 +230,18 @@ module M (StateM : State.StateM.S) = struct
     | Some ptr -> ok ptr
     | None ->
         let len = String.length str in
+        let bytes = Bytes.of_string str in
         let chars =
-          String.to_bytes str
-          |> Bytes.fold_left (fun l c -> Int (BV.u8i (Char.code c)) :: l) []
-          |> List.rev
+          Iarray.init len (fun i -> BV.u8i (Bytes.get_uint8 bytes i))
         in
-        let char_arr = Tuple chars in
+        let char_arr = Typed.Adt.mk_array u8_ty chars in
         let str_ty : Types.ty =
-          Common.Charon_util.mk_array_ty (TLiteral (TUInt U8)) (Z.of_int len)
+          Common.Charon_util.mk_array_ty u8_ty (Z.of_int len)
         in
         let@ () = with_alloc_kind ~kind:StaticString in
-        let* ptr, _ = State.alloc_ty str_ty in
-        let ptr = (ptr, Len (BV.usizei len)) in
+        let* ptr = State.alloc_ty str_ty in
+        let ptr = Typed.Ptr.ptr_of ptr in
+        let ptr = Typed.Ptr.mk_ptr_f ptr (Some (BV.usizei len)) in
         let* () = State.store ptr str_ty char_arr in
         let+ () = State.store_str_global str ptr in
         ptr

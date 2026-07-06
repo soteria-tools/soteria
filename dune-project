@@ -30,9 +30,9 @@
  (synopsis "Soteria is a toolkit for writing symbolic bug-finding tools")
  (description "Soteria is a toolkit for writing symbolic bug-finding tools")
  (depends
-  ; [versionsync: OCAML_VERSION=5.4.1]
+  ; [versionsync: OCAML_VERSION=5.5.0]
   (ocaml
-   (>= 5.4.1))
+   (>= 5.5.0))
   (tsort
    (>= 2.1.0))
   iter
@@ -61,9 +61,7 @@
   (qcheck-core :with-test)
   (qcheck-alcotest :with-test)
   (dune
-   (and
-    :build
-    (>= 3.14.0)))
+   (>= 3.23))
   (ppxlib
    (>= 0.38.0))
   (ppx_mixins
@@ -72,13 +70,14 @@
    (>= 0.5))
   (yojson
    (< 3.0))
-  unionFind
+  (unionFind
+   (>= 20220109))
   ppx_deriving_yojson
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.28.1)))
+    (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -88,9 +87,9 @@
  (sites
   (share includes))
  (depends
-  ; [versionsync: OCAML_VERSION=5.4.1]
+  ; [versionsync: OCAML_VERSION=5.5.0]
   (ocaml
-   (>= 5.4.1))
+   (>= 5.5.0))
   (shexp :build)
   soteria
   cerberus-lib
@@ -110,14 +109,12 @@
   (yojson
    (< 3.0))
   (dune
-   (and
-    :build
-    (>= 3.14.0)))
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
+   (>= 3.23))
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.28.1)))
+    (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))
 
 (package
@@ -127,9 +124,9 @@
  (sites
   (share plugins))
  (depends
-  ; [versionsync: OCAML_VERSION=5.4.1]
+  ; [versionsync: OCAML_VERSION=5.5.0]
   (ocaml
-   (>= 5.4.1))
+   (>= 5.5.0))
   (shexp :build)
   soteria
   dune-site
@@ -143,7 +140,8 @@
   (ppx_mixins
    (>= 0.2.0))
   fmt
-  unionFind
+  (unionFind
+   (>= 20220109))
   charon
   name_matcher_parser
   ppx_deriving_hash
@@ -152,12 +150,10 @@
   (yojson
    (< 3.0))
   (dune
-   (and
-    :build
-    (>= 3.14.0)))
-  ; [versionsync: OCAMLFORMAT_VERSION=0.28.1]
+   (>= 3.23))
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
     :with-dev-setup
-    (= 0.28.1)))
+    (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))

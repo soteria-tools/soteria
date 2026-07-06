@@ -8,6 +8,7 @@ let singleton x =
   tbl
 
 let add tbl x = Hashtbl.replace tbl x ()
+let add_check tbl x = Option.is_none @@ Hashtbl.find_and_replace tbl x ()
 let add_iter tbl iter = iter @@ add tbl
 let mem tbl x = Hashtbl.mem tbl x
 let remove tbl x = Hashtbl.remove tbl x
@@ -41,6 +42,7 @@ module type S = sig
   val with_capacity : int -> t
   val singleton : elt -> t
   val add : t -> elt -> unit
+  val add_check : t -> elt -> bool
   val add_iter : t -> elt Iter.t -> unit
   val mem : t -> elt -> bool
   val remove : t -> elt -> unit
@@ -68,6 +70,7 @@ module Make (Elt : PrintableHashedType) : S with type elt = Elt.t = struct
 
   let with_capacity i = Hashtbl.create i
   let add tbl x = Hashtbl.replace tbl x ()
+  let add_check tbl x = Option.is_none @@ Hashtbl.find_and_replace tbl x ()
   let add_iter tbl iter = iter @@ add tbl
   let mem tbl x = Hashtbl.mem tbl x
   let remove tbl x = Hashtbl.remove tbl x

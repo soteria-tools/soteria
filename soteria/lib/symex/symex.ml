@@ -29,18 +29,6 @@ let () =
              reason)
     | _ -> None)
 
-(** The different ways a managed effect can be handled. *)
-type 'a effect_handling =
-  | Ignore
-      (** Handle the effect by ignoring it, so don't collect any information. *)
-  | Dump of 'a
-      (** Handle the effect, and dump the information according to the relevant
-          configuration. The value is the parameter passed to the feature's dump
-          handler. *)
-  | Caller
-      (** The effect is already handled by the caller, nothing needs to be done.
-      *)
-
 module Or_gave_up = struct
   type 'err t = E of 'err | Gave_up of string
 
@@ -183,6 +171,9 @@ module type Core = sig
   (** {2 Fuel} *)
 
   val consume_fuel_steps : int -> unit t
+
+  (** Logs the current solver state, at the given log level *)
+  val log_solver_state : level:Logs.Level.t -> unit -> unit
 end
 
 module type Base = sig
@@ -195,9 +186,9 @@ module type Base = sig
 
       This is provided as a utility, and is equivalent to
       {@ocaml[
-        branch_on (not guard)
-          ~then_:(fun () -> return (Compo_res.error err))
-          ~else_:(fun () -> return (Compo_res.ok ()))
+      branch_on (not guard)
+        ~then_:(fun () -> return (Compo_res.error err))
+        ~else_:(fun () -> return (Compo_res.ok ()))
       ]} *)
   val assert_or_error :
     Value.(sbool t) -> 'err -> (unit, 'err, 'f) Compo_res.t t
@@ -350,16 +341,17 @@ module type S = sig
         handled and ignored by this function (default).
       - [flamegraph] specifies whether a flamegraph should be created from this
         symbolic process or if it should be ignored (default). The value passed
-        in the {{!effect_handling.Dump}[Dump]} variant is the name of the
-        created file (while the {{!Profiling.Config}configuration} for
-        flamegraphs specifies the directory in which flamegraphs are saved).
+        in the {{!Soteria.Soteria_std.Effects.Bookkeeping.mode.Dump}[Dump]}
+        variant is the name of the created file (while the
+        {{!Profiling.Config}configuration} for flamegraphs specifies the
+        directory in which flamegraphs are saved).
 
       @raise Symex.Gave_up
         if the symbolic process calls [give_up] and the mode is
         {!Symex.Approx.OX}. Prefer using {!Result.run} when possible. *)
   val run :
-    ?flamegraph:string effect_handling ->
-    ?stats:unit effect_handling ->
+    ?flamegraph:string Effects.Bookkeeping.mode ->
+    ?stats:unit Effects.Bookkeeping.mode ->
     ?fuel:Fuel_gauge.t ->
     mode:Approx.t ->
     'a t ->
@@ -373,8 +365,8 @@ module type S = sig
         to an {{!Symex.Or_gave_up.t}[Or_gave_up.t]}, potentially adding any path
         that gave up to the list. *)
     val run :
-      ?flamegraph:string effect_handling ->
-      ?stats:unit effect_handling ->
+      ?flamegraph:string Effects.Bookkeeping.mode ->
+      ?stats:unit Effects.Bookkeeping.mode ->
       ?fuel:Fuel_gauge.t ->
       ?fail_fast:bool ->
       mode:Approx.t ->
@@ -544,6 +536,9 @@ module Make_core (Sol : Solver.Mutable_incremental) = struct
     | Not_exhausted ->
         Stats.As_ctx.add_int StatKeys.steps n;
         f ()
+
+  let log_solver_state ~level () =
+    L.log ~level (fun m -> m "@[Path condition:@ %a@]" Solver.pp ())
 
   (** [Solver.simplify] throws an effect to ask the solver for simplification.
       When the value is already a concrete boolean literal, we can skip the
@@ -1022,27 +1017,11 @@ module Make (Sol : Solver.Mutable_incremental) :
   include CORE
   include Base_extension (CORE)
 
-  (* TODO: with modular explicits this can be implemented for any module:
-   * let manage (module M : Bookkeeping) = function
-   *   | Ignore -> M.with_ignored ()
-   *   | Dump arg -> M.with_dumped arg
-   *   | Caller -> fun f -> f ()
-   *)
-
-  let manage_flamegraph = function
-    | Ignore -> Flamegraph.with_ignored ()
-    | Dump name -> Flamegraph.with_dumped name
-    | Caller -> fun f -> f ()
-
-  let manage_stats = function
-    | Ignore -> Stats.As_ctx.with_ignored ()
-    | Dump name -> Stats.As_ctx.with_dumped name
-    | Caller -> fun f -> f ()
-
-  let setup ?(flamegraph = Ignore) ?(stats = Ignore)
-      ?(fuel = Fuel_gauge.infinite) ~mode f =
-    let@ () = manage_flamegraph flamegraph in
-    let@ () = manage_stats stats in
+  let setup ?(flamegraph = Effects.Bookkeeping.Ignore)
+      ?(stats = Effects.Bookkeeping.Ignore) ?(fuel = Fuel_gauge.infinite) ~mode
+      f =
+    let@ () = Effects.Bookkeeping.manage (module Flamegraph) flamegraph in
+    let@ () = Effects.Bookkeeping.manage (module Stats.As_ctx) stats in
     let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
     let@ () = Symex_state.run ~init_fuel:fuel in
     let@ () = Approx.As_ctx.with_mode mode in

@@ -1,4 +1,5 @@
 module Stats = Soteria.Stats
+open Svalue
 open Soteria.Logs.Printers
 open Syntaxes.FunctionWrap
 module State = State.Tree_state.Make (Tree_borrows.Concrete.Make)
@@ -98,9 +99,8 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let@ () = print_outcomes entry_name in
   Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
     ("Running " ^ entry_name ^ "...");
-  let args : State.Sptr.t Rust_val.t list =
-    if entry_name = "miri_start" then
-      [ Int (Typed.BV.usizei 0); Ptr (State.Sptr.null (), Thin) ]
+  let args : Typed.([> T.any ] t) list =
+    if entry_name = "miri_start" then Typed.[ BV.usizei 0; Typed.Ptr.null_f () ]
     else []
   in
   let branches =
@@ -126,7 +126,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
        | Missing _ -> execution_err "Miss encountered in WPST"
        | Error e -> (
            match Soteria.Symex.Or_gave_up.unwrap_exn e with
-           | (`OkExit, _), st -> Ok (Rust_val.unit_, st)
+           | (`OkExit, _), st -> Ok (Typed.Expr.of_value Typed.Adt.unit, st)
            | e -> Error e)
   in
   (* inverse ok and errors if we expect a failure *)
@@ -142,7 +142,8 @@ let exec_crate (crate : Charon.UllbcAst.crate)
                    ~loc:fun_decl.item_meta.span.data ()
                in
                Left (Error ((`MetaExpectedError, trace), st), pcs)
-           | Error (_, st), pcs -> Right (Ok (Rust_val.unit_, st), pcs)
+           | Error (_, st), pcs ->
+               Right (Ok (Typed.Expr.of_value Typed.Adt.unit, st), pcs)
       in
       if List.is_empty errors then oks else errors
   in

@@ -14,7 +14,7 @@ jobs:
     name: Test soteria-c Package
     strategy:
       matrix:
-        operating-system: [macos-latest, ubuntu-latest]
+        operating-system: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["macos-latest", "ubuntu-latest"]') }}
     runs-on: ${{ matrix.operating-system }}
     steps:
       - name: Set platform artifact name
@@ -87,7 +87,7 @@ jobs:
     name: Test soteria-rust Package
     strategy:
       matrix:
-        operating-system: [macos-latest, ubuntu-latest]
+        operating-system: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["macos-latest", "ubuntu-latest"]') }}
     runs-on: ${{ matrix.operating-system }}
     steps:
       - name: Set platform artifact name

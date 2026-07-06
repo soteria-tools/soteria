@@ -72,6 +72,8 @@ module Make
     module Symex = Sym
     module Value = Sym.Value
 
+    let log_solver_state ~level () = Sym.log_solver_state ~level ()
+
     type lfail = Sym.lfail [@@deriving show { with_path = false }]
     type cons_fail = Sym.cons_fail [@@deriving show { with_path = false }]
     type st = State.t

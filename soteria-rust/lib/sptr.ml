@@ -1,5 +1,11 @@
+(** The base type of pointers, permitting simple operations on the pointer type.
+    The majority of relevant operations are exposed via the state monad's
+    pointer module, {{!Soteria_rust_lib.State.StateM.S.Sptr}[StateM.Sptr]}, or
+    the {{!Svalue.Typed.Ptr}[Svalue.Ptr]} module. *)
+
 open Rustsymex
 open Charon
+open Svalue
 open Typed
 open Typed.Syntax
 open Typed.Infix
@@ -16,6 +22,22 @@ open T
 module type DecayMapS = sig
   include Soteria.Sym_states.Base.M(Rustsymex).S
 
+  module SM : sig
+    include module type of SM
+
+    val not_impl :
+      ?tip:string * string option ->
+      ?issue:int ->
+      ('a, Format.formatter, unit, 'b t) format4 ->
+      'a
+
+    val of_opt_not_impl :
+      ?tip:string * string option -> ?issue:int -> string -> 'a option -> 'a t
+
+    val match_on : 'a list -> constr:('a -> sbool Typed.t) -> 'a option t
+    val get_where : unit -> Trace.t t
+  end
+
   val empty : t
 
   (** Decays the given location into an integer, updating the decay map
@@ -26,7 +48,7 @@ module type DecayMapS = sig
     expose:bool ->
     size:[< sint ] Typed.t ->
     align:[< nonzero ] Typed.t ->
-    [< sloc ] Typed.t ->
+    sloc Typed.t ->
     sint Typed.t SM.t
 
   (** Tries finding, for the given integer, the matching provenance in the decay
@@ -36,7 +58,7 @@ module type DecayMapS = sig
     [< sint ] Typed.t -> (sloc Typed.t * sint Typed.t) option SM.t
 end
 
-module DecayMap = struct
+module DecayMap : DecayMapS = struct
   module MapKey = struct
     include Typed
 
@@ -164,66 +186,58 @@ module DecayMap = struct
     |> Iter.to_opt
 end
 
-module D_abstr = Soteria.Data.Abstr.M (DecayMap.SM)
+type t = Typed.(T.sptr_t t)
 
-(** The base type of pointers, permitting simple operations on the pointer type.
-    The majority of relevant operations are exposed via the state monad's
-    pointer module, {{!State.StateM.S.Sptr}Sptr}. *)
-module type S = sig
-  (** pointer type *)
-  type t [@@mixins D_abstr.S_with_syn]
+let pp = Typed.ppa
 
-  (** Converts an address into a pointer, without provenance. *)
-  val of_address : [< sint ] Typed.t -> t
+(** Creates a dangling pointer to the given type, if that type is a ZST; returns
+    [None] otherwise. *)
+let dangling_if_zst ty =
+  let open Rustsymex in
+  let open Syntax in
+  let** layout = Layout.layout_of ty in
+  if%sat layout.size ==@ Usize.(0s) then
+    (* UX: really any address that is well-aligned is valid, we
+       under-approximate here to make our life easier. *)
+    Result.ok (Some (Typed.Ptr.of_address layout.align))
+  else Result.ok None
 
-  (** Creates a dangling pointer to the given type, if that type is a ZST;
-      returns [None] otherwise. *)
-  val dangling_if_zst : Types.ty -> (t option, [> Error.t ], 'f) Result.t
+(** A simplified, untyped (and {b unsafe}) version of [offset], that adds a
+    signed integer to this pointer's offset. This offset doesn't check whether
+    the resulting pointer is dangling after being offset. *)
+let raw_offset ptr off_by =
+  let open Rustsymex.Syntax in
+  let ofs', ovf = Typed.Ptr.ofs ptr +$?@ off_by in
+  let++ () = assert_or_error (Typed.not ovf) `UBDanglingPointer in
+  Typed.Ptr.set_ofs ptr ofs'
 
-  (** The null pointer, which always decays to 0, and has no provenance.
-      Equivalent to [of_address 0]. *)
-  val null : unit -> t
+let[@inline] _decay ~expose p =
+  let open DecayMap.SM.Syntax in
+  let size = Typed.Ptr.size_of p in
+  let align = Typed.Ptr.align_of p in
+  let loc = Typed.Ptr.loc p in
+  let ofs = Typed.Ptr.ofs p in
+  let+ loc_int = DecayMap.decay ~expose ~size ~align loc in
+  [%l.debug "Decay %a -> %a" Typed.ppa loc Typed.ppa loc_int];
+  loc_int +!!@ ofs
 
-  (** Whether this is the null pointer, meaning it always decays to 0. *)
-  val is_null : t -> sbool Typed.t
+(** Decay a pointer into an integer value, losing provenance.
+    {b This does not expose the address of the allocation; for that, use
+       {!expose}} *)
+let decay p = _decay ~expose:false p
 
-  (** The offset of this pointer within its allocation. *)
-  val ofs : t -> [> sint ] Typed.t
+(** Decay a pointer into an integer value, exposing the address of the
+    allocation, allowing it to be retrieved with [DecayMapS.from_exposed] later.
+*)
+let expose p = _decay ~expose:true p
 
-  (** Returns a symbolic boolean characterising whether the pointer is in bound
-      to its allocation. *)
-  val in_bound : t -> sbool Typed.t
-
-  (** Whether this pointer has provenance, i.e. points to some allocation. *)
-  val has_provenance : t -> sbool Typed.t
-
-  (** If these two pointers have the same provenance, i.e. point to the same
-      allocation (or if they both have no provenance). *)
-  val have_same_provenance : t -> t -> sbool Typed.t
-
-  (** The distance, in bytes, between two pointers; if they point to different
-      allocations, they are decayed and substracted. *)
-  val distance : t -> t -> sint Typed.t DecayMap.SM.t
-
-  (** Generates a nondeterministic pointer, that is valid for accesses to the
-      given type. The location of the pointer is nondeterministic; it could
-      point to any allocation. *)
-  val nondet : Types.ty -> (t, [> Error.t ], 'a) Result.t
-
-  (** Decay a pointer into an integer value, losing provenance.
-      {b This does not expose the address of the allocation; for that, use
-         [expose]} *)
-  val decay : t -> [> sint ] Typed.t DecayMap.SM.t
-
-  (** Decay a pointer into an integer value, exposing the address of the
-      allocation, allowing it to be retrieved with [DecayMapS.from_exposed]
-      later. *)
-  val expose : t -> [> sint ] Typed.t DecayMap.SM.t
-
-  (** For Miri: the allocation ID of this location, as a u64 *)
-  val as_id : t -> [> sint ] Typed.t
-
-  (** For Miri: get the allocation info for this pointer: its size and alignment
-  *)
-  val allocation_info : t -> [> sint ] Typed.t * [> nonzero ] Typed.t
-end
+(** The distance, in bytes, between two pointers; if they point to different
+    allocations, they are decayed and substracted. *)
+let distance p1 p2 : [> sint ] Typed.t DecayMap.SM.t =
+  let open DecayMap.SM.Syntax in
+  if%sat Typed.Ptr.have_same_provenance p1 p2 then
+    DecayMap.SM.return (Typed.Ptr.ofs p1 -!@ Typed.Ptr.ofs p2)
+  else
+    let* ptr1 = decay p1 in
+    let+ ptr2 = decay p2 in
+    ptr1 -!@ ptr2

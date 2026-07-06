@@ -1,0 +1,5 @@
+(test
+ (name s_map_tests)
+ (libraries soteria alcotest fmt)
+ (preprocess
+  (pps soteria.ppx)))

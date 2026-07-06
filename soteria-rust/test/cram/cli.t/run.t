@@ -15,11 +15,17 @@
          exec [OPTION]… PATH
              Run symbolic execution
   
+         version [OPTION]…
+             Print version information
+  
   COMMON OPTIONS
          --help[=FMT] (default=auto)
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-rust exits with:
@@ -225,9 +231,14 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
-         --recursive-validity=ENUM (absent=warn)
+         --reference-to-invalid-memory=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
              obtaining a reference to it. We only go one level deep.
+             Referencing invalid values is not considered UB, but is bad
+             practice as it may cause UB down the line. For more information,
+             see https://github.com/rust-lang/unsafe-code-guidelines/issues/414
+             Enabling recursive validity checks may have a significant impact
+             on performance.
   
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
@@ -242,6 +253,9 @@
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-rust exec exits with:
@@ -517,9 +531,14 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
-         --recursive-validity=ENUM (absent=warn)
+         --reference-to-invalid-memory=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
              obtaining a reference to it. We only go one level deep.
+             Referencing invalid values is not considered UB, but is bad
+             practice as it may cause UB down the line. For more information,
+             see https://github.com/rust-lang/unsafe-code-guidelines/issues/414
+             Enabling recursive validity checks may have a significant impact
+             on performance.
   
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
@@ -530,6 +549,9 @@
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-rust build-plugins exits with:
@@ -805,9 +827,14 @@
              The provenance model to use for pointers. If not provided, the
              default is permissive.
   
-         --recursive-validity=ENUM (absent=warn)
+         --reference-to-invalid-memory=ENUM (absent=allow)
              Whether to check the validity of the addressed memory when
              obtaining a reference to it. We only go one level deep.
+             Referencing invalid values is not considered UB, but is bad
+             practice as it may cause UB down the line. For more information,
+             see https://github.com/rust-lang/unsafe-code-guidelines/issues/414
+             Enabling recursive validity checks may have a significant impact
+             on performance.
   
          --step-fuel=INT (absent STEP_FUEL env)
              The default step fuel for each entrypoint -- every control flow
@@ -822,6 +849,9 @@
              Show this help in format FMT. The value FMT must be one of auto,
              pager, groff or plain. With auto, the format is pager or plain
              whenever the TERM env var is dumb or undefined.
+  
+         --version
+             Show version information.
   
   EXIT STATUS
          soteria-rust compile exits with:

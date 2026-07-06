@@ -28,6 +28,8 @@ from soteria_utils import *
 
 # Files to scan for versionsync tags
 FILES_TO_SCAN = [
+    "soteria/lib/version.ml",
+    "soteria-rust/lib/version.ml",
     ".github/workflows/build.yml",
     ".github/workflows/test-packages.yml",
     ".github/workflows/benchmarks.yml",
@@ -535,9 +537,7 @@ def pull_project(
         info(f"Running post-build command: {' '.join(cmd)}")
         run_command(cmd, target_dir)
 
-    color_print(
-        f"\n✓ {project} updated and built successfully!\n", GREEN + BOLD
-    )
+    color_print(f"\n✓ {project} updated and built successfully!\n", GREEN + BOLD)
 
 
 class ProjectPullConfig(TypedDict):

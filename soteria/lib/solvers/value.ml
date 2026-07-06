@@ -1,4 +1,4 @@
-open Soteria_smt
+open Smt
 
 (** The type of values the solver operators on.
 

@@ -1,4 +1,5 @@
 open Charon
+open Svalue
 open Typed.Infix
 open Typed.Syntax
 open Compo_res
@@ -55,6 +56,11 @@ let align_of_literal_ty = size_of_literal_ty
 
 type meta_kind = LenKind | VTableKind | NoneKind
 
+let pp_meta_kind ft = function
+  | LenKind -> Fmt.string ft "length"
+  | VTableKind -> Fmt.string ft "vtable"
+  | NoneKind -> Fmt.string ft "unit"
+
 let rec dst_kind : Types.ty -> meta_kind = function
   | TAdt { id = TBuiltin TStr; _ } | TSlice _ -> LenKind
   | TDynTrait _ -> VTableKind
@@ -65,15 +71,22 @@ let rec dst_kind : Types.ty -> meta_kind = function
   | _ -> NoneKind
 
 (** If this is a DST type with a slice tail, return the type of the slice's
-    element. *)
-let rec dst_slice_ty : Types.ty -> Types.ty option = function
-  | TAdt { id = TBuiltin TStr; _ } -> Some (TLiteral (TUInt U8))
-  | TSlice sub_ty -> Some sub_ty
+    element. Errors otherwise. *)
+let rec dst_slice_ty : Types.ty -> Types.ty = function
+  | TAdt { id = TBuiltin TStr; _ } -> TLiteral (TUInt U8)
+  | TSlice sub_ty -> sub_ty
   | TAdt adt when Crate.is_struct adt -> (
       match List.last_opt (Crate.as_struct adt) with
-      | None -> None
+      | None -> L.failwith "dst_slice_ty: unexpected type"
       | Some last -> dst_slice_ty Types.(last.field_ty))
-  | _ -> None
+  | ty -> L.failwith "dst_slice_ty: unexpected type: %a" pp_ty ty
+
+(** Returns the resulting type obtained when indexing into the given type. Only
+    valid for arrays, slices and [str]. *)
+let index_ty : Types.ty -> Types.ty = function
+  | TAdt { id = TBuiltin TStr; _ } -> TLiteral (TUInt U8)
+  | TSlice ty | TArray (ty, _) -> ty
+  | ty -> L.failwith "slice_ty: unexpected type: %a" pp_ty ty
 
 (** If this is a dynamically sized type (requiring a fat pointer) *)
 let is_dst ty = dst_kind ty <> NoneKind
@@ -160,7 +173,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
          types, even if one is provided. This avoids inconsistent layouts. *)
       | [ (_triple, layout) ], _
         when (not (Config.get ()).polymorphic) || ty_is_monomorphic ty ->
-          translate_layout ty layout
+          translate_layout adt.kind ty layout
       | _ :: _ :: _, _ -> L.failwith "multiple layouts for the same ADT"
       | _, Struct fields -> compute_arbitrary_layout ty (field_tys fields)
       | _, Union fields -> compute_union_layout ty (field_tys fields)
@@ -234,7 +247,7 @@ and translate_discriminator : Types.discriminator -> Fields_shape.discriminator
       let fallback = translate_discriminator fallback in
       Branch { offset; tag_ty; children; fallback }
 
-and translate_layout ty (layout : Types.layout) =
+and translate_layout adt_kind ty (layout : Types.layout) =
   let size = compute_size ty layout.size in
   let align = compute_align ty layout.align in
   let uninhabited = layout.uninhabited in
@@ -252,17 +265,20 @@ and translate_layout ty (layout : Types.layout) =
               | [ (ofs, value) ] -> Some (BV.usizei ofs, BV.of_scalar value)
               | _ :: _ :: _ -> L.failwith "unsupported: >1 tagger values"
             in
-            (tagger, Arbitrary (Types.VariantId.of_int i, ofs)))
+            (tagger, Arbitrary ofs))
       layout.variant_layouts
   in
+  let is_enum = match adt_kind with Enum _ -> true | _ -> false in
   let fields : Fields_shape.t =
     match (discriminator, variant_layouts) with
-    (* tag layouts only exist on enum layouts *)
-    | Some (Branch _ as d), _ -> Enum (d, Array.of_list variant_layouts)
     (* no variants/invalid, so this is uninhabited; we can use primitive *)
     | _, [] | Some Invalid, _ -> Primitive
-    (* there is only one inhabited (non-Primitive) variant *)
-    | Some (Known v), _ -> snd (Types.VariantId.nth variant_layouts v)
+    (* struct/union: there is only one inhabited variant *)
+    | Some (Known v), _ when not is_enum ->
+        snd (Types.VariantId.nth variant_layouts v)
+    (* enums *)
+    | Some ((Known _ | Branch _) as d), _ ->
+        Enum (d, Array.of_list variant_layouts)
     (* we didn't translate a discriminator; we hope it's a struct-like! *)
     | None, [ (_, v) ] -> v
     | None, _ -> L.failwith "no discriminator and >1 variant layouts?"
@@ -285,8 +301,7 @@ and compute_align ty align =
       layout_warning "Inferred align=1" ty;
       BV.usizeinz 1
 
-and compute_arbitrary_layout ?fst_size ?fst_align
-    ?(variant = Types.VariantId.zero) ty members =
+and compute_arbitrary_layout ?fst_size ?fst_align ty members =
   (* Note: here we manually calculate a layout, à la [repr(C)]. We should avoid doing this,
      and make it clearer when we do. *)
   (* Calculates the offsets, size and alignment for a tuple-like type with fields of
@@ -311,9 +326,7 @@ and compute_arbitrary_layout ?fst_size ?fst_align
   let++ () = assert_or_error (Typed.not overflowed) (`InvalidLayout ty) in
   let size = size_to_fit ~size ~align in
   let layout =
-    mk ~size ~align ~uninhabited
-      ~fields:(Arbitrary (variant, Array.of_list offsets))
-      ()
+    mk ~size ~align ~uninhabited ~fields:(Arbitrary (Array.of_list offsets)) ()
   in
   Fmt.kstr layout_warning "Computed an arbitrary layout:@.%a" pp layout ty;
   layout
@@ -355,7 +368,7 @@ and compute_enum_layout ty (variants : Types.variant list) =
           ~f:(fun (size, align, variants, uninhabited) v ->
             let++ l =
               compute_arbitrary_layout ty ~fst_size:tag.size
-                ~fst_align:tag.align ~variant:v.id (field_tys v.fields)
+                ~fst_align:tag.align (field_tys v.fields)
             in
             let tagger =
               if l.uninhabited then None
@@ -386,7 +399,7 @@ and compute_union_layout ty members =
           BV.max ~signed:false align member.align ))
   in
   let fields = Array.make (List.length members) (BV.usizei 0) in
-  mk ~size ~align ~fields:(Arbitrary (Types.VariantId.zero, fields)) ()
+  mk ~size ~align ~fields:(Arbitrary fields) ()
 
 and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
   match tref.kind with
@@ -411,13 +424,32 @@ let normalise (ty : Types.ty) =
   let+ ty = Poly.subst_ty ty in
   Ok ty
 
-let size_of ty =
+let[@inline] size_of ty =
   let++ { size; _ } = layout_of ty in
   (Typed.cast size :> Typed.([> T.sint ] t))
 
-let align_of ty =
+let[@inline] align_of ty =
   let++ { align; _ } = layout_of ty in
   (Typed.cast align :> Typed.([> T.nonzero ] t))
+
+(** Whether the given type is a 1ZST: it must have size 0 and alignment 1. *)
+let[@inline] is_1zst ty =
+  let++ layout = layout_of ty in
+  layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
+
+(** Whether the given type is a ZST: it must have size 0. *)
+let[@inline] is_zst ty =
+  let++ layout = layout_of ty in
+  layout.size ==@ Usize.(0s)
+
+(** If the given type is an enum with a single variant, return the variant's ID.
+    Otherwise, return None. Fails if the type is not an enum. *)
+let enum_single_variant (ty : Types.ty) =
+  let++ layout = layout_of ty in
+  match layout.fields with
+  | Enum (Known v, _) -> Some v
+  | Enum _ -> None
+  | _ -> L.failwith "enum_single_variant: not an enum type: %a" pp_ty ty
 
 let min_value_z : Types.literal_type -> Z.t = function
   | TUInt _ -> Z.zero
@@ -449,10 +481,9 @@ let rec is_unsafe_cell : Types.ty -> bool = function
       List.exists is_unsafe_cell types
   | TAdt { id = TBuiltin _; _ } -> false
   | TAdt adt -> (
-      let adt = Crate.get_adt adt in
-      if adt.item_meta.lang_item = Some "unsafe_cell" then true
+      if adt_is_unsafe_cell adt then true
       else
-        match adt.kind with
+        match (Crate.get_adt adt).kind with
         | Struct fs | Union fs -> List.exists is_unsafe_cell (field_tys fs)
         | Enum vs ->
             Iter.exists is_unsafe_cell
@@ -473,10 +504,6 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
     | TAdt { id = TBuiltin TBox; _ } -> true
     | TAdt adt -> adt_is_box adt
     | _ -> false
-  in
-  let[@inline] is_1zst ty =
-    let++ layout = layout_of ty in
-    layout.size ==@ Usize.(0s) &&@ (layout.align ==@ Usize.(1s))
   in
   let is_repr_transparent (adt : Types.type_decl_ref) =
     match adt.id with
@@ -544,3 +571,31 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
       (* 1ZSTs are exclusively compatible with themselves; otherwise type
          equality! *)
       ty1_1zst &&@ ty2_1zst
+
+(** Returns the path through an ADT to the pointer that is the target of an
+    unsizing operation, returning [None] if no path was found. If the path is
+    [Some], it is guaranteed that following the path leads to a pointer type.
+
+    The path is found by recursively exploring the last non-ZST field of the
+    structure, until a pointer is found. *)
+let rec unsize_path ty : (int list option, _, _) Result.t =
+  let ( let*** ) x f = bind (function Some x -> f x | None -> ok None) x in
+  let ( let**/ ) x f = bind (function Some _ as x -> ok x | None -> f ()) x in
+  let rec find_last_non_zst_field idx tys =
+    match tys with
+    | [] -> ok None
+    | ty :: rest ->
+        let**/ () = find_last_non_zst_field (idx + 1) rest in
+        let** is_zst = is_zst ty in
+        if%sat is_zst then ok None else ok (Some (idx, ty))
+  in
+  let rec aux acc = function
+    | Types.TRawPtr _ | TRef _ -> ok (Some acc)
+    | TPattern (ty, _) -> aux acc ty
+    | TAdt adt when Crate.is_struct_or_tuple adt ->
+        let tys = Crate.as_struct_or_tuple adt in
+        let*** idx, ty = find_last_non_zst_field 0 tys in
+        aux (idx :: acc) ty
+    | ty -> ok None
+  in
+  map (Option.map List.rev) @@ aux [] ty

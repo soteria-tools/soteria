@@ -24,6 +24,8 @@ path = [
   "dune",
   "package.json",
   "README.md",
+  "CHANGELOG.md",
+  "RELEASING.md",
   "Makefile",
   "odoc-config.sexp",
   ".github/**",

@@ -136,7 +136,8 @@ earlier on `PATH` that logs a line then `exec`s the real one, and count
 spawns per benchmark run. Either way the goal is the same — a quantified,
 localized claim ("70% of minor allocations are in `Value.encode`",
 "we spawn Z3 N times when 1 would do"), not a feeling.
-(`references/ocaml-profiling.md` has both the OCaml and the Z3 recipes.)
+(`references/ocaml-profiling.md` has the OCaml recipes; `references/z3-solver.md`
+has the Z3-boundary recipes.)
 
 ### 4. One hypothesis, one change
 
@@ -214,9 +215,12 @@ find a profiler incantation that worked on the OCaml code, a new
 measurement trap, or a benchmark that isolates a subsystem well, add it to
 `references/` rather than keeping it in your head.
 
-- `references/ocaml-profiling.md` — concrete CPU / allocation / Z3-boundary
-  profiling for Soteria's OCaml + subprocess architecture, plus the settled
+- `references/ocaml-profiling.md` — concrete CPU / allocation profiling for
+  Soteria's OCaml engine, the realized-wins findings log, plus the settled
   flambda / `[@inline]` findings.
+- `references/z3-solver.md` — the Z3 subprocess boundary: spawn-count and
+  round-trip instrumentation, and the solver-side findings (incl. the
+  `reset` vs `push`/`pop` incrementality regression and its Z3 sources).
 - `references/tree-borrows.md` — Tree Borrows (`soteria-rust/lib/tree_borrows/`)
   specific findings: what `Raw.access`/`compact`/`borrow` actually cost, the
   realized optimizations and their benches, and the hard constraints.

@@ -124,6 +124,10 @@ module type S = sig
 
   include Base
 
+  val fold :
+    (module M : Sigs.Foldable) ->
+    'elem M.t -> init:'a -> f:('a -> 'elem -> ('a, 'b, 'c) t) -> ('a, 'b, 'c) t
+
   val fold_list :
     'elem list -> init:'a -> f:('a -> 'elem -> ('a, 'b, 'c) t) -> ('a, 'b, 'c) t
 
@@ -133,16 +137,25 @@ module type S = sig
     f:('a -> 'elem -> ('a, 'b, 'c) t) ->
     ('a, 'b, 'c) t
 
+  val iter :
+    (module M : Sigs.Foldable) ->
+    'elem M.t -> f:('elem -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
+
   val iter_list :
     'elem list -> f:('elem -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
 
   val iter_iter :
     'elem Iter.t -> f:('elem -> (unit, 'b, 'c) t) -> (unit, 'b, 'c) t
 
+  val map_m :
+    (module M : Sigs.Foldable) ->
+    'elem M.t -> f:('elem -> ('a, 'b, 'c) t) -> ('a list, 'b, 'c) t
+
   val map_list :
     'elem list -> f:('elem -> ('a, 'b, 'c) t) -> ('a list, 'b, 'c) t
 
-  val all : ('a -> ('b, 'c, 'd) t) -> 'a list -> ('b list, 'c, 'd) t
+  val map_iter :
+    'elem Iter.t -> f:('elem -> ('a, 'b, 'c) t) -> ('a list, 'b, 'c) t
 end
 
 (** {2 Functors} *)
@@ -151,19 +164,23 @@ module Extend (M : Base) :
   S with type ('ok, 'err, 'fix) t = ('ok, 'err, 'fix) M.t = struct
   include M
 
-  let foldM ~fold xs ~init ~f = Monad.foldM ~return:ok ~bind ~fold ~init ~f xs
-  let fold_list xs ~init ~f = foldM ~fold:Foldable.List.fold ~init ~f xs
-  let fold_iter xs ~init ~f = foldM ~fold:Foldable.Iter.fold ~init ~f xs
-  let iterM xs ~fold ~f = foldM ~fold xs ~init:() ~f:(fun () -> f)
-  let iter_list xs ~f = iterM ~fold:Foldable.List.fold xs ~f
-  let iter_iter xs ~f = iterM ~fold:Foldable.Iter.fold xs ~f
+  let[@inline] fold (module M : Sigs.Foldable) xs ~init ~f =
+    Monad.foldM (module M) ~return:ok ~bind ~init ~f xs
 
-  let map_list xs ~f =
-    foldM ~init:[] ~fold:Foldable.List.fold xs ~f:(fun acc a ->
-        map (fun b -> b :: acc) (f a))
-    |> map List.rev
+  let[@inline] fold_list xs ~init ~f = fold (module List) xs ~init ~f
+  let[@inline] fold_iter xs ~init ~f = fold (module Iter) xs ~init ~f
 
-  let all f xs = Monad.all ~return:ok ~bind f xs
+  let[@inline] iter (module M : Sigs.Foldable) xs ~f =
+    Monad.iterM (module M) ~return:ok ~bind ~f xs
+
+  let[@inline] iter_list xs ~f = iter (module List) xs ~f
+  let[@inline] iter_iter xs ~f = iter (module Iter) xs ~f
+
+  let[@inline] map_m (module M : Sigs.Foldable) xs ~f =
+    Monad.mapM (module M) ~return:ok ~bind ~map ~f xs
+
+  let[@inline] map_list xs ~f = map_m (module List) ~f xs
+  let[@inline] map_iter xs ~f = map_m (module Iter) ~f xs
 end
 
 module Make_syntax (M : Base) :

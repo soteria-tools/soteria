@@ -1,4 +1,5 @@
-open Rust_val
+open Svalue
+open Common.Charon_util
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
@@ -17,25 +18,48 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   (* ---- alloc ---- *)
 
-  let alloc_impl ~self:_ ~layout ~zeroed =
+  (** {@rust[
+        const fn alloc_impl(&self, layout: Layout, zeroed: bool)
+          -> Result<NonNull<[u8]>, AllocError> { ... }
+      ]}
+
+      with
+      {@rust[
+        pub struct Layout {
+            size: usize,
+            align: Alignment,
+        }
+
+        pub struct Alignment {
+            _inner_repr_trick: AlignmentEnum,
+        }
+
+        enum AlignmentEnum { ... }
+      ]} *)
+  let alloc_impl ~(fun_sig : Charon.Types.fun_sig) ~self:_ ~layout ~zeroed =
     let zeroed = (zeroed :> Typed.T.sbool Typed.t) in
-    let zero = Usize.(0s) in
     let size, align =
-      match layout with
-      | Tuple [ Int size; Tuple [ Enum (align, []) ] ] ->
-          (Typed.cast_i Usize size, Typed.cast_i Usize align)
-      | _ -> L.failwith "alloc_impl: invalid layout: %a" pp_rust_val layout
+      let size, align = Typed.Adt.as_tuple2 (Typed.cast_tuple layout) in
+      let size = Typed.cast_i Usize size in
+      let align_enum =
+        Typed.cast_enum (Typed.Adt.as_tuple1 (Typed.cast_tuple align))
+      in
+      let align = Typed.Adt.discriminant_of align_enum in
+      (size, Typed.cast_i Usize align)
     in
-    let mk_res ptr len = Enum (zero, [ Tuple [ Ptr (ptr, Len len) ] ]) in
-    if%sat size ==@ zero then
-      let dangling = Sptr.of_address align in
-      ok (mk_res dangling zero)
+    let mk_res ptr len =
+      let out_res = ty_as_adt fun_sig.output in
+      let ptr = Typed.Ptr.mk_ptr_f ptr (Some len) in
+      let nonnull = Typed.Adt.mk_tuple [ ptr ] in
+      Typed.Adt.Checked.mk_enum out_res "Ok" [ nonnull ]
+    in
+    if%sat size ==@ Usize.(0s) then
+      let dangling = Typed.Ptr.of_address align in
+      ok (mk_res dangling Usize.(0s))
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
-      let+ ptr = Alloc.alloc ~zeroed [ Int size; Int align ] in
-      let ptr =
-        match ptr with Ptr (p, _) -> p | _ -> L.failwith "Expected Ptr"
-      in
+      let+ ptr = Alloc.alloc ~zeroed [ size; align ] in
+      let ptr, _ = Typed.Ptr.split (Typed.cast_ptr_f ptr) in
       mk_res ptr size
 
   let handle_alloc_error ~layout:_ = do_panic ()
@@ -43,7 +67,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
 
   (* ---- float helpers ---- *)
 
-  let float_is (fp : Svalue.FloatClass.t) =
+  let float_is (fp : Typed.FloatClass.t) =
     match fp with
     | Zero -> Typed.Float.is_zero
     | NaN -> Typed.Float.is_nan
@@ -115,7 +139,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let panic_nounwind_fmt ~fmt:_ ~force_no_backtrace:_ = do_panic ()
 
   let begin_panic ~m:_ ~msg =
-    match msg with Ptr msg -> do_panic ~msg () | _ -> do_panic ()
+    match%ty msg with
+    | TExtension TFullPtr -> do_panic ~msg ()
+    | _ -> do_panic ()
 
   (* ---- hashing ---- *)
 
@@ -125,10 +151,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
        avoid path explosion. This is an under-approximation, some paths may be \
        missed."
 
-  (** Replace the real [SipHasher] with the *constant* hash: every value hashes
-      to 0. This is a valid hash function, and avoid branch explosion from
-      symbolic hashes, as e.g. hashbrown uses the lower bits of the hash to pick
-      a bucket. *)
+  (** UX: Replace the real [SipHasher] with the *constant* hash: every value
+      hashes to 0. This is a valid hash function, and avoid branch explosion
+      from symbolic hashes, as e.g. hashbrown uses the lower bits of the hash to
+      pick a bucket. *)
   let hash_one ~types:_ ~t_self:_ ~t:_ ~self:_ ~x:_ =
     if Soteria.Symex.Approx.As_ctx.is_ox () then
       Soteria.Terminal.Warn.warn_once hash_one_ux;
