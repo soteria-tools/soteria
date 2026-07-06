@@ -11,6 +11,9 @@ request.
 
 ## [Unreleased]
 
+### Changed
+
+- Soteria Rust: renamed `--recursive-validity` to `--reference-to-invalid-memory` to better reflect that it's a lint (allow/deny/warn) and not a flag. It is also now set to **allow** by default, to improve performance.
 
 ## [0.1.0] - 2026-06-27
 
