@@ -14,8 +14,9 @@ boilerplate required by state modules implementing the
 - [produce] and [consume] to support Soteria's logic.
 - [with_<field>] and [with_<field>_sym] helper wrappers.
 
-The [sym_state] PPX generates these from the state type declaration. More
-formally, this generates a product of the state models of the individual fields.
+The [sym_state] PPX generates these from the state type declaration. Deriving on
+a record generates a {e product} of the state models of the individual fields;
+deriving on a variant generates a {e sum} of them (see {!sums} below).
 
 {2 Basic usage}
 
@@ -157,6 +158,51 @@ Which can then easily be used:
 let load addr ty = with_heap_sym (FancyHeap.load addr ty)
 ]}
 
+{2:sums Sum memory models}
+
+The deriver also works on {b variant} types. Where a record derives a
+{e product}, where all fields are owned at once, a variant derives a {e sum}:
+the state is exactly one of the variants at a time. This is useful to model a
+resource with alternative representations that it can flip between, or a set of
+mutually-exclusive states.
+
+Each constructor carries a single state model, written as [<Module>.t] (with no
+[option]):
+
+{@ocaml[
+type t = Freed of Freed.t | Alive of Inner.t
+[@@deriving sym_state { symex = My_symex }]
+]}
+
+We do not allow [option] within sum types, to facilitate frame-preservation.
+Take the example above: if [Freed] and [Alive] were both [t option], then a
+state could be [Freed None], and a [consume] of [Alive …] would have to fail,
+even though the state is empty.
+
+Every generated function dispatches on the active variant, and serialization
+tags each variant with its own constructor, named [Ser_<Constructor>]:
+
+{@ocaml[
+type syn = Ser_Freed of Freed.syn | Ser_Alive of Inner.syn
+]}
+
+Unlike records, sums do not generate [of_opt], [to_opt] or [with_<field>]
+wrappers: there is no canonical variant to expand [None] into.
+
+{3 Producing and consuming across variants}
+
+[produce] and [consume] act on the variant selected by the [syn] constructor:
+
+- against an empty state, they create (resp. require) that variant;
+- against the {e same} variant, they delegate to its inner state model;
+- against a {e different} variant, they are contradictory: [produce] vanishes
+  and [consume] fails, since two variants cannot describe the same resource at
+  once.
+
+These are only defaults. If you need some different behaviour (e.g. to allow
+[produce] to switch variants), you can override them by redefining [produce] and
+[consume].
+
 {2 [syn] type equality}
 
 Some applications may want to expose a stable [syn] type through an interface,
@@ -174,3 +220,21 @@ type t = { heap : Heap.t option; globs : Globs.t option }
 {b Note} this only asserts the generated [syn] type is equal to [my_syn], it
 does not actually change any of the generated code to use [my_syn]. If [my_syn]
 does not match [syn], this will cause a compile error.
+
+{3 Parameterised manifests}
+
+The manifest may itself be a parameterised type, which is convenient for
+reusable combinators. For example, a [Freeable] combinator (a sum, as in
+{!sums}) can share a single serialization type across all its instantiations:
+
+{@ocaml[
+type 'a freeable_syn = Ser_Freed of Freed.syn | Ser_Alive of 'a
+
+type t = Freed of Freed.t | Alive of Inner.t
+[@@deriving sym_state { symex = My_symex; syn = Inner.syn freeable_syn }]
+]}
+
+When the manifest is parameterised, the generated [syn] is a transparent alias
+of it (rather than a re-declaration of the constructors), and its constructors
+are taken from the manifest type's module. Their names must still match the
+[Ser_<field>] / [Ser_<Constructor>] convention.
