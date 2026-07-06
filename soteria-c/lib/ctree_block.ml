@@ -213,12 +213,12 @@ include Tree_block (MemVal)
 module Range = struct
   include Range
 
+  let of_low_and_size low (size : Typed.([< T.nonzero ] t)) =
+    of_low_and_size low (size :> Typed.(T.sint t))
+
   let of_low_and_type low ty =
     let+ size = Layout.size_of_s ty in
     of_low_and_size low size
-
-  let of_low_and_size low (size : Typed.([< T.nonzero ] t)) =
-    of_low_and_size low (size :> Typed.(T.sint t))
 
   let size r = Typed.BitVec.cast_nonzero @@ size r
 end
@@ -284,7 +284,6 @@ let store (low : [< T.sint ] Typed.t) (ty : Ctype.ctype)
         match node.node with
         | NotOwned Totally ->
             let* len = Layout.size_of_s ty in
-            let len = Typed.BitVec.cast_nonzero len in
             let fixes = mk_fix_any low len () in
             Result.miss (log_fixes fixes)
         | NotOwned Partially -> miss_no_fix ~reason:"partially missing store" ()

@@ -212,22 +212,23 @@ module M (State : State_intf.S) = struct
     in
     let char = BV.fit_to ~signed:false 8 char_int in
     if%sat count ==@ Usize.(0s) then Result.ok Agv.void
-    else if%sure char ==@ U8.(0s) then
-      let count = Typed.BitVec.cast_nonzero count in
-      let++ () = State.zero_range dest count in
-      Agv.void
     else
-      let rec loop dest count =
-        if%sat count ==@ Usize.(0s) then Result.ok Agv.void
-        else
-          let** () =
-            State.store dest Ctype.char (Agv.Basic (char :> T.cval Typed.t))
-          in
-          let s1_ptr = Typed.Ptr.add_ofs dest (BV.usizei 1) in
-          let count = count -!@ Usize.(1s) in
-          loop s1_ptr count
-      in
-      loop dest count
+      let count = Typed.BitVec.cast_nonzero count in
+      if%sure char ==@ U8.(0s) then
+        let++ () = State.zero_range dest count in
+        Agv.void
+      else
+        let rec loop dest count =
+          if%sat count ==@ Usize.(0s) then Result.ok Agv.void
+          else
+            let** () =
+              State.store dest Ctype.char (Agv.Basic (char :> T.cval Typed.t))
+            in
+            let s1_ptr = Typed.Ptr.add_ofs dest (BV.usizei 1) in
+            let count = count -!@ Usize.(1s) in
+            loop s1_ptr count
+        in
+        loop dest count
 
   let havoc ~return_ty ~args =
     let rec havoc_aggregate (v : Agv.t) =

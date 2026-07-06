@@ -232,7 +232,7 @@ and struct_layout_of_members members =
 
 let size_of_s ty =
   match layout_of ty with
-  | Some { size; _ } -> Csymex.return (BV.usizei size)
+  | Some { size; _ } -> Csymex.return (BV.usizeinz size)
   | None ->
       Fmt.kstr Csymex.not_impl "Cannot yet compute size of type %a"
         Fmt_ail.pp_ty ty
