@@ -220,37 +220,37 @@ module Make (Borrows : Tree_borrows.T) = struct
         "%a access to the state at pointer %a" pp_access access Typed.ppa ptr];
       [%l.trace "STATE:@\n%a" (Fmt.Dump.option pp) st]
 
-    let with_ptr (access : access) (ptr : Typed.([< T.sptr_t ] t))
+    let check_ptr_deref (ptr : Typed.([< T.sptr_t ] t)) =
+      let open DecayMap.SM in
+      let open Syntax in
+      let** () =
+        assert_or_error Typed.(not (Ptr.is_null ptr)) `NullDereference
+      in
+      assert_or_error Typed.(Ptr.has_provenance ptr) `UBDanglingPointer
+
+    let with_ptr ?(check_ptr = true) (access : access)
+        (ptr : Typed.([< T.sptr_t ] t))
         (f : [< T.sint ] Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
         ('a, 'err, syn list) SM.Result.t =
       let open SM in
       let open SM.Syntax in
       let* () = print_access access ptr in
-      let** () =
-        assert_or_error Typed.(not (Typed.Ptr.is_null ptr)) `NullDereference
+      let**^ () =
+        if check_ptr then check_ptr_deref ptr else DecayMap.SM.Result.ok ()
       in
       let loc, ofs = Typed.Ptr.decompose ptr in
-      let* res =
-        wrap loc
-          (let open Freeable_block_with_meta in
-           let open SM.Syntax in
-           let* block = SM.get_state () in
-           match (alloc_kind block, access) with
-           | Some (Function _), (Read | Write) ->
-               SM.Result.error `AccessedFnPointer
-           | Some ((Const _ | AnonConst | StaticString) as k), Write ->
-               let*^ cur_kind = DecayMap.SM.lift @@ get_alloc_kind () in
-               if cur_kind <> k then SM.Result.error `WriteToReadOnly
-               else Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs)
-           | _ -> Freeable_block_with_meta.wrap @@ Freeable_block.wrap (f ofs))
-      in
-      match (res, Config.get_mode ()) with
-      | (Missing _ as miss), Whole_program ->
-          (* HACK: a miss in WPST means there is a dangling pointer. *)
-          if%sat Typed.not (Typed.Ptr.has_provenance ptr) then
-            Result.error `UBDanglingPointer
-          else return miss
-      | ok_or_err, _ -> return ok_or_err
+      wrap loc
+        (let open Freeable_block_with_meta in
+         let open SM.Syntax in
+         let* block = SM.get_state () in
+         match (alloc_kind block, access) with
+         | Some (Function _), (Read | Write) ->
+             SM.Result.error `AccessedFnPointer
+         | Some ((Const _ | AnonConst | StaticString) as k), Write ->
+             let*^ cur_kind = DecayMap.SM.lift @@ get_alloc_kind () in
+             if cur_kind <> k then SM.Result.error `WriteToReadOnly
+             else wrap @@ Freeable_block.wrap (f ofs)
+         | _ -> wrap @@ Freeable_block.wrap (f ofs))
 
     let is_freed loc =
       wrap loc
@@ -260,12 +260,6 @@ module Make (Borrows : Tree_borrows.T) = struct
          match block with
          | Some { node = Freed; _ } -> SM.Result.ok true
          | _ -> SM.Result.ok false)
-
-    module Decoder = Value_codec.Decoder (struct
-      module SM = SM
-
-      type fix = syn list
-    end)
   end
 
   type t = {
@@ -330,6 +324,16 @@ module Make (Borrows : Tree_borrows.T) = struct
         (Fmt.Dump.option (pp_pretty ~ignore_freed:true))
         st]
 
+  let ignore_state x =
+    DecayMap.SM.map
+      (function
+        | Ok (value, _block) -> Ok value
+        | Error (e, _block) -> Error e
+        (* HACK: we add this because we can't lift misses for a part of state
+           that doesn't exist (and misses can't happen here anyways) *)
+        | Missing _ -> L.failwith "impossible : miss")
+      x
+
   let[@inline] with_alloc_kind kind (f : unit -> 'a t) : 'a t =
    fun st -> with_alloc_kind kind (f () st)
 
@@ -344,23 +348,19 @@ module Make (Borrows : Tree_borrows.T) = struct
     Error.log_at trace err;
     Error (Error.decorate trace err)
 
+  module Decoder = Value_codec.Decoder (Block)
+
   let apply_parser (type a) ?(ignore_borrow = false) ptr
-      (parser : offset:T.sint Typed.t -> a Heap.Decoder.ParserMonad.t) :
+      (parser : offset:T.sint Typed.t -> a Tree_block.Decoder.ParserMonad.t) :
       (a, Error.t, syn list) Result.t =
     let* () = log "load" ptr in
+    let open Block.SM.Syntax in
     let tag = Typed.Ptr.tag_of ptr in
-    let handler (ty, ofs) =
-      let@ _ofs = Heap.with_ptr Read ptr in
-      Block.with_block_read_tb (Tree_block.load ~ignore_borrow ofs ty tag)
-    in
-    let get_all (size, ofs) =
-      let@ _ofs = Heap.with_ptr Read ptr in
-      Block.with_block (Tree_block.get_init_leaves ofs size)
-    in
-    let offset = Typed.Ptr.ofs ptr in
-    with_heap
-    @@ Heap.Decoder.ParserMonad.parse ~handler ~get_all
-    @@ parser ~offset
+    let@@ () = with_heap in
+    let@ offset = Heap.with_ptr ~check_ptr:false Read ptr in
+    let@ tb = Block.with_block_read_tb in
+    let on_access () = Heap.check_ptr_deref ptr in
+    Tree_block.apply_parser ~on_access ~ignore_borrow tag tb @@ parser ~offset
 
   let with_ptr access ptr f = with_heap @@ Heap.with_ptr access ptr f
 
@@ -388,10 +388,14 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     lift @@ Value_codec.size_and_align_of_val ~load_vtable ~t ~meta
 
+  (** Checks the given pointer is well-aligned for the given type, possibly
+      reading in the heap to know what the alignment is (e.g. for [&dyn Trait]).
+      Returns the size of the type for that pointer (i.e. taking into account
+      metadata). *)
   and check_ptr_align (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     (* The expected alignment of a dyn pointer is stored inside the VTable *)
     let ptr, meta = Typed.Ptr.split ptr in
-    let** _, exp_align = size_and_align_of_val ty meta in
+    let** size, exp_align = size_and_align_of_val ty meta in
     [%l.debug
       "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
         exp_align pp_ty ty];
@@ -413,9 +417,9 @@ module Make (Borrows : Tree_borrows.T) = struct
          always be aligned; what matters most is whether it is guaranteed to be
          aligned. *)
       let* address = with_pointers_sym @@ Sptr.decay ptr in
-      if%sure address %@ exp_align ==@ Usize.(0s) then Result.ok ()
+      if%sure address %@ exp_align ==@ Usize.(0s) then Result.ok size
       else Result.error (`MisalignedPointer (exp_align, align, ofs))
-    else Result.ok ()
+    else Result.ok size
 
   and check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
     let check (ptr : Typed.([< T.sptr_t ] t)) size =
@@ -440,8 +444,8 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   and check_validity ~check_refs ty value =
     let default_check ptr ty =
-      let** () = check_ptr_align ptr ty in
-      check_non_dangling ptr ty
+      let** size = check_ptr_align ptr ty in
+      check_non_dangling_untyped (Typed.Ptr.ptr_of ptr) size
     in
     let check_ref =
       if (Config.get ()).recursive_validity <> Allow && check_refs then
@@ -460,18 +464,32 @@ module Make (Borrows : Tree_borrows.T) = struct
       Types.ty ->
       (Typed.([> T.any ] t), Error.t, syn list) Result.t =
    fun ?ignore_borrow ?(check_refs = true) ptr ty ->
-    let** () = check_ptr_align ptr ty in
+    let** size = check_ptr_align ptr ty in
     let ptr, meta = Typed.Ptr.split ptr in
-    let parser ~offset = Heap.Decoder.decode ~meta ~offset ty in
-    let** value = apply_parser ?ignore_borrow ptr parser in
+    let parser ~offset = Tree_block.Decoder.decode ~meta ~offset ty in
+    let** value =
+      if%sat size ==@ Usize.(0s) then
+        with_pointers
+          (Tree_block.SM.Result.run_with_state ~state:None
+             (Tree_block.apply_parser ~ignore_borrow:true None None
+                (parser ~offset:Usize.(0s)))
+          |> ignore_state)
+      else apply_parser ?ignore_borrow ptr parser
+    in
     [%l.debug "Finished reading rust value %a" Typed.ppa value];
     let++ () = check_validity ~check_refs ty value in
     Typed.as_any value
 
   and load_discriminant (ptr : Typed.([< T.sptr_f ] t)) ty =
-    let** () = check_ptr_align ptr ty in
-    let parser ~offset = Heap.Decoder.variant_of_enum ty ~offset in
-    let++ variant_id = apply_parser (Typed.Ptr.ptr_of ptr) parser in
+    let** _size = check_ptr_align ptr ty in
+    let**^ known_variant = Layout.enum_single_variant ty in
+    let++ variant_id =
+      match known_variant with
+      | Some variant -> Result.ok variant
+      | None ->
+          let parser ~offset = Tree_block.Decoder.variant_of_enum ty ~offset in
+          apply_parser (Typed.Ptr.ptr_of ptr) parser
+    in
     let adt = Charon_util.ty_as_adt ty in
     let variants = Crate.as_enum adt in
     let variant = Types.VariantId.nth variants variant_id in
@@ -546,13 +564,12 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     if Iter.is_empty parts then Result.ok ()
     else
-      let** () = check_ptr_align ptr ty in
+      let** size = check_ptr_align ptr ty in
       (* [%l.debug
        *   "Parsed to parts [%a]"
        *   Fmt.(list ~sep:comma Encoder.pp_cval_info)
        *   parts]; *)
       let* () = log "store" ptr in
-      let**^ size = Layout.size_of ty in
       let ptr = Typed.Ptr.ptr_of ptr in
       let tag = Typed.Ptr.tag_of ptr in
       let@ ofs = with_ptr Write ptr in
@@ -564,15 +581,6 @@ module Make (Borrows : Tree_borrows.T) = struct
           let** () = Tree_block.uninit_range ofs size in
           Result.iter_iter parts ~f:(fun (value, offset, size) ->
               Tree_block.store (offset +!!@ ofs) size value tag tb))
-
-  (** We can't use {!Heap.Decoder} for [transmute], since the transmute happens
-      regardless of the heap's state, so we need to re-instantiate it for tree
-      block instead *)
-  module Tree_block_decoder = Value_codec.Decoder (struct
-    module SM = Tree_block.SM
-
-    type fix = Tree_block.syn list
-  end)
 
   let transmute_raw_inner ~to_ ~size blocks =
     (* a transmute is just a write of one type with a read of another type; we
@@ -586,25 +594,15 @@ module Make (Borrows : Tree_borrows.T) = struct
          Tree_block.SM.Result.run_with_state ~state:(Some block)
            (let open Tree_block.SM in
             let open Syntax in
-            let open Tree_block_decoder in
             (* first, we write *)
             let** () =
               Result.iter_iter blocks ~f:(fun (value, offset, size) ->
                   Tree_block.store offset size value None None)
             in
             (* next, we read *)
-            let handler (ty, ofs) =
-              Tree_block.load ~ignore_borrow:true ofs ty None None
-            in
-            let get_all (size, ofs) = Tree_block.get_init_leaves ofs size in
-            ParserMonad.parse ~handler ~get_all
-            @@ decode ~meta:None ~offset:Usize.(0s) to_)
-         |> map (function
-           | Ok (value, _block) -> Ok value
-           | Error (e, _block) -> Error e
-           (* HACK: we add this because we can't lift misses for a part of state
-              that doesn't exist (and misses can't happen here anyways) *)
-           | Missing _ -> L.failwith "impossible : miss"))
+            Tree_block.apply_parser ~ignore_borrow:true None None
+            @@ Tree_block.Decoder.decode ~meta:None ~offset:Usize.(0s) to_)
+         |> ignore_state)
     in
     let++ () = check_validity ~check_refs:true to_ value in
     (value : Typed.T.any Typed.t :> Typed.([> T.any ] t))
@@ -671,7 +669,7 @@ module Make (Borrows : Tree_borrows.T) = struct
 
     let check_aligned ptr ty =
       let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
-      check_ptr_align ptr ty
+      SM.Result.map ignore @@ check_ptr_align ptr ty
 
     let check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
       let@ () = with_loc_err ~trace:"Dangling check" () in
