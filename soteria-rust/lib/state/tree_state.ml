@@ -498,8 +498,8 @@ module Make (Borrows : Tree_borrows.T) = struct
       or the tree-borrow state. Returns [Some error] if an error occurred, and
       [None] otherwise. Will wrap whatever error happened in [`InvalidRef].
 
-      Note that if {!Config.recursive_validity} is [Allow] then this is a no-op.
-  *)
+      Note that if {!Config.reference_to_invalid_memory} is [Allow] then this is
+      a no-op. *)
   and fake_read ptr ty =
     let open Syntax in
     let lint_level = (Config.get ()).reference_to_invalid_memory in
