@@ -59,6 +59,7 @@ module LocCtx = struct
   let liddots base path =
     wloc @@ List.fold_left (fun acc name -> Ldot (acc, name)) base path
 
+  let liddots' path = liddots (Lident (List.hd path)) (List.tl path)
   let pexp_ident_dot base name = pexp_ident (liddot base name)
   let pexp_ident_dots base name = pexp_ident (liddots base name)
 

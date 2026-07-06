@@ -1,6 +1,10 @@
 module Typed = Soteria.Tiny_values.Typed
 module Symex = Soteria.Symex.Make (Soteria.Tiny_values.Tiny_solver.Z3_solver)
 
+(* Mirrors what is in scope inside the Soteria library itself, so the
+   [inside_soteria] flag's output compiles in this test harness. *)
+module State_monad = Soteria.Sym_states.State_monad
+
 module S_int = struct
   include Typed
 
