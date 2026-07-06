@@ -205,14 +205,17 @@ let produce_basic_val loc offset ty v t =
   let*^ len = Layout.size_of_s ty in
   let len = Typed.Expr.of_value len in
   let block : Block.syn =
-    { node = Alive (MemVal { offset; len; v = SInit (v, ty) }); info = None }
+    {
+      node = Ser_Alive (MemVal { offset; len; v = SInit (v, ty) });
+      info = None;
+    }
   in
   let syn : syn = Ser_heap (loc, block) in
   produce syn t
 
 let produce_padding loc ~offset ~len =
   let block : Block.syn =
-    { node = Alive (MemVal { offset; len; v = SUninit }); info = None }
+    { node = Ser_Alive (MemVal { offset; len; v = SUninit }); info = None }
   in
   let serialized : syn = Ser_heap (loc, block) in
   produce serialized
