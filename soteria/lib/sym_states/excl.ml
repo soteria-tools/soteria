@@ -1,3 +1,8 @@
+open Soteria_std
+open Logs.Import
+
+(** Create an exclusively owned state from a semantic value type. This is the
+    most simple of state models: the value is either owned or not owned. *)
 module Make (Symex : Symex.Base) (E : Data.Abstr.M(Symex).S_with_syn) = struct
   type t = E.t [@@deriving show { with_path = false }]
   type syn = E.syn [@@deriving show { with_path = false }]
@@ -50,4 +55,37 @@ module Make (Symex : Symex.Base) (E : Data.Abstr.M(Symex).S_with_syn) = struct
     | Some x ->
         let+ () = E.learn_eq s x in
         None
+end
+
+(** Create an exclusively owned state from a concrete value type. This is the
+    most simple of state models: the value is either owned or not owned. The
+    syntactic value type is the same as the semantic value type, and
+    substitutions are the identity. We only require
+    {{!Data.Abstr.M.S.fresh}[fresh]} to be implemented. *)
+module Make_concrete
+    (Symex : Symex.Base)
+    (E : sig
+      type t [@@mixins Sigs.Eq]
+
+      include Data.Abstr.M(Symex).S with type t := t
+    end) =
+struct
+  include
+    Make
+      (Symex)
+      (struct
+        include E
+
+        type syn = t [@@deriving show { with_path = false }]
+
+        let to_syn x = x
+        let fresh = E.fresh
+        let subst _ x = x
+        let exprs_syn _ = []
+
+        let learn_eq syn t =
+          let open Symex in
+          if E.equal syn t then Consumer.ok ()
+          else Consumer.lfail (Value.of_bool false)
+      end)
 end
