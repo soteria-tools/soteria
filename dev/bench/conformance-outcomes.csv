@@ -805,7 +805,7 @@ miri,pass/assume_bug.rs,pass
 miri,pass/backtrace/backtrace-global-alloc.rs,pass
 miri,pass/backtrace/backtrace-std.rs,pass
 miri,pass/bad_substs.rs,pass
-miri,pass/binary-heap.rs,timeout
+miri,pass/binary-heap.rs,pass
 miri,pass/binops.rs,pass
 miri,pass/bools.rs,pass
 miri,pass/both_borrows/2phase.rs,pass
