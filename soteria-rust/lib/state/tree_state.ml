@@ -448,8 +448,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       check_non_dangling_untyped (Typed.Ptr.ptr_of ptr) size
     in
     let check_ref =
-      if (Config.get ()).recursive_validity <> Allow && check_refs then
-        fun ptr ty ->
+      if check_refs then fun ptr ty ->
         let** () = default_check ptr ty in
         fake_read ptr ty
       else default_check
@@ -497,11 +496,15 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   (** Performs a side-effect free ghost read -- this does not modify the state
       or the tree-borrow state. Returns [Some error] if an error occurred, and
-      [None] otherwise. Will wrap whatever error happened in [`InvalidRef]. *)
+      [None] otherwise. Will wrap whatever error happened in [`InvalidRef].
+
+      Note that if {!Config.reference_to_invalid_memory} is [Allow] then this is
+      a no-op. *)
   and fake_read ptr ty =
     let open Syntax in
+    let lint_level = (Config.get ()).reference_to_invalid_memory in
     let skip_check =
-      match (Typed.Ptr.meta_of ptr, (Config.get ()).recursive_validity) with
+      match (Typed.Ptr.meta_of ptr, lint_level) with
       | _, Allow -> true
       | _, Warn when Config.get_mode () = Compositional -> true
       | None, _ -> false
@@ -519,10 +522,9 @@ module Make (Borrows : Tree_borrows.T) = struct
     else (
       [%l.debug "Checking validity of %a for %a" Typed.ppa ptr pp_ty ty];
       let*- err =
-        let++ _ = load ~ignore_borrow:true ~check_refs:false ptr ty in
-        ()
+        Result.map ignore @@ load ~ignore_borrow:true ~check_refs:false ptr ty
       in
-      match (Config.get ()).recursive_validity with
+      match lint_level with
       | Allow -> L.failwith "Unreachable, handled above"
       | Deny -> Result.error (`InvalidRef err)
       | Warn ->

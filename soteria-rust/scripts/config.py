@@ -284,7 +284,7 @@ def miri(opts: CliOpts) -> TestConfig:
                 flags.append("--ignore-aliasing")
                 continue
             if "-Zmiri-recursive-validation" == miri_flag:
-                flags.append("--recursive-validity=deny")
+                flags.append("--reference-to-invalid-memory=deny")
                 continue
 
             raise ArgError(

@@ -679,11 +679,7 @@ module Make (StateImpl : State.S) = struct
         let* ptr = resolve_place place in
         let* () = Sptr.check_aligned ptr place.ty in
         let* () = Sptr.check_non_dangling ptr place.ty in
-        let* () =
-          if (Config.get ()).recursive_validity <> Allow then
-            State.fake_read ptr place.ty
-          else ok ()
-        in
+        let* () = State.fake_read ptr place.ty in
         State.borrow ptr expr_ty
     (* Raw pointer *)
     | RawPtr (place, _kind, _metadata) ->

@@ -53,13 +53,6 @@ Splitting and merging, via a union
   PC 1: empty
   
   => Running split_merges::uninit_gap...
-  warning: Invalid reference: Uninitialized memory access
-      --> $TESTCASE_ROOT/split_merges.rs:64:9
-   52 |  fn uninit_gap() {
-      |  --------------- 1: Entry point
-      .  
-   64 |          assert_eq!(x.as_u32, 0x1234_5678);
-      |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering operation
   error: split_merges::uninit_gap: found issues in <time>, errors in 1 branch (out of 1)
   bug: Uninitialized memory access in split_merges::uninit_gap
       --> $TESTCASE_ROOT/split_merges.rs:64:9
@@ -323,7 +316,7 @@ Test cloning ZSTs works; in particular, this generates a function with an empty 
   [1]
 
 Test recursive validity check for references; disabled
-  $ soteria-rust exec ref_validity.rs --recursive-validity=allow
+  $ soteria-rust exec ref_validity.rs --reference-to-invalid-memory=allow
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
@@ -355,7 +348,7 @@ Test recursive validity check for references; disabled
   [1]
 
 Test recursive validity check for references; enabled
-  $ soteria-rust exec ref_validity.rs --recursive-validity=deny
+  $ soteria-rust exec ref_validity.rs --reference-to-invalid-memory=deny
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   error: ref_validity::test_uninit_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -394,7 +387,7 @@ Test recursive validity check for references; enabled
   [1]
 
 Test recursive validity check for references; warn
-  $ soteria-rust exec ref_validity.rs --recursive-validity=warn
+  $ soteria-rust exec ref_validity.rs --reference-to-invalid-memory=warn
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   warning: Invalid reference: Uninitialized memory access
