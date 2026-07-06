@@ -211,7 +211,9 @@ module M (State : State_intf.S) = struct
       | _ -> not_impl "memset with non-thre arguments"
     in
     let char = BV.fit_to ~signed:false 8 char_int in
-    if%sure char ==@ U8.(0s) then
+    if%sat count ==@ Usize.(0s) then Result.ok Agv.void
+    else if%sure char ==@ U8.(0s) then
+      let count = Typed.BitVec.cast_nonzero count in
       let++ () = State.zero_range dest count in
       Agv.void
     else
