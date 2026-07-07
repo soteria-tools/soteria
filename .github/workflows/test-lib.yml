@@ -44,7 +44,8 @@ jobs:
             ${{ runner.os }}-${{ runner.arch }}-opam-testlib-${{ env.OCAML_VERSION }}-
 
       - name: Update opam
-        run: opam update
+        run: |
+          opam update || { rm -rf "$(opam var root)/repo/default"; opam update; }
 
       # Install soteria as an opam package, exactly as an external consumer would.
       - name: Install soteria

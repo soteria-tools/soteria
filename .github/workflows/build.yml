@@ -63,7 +63,10 @@ jobs:
         run: |
           rm -rf _opam/.opam-switch/sources/charon _opam/.opam-switch/sources/name_matcher_parser
           set -o pipefail
-          opam update 2>&1 | tee opam-update.log
+          if ! opam update 2>&1 | tee opam-update.log; then
+            rm -rf "$(opam var root)/repo/default"
+            opam update 2>&1 | tee opam-update.log
+          fi
           if grep -qiE "Could not synchronize|fetching sources failed|Could not retrieve some package sources" opam-update.log; then
             echo "::error::opam update could not fetch a pinned source; aborting to avoid building stale deps"
             exit 1
