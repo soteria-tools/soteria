@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 4) ?(functions = []) statement =
+let program ?(schema_version = 5) ?(functions = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -47,10 +47,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:5 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:6 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 5 (expected 4)"
+        "error" "$.schema_version: unsupported schema version 6 (expected 5)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -255,6 +255,70 @@ let rejects_array_append_reads () =
         error
   | Ok _ -> Alcotest.fail "accepted an array append read"
 
+let decodes_references_and_unset () =
+  let lvalue name =
+    `Assoc
+      [
+        ("kind", `String "variable");
+        ("name", `String name);
+        ("location", location);
+      ]
+  in
+  let assignment =
+    `Assoc
+      [
+        ("kind", `String "assign_reference");
+        ("target", lvalue "alias");
+        ("source", lvalue "value");
+        ("location", location);
+      ]
+  in
+  let expression_statement =
+    `Assoc
+      [
+        ("kind", `String "expression");
+        ("expression", assignment);
+        ("location", location);
+      ]
+  in
+  let unset =
+    `Assoc
+      [
+        ("kind", `String "unset");
+        ("targets", `List [ lvalue "alias" ]);
+        ("location", location);
+      ]
+  in
+  let json =
+    match program expression_statement with
+    | `Assoc fields ->
+        `Assoc
+          (("statements", `List [ expression_statement; unset ])
+          :: List.remove_assoc "statements" fields)
+    | _ -> assert false
+  in
+  match Soteria_php.Php_ir.of_yojson json with
+  | Ok
+      {
+        statements =
+          [
+            Expression
+              ( {
+                  desc =
+                    Assign_reference
+                      ( { desc = Variable_lvalue "alias"; _ },
+                        { desc = Variable_lvalue "value"; _ } );
+                  _;
+                },
+                _ );
+            Unset ([ { desc = Variable_lvalue "alias"; _ } ], _);
+          ];
+        _;
+      } ->
+      ()
+  | Ok _ -> Alcotest.fail "decoded an unexpected reference or unset shape"
+  | Error error -> Alcotest.fail error
+
 let () =
   Alcotest.run "PHP IR"
     [
@@ -270,5 +334,7 @@ let () =
             decodes_arrays_and_lvalues;
           Alcotest.test_case "array append reads" `Quick
             rejects_array_append_reads;
+          Alcotest.test_case "references and unset" `Quick
+            decodes_references_and_unset;
         ] );
     ]

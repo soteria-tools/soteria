@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 final class LoweringError extends RuntimeException
 {
@@ -179,6 +179,17 @@ final class Lowerer
                     : $this->lowerExpression($statement->expr),
                 'location' => $location,
             ],
+            $statement instanceof Node\Stmt\Unset_ => [
+                'kind' => 'unset',
+                'targets' => array_map(
+                    fn (Node\Expr $target): array => $this->lowerLvalue(
+                        $target,
+                        false,
+                    ),
+                    $statement->vars,
+                ),
+                'location' => $location,
+            ],
             $statement instanceof Node\Stmt\Nop => [
                 'kind' => 'nop',
                 'location' => $location,
@@ -319,6 +330,15 @@ final class Lowerer
             return [
                 'kind' => 'array_get',
                 'target' => $this->lowerLvalue($expression, false),
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\AssignRef) {
+            return [
+                'kind' => 'assign_reference',
+                'target' => $this->lowerLvalue($expression->var),
+                'source' => $this->lowerLvalue($expression->expr),
                 'location' => $location,
             ];
         }

@@ -1,5 +1,8 @@
 # Soteria PHP IR version 4
 
+Version 4 is historical. The current frontend emits version 5, documented in
+`ir-v5.md`.
+
 Version 4 extends version 3 with array literals, array-element reads, and a
 first-class lvalue representation. The program envelope uses `schema_version`
 `4`; functions, statements, scalar expressions, and source locations otherwise

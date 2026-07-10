@@ -2,7 +2,7 @@
   $ ../../../bin/soteria_php.exe parse valid.php > second.json
   $ cmp first.json second.json
   $ php summarize.php first.json
-  schema=4 php=8.4.19 source=valid.php
+  schema=5 php=8.4.19 source=valid.php
   echo 2:1-2:42 [6,47)
     null=-
     bool=true

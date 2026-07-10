@@ -3,7 +3,7 @@
 Soteria PHP targets PHP 8.4.19 with 64-bit integers. PHP 8.4.19 is the concrete
 semantics oracle, while the parser sidecar may run on any PHP version accepted
 by its Composer manifest. The frontend uses nikic/PHP-Parser 5.8.0 and emits
-Soteria PHP IR schema version 4.
+Soteria PHP IR schema version 5.
 
 The interpreter supports this deliberately bounded source subset:
 
@@ -11,12 +11,12 @@ The interpreter supports this deliberately bounded source subset:
 | --- | --- | --- |
 | `null`, boolean, integer, and float literals | Supported | Integers must fit in a signed 64-bit value; floats must be finite. |
 | String literals | Partially supported | UTF-8 string values only. |
-| Variables and ordinary assignment | Supported | Scopes map variables to immutable cells. Assignment targets may be variables or nested array elements. Dynamic variables and other lvalues remain unsupported. |
+| Variables, assignment, and references | Supported | Scopes map variables to immutable cells. Ordinary and reference assignment targets may be variables or nested array elements. Reference assignment aliases variables or array entries through persistent cells. Dynamic variables and other lvalues remain unsupported. |
 | Array literals | Partially supported | Keyed and unkeyed items are evaluated in PHP order. Unpacking and items by reference remain unsupported. |
 | Array keys | Partially supported | Concrete null, boolean, integer, float, and string keys use PHP key normalization. Float-to-integer deprecation notices are not yet reported. Arrays are rejected as keys. |
 | Array reads, writes, and append | Partially supported | Nested array lvalues, null/undefined autovivification, insertion order, negative next-integer keys, and append exhaustion are modelled. Missing-offset warning/value behavior remains unsupported. |
 | Symbolic array keys | Partially supported | Symbolic integer and boolean keys branch against existing integer keys. A feasible fresh-key read or write explicitly gives up because persistent symbolic-key insertion is not implemented. |
-| Array assignment and copying | Supported | Arrays are immutable values, so ordinary assignment copies the value while updates rebuild only the affected path. Mandatory branch-isolation tests cover copies and nested writes. References inside arrays are not yet supported. |
+| Array assignment and copying | Supported | Arrays are immutable values, so ordinary assignment copies the value while updates rebuild only the affected path. Array elements promoted to references retain their aliases in later copies; earlier copies remain independent. Mandatory branch-isolation tests cover ordinary and referenced cells. |
 | Boolean, integer, float, and string casts | Partially supported | Array-to-boolean, integer, and float conversion is supported. Array-to-string conversion, conversions requiring a symbolic string, and symbolic float-to-integer conversions explicitly give up. |
 | Unary `!`, `+`, and `-` | Partially supported | Numeric unary operators currently require an integer or float operand. Integer-negation overflow explicitly gives up. |
 | `+`, `-`, `*`, and `/` | Partially supported | Integer and float arithmetic and array union with `+` are supported. Integer overflow explicitly gives up instead of wrapping. Other PHP numeric coercions are not yet supported. |
@@ -28,7 +28,7 @@ The interpreter supports this deliberately bounded source subset:
 | Function calls | Partially supported | The callee must be a statically named user function or Soteria intrinsic. Arguments must be positional, non-reference, and non-unpacked. |
 | Named functions and returns | Partially supported | Top-level declarations, required untyped by-value parameters, case-insensitive calls, early returns, fallthrough-to-`null`, and recursion are supported. Extra arguments are evaluated and ignored as in PHP. Parameter defaults and types, return types, references, variadics, named arguments, attributes, nested declarations, and closures remain unsupported. |
 | Function-local variables | Supported | Calls use a fresh persistent local scope initialized with the parameters. Assignments do not modify or leak into the caller's scope. Output remains visible across calls. PHP `global` and static local variables remain unsupported. |
-| Expression statements, `echo`, `if`, `else`, `while`, and `return` | Supported | `return` is supported in function bodies. `elseif`, loop-control statements, and all other statements remain unsupported. |
+| Expression statements, `echo`, `if`, `else`, `while`, `return`, and `unset` | Supported | `return` is supported in function bodies. `unset` removes variable or nested array-element bindings without destroying aliased cells. `elseif`, loop-control statements, and all other statements remain unsupported. |
 | Undefined variable and array-offset reads | Unsupported | The execution path explicitly gives up. PHP warning and resulting-value semantics are not implemented yet. |
 
 Every interpreted expression and statement consumes step fuel. The command-line

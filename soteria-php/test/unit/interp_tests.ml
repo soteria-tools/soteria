@@ -22,6 +22,9 @@ let variable_lvalue name : Php_ir.lvalue =
 let assign name value = expression (Assign (variable_lvalue name, value))
 let assign_lvalue target value = expression (Assign (target, value))
 
+let assign_reference target source =
+  expression (Assign_reference (target, source))
+
 let array_element ?key array : Php_ir.lvalue =
   { desc = Array_element_lvalue (array, key); location }
 
@@ -321,7 +324,11 @@ let preserves_array_order_and_append_keys () =
       bindings
   in
   let values =
-    List.map (fun (_, value) -> Option.get (Value.int_value value)) bindings
+    List.map
+      (function
+        | _, Value.Inline value -> Option.get (Value.int_value value)
+        | _, Reference _ -> Alcotest.fail "unexpected reference")
+      bindings
   in
   Alcotest.(check (list string)) "insertion order" [ "2"; "3"; "1"; "4" ] keys;
   Alcotest.(check (list int64))
@@ -350,11 +357,13 @@ let writes_nested_arrays_and_preserves_copies () =
   let nested_value name =
     Option.bind (State.find_variable name state) Value.array_value
     |> fun array ->
-    Option.bind array (Value.array_find (Value.String_key "item"))
+    Option.bind array (fun array ->
+        State.find_array_value (Value.String_key "item") array state)
     |> fun item ->
     Option.bind item Value.array_value |> fun item ->
-    Option.bind item (Value.array_find (Value.Integer_key 0L)) |> fun value ->
-    Option.bind value Value.int_value
+    Option.bind item (fun array ->
+        State.find_array_value (Value.Integer_key 0L) array state)
+    |> fun value -> Option.bind value Value.int_value
   in
   Alcotest.(check (option int64))
     "original remains unchanged" (Some 7L) (nested_value "original");
@@ -386,7 +395,8 @@ let isolates_array_copies_across_symbolic_branches () =
           let element name =
             Option.bind (State.find_variable name state) Value.array_value
             |> fun array ->
-            Option.bind array (Value.array_find (Value.Integer_key 0L))
+            Option.bind array (fun array ->
+                State.find_array_value (Value.Integer_key 0L) array state)
             |> fun value -> Option.bind value Value.int_value
           in
           Option.bind (element "original") (fun original ->
@@ -493,11 +503,163 @@ let reserves_append_keys_before_values () =
     |> Value.array_bindings
   in
   let keys = List.map fst bindings in
-  let values = List.map snd bindings |> List.filter_map Value.int_value in
+  let values =
+    List.filter_map
+      (function _, Value.Inline value -> Value.int_value value | _ -> None)
+      bindings
+  in
   Alcotest.(check bool)
     "reserved key order" true
     (keys = [ Value.Integer_key 0L; Value.Integer_key 1L ]);
   Alcotest.(check (list int64)) "nested append values" [ 1L; 1L ] values
+
+let creates_and_rebinds_variable_references () =
+  let statements =
+    [
+      expression_statement (assign "value" (literal (Int 1L)));
+      expression_statement
+        (assign_reference (variable_lvalue "alias") (variable_lvalue "value"));
+      expression_statement (assign "alias" (literal (Int 2L)));
+      expression_statement (assign "other" (literal (Int 3L)));
+      expression_statement
+        (assign_reference (variable_lvalue "alias") (variable_lvalue "other"));
+      expression_statement (assign "alias" (literal (Int 4L)));
+    ]
+  in
+  let state = run statements |> expect_single_ok "variable references" in
+  let integer name =
+    Option.bind (State.find_variable name state) Value.int_value
+  in
+  Alcotest.(check (option int64)) "old binding" (Some 2L) (integer "value");
+  Alcotest.(check (option int64)) "rebound alias" (Some 4L) (integer "alias");
+  Alcotest.(check (option int64)) "new binding" (Some 4L) (integer "other")
+
+let unsets_bindings_without_destroying_aliased_cells () =
+  let element =
+    array_element ~key:(literal (Int 0L)) (variable_lvalue "values")
+  in
+  let statements =
+    [
+      expression_statement (assign "value" (literal (Int 1L)));
+      expression_statement
+        (assign_reference (variable_lvalue "alias") (variable_lvalue "value"));
+      Php_ir.Unset ([ variable_lvalue "alias" ], location);
+      expression_statement (assign "alias" (literal (Int 2L)));
+      expression_statement (assign "values" (array []));
+      expression_statement (assign_reference element (variable_lvalue "value"));
+      expression_statement (assign "copy" (variable "values"));
+      Php_ir.Unset ([ element ], location);
+      expression_statement (assign "value" (literal (Int 3L)));
+    ]
+  in
+  let state = run statements |> expect_single_ok "unset references" in
+  let integer name =
+    Option.bind (State.find_variable name state) Value.int_value
+  in
+  let array_integer name =
+    Option.bind (State.find_variable name state) Value.array_value
+    |> fun array ->
+    Option.bind array (fun array ->
+        State.find_array_value (Value.Integer_key 0L) array state)
+    |> fun value -> Option.bind value Value.int_value
+  in
+  Alcotest.(check (option int64))
+    "detached variable" (Some 2L) (integer "alias");
+  Alcotest.(check (option int64)) "surviving source" (Some 3L) (integer "value");
+  Alcotest.(check (option int64))
+    "removed array binding" None (array_integer "values");
+  Alcotest.(check (option int64))
+    "copied reference survives" (Some 3L) (array_integer "copy")
+
+let preserves_reference_timing_across_array_copies () =
+  let original_element =
+    array_element ~key:(literal (Int 0L)) (variable_lvalue "original")
+  in
+  let after_element =
+    array_element ~key:(literal (Int 0L)) (variable_lvalue "after")
+  in
+  let statements =
+    [
+      expression_statement
+        (assign "original" (array [ array_item (literal (Int 1L)) ]));
+      expression_statement (assign "before" (variable "original"));
+      expression_statement
+        (assign_reference (variable_lvalue "alias") original_element);
+      expression_statement (assign "alias" (literal (Int 2L)));
+      expression_statement (assign "after" (variable "original"));
+      expression_statement (assign_lvalue after_element (literal (Int 3L)));
+    ]
+  in
+  let state = run statements |> expect_single_ok "array reference copies" in
+  let element name =
+    Option.bind (State.find_variable name state) Value.array_value
+    |> fun array ->
+    Option.bind array (fun array ->
+        State.find_array_value (Value.Integer_key 0L) array state)
+    |> fun value -> Option.bind value Value.int_value
+  in
+  Alcotest.(check (option int64))
+    "copy before promotion" (Some 1L) (element "before");
+  Alcotest.(check (option int64))
+    "promoted original" (Some 3L) (element "original");
+  Alcotest.(check (option int64))
+    "copy after promotion" (Some 3L) (element "after");
+  Alcotest.(check (option int64))
+    "element alias" (Some 3L)
+    (Option.bind (State.find_variable "alias" state) Value.int_value)
+
+let isolates_aliased_cells_across_symbolic_branches () =
+  let statements =
+    [
+      expression_statement (assign "value" (literal (Int 1L)));
+      expression_statement
+        (assign_reference (variable_lvalue "alias") (variable_lvalue "value"));
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.If
+        ( variable "condition",
+          [ expression_statement (assign "alias" (literal (Int 2L))) ],
+          [ expression_statement (assign "alias" (literal (Int 3L))) ],
+          location );
+    ]
+  in
+  let values =
+    run statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind
+            (Option.bind (State.find_variable "value" state) Value.int_value)
+            (fun value ->
+              Option.map
+                (fun alias -> (value, alias))
+                (Option.bind
+                   (State.find_variable "alias" state)
+                   Value.int_value))
+      | _ -> None)
+    |> List.sort Stdlib.compare
+  in
+  Alcotest.(check (list (pair int64 int64)))
+    "branch-local aliases"
+    [ (2L, 2L); (3L, 3L) ]
+    values
+
+let compares_self_referential_arrays () =
+  let element =
+    array_element ~key:(literal (Int 0L)) (variable_lvalue "array")
+  in
+  let statements =
+    [
+      expression_statement (assign "array" (array []));
+      expression_statement (assign_reference element (variable_lvalue "array"));
+      expression_statement
+        (assign "equal"
+           (binary (variable "array") Identical (variable "array")));
+    ]
+  in
+  let state = run statements |> expect_single_ok "recursive reference" in
+  Alcotest.(check (option bool))
+    "self equality" (Some true)
+    (Option.bind (State.find_variable "equal" state) Value.bool_value)
 
 let () =
   Alcotest.run "PHP interpreter"
@@ -538,5 +700,15 @@ let () =
             reports_array_append_overflow;
           Alcotest.test_case "array append reservation" `Quick
             reserves_append_keys_before_values;
+          Alcotest.test_case "variable reference rebinding" `Quick
+            creates_and_rebinds_variable_references;
+          Alcotest.test_case "unset reference bindings" `Quick
+            unsets_bindings_without_destroying_aliased_cells;
+          Alcotest.test_case "array copies with references" `Quick
+            preserves_reference_timing_across_array_copies;
+          Alcotest.test_case "reference branch isolation" `Quick
+            isolates_aliased_cells_across_symbolic_branches;
+          Alcotest.test_case "self-referential array equality" `Quick
+            compares_self_referential_arrays;
         ] );
     ]

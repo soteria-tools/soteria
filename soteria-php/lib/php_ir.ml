@@ -37,6 +37,7 @@ and expression_desc =
   | Array of array_item list
   | Array_get of lvalue
   | Assign of lvalue * expression
+  | Assign_reference of lvalue * lvalue
   | Unary of unary_operator * expression
   | Binary of expression * binary_operator * expression
   | Cast of cast * expression
@@ -62,6 +63,7 @@ type statement =
   | If of expression * statement list * statement list * location
   | While of expression * statement list * location
   | Return of expression option * location
+  | Unset of lvalue list * location
   | Nop of location
 
 type function_decl = {
@@ -78,7 +80,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 4
+let schema_version = 5
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -252,6 +254,17 @@ let rec decode_expression path json =
           field path "value" fields |> decode_expression (path ^ ".value")
         in
         Assign (target, value)
+    | "assign_reference" ->
+        check_fields path [ "kind"; "target"; "source"; "location" ] fields;
+        let target =
+          field path "target" fields
+          |> decode_lvalue ~allow_append:true (path ^ ".target")
+        in
+        let source =
+          field path "source" fields
+          |> decode_lvalue ~allow_append:true (path ^ ".source")
+        in
+        Assign_reference (target, source)
     | "unary" ->
         check_fields path [ "kind"; "operator"; "operand"; "location" ] fields;
         let operator =
@@ -406,6 +419,17 @@ and decode_statement ~allow_return path json =
         | json -> Some (decode_expression (path ^ ".expression") json)
       in
       Return (expression, location ())
+  | "unset" ->
+      check_fields path [ "kind"; "targets"; "location" ] fields;
+      let targets =
+        field path "targets" fields
+        |> as_list (path ^ ".targets")
+        |> List.mapi (fun index ->
+            decode_lvalue ~allow_append:false
+              (Printf.sprintf "%s.targets[%d]" path index))
+      in
+      if targets = [] then decode_error (path ^ ".targets") "must not be empty";
+      Unset (targets, location ())
   | "nop" ->
       check_fields path [ "kind"; "location" ] fields;
       Nop (location ())
@@ -451,6 +475,9 @@ let rec iter_expression_locations f (expression : expression) =
   | Assign (target, value) ->
       iter_lvalue_locations f target;
       iter_expression_locations f value
+  | Assign_reference (target, source) ->
+      iter_lvalue_locations f target;
+      iter_lvalue_locations f source
   | Unary (_, value) | Cast (_, value) -> iter_expression_locations f value
   | Binary (left, _, right) ->
       iter_expression_locations f left;
@@ -490,6 +517,9 @@ let rec iter_statement_locations f (statement : statement) =
   | Return (expression, location) ->
       f location;
       Option.iter (iter_expression_locations f) expression
+  | Unset (targets, location) ->
+      f location;
+      List.iter (iter_lvalue_locations f) targets
   | Nop location -> f location
 
 let iter_function_locations f (function_ : function_decl) =
@@ -658,6 +688,12 @@ let rec expression_to_yojson expression =
           ("target", lvalue_to_yojson target);
           ("value", expression_to_yojson value);
         ]
+    | Assign_reference (target, source) ->
+        [
+          ("kind", `String "assign_reference");
+          ("target", lvalue_to_yojson target);
+          ("source", lvalue_to_yojson source);
+        ]
     | Unary (operator, operand) ->
         [
           ("kind", `String "unary");
@@ -746,6 +782,13 @@ let rec statement_to_yojson = function
           ("kind", `String "return");
           ( "expression",
             Option.fold ~none:`Null ~some:expression_to_yojson expression );
+          ("location", location_to_yojson location);
+        ]
+  | Unset (targets, location) ->
+      `Assoc
+        [
+          ("kind", `String "unset");
+          ("targets", `List (List.map lvalue_to_yojson targets));
           ("location", location_to_yojson location);
         ]
   | Nop location ->

@@ -168,7 +168,7 @@ let division left right =
               unsupported "operator / for %s and %s" (Value.type_name left)
                 (Value.type_name right)))
 
-let rec strict_equal left right =
+let rec strict_equal state left right =
   let result =
     match (left, right) with
     | Value.Undef, Value.Undef | Value.Null, Value.Null ->
@@ -178,23 +178,36 @@ let rec strict_equal left right =
     | Value.Float left, Value.Float right -> Value.Typed.Float.eq left right
     | Value.String left, Value.String right ->
         Value.Typed.Bool.of_bool (String.equal left right)
-    | Value.Array left, Value.Array right -> strict_equal_arrays left right
+    | Value.Array left, Value.Array right ->
+        strict_equal_arrays state left right
     | _ -> Value.Typed.Bool.v_false
   in
   Value.Bool result
 
-and strict_equal_arrays left right =
+and strict_equal_arrays state left right =
   let left = Value.array_bindings left in
   let right = Value.array_bindings right in
   if List.length left <> List.length right then Value.Typed.Bool.v_false
   else
     List.fold_left2
-      (fun equal (left_key, left_value) (right_key, right_value) ->
+      (fun equal (left_key, left_entry) (right_key, right_entry) ->
         let keys_equal = Stdlib.compare left_key right_key = 0 in
+        let left_value =
+          State.value_of_array_entry left_entry state
+          |> Option.value ~default:Value.undef
+        in
+        let right_value =
+          State.value_of_array_entry right_entry state
+          |> Option.value ~default:Value.undef
+        in
         let values_equal =
-          match strict_equal left_value right_value with
-          | Value.Bool equal -> equal
-          | _ -> assert false
+          match (left_entry, right_entry) with
+          | Value.Reference left, Value.Reference right when left = right ->
+              Value.Typed.Bool.v_true
+          | _ -> (
+              match strict_equal state left_value right_value with
+              | Value.Bool equal -> equal
+              | _ -> assert false)
         in
         Value.Typed.Bool.and_ equal
           (Value.Typed.Bool.and_
@@ -256,7 +269,7 @@ let comparison operator left right =
           unsupported "ordering comparison for %s and %s" (Value.type_name left)
             (Value.type_name right))
 
-let binary operator left right =
+let binary state operator left right =
   match operator with
   | Php_ir.Add when Value.kind left = `Array && Value.kind right = `Array ->
       let left = Option.get (Value.array_value left) in
@@ -279,9 +292,9 @@ let binary operator left right =
       let left = Option.get (Value.string_value left) in
       let right = Option.get (Value.string_value right) in
       Phpsymex.Result.ok (Value.string (left ^ right))
-  | Identical -> Phpsymex.Result.ok (strict_equal left right)
+  | Identical -> Phpsymex.Result.ok (strict_equal state left right)
   | Not_identical -> (
-      match strict_equal left right with
+      match strict_equal state left right with
       | Value.Bool equal ->
           Phpsymex.Result.ok (Value.Bool (Value.Typed.Bool.not equal))
       | _ -> failwith "strict equality returned a non-boolean value")
@@ -324,19 +337,22 @@ module Function_map = Map.Make (String)
 
 type functions = Php_ir.function_decl Function_map.t
 type control = Normal | Return of Value.t
-type place = Cell of State.cell_id | Array_element of place * Value.array_key
+type access = Read | Write | Unset
+type place = Variable of string | Array_element of place * Value.array_key
 
 let rec read_place state = function
-  | Cell cell -> Option.value ~default:Value.undef (State.find_cell cell state)
+  | Variable name ->
+      Option.value ~default:Value.undef (State.find_variable name state)
   | Array_element (array, key) -> (
       match read_place state array with
       | Value.Array array ->
-          Option.value ~default:Value.undef (Value.array_find key array)
+          State.find_array_value key array state
+          |> Option.value ~default:Value.undef
       | _ -> Value.undef)
 
 let rec write_place place value state =
   match place with
-  | Cell cell -> Phpsymex.Result.ok (State.set_cell cell value state)
+  | Variable name -> Phpsymex.Result.ok (State.set_variable name value state)
   | Array_element (parent, key) -> (
       let array =
         match read_place state parent with
@@ -345,13 +361,83 @@ let rec write_place place value state =
         | _ -> None
       in
       match array with
-      | Some array ->
-          write_place parent
-            (Value.array (Value.array_set key value array))
-            state
+      | Some array -> (
+          match Value.array_find key array with
+          | Some (Value.Reference cell) ->
+              Phpsymex.Result.ok (State.set_cell cell value state)
+          | Some (Value.Inline _) | None ->
+              write_place parent
+                (Value.array (Value.array_set key value array))
+                state)
       | None ->
           Phpsymex.error
             (Error.Cannot_use_as_array (Value.kind (read_place state parent))))
+
+let bind_place_reference place cell state =
+  match place with
+  | Variable name -> Phpsymex.Result.ok (State.bind_variable name cell state)
+  | Array_element (parent, key) -> (
+      match read_place state parent with
+      | Value.Array array ->
+          write_place parent
+            (Value.array (Value.array_set_reference key cell array))
+            state
+      | Value.Undef | Value.Null ->
+          write_place parent
+            (Value.array (Value.array_set_reference key cell Value.empty_array))
+            state
+      | value -> Phpsymex.error (Error.Cannot_use_as_array (Value.kind value)))
+
+let cell_for_reference place state =
+  match place with
+  | Variable name ->
+      let cell, state = State.ensure_variable name state in
+      let state =
+        match State.find_cell cell state with
+        | Some Value.Undef -> State.set_cell cell Value.null state
+        | Some _ -> state
+        | None -> failwith "variable is bound to an unknown PHP cell"
+      in
+      Phpsymex.Result.ok (cell, state)
+  | Array_element (parent, key) -> (
+      let array =
+        match read_place state parent with
+        | Value.Array array -> Some array
+        | Value.Undef | Value.Null -> Some Value.empty_array
+        | _ -> None
+      in
+      match array with
+      | None ->
+          Phpsymex.error
+            (Error.Cannot_use_as_array (Value.kind (read_place state parent)))
+      | Some array -> (
+          match Value.array_find key array with
+          | Some (Value.Reference cell) -> Phpsymex.Result.ok (cell, state)
+          | entry ->
+              let value =
+                match entry with
+                | Some (Value.Inline value) -> value
+                | None -> Value.null
+                | Some (Value.Reference _) -> assert false
+              in
+              let cell, state = State.allocate_cell value state in
+              let open Phpsymex.Syntax in
+              let** state =
+                write_place parent
+                  (Value.array (Value.array_set_reference key cell array))
+                  state
+              in
+              Phpsymex.Result.ok (cell, state)))
+
+let unset_place place state =
+  match place with
+  | Variable name -> Phpsymex.Result.ok (State.unset_variable name state)
+  | Array_element (parent, key) -> (
+      match read_place state parent with
+      | Value.Array array ->
+          write_place parent (Value.array (Value.array_remove key array)) state
+      | Value.Undef | Value.Null -> Phpsymex.Result.ok state
+      | value -> Phpsymex.error (Error.Cannot_use_as_array (Value.kind value)))
 
 let normalized_array_key value =
   match Coercion.to_array_key value with
@@ -431,29 +517,26 @@ and eval_array_items functions state array items =
       in
       Phpsymex.with_location ~location:item.location process
 
-and resolve_lvalue functions state ~for_write (lvalue : Php_ir.lvalue) =
+and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
   let process =
     let open Phpsymex.Syntax in
     match lvalue.desc with
     | Variable_lvalue name -> (
-        if for_write then
-          let cell, state = State.ensure_variable name state in
-          Phpsymex.Result.ok (Cell cell, state)
-        else
-          match State.find_variable_cell name state with
-          | Some cell -> Phpsymex.Result.ok (Cell cell, state)
-          | None -> unsupported "read of undefined variable $%s" name)
+        match access with
+        | Write | Unset -> Phpsymex.Result.ok (Variable name, state)
+        | Read -> (
+            match State.find_variable_cell name state with
+            | Some _ -> Phpsymex.Result.ok (Variable name, state)
+            | None -> unsupported "read of undefined variable $%s" name))
     | Array_element_lvalue (parent, key_expression) ->
-        let** parent, state =
-          resolve_lvalue functions state ~for_write parent
-        in
+        let** parent, state = resolve_lvalue functions state ~access parent in
         let** key, state =
           match key_expression with
           | None -> (
-              if not for_write then unsupported "array append read"
+              if access <> Write then unsupported "array append read"
               else
                 let** array =
-                  read_place state parent |> array_for_access ~for_write
+                  read_place state parent |> array_for_access ~for_write:true
                 in
                 match Value.array_reserve_next array with
                 | Some (key, array) ->
@@ -465,10 +548,16 @@ and resolve_lvalue functions state ~for_write (lvalue : Php_ir.lvalue) =
           | Some expression ->
               let** value, state = eval_expression functions state expression in
               let** array =
-                read_place state parent |> array_for_access ~for_write
+                match (access, read_place state parent) with
+                | Unset, Value.Array array -> Phpsymex.Result.ok array
+                | Unset, _ -> Phpsymex.Result.ok Value.empty_array
+                | (Read | Write), value ->
+                    array_for_access ~for_write:(access = Write) value
               in
               let** key = normalized_array_key value in
-              let** key = resolve_array_key ~for_write array key in
+              let** key =
+                resolve_array_key ~for_write:(access = Write) array key
+              in
               Phpsymex.Result.ok (key, state)
         in
         Phpsymex.Result.ok (Array_element (parent, key), state)
@@ -511,7 +600,7 @@ and eval_expression functions state expression =
         | None -> unsupported "read of undefined variable $%s" name)
     | Array_get target ->
         let** place, state =
-          resolve_lvalue functions state ~for_write:false target
+          resolve_lvalue functions state ~access:Read target
         in
         let value = read_place state place in
         if Value.kind value = `Undefined then
@@ -519,10 +608,23 @@ and eval_expression functions state expression =
         else Phpsymex.Result.ok (value, state)
     | Assign (target, expression) ->
         let** place, state =
-          resolve_lvalue functions state ~for_write:true target
+          resolve_lvalue functions state ~access:Write target
         in
         let** value, state = eval_expression functions state expression in
         let** state = write_place place value state in
+        Phpsymex.Result.ok (value, state)
+    | Assign_reference (target, source) ->
+        let** target, state =
+          resolve_lvalue functions state ~access:Write target
+        in
+        let** source, state =
+          resolve_lvalue functions state ~access:Write source
+        in
+        let** cell, state = cell_for_reference source state in
+        let** state = bind_place_reference target cell state in
+        let value =
+          State.find_cell cell state |> Option.value ~default:Value.undef
+        in
         Phpsymex.Result.ok (value, state)
     | Unary (operator, expression) ->
         let** value, state = eval_expression functions state expression in
@@ -533,7 +635,7 @@ and eval_expression functions state expression =
     | Binary (left, operator, right) ->
         let** left, state = eval_expression functions state left in
         let** right, state = eval_expression functions state right in
-        let** value = binary operator left right in
+        let** value = binary state operator left right in
         Phpsymex.Result.ok (value, state)
     | Cast (cast, expression) ->
         let** value, state = eval_expression functions state expression in
@@ -596,6 +698,17 @@ and emit_expressions functions state expressions =
       let output = Option.get (Value.string_value value) in
       emit_expressions functions (State.emit output state) expressions
 
+and unset_lvalues functions state lvalues =
+  let open Phpsymex.Syntax in
+  match lvalues with
+  | [] -> Phpsymex.Result.ok state
+  | lvalue :: lvalues ->
+      let** place, state =
+        resolve_lvalue functions state ~access:Unset lvalue
+      in
+      let** state = unset_place place state in
+      unset_lvalues functions state lvalues
+
 and exec_statements functions state statements =
   let open Phpsymex.Syntax in
   match statements with
@@ -627,6 +740,7 @@ and exec_statement functions state statement =
     | If (_, _, _, location)
     | While (_, _, location)
     | Return (_, location)
+    | Unset (_, location)
     | Nop location ->
         location
   in
@@ -658,6 +772,9 @@ and exec_statement functions state statement =
           | Some expression -> eval_expression functions state expression
         in
         Phpsymex.Result.ok (Return value, state)
+    | Unset (lvalues, _) ->
+        let** state = unset_lvalues functions state lvalues in
+        Phpsymex.Result.ok (Normal, state)
     | Nop _ -> Phpsymex.Result.ok (Normal, state)
   in
   Phpsymex.with_location ~location process

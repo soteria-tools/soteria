@@ -16,6 +16,12 @@
   $ cat soteria.out
   kv:string:1:append:7:8:next:3:4:4:1
 
+  $ php references.php > php.out
+  $ ../../../bin/soteria_php.exe exec references.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  2:5:7:1:3:3:7:1:8
+
   $ php functions.php > php.out
   $ ../../../bin/soteria_php.exe exec functions.php > soteria.out
   $ cmp php.out soteria.out

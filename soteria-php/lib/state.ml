@@ -56,9 +56,32 @@ let ensure_variable name state =
             { state with scopes = String_map.add name cell scope :: scopes } )
       | [] -> failwith "PHP state has no active scope")
 
+let bind_variable name cell state =
+  if not (Cell_map.mem cell state.cells) then
+    failwith "bind variable to an unknown PHP cell";
+  match state.scopes with
+  | scope :: scopes ->
+      { state with scopes = String_map.add name cell scope :: scopes }
+  | [] -> failwith "PHP state has no active scope"
+
+let unset_variable name state =
+  match state.scopes with
+  | scope :: scopes ->
+      { state with scopes = String_map.remove name scope :: scopes }
+  | [] -> failwith "PHP state has no active scope"
+
 let set_variable name value state =
   let cell, state = ensure_variable name state in
   set_cell cell value state
+
+let value_of_array_entry entry state =
+  match entry with
+  | Value.Inline value -> Some value
+  | Value.Reference cell -> find_cell cell state
+
+let find_array_value key array state =
+  Option.bind (Value.array_find key array) (fun entry ->
+      value_of_array_entry entry state)
 
 let enter_scope bindings state =
   let scope, state =

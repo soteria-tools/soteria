@@ -21,10 +21,12 @@ type t =
   | Array of php_array
 
 and php_array = {
-  entries : t Array_key_map.t;
+  entries : array_entry Array_key_map.t;
   order_rev : array_key list;
   max_integer_key : int64 option;
 }
+
+and array_entry = Inline of t | Reference of int
 
 type kind =
   [ `Undefined | `Null | `Boolean | `Integer | `Float | `String | `Array ]
@@ -98,14 +100,14 @@ let array_bindings array =
   |> List.rev
   |> List.filter_map (fun key ->
       Option.map
-        (fun value -> (key, value))
+        (fun entry -> (key, entry))
         (Array_key_map.find_opt key array.entries))
 
 let array_integer_keys array =
   array_bindings array
   |> List.filter_map (function Integer_key key, _ -> Some key | _ -> None)
 
-let array_set key value array =
+let array_set_entry key entry array =
   let ordered = List.exists (fun existing -> existing = key) array.order_rev in
   let max_integer_key =
     match (key, array.max_integer_key) with
@@ -115,9 +117,21 @@ let array_set key value array =
     | _ -> array.max_integer_key
   in
   {
-    entries = Array_key_map.add key value array.entries;
+    entries = Array_key_map.add key entry array.entries;
     order_rev = (if ordered then array.order_rev else key :: array.order_rev);
     max_integer_key;
+  }
+
+let array_set key value array = array_set_entry key (Inline value) array
+
+let array_set_reference key cell array =
+  array_set_entry key (Reference cell) array
+
+let array_remove key array =
+  {
+    array with
+    entries = Array_key_map.remove key array.entries;
+    order_rev = List.filter (fun existing -> existing <> key) array.order_rev;
   }
 
 let array_next_key array =
@@ -141,9 +155,9 @@ let array_reserve_next array =
 
 let array_union left right =
   List.fold_left
-    (fun result (key, value) ->
+    (fun result (key, entry) ->
       if Array_key_map.mem key result.entries then result
-      else array_set key value result)
+      else array_set_entry key entry result)
     left (array_bindings right)
 
 let pp_array_key formatter = function
@@ -170,8 +184,12 @@ let rec pp formatter = function
       | _ -> Format.fprintf formatter "float(%a)" Typed.ppa value)
   | String value -> Format.fprintf formatter "%S" value
   | Array array ->
-      let pp_binding formatter (key, value) =
-        Format.fprintf formatter "%a => %a" pp_array_key key pp value
+      let pp_binding formatter (key, entry) =
+        match entry with
+        | Inline value ->
+            Format.fprintf formatter "%a => %a" pp_array_key key pp value
+        | Reference cell ->
+            Format.fprintf formatter "%a => &cell(%d)" pp_array_key key cell
       in
       Format.fprintf formatter "[%a]"
         (Format.pp_print_list

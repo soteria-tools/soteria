@@ -55,7 +55,9 @@ let constructs_persistent_ordered_arrays () =
     "copy gets a new final key" true
     (copy_keys = [ Integer_key 2L; String_key "name"; Integer_key 3L ]);
   check_int "original overwritten value" 3L
-    (Option.get (Value.array_find (Integer_key 2L) original));
+    (match Value.array_find (Integer_key 2L) original with
+    | Some (Value.Inline value) -> value
+    | Some (Reference _) | None -> Alcotest.fail "missing inline array value");
   Alcotest.(check bool)
     "original is unchanged by copy update" true
     (Option.is_none (Value.array_find (Integer_key 3L) original))
