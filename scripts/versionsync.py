@@ -37,6 +37,7 @@ FILES_TO_SCAN = [
     "soteria-php/frontend/composer.json",
     "soteria-php/frontend/bin/lower.php",
     "soteria-php/lib/php_ir.ml",
+    "soteria-php/test/unit/coercion_oracle.php",
     "dune-project",
     ".ocamlformat",
     "Makefile",

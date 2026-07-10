@@ -1,7 +1,7 @@
 (library
  (name soteria_php)
  (public_name soteria-php)
- (libraries dune-site yojson unix))
+ (libraries dune-site soteria str yojson unix))
 
 (generate_sites_module
  (module frontend_site)
