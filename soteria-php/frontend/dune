@@ -1,0 +1,6 @@
+(install
+ (package soteria-php)
+ (section
+  (site
+   (soteria-php frontend)))
+ (files composer.json composer.lock))

@@ -51,6 +51,7 @@ build/Release
 
 # Dependency directories
 node_modules/
+soteria-php/frontend/vendor/
 jspm_packages/
 
 # Snowpack dependency directory (https://snowpack.dev/)

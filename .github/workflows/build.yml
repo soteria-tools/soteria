@@ -119,6 +119,9 @@ jobs:
       - name: Add Charon to path
         run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
 
+      - name: Install PHP frontend dependencies
+        run: composer install --working-dir=soteria-php/frontend --no-interaction --no-progress
+
       # Run tests
       - name: Test
         run: make ocaml-test

@@ -1,0 +1,12 @@
+(env
+ (_
+  (env-vars
+   (SOTERIA_PHP_FRONTEND ../../../frontend/bin/lower.php)
+   (TERM dumb))))
+
+(cram
+ (package soteria-php)
+ (deps
+  ../../bin/soteria_php.exe
+  (source_tree ../../frontend))
+ (applies_to :whole_subtree))

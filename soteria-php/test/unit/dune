@@ -1,0 +1,4 @@
+(test
+ (package soteria-php)
+ (name php_ir_tests)
+ (libraries alcotest soteria_php))
