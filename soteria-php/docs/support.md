@@ -16,8 +16,9 @@ The initial parse-only skeleton supports this deliberately small source subset:
 | Empty statements | Supported | Lowered to an explicit `nop` statement. |
 | All other expressions and statements | Unsupported | The frontend exits with a source-level error. |
 
-Parsing support does not imply execution support. This deliverable only lowers
-source to IR and validates that IR in OCaml; it does not interpret PHP code.
+Parsing support does not imply source execution support. The frontend currently
+lowers source to IR and validates that IR in OCaml, but the scalar expression
+and statement interpreter has not been implemented yet.
 
 The scalar semantic layer represents `null`, booleans, signed 64-bit integers,
 IEEE-754 binary64 floats, and concrete strings. Boolean, integer, and float
@@ -31,3 +32,22 @@ the default `precision=14` float-to-string setting. Conversions that require a
 symbolic string result, and symbolic float-to-integer conversions whose range is
 not yet known, return an explicit unsupported error. Reading an undefined value
 is also an explicit error until interpreter diagnostics are introduced.
+
+The symbolic runtime is instantiated with Soteria's bitvector value layer and
+Z3. It currently exposes the following case-insensitive intrinsic functions to
+the future interpreter:
+
+| Function | Status | Notes |
+| --- | --- | --- |
+| `Soteria\symbolic_bool()` | Supported | Returns a fresh symbolic boolean. |
+| `Soteria\symbolic_int()` | Supported | Returns a fresh symbolic signed 64-bit integer. |
+| `Soteria\symbolic_float()` | Supported | Returns a fresh symbolic binary64 float. |
+| `Soteria\assume(bool)` | Supported | Restricts the current path; currently requires a boolean argument. |
+| `Soteria\assert(bool)` | Supported | Produces distinct success and failure paths; currently requires a boolean argument. |
+| `Soteria\expect_fail()` | Unsupported | Requires entry-point result handling that is not implemented yet. |
+
+Builtin arity and type errors and failed assertions retain their source
+location and call trace. Unsupported builtin names explicitly give up the
+current path. These intrinsics are unit-testable through the OCaml runtime, but
+cannot be invoked from PHP source until function calls and the interpreter are
+added to the IR.

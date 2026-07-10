@@ -13,3 +13,8 @@
  (name coercion_tests)
  (libraries alcotest soteria_php unix yojson)
  (deps coercion_cases.json coercion_oracle.php))
+
+(test
+ (package soteria-php)
+ (name phpsymex_tests)
+ (libraries alcotest soteria_php))
