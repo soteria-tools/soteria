@@ -3,7 +3,7 @@
 Soteria PHP targets PHP 8.4.19 with 64-bit integers. PHP 8.4.19 is the concrete
 semantics oracle, while the parser sidecar may run on any PHP version accepted
 by its Composer manifest. The frontend uses nikic/PHP-Parser 5.8.0 and emits
-Soteria PHP IR schema version 2.
+Soteria PHP IR schema version 3.
 
 The scalar interpreter supports this deliberately bounded source subset:
 
@@ -20,8 +20,10 @@ The scalar interpreter supports this deliberately bounded source subset:
 | `==` and `!=` | Partially supported | Supported for numeric pairs and boolean/null pairs. Numeric-string and other mixed-type rules are not yet supported. |
 | `<`, `<=`, `>`, and `>=` | Partially supported | Numeric operands only. |
 | `&&`, `||`, `and`, and `or` | Supported | Right-hand evaluation is correctly short-circuited and may branch symbolically. |
-| Intrinsic function calls | Supported | The callee must be a statically named Soteria intrinsic and arguments must be positional, non-reference, and non-unpacked. User functions are the next roadmap part. |
-| Expression statements, `echo`, `if`, `else`, and `while` | Supported | `elseif`, loop-control statements, and all other statements remain unsupported. |
+| Function calls | Partially supported | The callee must be a statically named user function or Soteria intrinsic. Arguments must be positional, non-reference, and non-unpacked. |
+| Named functions and returns | Partially supported | Top-level declarations, required untyped by-value parameters, case-insensitive calls, early returns, fallthrough-to-`null`, and recursion are supported. Extra arguments are evaluated and ignored as in PHP. Parameter defaults and types, return types, references, variadics, named arguments, attributes, nested declarations, and closures remain unsupported. |
+| Function-local variables | Supported | Calls use a fresh persistent local scope initialized with the parameters. Assignments do not modify or leak into the caller's scope. Output remains visible across calls. PHP `global` and static local variables remain unsupported. |
+| Expression statements, `echo`, `if`, `else`, `while`, and `return` | Supported | `return` is supported in function bodies. `elseif`, loop-control statements, and all other statements remain unsupported. |
 | Undefined variable reads | Unsupported | The execution path explicitly gives up. Undefined-variable warning semantics are planned with the core state milestone. |
 
 Every interpreted expression and statement consumes step fuel. The command-line
@@ -41,8 +43,9 @@ The symbolic runtime recognizes these case-insensitive intrinsic functions:
 | `Soteria\assert(bool)` | Supported | Produces distinct success and failure paths and currently requires a boolean argument. |
 | `Soteria\expect_fail()` | Unsupported | Requires entry-point result handling that is not implemented yet. |
 
-Builtin arity and type errors, failed assertions, and division by zero retain
-their source location and call trace. Unsupported builtin names and unsupported
-semantic cases explicitly give up the current path. The `exec` command returns
-status 1 when a definite failure is found, status 2 for frontend errors, and
-status 3 when exploration is incomplete.
+Builtin and user-function arity errors, failed assertions, and division by zero
+retain their source location and call trace. Errors reached in a user function
+also identify the call site. Unsupported function names, unsupported builtins,
+and unsupported semantic cases explicitly give up the current path. The `exec`
+command returns status 1 when a definite failure is found, status 2 for frontend
+errors, and status 3 when exploration is incomplete.

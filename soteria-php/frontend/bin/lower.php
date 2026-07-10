@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 final class LoweringError extends RuntimeException
 {
@@ -39,15 +39,105 @@ final class Lowerer
     /** @param list<Node\Stmt> $statements */
     public function lowerProgram(array $statements): array
     {
+        $functions = [];
+        $functionNames = [];
+        $body = [];
+        foreach ($statements as $statement) {
+            if ($statement instanceof Node\Stmt\Function_) {
+                $function = $this->lowerFunction($statement);
+                $canonicalName = strtolower($function['name']);
+                if (array_key_exists($canonicalName, $functionNames)) {
+                    return $this->unsupported(
+                        $statement,
+                        'duplicate function declaration',
+                    );
+                }
+                $functionNames[$canonicalName] = true;
+                $functions[] = $function;
+            } else {
+                $body[] = $this->lowerStatement($statement, false);
+            }
+        }
+
         return [
             'schema_version' => SCHEMA_VERSION,
             'target_php_version' => TARGET_PHP_VERSION,
             'source_file' => $this->filename,
-            'statements' => array_map($this->lowerStatement(...), $statements),
+            'functions' => $functions,
+            'statements' => $body,
         ];
     }
 
-    private function lowerStatement(Node\Stmt $statement): array
+    private function lowerFunction(Node\Stmt\Function_ $function): array
+    {
+        if ($function->byRef) {
+            return $this->unsupported($function, 'by-reference function return');
+        }
+        if ($function->returnType !== null) {
+            return $this->unsupported($function->returnType, 'function return type');
+        }
+        if ($function->attrGroups !== []) {
+            return $this->unsupported($function->attrGroups[0], 'function attribute');
+        }
+
+        $name = $function->namespacedName instanceof Node\Name
+            ? $function->namespacedName->toString()
+            : $function->name->toString();
+
+        $parameters = [];
+        $parameterNames = [];
+        foreach ($function->params as $parameter) {
+            $lowered = $this->lowerParameter($parameter);
+            if (array_key_exists($lowered['name'], $parameterNames)) {
+                return $this->unsupported(
+                    $parameter,
+                    'duplicate function parameter',
+                );
+            }
+            $parameterNames[$lowered['name']] = true;
+            $parameters[] = $lowered;
+        }
+
+        return [
+            'name' => $name,
+            'parameters' => $parameters,
+            'body' => array_map(
+                fn (Node\Stmt $statement): array => $this->lowerStatement(
+                    $statement,
+                    true,
+                ),
+                $function->stmts,
+            ),
+            'location' => $this->location($function),
+        ];
+    }
+
+    private function lowerParameter(Node\Param $parameter): array
+    {
+        if (
+            $parameter->default !== null
+            || $parameter->type !== null
+            || $parameter->byRef
+            || $parameter->variadic
+            || $parameter->flags !== 0
+            || $parameter->attrGroups !== []
+            || $parameter->hooks !== []
+            || !($parameter->var instanceof Node\Expr\Variable)
+            || !is_string($parameter->var->name)
+        ) {
+            return $this->unsupported($parameter, 'function parameter');
+        }
+
+        return [
+            'name' => $parameter->var->name,
+            'location' => $this->location($parameter),
+        ];
+    }
+
+    private function lowerStatement(
+        Node\Stmt $statement,
+        bool $inFunction,
+    ): array
     {
         $location = $this->location($statement);
 
@@ -68,14 +158,25 @@ final class Lowerer
             $statement instanceof Node\Stmt\If_ => $this->lowerIf(
                 $statement,
                 $location,
+                $inFunction,
             ),
             $statement instanceof Node\Stmt\While_ => [
                 'kind' => 'while',
                 'condition' => $this->lowerExpression($statement->cond),
                 'body' => array_map(
-                    $this->lowerStatement(...),
+                    fn (Node\Stmt $bodyStatement): array => $this->lowerStatement(
+                        $bodyStatement,
+                        $inFunction,
+                    ),
                     $statement->stmts,
                 ),
+                'location' => $location,
+            ],
+            $inFunction && $statement instanceof Node\Stmt\Return_ => [
+                'kind' => 'return',
+                'expression' => $statement->expr === null
+                    ? null
+                    : $this->lowerExpression($statement->expr),
                 'location' => $location,
             ],
             $statement instanceof Node\Stmt\Nop => [
@@ -86,7 +187,11 @@ final class Lowerer
         };
     }
 
-    private function lowerIf(Node\Stmt\If_ $statement, array $location): array
+    private function lowerIf(
+        Node\Stmt\If_ $statement,
+        array $location,
+        bool $inFunction,
+    ): array
     {
         if ($statement->elseifs !== []) {
             return $this->unsupported($statement->elseifs[0], 'elseif clause');
@@ -95,11 +200,20 @@ final class Lowerer
         return [
             'kind' => 'if',
             'condition' => $this->lowerExpression($statement->cond),
-            'then' => array_map($this->lowerStatement(...), $statement->stmts),
+            'then' => array_map(
+                fn (Node\Stmt $thenStatement): array => $this->lowerStatement(
+                    $thenStatement,
+                    $inFunction,
+                ),
+                $statement->stmts,
+            ),
             'else' => $statement->else === null
                 ? []
                 : array_map(
-                    $this->lowerStatement(...),
+                    fn (Node\Stmt $elseStatement): array => $this->lowerStatement(
+                        $elseStatement,
+                        $inFunction,
+                    ),
                     $statement->else->stmts,
                 ),
             'location' => $location,

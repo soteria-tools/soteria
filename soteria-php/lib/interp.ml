@@ -296,25 +296,40 @@ let unary operator value =
           Phpsymex.Result.ok (Value.Float (Value.Typed.Float.neg value))
       | _ -> unsupported "unary - for %s" (Value.type_name value))
 
-let rec eval_expressions state expressions =
+module Function_map = Map.Make (String)
+
+type functions = Php_ir.function_decl Function_map.t
+type control = Normal | Return of Value.t
+
+let bind_parameters (parameters : Php_ir.parameter list) arguments =
+  let rec bind bindings parameters arguments =
+    match (parameters, arguments) with
+    | [], _ -> List.rev bindings
+    | (parameter : Php_ir.parameter) :: parameters, argument :: arguments ->
+        bind ((parameter.name, argument) :: bindings) parameters arguments
+    | _ :: _, [] -> failwith "not enough arguments to bind PHP parameters"
+  in
+  bind [] parameters arguments
+
+let rec eval_expressions functions state expressions =
   let open Phpsymex.Syntax in
   match expressions with
   | [] -> Phpsymex.Result.ok ([], state)
   | expression :: expressions ->
-      let** value, state = eval_expression state expression in
-      let** values, state = eval_expressions state expressions in
+      let** value, state = eval_expression functions state expression in
+      let** values, state = eval_expressions functions state expressions in
       Phpsymex.Result.ok (value :: values, state)
 
-and eval_short_circuit state left operator right =
+and eval_short_circuit functions state left operator right =
   let open Phpsymex.Syntax in
-  let** left, state = eval_expression state left in
+  let** left, state = eval_expression functions state left in
   let** guard = condition left in
   match operator with
   | Php_ir.Boolean_and ->
       Phpsymex.branch_on guard ~left_branch_name:"Evaluate right operand"
         ~right_branch_name:"Short-circuit false"
         ~then_:(fun () ->
-          let** right, state = eval_expression state right in
+          let** right, state = eval_expression functions state right in
           let** right = condition right in
           Phpsymex.Result.ok (Value.Bool right, state))
         ~else_:(fun () -> Phpsymex.Result.ok (Value.bool false, state))
@@ -323,12 +338,12 @@ and eval_short_circuit state left operator right =
         ~right_branch_name:"Evaluate right operand"
         ~then_:(fun () -> Phpsymex.Result.ok (Value.bool true, state))
         ~else_:(fun () ->
-          let** right, state = eval_expression state right in
+          let** right, state = eval_expression functions state right in
           let** right = condition right in
           Phpsymex.Result.ok (Value.Bool right, state))
   | _ -> failwith "non-short-circuit operator passed to evaluation"
 
-and eval_expression state expression =
+and eval_expression functions state expression =
   let process =
     let open Phpsymex.Syntax in
     let* () = Phpsymex.consume_fuel_steps 1 in
@@ -339,21 +354,21 @@ and eval_expression state expression =
         | Some value -> Phpsymex.Result.ok (value, state)
         | None -> unsupported "read of undefined variable $%s" name)
     | Assign (name, expression) ->
-        let** value, state = eval_expression state expression in
+        let** value, state = eval_expression functions state expression in
         Phpsymex.Result.ok (value, State.set_variable name value state)
     | Unary (operator, expression) ->
-        let** value, state = eval_expression state expression in
+        let** value, state = eval_expression functions state expression in
         let** value = unary operator value in
         Phpsymex.Result.ok (value, state)
     | Binary (left, ((Boolean_and | Boolean_or) as operator), right) ->
-        eval_short_circuit state left operator right
+        eval_short_circuit functions state left operator right
     | Binary (left, operator, right) ->
-        let** left, state = eval_expression state left in
-        let** right, state = eval_expression state right in
+        let** left, state = eval_expression functions state left in
+        let** right, state = eval_expression functions state right in
         let** value = binary operator left right in
         Phpsymex.Result.ok (value, state)
     | Cast (cast, expression) ->
-        let** value, state = eval_expression state expression in
+        let** value, state = eval_expression functions state expression in
         let target =
           match cast with
           | Php_ir.To_boolean -> Coercion.Boolean
@@ -363,50 +378,87 @@ and eval_expression state expression =
         in
         let** value = coerce target value in
         Phpsymex.Result.ok (value, state)
-    | Call (name, arguments) ->
-        let** arguments, state = eval_expressions state arguments in
-        let** value = Builtins.call name arguments in
-        Phpsymex.Result.ok (value, state)
+    | Call (name, arguments) -> (
+        let** arguments, state = eval_expressions functions state arguments in
+        match Builtins.find name with
+        | Some implementation ->
+            let** value = implementation ~args:arguments in
+            Phpsymex.Result.ok (value, state)
+        | None ->
+            call_function functions state expression.location name arguments)
   in
   Phpsymex.with_location ~location:expression.location process
 
-let rec emit_expressions state expressions =
+and call_function functions state location name arguments =
+  let canonical_name = Builtins.canonical_name name in
+  match Function_map.find_opt canonical_name functions with
+  | None -> unsupported "function %s" name
+  | Some (function_ : Php_ir.function_decl) ->
+      let expected = List.length function_.parameters in
+      let actual = List.length arguments in
+      if actual < expected then
+        Phpsymex.error
+          (Error.Invalid_argument_count
+             { function_name = function_.name ^ "()"; expected; actual })
+      else
+        let bindings = bind_parameters function_.parameters arguments in
+        let local_state = State.enter_scope bindings state in
+        let process =
+          let open Phpsymex.Syntax in
+          let** control, local_state =
+            exec_statements functions local_state function_.body
+          in
+          let value =
+            match control with Normal -> Value.null | Return value -> value
+          in
+          Phpsymex.Result.ok (value, State.leave_scope local_state)
+        in
+        Phpsymex.with_call ~location
+          ~message:("Call to " ^ function_.name)
+          process
+
+and emit_expressions functions state expressions =
   let open Phpsymex.Syntax in
   match expressions with
   | [] -> Phpsymex.Result.ok state
   | expression :: expressions ->
-      let** value, state = eval_expression state expression in
+      let** value, state = eval_expression functions state expression in
       let* value = simplify_value value in
       let** value = coerce Coercion.String value in
       let output = Option.get (Value.string_value value) in
-      emit_expressions (State.emit output state) expressions
+      emit_expressions functions (State.emit output state) expressions
 
-let rec exec_statements state statements =
+and exec_statements functions state statements =
   let open Phpsymex.Syntax in
   match statements with
-  | [] -> Phpsymex.Result.ok state
-  | statement :: statements ->
-      let** state = exec_statement state statement in
-      exec_statements state statements
+  | [] -> Phpsymex.Result.ok (Normal, state)
+  | statement :: statements -> (
+      let** control, state = exec_statement functions state statement in
+      match control with
+      | Normal -> exec_statements functions state statements
+      | Return _ -> Phpsymex.Result.ok (control, state))
 
-and exec_while state condition_expression body =
+and exec_while functions state condition_expression body =
   let open Phpsymex.Syntax in
-  let** value, state = eval_expression state condition_expression in
+  let** value, state = eval_expression functions state condition_expression in
   let** guard = condition value in
   Phpsymex.branch_on guard ~left_branch_name:"While body"
     ~right_branch_name:"While exit"
     ~then_:(fun () ->
-      let** state = exec_statements state body in
-      exec_while state condition_expression body)
-    ~else_:(fun () -> Phpsymex.Result.ok state)
+      let** control, state = exec_statements functions state body in
+      match control with
+      | Normal -> exec_while functions state condition_expression body
+      | Return _ -> Phpsymex.Result.ok (control, state))
+    ~else_:(fun () -> Phpsymex.Result.ok (Normal, state))
 
-and exec_statement state statement =
+and exec_statement functions state statement =
   let location =
     match statement with
     | Php_ir.Expression (_, location)
     | Echo (_, location)
     | If (_, _, _, location)
     | While (_, _, location)
+    | Return (_, location)
     | Nop location ->
         location
   in
@@ -415,20 +467,47 @@ and exec_statement state statement =
     let* () = Phpsymex.consume_fuel_steps 1 in
     match statement with
     | Php_ir.Expression (expression, _) ->
-        let** _, state = eval_expression state expression in
-        Phpsymex.Result.ok state
-    | Echo (expressions, _) -> emit_expressions state expressions
+        let** _, state = eval_expression functions state expression in
+        Phpsymex.Result.ok (Normal, state)
+    | Echo (expressions, _) ->
+        let** state = emit_expressions functions state expressions in
+        Phpsymex.Result.ok (Normal, state)
     | If (condition_expression, then_, else_, _) ->
-        let** value, state = eval_expression state condition_expression in
+        let** value, state =
+          eval_expression functions state condition_expression
+        in
         let** guard = condition value in
         Phpsymex.branch_on guard ~left_branch_name:"If branch"
           ~right_branch_name:"Else branch"
-          ~then_:(fun () -> exec_statements state then_)
-          ~else_:(fun () -> exec_statements state else_)
+          ~then_:(fun () -> exec_statements functions state then_)
+          ~else_:(fun () -> exec_statements functions state else_)
     | While (condition_expression, body, _) ->
-        exec_while state condition_expression body
-    | Nop _ -> Phpsymex.Result.ok state
+        exec_while functions state condition_expression body
+    | Return (expression, _) ->
+        let** value, state =
+          match expression with
+          | None -> Phpsymex.Result.ok (Value.null, state)
+          | Some expression -> eval_expression functions state expression
+        in
+        Phpsymex.Result.ok (Return value, state)
+    | Nop _ -> Phpsymex.Result.ok (Normal, state)
   in
   Phpsymex.with_location ~location process
 
-let run program = exec_statements State.empty program.Php_ir.statements
+let collect_functions declarations =
+  let rec collect functions = function
+    | [] -> Phpsymex.Result.ok functions
+    | (function_ : Php_ir.function_decl) :: declarations ->
+        let name = Builtins.canonical_name function_.Php_ir.name in
+        if Function_map.mem name functions then
+          Phpsymex.with_location ~location:function_.location
+            (unsupported "duplicate function %s" function_.name)
+        else collect (Function_map.add name function_ functions) declarations
+  in
+  collect Function_map.empty declarations
+
+let run program =
+  let open Phpsymex.Syntax in
+  let** functions = collect_functions program.Php_ir.functions in
+  let** _, state = exec_statements functions State.empty program.statements in
+  Phpsymex.Result.ok state

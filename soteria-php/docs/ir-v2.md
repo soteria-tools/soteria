@@ -1,5 +1,8 @@
 # Soteria PHP IR version 2
 
+Version 2 is historical. The current frontend emits version 3, documented in
+`ir-v3.md`.
+
 Version 2 extends the scalar-only version 1 format with executable scalar
 expressions and structured statements. The program envelope and source-location
 format are unchanged, but `schema_version` is `2`.

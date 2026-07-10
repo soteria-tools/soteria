@@ -19,16 +19,21 @@ let assign name value = expression (Assign (name, value))
 let call name arguments = expression (Call (name, arguments))
 let binary left operator right = expression (Binary (left, operator, right))
 let expression_statement expression = Php_ir.Expression (expression, location)
+let parameter name : Php_ir.parameter = { name; location }
 
-let program statements : Php_ir.t =
+let function_ name parameters body : Php_ir.function_decl =
+  { name; parameters = List.map parameter parameters; body; location }
+
+let program ?(functions = []) statements : Php_ir.t =
   {
     target_php_version = Php_ir.target_php_version;
     source_file = location.file;
+    functions;
     statements;
   }
 
-let run ?fuel statements =
-  Interp.run (program statements)
+let run ?fuel ?functions statements =
+  Interp.run (program ?functions statements)
   |> Phpsymex.Result.run ?fuel ~mode:Soteria.Symex.Approx.OX
 
 let expect_single_ok label = function
@@ -135,6 +140,146 @@ let reports_partial_branch_exhaustion () =
   Alcotest.(check bool) "completed branch" true has_success;
   Alcotest.(check bool) "exhausted branch" true has_give_up
 
+let calls_functions_with_local_scopes () =
+  let add =
+    function_ "Add" [ "left"; "right" ]
+      [
+        expression_statement (assign "outside" (literal (Int 99L)));
+        Php_ir.Echo ([ literal (String "inside:") ], location);
+        Php_ir.If
+          ( binary (variable "left") Greater_than (literal (Int 0L)),
+            [
+              Php_ir.Return
+                ( Some (binary (variable "left") Add (variable "right")),
+                  location );
+            ],
+            [ Php_ir.Return (None, location) ],
+            location );
+        expression_statement (call "Soteria\\assert" [ literal (Bool false) ]);
+      ]
+  in
+  let statements =
+    [
+      expression_statement (assign "outside" (literal (Int 7L)));
+      expression_statement
+        (assign "result"
+           (call "aDd" [ literal (Int 2L); literal (Int 3L); literal (Int 4L) ]));
+    ]
+  in
+  let state =
+    run ~functions:[ add ] statements |> expect_single_ok "function call"
+  in
+  Alcotest.(check string) "function output" "inside:" (State.output state);
+  let result =
+    Option.bind (State.find_variable "result" state) Value.int_value
+  in
+  let outside =
+    Option.bind (State.find_variable "outside" state) Value.int_value
+  in
+  Alcotest.(check (option int64)) "return value" (Some 5L) result;
+  Alcotest.(check (option int64)) "caller variable" (Some 7L) outside;
+  Alcotest.(check bool)
+    "parameter does not leak" true
+    (Option.is_none (State.find_variable "left" state))
+
+let defaults_to_null_on_fallthrough () =
+  let no_return =
+    function_ "no_return" []
+      [ expression_statement (assign "local" (literal (Int 1L))) ]
+  in
+  let state =
+    run ~functions:[ no_return ]
+      [ expression_statement (assign "result" (call "no_return" [])) ]
+    |> expect_single_ok "function fallthrough"
+  in
+  match State.find_variable "result" state with
+  | Some Value.Null -> ()
+  | _ -> Alcotest.fail "function fallthrough did not return null"
+
+let isolates_symbolic_function_returns () =
+  let choose =
+    function_ "choose" [ "condition" ]
+      [
+        Php_ir.If
+          ( variable "condition",
+            [ Php_ir.Return (Some (literal (Int 1L)), location) ],
+            [ Php_ir.Return (Some (literal (Int 2L)), location) ],
+            location );
+      ]
+  in
+  let statements =
+    [
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      expression_statement
+        (assign "result" (call "choose" [ variable "condition" ]));
+    ]
+  in
+  let values =
+    run ~functions:[ choose ] statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind (State.find_variable "result" state) Value.int_value
+      | _ -> None)
+    |> List.sort Int64.compare
+  in
+  Alcotest.(check (list int64)) "return values" [ 1L; 2L ] values
+
+let reports_missing_function_arguments () =
+  let function_ =
+    function_ "needs_two" [ "first"; "second" ]
+      [ Php_ir.Return (None, location) ]
+  in
+  match
+    run ~functions:[ function_ ]
+      [ expression_statement (call "needs_two" [ literal (Int 1L) ]) ]
+  with
+  | [
+   ( Compo_res.Error
+       (Or_gave_up.E
+          ( Error.Invalid_argument_count
+              { function_name = "needs_two()"; expected = 2; actual = 1 },
+            _ )),
+     _ );
+  ] ->
+      ()
+  | _ -> Alcotest.fail "missing function argument did not produce an error"
+
+let supports_recursive_calls () =
+  let count_down =
+    function_ "count_down" [ "value" ]
+      [
+        Php_ir.If
+          ( binary (variable "value") Identical (literal (Int 0L)),
+            [ Php_ir.Return (Some (literal (Int 0L)), location) ],
+            [
+              Php_ir.Return
+                ( Some
+                    (binary
+                       (call "count_down"
+                          [
+                            binary (variable "value") Subtract
+                              (literal (Int 1L));
+                          ])
+                       Add (literal (Int 1L))),
+                  location );
+            ],
+            location );
+      ]
+  in
+  let state =
+    run ~functions:[ count_down ]
+      [
+        expression_statement
+          (assign "result" (call "count_down" [ literal (Int 3L) ]));
+      ]
+    |> expect_single_ok "recursive function"
+  in
+  let result =
+    Option.bind (State.find_variable "result" state) Value.int_value
+  in
+  Alcotest.(check (option int64)) "recursive result" (Some 3L) result
+
 let () =
   Alcotest.run "PHP interpreter"
     [
@@ -150,5 +295,15 @@ let () =
           Alcotest.test_case "loop fuel" `Quick exhausts_loop_fuel;
           Alcotest.test_case "branch fuel" `Quick
             reports_partial_branch_exhaustion;
+          Alcotest.test_case "function calls and local scopes" `Quick
+            calls_functions_with_local_scopes;
+          Alcotest.test_case "function fallthrough" `Quick
+            defaults_to_null_on_fallthrough;
+          Alcotest.test_case "symbolic function returns" `Quick
+            isolates_symbolic_function_returns;
+          Alcotest.test_case "missing function arguments" `Quick
+            reports_missing_function_arguments;
+          Alcotest.test_case "recursive functions" `Quick
+            supports_recursive_calls;
         ] );
     ]

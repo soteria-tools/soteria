@@ -40,20 +40,31 @@ and expression_desc =
   | Cast of cast * expression
   | Call of string * expression list
 
+type parameter = { name : string; location : location }
+
 type statement =
   | Expression of expression * location
   | Echo of expression list * location
   | If of expression * statement list * statement list * location
   | While of expression * statement list * location
+  | Return of expression option * location
   | Nop of location
+
+type function_decl = {
+  name : string;
+  parameters : parameter list;
+  body : statement list;
+  location : location;
+}
 
 type t = {
   target_php_version : string;
   source_file : string;
+  functions : function_decl list;
   statements : statement list;
 }
 
-let schema_version = 2
+let schema_version = 3
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -266,7 +277,7 @@ let rec decode_expression path json =
   in
   { desc; location }
 
-and decode_statement path json =
+and decode_statement ~allow_return path json =
   let fields = as_assoc path json in
   let kind = field path "kind" fields |> as_string (path ^ ".kind") in
   let location () =
@@ -276,7 +287,8 @@ and decode_statement path json =
     field path name fields
     |> as_list (path ^ "." ^ name)
     |> List.mapi (fun index ->
-        decode_statement (Printf.sprintf "%s.%s[%d]" path name index))
+        decode_statement ~allow_return
+          (Printf.sprintf "%s.%s[%d]" path name index))
   in
   match kind with
   | "expression" ->
@@ -309,12 +321,53 @@ and decode_statement path json =
         field path "condition" fields |> decode_expression (path ^ ".condition")
       in
       While (condition, statements "body", location ())
+  | "return" ->
+      check_fields path [ "kind"; "expression"; "location" ] fields;
+      if not allow_return then
+        decode_error path "return is only valid in a function body";
+      let expression =
+        match field path "expression" fields with
+        | `Null -> None
+        | json -> Some (decode_expression (path ^ ".expression") json)
+      in
+      Return (expression, location ())
   | "nop" ->
       check_fields path [ "kind"; "location" ] fields;
       Nop (location ())
   | kind -> decode_error (path ^ ".kind") ("unknown statement kind " ^ kind)
 
-let rec iter_expression_locations f expression =
+let decode_parameter path json =
+  let fields = as_assoc path json in
+  check_fields path [ "name"; "location" ] fields;
+  let name = field path "name" fields |> as_string (path ^ ".name") in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { name; location }
+
+let decode_function path json =
+  let fields = as_assoc path json in
+  check_fields path [ "name"; "parameters"; "body"; "location" ] fields;
+  let name = field path "name" fields |> as_string (path ^ ".name") in
+  let parameters =
+    field path "parameters" fields
+    |> as_list (path ^ ".parameters")
+    |> List.mapi (fun index ->
+        decode_parameter (Printf.sprintf "%s.parameters[%d]" path index))
+  in
+  let body =
+    field path "body" fields
+    |> as_list (path ^ ".body")
+    |> List.mapi (fun index ->
+        decode_statement ~allow_return:true
+          (Printf.sprintf "%s.body[%d]" path index))
+  in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { name; parameters; body; location }
+
+let rec iter_expression_locations f (expression : expression) =
   f expression.location;
   match expression.desc with
   | Literal _ | Variable _ -> ()
@@ -325,7 +378,8 @@ let rec iter_expression_locations f expression =
       iter_expression_locations f right
   | Call (_, arguments) -> List.iter (iter_expression_locations f) arguments
 
-let rec iter_statement_locations f = function
+let rec iter_statement_locations f (statement : statement) =
+  match statement with
   | Expression (expression, location) ->
       f location;
       iter_expression_locations f expression
@@ -341,20 +395,62 @@ let rec iter_statement_locations f = function
       f location;
       iter_expression_locations f condition;
       List.iter (iter_statement_locations f) body
+  | Return (expression, location) ->
+      f location;
+      Option.iter (iter_expression_locations f) expression
   | Nop location -> f location
 
-let validate_source_file source_file statements =
+let iter_function_locations f (function_ : function_decl) =
+  f function_.location;
   List.iter
-    (iter_statement_locations (fun location ->
-         if not (String.equal source_file location.file) then
-           decode_error "$.statements" "location file differs from source_file"))
-    statements
+    (fun (parameter : parameter) -> f parameter.location)
+    function_.parameters;
+  List.iter (iter_statement_locations f) function_.body
+
+let validate_source_file source_file functions statements =
+  let validate location =
+    if not (String.equal source_file location.file) then
+      decode_error "$" "location file differs from source_file"
+  in
+  List.iter (iter_function_locations validate) functions;
+  List.iter (iter_statement_locations validate) statements
+
+let validate_function_names functions =
+  let rec validate seen index = function
+    | [] -> ()
+    | (function_ : function_decl) :: functions ->
+        let name = String.lowercase_ascii function_.name in
+        if List.mem name seen then
+          decode_error
+            (Printf.sprintf "$.functions[%d].name" index)
+            ("duplicate function " ^ function_.name);
+        let rec validate_parameters seen parameter_index = function
+          | [] -> ()
+          | (parameter : parameter) :: parameters ->
+              if List.mem parameter.name seen then
+                decode_error
+                  (Printf.sprintf "$.functions[%d].parameters[%d].name" index
+                     parameter_index)
+                  ("duplicate parameter " ^ parameter.name);
+              validate_parameters (parameter.name :: seen) (parameter_index + 1)
+                parameters
+        in
+        validate_parameters [] 0 function_.parameters;
+        validate (name :: seen) (index + 1) functions
+  in
+  validate [] 0 functions
 
 let of_yojson json =
   try
     let fields = as_assoc "$" json in
     check_fields "$"
-      [ "schema_version"; "target_php_version"; "source_file"; "statements" ]
+      [
+        "schema_version";
+        "target_php_version";
+        "source_file";
+        "functions";
+        "statements";
+      ]
       fields;
     let actual_schema =
       field "$" "schema_version" fields |> as_int "$.schema_version"
@@ -373,14 +469,28 @@ let of_yojson json =
     let source_file =
       field "$" "source_file" fields |> as_string "$.source_file"
     in
+    let functions =
+      field "$" "functions" fields
+      |> as_list "$.functions"
+      |> List.mapi (fun index ->
+          decode_function (Printf.sprintf "$.functions[%d]" index))
+    in
     let statements =
       field "$" "statements" fields
       |> as_list "$.statements"
       |> List.mapi (fun index ->
-          decode_statement (Printf.sprintf "$.statements[%d]" index))
+          decode_statement ~allow_return:false
+            (Printf.sprintf "$.statements[%d]" index))
     in
-    validate_source_file source_file statements;
-    Ok { target_php_version = actual_php_version; source_file; statements }
+    validate_function_names functions;
+    validate_source_file source_file functions statements;
+    Ok
+      {
+        target_php_version = actual_php_version;
+        source_file;
+        functions;
+        statements;
+      }
   with Decode_error message -> Error message
 
 let position_to_yojson position =
@@ -509,9 +619,33 @@ let rec statement_to_yojson = function
           ("body", `List (List.map statement_to_yojson body));
           ("location", location_to_yojson location);
         ]
+  | Return (expression, location) ->
+      `Assoc
+        [
+          ("kind", `String "return");
+          ( "expression",
+            Option.fold ~none:`Null ~some:expression_to_yojson expression );
+          ("location", location_to_yojson location);
+        ]
   | Nop location ->
       `Assoc
         [ ("kind", `String "nop"); ("location", location_to_yojson location) ]
+
+let parameter_to_yojson (parameter : parameter) =
+  `Assoc
+    [
+      ("name", `String parameter.name);
+      ("location", location_to_yojson parameter.location);
+    ]
+
+let function_to_yojson (function_ : function_decl) =
+  `Assoc
+    [
+      ("name", `String function_.name);
+      ("parameters", `List (List.map parameter_to_yojson function_.parameters));
+      ("body", `List (List.map statement_to_yojson function_.body));
+      ("location", location_to_yojson function_.location);
+    ]
 
 let to_yojson program =
   `Assoc
@@ -519,5 +653,6 @@ let to_yojson program =
       ("schema_version", `Int schema_version);
       ("target_php_version", `String program.target_php_version);
       ("source_file", `String program.source_file);
+      ("functions", `List (List.map function_to_yojson program.functions));
       ("statements", `List (List.map statement_to_yojson program.statements));
     ]

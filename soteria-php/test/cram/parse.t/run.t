@@ -2,7 +2,7 @@
   $ ../../../bin/soteria_php.exe parse valid.php > second.json
   $ cmp first.json second.json
   $ php summarize.php first.json
-  schema=2 php=8.4.19 source=valid.php
+  schema=3 php=8.4.19 source=valid.php
   echo 2:1-2:42 [6,47)
     null=-
     bool=true
@@ -14,6 +14,10 @@
 
   $ ../../../bin/soteria_php.exe parse unsupported.php
   Frontend error: unsupported.php:2:1: unsupported statement (Stmt_For)
+  [2]
+
+  $ ../../../bin/soteria_php.exe parse unsupported_function.php
+  Frontend error: unsupported_function.php:2:20: unsupported function parameter (Param)
   [2]
 
   $ ../../../bin/soteria_php.exe parse malformed.php
