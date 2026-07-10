@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 final class LoweringError extends RuntimeException
 {
@@ -65,12 +65,45 @@ final class Lowerer
                 ),
                 'location' => $location,
             ],
+            $statement instanceof Node\Stmt\If_ => $this->lowerIf(
+                $statement,
+                $location,
+            ),
+            $statement instanceof Node\Stmt\While_ => [
+                'kind' => 'while',
+                'condition' => $this->lowerExpression($statement->cond),
+                'body' => array_map(
+                    $this->lowerStatement(...),
+                    $statement->stmts,
+                ),
+                'location' => $location,
+            ],
             $statement instanceof Node\Stmt\Nop => [
                 'kind' => 'nop',
                 'location' => $location,
             ],
             default => $this->unsupported($statement, 'statement'),
         };
+    }
+
+    private function lowerIf(Node\Stmt\If_ $statement, array $location): array
+    {
+        if ($statement->elseifs !== []) {
+            return $this->unsupported($statement->elseifs[0], 'elseif clause');
+        }
+
+        return [
+            'kind' => 'if',
+            'condition' => $this->lowerExpression($statement->cond),
+            'then' => array_map($this->lowerStatement(...), $statement->stmts),
+            'else' => $statement->else === null
+                ? []
+                : array_map(
+                    $this->lowerStatement(...),
+                    $statement->else->stmts,
+                ),
+            'location' => $location,
+        ];
     }
 
     private function lowerExpression(Node\Expr $expression): array
@@ -127,7 +160,132 @@ final class Lowerer
             };
         }
 
+        if ($expression instanceof Node\Expr\Variable) {
+            if (!is_string($expression->name)) {
+                return $this->unsupported($expression, 'dynamic variable');
+            }
+
+            return [
+                'kind' => 'variable',
+                'name' => $expression->name,
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\Assign) {
+            if (
+                !($expression->var instanceof Node\Expr\Variable)
+                || !is_string($expression->var->name)
+            ) {
+                return $this->unsupported($expression->var, 'assignment target');
+            }
+
+            return [
+                'kind' => 'assign',
+                'variable' => $expression->var->name,
+                'value' => $this->lowerExpression($expression->expr),
+                'location' => $location,
+            ];
+        }
+
+        $unaryOperator = match (true) {
+            $expression instanceof Node\Expr\BooleanNot => 'boolean_not',
+            $expression instanceof Node\Expr\UnaryPlus => 'numeric_identity',
+            $expression instanceof Node\Expr\UnaryMinus => 'numeric_negation',
+            default => null,
+        };
+        if ($unaryOperator !== null) {
+            return [
+                'kind' => 'unary',
+                'operator' => $unaryOperator,
+                'operand' => $this->lowerExpression($expression->expr),
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\BinaryOp) {
+            return [
+                'kind' => 'binary',
+                'operator' => $this->lowerBinaryOperator($expression),
+                'left' => $this->lowerExpression($expression->left),
+                'right' => $this->lowerExpression($expression->right),
+                'location' => $location,
+            ];
+        }
+
+        $cast = match (true) {
+            $expression instanceof Node\Expr\Cast\Bool_ => 'bool',
+            $expression instanceof Node\Expr\Cast\Int_ => 'int',
+            $expression instanceof Node\Expr\Cast\Double => 'float',
+            $expression instanceof Node\Expr\Cast\String_ => 'string',
+            default => null,
+        };
+        if ($cast !== null) {
+            return [
+                'kind' => 'cast',
+                'type' => $cast,
+                'expression' => $this->lowerExpression($expression->expr),
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\FuncCall) {
+            if (!($expression->name instanceof Node\Name)) {
+                return $this->unsupported($expression, 'dynamic function call');
+            }
+            foreach ($expression->args as $argument) {
+                if (
+                    !($argument instanceof Node\Arg)
+                    || $argument->byRef
+                    || $argument->unpack
+                    || $argument->name !== null
+                ) {
+                    return $this->unsupported($argument, 'function argument');
+                }
+            }
+            $resolvedName = $expression->name->getAttribute('resolvedName');
+            $name = $resolvedName instanceof Node\Name
+                ? $resolvedName->toString()
+                : $expression->name->toString();
+
+            return [
+                'kind' => 'call',
+                'name' => $name,
+                'arguments' => array_map(
+                    fn (Node\Arg $argument): array => $this->lowerExpression(
+                        $argument->value,
+                    ),
+                    $expression->args,
+                ),
+                'location' => $location,
+            ];
+        }
+
         return $this->unsupported($expression, 'expression');
+    }
+
+    private function lowerBinaryOperator(Node\Expr\BinaryOp $operator): string
+    {
+        return match (true) {
+            $operator instanceof Node\Expr\BinaryOp\Plus => 'add',
+            $operator instanceof Node\Expr\BinaryOp\Minus => 'subtract',
+            $operator instanceof Node\Expr\BinaryOp\Mul => 'multiply',
+            $operator instanceof Node\Expr\BinaryOp\Div => 'divide',
+            $operator instanceof Node\Expr\BinaryOp\Concat => 'concat',
+            $operator instanceof Node\Expr\BinaryOp\Identical => 'identical',
+            $operator instanceof Node\Expr\BinaryOp\NotIdentical => 'not_identical',
+            $operator instanceof Node\Expr\BinaryOp\Equal => 'equal',
+            $operator instanceof Node\Expr\BinaryOp\NotEqual => 'not_equal',
+            $operator instanceof Node\Expr\BinaryOp\Smaller => 'less_than',
+            $operator instanceof Node\Expr\BinaryOp\SmallerOrEqual => 'less_than_or_equal',
+            $operator instanceof Node\Expr\BinaryOp\Greater => 'greater_than',
+            $operator instanceof Node\Expr\BinaryOp\GreaterOrEqual => 'greater_than_or_equal',
+            $operator instanceof Node\Expr\BinaryOp\BooleanAnd,
+            $operator instanceof Node\Expr\BinaryOp\LogicalAnd => 'boolean_and',
+            $operator instanceof Node\Expr\BinaryOp\BooleanOr,
+            $operator instanceof Node\Expr\BinaryOp\LogicalOr => 'boolean_or',
+            default => $this->unsupported($operator, 'binary operator'),
+        };
     }
 
     private function unsupported(Node $node, string $description): never

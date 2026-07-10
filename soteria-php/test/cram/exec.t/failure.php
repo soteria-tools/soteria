@@ -1,0 +1,2 @@
+<?php
+Soteria\assert(false);

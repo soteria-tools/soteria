@@ -8,11 +8,43 @@ type literal =
   | Float of float
   | String of string
 
-type expression = { literal : literal; location : location }
+type unary_operator = Boolean_not | Numeric_identity | Numeric_negation
+
+type binary_operator =
+  | Add
+  | Subtract
+  | Multiply
+  | Divide
+  | Concat
+  | Identical
+  | Not_identical
+  | Equal
+  | Not_equal
+  | Less_than
+  | Less_than_or_equal
+  | Greater_than
+  | Greater_than_or_equal
+  | Boolean_and
+  | Boolean_or
+
+type cast = To_boolean | To_integer | To_float | To_string
+
+type expression = { desc : expression_desc; location : location }
+
+and expression_desc =
+  | Literal of literal
+  | Variable of string
+  | Assign of string * expression
+  | Unary of unary_operator * expression
+  | Binary of expression * binary_operator * expression
+  | Cast of cast * expression
+  | Call of string * expression list
 
 type statement =
   | Expression of expression * location
   | Echo of expression list * location
+  | If of expression * statement list * statement list * location
+  | While of expression * statement list * location
   | Nop of location
 
 type t = {
@@ -21,7 +53,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 1
+let schema_version = 2
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -112,38 +144,140 @@ let decode_float path value =
   | FP_normal | FP_subnormal | FP_zero -> value
   | FP_infinite | FP_nan -> decode_error path "float must be finite"
 
-let decode_expression path json =
+let decode_unary_operator path = function
+  | "boolean_not" -> Boolean_not
+  | "numeric_identity" -> Numeric_identity
+  | "numeric_negation" -> Numeric_negation
+  | operator -> decode_error path ("unknown unary operator " ^ operator)
+
+let decode_binary_operator path = function
+  | "add" -> Add
+  | "subtract" -> Subtract
+  | "multiply" -> Multiply
+  | "divide" -> Divide
+  | "concat" -> Concat
+  | "identical" -> Identical
+  | "not_identical" -> Not_identical
+  | "equal" -> Equal
+  | "not_equal" -> Not_equal
+  | "less_than" -> Less_than
+  | "less_than_or_equal" -> Less_than_or_equal
+  | "greater_than" -> Greater_than
+  | "greater_than_or_equal" -> Greater_than_or_equal
+  | "boolean_and" -> Boolean_and
+  | "boolean_or" -> Boolean_or
+  | operator -> decode_error path ("unknown binary operator " ^ operator)
+
+let decode_cast path = function
+  | "bool" -> To_boolean
+  | "int" -> To_integer
+  | "float" -> To_float
+  | "string" -> To_string
+  | cast -> decode_error path ("unknown cast " ^ cast)
+
+let rec decode_expression path json =
   let fields = as_assoc path json in
   let kind = field path "kind" fields |> as_string (path ^ ".kind") in
-  let literal =
+  let desc =
     match kind with
     | "null" ->
         check_fields path [ "kind"; "location" ] fields;
-        Null
+        Literal Null
     | "bool" ->
         check_fields path [ "kind"; "value"; "location" ] fields;
-        Bool (field path "value" fields |> as_bool (path ^ ".value"))
+        Literal (Bool (field path "value" fields |> as_bool (path ^ ".value")))
     | "int" ->
         check_fields path [ "kind"; "value"; "location" ] fields;
         let value = field path "value" fields |> as_string (path ^ ".value") in
-        Int (decode_int (path ^ ".value") value)
+        Literal (Int (decode_int (path ^ ".value") value))
     | "float" ->
         check_fields path [ "kind"; "value"; "location" ] fields;
         let value = field path "value" fields |> as_string (path ^ ".value") in
-        Float (decode_float (path ^ ".value") value)
+        Literal (Float (decode_float (path ^ ".value") value))
     | "string" ->
         check_fields path [ "kind"; "value"; "location" ] fields;
-        String (field path "value" fields |> as_string (path ^ ".value"))
+        Literal
+          (String (field path "value" fields |> as_string (path ^ ".value")))
+    | "variable" ->
+        check_fields path [ "kind"; "name"; "location" ] fields;
+        Variable (field path "name" fields |> as_string (path ^ ".name"))
+    | "assign" ->
+        check_fields path [ "kind"; "variable"; "value"; "location" ] fields;
+        let variable =
+          field path "variable" fields |> as_string (path ^ ".variable")
+        in
+        let value =
+          field path "value" fields |> decode_expression (path ^ ".value")
+        in
+        Assign (variable, value)
+    | "unary" ->
+        check_fields path [ "kind"; "operator"; "operand"; "location" ] fields;
+        let operator =
+          field path "operator" fields
+          |> as_string (path ^ ".operator")
+          |> decode_unary_operator (path ^ ".operator")
+        in
+        let operand =
+          field path "operand" fields |> decode_expression (path ^ ".operand")
+        in
+        Unary (operator, operand)
+    | "binary" ->
+        check_fields path
+          [ "kind"; "operator"; "left"; "right"; "location" ]
+          fields;
+        let left =
+          field path "left" fields |> decode_expression (path ^ ".left")
+        in
+        let operator =
+          field path "operator" fields
+          |> as_string (path ^ ".operator")
+          |> decode_binary_operator (path ^ ".operator")
+        in
+        let right =
+          field path "right" fields |> decode_expression (path ^ ".right")
+        in
+        Binary (left, operator, right)
+    | "cast" ->
+        check_fields path [ "kind"; "type"; "expression"; "location" ] fields;
+        let cast =
+          field path "type" fields
+          |> as_string (path ^ ".type")
+          |> decode_cast (path ^ ".type")
+        in
+        let expression =
+          field path "expression" fields
+          |> decode_expression (path ^ ".expression")
+        in
+        Cast (cast, expression)
+    | "call" ->
+        check_fields path [ "kind"; "name"; "arguments"; "location" ] fields;
+        let name = field path "name" fields |> as_string (path ^ ".name") in
+        let arguments =
+          field path "arguments" fields
+          |> as_list (path ^ ".arguments")
+          |> List.mapi (fun index ->
+              decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
+        in
+        Call (name, arguments)
     | kind -> decode_error (path ^ ".kind") ("unknown expression kind " ^ kind)
   in
   let location =
     field path "location" fields |> decode_location (path ^ ".location")
   in
-  { literal; location }
+  { desc; location }
 
-let decode_statement path json =
+and decode_statement path json =
   let fields = as_assoc path json in
   let kind = field path "kind" fields |> as_string (path ^ ".kind") in
+  let location () =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  let statements name =
+    field path name fields
+    |> as_list (path ^ "." ^ name)
+    |> List.mapi (fun index ->
+        decode_statement (Printf.sprintf "%s.%s[%d]" path name index))
+  in
   match kind with
   | "expression" ->
       check_fields path [ "kind"; "expression"; "location" ] fields;
@@ -151,10 +285,7 @@ let decode_statement path json =
         field path "expression" fields
         |> decode_expression (path ^ ".expression")
       in
-      let location =
-        field path "location" fields |> decode_location (path ^ ".location")
-      in
-      Expression (expression, location)
+      Expression (expression, location ())
   | "echo" ->
       check_fields path [ "kind"; "expressions"; "location" ] fields;
       let expressions =
@@ -163,32 +294,60 @@ let decode_statement path json =
         |> List.mapi (fun index ->
             decode_expression (Printf.sprintf "%s.expressions[%d]" path index))
       in
-      let location =
-        field path "location" fields |> decode_location (path ^ ".location")
+      Echo (expressions, location ())
+  | "if" ->
+      check_fields path
+        [ "kind"; "condition"; "then"; "else"; "location" ]
+        fields;
+      let condition =
+        field path "condition" fields |> decode_expression (path ^ ".condition")
       in
-      Echo (expressions, location)
+      If (condition, statements "then", statements "else", location ())
+  | "while" ->
+      check_fields path [ "kind"; "condition"; "body"; "location" ] fields;
+      let condition =
+        field path "condition" fields |> decode_expression (path ^ ".condition")
+      in
+      While (condition, statements "body", location ())
   | "nop" ->
       check_fields path [ "kind"; "location" ] fields;
-      let location =
-        field path "location" fields |> decode_location (path ^ ".location")
-      in
-      Nop location
+      Nop (location ())
   | kind -> decode_error (path ^ ".kind") ("unknown statement kind " ^ kind)
 
-let locations_of_statement = function
-  | Expression (expression, location) -> [ expression.location; location ]
+let rec iter_expression_locations f expression =
+  f expression.location;
+  match expression.desc with
+  | Literal _ | Variable _ -> ()
+  | Assign (_, value) | Unary (_, value) | Cast (_, value) ->
+      iter_expression_locations f value
+  | Binary (left, _, right) ->
+      iter_expression_locations f left;
+      iter_expression_locations f right
+  | Call (_, arguments) -> List.iter (iter_expression_locations f) arguments
+
+let rec iter_statement_locations f = function
+  | Expression (expression, location) ->
+      f location;
+      iter_expression_locations f expression
   | Echo (expressions, location) ->
-      location :: List.map (fun expression -> expression.location) expressions
-  | Nop location -> [ location ]
+      f location;
+      List.iter (iter_expression_locations f) expressions
+  | If (condition, then_, else_, location) ->
+      f location;
+      iter_expression_locations f condition;
+      List.iter (iter_statement_locations f) then_;
+      List.iter (iter_statement_locations f) else_
+  | While (condition, body, location) ->
+      f location;
+      iter_expression_locations f condition;
+      List.iter (iter_statement_locations f) body
+  | Nop location -> f location
 
 let validate_source_file source_file statements =
   List.iter
-    (fun statement ->
-      List.iter
-        (fun location ->
-          if not (String.equal source_file location.file) then
-            decode_error "$.statements" "location file differs from source_file")
-        (locations_of_statement statement))
+    (iter_statement_locations (fun location ->
+         if not (String.equal source_file location.file) then
+           decode_error "$.statements" "location file differs from source_file"))
     statements
 
 let of_yojson json =
@@ -240,23 +399,85 @@ let location_to_yojson location =
       ("end", position_to_yojson location.end_);
     ]
 
-let expression_to_yojson expression =
+let unary_operator_to_string = function
+  | Boolean_not -> "boolean_not"
+  | Numeric_identity -> "numeric_identity"
+  | Numeric_negation -> "numeric_negation"
+
+let binary_operator_to_string = function
+  | Add -> "add"
+  | Subtract -> "subtract"
+  | Multiply -> "multiply"
+  | Divide -> "divide"
+  | Concat -> "concat"
+  | Identical -> "identical"
+  | Not_identical -> "not_identical"
+  | Equal -> "equal"
+  | Not_equal -> "not_equal"
+  | Less_than -> "less_than"
+  | Less_than_or_equal -> "less_than_or_equal"
+  | Greater_than -> "greater_than"
+  | Greater_than_or_equal -> "greater_than_or_equal"
+  | Boolean_and -> "boolean_and"
+  | Boolean_or -> "boolean_or"
+
+let cast_to_string = function
+  | To_boolean -> "bool"
+  | To_integer -> "int"
+  | To_float -> "float"
+  | To_string -> "string"
+
+let rec expression_to_yojson expression =
   let fields =
-    match expression.literal with
-    | Null -> [ ("kind", `String "null") ]
-    | Bool value -> [ ("kind", `String "bool"); ("value", `Bool value) ]
-    | Int value ->
+    match expression.desc with
+    | Literal Null -> [ ("kind", `String "null") ]
+    | Literal (Bool value) ->
+        [ ("kind", `String "bool"); ("value", `Bool value) ]
+    | Literal (Int value) ->
         [ ("kind", `String "int"); ("value", `String (Int64.to_string value)) ]
-    | Float value ->
+    | Literal (Float value) ->
         [
           ("kind", `String "float");
           ("value", `String (Printf.sprintf "%.17g" value));
         ]
-    | String value -> [ ("kind", `String "string"); ("value", `String value) ]
+    | Literal (String value) ->
+        [ ("kind", `String "string"); ("value", `String value) ]
+    | Variable name -> [ ("kind", `String "variable"); ("name", `String name) ]
+    | Assign (variable, value) ->
+        [
+          ("kind", `String "assign");
+          ("variable", `String variable);
+          ("value", expression_to_yojson value);
+        ]
+    | Unary (operator, operand) ->
+        [
+          ("kind", `String "unary");
+          ("operator", `String (unary_operator_to_string operator));
+          ("operand", expression_to_yojson operand);
+        ]
+    | Binary (left, operator, right) ->
+        [
+          ("kind", `String "binary");
+          ("operator", `String (binary_operator_to_string operator));
+          ("left", expression_to_yojson left);
+          ("right", expression_to_yojson right);
+        ]
+    | Cast (cast, expression) ->
+        [
+          ("kind", `String "cast");
+          ("type", `String (cast_to_string cast));
+          ("expression", expression_to_yojson expression);
+        ]
+    | Call (name, arguments) ->
+        [
+          ("kind", `String "call");
+          ("name", `String name);
+          ("arguments", `List (List.map expression_to_yojson arguments));
+        ]
   in
   `Assoc (fields @ [ ("location", location_to_yojson expression.location) ])
 
-let statement_to_yojson = function
+let rec statement_to_yojson = function
   | Expression (expression, location) ->
       `Assoc
         [
@@ -269,6 +490,23 @@ let statement_to_yojson = function
         [
           ("kind", `String "echo");
           ("expressions", `List (List.map expression_to_yojson expressions));
+          ("location", location_to_yojson location);
+        ]
+  | If (condition, then_, else_, location) ->
+      `Assoc
+        [
+          ("kind", `String "if");
+          ("condition", expression_to_yojson condition);
+          ("then", `List (List.map statement_to_yojson then_));
+          ("else", `List (List.map statement_to_yojson else_));
+          ("location", location_to_yojson location);
+        ]
+  | While (condition, body, location) ->
+      `Assoc
+        [
+          ("kind", `String "while");
+          ("condition", expression_to_yojson condition);
+          ("body", `List (List.map statement_to_yojson body));
           ("location", location_to_yojson location);
         ]
   | Nop location ->

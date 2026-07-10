@@ -1,20 +1,30 @@
 (test
  (package soteria-php)
  (name php_ir_tests)
+ (modules php_ir_tests)
  (libraries alcotest soteria_php))
 
 (test
  (package soteria-php)
  (name value_tests)
+ (modules value_tests)
  (libraries alcotest soteria_php))
 
 (test
  (package soteria-php)
  (name coercion_tests)
+ (modules coercion_tests)
  (libraries alcotest soteria_php unix yojson)
  (deps coercion_cases.json coercion_oracle.php))
 
 (test
  (package soteria-php)
  (name phpsymex_tests)
+ (modules phpsymex_tests)
+ (libraries alcotest soteria_php))
+
+(test
+ (package soteria-php)
+ (name interp_tests)
+ (modules interp_tests)
  (libraries alcotest soteria_php))

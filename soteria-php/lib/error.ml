@@ -2,6 +2,7 @@ module Call_trace = Soteria.Terminal.Call_trace
 
 type t =
   | Failed_assertion
+  | Division_by_zero
   | Invalid_argument_count of {
       function_name : string;
       expected : int;
@@ -16,6 +17,7 @@ type t =
 
 let pp formatter = function
   | Failed_assertion -> Format.pp_print_string formatter "Failed assertion"
+  | Division_by_zero -> Format.pp_print_string formatter "Division by zero"
   | Invalid_argument_count { function_name; expected; actual } ->
       Format.fprintf formatter "%s expects %d argument%s, %d given"
         function_name expected
@@ -29,9 +31,17 @@ module Trace = struct
   type t = {
     location : Php_ir.location option;
     call_trace : Php_ir.location Call_trace.t;
+    fuel : Soteria.Symex.Fuel_gauge.t;
   }
 
-  let empty = { location = None; call_trace = Call_trace.empty }
+  let empty =
+    {
+      location = None;
+      call_trace = Call_trace.empty;
+      fuel = Soteria.Symex.Fuel_gauge.infinite;
+    }
+
+  let with_fuel fuel = { empty with fuel }
 end
 
 type with_trace = t * Php_ir.location Call_trace.t

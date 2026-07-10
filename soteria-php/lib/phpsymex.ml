@@ -1,10 +1,41 @@
+module Php_value = Value
+
 module Raw_symex =
-  Soteria.Symex.Make (Soteria.Bv_values.Bv_solver.Z3_solver (Value.Typed))
+  Soteria.Symex.Make (Soteria.Bv_values.Bv_solver.Z3_solver (Php_value.Typed))
 
 module Monad = Soteria.Sym_states.State_monad.Make (Raw_symex) (Error.Trace)
 include Monad
 
 let get_trace () = get_state ()
+let base_branch_on = branch_on
+
+let consume_fuel_steps count =
+  let open Syntax in
+  let* trace = get_state () in
+  let status, fuel =
+    Soteria.Symex.Fuel_gauge.consume_fuel_steps count trace.Error.Trace.fuel
+  in
+  let* () = set_state { trace with Error.Trace.fuel } in
+  match status with
+  | Soteria.Symex.Fuel_gauge.Not_exhausted -> return ()
+  | Exhausted -> give_up "Step fuel exhausted"
+
+let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
+  match Php_value.Typed.Bool.to_bool guard with
+  | Some _ ->
+      base_branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_
+  | None -> (
+      let open Syntax in
+      let* trace = get_state () in
+      let status, fuel =
+        Soteria.Symex.Fuel_gauge.consume_branching 1 trace.Error.Trace.fuel
+      in
+      let* () = set_state { trace with Error.Trace.fuel } in
+      match status with
+      | Soteria.Symex.Fuel_gauge.Not_exhausted ->
+          base_branch_on ?left_branch_name ?right_branch_name guard ~then_
+            ~else_
+      | Exhausted -> give_up "Branching fuel exhausted")
 
 let with_location ~location process trace =
   let open Raw_symex.Syntax in
@@ -33,9 +64,12 @@ let error ?message reason =
 let not_impl description = give_up ("Unsupported: " ^ description)
 
 let run ?stats ?flamegraph ?fuel ~mode process =
-  run_with_state ~state:Error.Trace.empty process
+  let state =
+    Option.fold ~none:Error.Trace.empty ~some:Error.Trace.with_fuel fuel
+  in
+  run_with_state ~state process
   |> Raw_symex.map fst
-  |> Raw_symex.run ?stats ?flamegraph ?fuel ~mode
+  |> Raw_symex.run ?stats ?flamegraph ~mode
 
 module Result = struct
   include Result
@@ -47,7 +81,10 @@ module Result = struct
     | Missing fixes -> Missing fixes
 
   let run ?stats ?flamegraph ?fuel ?fail_fast ~mode process =
-    run_with_state ~state:Error.Trace.empty process
+    let state =
+      Option.fold ~none:Error.Trace.empty ~some:Error.Trace.with_fuel fuel
+    in
+    run_with_state ~state process
     |> Raw_symex.map drop_state
-    |> Raw_symex.Result.run ?stats ?flamegraph ?fuel ?fail_fast ~mode
+    |> Raw_symex.Result.run ?stats ?flamegraph ?fail_fast ~mode
 end

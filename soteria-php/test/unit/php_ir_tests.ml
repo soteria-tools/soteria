@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 1) statement =
+let program ?(schema_version = 2) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -38,17 +38,18 @@ let decodes_supported_ir () =
       ]
   in
   match Soteria_php.Php_ir.of_yojson (program statement) with
-  | Ok { statements = [ Echo ([ { literal = Int value; _ } ], _) ]; _ } ->
+  | Ok { statements = [ Echo ([ { desc = Literal (Int value); _ } ], _) ]; _ }
+    ->
       Alcotest.(check int64) "integer value" Int64.max_int value
   | Ok _ -> Alcotest.fail "decoded an unexpected IR shape"
   | Error error -> Alcotest.fail error
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:2 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:3 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 2 (expected 1)"
+        "error" "$.schema_version: unsupported schema version 3 (expected 2)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
