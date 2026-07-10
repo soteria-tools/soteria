@@ -1,7 +1,7 @@
 # Soteria PHP IR version 3
 
-Version 3 is historical. The current frontend emits version 5, documented in
-`ir-v5.md`.
+Version 3 is historical. The current frontend emits version 6, documented in
+`ir-v6.md`.
 
 Version 3 extends version 2 with top-level named functions, parameters, and
 returns. The program object adds a required `functions` array and uses

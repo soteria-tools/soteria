@@ -22,6 +22,12 @@
   $ cat soteria.out
   2:5:7:1:3:3:7:1:8
 
+  $ php exceptions.php > php.out
+  $ ../../../bin/soteria_php.exe exec exceptions.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  ififdone:caught:same:finally7:9:error
+
   $ php functions.php > php.out
   $ ../../../bin/soteria_php.exe exec functions.php > soteria.out
   $ cmp php.out soteria.out
@@ -46,6 +52,13 @@
       .  
     6 |  fail_here();
       |  ----------- 1: Call to fail_here
+  [1]
+
+  $ ../../../bin/soteria_php.exe exec uncaught_exception.php
+  error: Uncaught RuntimeException: boom
+      --> uncaught_exception.php:3:1
+    3 |  throw new RuntimeException("boom");
+      |  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Triggering operation
   [1]
 
   $ ../../../bin/soteria_php.exe exec --step-fuel=5 loop.php

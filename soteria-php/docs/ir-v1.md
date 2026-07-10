@@ -1,7 +1,7 @@
 # Soteria PHP IR version 1
 
 Version 1 is the historical parse-only format. The current frontend emits
-version 5, documented in `ir-v5.md`.
+version 6, documented in `ir-v6.md`.
 
 The frontend emits one JSON program object:
 

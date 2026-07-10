@@ -1,13 +1,18 @@
 module String_map = Map.Make (String)
 module Cell_map = Map.Make (Int)
+module Object_map = Map.Make (Int)
 
 type cell_id = int
 type scope = cell_id String_map.t
+type object_id = int
+type php_object = { class_name : string; message : string }
 
 type t = {
   scopes : scope list;
   cells : Value.t Cell_map.t;
   next_cell : cell_id;
+  objects : php_object Object_map.t;
+  next_object : object_id;
   output_rev : string list;
 }
 
@@ -16,6 +21,8 @@ let empty =
     scopes = [ String_map.empty ];
     cells = Cell_map.empty;
     next_cell = 0;
+    objects = Object_map.empty;
+    next_object = 0;
     output_rev = [];
   }
 
@@ -38,6 +45,17 @@ let allocate_cell value state =
       cells = Cell_map.add cell value state.cells;
       next_cell = cell + 1;
     } )
+
+let allocate_object class_name message state =
+  let id = state.next_object in
+  ( id,
+    {
+      state with
+      objects = Object_map.add id { class_name; message } state.objects;
+      next_object = id + 1;
+    } )
+
+let find_object id state = Object_map.find_opt id state.objects
 
 let find_variable_cell name state =
   String_map.find_opt name (current_scope state)

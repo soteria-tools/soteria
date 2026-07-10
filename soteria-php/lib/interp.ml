@@ -24,7 +24,8 @@ let simplify_value value =
   | Value.Float value ->
       let+ value = Phpsymex.simplify value in
       Value.Float (normalize value)
-  | (Value.Undef | Value.Null | Value.String _ | Value.Array _) as value ->
+  | (Value.Undef | Value.Null | Value.String _ | Value.Array _ | Value.Object _)
+    as value ->
       Phpsymex.return value
 
 let condition value =
@@ -180,6 +181,8 @@ let rec strict_equal state left right =
         Value.Typed.Bool.of_bool (String.equal left right)
     | Value.Array left, Value.Array right ->
         strict_equal_arrays state left right
+    | Value.Object left, Value.Object right ->
+        Value.Typed.Bool.of_bool (left = right)
     | _ -> Value.Typed.Bool.v_false
   in
   Value.Bool result
@@ -336,9 +339,109 @@ let unary operator value =
 module Function_map = Map.Make (String)
 
 type functions = Php_ir.function_decl Function_map.t
-type control = Normal | Return of Value.t
+type thrown = { value : Value.t; trace : Error.Trace.t }
+type 'a evaluation = Evaluated of 'a | Raised of thrown
+
+type control =
+  | Normal
+  | Return of Value.t
+  | Break of int
+  | Continue of int
+  | Throw of thrown
+
 type access = Read | Write | Unset
 type place = Variable of string | Array_element of place * Value.array_key
+
+type throwable_class = {
+  name : string;
+  parent : string option;
+  constructible : bool;
+}
+
+let throwable ?parent name = { name; parent; constructible = true }
+
+let throwable_classes =
+  [
+    { name = "Throwable"; parent = None; constructible = false };
+    throwable ~parent:"Throwable" "Exception";
+    throwable ~parent:"Exception" "LogicException";
+    throwable ~parent:"LogicException" "InvalidArgumentException";
+    throwable ~parent:"LogicException" "DomainException";
+    throwable ~parent:"LogicException" "LengthException";
+    throwable ~parent:"LogicException" "OutOfRangeException";
+    throwable ~parent:"Exception" "RuntimeException";
+    throwable ~parent:"RuntimeException" "OutOfBoundsException";
+    throwable ~parent:"RuntimeException" "OverflowException";
+    throwable ~parent:"RuntimeException" "RangeException";
+    throwable ~parent:"RuntimeException" "UnderflowException";
+    throwable ~parent:"RuntimeException" "UnexpectedValueException";
+    throwable ~parent:"Throwable" "Error";
+    throwable ~parent:"Error" "ArithmeticError";
+    throwable ~parent:"ArithmeticError" "DivisionByZeroError";
+    throwable ~parent:"Error" "AssertionError";
+    throwable ~parent:"Error" "TypeError";
+    throwable ~parent:"TypeError" "ArgumentCountError";
+    throwable ~parent:"Error" "ValueError";
+  ]
+
+let find_throwable_class name =
+  let name = Builtins.canonical_name name in
+  List.find_opt
+    (fun class_ -> String.equal (String.lowercase_ascii class_.name) name)
+    throwable_classes
+
+let rec class_is_a actual expected =
+  let expected = Builtins.canonical_name expected in
+  if String.equal (String.lowercase_ascii actual) expected then true
+  else
+    match find_throwable_class actual with
+    | Some { parent = Some parent; _ } -> class_is_a parent expected
+    | Some { parent = None; _ } | None -> false
+
+let evaluated value state = Phpsymex.Result.ok (Evaluated value, state)
+
+let bind_evaluation evaluation continuation =
+  let open Phpsymex.Syntax in
+  let** result, state = evaluation in
+  match result with
+  | Evaluated value -> continuation (value, state)
+  | Raised thrown -> Phpsymex.Result.ok (Raised thrown, state)
+
+let ( let*** ) = bind_evaluation
+
+let construct_throwable state name arguments =
+  match find_throwable_class name with
+  | Some { constructible = true; name; _ } ->
+      let open Phpsymex.Syntax in
+      let** message =
+        match arguments with
+        | [] -> Phpsymex.Result.ok ""
+        | [ value ] ->
+            let** value = coerce Coercion.String value in
+            Phpsymex.Result.ok (Option.get (Value.string_value value))
+        | _ -> unsupported "%s::__construct() arguments beyond the message" name
+      in
+      let id, state = State.allocate_object name message state in
+      evaluated (Value.object_ id) state
+  | Some { constructible = false; _ } -> unsupported "construction of Throwable"
+  | None -> unsupported "object construction for class %s" name
+
+let raise_value value state =
+  let value, state =
+    match value with
+    | Value.Object id -> (
+        match State.find_object id state with
+        | Some _ -> (value, state)
+        | None -> failwith "PHP object value refers to an unknown object")
+    | _ ->
+        let id, state =
+          State.allocate_object "Error" "Can only throw objects" state
+        in
+        (Value.object_ id, state)
+  in
+  let open Phpsymex.Syntax in
+  let* trace = Phpsymex.get_trace () in
+  Phpsymex.Result.ok (Raised { value; trace }, state)
 
 let rec read_place state = function
   | Variable name ->
@@ -485,34 +588,43 @@ let bind_parameters (parameters : Php_ir.parameter list) arguments =
   in
   bind [] parameters arguments
 
+let finish_evaluation evaluation continuation =
+  let open Phpsymex.Syntax in
+  let** result, state = evaluation in
+  match result with
+  | Evaluated value -> continuation value state
+  | Raised thrown -> Phpsymex.Result.ok (Throw thrown, state)
+
 let rec eval_expressions functions state expressions =
   let open Phpsymex.Syntax in
   match expressions with
-  | [] -> Phpsymex.Result.ok ([], state)
+  | [] -> evaluated [] state
   | expression :: expressions ->
-      let** value, state = eval_expression functions state expression in
-      let** values, state = eval_expressions functions state expressions in
-      Phpsymex.Result.ok (value :: values, state)
+      let*** value, state = eval_expression functions state expression in
+      let*** values, state = eval_expressions functions state expressions in
+      evaluated (value :: values) state
 
 and eval_array_items functions state array items =
   let open Phpsymex.Syntax in
   match items with
-  | [] -> Phpsymex.Result.ok (Value.array array, state)
+  | [] -> evaluated (Value.array array) state
   | (item : Php_ir.array_item) :: items ->
       let process =
-        let** key, state =
+        let*** key, state =
           match item.key with
           | None -> (
               match Value.array_next_key array with
-              | Some key -> Phpsymex.Result.ok (key, state)
+              | Some key -> evaluated key state
               | None -> Phpsymex.error Error.Array_append_overflow)
           | Some expression ->
-              let** value, state = eval_expression functions state expression in
+              let*** value, state =
+                eval_expression functions state expression
+              in
               let** key = normalized_array_key value in
               let** key = resolve_array_key ~for_write:true array key in
-              Phpsymex.Result.ok (key, state)
+              evaluated key state
         in
-        let** value, state = eval_expression functions state item.value in
+        let*** value, state = eval_expression functions state item.value in
         eval_array_items functions state (Value.array_set key value array) items
       in
       Phpsymex.with_location ~location:item.location process
@@ -523,14 +635,14 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
     match lvalue.desc with
     | Variable_lvalue name -> (
         match access with
-        | Write | Unset -> Phpsymex.Result.ok (Variable name, state)
+        | Write | Unset -> evaluated (Variable name) state
         | Read -> (
             match State.find_variable_cell name state with
-            | Some _ -> Phpsymex.Result.ok (Variable name, state)
+            | Some _ -> evaluated (Variable name) state
             | None -> unsupported "read of undefined variable $%s" name))
     | Array_element_lvalue (parent, key_expression) ->
-        let** parent, state = resolve_lvalue functions state ~access parent in
-        let** key, state =
+        let*** parent, state = resolve_lvalue functions state ~access parent in
+        let*** key, state =
           match key_expression with
           | None -> (
               if access <> Write then unsupported "array append read"
@@ -543,10 +655,12 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
                     let** state =
                       write_place parent (Value.array array) state
                     in
-                    Phpsymex.Result.ok (key, state)
+                    evaluated key state
                 | None -> Phpsymex.error Error.Array_append_overflow)
           | Some expression ->
-              let** value, state = eval_expression functions state expression in
+              let*** value, state =
+                eval_expression functions state expression
+              in
               let** array =
                 match (access, read_place state parent) with
                 | Unset, Value.Array array -> Phpsymex.Result.ok array
@@ -558,33 +672,33 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
               let** key =
                 resolve_array_key ~for_write:(access = Write) array key
               in
-              Phpsymex.Result.ok (key, state)
+              evaluated key state
         in
-        Phpsymex.Result.ok (Array_element (parent, key), state)
+        evaluated (Array_element (parent, key)) state
   in
   Phpsymex.with_location ~location:lvalue.location process
 
 and eval_short_circuit functions state left operator right =
   let open Phpsymex.Syntax in
-  let** left, state = eval_expression functions state left in
+  let*** left, state = eval_expression functions state left in
   let** guard = condition left in
   match operator with
   | Php_ir.Boolean_and ->
       Phpsymex.branch_on guard ~left_branch_name:"Evaluate right operand"
         ~right_branch_name:"Short-circuit false"
         ~then_:(fun () ->
-          let** right, state = eval_expression functions state right in
+          let*** right, state = eval_expression functions state right in
           let** right = condition right in
-          Phpsymex.Result.ok (Value.Bool right, state))
-        ~else_:(fun () -> Phpsymex.Result.ok (Value.bool false, state))
+          evaluated (Value.Bool right) state)
+        ~else_:(fun () -> evaluated (Value.bool false) state)
   | Boolean_or ->
       Phpsymex.branch_on guard ~left_branch_name:"Short-circuit true"
         ~right_branch_name:"Evaluate right operand"
-        ~then_:(fun () -> Phpsymex.Result.ok (Value.bool true, state))
+        ~then_:(fun () -> evaluated (Value.bool true) state)
         ~else_:(fun () ->
-          let** right, state = eval_expression functions state right in
+          let*** right, state = eval_expression functions state right in
           let** right = condition right in
-          Phpsymex.Result.ok (Value.Bool right, state))
+          evaluated (Value.Bool right) state)
   | _ -> failwith "non-short-circuit operator passed to evaluation"
 
 and eval_expression functions state expression =
@@ -592,32 +706,32 @@ and eval_expression functions state expression =
     let open Phpsymex.Syntax in
     let* () = Phpsymex.consume_fuel_steps 1 in
     match expression.Php_ir.desc with
-    | Literal literal -> Phpsymex.Result.ok (Value.of_literal literal, state)
+    | Literal literal -> evaluated (Value.of_literal literal) state
     | Array items -> eval_array_items functions state Value.empty_array items
     | Variable name -> (
         match State.find_variable name state with
-        | Some value -> Phpsymex.Result.ok (value, state)
+        | Some value -> evaluated value state
         | None -> unsupported "read of undefined variable $%s" name)
     | Array_get target ->
-        let** place, state =
+        let*** place, state =
           resolve_lvalue functions state ~access:Read target
         in
         let value = read_place state place in
         if Value.kind value = `Undefined then
           unsupported "read of an undefined array offset"
-        else Phpsymex.Result.ok (value, state)
+        else evaluated value state
     | Assign (target, expression) ->
-        let** place, state =
+        let*** place, state =
           resolve_lvalue functions state ~access:Write target
         in
-        let** value, state = eval_expression functions state expression in
+        let*** value, state = eval_expression functions state expression in
         let** state = write_place place value state in
-        Phpsymex.Result.ok (value, state)
+        evaluated value state
     | Assign_reference (target, source) ->
-        let** target, state =
+        let*** target, state =
           resolve_lvalue functions state ~access:Write target
         in
-        let** source, state =
+        let*** source, state =
           resolve_lvalue functions state ~access:Write source
         in
         let** cell, state = cell_for_reference source state in
@@ -625,20 +739,20 @@ and eval_expression functions state expression =
         let value =
           State.find_cell cell state |> Option.value ~default:Value.undef
         in
-        Phpsymex.Result.ok (value, state)
+        evaluated value state
     | Unary (operator, expression) ->
-        let** value, state = eval_expression functions state expression in
+        let*** value, state = eval_expression functions state expression in
         let** value = unary operator value in
-        Phpsymex.Result.ok (value, state)
+        evaluated value state
     | Binary (left, ((Boolean_and | Boolean_or) as operator), right) ->
         eval_short_circuit functions state left operator right
     | Binary (left, operator, right) ->
-        let** left, state = eval_expression functions state left in
-        let** right, state = eval_expression functions state right in
+        let*** left, state = eval_expression functions state left in
+        let*** right, state = eval_expression functions state right in
         let** value = binary state operator left right in
-        Phpsymex.Result.ok (value, state)
+        evaluated value state
     | Cast (cast, expression) ->
-        let** value, state = eval_expression functions state expression in
+        let*** value, state = eval_expression functions state expression in
         let target =
           match cast with
           | Php_ir.To_boolean -> Coercion.Boolean
@@ -647,15 +761,21 @@ and eval_expression functions state expression =
           | To_string -> Coercion.String
         in
         let** value = coerce target value in
-        Phpsymex.Result.ok (value, state)
+        evaluated value state
     | Call (name, arguments) -> (
-        let** arguments, state = eval_expressions functions state arguments in
+        let*** arguments, state = eval_expressions functions state arguments in
         match Builtins.find name with
         | Some implementation ->
             let** value = implementation ~args:arguments in
-            Phpsymex.Result.ok (value, state)
+            evaluated value state
         | None ->
             call_function functions state expression.location name arguments)
+    | New (name, arguments) ->
+        let*** arguments, state = eval_expressions functions state arguments in
+        construct_throwable state name arguments
+    | Throw expression ->
+        let*** value, state = eval_expression functions state expression in
+        raise_value value state
   in
   Phpsymex.with_location ~location:expression.location process
 
@@ -678,10 +798,13 @@ and call_function functions state location name arguments =
           let** control, local_state =
             exec_statements functions local_state function_.body
           in
-          let value =
-            match control with Normal -> Value.null | Return value -> value
-          in
-          Phpsymex.Result.ok (value, State.leave_scope local_state)
+          let state = State.leave_scope local_state in
+          match control with
+          | Normal -> evaluated Value.null state
+          | Return value -> evaluated value state
+          | Throw thrown -> Phpsymex.Result.ok (Raised thrown, state)
+          | Break _ | Continue _ ->
+              failwith "loop control escaped a PHP function"
         in
         Phpsymex.with_call ~location
           ~message:("Call to " ^ function_.name)
@@ -690,9 +813,9 @@ and call_function functions state location name arguments =
 and emit_expressions functions state expressions =
   let open Phpsymex.Syntax in
   match expressions with
-  | [] -> Phpsymex.Result.ok state
+  | [] -> evaluated () state
   | expression :: expressions ->
-      let** value, state = eval_expression functions state expression in
+      let*** value, state = eval_expression functions state expression in
       let* value = simplify_value value in
       let** value = coerce Coercion.String value in
       let output = Option.get (Value.string_value value) in
@@ -701,9 +824,9 @@ and emit_expressions functions state expressions =
 and unset_lvalues functions state lvalues =
   let open Phpsymex.Syntax in
   match lvalues with
-  | [] -> Phpsymex.Result.ok state
+  | [] -> evaluated () state
   | lvalue :: lvalues ->
-      let** place, state =
+      let*** place, state =
         resolve_lvalue functions state ~access:Unset lvalue
       in
       let** state = unset_place place state in
@@ -717,20 +840,65 @@ and exec_statements functions state statements =
       let** control, state = exec_statement functions state statement in
       match control with
       | Normal -> exec_statements functions state statements
-      | Return _ -> Phpsymex.Result.ok (control, state))
+      | Return _ | Break _ | Continue _ | Throw _ ->
+          Phpsymex.Result.ok (control, state))
 
 and exec_while functions state condition_expression body =
   let open Phpsymex.Syntax in
-  let** value, state = eval_expression functions state condition_expression in
-  let** guard = condition value in
-  Phpsymex.branch_on guard ~left_branch_name:"While body"
-    ~right_branch_name:"While exit"
-    ~then_:(fun () ->
-      let** control, state = exec_statements functions state body in
-      match control with
-      | Normal -> exec_while functions state condition_expression body
-      | Return _ -> Phpsymex.Result.ok (control, state))
-    ~else_:(fun () -> Phpsymex.Result.ok (Normal, state))
+  finish_evaluation (eval_expression functions state condition_expression)
+    (fun value state ->
+      let** guard = condition value in
+      Phpsymex.branch_on guard ~left_branch_name:"While body"
+        ~right_branch_name:"While exit"
+        ~then_:(fun () ->
+          let** control, state = exec_statements functions state body in
+          match control with
+          | Normal | Continue 1 ->
+              exec_while functions state condition_expression body
+          | Break 1 -> Phpsymex.Result.ok (Normal, state)
+          | Break depth -> Phpsymex.Result.ok (Break (depth - 1), state)
+          | Continue depth -> Phpsymex.Result.ok (Continue (depth - 1), state)
+          | Return _ | Throw _ -> Phpsymex.Result.ok (control, state))
+        ~else_:(fun () -> Phpsymex.Result.ok (Normal, state)))
+
+and exec_try functions state body catches finally =
+  let open Phpsymex.Syntax in
+  let** control, state = exec_statements functions state body in
+  let** control, state =
+    match control with
+    | Throw thrown -> exec_catches functions state thrown catches
+    | Normal | Return _ | Break _ | Continue _ ->
+        Phpsymex.Result.ok (control, state)
+  in
+  match finally with
+  | None -> Phpsymex.Result.ok (control, state)
+  | Some finally -> (
+      let** finally_control, state = exec_statements functions state finally in
+      match finally_control with
+      | Normal -> Phpsymex.Result.ok (control, state)
+      | Return _ | Break _ | Continue _ | Throw _ ->
+          Phpsymex.Result.ok (finally_control, state))
+
+and exec_catches functions state thrown catches =
+  match catches with
+  | [] -> Phpsymex.Result.ok (Throw thrown, state)
+  | (catch : Php_ir.catch_clause) :: catches ->
+      let object_ =
+        match thrown.value with
+        | Value.Object id -> (
+            match State.find_object id state with
+            | Some object_ -> object_
+            | None -> failwith "thrown PHP object is missing from state")
+        | _ -> failwith "non-object escaped as a PHP exception"
+      in
+      if List.exists (class_is_a object_.class_name) catch.types then
+        let state =
+          match catch.variable with
+          | None -> state
+          | Some name -> State.set_variable name thrown.value state
+        in
+        exec_statements functions state catch.body
+      else exec_catches functions state thrown catches
 
 and exec_statement functions state statement =
   let location =
@@ -739,7 +907,10 @@ and exec_statement functions state statement =
     | Echo (_, location)
     | If (_, _, _, location)
     | While (_, _, location)
+    | Break (_, location)
+    | Continue (_, location)
     | Return (_, location)
+    | Try (_, _, _, location)
     | Unset (_, location)
     | Nop location ->
         location
@@ -749,32 +920,34 @@ and exec_statement functions state statement =
     let* () = Phpsymex.consume_fuel_steps 1 in
     match statement with
     | Php_ir.Expression (expression, _) ->
-        let** _, state = eval_expression functions state expression in
-        Phpsymex.Result.ok (Normal, state)
+        finish_evaluation (eval_expression functions state expression)
+          (fun _ state -> Phpsymex.Result.ok (Normal, state))
     | Echo (expressions, _) ->
-        let** state = emit_expressions functions state expressions in
-        Phpsymex.Result.ok (Normal, state)
+        finish_evaluation (emit_expressions functions state expressions)
+          (fun () state -> Phpsymex.Result.ok (Normal, state))
     | If (condition_expression, then_, else_, _) ->
-        let** value, state =
-          eval_expression functions state condition_expression
-        in
-        let** guard = condition value in
-        Phpsymex.branch_on guard ~left_branch_name:"If branch"
-          ~right_branch_name:"Else branch"
-          ~then_:(fun () -> exec_statements functions state then_)
-          ~else_:(fun () -> exec_statements functions state else_)
+        finish_evaluation (eval_expression functions state condition_expression)
+          (fun value state ->
+            let** guard = condition value in
+            Phpsymex.branch_on guard ~left_branch_name:"If branch"
+              ~right_branch_name:"Else branch"
+              ~then_:(fun () -> exec_statements functions state then_)
+              ~else_:(fun () -> exec_statements functions state else_))
     | While (condition_expression, body, _) ->
         exec_while functions state condition_expression body
+    | Break (depth, _) -> Phpsymex.Result.ok (Break depth, state)
+    | Continue (depth, _) -> Phpsymex.Result.ok (Continue depth, state)
     | Return (expression, _) ->
-        let** value, state =
-          match expression with
-          | None -> Phpsymex.Result.ok (Value.null, state)
-          | Some expression -> eval_expression functions state expression
-        in
-        Phpsymex.Result.ok (Return value, state)
+        finish_evaluation
+          (match expression with
+          | None -> evaluated Value.null state
+          | Some expression -> eval_expression functions state expression)
+          (fun value state -> Phpsymex.Result.ok (Return value, state))
+    | Try (body, catches, finally, _) ->
+        exec_try functions state body catches finally
     | Unset (lvalues, _) ->
-        let** state = unset_lvalues functions state lvalues in
-        Phpsymex.Result.ok (Normal, state)
+        finish_evaluation (unset_lvalues functions state lvalues)
+          (fun () state -> Phpsymex.Result.ok (Normal, state))
     | Nop _ -> Phpsymex.Result.ok (Normal, state)
   in
   Phpsymex.with_location ~location process
@@ -794,5 +967,23 @@ let collect_functions declarations =
 let run program =
   let open Phpsymex.Syntax in
   let** functions = collect_functions program.Php_ir.functions in
-  let** _, state = exec_statements functions State.empty program.statements in
-  Phpsymex.Result.ok state
+  let** control, state =
+    exec_statements functions State.empty program.statements
+  in
+  match control with
+  | Normal -> Phpsymex.Result.ok state
+  | Throw thrown -> (
+      match thrown.value with
+      | Value.Object id -> (
+          match State.find_object id state with
+          | Some object_ ->
+              Phpsymex.error_at thrown.trace
+                (Error.Uncaught_exception
+                   {
+                     class_name = object_.class_name;
+                     message = object_.message;
+                   })
+          | None -> failwith "uncaught PHP object is missing from state")
+      | _ -> failwith "non-object escaped as an uncaught PHP exception")
+  | Return _ | Break _ | Continue _ ->
+      failwith "invalid structured control escaped the PHP program"

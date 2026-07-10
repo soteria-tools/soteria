@@ -3,7 +3,7 @@
 Soteria PHP targets PHP 8.4.19 with 64-bit integers. PHP 8.4.19 is the concrete
 semantics oracle, while the parser sidecar may run on any PHP version accepted
 by its Composer manifest. The frontend uses nikic/PHP-Parser 5.8.0 and emits
-Soteria PHP IR schema version 5.
+Soteria PHP IR schema version 6.
 
 The interpreter supports this deliberately bounded source subset:
 
@@ -21,15 +21,25 @@ The interpreter supports this deliberately bounded source subset:
 | Unary `!`, `+`, and `-` | Partially supported | Numeric unary operators currently require an integer or float operand. Integer-negation overflow explicitly gives up. |
 | `+`, `-`, `*`, and `/` | Partially supported | Integer and float arithmetic and array union with `+` are supported. Integer overflow explicitly gives up instead of wrapping. Other PHP numeric coercions are not yet supported. |
 | `.` concatenation | Partially supported | Supported when both operands can be converted to concrete strings. |
-| `===` and `!==` | Supported | Supported for all current value kinds, including ordered recursive arrays and symbolic scalar payloads. |
+| `===` and `!==` | Supported | Supported for all current value kinds, including ordered recursive arrays, symbolic scalar payloads, and built-in throwable object identity. |
 | `==` and `!=` | Partially supported | Supported for numeric pairs and boolean/null pairs. Numeric-string and other mixed-type rules are not yet supported. |
 | `<`, `<=`, `>`, and `>=` | Partially supported | Numeric operands only. |
 | `&&`, `||`, `and`, and `or` | Supported | Right-hand evaluation is correctly short-circuited and may branch symbolically. |
 | Function calls | Partially supported | The callee must be a statically named user function or Soteria intrinsic. Arguments must be positional, non-reference, and non-unpacked. |
 | Named functions and returns | Partially supported | Top-level declarations, required untyped by-value parameters, case-insensitive calls, early returns, fallthrough-to-`null`, and recursion are supported. Extra arguments are evaluated and ignored as in PHP. Parameter defaults and types, return types, references, variadics, named arguments, attributes, nested declarations, and closures remain unsupported. |
 | Function-local variables | Supported | Calls use a fresh persistent local scope initialized with the parameters. Assignments do not modify or leak into the caller's scope. Output remains visible across calls. PHP `global` and static local variables remain unsupported. |
-| Expression statements, `echo`, `if`, `else`, `while`, `return`, and `unset` | Supported | `return` is supported in function bodies. `unset` removes variable or nested array-element bindings without destroying aliased cells. `elseif`, loop-control statements, and all other statements remain unsupported. |
+| Expression statements, `echo`, `if`, `else`, `while`, `return`, `break`, `continue`, and `unset` | Supported | `return` is supported in function bodies. `break` and `continue` use positive static depths and may target enclosing `while` loops. `unset` removes variable or nested array-element bindings without destroying aliased cells. `elseif` and other loop forms remain unsupported. |
+| `throw`, `try`, multi-catch, and `finally` | Partially supported | Explicit throws propagate through expressions and function calls. Catch order and the supported subset of the built-in PHP throwable hierarchy are modelled, catch variables retain stable object identity, and finally runs for every structured completion. Non-object throws become catchable `Error` objects. Existing interpreter errors such as division by zero are not yet catchable. |
+| `new` | Partially supported | Statically named built-in throwable classes may be constructed with no arguments or one concrete or coercible message argument. General objects, user classes, properties, methods, and additional constructor arguments remain unsupported. |
 | Undefined variable and array-offset reads | Unsupported | The execution path explicitly gives up. PHP warning and resulting-value semantics are not implemented yet. |
+
+Throwable construction and catch inheritance currently cover `Throwable`,
+`Exception`, `LogicException`, `InvalidArgumentException`, `DomainException`,
+`LengthException`, `OutOfRangeException`, `RuntimeException`,
+`OutOfBoundsException`, `OverflowException`, `RangeException`,
+`UnderflowException`, `UnexpectedValueException`, `Error`, `ArithmeticError`,
+`DivisionByZeroError`, `AssertionError`, `TypeError`, `ArgumentCountError`, and
+`ValueError`. `Throwable` itself is not constructible.
 
 Every interpreted expression and statement consumes step fuel. The command-line
 driver also sets finite branching fuel, so unbounded loops and path explosion
@@ -48,9 +58,10 @@ The symbolic runtime recognizes these case-insensitive intrinsic functions:
 | `Soteria\assert(bool)` | Supported | Produces distinct success and failure paths and currently requires a boolean argument. |
 | `Soteria\expect_fail()` | Unsupported | Requires entry-point result handling that is not implemented yet. |
 
-Builtin and user-function arity errors, failed assertions, and division by zero
-retain their source location and call trace. Errors reached in a user function
-also identify the call site. Unsupported function names, unsupported builtins,
-and unsupported semantic cases explicitly give up the current path. The `exec`
-command returns status 1 when a definite failure is found, status 2 for frontend
-errors, and status 3 when exploration is incomplete.
+Builtin and user-function arity errors, failed assertions, division by zero,
+and uncaught explicit exceptions retain their source location and call trace.
+Failures reached in a user function also identify the call site. Unsupported
+function names, unsupported builtins, and unsupported semantic cases explicitly
+give up the current path. The `exec` command returns status 1 when a definite
+failure is found, status 2 for frontend errors, and status 3 when exploration is
+incomplete.

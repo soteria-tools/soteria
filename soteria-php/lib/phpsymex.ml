@@ -61,6 +61,7 @@ let error ?message reason =
   let* trace = get_trace () in
   Result.error (Error.decorate ?message trace reason)
 
+let error_at trace reason = Result.error (Error.decorate trace reason)
 let not_impl description = give_up ("Unsupported: " ^ description)
 
 let run ?stats ?flamegraph ?fuel ~mode process =

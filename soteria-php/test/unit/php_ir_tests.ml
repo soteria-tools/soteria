@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 5) ?(functions = []) statement =
+let program ?(schema_version = 6) ?(functions = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -47,10 +47,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:6 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:7 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 6 (expected 5)"
+        "error" "$.schema_version: unsupported schema version 7 (expected 6)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -319,6 +319,111 @@ let decodes_references_and_unset () =
   | Ok _ -> Alcotest.fail "decoded an unexpected reference or unset shape"
   | Error error -> Alcotest.fail error
 
+let decodes_exceptions_and_structured_control () =
+  let string value =
+    `Assoc
+      [
+        ("kind", `String "string");
+        ("value", `String value);
+        ("location", location);
+      ]
+  in
+  let new_exception =
+    `Assoc
+      [
+        ("kind", `String "new");
+        ("class", `String "RuntimeException");
+        ("arguments", `List [ string "boom" ]);
+        ("location", location);
+      ]
+  in
+  let throw =
+    `Assoc
+      [
+        ("kind", `String "throw");
+        ("expression", new_exception);
+        ("location", location);
+      ]
+  in
+  let expression =
+    `Assoc
+      [
+        ("kind", `String "expression");
+        ("expression", throw);
+        ("location", location);
+      ]
+  in
+  let nop = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
+  let catch =
+    `Assoc
+      [
+        ("types", `List [ `String "LogicException"; `String "Exception" ]);
+        ("variable", `String "exception");
+        ("body", `List [ nop ]);
+        ("location", location);
+      ]
+  in
+  let try_ =
+    `Assoc
+      [
+        ("kind", `String "try");
+        ("body", `List [ expression ]);
+        ("catches", `List [ catch ]);
+        ("finally", `List [ nop ]);
+        ("location", location);
+      ]
+  in
+  match Soteria_php.Php_ir.of_yojson (program try_) with
+  | Ok
+      {
+        statements =
+          [
+            Try
+              ( [
+                  Expression
+                    ( {
+                        desc =
+                          Throw
+                            {
+                              desc =
+                                New
+                                  ( "RuntimeException",
+                                    [ { desc = Literal (String "boom"); _ } ] );
+                              _;
+                            };
+                        _;
+                      },
+                      _ );
+                ],
+                [
+                  {
+                    types = [ "LogicException"; "Exception" ];
+                    variable = Some "exception";
+                    _;
+                  };
+                ],
+                Some [ Nop _ ],
+                _ );
+          ];
+        _;
+      } ->
+      ()
+  | Ok _ -> Alcotest.fail "decoded an unexpected exception shape"
+  | Error error -> Alcotest.fail error
+
+let rejects_invalid_loop_control () =
+  let break =
+    `Assoc
+      [ ("kind", `String "break"); ("depth", `Int 1); ("location", location) ]
+  in
+  match Soteria_php.Php_ir.of_yojson (program break) with
+  | Error error ->
+      Alcotest.(check string)
+        "error"
+        "$.statements[0].depth: break depth 1 exceeds enclosing loop depth 0"
+        error
+  | Ok _ -> Alcotest.fail "accepted break outside a loop"
+
 let () =
   Alcotest.run "PHP IR"
     [
@@ -336,5 +441,9 @@ let () =
             rejects_array_append_reads;
           Alcotest.test_case "references and unset" `Quick
             decodes_references_and_unset;
+          Alcotest.test_case "exceptions and structured control" `Quick
+            decodes_exceptions_and_structured_control;
+          Alcotest.test_case "loop-control validation" `Quick
+            rejects_invalid_loop_control;
         ] );
     ]

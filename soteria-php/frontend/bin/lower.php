@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
 final class LoweringError extends RuntimeException
 {
@@ -55,7 +55,7 @@ final class Lowerer
                 $functionNames[$canonicalName] = true;
                 $functions[] = $function;
             } else {
-                $body[] = $this->lowerStatement($statement, false);
+                $body[] = $this->lowerStatement($statement, false, 0);
             }
         }
 
@@ -105,6 +105,7 @@ final class Lowerer
                 fn (Node\Stmt $statement): array => $this->lowerStatement(
                     $statement,
                     true,
+                    0,
                 ),
                 $function->stmts,
             ),
@@ -137,6 +138,7 @@ final class Lowerer
     private function lowerStatement(
         Node\Stmt $statement,
         bool $inFunction,
+        int $loopDepth,
     ): array
     {
         $location = $this->location($statement);
@@ -159,6 +161,7 @@ final class Lowerer
                 $statement,
                 $location,
                 $inFunction,
+                $loopDepth,
             ),
             $statement instanceof Node\Stmt\While_ => [
                 'kind' => 'while',
@@ -167,8 +170,27 @@ final class Lowerer
                     fn (Node\Stmt $bodyStatement): array => $this->lowerStatement(
                         $bodyStatement,
                         $inFunction,
+                        $loopDepth + 1,
                     ),
                     $statement->stmts,
+                ),
+                'location' => $location,
+            ],
+            $statement instanceof Node\Stmt\Break_ => [
+                'kind' => 'break',
+                'depth' => $this->lowerLoopControlDepth(
+                    $statement,
+                    $statement->num,
+                    $loopDepth,
+                ),
+                'location' => $location,
+            ],
+            $statement instanceof Node\Stmt\Continue_ => [
+                'kind' => 'continue',
+                'depth' => $this->lowerLoopControlDepth(
+                    $statement,
+                    $statement->num,
+                    $loopDepth,
                 ),
                 'location' => $location,
             ],
@@ -179,6 +201,12 @@ final class Lowerer
                     : $this->lowerExpression($statement->expr),
                 'location' => $location,
             ],
+            $statement instanceof Node\Stmt\TryCatch => $this->lowerTry(
+                $statement,
+                $location,
+                $inFunction,
+                $loopDepth,
+            ),
             $statement instanceof Node\Stmt\Unset_ => [
                 'kind' => 'unset',
                 'targets' => array_map(
@@ -202,6 +230,7 @@ final class Lowerer
         Node\Stmt\If_ $statement,
         array $location,
         bool $inFunction,
+        int $loopDepth,
     ): array
     {
         if ($statement->elseifs !== []) {
@@ -215,6 +244,7 @@ final class Lowerer
                 fn (Node\Stmt $thenStatement): array => $this->lowerStatement(
                     $thenStatement,
                     $inFunction,
+                    $loopDepth,
                 ),
                 $statement->stmts,
             ),
@@ -224,11 +254,104 @@ final class Lowerer
                     fn (Node\Stmt $elseStatement): array => $this->lowerStatement(
                         $elseStatement,
                         $inFunction,
+                        $loopDepth,
                     ),
                     $statement->else->stmts,
                 ),
             'location' => $location,
         ];
+    }
+
+    private function lowerLoopControlDepth(
+        Node\Stmt $statement,
+        ?Node\Expr $depth,
+        int $loopDepth,
+    ): int
+    {
+        $depth = $depth === null ? 1 : (
+            $depth instanceof Node\Scalar\Int_ ? $depth->value : 0
+        );
+        if ($depth < 1 || $depth > $loopDepth) {
+            return $this->unsupported($statement, 'loop-control depth');
+        }
+
+        return $depth;
+    }
+
+    private function lowerTry(
+        Node\Stmt\TryCatch $statement,
+        array $location,
+        bool $inFunction,
+        int $loopDepth,
+    ): array
+    {
+        return [
+            'kind' => 'try',
+            'body' => array_map(
+                fn (Node\Stmt $bodyStatement): array => $this->lowerStatement(
+                    $bodyStatement,
+                    $inFunction,
+                    $loopDepth,
+                ),
+                $statement->stmts,
+            ),
+            'catches' => array_map(
+                fn (Node\Stmt\Catch_ $catch): array => $this->lowerCatch(
+                    $catch,
+                    $inFunction,
+                    $loopDepth,
+                ),
+                $statement->catches,
+            ),
+            'finally' => $statement->finally === null
+                ? null
+                : array_map(
+                    fn (Node\Stmt $finallyStatement): array =>
+                        $this->lowerStatement(
+                            $finallyStatement,
+                            $inFunction,
+                            $loopDepth,
+                        ),
+                    $statement->finally->stmts,
+                ),
+            'location' => $location,
+        ];
+    }
+
+    private function lowerCatch(
+        Node\Stmt\Catch_ $catch,
+        bool $inFunction,
+        int $loopDepth,
+    ): array
+    {
+        if ($catch->var !== null && !is_string($catch->var->name)) {
+            return $this->unsupported($catch->var, 'catch variable');
+        }
+
+        return [
+            'types' => array_map(
+                fn (Node\Name $type): string => $this->resolvedName($type),
+                $catch->types,
+            ),
+            'variable' => $catch->var?->name,
+            'body' => array_map(
+                fn (Node\Stmt $bodyStatement): array => $this->lowerStatement(
+                    $bodyStatement,
+                    $inFunction,
+                    $loopDepth,
+                ),
+                $catch->stmts,
+            ),
+            'location' => $this->location($catch),
+        ];
+    }
+
+    private function resolvedName(Node\Name $name): string
+    {
+        $resolvedName = $name->getAttribute('resolvedName');
+        return $resolvedName instanceof Node\Name
+            ? $resolvedName->toString()
+            : $name->toString();
     }
 
     private function lowerExpression(Node\Expr $expression): array
@@ -393,6 +516,45 @@ final class Lowerer
             ];
         }
 
+        if ($expression instanceof Node\Expr\Throw_) {
+            return [
+                'kind' => 'throw',
+                'expression' => $this->lowerExpression($expression->expr),
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\New_) {
+            if (!($expression->class instanceof Node\Name)) {
+                return $this->unsupported(
+                    $expression,
+                    'dynamic class construction',
+                );
+            }
+            foreach ($expression->args as $argument) {
+                if (
+                    !($argument instanceof Node\Arg)
+                    || $argument->byRef
+                    || $argument->unpack
+                    || $argument->name !== null
+                ) {
+                    return $this->unsupported($argument, 'constructor argument');
+                }
+            }
+
+            return [
+                'kind' => 'new',
+                'class' => $this->resolvedName($expression->class),
+                'arguments' => array_map(
+                    fn (Node\Arg $argument): array => $this->lowerExpression(
+                        $argument->value,
+                    ),
+                    $expression->args,
+                ),
+                'location' => $location,
+            ];
+        }
+
         if ($expression instanceof Node\Expr\FuncCall) {
             if (!($expression->name instanceof Node\Name)) {
                 return $this->unsupported($expression, 'dynamic function call');
@@ -407,14 +569,10 @@ final class Lowerer
                     return $this->unsupported($argument, 'function argument');
                 }
             }
-            $resolvedName = $expression->name->getAttribute('resolvedName');
-            $name = $resolvedName instanceof Node\Name
-                ? $resolvedName->toString()
-                : $expression->name->toString();
 
             return [
                 'kind' => 'call',
-                'name' => $name,
+                'name' => $this->resolvedName($expression->name),
                 'arguments' => array_map(
                     fn (Node\Arg $argument): array => $this->lowerExpression(
                         $argument->value,

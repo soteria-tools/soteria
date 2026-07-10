@@ -32,12 +32,17 @@ let array_get target = expression (Array_get target)
 let array_item ?key value : Php_ir.array_item = { key; value; location }
 let array items = expression (Array items)
 let call name arguments = expression (Call (name, arguments))
+let new_ name arguments = expression (New (name, arguments))
+let throw value = expression (Throw value)
 let binary left operator right = expression (Binary (left, operator, right))
 let expression_statement expression = Php_ir.Expression (expression, location)
 let parameter name : Php_ir.parameter = { name; location }
 
 let function_ name parameters body : Php_ir.function_decl =
   { name; parameters = List.map parameter parameters; body; location }
+
+let catch ?variable types body : Php_ir.catch_clause =
+  { types; variable; body; location }
 
 let program ?(functions = []) statements : Php_ir.t =
   {
@@ -661,6 +666,129 @@ let compares_self_referential_arrays () =
     "self equality" (Some true)
     (Option.bind (State.find_variable "equal" state) Value.bool_value)
 
+let propagates_nested_loop_control_through_finally () =
+  let increment =
+    expression_statement
+      (assign "count" (binary (variable "count") Add (literal (Int 1L))))
+  in
+  let inner =
+    Php_ir.While
+      ( literal (Bool true),
+        [
+          Php_ir.Try
+            ( [
+                increment;
+                Php_ir.If
+                  ( binary (variable "count") Identical (literal (Int 1L)),
+                    [ Php_ir.Continue (2, location) ],
+                    [ Php_ir.Break (2, location) ],
+                    location );
+              ],
+              [],
+              Some [ Php_ir.Echo ([ literal (String "f") ], location) ],
+              location );
+        ],
+        location )
+  in
+  let statements =
+    [
+      expression_statement (assign "count" (literal (Int 0L)));
+      Php_ir.While
+        ( binary (variable "count") Less_than (literal (Int 3L)),
+          [ inner ],
+          location );
+      Php_ir.Echo ([ literal (String "done") ], location);
+    ]
+  in
+  let state = run statements |> expect_single_ok "structured loop control" in
+  Alcotest.(check string) "finally output" "ffdone" (State.output state);
+  Alcotest.(check (option int64))
+    "loop count" (Some 2L)
+    (Option.bind (State.find_variable "count" state) Value.int_value)
+
+let catches_function_exceptions_and_preserves_identity () =
+  let fail =
+    function_ "fail" []
+      [
+        expression_statement
+          (throw (new_ "RuntimeException" [ literal (String "boom") ]));
+      ]
+  in
+  let statements =
+    [
+      Php_ir.Try
+        ( [ expression_statement (call "fail" []) ],
+          [
+            catch [ "LogicException" ]
+              [ Php_ir.Echo ([ literal (String "wrong") ], location) ];
+            catch ~variable:"exception" [ "Exception" ]
+              [
+                expression_statement
+                  (assign "same"
+                     (binary (variable "exception") Identical
+                        (variable "exception")));
+                Php_ir.Echo ([ literal (String "caught") ], location);
+              ];
+          ],
+          Some [ Php_ir.Echo ([ literal (String ":finally") ], location) ],
+          location );
+    ]
+  in
+  let state =
+    run ~functions:[ fail ] statements |> expect_single_ok "caught exception"
+  in
+  Alcotest.(check string)
+    "catch and finally output" "caught:finally" (State.output state);
+  Alcotest.(check (option bool))
+    "object identity" (Some true)
+    (Option.bind (State.find_variable "same" state) Value.bool_value);
+  match State.find_variable "exception" state with
+  | Some (Value.Object id) -> (
+      match State.find_object id state with
+      | Some { class_name = "RuntimeException"; message = "boom" } -> ()
+      | _ -> Alcotest.fail "caught object has unexpected exception metadata")
+  | _ -> Alcotest.fail "catch variable does not contain an object"
+
+let lets_finally_override_a_pending_throw () =
+  let override =
+    function_ "override" []
+      [
+        Php_ir.Try
+          ( [ expression_statement (throw (literal (Int 1L))) ],
+            [],
+            Some [ Php_ir.Return (Some (literal (Int 9L)), location) ],
+            location );
+      ]
+  in
+  let state =
+    run ~functions:[ override ]
+      [ expression_statement (assign "result" (call "override" [])) ]
+    |> expect_single_ok "finally override"
+  in
+  Alcotest.(check (option int64))
+    "return from finally" (Some 9L)
+    (Option.bind (State.find_variable "result" state) Value.int_value)
+
+let reports_uncaught_exceptions_at_the_throw () =
+  let fail =
+    function_ "fail" []
+      [
+        expression_statement
+          (throw (new_ "RuntimeException" [ literal (String "boom") ]));
+      ]
+  in
+  match run ~functions:[ fail ] [ expression_statement (call "fail" []) ] with
+  | [
+   ( Compo_res.Error
+       (Or_gave_up.E
+          ( Error.Uncaught_exception
+              { class_name = "RuntimeException"; message = "boom" },
+            [ _throw_location; _call_location ] )),
+     _ );
+  ] ->
+      ()
+  | _ -> Alcotest.fail "uncaught exception did not retain its throw trace"
+
 let () =
   Alcotest.run "PHP interpreter"
     [
@@ -710,5 +838,13 @@ let () =
             isolates_aliased_cells_across_symbolic_branches;
           Alcotest.test_case "self-referential array equality" `Quick
             compares_self_referential_arrays;
+          Alcotest.test_case "loop control through finally" `Quick
+            propagates_nested_loop_control_through_finally;
+          Alcotest.test_case "exception catches" `Quick
+            catches_function_exceptions_and_preserves_identity;
+          Alcotest.test_case "finally overrides throw" `Quick
+            lets_finally_override_a_pending_throw;
+          Alcotest.test_case "uncaught exception trace" `Quick
+            reports_uncaught_exceptions_at_the_throw;
         ] );
     ]

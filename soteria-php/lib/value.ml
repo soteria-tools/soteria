@@ -19,6 +19,7 @@ type t =
   | Float of Typed.T.sfloat Typed.t
   | String of string
   | Array of php_array
+  | Object of int
 
 and php_array = {
   entries : array_entry Array_key_map.t;
@@ -29,7 +30,14 @@ and php_array = {
 and array_entry = Inline of t | Reference of int
 
 type kind =
-  [ `Undefined | `Null | `Boolean | `Integer | `Float | `String | `Array ]
+  [ `Undefined
+  | `Null
+  | `Boolean
+  | `Integer
+  | `Float
+  | `String
+  | `Array
+  | `Object ]
 
 let undef = Undef
 let null = Null
@@ -45,6 +53,7 @@ let empty_array =
   { entries = Array_key_map.empty; order_rev = []; max_integer_key = None }
 
 let array value = Array value
+let object_ id = Object id
 
 let of_literal = function
   | Php_ir.Null -> null
@@ -61,6 +70,7 @@ let kind = function
   | Float _ -> `Float
   | String _ -> `String
   | Array _ -> `Array
+  | Object _ -> `Object
 
 let kind_name = function
   | `Undefined -> "undefined"
@@ -70,6 +80,7 @@ let kind_name = function
   | `Float -> "float"
   | `String -> "string"
   | `Array -> "array"
+  | `Object -> "object"
 
 let type_name value = kind_name (kind value)
 let bool_value = function Bool value -> Typed.Bool.to_bool value | _ -> None
@@ -91,6 +102,7 @@ let float_value = function
 
 let string_value = function String value -> Some value | _ -> None
 let array_value = function Array value -> Some value | _ -> None
+let object_value = function Object id -> Some id | _ -> None
 let array_is_empty array = Array_key_map.is_empty array.entries
 let array_length array = Array_key_map.cardinal array.entries
 let array_find key array = Array_key_map.find_opt key array.entries
@@ -196,3 +208,4 @@ let rec pp formatter = function
            ~pp_sep:(fun formatter () -> Format.pp_print_string formatter ", ")
            pp_binding)
         (array_bindings array)
+  | Object id -> Format.fprintf formatter "object(%d)" id

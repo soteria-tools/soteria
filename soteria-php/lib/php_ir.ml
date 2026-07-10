@@ -42,6 +42,8 @@ and expression_desc =
   | Binary of expression * binary_operator * expression
   | Cast of cast * expression
   | Call of string * expression list
+  | New of string * expression list
+  | Throw of expression
 
 and array_item = {
   key : expression option;
@@ -57,12 +59,22 @@ and lvalue_desc =
 
 type parameter = { name : string; location : location }
 
-type statement =
+type catch_clause = {
+  types : string list;
+  variable : string option;
+  body : statement list;
+  location : location;
+}
+
+and statement =
   | Expression of expression * location
   | Echo of expression list * location
   | If of expression * statement list * statement list * location
   | While of expression * statement list * location
+  | Break of int * location
+  | Continue of int * location
   | Return of expression option * location
+  | Try of statement list * catch_clause list * statement list option * location
   | Unset of lvalue list * location
   | Nop of location
 
@@ -80,7 +92,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 5
+let schema_version = 6
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -314,6 +326,25 @@ let rec decode_expression path json =
               decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
         in
         Call (name, arguments)
+    | "new" ->
+        check_fields path [ "kind"; "class"; "arguments"; "location" ] fields;
+        let class_name =
+          field path "class" fields |> as_string (path ^ ".class")
+        in
+        let arguments =
+          field path "arguments" fields
+          |> as_list (path ^ ".arguments")
+          |> List.mapi (fun index ->
+              decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
+        in
+        New (class_name, arguments)
+    | "throw" ->
+        check_fields path [ "kind"; "expression"; "location" ] fields;
+        let expression =
+          field path "expression" fields
+          |> decode_expression (path ^ ".expression")
+        in
+        Throw expression
     | kind -> decode_error (path ^ ".kind") ("unknown expression kind " ^ kind)
   in
   let location =
@@ -365,18 +396,28 @@ and decode_lvalue ~allow_append path json =
   in
   { desc; location }
 
-and decode_statement ~allow_return path json =
+and decode_statement ~allow_return ~loop_depth path json =
   let fields = as_assoc path json in
   let kind = field path "kind" fields |> as_string (path ^ ".kind") in
   let location () =
     field path "location" fields |> decode_location (path ^ ".location")
   in
-  let statements name =
+  let statements ?(depth = loop_depth) name =
     field path name fields
     |> as_list (path ^ "." ^ name)
     |> List.mapi (fun index ->
-        decode_statement ~allow_return
+        decode_statement ~allow_return ~loop_depth:depth
           (Printf.sprintf "%s.%s[%d]" path name index))
+  in
+  let loop_control kind constructor =
+    check_fields path [ "kind"; "depth"; "location" ] fields;
+    let depth = field path "depth" fields |> as_int (path ^ ".depth") in
+    if depth < 1 then decode_error (path ^ ".depth") "must be positive";
+    if depth > loop_depth then
+      decode_error (path ^ ".depth")
+        (Printf.sprintf "%s depth %d exceeds enclosing loop depth %d" kind depth
+           loop_depth);
+    constructor (depth, location ())
   in
   match kind with
   | "expression" ->
@@ -408,7 +449,12 @@ and decode_statement ~allow_return path json =
       let condition =
         field path "condition" fields |> decode_expression (path ^ ".condition")
       in
-      While (condition, statements "body", location ())
+      While (condition, statements ~depth:(loop_depth + 1) "body", location ())
+  | "break" ->
+      loop_control "break" (fun (depth, location) -> Break (depth, location))
+  | "continue" ->
+      loop_control "continue" (fun (depth, location) ->
+          Continue (depth, location))
   | "return" ->
       check_fields path [ "kind"; "expression"; "location" ] fields;
       if not allow_return then
@@ -419,6 +465,31 @@ and decode_statement ~allow_return path json =
         | json -> Some (decode_expression (path ^ ".expression") json)
       in
       Return (expression, location ())
+  | "try" ->
+      check_fields path
+        [ "kind"; "body"; "catches"; "finally"; "location" ]
+        fields;
+      let catches =
+        field path "catches" fields
+        |> as_list (path ^ ".catches")
+        |> List.mapi (fun index ->
+            decode_catch_clause ~allow_return ~loop_depth
+              (Printf.sprintf "%s.catches[%d]" path index))
+      in
+      let finally =
+        match field path "finally" fields with
+        | `Null -> None
+        | json ->
+            Some
+              (json
+              |> as_list (path ^ ".finally")
+              |> List.mapi (fun index ->
+                  decode_statement ~allow_return ~loop_depth
+                    (Printf.sprintf "%s.finally[%d]" path index)))
+      in
+      if catches = [] && Option.is_none finally then
+        decode_error path "try must have a catch or finally block";
+      Try (statements "body", catches, finally, location ())
   | "unset" ->
       check_fields path [ "kind"; "targets"; "location" ] fields;
       let targets =
@@ -434,6 +505,33 @@ and decode_statement ~allow_return path json =
       check_fields path [ "kind"; "location" ] fields;
       Nop (location ())
   | kind -> decode_error (path ^ ".kind") ("unknown statement kind " ^ kind)
+
+and decode_catch_clause ~allow_return ~loop_depth path json =
+  let fields = as_assoc path json in
+  check_fields path [ "types"; "variable"; "body"; "location" ] fields;
+  let types =
+    field path "types" fields
+    |> as_list (path ^ ".types")
+    |> List.mapi (fun index value ->
+        as_string (Printf.sprintf "%s.types[%d]" path index) value)
+  in
+  if types = [] then decode_error (path ^ ".types") "must not be empty";
+  let variable =
+    match field path "variable" fields with
+    | `Null -> None
+    | json -> Some (as_string (path ^ ".variable") json)
+  in
+  let body =
+    field path "body" fields
+    |> as_list (path ^ ".body")
+    |> List.mapi (fun index ->
+        decode_statement ~allow_return ~loop_depth
+          (Printf.sprintf "%s.body[%d]" path index))
+  in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { types; variable; body; location }
 
 let decode_parameter path json =
   let fields = as_assoc path json in
@@ -458,7 +556,7 @@ let decode_function path json =
     field path "body" fields
     |> as_list (path ^ ".body")
     |> List.mapi (fun index ->
-        decode_statement ~allow_return:true
+        decode_statement ~allow_return:true ~loop_depth:0
           (Printf.sprintf "%s.body[%d]" path index))
   in
   let location =
@@ -482,7 +580,9 @@ let rec iter_expression_locations f (expression : expression) =
   | Binary (left, _, right) ->
       iter_expression_locations f left;
       iter_expression_locations f right
-  | Call (_, arguments) -> List.iter (iter_expression_locations f) arguments
+  | Call (_, arguments) | New (_, arguments) ->
+      List.iter (iter_expression_locations f) arguments
+  | Throw expression -> iter_expression_locations f expression
 
 and iter_array_item_locations f (item : array_item) =
   f item.location;
@@ -514,13 +614,23 @@ let rec iter_statement_locations f (statement : statement) =
       f location;
       iter_expression_locations f condition;
       List.iter (iter_statement_locations f) body
+  | Break (_, location) | Continue (_, location) -> f location
   | Return (expression, location) ->
       f location;
       Option.iter (iter_expression_locations f) expression
+  | Try (body, catches, finally, location) ->
+      f location;
+      List.iter (iter_statement_locations f) body;
+      List.iter (iter_catch_clause_locations f) catches;
+      Option.iter (List.iter (iter_statement_locations f)) finally
   | Unset (targets, location) ->
       f location;
       List.iter (iter_lvalue_locations f) targets
   | Nop location -> f location
+
+and iter_catch_clause_locations f (catch : catch_clause) =
+  f catch.location;
+  List.iter (iter_statement_locations f) catch.body
 
 let iter_function_locations f (function_ : function_decl) =
   f function_.location;
@@ -601,7 +711,7 @@ let of_yojson json =
       field "$" "statements" fields
       |> as_list "$.statements"
       |> List.mapi (fun index ->
-          decode_statement ~allow_return:false
+          decode_statement ~allow_return:false ~loop_depth:0
             (Printf.sprintf "$.statements[%d]" index))
     in
     validate_function_names functions;
@@ -719,6 +829,17 @@ let rec expression_to_yojson expression =
           ("name", `String name);
           ("arguments", `List (List.map expression_to_yojson arguments));
         ]
+    | New (class_name, arguments) ->
+        [
+          ("kind", `String "new");
+          ("class", `String class_name);
+          ("arguments", `List (List.map expression_to_yojson arguments));
+        ]
+    | Throw expression ->
+        [
+          ("kind", `String "throw");
+          ("expression", expression_to_yojson expression);
+        ]
   in
   `Assoc (fields @ [ ("location", location_to_yojson expression.location) ])
 
@@ -776,12 +897,39 @@ let rec statement_to_yojson = function
           ("body", `List (List.map statement_to_yojson body));
           ("location", location_to_yojson location);
         ]
+  | Break (depth, location) ->
+      `Assoc
+        [
+          ("kind", `String "break");
+          ("depth", `Int depth);
+          ("location", location_to_yojson location);
+        ]
+  | Continue (depth, location) ->
+      `Assoc
+        [
+          ("kind", `String "continue");
+          ("depth", `Int depth);
+          ("location", location_to_yojson location);
+        ]
   | Return (expression, location) ->
       `Assoc
         [
           ("kind", `String "return");
           ( "expression",
             Option.fold ~none:`Null ~some:expression_to_yojson expression );
+          ("location", location_to_yojson location);
+        ]
+  | Try (body, catches, finally, location) ->
+      `Assoc
+        [
+          ("kind", `String "try");
+          ("body", `List (List.map statement_to_yojson body));
+          ("catches", `List (List.map catch_clause_to_yojson catches));
+          ( "finally",
+            Option.fold ~none:`Null
+              ~some:(fun statements ->
+                `List (List.map statement_to_yojson statements))
+              finally );
           ("location", location_to_yojson location);
         ]
   | Unset (targets, location) ->
@@ -794,6 +942,17 @@ let rec statement_to_yojson = function
   | Nop location ->
       `Assoc
         [ ("kind", `String "nop"); ("location", location_to_yojson location) ]
+
+and catch_clause_to_yojson (catch : catch_clause) =
+  `Assoc
+    [
+      ("types", `List (List.map (fun name -> `String name) catch.types));
+      ( "variable",
+        Option.fold ~none:`Null ~some:(fun name -> `String name) catch.variable
+      );
+      ("body", `List (List.map statement_to_yojson catch.body));
+      ("location", location_to_yojson catch.location);
+    ]
 
 let parameter_to_yojson (parameter : parameter) =
   `Assoc

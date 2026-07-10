@@ -17,6 +17,7 @@ type t =
       expected : string;
       actual : Value.kind;
     }
+  | Uncaught_exception of { class_name : string; message : string }
 
 let pp formatter = function
   | Failed_assertion -> Format.pp_print_string formatter "Failed assertion"
@@ -38,6 +39,10 @@ let pp formatter = function
   | Invalid_argument_type { function_name; position; expected; actual } ->
       Format.fprintf formatter "%s argument #%d must be of type %s, %s given"
         function_name position expected (Value.kind_name actual)
+  | Uncaught_exception { class_name; message = "" } ->
+      Format.fprintf formatter "Uncaught %s" class_name
+  | Uncaught_exception { class_name; message } ->
+      Format.fprintf formatter "Uncaught %s: %s" class_name message
 
 module Trace = struct
   type t = {

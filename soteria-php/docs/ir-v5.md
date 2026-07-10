@@ -1,5 +1,8 @@
 # Soteria PHP IR version 5
 
+Version 5 is historical. The current frontend emits version 6, documented in
+`ir-v6.md`.
+
 Version 5 extends version 4 with assignment by reference and `unset`. The
 program envelope uses `schema_version` `5`; all version 4 constructs retain
 their existing representation.
