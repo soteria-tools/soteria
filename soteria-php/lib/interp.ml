@@ -11,6 +11,14 @@ let coerce_number value =
   | Ok value -> Phpsymex.Result.ok value
   | Error error -> coercion_error error
 
+let boolean_value = function
+  | Value.Bool value -> value
+  | _ -> failwith "boolean coercion returned a non-boolean value"
+
+let string_value = function
+  | Value.String value -> value
+  | _ -> failwith "string coercion returned a non-string value"
+
 let simplify_value value =
   let open Phpsymex.Syntax in
   let normalize value =
@@ -36,33 +44,30 @@ let simplify_value value =
 let condition value =
   let open Phpsymex.Syntax in
   let** value = coerce Coercion.Boolean value in
-  match value with
-  | Value.Bool condition -> Phpsymex.Result.ok condition
-  | _ -> failwith "boolean coercion returned a non-boolean value"
+  Phpsymex.Result.ok (boolean_value value)
+
+let float_of_integer value =
+  Value.Typed.BitVec.to_float
+    ~rounding:Value.Typed.RoundingMode.NearestTiesToEven ~signed:true
+    ~fp:Value.Typed.FloatPrecision.F64 value
 
 let numeric_float = function
-  | Value.Int value ->
-      Some
-        (Value.Typed.BitVec.to_float
-           ~rounding:Value.Typed.RoundingMode.NearestTiesToEven ~signed:true
-           ~fp:Value.Typed.FloatPrecision.F64 value)
-  | Value.Float value -> Some value
-  | _ -> None
+  | Value.Int value -> float_of_integer value
+  | Value.Float value -> value
+  | _ -> failwith "numeric coercion returned a non-numeric value"
 
 let concrete_numeric_float = function
   | Value.Int _ as value -> Option.map Int64.to_float (Value.int_value value)
   | Value.Float _ as value -> Value.float_value value
-  | _ -> None
+  | _ -> failwith "numeric coercion returned a non-numeric value"
 
 let checked_integer check float left right =
   let result, overflow = check ~signed:true left right in
-  Phpsymex.branch_on overflow ~left_branch_name:"Integer overflow"
-    ~right_branch_name:"Integer result"
-    ~then_:(fun () ->
-      let left = Option.get (numeric_float (Value.Int left)) in
-      let right = Option.get (numeric_float (Value.Int right)) in
-      Phpsymex.Result.ok (Value.Float (float left right)))
-    ~else_:(fun () -> Phpsymex.Result.ok (Value.Int result))
+  let open Phpsymex.Syntax in
+  if%sat[@lname "Integer overflow"] [@rname "Integer result"] overflow then
+    Phpsymex.Result.ok
+      (Value.Float (float (float_of_integer left) (float_of_integer right)))
+  else Phpsymex.Result.ok (Value.Int result)
 
 let arithmetic integer float concrete_float left right =
   let open Phpsymex.Syntax in
@@ -74,11 +79,9 @@ let arithmetic integer float concrete_float left right =
       match (concrete_numeric_float left, concrete_numeric_float right) with
       | Some left, Some right ->
           Phpsymex.Result.ok (Value.float (concrete_float left right))
-      | _ -> (
-          match (numeric_float left, numeric_float right) with
-          | Some left, Some right ->
-              Phpsymex.Result.ok (Value.Float (float left right))
-          | _ -> assert false))
+      | _ ->
+          Phpsymex.Result.ok
+            (Value.Float (float (numeric_float left) (numeric_float right))))
 
 let division left right =
   let open Phpsymex.Syntax in
@@ -89,35 +92,28 @@ let division left right =
       Phpsymex.error Error.Division_by_zero
   | Some numerator, Some denominator ->
       Phpsymex.Result.ok (Value.float (numerator /. denominator))
-  | _ -> (
-      match (numeric_float left, numeric_float right) with
-      | Some numerator, Some denominator ->
-          Phpsymex.branch_on
-            (Value.Typed.Float.is_zero denominator)
-            ~left_branch_name:"Division by zero" ~right_branch_name:"Division"
-            ~then_:(fun () -> Phpsymex.error Error.Division_by_zero)
-            ~else_:(fun () ->
-              Phpsymex.Result.ok
-                (Value.Float (Value.Typed.Float.div numerator denominator)))
-      | _ -> assert false)
+  | _ ->
+      let numerator = numeric_float left in
+      let denominator = numeric_float right in
+      if%sat[@lname "Division by zero"] [@rname "Division"]
+        Value.Typed.Float.is_zero denominator
+      then Phpsymex.error Error.Division_by_zero
+      else
+        Phpsymex.Result.ok
+          (Value.Float (Value.Typed.Float.div numerator denominator))
 
 let rec strict_equal state left right =
-  let result =
-    match (left, right) with
-    | Value.Undef, Value.Undef | Value.Null, Value.Null ->
-        Value.Typed.Bool.v_true
-    | Value.Bool left, Value.Bool right -> Value.Typed.sem_eq left right
-    | Value.Int left, Value.Int right -> Value.Typed.sem_eq left right
-    | Value.Float left, Value.Float right -> Value.Typed.Float.eq left right
-    | Value.String left, Value.String right ->
-        Value.Typed.Bool.of_bool (String.equal left right)
-    | Value.Array left, Value.Array right ->
-        strict_equal_arrays state left right
-    | Value.Object left, Value.Object right ->
-        Value.Typed.Bool.of_bool (left = right)
-    | _ -> Value.Typed.Bool.v_false
-  in
-  Value.Bool result
+  match (left, right) with
+  | Value.Undef, Value.Undef | Value.Null, Value.Null -> Value.Typed.Bool.v_true
+  | Value.Bool left, Value.Bool right -> Value.Typed.sem_eq left right
+  | Value.Int left, Value.Int right -> Value.Typed.sem_eq left right
+  | Value.Float left, Value.Float right -> Value.Typed.Float.eq left right
+  | Value.String left, Value.String right ->
+      Value.Typed.Bool.of_bool (String.equal left right)
+  | Value.Array left, Value.Array right -> strict_equal_arrays state left right
+  | Value.Object left, Value.Object right ->
+      Value.Typed.Bool.of_bool (left = right)
+  | _ -> Value.Typed.Bool.v_false
 
 and strict_equal_arrays state left right =
   let left = Value.array_bindings left in
@@ -139,10 +135,7 @@ and strict_equal_arrays state left right =
           match (left_entry, right_entry) with
           | Value.Reference left, Value.Reference right when left = right ->
               Value.Typed.Bool.v_true
-          | _ -> (
-              match strict_equal state left_value right_value with
-              | Value.Bool equal -> equal
-              | _ -> assert false)
+          | _ -> strict_equal state left_value right_value
         in
         Value.Typed.Bool.and_ equal
           (Value.Typed.Bool.and_
@@ -170,13 +163,13 @@ let comparison operator left right =
 
 let binary state operator left right =
   match operator with
-  | Php_ir.Add when Value.kind left = `Array && Value.kind right = `Array ->
-      let left = Option.get (Value.array_value left) in
-      let right = Option.get (Value.array_value right) in
-      Phpsymex.Result.ok (Value.array (Value.array_union left right))
-  | Php_ir.Add ->
-      arithmetic Value.Typed.BitVec.add_checked Value.Typed.Float.add ( +. )
-        left right
+  | Php_ir.Add -> (
+      match (left, right) with
+      | Value.Array left, Value.Array right ->
+          Phpsymex.Result.ok (Value.array (Value.array_union left right))
+      | _ ->
+          arithmetic Value.Typed.BitVec.add_checked Value.Typed.Float.add ( +. )
+            left right)
   | Subtract ->
       arithmetic Value.Typed.BitVec.sub_checked Value.Typed.Float.sub ( -. )
         left right
@@ -188,23 +181,17 @@ let binary state operator left right =
       let open Phpsymex.Syntax in
       let** left = coerce Coercion.String left in
       let** right = coerce Coercion.String right in
-      let left = Option.get (Value.string_value left) in
-      let right = Option.get (Value.string_value right) in
-      Phpsymex.Result.ok (Value.string (left ^ right))
-  | Identical -> Phpsymex.Result.ok (strict_equal state left right)
-  | Not_identical -> (
-      match strict_equal state left right with
-      | Value.Bool equal ->
-          Phpsymex.Result.ok (Value.Bool (Value.Typed.Bool.not equal))
-      | _ -> failwith "strict equality returned a non-boolean value")
+      Phpsymex.Result.ok (Value.string (string_value left ^ string_value right))
+  | Identical -> Phpsymex.Result.ok (Value.Bool (strict_equal state left right))
+  | Not_identical ->
+      Phpsymex.Result.ok
+        (Value.Bool (Value.Typed.Bool.not (strict_equal state left right)))
   | Equal -> loose_equal left right
   | Not_equal ->
       let open Phpsymex.Syntax in
       let** equal = loose_equal left right in
-      let equal =
-        match equal with Value.Bool value -> value | _ -> assert false
-      in
-      Phpsymex.Result.ok (Value.Bool (Value.Typed.Bool.not equal))
+      Phpsymex.Result.ok
+        (Value.Bool (Value.Typed.Bool.not (boolean_value equal)))
   | Less_than | Less_than_or_equal | Greater_than | Greater_than_or_equal ->
       comparison operator left right
   | Boolean_and | Boolean_or ->
@@ -223,12 +210,11 @@ let unary operator value =
       match value with
       | Value.Int value ->
           let result, overflow = Value.Typed.BitVec.neg_checked value in
-          Phpsymex.branch_on overflow ~left_branch_name:"Integer overflow"
-            ~right_branch_name:"Integer result"
-            ~then_:(fun () ->
-              let value = Option.get (numeric_float (Value.Int value)) in
-              Phpsymex.Result.ok (Value.Float (Value.Typed.Float.neg value)))
-            ~else_:(fun () -> Phpsymex.Result.ok (Value.Int result))
+          if%sat[@lname "Integer overflow"] [@rname "Integer result"] overflow
+          then
+            Phpsymex.Result.ok
+              (Value.Float (Value.Typed.Float.neg (float_of_integer value)))
+          else Phpsymex.Result.ok (Value.Int result)
       | Value.Float value ->
           Phpsymex.Result.ok (Value.Float (Value.Typed.Float.neg value))
       | _ -> assert false)
@@ -324,7 +310,7 @@ let construct_throwable state name arguments =
         | [] -> Phpsymex.Result.ok ""
         | [ value ] ->
             let** value = coerce Coercion.String value in
-            Phpsymex.Result.ok (Option.get (Value.string_value value))
+            Phpsymex.Result.ok (string_value value)
         | _ -> unsupported "%s::__construct() arguments beyond the message" name
       in
       let id, state = State.allocate_object name message state in
@@ -490,12 +476,11 @@ let resolve_array_key ~for_write array = function
             let concrete_key =
               Value.Typed.BitVec.mk_masked Value.integer_bits (Z.of_int64 key)
             in
-            Phpsymex.branch_on
-              (Value.Typed.sem_eq symbolic_key concrete_key)
-              ~left_branch_name:"Existing array key"
-              ~right_branch_name:"Different array key"
-              ~then_:(fun () -> Phpsymex.Result.ok (Value.Integer_key key))
-              ~else_:(fun () -> choose keys)
+            let open Phpsymex.Syntax in
+            if%sat[@lname "Existing array key"] [@rname "Different array key"]
+              Value.Typed.sem_eq symbolic_key concrete_key
+            then Phpsymex.Result.ok (Value.Integer_key key)
+            else choose keys
       in
       choose (Value.array_integer_keys array)
 
@@ -664,21 +649,21 @@ and eval_short_circuit functions state left operator right =
   let** guard = condition left in
   match operator with
   | Php_ir.Boolean_and ->
-      Phpsymex.branch_on guard ~left_branch_name:"Evaluate right operand"
-        ~right_branch_name:"Short-circuit false"
-        ~then_:(fun () ->
-          let*** right, state = eval_expression functions state right in
-          let** right = condition right in
-          evaluated (Value.Bool right) state)
-        ~else_:(fun () -> evaluated (Value.bool false) state)
+      if%sat[@lname "Evaluate right operand"] [@rname "Short-circuit false"]
+        guard
+      then
+        let*** right, state = eval_expression functions state right in
+        let** right = condition right in
+        evaluated (Value.Bool right) state
+      else evaluated (Value.bool false) state
   | Boolean_or ->
-      Phpsymex.branch_on guard ~left_branch_name:"Short-circuit true"
-        ~right_branch_name:"Evaluate right operand"
-        ~then_:(fun () -> evaluated (Value.bool true) state)
-        ~else_:(fun () ->
-          let*** right, state = eval_expression functions state right in
-          let** right = condition right in
-          evaluated (Value.Bool right) state)
+      if%sat[@lname "Short-circuit true"] [@rname "Evaluate right operand"]
+        guard
+      then evaluated (Value.bool true) state
+      else
+        let*** right, state = eval_expression functions state right in
+        let** right = condition right in
+        evaluated (Value.Bool right) state
   | _ -> failwith "non-short-circuit operator passed to evaluation"
 
 and eval_expression functions state expression =
@@ -805,8 +790,9 @@ and emit_expressions functions state expressions =
       let*** value, state = eval_expression functions state expression in
       let* value = simplify_value value in
       let** value = coerce Coercion.String value in
-      let output = Option.get (Value.string_value value) in
-      emit_expressions functions (State.emit output state) expressions
+      emit_expressions functions
+        (State.emit (string_value value) state)
+        expressions
 
 and unset_lvalues functions state lvalues =
   let open Phpsymex.Syntax in
@@ -835,18 +821,16 @@ and exec_while functions state condition_expression body =
   finish_evaluation (eval_expression functions state condition_expression)
     (fun value state ->
       let** guard = condition value in
-      Phpsymex.branch_on guard ~left_branch_name:"While body"
-        ~right_branch_name:"While exit"
-        ~then_:(fun () ->
-          let** control, state = exec_statements functions state body in
-          match control with
-          | Normal | Continue 1 ->
-              exec_while functions state condition_expression body
-          | Break 1 -> Phpsymex.Result.ok (Normal, state)
-          | Break depth -> Phpsymex.Result.ok (Break (depth - 1), state)
-          | Continue depth -> Phpsymex.Result.ok (Continue (depth - 1), state)
-          | Return _ | Throw _ -> Phpsymex.Result.ok (control, state))
-        ~else_:(fun () -> Phpsymex.Result.ok (Normal, state)))
+      if%sat[@lname "While body"] [@rname "While exit"] guard then
+        let** control, state = exec_statements functions state body in
+        match control with
+        | Normal | Continue 1 ->
+            exec_while functions state condition_expression body
+        | Break 1 -> Phpsymex.Result.ok (Normal, state)
+        | Break depth -> Phpsymex.Result.ok (Break (depth - 1), state)
+        | Continue depth -> Phpsymex.Result.ok (Continue (depth - 1), state)
+        | Return _ | Throw _ -> Phpsymex.Result.ok (control, state)
+      else Phpsymex.Result.ok (Normal, state))
 
 and exec_try functions state body catches finally =
   let open Phpsymex.Syntax in
@@ -916,10 +900,9 @@ and exec_statement functions state statement =
         finish_evaluation (eval_expression functions state condition_expression)
           (fun value state ->
             let** guard = condition value in
-            Phpsymex.branch_on guard ~left_branch_name:"If branch"
-              ~right_branch_name:"Else branch"
-              ~then_:(fun () -> exec_statements functions state then_)
-              ~else_:(fun () -> exec_statements functions state else_))
+            if%sat[@lname "If branch"] [@rname "Else branch"] guard then
+              exec_statements functions state then_
+            else exec_statements functions state else_)
     | While (condition_expression, body, _) ->
         exec_while functions state condition_expression body
     | Break (depth, _) -> Phpsymex.Result.ok (Break depth, state)

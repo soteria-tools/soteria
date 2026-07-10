@@ -62,11 +62,11 @@ let assume ~args =
 
 let assert_ ~args =
   boolean_argument "Soteria\\assert()" args @@ fun condition ->
-  Phpsymex.branch_on
-    (Value.Typed.Bool.not condition)
-    ~left_branch_name:"Assertion failure" ~right_branch_name:"Assertion success"
-    ~then_:(fun () -> Phpsymex.error Error.Failed_assertion)
-    ~else_:(fun () -> Phpsymex.Result.ok Value.null)
+  let open Phpsymex.Syntax in
+  if%sat[@lname "Assertion failure"] [@rname "Assertion success"]
+    Value.Typed.Bool.not condition
+  then Phpsymex.error Error.Failed_assertion
+  else Phpsymex.Result.ok Value.null
 
 let implementations : (string * implementation) list =
   [

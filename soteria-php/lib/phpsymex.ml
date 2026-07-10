@@ -55,6 +55,16 @@ let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
             ~else_
       | Exhausted -> give_up "Branching fuel exhausted")
 
+module Syntax = struct
+  include Monad.Syntax
+
+  module Symex_syntax = struct
+    let branch_on = branch_on
+    let branch_on_take_one = branch_on_take_one
+    let if_sure = if_sure
+  end
+end
+
 let with_location ~location process trace =
   let open Raw_symex.Syntax in
   let+ result, final_trace =
