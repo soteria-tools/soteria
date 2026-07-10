@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 3) ?(functions = []) statement =
+let program ?(schema_version = 4) ?(functions = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -47,10 +47,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:4 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:5 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 4 (expected 3)"
+        "error" "$.schema_version: unsupported schema version 5 (expected 4)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -130,6 +130,131 @@ let rejects_top_level_returns () =
         "error" "$.statements[0]: return is only valid in a function body" error
   | Ok _ -> Alcotest.fail "accepted a top-level return"
 
+let decodes_arrays_and_lvalues () =
+  let int value =
+    `Assoc
+      [
+        ("kind", `String "int"); ("value", `String value); ("location", location);
+      ]
+  in
+  let variable =
+    `Assoc
+      [
+        ("kind", `String "variable");
+        ("name", `String "array");
+        ("location", location);
+      ]
+  in
+  let target =
+    `Assoc
+      [
+        ("kind", `String "array_element");
+        ("array", variable);
+        ("key", `Null);
+        ("location", location);
+      ]
+  in
+  let array =
+    `Assoc
+      [
+        ("kind", `String "array");
+        ( "items",
+          `List
+            [
+              `Assoc
+                [ ("key", int "2"); ("value", int "3"); ("location", location) ];
+            ] );
+        ("location", location);
+      ]
+  in
+  let assign =
+    `Assoc
+      [
+        ("kind", `String "assign");
+        ("target", target);
+        ("value", array);
+        ("location", location);
+      ]
+  in
+  let statement =
+    `Assoc
+      [
+        ("kind", `String "expression");
+        ("expression", assign);
+        ("location", location);
+      ]
+  in
+  match Soteria_php.Php_ir.of_yojson (program statement) with
+  | Ok
+      {
+        statements =
+          [
+            Expression
+              ( {
+                  desc =
+                    Assign
+                      ( { desc = Array_element_lvalue (_, None); _ },
+                        {
+                          desc =
+                            Array
+                              [
+                                {
+                                  key = Some { desc = Literal (Int 2L); _ };
+                                  value = { desc = Literal (Int 3L); _ };
+                                  _;
+                                };
+                              ];
+                          _;
+                        } );
+                  _;
+                },
+                _ );
+          ];
+        _;
+      } ->
+      ()
+  | Ok _ -> Alcotest.fail "decoded an unexpected array or lvalue shape"
+  | Error error -> Alcotest.fail error
+
+let rejects_array_append_reads () =
+  let variable =
+    `Assoc
+      [
+        ("kind", `String "variable");
+        ("name", `String "array");
+        ("location", location);
+      ]
+  in
+  let target =
+    `Assoc
+      [
+        ("kind", `String "array_element");
+        ("array", variable);
+        ("key", `Null);
+        ("location", location);
+      ]
+  in
+  let get =
+    `Assoc
+      [
+        ("kind", `String "array_get"); ("target", target); ("location", location);
+      ]
+  in
+  let statement =
+    `Assoc
+      [
+        ("kind", `String "expression");
+        ("expression", get);
+        ("location", location);
+      ]
+  in
+  match Soteria_php.Php_ir.of_yojson (program statement) with
+  | Error error ->
+      Alcotest.(check string)
+        "error" "$.statements[0].expression.target.key: append cannot be read"
+        error
+  | Ok _ -> Alcotest.fail "accepted an array append read"
+
 let () =
   Alcotest.run "PHP IR"
     [
@@ -141,5 +266,9 @@ let () =
           Alcotest.test_case "functions and returns" `Quick
             decodes_functions_and_returns;
           Alcotest.test_case "top-level return" `Quick rejects_top_level_returns;
+          Alcotest.test_case "arrays and lvalues" `Quick
+            decodes_arrays_and_lvalues;
+          Alcotest.test_case "array append reads" `Quick
+            rejects_array_append_reads;
         ] );
     ]

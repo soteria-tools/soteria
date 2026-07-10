@@ -3,6 +3,13 @@ type target = Boolean | Integer | Float | String
 type error =
   | Undefined_value of target
   | Symbolic_conversion of { source : Value.kind; target : target }
+  | Invalid_conversion of { source : Value.kind; target : target }
+  | Invalid_array_key of Value.kind
+  | Symbolic_array_key of Value.kind
+
+type array_key =
+  | Concrete_key of Value.array_key
+  | Symbolic_integer_key of Value.Typed.T.sint Value.Typed.t
 
 let target_name = function
   | Boolean -> "bool"
@@ -17,6 +24,15 @@ let pp_error formatter = function
   | Symbolic_conversion { source; target } ->
       Format.fprintf formatter "symbolic %s-to-%s coercion is not supported"
         (Value.kind_name source) (target_name target)
+  | Invalid_conversion { source; target } ->
+      Format.fprintf formatter "cannot coerce %s to %s" (Value.kind_name source)
+        (target_name target)
+  | Invalid_array_key source ->
+      Format.fprintf formatter "%s cannot be used as an array key"
+        (Value.kind_name source)
+  | Symbolic_array_key source ->
+      Format.fprintf formatter "symbolic %s array keys are not supported"
+        (Value.kind_name source)
 
 let undefined target = Error (Undefined_value target)
 
@@ -38,6 +54,7 @@ let to_bool = function
       )
   | Value.String value ->
       Ok (Value.bool (not (String.equal value "" || String.equal value "0")))
+  | Value.Array array -> Ok (Value.bool (not (Value.array_is_empty array)))
 
 let integer_min = Z.of_int64 Int64.min_int
 let integer_max = Z.of_int64 Int64.max_int
@@ -116,6 +133,8 @@ let to_int = function
       | Some value -> Ok (integer_of_float ~overflow:`Wrap value |> int_of_z)
       | None -> symbolic (Value.Float value) Integer)
   | Value.String value -> Ok (int_of_string value |> int_of_z)
+  | Value.Array array ->
+      Ok (Value.int (if Value.array_is_empty array then 0L else 1L))
 
 let float_of_numeric_string value =
   match numeric_prefix value with
@@ -146,6 +165,8 @@ let to_float = function
                   ~signed:true ~fp:Value.Typed.FloatPrecision.F64 value)))
   | Value.Float _ as value -> Ok value
   | Value.String value -> Ok (Value.float (float_of_numeric_string value))
+  | Value.Array array ->
+      Ok (Value.float (if Value.array_is_empty array then 0.0 else 1.0))
 
 let add_decimal_to_exponent value =
   match String.index_opt value 'E' with
@@ -180,6 +201,51 @@ let to_string = function
       | Some value -> Ok (Value.string (string_of_float value))
       | None -> symbolic source String)
   | Value.String _ as value -> Ok value
+  | Value.Array _ ->
+      Error (Invalid_conversion { source = `Array; target = String })
+
+let integer_string_array_key value =
+  let length = String.length value in
+  let first_digit = if length > 0 && value.[0] = '-' then 1 else 0 in
+  let rec all_digits index =
+    if index = length then true
+    else
+      match value.[index] with
+      | '0' .. '9' -> all_digits (index + 1)
+      | _ -> false
+  in
+  if first_digit = length || not (all_digits first_digit) then None
+  else if value.[first_digit] = '0' && length - first_digit > 1 then None
+  else if String.equal value "-0" then None
+  else Int64.of_string_opt value
+
+let to_array_key = function
+  | Value.Undef -> Error (Invalid_array_key `Undefined)
+  | Value.Null -> Ok (Concrete_key (Value.String_key ""))
+  | Value.Bool value -> (
+      match Value.Typed.Bool.to_bool value with
+      | Some value ->
+          Ok (Concrete_key (Value.Integer_key (if value then 1L else 0L)))
+      | None ->
+          Ok
+            (Symbolic_integer_key
+               (Value.Typed.BitVec.of_bool Value.integer_bits value
+                 :> Value.Typed.T.sint Value.Typed.t)))
+  | Value.Int value as source -> (
+      match Value.int_value source with
+      | Some value -> Ok (Concrete_key (Value.Integer_key value))
+      | None -> Ok (Symbolic_integer_key value))
+  | Value.Float _ as source -> (
+      match Value.float_value source with
+      | Some value ->
+          let value = integer_of_float ~overflow:`Wrap value |> Z.to_int64 in
+          Ok (Concrete_key (Value.Integer_key value))
+      | None -> Error (Symbolic_array_key `Float))
+  | Value.String value -> (
+      match integer_string_array_key value with
+      | Some value -> Ok (Concrete_key (Value.Integer_key value))
+      | None -> Ok (Concrete_key (Value.String_key value)))
+  | Value.Array _ -> Error (Invalid_array_key `Array)
 
 let coerce target value =
   match target with

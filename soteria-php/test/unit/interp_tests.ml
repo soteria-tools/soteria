@@ -15,7 +15,19 @@ let location : Php_ir.location =
 let expression desc : Php_ir.expression = { desc; location }
 let literal value = expression (Literal value)
 let variable name = expression (Variable name)
-let assign name value = expression (Assign (name, value))
+
+let variable_lvalue name : Php_ir.lvalue =
+  { desc = Variable_lvalue name; location }
+
+let assign name value = expression (Assign (variable_lvalue name, value))
+let assign_lvalue target value = expression (Assign (target, value))
+
+let array_element ?key array : Php_ir.lvalue =
+  { desc = Array_element_lvalue (array, key); location }
+
+let array_get target = expression (Array_get target)
+let array_item ?key value : Php_ir.array_item = { key; value; location }
+let array items = expression (Array items)
 let call name arguments = expression (Call (name, arguments))
 let binary left operator right = expression (Binary (left, operator, right))
 let expression_statement expression = Php_ir.Expression (expression, location)
@@ -280,6 +292,213 @@ let supports_recursive_calls () =
   in
   Alcotest.(check (option int64)) "recursive result" (Some 3L) result
 
+let preserves_array_order_and_append_keys () =
+  let statements =
+    [
+      expression_statement
+        (assign "array"
+           (array
+              [
+                array_item ~key:(literal (Int 2L)) (literal (Int 10L));
+                array_item (literal (Int 20L));
+                array_item ~key:(literal (Int 1L)) (literal (Int 30L));
+                array_item (literal (Int 40L));
+                array_item ~key:(literal (Int 2L)) (literal (Int 50L));
+              ]));
+    ]
+  in
+  let state = run statements |> expect_single_ok "ordered array" in
+  let bindings =
+    Option.bind (State.find_variable "array" state) Value.array_value
+    |> Option.get
+    |> Value.array_bindings
+  in
+  let keys =
+    List.map
+      (function
+        | Value.Integer_key key, _ -> Int64.to_string key
+        | String_key key, _ -> key)
+      bindings
+  in
+  let values =
+    List.map (fun (_, value) -> Option.get (Value.int_value value)) bindings
+  in
+  Alcotest.(check (list string)) "insertion order" [ "2"; "3"; "1"; "4" ] keys;
+  Alcotest.(check (list int64))
+    "overwritten values" [ 50L; 20L; 30L; 40L ] values
+
+let writes_nested_arrays_and_preserves_copies () =
+  let original_item =
+    array_element ~key:(literal (String "item")) (variable_lvalue "original")
+  in
+  let copy_item =
+    array_element ~key:(literal (String "item")) (variable_lvalue "copy")
+  in
+  let statements =
+    [
+      expression_statement (assign "original" (array []));
+      expression_statement
+        (assign_lvalue (array_element original_item) (literal (Int 7L)));
+      expression_statement (assign "copy" (variable "original"));
+      expression_statement
+        (assign_lvalue
+           (array_element ~key:(literal (Int 0L)) copy_item)
+           (literal (Int 8L)));
+    ]
+  in
+  let state = run statements |> expect_single_ok "nested array writes" in
+  let nested_value name =
+    Option.bind (State.find_variable name state) Value.array_value
+    |> fun array ->
+    Option.bind array (Value.array_find (Value.String_key "item"))
+    |> fun item ->
+    Option.bind item Value.array_value |> fun item ->
+    Option.bind item (Value.array_find (Value.Integer_key 0L)) |> fun value ->
+    Option.bind value Value.int_value
+  in
+  Alcotest.(check (option int64))
+    "original remains unchanged" (Some 7L) (nested_value "original");
+  Alcotest.(check (option int64))
+    "copy is updated" (Some 8L) (nested_value "copy")
+
+let isolates_array_copies_across_symbolic_branches () =
+  let copy_zero =
+    array_element ~key:(literal (Int 0L)) (variable_lvalue "copy")
+  in
+  let statements =
+    [
+      expression_statement
+        (assign "original" (array [ array_item (literal (Int 1L)) ]));
+      expression_statement (assign "copy" (variable "original"));
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.If
+        ( variable "condition",
+          [ expression_statement (assign_lvalue copy_zero (literal (Int 2L))) ],
+          [ expression_statement (assign_lvalue copy_zero (literal (Int 3L))) ],
+          location );
+    ]
+  in
+  let values =
+    run statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          let element name =
+            Option.bind (State.find_variable name state) Value.array_value
+            |> fun array ->
+            Option.bind array (Value.array_find (Value.Integer_key 0L))
+            |> fun value -> Option.bind value Value.int_value
+          in
+          Option.bind (element "original") (fun original ->
+              Option.map (fun copy -> (original, copy)) (element "copy"))
+      | _ -> None)
+    |> List.sort Stdlib.compare
+  in
+  Alcotest.(check (list (pair int64 int64)))
+    "branch-local array copies"
+    [ (1L, 2L); (1L, 3L) ]
+    values
+
+let evaluates_array_keys_before_assignment_values () =
+  let key =
+    function_ "key" []
+      [
+        Php_ir.Echo ([ literal (String "k") ], location);
+        Php_ir.Return (Some (literal (Int 0L)), location);
+      ]
+  in
+  let value =
+    function_ "value" []
+      [
+        Php_ir.Echo ([ literal (String "v") ], location);
+        Php_ir.Return (Some (literal (Int 1L)), location);
+      ]
+  in
+  let target = array_element ~key:(call "key" []) (variable_lvalue "array") in
+  let statements =
+    [
+      expression_statement (assign "array" (array []));
+      expression_statement (assign_lvalue target (call "value" []));
+    ]
+  in
+  let state =
+    run ~functions:[ key; value ] statements
+    |> expect_single_ok "array assignment evaluation order"
+  in
+  Alcotest.(check string) "key before value" "kv" (State.output state)
+
+let reads_existing_symbolic_array_keys () =
+  let index = variable "index" in
+  let in_bounds =
+    binary
+      (binary index Greater_than_or_equal (literal (Int 0L)))
+      Boolean_and
+      (binary index Less_than_or_equal (literal (Int 1L)))
+  in
+  let target = array_element ~key:index (variable_lvalue "array") in
+  let statements =
+    [
+      expression_statement
+        (assign "array"
+           (array
+              [ array_item (literal (Int 10L)); array_item (literal (Int 20L)) ]));
+      expression_statement (assign "index" (call "Soteria\\symbolic_int" []));
+      expression_statement (call "Soteria\\assume" [ in_bounds ]);
+      expression_statement (assign "result" (array_get target));
+    ]
+  in
+  let values =
+    run statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind (State.find_variable "result" state) Value.int_value
+      | _ -> None)
+    |> List.sort Int64.compare
+  in
+  Alcotest.(check (list int64)) "symbolic offset values" [ 10L; 20L ] values
+
+let reports_array_append_overflow () =
+  let statements =
+    [
+      expression_statement
+        (assign "array"
+           (array
+              [
+                array_item ~key:(literal (Int Int64.max_int)) (literal (Int 1L));
+              ]));
+      expression_statement
+        (assign_lvalue
+           (array_element (variable_lvalue "array"))
+           (literal (Int 2L)));
+    ]
+  in
+  match run statements with
+  | [ (Compo_res.Error (Or_gave_up.E (Error.Array_append_overflow, _)), _) ] ->
+      ()
+  | _ -> Alcotest.fail "append after PHP_INT_MAX did not produce an error"
+
+let reserves_append_keys_before_values () =
+  let append = array_element (variable_lvalue "array") in
+  let statements =
+    [
+      expression_statement (assign "array" (array []));
+      expression_statement
+        (assign_lvalue append (assign_lvalue append (literal (Int 1L))));
+    ]
+  in
+  let state = run statements |> expect_single_ok "nested append assignment" in
+  let bindings =
+    Option.bind (State.find_variable "array" state) Value.array_value
+    |> Option.get
+    |> Value.array_bindings
+  in
+  let keys = List.map fst bindings in
+  let values = List.map snd bindings |> List.filter_map Value.int_value in
+  Alcotest.(check bool)
+    "reserved key order" true
+    (keys = [ Value.Integer_key 0L; Value.Integer_key 1L ]);
+  Alcotest.(check (list int64)) "nested append values" [ 1L; 1L ] values
+
 let () =
   Alcotest.run "PHP interpreter"
     [
@@ -305,5 +524,19 @@ let () =
             reports_missing_function_arguments;
           Alcotest.test_case "recursive functions" `Quick
             supports_recursive_calls;
+          Alcotest.test_case "array order and append keys" `Quick
+            preserves_array_order_and_append_keys;
+          Alcotest.test_case "nested array writes and copies" `Quick
+            writes_nested_arrays_and_preserves_copies;
+          Alcotest.test_case "array branch isolation" `Quick
+            isolates_array_copies_across_symbolic_branches;
+          Alcotest.test_case "array assignment evaluation order" `Quick
+            evaluates_array_keys_before_assignment_values;
+          Alcotest.test_case "symbolic array keys" `Quick
+            reads_existing_symbolic_array_keys;
+          Alcotest.test_case "array append overflow" `Quick
+            reports_array_append_overflow;
+          Alcotest.test_case "array append reservation" `Quick
+            reserves_append_keys_before_values;
         ] );
     ]

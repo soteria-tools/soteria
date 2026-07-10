@@ -3,20 +3,25 @@
 Soteria PHP targets PHP 8.4.19 with 64-bit integers. PHP 8.4.19 is the concrete
 semantics oracle, while the parser sidecar may run on any PHP version accepted
 by its Composer manifest. The frontend uses nikic/PHP-Parser 5.8.0 and emits
-Soteria PHP IR schema version 3.
+Soteria PHP IR schema version 4.
 
-The scalar interpreter supports this deliberately bounded source subset:
+The interpreter supports this deliberately bounded source subset:
 
 | Construct | Status | Notes |
 | --- | --- | --- |
 | `null`, boolean, integer, and float literals | Supported | Integers must fit in a signed 64-bit value; floats must be finite. |
 | String literals | Partially supported | UTF-8 string values only. |
-| Scalar variables and ordinary assignment | Supported | Variables are stored in a persistent map. Dynamic variables and non-variable assignment targets are unsupported. |
-| Boolean, integer, float, and string casts | Partially supported | Conversions requiring a symbolic string, and symbolic float-to-integer conversions, explicitly give up. |
+| Variables and ordinary assignment | Supported | Scopes map variables to immutable cells. Assignment targets may be variables or nested array elements. Dynamic variables and other lvalues remain unsupported. |
+| Array literals | Partially supported | Keyed and unkeyed items are evaluated in PHP order. Unpacking and items by reference remain unsupported. |
+| Array keys | Partially supported | Concrete null, boolean, integer, float, and string keys use PHP key normalization. Float-to-integer deprecation notices are not yet reported. Arrays are rejected as keys. |
+| Array reads, writes, and append | Partially supported | Nested array lvalues, null/undefined autovivification, insertion order, negative next-integer keys, and append exhaustion are modelled. Missing-offset warning/value behavior remains unsupported. |
+| Symbolic array keys | Partially supported | Symbolic integer and boolean keys branch against existing integer keys. A feasible fresh-key read or write explicitly gives up because persistent symbolic-key insertion is not implemented. |
+| Array assignment and copying | Supported | Arrays are immutable values, so ordinary assignment copies the value while updates rebuild only the affected path. Mandatory branch-isolation tests cover copies and nested writes. References inside arrays are not yet supported. |
+| Boolean, integer, float, and string casts | Partially supported | Array-to-boolean, integer, and float conversion is supported. Array-to-string conversion, conversions requiring a symbolic string, and symbolic float-to-integer conversions explicitly give up. |
 | Unary `!`, `+`, and `-` | Partially supported | Numeric unary operators currently require an integer or float operand. Integer-negation overflow explicitly gives up. |
-| Integer and float `+`, `-`, `*`, and `/` | Partially supported | Mixed integer/float arithmetic is supported. Integer overflow explicitly gives up instead of wrapping. Other PHP numeric coercions are not yet supported. |
+| `+`, `-`, `*`, and `/` | Partially supported | Integer and float arithmetic and array union with `+` are supported. Integer overflow explicitly gives up instead of wrapping. Other PHP numeric coercions are not yet supported. |
 | `.` concatenation | Partially supported | Supported when both operands can be converted to concrete strings. |
-| `===` and `!==` | Supported | Supported for all current scalar value kinds, including symbolic payloads. |
+| `===` and `!==` | Supported | Supported for all current value kinds, including ordered recursive arrays and symbolic scalar payloads. |
 | `==` and `!=` | Partially supported | Supported for numeric pairs and boolean/null pairs. Numeric-string and other mixed-type rules are not yet supported. |
 | `<`, `<=`, `>`, and `>=` | Partially supported | Numeric operands only. |
 | `&&`, `||`, `and`, and `or` | Supported | Right-hand evaluation is correctly short-circuited and may branch symbolically. |
@@ -24,7 +29,7 @@ The scalar interpreter supports this deliberately bounded source subset:
 | Named functions and returns | Partially supported | Top-level declarations, required untyped by-value parameters, case-insensitive calls, early returns, fallthrough-to-`null`, and recursion are supported. Extra arguments are evaluated and ignored as in PHP. Parameter defaults and types, return types, references, variadics, named arguments, attributes, nested declarations, and closures remain unsupported. |
 | Function-local variables | Supported | Calls use a fresh persistent local scope initialized with the parameters. Assignments do not modify or leak into the caller's scope. Output remains visible across calls. PHP `global` and static local variables remain unsupported. |
 | Expression statements, `echo`, `if`, `else`, `while`, and `return` | Supported | `return` is supported in function bodies. `elseif`, loop-control statements, and all other statements remain unsupported. |
-| Undefined variable reads | Unsupported | The execution path explicitly gives up. Undefined-variable warning semantics are planned with the core state milestone. |
+| Undefined variable and array-offset reads | Unsupported | The execution path explicitly gives up. PHP warning and resulting-value semantics are not implemented yet. |
 
 Every interpreted expression and statement consumes step fuel. The command-line
 driver also sets finite branching fuel, so unbounded loops and path explosion

@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 final class LoweringError extends RuntimeException
 {
@@ -286,17 +286,47 @@ final class Lowerer
             ];
         }
 
-        if ($expression instanceof Node\Expr\Assign) {
-            if (
-                !($expression->var instanceof Node\Expr\Variable)
-                || !is_string($expression->var->name)
-            ) {
-                return $this->unsupported($expression->var, 'assignment target');
+        if ($expression instanceof Node\Expr\Array_) {
+            $items = [];
+            foreach ($expression->items as $item) {
+                if ($item === null || $item->unpack || $item->byRef) {
+                    return $this->unsupported(
+                        $item ?? $expression,
+                        'array item',
+                    );
+                }
+                $items[] = [
+                    'key' => $item->key === null
+                        ? null
+                        : $this->lowerExpression($item->key),
+                    'value' => $this->lowerExpression($item->value),
+                    'location' => $this->location($item),
+                ];
             }
 
             return [
+                'kind' => 'array',
+                'items' => $items,
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\ArrayDimFetch) {
+            if ($expression->dim === null) {
+                return $this->unsupported($expression, 'array append read');
+            }
+
+            return [
+                'kind' => 'array_get',
+                'target' => $this->lowerLvalue($expression, false),
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\Assign) {
+            return [
                 'kind' => 'assign',
-                'variable' => $expression->var->name,
+                'target' => $this->lowerLvalue($expression->var),
                 'value' => $this->lowerExpression($expression->expr),
                 'location' => $location,
             ];
@@ -376,6 +406,40 @@ final class Lowerer
         }
 
         return $this->unsupported($expression, 'expression');
+    }
+
+    private function lowerLvalue(
+        Node\Expr $expression,
+        bool $allowAppend = true,
+    ): array
+    {
+        if (
+            $expression instanceof Node\Expr\Variable
+            && is_string($expression->name)
+        ) {
+            return [
+                'kind' => 'variable',
+                'name' => $expression->name,
+                'location' => $this->location($expression),
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\ArrayDimFetch) {
+            if ($expression->dim === null && !$allowAppend) {
+                return $this->unsupported($expression, 'array append read');
+            }
+
+            return [
+                'kind' => 'array_element',
+                'array' => $this->lowerLvalue($expression->var, $allowAppend),
+                'key' => $expression->dim === null
+                    ? null
+                    : $this->lowerExpression($expression->dim),
+                'location' => $this->location($expression),
+            ];
+        }
+
+        return $this->unsupported($expression, 'assignment target');
     }
 
     private function lowerBinaryOperator(Node\Expr\BinaryOp $operator): string

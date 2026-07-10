@@ -10,6 +10,12 @@
   $ cat soteria.out
   7,3,10,2.5,3.5,1,12
 
+  $ php arrays.php > php.out
+  $ ../../../bin/soteria_php.exe exec arrays.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  kv:string:1:append:7:8:next:3:4:4:1
+
   $ php functions.php > php.out
   $ ../../../bin/soteria_php.exe exec functions.php > soteria.out
   $ cmp php.out soteria.out

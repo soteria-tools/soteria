@@ -3,6 +3,9 @@ module Call_trace = Soteria.Terminal.Call_trace
 type t =
   | Failed_assertion
   | Division_by_zero
+  | Array_append_overflow
+  | Illegal_offset_type of Value.kind
+  | Cannot_use_as_array of Value.kind
   | Invalid_argument_count of {
       function_name : string;
       expected : int;
@@ -18,6 +21,15 @@ type t =
 let pp formatter = function
   | Failed_assertion -> Format.pp_print_string formatter "Failed assertion"
   | Division_by_zero -> Format.pp_print_string formatter "Division by zero"
+  | Array_append_overflow ->
+      Format.pp_print_string formatter
+        "Cannot add element to the array as the next element is already \
+         occupied"
+  | Illegal_offset_type kind ->
+      Format.fprintf formatter "Illegal offset type %s" (Value.kind_name kind)
+  | Cannot_use_as_array kind ->
+      Format.fprintf formatter "Cannot use a value of type %s as an array"
+        (Value.kind_name kind)
   | Invalid_argument_count { function_name; expected; actual } ->
       Format.fprintf formatter "%s expects %d argument%s, %d given"
         function_name expected

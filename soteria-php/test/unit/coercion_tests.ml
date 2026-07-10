@@ -182,6 +182,29 @@ let symbolic_coercions () =
   | Error error -> Alcotest.fail (Format.asprintf "%a" Coercion.pp_error error)
   | Ok _ -> Alcotest.fail "undefined-to-bool should be unsupported"
 
+let array_key_coercions () =
+  let check label expected value =
+    match Coercion.to_array_key value with
+    | Ok (Concrete_key actual) ->
+        Alcotest.(check bool) label true (actual = expected)
+    | Ok (Symbolic_integer_key _) ->
+        Alcotest.failf "%s: expected a concrete key" label
+    | Error error ->
+        Alcotest.fail (Format.asprintf "%a" Coercion.pp_error error)
+  in
+  check "canonical integer string" (Value.Integer_key 12L) (Value.string "12");
+  check "leading-zero string" (Value.String_key "012") (Value.string "012");
+  check "negative zero string" (Value.String_key "-0") (Value.string "-0");
+  check "out-of-range integer string" (Value.String_key "9223372036854775808")
+    (Value.string "9223372036854775808");
+  check "true" (Value.Integer_key 1L) (Value.bool true);
+  check "null" (Value.String_key "") Value.null;
+  check "float truncation" (Value.Integer_key (-1L)) (Value.float (-1.9));
+  match Coercion.to_array_key (Value.array Value.empty_array) with
+  | Error (Invalid_array_key `Array) -> ()
+  | Error error -> Alcotest.fail (Format.asprintf "%a" Coercion.pp_error error)
+  | Ok _ -> Alcotest.fail "an array was accepted as an array key"
+
 let () =
   Alcotest.run "PHP coercions"
     [
@@ -190,5 +213,6 @@ let () =
           Alcotest.test_case "PHP differential oracle" `Quick
             differential_scalar_coercions;
           Alcotest.test_case "symbolic values" `Quick symbolic_coercions;
+          Alcotest.test_case "array keys" `Quick array_key_coercions;
         ] );
     ]

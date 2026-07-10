@@ -34,11 +34,25 @@ type expression = { desc : expression_desc; location : location }
 and expression_desc =
   | Literal of literal
   | Variable of string
-  | Assign of string * expression
+  | Array of array_item list
+  | Array_get of lvalue
+  | Assign of lvalue * expression
   | Unary of unary_operator * expression
   | Binary of expression * binary_operator * expression
   | Cast of cast * expression
   | Call of string * expression list
+
+and array_item = {
+  key : expression option;
+  value : expression;
+  location : location;
+}
+
+and lvalue = { desc : lvalue_desc; location : location }
+
+and lvalue_desc =
+  | Variable_lvalue of string
+  | Array_element_lvalue of lvalue * expression option
 
 type parameter = { name : string; location : location }
 
@@ -64,7 +78,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 3
+let schema_version = 4
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -212,15 +226,32 @@ let rec decode_expression path json =
     | "variable" ->
         check_fields path [ "kind"; "name"; "location" ] fields;
         Variable (field path "name" fields |> as_string (path ^ ".name"))
+    | "array" ->
+        check_fields path [ "kind"; "items"; "location" ] fields;
+        let items =
+          field path "items" fields
+          |> as_list (path ^ ".items")
+          |> List.mapi (fun index ->
+              decode_array_item (Printf.sprintf "%s.items[%d]" path index))
+        in
+        Array items
+    | "array_get" ->
+        check_fields path [ "kind"; "target"; "location" ] fields;
+        let target =
+          field path "target" fields
+          |> decode_lvalue ~allow_append:false (path ^ ".target")
+        in
+        Array_get target
     | "assign" ->
-        check_fields path [ "kind"; "variable"; "value"; "location" ] fields;
-        let variable =
-          field path "variable" fields |> as_string (path ^ ".variable")
+        check_fields path [ "kind"; "target"; "value"; "location" ] fields;
+        let target =
+          field path "target" fields
+          |> decode_lvalue ~allow_append:true (path ^ ".target")
         in
         let value =
           field path "value" fields |> decode_expression (path ^ ".value")
         in
-        Assign (variable, value)
+        Assign (target, value)
     | "unary" ->
         check_fields path [ "kind"; "operator"; "operand"; "location" ] fields;
         let operator =
@@ -271,6 +302,50 @@ let rec decode_expression path json =
         in
         Call (name, arguments)
     | kind -> decode_error (path ^ ".kind") ("unknown expression kind " ^ kind)
+  in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { desc; location }
+
+and decode_array_item path json =
+  let fields = as_assoc path json in
+  check_fields path [ "key"; "value"; "location" ] fields;
+  let key =
+    match field path "key" fields with
+    | `Null -> None
+    | json -> Some (decode_expression (path ^ ".key") json)
+  in
+  let value =
+    field path "value" fields |> decode_expression (path ^ ".value")
+  in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { key; value; location }
+
+and decode_lvalue ~allow_append path json =
+  let fields = as_assoc path json in
+  let kind = field path "kind" fields |> as_string (path ^ ".kind") in
+  let desc =
+    match kind with
+    | "variable" ->
+        check_fields path [ "kind"; "name"; "location" ] fields;
+        Variable_lvalue (field path "name" fields |> as_string (path ^ ".name"))
+    | "array_element" ->
+        check_fields path [ "kind"; "array"; "key"; "location" ] fields;
+        let array =
+          field path "array" fields
+          |> decode_lvalue ~allow_append (path ^ ".array")
+        in
+        let key =
+          match field path "key" fields with
+          | `Null when allow_append -> None
+          | `Null -> decode_error (path ^ ".key") "append cannot be read"
+          | json -> Some (decode_expression (path ^ ".key") json)
+        in
+        Array_element_lvalue (array, key)
+    | kind -> decode_error (path ^ ".kind") ("unknown lvalue kind " ^ kind)
   in
   let location =
     field path "location" fields |> decode_location (path ^ ".location")
@@ -371,12 +446,29 @@ let rec iter_expression_locations f (expression : expression) =
   f expression.location;
   match expression.desc with
   | Literal _ | Variable _ -> ()
-  | Assign (_, value) | Unary (_, value) | Cast (_, value) ->
+  | Array items -> List.iter (iter_array_item_locations f) items
+  | Array_get target -> iter_lvalue_locations f target
+  | Assign (target, value) ->
+      iter_lvalue_locations f target;
       iter_expression_locations f value
+  | Unary (_, value) | Cast (_, value) -> iter_expression_locations f value
   | Binary (left, _, right) ->
       iter_expression_locations f left;
       iter_expression_locations f right
   | Call (_, arguments) -> List.iter (iter_expression_locations f) arguments
+
+and iter_array_item_locations f (item : array_item) =
+  f item.location;
+  Option.iter (iter_expression_locations f) item.key;
+  iter_expression_locations f item.value
+
+and iter_lvalue_locations f (lvalue : lvalue) =
+  f lvalue.location;
+  match lvalue.desc with
+  | Variable_lvalue _ -> ()
+  | Array_element_lvalue (array, key) ->
+      iter_lvalue_locations f array;
+      Option.iter (iter_expression_locations f) key
 
 let rec iter_statement_locations f (statement : statement) =
   match statement with
@@ -553,10 +645,17 @@ let rec expression_to_yojson expression =
     | Literal (String value) ->
         [ ("kind", `String "string"); ("value", `String value) ]
     | Variable name -> [ ("kind", `String "variable"); ("name", `String name) ]
-    | Assign (variable, value) ->
+    | Array items ->
+        [
+          ("kind", `String "array");
+          ("items", `List (List.map array_item_to_yojson items));
+        ]
+    | Array_get target ->
+        [ ("kind", `String "array_get"); ("target", lvalue_to_yojson target) ]
+    | Assign (target, value) ->
         [
           ("kind", `String "assign");
-          ("variable", `String variable);
+          ("target", lvalue_to_yojson target);
           ("value", expression_to_yojson value);
         ]
     | Unary (operator, operand) ->
@@ -586,6 +685,28 @@ let rec expression_to_yojson expression =
         ]
   in
   `Assoc (fields @ [ ("location", location_to_yojson expression.location) ])
+
+and array_item_to_yojson (item : array_item) =
+  `Assoc
+    [
+      ("key", Option.fold ~none:`Null ~some:expression_to_yojson item.key);
+      ("value", expression_to_yojson item.value);
+      ("location", location_to_yojson item.location);
+    ]
+
+and lvalue_to_yojson lvalue =
+  let fields =
+    match lvalue.desc with
+    | Variable_lvalue name ->
+        [ ("kind", `String "variable"); ("name", `String name) ]
+    | Array_element_lvalue (array, key) ->
+        [
+          ("kind", `String "array_element");
+          ("array", lvalue_to_yojson array);
+          ("key", Option.fold ~none:`Null ~some:expression_to_yojson key);
+        ]
+  in
+  `Assoc (fields @ [ ("location", location_to_yojson lvalue.location) ])
 
 let rec statement_to_yojson = function
   | Expression (expression, location) ->
