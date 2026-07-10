@@ -28,7 +28,11 @@ let assign_reference target source =
 let array_element ?key array : Php_ir.lvalue =
   { desc = Array_element_lvalue (array, key); location }
 
+let object_property object_ name : Php_ir.lvalue =
+  { desc = Object_property_lvalue (object_, name); location }
+
 let array_get target = expression (Array_get target)
+let property_get target = expression (Property_get target)
 let array_item ?key value : Php_ir.array_item = { key; value; location }
 let array items = expression (Array items)
 let call name arguments = expression (Call (name, arguments))
@@ -41,19 +45,23 @@ let parameter name : Php_ir.parameter = { name; location }
 let function_ name parameters body : Php_ir.function_decl =
   { name; parameters = List.map parameter parameters; body; location }
 
+let property ?default name : Php_ir.property_decl = { name; default; location }
+let class_ name properties : Php_ir.class_decl = { name; properties; location }
+
 let catch ?variable types body : Php_ir.catch_clause =
   { types; variable; body; location }
 
-let program ?(functions = []) statements : Php_ir.t =
+let program ?(functions = []) ?(classes = []) statements : Php_ir.t =
   {
     target_php_version = Php_ir.target_php_version;
     source_file = location.file;
     functions;
+    classes;
     statements;
   }
 
-let run ?fuel ?functions statements =
-  Interp.run (program ?functions statements)
+let run ?fuel ?functions ?classes statements =
+  Interp.run (program ?functions ?classes statements)
   |> Phpsymex.Result.run ?fuel ~mode:Soteria.Symex.Approx.OX
 
 let expect_single_ok label = function
@@ -666,6 +674,76 @@ let compares_self_referential_arrays () =
     "self equality" (Some true)
     (Option.bind (State.find_variable "equal" state) Value.bool_value)
 
+let shares_object_identity_and_property_cells () =
+  let box = class_ "Box" [ property ~default:(literal (Int 1L)) "value" ] in
+  let first_value = object_property (variable_lvalue "first") "value" in
+  let alias_value = object_property (variable_lvalue "alias") "value" in
+  let other_value = object_property (variable_lvalue "other") "value" in
+  let statements =
+    [
+      expression_statement (assign "first" (new_ "Box" []));
+      expression_statement (assign "alias" (variable "first"));
+      expression_statement (assign "other" (new_ "box" []));
+      expression_statement (assign_lvalue alias_value (literal (Int 2L)));
+      expression_statement
+        (assign_reference (variable_lvalue "reference") first_value);
+      expression_statement (assign "reference" (literal (Int 3L)));
+      expression_statement
+        (assign "same" (binary (variable "first") Identical (variable "alias")));
+      expression_statement
+        (assign "different"
+           (binary (variable "first") Not_identical (variable "other")));
+      Php_ir.Unset ([ alias_value ], location);
+      expression_statement (assign_lvalue first_value (literal (Int 4L)));
+      expression_statement (assign "result" (property_get alias_value));
+      expression_statement (assign "untouched" (property_get other_value));
+    ]
+  in
+  let state =
+    run ~classes:[ box ] statements |> expect_single_ok "object properties"
+  in
+  let boolean name =
+    Option.bind (State.find_variable name state) Value.bool_value
+  in
+  let integer name =
+    Option.bind (State.find_variable name state) Value.int_value
+  in
+  Alcotest.(check (option bool)) "shared handle" (Some true) (boolean "same");
+  Alcotest.(check (option bool))
+    "distinct allocation" (Some true) (boolean "different");
+  Alcotest.(check (option int64))
+    "property restored through alias" (Some 4L) (integer "result");
+  Alcotest.(check (option int64))
+    "separate property store" (Some 1L) (integer "untouched");
+  Alcotest.(check (option int64))
+    "detached property reference" (Some 3L) (integer "reference")
+
+let isolates_object_properties_across_symbolic_branches () =
+  let box = class_ "Box" [ property ~default:(literal (Int 1L)) "value" ] in
+  let value = object_property (variable_lvalue "box") "value" in
+  let statements =
+    [
+      expression_statement (assign "box" (new_ "Box" []));
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.If
+        ( variable "condition",
+          [ expression_statement (assign_lvalue value (literal (Int 2L))) ],
+          [ expression_statement (assign_lvalue value (literal (Int 3L))) ],
+          location );
+      expression_statement (assign "result" (property_get value));
+    ]
+  in
+  let values =
+    run ~classes:[ box ] statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind (State.find_variable "result" state) Value.int_value
+      | _ -> None)
+    |> List.sort Int64.compare
+  in
+  Alcotest.(check (list int64)) "branch-local property stores" [ 2L; 3L ] values
+
 let propagates_nested_loop_control_through_finally () =
   let increment =
     expression_statement
@@ -838,6 +916,10 @@ let () =
             isolates_aliased_cells_across_symbolic_branches;
           Alcotest.test_case "self-referential array equality" `Quick
             compares_self_referential_arrays;
+          Alcotest.test_case "object identity and property cells" `Quick
+            shares_object_identity_and_property_cells;
+          Alcotest.test_case "object property branch isolation" `Quick
+            isolates_object_properties_across_symbolic_branches;
           Alcotest.test_case "loop control through finally" `Quick
             propagates_nested_loop_control_through_finally;
           Alcotest.test_case "exception catches" `Quick

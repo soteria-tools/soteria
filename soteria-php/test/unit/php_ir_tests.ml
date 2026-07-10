@@ -10,13 +10,14 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 6) ?(functions = []) statement =
+let program ?(schema_version = 7) ?(functions = []) ?(classes = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
       ("target_php_version", `String "8.4.19");
       ("source_file", `String "test.php");
       ("functions", `List functions);
+      ("classes", `List classes);
       ("statements", `List [ statement ]);
     ]
 
@@ -47,10 +48,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:7 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:8 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 7 (expected 6)"
+        "error" "$.schema_version: unsupported schema version 8 (expected 7)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -411,6 +412,100 @@ let decodes_exceptions_and_structured_control () =
   | Ok _ -> Alcotest.fail "decoded an unexpected exception shape"
   | Error error -> Alcotest.fail error
 
+let decodes_classes_and_object_properties () =
+  let int =
+    `Assoc
+      [
+        ("kind", `String "int"); ("value", `String "1"); ("location", location);
+      ]
+  in
+  let property =
+    `Assoc
+      [ ("name", `String "value"); ("default", int); ("location", location) ]
+  in
+  let class_ =
+    `Assoc
+      [
+        ("name", `String "Box");
+        ("properties", `List [ property ]);
+        ("location", location);
+      ]
+  in
+  let variable =
+    `Assoc
+      [
+        ("kind", `String "variable");
+        ("name", `String "box");
+        ("location", location);
+      ]
+  in
+  let property_lvalue =
+    `Assoc
+      [
+        ("kind", `String "object_property");
+        ("object", variable);
+        ("name", `String "value");
+        ("location", location);
+      ]
+  in
+  let get =
+    `Assoc
+      [
+        ("kind", `String "property_get");
+        ("target", property_lvalue);
+        ("location", location);
+      ]
+  in
+  let statement =
+    `Assoc
+      [
+        ("kind", `String "expression");
+        ("expression", get);
+        ("location", location);
+      ]
+  in
+  match
+    Soteria_php.Php_ir.of_yojson (program ~classes:[ class_ ] statement)
+  with
+  | Ok
+      {
+        classes =
+          [
+            {
+              name = "Box";
+              properties =
+                [
+                  {
+                    name = "value";
+                    default = Some { desc = Literal (Int 1L); _ };
+                    _;
+                  };
+                ];
+              _;
+            };
+          ];
+        statements =
+          [
+            Expression
+              ( {
+                  desc =
+                    Property_get
+                      {
+                        desc =
+                          Object_property_lvalue
+                            ({ desc = Variable_lvalue "box"; _ }, "value");
+                        _;
+                      };
+                  _;
+                },
+                _ );
+          ];
+        _;
+      } ->
+      ()
+  | Ok _ -> Alcotest.fail "decoded an unexpected class or property shape"
+  | Error error -> Alcotest.fail error
+
 let rejects_invalid_loop_control () =
   let break =
     `Assoc
@@ -443,6 +538,8 @@ let () =
             decodes_references_and_unset;
           Alcotest.test_case "exceptions and structured control" `Quick
             decodes_exceptions_and_structured_control;
+          Alcotest.test_case "classes and object properties" `Quick
+            decodes_classes_and_object_properties;
           Alcotest.test_case "loop-control validation" `Quick
             rejects_invalid_loop_control;
         ] );

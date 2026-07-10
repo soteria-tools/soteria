@@ -36,6 +36,7 @@ and expression_desc =
   | Variable of string
   | Array of array_item list
   | Array_get of lvalue
+  | Property_get of lvalue
   | Assign of lvalue * expression
   | Assign_reference of lvalue * lvalue
   | Unary of unary_operator * expression
@@ -56,6 +57,7 @@ and lvalue = { desc : lvalue_desc; location : location }
 and lvalue_desc =
   | Variable_lvalue of string
   | Array_element_lvalue of lvalue * expression option
+  | Object_property_lvalue of lvalue * string
 
 type parameter = { name : string; location : location }
 
@@ -85,14 +87,27 @@ type function_decl = {
   location : location;
 }
 
+type property_decl = {
+  name : string;
+  default : expression option;
+  location : location;
+}
+
+type class_decl = {
+  name : string;
+  properties : property_decl list;
+  location : location;
+}
+
 type t = {
   target_php_version : string;
   source_file : string;
   functions : function_decl list;
+  classes : class_decl list;
   statements : statement list;
 }
 
-let schema_version = 6
+let schema_version = 7
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -256,6 +271,15 @@ let rec decode_expression path json =
           |> decode_lvalue ~allow_append:false (path ^ ".target")
         in
         Array_get target
+    | "property_get" -> (
+        check_fields path [ "kind"; "target"; "location" ] fields;
+        let target =
+          field path "target" fields
+          |> decode_lvalue ~allow_append:false (path ^ ".target")
+        in
+        match target.desc with
+        | Object_property_lvalue _ -> Property_get target
+        | _ -> decode_error (path ^ ".target") "expected an object property")
     | "assign" ->
         check_fields path [ "kind"; "target"; "value"; "location" ] fields;
         let target =
@@ -389,6 +413,14 @@ and decode_lvalue ~allow_append path json =
           | json -> Some (decode_expression (path ^ ".key") json)
         in
         Array_element_lvalue (array, key)
+    | "object_property" ->
+        check_fields path [ "kind"; "object"; "name"; "location" ] fields;
+        let object_ =
+          field path "object" fields
+          |> decode_lvalue ~allow_append (path ^ ".object")
+        in
+        let name = field path "name" fields |> as_string (path ^ ".name") in
+        Object_property_lvalue (object_, name)
     | kind -> decode_error (path ^ ".kind") ("unknown lvalue kind " ^ kind)
   in
   let location =
@@ -564,12 +596,64 @@ let decode_function path json =
   in
   { name; parameters; body; location }
 
+let rec validate_property_default path (expression : expression) =
+  let rec numeric = function
+    | { desc = Literal (Int _ | Float _); _ } -> true
+    | { desc = Unary ((Numeric_identity | Numeric_negation), operand); _ } ->
+        numeric operand
+    | _ -> false
+  in
+  match expression.desc with
+  | Literal _ -> ()
+  | Unary ((Numeric_identity | Numeric_negation), _) when numeric expression ->
+      ()
+  | Array items ->
+      List.iteri
+        (fun index (item : array_item) ->
+          let path = Printf.sprintf "%s.items[%d]" path index in
+          Option.iter (validate_property_default (path ^ ".key")) item.key;
+          validate_property_default (path ^ ".value") item.value)
+        items
+  | _ -> decode_error path "unsupported property default expression"
+
+let decode_property path json =
+  let fields = as_assoc path json in
+  check_fields path [ "name"; "default"; "location" ] fields;
+  let name = field path "name" fields |> as_string (path ^ ".name") in
+  let default =
+    match field path "default" fields with
+    | `Null -> None
+    | json ->
+        let expression = decode_expression (path ^ ".default") json in
+        validate_property_default (path ^ ".default") expression;
+        Some expression
+  in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { name; default; location }
+
+let decode_class path json =
+  let fields = as_assoc path json in
+  check_fields path [ "name"; "properties"; "location" ] fields;
+  let name = field path "name" fields |> as_string (path ^ ".name") in
+  let properties =
+    field path "properties" fields
+    |> as_list (path ^ ".properties")
+    |> List.mapi (fun index ->
+        decode_property (Printf.sprintf "%s.properties[%d]" path index))
+  in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { name; properties; location }
+
 let rec iter_expression_locations f (expression : expression) =
   f expression.location;
   match expression.desc with
   | Literal _ | Variable _ -> ()
   | Array items -> List.iter (iter_array_item_locations f) items
-  | Array_get target -> iter_lvalue_locations f target
+  | Array_get target | Property_get target -> iter_lvalue_locations f target
   | Assign (target, value) ->
       iter_lvalue_locations f target;
       iter_expression_locations f value
@@ -596,6 +680,7 @@ and iter_lvalue_locations f (lvalue : lvalue) =
   | Array_element_lvalue (array, key) ->
       iter_lvalue_locations f array;
       Option.iter (iter_expression_locations f) key
+  | Object_property_lvalue (object_, _) -> iter_lvalue_locations f object_
 
 let rec iter_statement_locations f (statement : statement) =
   match statement with
@@ -639,12 +724,21 @@ let iter_function_locations f (function_ : function_decl) =
     function_.parameters;
   List.iter (iter_statement_locations f) function_.body
 
-let validate_source_file source_file functions statements =
+let iter_class_locations f (class_ : class_decl) =
+  f class_.location;
+  List.iter
+    (fun (property : property_decl) ->
+      f property.location;
+      Option.iter (iter_expression_locations f) property.default)
+    class_.properties
+
+let validate_source_file source_file functions classes statements =
   let validate location =
     if not (String.equal source_file location.file) then
       decode_error "$" "location file differs from source_file"
   in
   List.iter (iter_function_locations validate) functions;
+  List.iter (iter_class_locations validate) classes;
   List.iter (iter_statement_locations validate) statements
 
 let validate_function_names functions =
@@ -672,6 +766,31 @@ let validate_function_names functions =
   in
   validate [] 0 functions
 
+let validate_class_names classes =
+  let rec validate seen index = function
+    | [] -> ()
+    | (class_ : class_decl) :: classes ->
+        let name = String.lowercase_ascii class_.name in
+        if List.mem name seen then
+          decode_error
+            (Printf.sprintf "$.classes[%d].name" index)
+            ("duplicate class " ^ class_.name);
+        let rec validate_properties seen property_index = function
+          | [] -> ()
+          | (property : property_decl) :: properties ->
+              if List.mem property.name seen then
+                decode_error
+                  (Printf.sprintf "$.classes[%d].properties[%d].name" index
+                     property_index)
+                  ("duplicate property " ^ property.name);
+              validate_properties (property.name :: seen) (property_index + 1)
+                properties
+        in
+        validate_properties [] 0 class_.properties;
+        validate (name :: seen) (index + 1) classes
+  in
+  validate [] 0 classes
+
 let of_yojson json =
   try
     let fields = as_assoc "$" json in
@@ -681,6 +800,7 @@ let of_yojson json =
         "target_php_version";
         "source_file";
         "functions";
+        "classes";
         "statements";
       ]
       fields;
@@ -707,6 +827,12 @@ let of_yojson json =
       |> List.mapi (fun index ->
           decode_function (Printf.sprintf "$.functions[%d]" index))
     in
+    let classes =
+      field "$" "classes" fields
+      |> as_list "$.classes"
+      |> List.mapi (fun index ->
+          decode_class (Printf.sprintf "$.classes[%d]" index))
+    in
     let statements =
       field "$" "statements" fields
       |> as_list "$.statements"
@@ -715,12 +841,14 @@ let of_yojson json =
             (Printf.sprintf "$.statements[%d]" index))
     in
     validate_function_names functions;
-    validate_source_file source_file functions statements;
+    validate_class_names classes;
+    validate_source_file source_file functions classes statements;
     Ok
       {
         target_php_version = actual_php_version;
         source_file;
         functions;
+        classes;
         statements;
       }
   with Decode_error message -> Error message
@@ -792,6 +920,10 @@ let rec expression_to_yojson expression =
         ]
     | Array_get target ->
         [ ("kind", `String "array_get"); ("target", lvalue_to_yojson target) ]
+    | Property_get target ->
+        [
+          ("kind", `String "property_get"); ("target", lvalue_to_yojson target);
+        ]
     | Assign (target, value) ->
         [
           ("kind", `String "assign");
@@ -861,6 +993,12 @@ and lvalue_to_yojson lvalue =
           ("kind", `String "array_element");
           ("array", lvalue_to_yojson array);
           ("key", Option.fold ~none:`Null ~some:expression_to_yojson key);
+        ]
+    | Object_property_lvalue (object_, name) ->
+        [
+          ("kind", `String "object_property");
+          ("object", lvalue_to_yojson object_);
+          ("name", `String name);
         ]
   in
   `Assoc (fields @ [ ("location", location_to_yojson lvalue.location) ])
@@ -970,6 +1108,23 @@ let function_to_yojson (function_ : function_decl) =
       ("location", location_to_yojson function_.location);
     ]
 
+let property_to_yojson (property : property_decl) =
+  `Assoc
+    [
+      ("name", `String property.name);
+      ( "default",
+        Option.fold ~none:`Null ~some:expression_to_yojson property.default );
+      ("location", location_to_yojson property.location);
+    ]
+
+let class_to_yojson (class_ : class_decl) =
+  `Assoc
+    [
+      ("name", `String class_.name);
+      ("properties", `List (List.map property_to_yojson class_.properties));
+      ("location", location_to_yojson class_.location);
+    ]
+
 let to_yojson program =
   `Assoc
     [
@@ -977,5 +1132,6 @@ let to_yojson program =
       ("target_php_version", `String program.target_php_version);
       ("source_file", `String program.source_file);
       ("functions", `List (List.map function_to_yojson program.functions));
+      ("classes", `List (List.map class_to_yojson program.classes));
       ("statements", `List (List.map statement_to_yojson program.statements));
     ]

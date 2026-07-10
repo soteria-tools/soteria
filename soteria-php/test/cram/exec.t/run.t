@@ -22,6 +22,12 @@
   $ cat soteria.out
   2:5:7:1:3:3:7:1:8
 
+  $ php objects.php > php.out
+  $ ../../../bin/soteria_php.exe exec objects.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  same:different:2:1:3:4:3:second:first:5
+
   $ php exceptions.php > php.out
   $ ../../../bin/soteria_php.exe exec exceptions.php > soteria.out
   $ cmp php.out soteria.out

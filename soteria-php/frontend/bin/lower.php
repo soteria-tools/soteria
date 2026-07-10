@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 final class LoweringError extends RuntimeException
 {
@@ -41,6 +41,8 @@ final class Lowerer
     {
         $functions = [];
         $functionNames = [];
+        $classes = [];
+        $classNames = [];
         $body = [];
         foreach ($statements as $statement) {
             if ($statement instanceof Node\Stmt\Function_) {
@@ -54,6 +56,17 @@ final class Lowerer
                 }
                 $functionNames[$canonicalName] = true;
                 $functions[] = $function;
+            } elseif ($statement instanceof Node\Stmt\Class_) {
+                $class = $this->lowerClass($statement);
+                $canonicalName = strtolower($class['name']);
+                if (array_key_exists($canonicalName, $classNames)) {
+                    return $this->unsupported(
+                        $statement,
+                        'duplicate class declaration',
+                    );
+                }
+                $classNames[$canonicalName] = true;
+                $classes[] = $class;
             } else {
                 $body[] = $this->lowerStatement($statement, false, 0);
             }
@@ -64,8 +77,141 @@ final class Lowerer
             'target_php_version' => TARGET_PHP_VERSION,
             'source_file' => $this->filename,
             'functions' => $functions,
+            'classes' => $classes,
             'statements' => $body,
         ];
+    }
+
+    private function lowerClass(Node\Stmt\Class_ $class): array
+    {
+        if (
+            $class->name === null
+            || $class->flags !== 0
+            || $class->extends !== null
+            || $class->implements !== []
+            || $class->attrGroups !== []
+        ) {
+            return $this->unsupported($class, 'class declaration');
+        }
+
+        $name = $class->namespacedName instanceof Node\Name
+            ? $class->namespacedName->toString()
+            : $class->name->toString();
+        $properties = [];
+        $propertyNames = [];
+        foreach ($class->stmts as $statement) {
+            if (!($statement instanceof Node\Stmt\Property)) {
+                return $this->unsupported($statement, 'class member');
+            }
+            foreach ($this->lowerProperties($statement) as $property) {
+                if (array_key_exists($property['name'], $propertyNames)) {
+                    return $this->unsupported(
+                        $statement,
+                        'duplicate property declaration',
+                    );
+                }
+                $propertyNames[$property['name']] = true;
+                $properties[] = $property;
+            }
+        }
+
+        return [
+            'name' => $name,
+            'properties' => $properties,
+            'location' => $this->location($class),
+        ];
+    }
+
+    private function lowerProperties(Node\Stmt\Property $property): array
+    {
+        if (
+            !in_array($property->flags, [0, Node\Stmt\Class_::MODIFIER_PUBLIC], true)
+            || $property->type !== null
+            || $property->attrGroups !== []
+            || $property->hooks !== []
+        ) {
+            return $this->unsupported($property, 'property declaration');
+        }
+
+        return array_map(
+            function (Node\PropertyItem $item): array {
+                if (
+                    $item->default !== null
+                    && !$this->isSupportedPropertyDefault($item->default)
+                ) {
+                    return $this->unsupported($item->default, 'property default');
+                }
+                return [
+                    'name' => $item->name->toString(),
+                    'default' => $item->default === null
+                        ? null
+                        : $this->lowerExpression($item->default),
+                    'location' => $this->location($item),
+                ];
+            },
+            $property->props,
+        );
+    }
+
+    private function isSupportedPropertyDefault(Node\Expr $expression): bool
+    {
+        if (
+            $expression instanceof Node\Scalar\Int_
+            || $expression instanceof Node\Scalar\Float_
+            || $expression instanceof Node\Scalar\String_
+        ) {
+            return true;
+        }
+        if ($expression instanceof Node\Expr\ConstFetch) {
+            return in_array(
+                strtolower($expression->name->toString()),
+                ['null', 'true', 'false'],
+                true,
+            );
+        }
+        if (
+            $expression instanceof Node\Expr\UnaryPlus
+            || $expression instanceof Node\Expr\UnaryMinus
+        ) {
+            return $this->isSupportedNumericPropertyDefault($expression->expr);
+        }
+        if ($expression instanceof Node\Expr\Array_) {
+            foreach ($expression->items as $item) {
+                if (
+                    $item === null
+                    || $item->unpack
+                    || $item->byRef
+                    || ($item->key !== null
+                        && !$this->isSupportedPropertyDefault($item->key))
+                    || !$this->isSupportedPropertyDefault($item->value)
+                ) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    private function isSupportedNumericPropertyDefault(
+        Node\Expr $expression,
+    ): bool
+    {
+        if (
+            $expression instanceof Node\Scalar\Int_
+            || $expression instanceof Node\Scalar\Float_
+        ) {
+            return true;
+        }
+        if (
+            $expression instanceof Node\Expr\UnaryPlus
+            || $expression instanceof Node\Expr\UnaryMinus
+        ) {
+            return $this->isSupportedNumericPropertyDefault($expression->expr);
+        }
+
+        return false;
     }
 
     private function lowerFunction(Node\Stmt\Function_ $function): array
@@ -457,6 +603,18 @@ final class Lowerer
             ];
         }
 
+        if ($expression instanceof Node\Expr\PropertyFetch) {
+            if (!($expression->name instanceof Node\Identifier)) {
+                return $this->unsupported($expression->name, 'dynamic property');
+            }
+
+            return [
+                'kind' => 'property_get',
+                'target' => $this->lowerLvalue($expression, false),
+                'location' => $location,
+            ];
+        }
+
         if ($expression instanceof Node\Expr\AssignRef) {
             return [
                 'kind' => 'assign_reference',
@@ -613,6 +771,19 @@ final class Lowerer
                 'key' => $expression->dim === null
                     ? null
                     : $this->lowerExpression($expression->dim),
+                'location' => $this->location($expression),
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\PropertyFetch) {
+            if (!($expression->name instanceof Node\Identifier)) {
+                return $this->unsupported($expression->name, 'dynamic property');
+            }
+
+            return [
+                'kind' => 'object_property',
+                'object' => $this->lowerLvalue($expression->var, $allowAppend),
+                'name' => $expression->name->toString(),
                 'location' => $this->location($expression),
             ];
         }

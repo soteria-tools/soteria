@@ -1,11 +1,18 @@
 module String_map = Map.Make (String)
+module String_set = Set.Make (String)
 module Cell_map = Map.Make (Int)
 module Object_map = Map.Make (Int)
 
 type cell_id = int
 type scope = cell_id String_map.t
 type object_id = int
-type php_object = { class_name : string; message : string }
+
+type php_object = {
+  class_name : string;
+  declared_properties : String_set.t;
+  properties : cell_id String_map.t;
+  message : string;
+}
 
 type t = {
   scopes : scope list;
@@ -46,16 +53,82 @@ let allocate_cell value state =
       next_cell = cell + 1;
     } )
 
-let allocate_object class_name message state =
+let allocate_object ?(properties = []) class_name message state =
   let id = state.next_object in
+  let declared_properties, object_properties, state =
+    List.fold_left
+      (fun (declared, object_properties, state) (name, value) ->
+        let cell, state = allocate_cell value state in
+        ( String_set.add name declared,
+          String_map.add name cell object_properties,
+          state ))
+      (String_set.empty, String_map.empty, state)
+      properties
+  in
+  let object_ =
+    { class_name; declared_properties; properties = object_properties; message }
+  in
   ( id,
     {
       state with
-      objects = Object_map.add id { class_name; message } state.objects;
+      objects = Object_map.add id object_ state.objects;
       next_object = id + 1;
     } )
 
 let find_object id state = Object_map.find_opt id state.objects
+
+let object_declares_property id name state =
+  match find_object id state with
+  | Some object_ -> String_set.mem name object_.declared_properties
+  | None -> failwith "property access on an unknown PHP object"
+
+let find_object_property_cell id name state =
+  match find_object id state with
+  | Some object_ -> String_map.find_opt name object_.properties
+  | None -> failwith "property access on an unknown PHP object"
+
+let find_object_property id name state =
+  Option.bind (find_object_property_cell id name state) (fun cell ->
+      find_cell cell state)
+
+let set_object_property id name value state =
+  match find_object id state with
+  | None -> failwith "property write on an unknown PHP object"
+  | Some object_ -> (
+      match String_map.find_opt name object_.properties with
+      | Some cell -> set_cell cell value state
+      | None ->
+          let cell, state = allocate_cell value state in
+          let object_ =
+            {
+              object_ with
+              properties = String_map.add name cell object_.properties;
+            }
+          in
+          { state with objects = Object_map.add id object_ state.objects })
+
+let bind_object_property id name cell state =
+  if not (Cell_map.mem cell state.cells) then
+    failwith "bind object property to an unknown PHP cell";
+  match find_object id state with
+  | None -> failwith "property binding on an unknown PHP object"
+  | Some object_ ->
+      let object_ =
+        {
+          object_ with
+          properties = String_map.add name cell object_.properties;
+        }
+      in
+      { state with objects = Object_map.add id object_ state.objects }
+
+let unset_object_property id name state =
+  match find_object id state with
+  | None -> failwith "property unset on an unknown PHP object"
+  | Some object_ ->
+      let object_ =
+        { object_ with properties = String_map.remove name object_.properties }
+      in
+      { state with objects = Object_map.add id object_ state.objects }
 
 let find_variable_cell name state =
   String_map.find_opt name (current_scope state)

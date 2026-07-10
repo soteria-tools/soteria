@@ -337,8 +337,13 @@ let unary operator value =
       | _ -> unsupported "unary - for %s" (Value.type_name value))
 
 module Function_map = Map.Make (String)
+module Class_map = Map.Make (String)
 
-type functions = Php_ir.function_decl Function_map.t
+type declarations = {
+  functions : Php_ir.function_decl Function_map.t;
+  classes : Php_ir.class_decl Class_map.t;
+}
+
 type thrown = { value : Value.t; trace : Error.Trace.t }
 type 'a evaluation = Evaluated of 'a | Raised of thrown
 
@@ -350,7 +355,11 @@ type control =
   | Throw of thrown
 
 type access = Read | Write | Unset
-type place = Variable of string | Array_element of place * Value.array_key
+
+type place =
+  | Variable of string
+  | Array_element of place * Value.array_key
+  | Object_property of State.object_id * string
 
 type throwable_class = {
   name : string;
@@ -424,14 +433,21 @@ let construct_throwable state name arguments =
       let id, state = State.allocate_object name message state in
       evaluated (Value.object_ id) state
   | Some { constructible = false; _ } -> unsupported "construction of Throwable"
-  | None -> unsupported "object construction for class %s" name
+  | None -> failwith "non-throwable class passed to throwable construction"
 
 let raise_value value state =
   let value, state =
     match value with
     | Value.Object id -> (
         match State.find_object id state with
-        | Some _ -> (value, state)
+        | Some object_ when class_is_a object_.class_name "Throwable" ->
+            (value, state)
+        | Some _ ->
+            let id, state =
+              State.allocate_object "Error"
+                "Cannot throw objects that do not implement Throwable" state
+            in
+            (Value.object_ id, state)
         | None -> failwith "PHP object value refers to an unknown object")
     | _ ->
         let id, state =
@@ -452,6 +468,9 @@ let rec read_place state = function
           State.find_array_value key array state
           |> Option.value ~default:Value.undef
       | _ -> Value.undef)
+  | Object_property (object_id, name) ->
+      State.find_object_property object_id name state
+      |> Option.value ~default:Value.undef
 
 let rec write_place place value state =
   match place with
@@ -475,6 +494,8 @@ let rec write_place place value state =
       | None ->
           Phpsymex.error
             (Error.Cannot_use_as_array (Value.kind (read_place state parent))))
+  | Object_property (object_id, name) ->
+      Phpsymex.Result.ok (State.set_object_property object_id name value state)
 
 let bind_place_reference place cell state =
   match place with
@@ -490,6 +511,8 @@ let bind_place_reference place cell state =
             (Value.array (Value.array_set_reference key cell Value.empty_array))
             state
       | value -> Phpsymex.error (Error.Cannot_use_as_array (Value.kind value)))
+  | Object_property (object_id, name) ->
+      Phpsymex.Result.ok (State.bind_object_property object_id name cell state)
 
 let cell_for_reference place state =
   match place with
@@ -531,6 +554,13 @@ let cell_for_reference place state =
                   state
               in
               Phpsymex.Result.ok (cell, state)))
+  | Object_property (object_id, name) -> (
+      match State.find_object_property_cell object_id name state with
+      | Some cell -> Phpsymex.Result.ok (cell, state)
+      | None ->
+          let cell, state = State.allocate_cell Value.null state in
+          let state = State.bind_object_property object_id name cell state in
+          Phpsymex.Result.ok (cell, state))
 
 let unset_place place state =
   match place with
@@ -541,6 +571,8 @@ let unset_place place state =
           write_place parent (Value.array (Value.array_remove key array)) state
       | Value.Undef | Value.Null -> Phpsymex.Result.ok state
       | value -> Phpsymex.error (Error.Cannot_use_as_array (Value.kind value)))
+  | Object_property (object_id, name) ->
+      Phpsymex.Result.ok (State.unset_object_property object_id name state)
 
 let normalized_array_key value =
   match Coercion.to_array_key value with
@@ -629,6 +661,34 @@ and eval_array_items functions state array items =
       in
       Phpsymex.with_location ~location:item.location process
 
+and eval_property_defaults declarations state properties =
+  match properties with
+  | [] -> evaluated [] state
+  | (property : Php_ir.property_decl) :: properties ->
+      let open Phpsymex.Syntax in
+      let*** value, state =
+        match property.default with
+        | None -> evaluated Value.null state
+        | Some expression -> eval_expression declarations state expression
+      in
+      let*** values, state =
+        eval_property_defaults declarations state properties
+      in
+      evaluated ((property.name, value) :: values) state
+
+and construct_object declarations state name arguments =
+  let canonical_name = Builtins.canonical_name name in
+  match Class_map.find_opt canonical_name declarations.classes with
+  | None -> unsupported "object construction for class %s" name
+  | Some (class_ : Php_ir.class_decl) ->
+      let open Phpsymex.Syntax in
+      let*** properties, state =
+        eval_property_defaults declarations state class_.properties
+      in
+      let _ = arguments in
+      let id, state = State.allocate_object ~properties class_.name "" state in
+      evaluated (Value.object_ id) state
+
 and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
   let process =
     let open Phpsymex.Syntax in
@@ -675,6 +735,29 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
               evaluated key state
         in
         evaluated (Array_element (parent, key)) state
+    | Object_property_lvalue (object_, name) -> (
+        let*** object_, state =
+          resolve_lvalue functions state ~access object_
+        in
+        match read_place state object_ with
+        | Value.Object object_id ->
+            let object_state =
+              match State.find_object object_id state with
+              | Some object_ -> object_
+              | None -> failwith "PHP object value refers to an unknown object"
+            in
+            if not (State.object_declares_property object_id name state) then
+              unsupported "undeclared property %s::$%s" object_state.class_name
+                name
+            else if
+              access = Read
+              && Option.is_none
+                   (State.find_object_property_cell object_id name state)
+            then
+              unsupported "read of unset property %s::$%s"
+                object_state.class_name name
+            else evaluated (Object_property (object_id, name)) state
+        | value -> unsupported "property access on %s" (Value.type_name value))
   in
   Phpsymex.with_location ~location:lvalue.location process
 
@@ -720,6 +803,11 @@ and eval_expression functions state expression =
         if Value.kind value = `Undefined then
           unsupported "read of an undefined array offset"
         else evaluated value state
+    | Property_get target ->
+        let*** place, state =
+          resolve_lvalue functions state ~access:Read target
+        in
+        evaluated (read_place state place) state
     | Assign (target, expression) ->
         let*** place, state =
           resolve_lvalue functions state ~access:Write target
@@ -770,9 +858,11 @@ and eval_expression functions state expression =
             evaluated value state
         | None ->
             call_function functions state expression.location name arguments)
-    | New (name, arguments) ->
+    | New (name, arguments) -> (
         let*** arguments, state = eval_expressions functions state arguments in
-        construct_throwable state name arguments
+        match find_throwable_class name with
+        | Some _ -> construct_throwable state name arguments
+        | None -> construct_object functions state name arguments)
     | Throw expression ->
         let*** value, state = eval_expression functions state expression in
         raise_value value state
@@ -781,7 +871,7 @@ and eval_expression functions state expression =
 
 and call_function functions state location name arguments =
   let canonical_name = Builtins.canonical_name name in
-  match Function_map.find_opt canonical_name functions with
+  match Function_map.find_opt canonical_name functions.functions with
   | None -> unsupported "function %s" name
   | Some (function_ : Php_ir.function_decl) ->
       let expected = List.length function_.parameters in
@@ -964,11 +1054,28 @@ let collect_functions declarations =
   in
   collect Function_map.empty declarations
 
+let collect_classes declarations =
+  let rec collect classes = function
+    | [] -> Phpsymex.Result.ok classes
+    | (class_ : Php_ir.class_decl) :: declarations ->
+        let name = Builtins.canonical_name class_.Php_ir.name in
+        if
+          Class_map.mem name classes
+          || Option.is_some (find_throwable_class name)
+        then
+          Phpsymex.with_location ~location:class_.location
+            (unsupported "duplicate class %s" class_.name)
+        else collect (Class_map.add name class_ classes) declarations
+  in
+  collect Class_map.empty declarations
+
 let run program =
   let open Phpsymex.Syntax in
   let** functions = collect_functions program.Php_ir.functions in
+  let** classes = collect_classes program.Php_ir.classes in
+  let declarations = { functions; classes } in
   let** control, state =
-    exec_statements functions State.empty program.statements
+    exec_statements declarations State.empty program.statements
   in
   match control with
   | Normal -> Phpsymex.Result.ok state
