@@ -7,6 +7,9 @@ Soteria PHP IR schema version 7.
 
 The interpreter supports this deliberately bounded source subset:
 
+The detailed cast and operand-kind tables are in
+[`scalar-semantics.md`](scalar-semantics.md).
+
 | Construct | Status | Notes |
 | --- | --- | --- |
 | `null`, boolean, integer, and float literals | Supported | Integers must fit in a signed 64-bit value; floats must be finite. |
@@ -17,13 +20,13 @@ The interpreter supports this deliberately bounded source subset:
 | Array reads, writes, and append | Partially supported | Nested array lvalues, null/undefined autovivification, insertion order, negative next-integer keys, and append exhaustion are modelled. Missing-offset warning/value behavior remains unsupported. |
 | Symbolic array keys | Partially supported | Symbolic integer and boolean keys branch against existing integer keys. A feasible fresh-key read or write explicitly gives up because persistent symbolic-key insertion is not implemented. |
 | Array assignment and copying | Supported | Arrays are immutable values, so ordinary assignment copies the value while updates rebuild only the affected path. Array elements promoted to references retain their aliases in later copies; earlier copies remain independent. Mandatory branch-isolation tests cover ordinary and referenced cells. |
-| Boolean, integer, float, and string casts | Partially supported | Array-to-boolean, integer, and float conversion is supported. Array-to-string conversion, conversions requiring a symbolic string, and symbolic float-to-integer conversions explicitly give up. |
-| Unary `!`, `+`, and `-` | Partially supported | Numeric unary operators currently require an integer or float operand. Integer-negation overflow explicitly gives up. |
-| `+`, `-`, `*`, and `/` | Partially supported | Integer and float arithmetic and array union with `+` are supported. Integer overflow explicitly gives up instead of wrapping. Other PHP numeric coercions are not yet supported. |
+| Boolean, integer, float, and string casts | Partially supported | All concrete scalar casts are supported. Array-to-boolean, integer, and float conversion is supported. Array-to-string conversion, conversions requiring a symbolic string, and symbolic float-to-integer conversions explicitly give up. |
+| Unary `!`, `+`, and `-` | Partially supported | Numeric unary operators support null, booleans, integers, floats, and well-formed concrete numeric strings. Integer-negation overflow promotes to float. Leading-numeric strings explicitly give up until warning events are modelled; invalid operand types give up until their `TypeError` is catchable. |
+| `+`, `-`, `*`, and `/` | Partially supported | Scalar weak numeric coercion, integer/float promotion, integer-overflow promotion, division's always-float result, and array union with `+` are supported. Leading-numeric strings and invalid operand types explicitly give up pending warning and catchable-error support. |
 | `.` concatenation | Partially supported | Supported when both operands can be converted to concrete strings. |
 | `===` and `!==` | Supported | Supported for all current value kinds, including ordered recursive arrays, symbolic scalar payloads, and stable object identity. |
-| `==` and `!=` | Partially supported | Supported for numeric pairs and boolean/null pairs. Numeric-string and other mixed-type rules are not yet supported. |
-| `<`, `<=`, `>`, and `>=` | Partially supported | Numeric operands only. |
+| `==` and `!=` | Partially supported | Supported for every scalar pair, including boolean/null precedence, integer/float promotion, numeric strings, ordinary strings, and `NAN`. Array and object loose equality remain unsupported. |
+| `<`, `<=`, `>`, and `>=` | Partially supported | Supported for every scalar pair with PHP 8.4.19 coercion rules. Array and object ordering remain unsupported. |
 | `&&`, `||`, `and`, and `or` | Supported | Right-hand evaluation is correctly short-circuited and may branch symbolically. |
 | Function calls | Partially supported | The callee must be a statically named user function or Soteria intrinsic. Arguments must be positional, non-reference, and non-unpacked. |
 | Named functions and returns | Partially supported | Top-level declarations, required untyped by-value parameters, case-insensitive calls, early returns, fallthrough-to-`null`, and recursion are supported. Extra arguments are evaluated and ignored as in PHP. Parameter defaults and types, return types, references, variadics, named arguments, attributes, nested declarations, and closures remain unsupported. |

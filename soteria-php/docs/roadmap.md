@@ -1,6 +1,8 @@
 # Soteria PHP design and implementation roadmap
 
-Status: proposal
+Status: active implementation
+
+Last updated: 10 July 2026
 
 ## Overview
 
@@ -35,6 +37,21 @@ Diagnostics, counterexamples, and execution statistics
 Most of the engineering effort will be in defining PHP semantics precisely,
 especially dynamic type coercion, arrays, references, objects, lvalue behavior,
 and errors. The Dune and CLI integration is comparatively small.
+
+## Current implementation status
+
+The first ten changes in the suggested pull request sequence have been
+implemented and validated. The current vertical slice includes the versioned
+frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
+references, structured exceptions, stable object identity, and declared public
+properties. The next work should close the remaining M1-M3 semantics before
+standalone packaging and release integration.
+
+Completing these pull requests is not the same as completing milestones M0-M3.
+The sequence deliberately established one sound path through each subsystem
+before filling out PHP's semantic breadth. M0 is complete; M1, M2, and M3 remain
+partial as described below. The authoritative language boundary is maintained
+in `support.md`.
 
 ## Goals
 
@@ -526,6 +543,8 @@ available.
 
 ### M0: frontend spike
 
+**Status:** Complete.
+
 Deliverables:
 
 - Pinned PHP and PHP-Parser versions.
@@ -539,6 +558,10 @@ Exit criterion: supported example files produce deterministic, validated IR,
 and unsupported or malformed input produces a source-level frontend error.
 
 ### M1: scalar symbolic executor
+
+**Status:** Partial. Scalar execution, symbolic inputs, assertions, fuel, and
+basic diagnostics and the scalar coercion/comparison contract are implemented.
+Concrete counterexample reporting remains.
 
 Deliverables:
 
@@ -555,6 +578,11 @@ verification success.
 
 ### M2: PHP core state semantics
 
+**Status:** Partial. Persistent arrays, general lvalues, references, exceptions,
+and mandatory branch-isolation tests are implemented. `foreach`, undefined
+variable and offset behavior, fresh symbolic array-key insertion, and converting
+interpreter failures such as division by zero into catchable PHP errors remain.
+
 Deliverables:
 
 - General lvalue abstraction.
@@ -569,6 +597,12 @@ branch-isolation tests.
 
 ### M3: object model
 
+**Status:** Partial. Stable object handles, assignment by handle, persistent
+declared-property stores, property references, `unset`, nested array access, and
+branch isolation are implemented. Constructors, methods, visibility beyond
+public properties, inheritance, interfaces, traits, static state, cloning,
+closures, and magic methods remain.
+
 Deliverables:
 
 - Classes, constructors, properties, methods, and visibility.
@@ -581,6 +615,8 @@ Exit criterion: small object-oriented programs can be analysed without semantic
 shortcuts that break object identity or property isolation.
 
 ### M4: project analysis
+
+**Status:** Not started.
 
 Deliverables:
 
@@ -597,6 +633,10 @@ coverage and give-up statistics.
 
 ### M5: distribution
 
+**Status:** Deferred until the M1-M3 exit criteria are met. The Dune package,
+executable, generated opam metadata, Composer lockfile, and source-build CI
+coverage already exist. Standalone packages and their release path do not.
+
 Deliverables:
 
 - Standalone packaging policy for the PHP frontend runtime.
@@ -609,19 +649,199 @@ Deliverables:
 
 Changes should remain small and independently reviewable.
 
-1. Package skeleton, frontend sidecar, IR schema, and parse-only CLI.
-2. Scalar value representation and differential coercion test harness.
-3. Symbolic monad instantiation, diagnostics, and assertion API.
-4. Scalar expression and statement interpreter.
-5. Functions and scopes.
-6. Persistent arrays and lvalue abstraction.
-7. References and aliasing tests.
-8. Exceptions and structured control flow.
-9. Object identity and properties.
-10. Packaging and CI integration.
+1. **Complete:** Package skeleton, frontend sidecar, IR schema, and parse-only
+   CLI.
+2. **Complete:** Scalar value representation and differential coercion test
+   harness.
+3. **Complete:** Symbolic monad instantiation, diagnostics, and assertion API.
+4. **Complete:** Scalar expression and statement interpreter.
+5. **Complete:** Functions and scopes.
+6. **Complete:** Persistent arrays and lvalue abstraction.
+7. **Complete:** References and aliasing tests.
+8. **Complete:** Exceptions and structured control flow.
+9. **Complete:** Object identity and properties.
+10. **Complete:** Scalar coercion and comparison completion.
+11. Counterexample models, `expect_fail`, and function entry points.
+12. Undefined reads, warnings, and catchable runtime errors.
+13. `foreach` by value.
+14. `foreach` by reference and symbolic array-key insertion.
+15. Constructors, instance methods, and `$this`.
+16. Property and method visibility.
+17. Inheritance, interfaces, and traits.
+18. Static state, closures, and callable values.
+19. Selected magic methods and object builtins.
+20. Packaging and CI distribution after the M1-M3 exit criteria pass.
 
 Each pull request should include focused tests and should not combine repository
 packaging work with substantial semantic changes.
+
+## M1-M3 completion plan
+
+The following steps define the semantic work needed before distribution becomes
+the main priority. Each numbered group can be split into one or more pull
+requests when the differential test matrix or state changes are substantial.
+
+### M1.1: finish the scalar semantic contract
+
+1. Write an explicit operand-kind matrix for every supported cast, unary
+   operator, arithmetic operator, concatenation, equality operator, and ordering
+   operator. Every cell must be either supported with PHP 8.4 behavior or an
+   explicit give-up.
+2. Add a centralized concrete numeric-string classifier and implement the weak
+   numeric coercions required by the matrix. Keep these rules in `coercion.ml`.
+3. Complete strict and loose comparisons for the supported scalar pairs,
+   including boolean/null precedence, integer/float comparison, concrete numeric
+   strings, ordinary strings, and `NAN` edge cases where representable.
+4. Define arithmetic promotion, division, integer overflow, float-to-integer
+   conversion, and warning/error behavior for every supported scalar pair.
+5. Expand the generated differential oracle so every supported matrix cell and
+   important boundary value is compared with PHP 8.4.19.
+
+This step is complete when the documented scalar matrix and differential suite
+agree and no supported scalar operation falls through to an accidental OCaml
+exception or silent approximation.
+
+### M1.2: counterexamples and analysis entry points
+
+1. Record stable names, types, and creation order for symbolic inputs.
+2. On a failing path, query the solver model and convert symbolic booleans,
+   integers, and floats into PHP-level concrete values.
+3. Print a deterministic counterexample with the assertion diagnostic and add
+   unit and cram tests for multiple inputs and constrained paths.
+4. Implement `Soteria\expect_fail()` in terms of entry-point result handling,
+   with explicit behavior for no failure, a definite failure, and incomplete
+   exploration.
+5. Add `exec --function NAME`, validate its arity and supported parameter model,
+   and report the selected function in diagnostics.
+
+M1 is complete when scalar differential tests pass, failing symbolic assertions
+produce stable concrete models, and unsupported or incomplete paths cannot be
+reported as verification success.
+
+### M2.1: undefined reads and PHP runtime events
+
+1. Introduce a persistent runtime-event representation for notices, warnings,
+   deprecations, and errors, including source location and call trace.
+2. Implement PHP 8.4 behavior for undefined variables, missing array offsets,
+   and unset or missing object properties: emit the correct event and return the
+   correct resulting value where execution continues.
+3. Define which event severities are reported as bugs, retained as diagnostics,
+   or ignored by configuration. The default must remain conservative.
+4. Cover reads, writes, autovivification, `isset`-like future hooks, `unset`, and
+   aliases with differential tests.
+
+### M2.2: make language errors catchable
+
+1. Route PHP runtime failures through the interpreter's `Throw` control path
+   instead of terminating directly with a Soteria diagnostic.
+2. Construct the appropriate built-in throwable for division by zero, invalid
+   operand types, argument count/type failures, illegal offsets, and invalid
+   property or array access.
+3. Preserve the triggering source location and call trace while allowing
+   `catch` and `finally` to run. Only an uncaught throwable becomes a final
+   failure diagnostic.
+4. Add differential tests for caught and uncaught failures in expressions,
+   functions, loops, and `finally` blocks.
+
+### M2.3: `foreach` by value
+
+1. Add versioned IR nodes for `foreach`, its optional key target, its value
+   target, and loop control.
+2. Evaluate the iterable exactly once and traverse concrete arrays in insertion
+   order using PHP's by-value iteration behavior.
+3. Implement key/value assignment, nested lvalues, `break`, `continue`, return,
+   throw, and mutation of the original array during iteration.
+4. Add differential tests for integer/string keys, copies, nested loops, early
+   exits, and mutation during iteration.
+
+### M2.4: `foreach` references and symbolic array keys
+
+1. Implement by-reference iteration by promoting array entries to persistent
+   cells without introducing mutable OCaml state.
+2. Preserve PHP's lingering reference after the loop and its behavior under
+   assignment, `unset`, array copies, and symbolic branches.
+3. Replace the current give-up for feasible fresh symbolic keys with a
+   persistent representation that can distinguish equality with existing keys
+   from insertion of a new key.
+4. Add mandatory branch-isolation tests for iterator position, promoted cells,
+   writes through the lingering alias, and fresh-key insertion.
+
+M2 is complete when by-value and by-reference array iteration agree with PHP,
+undefined reads have documented runtime behavior, PHP errors are catchable, and
+array/reference branch-isolation tests pass.
+
+### M3.1: constructors and instance methods
+
+1. Extend class IR with ordered method declarations, parameters, bodies,
+   modifiers, and source locations, plus statically named method-call
+   expressions.
+2. Add method lookup by runtime class, a fresh call scope containing `$this`,
+   ordinary argument evaluation, return handling, recursion, and thrown control.
+3. Run property initialization before `__construct`, invoke supported
+   constructors with PHP argument rules, and preserve the allocated object when
+   construction completes.
+4. Differentially test method evaluation order, mutation through aliased object
+   handles, constructor throws, recursive calls, and branch isolation.
+
+### M3.2: visibility and property identity
+
+1. Track the declaring class of every method and property and carry the current
+   class context through calls.
+2. Represent private properties by declaring-class identity plus source name so
+   parent and child private properties cannot collide.
+3. Enforce public, protected, and private reads, writes, references, method
+   calls, and `unset`; invalid access must raise a catchable PHP `Error`.
+4. Add tests for access from the declaring class, subclasses, unrelated classes,
+   and top-level code.
+
+### M3.3: inheritance, interfaces, and traits
+
+1. Add parent and interface metadata, validate class graphs, reject cycles, and
+   implement inherited property layout and method lookup.
+2. Implement overriding, `parent` method calls, constructor inheritance, and the
+   object type checks needed by catch and method dispatch.
+3. Validate interface method obligations for the supported method subset.
+4. Lower traits into deterministic class metadata while implementing PHP's
+   conflict and alias rules for the supported subset.
+5. Differentially test lookup, override, visibility, private property identity,
+   and trait conflicts.
+
+### M3.4: static state, callables, and closures
+
+1. Add persistent per-class static property cells and static method lookup;
+   static state must remain isolated across symbolic branches.
+2. Add callable values for functions, static methods, and object methods, then
+   route invocation through one checked call path.
+3. Add closures with by-value and by-reference captures represented by the
+   existing persistent value/cell model.
+4. Add branch-isolation and differential tests for static writes, callable
+   dispatch, closure capture timing, and captured references.
+
+### M3.5: selected object completion work
+
+1. Implement cloning with a fresh object identity, PHP's shallow property-copy
+   behavior, preserved references, and an optional supported `__clone` method.
+2. Select and implement the first required magic methods based on target
+   programs; likely candidates are `__get`, `__set`, `__isset`, `__unset`,
+   `__call`, and `__toString`.
+3. Add a small object-builtin set such as `get_class`, `is_a`,
+   `property_exists`, and `method_exists`, each with an explicit analysis
+   contract.
+4. Keep serialization and dynamic properties unsupported until their state and
+   deprecation behavior are designed explicitly.
+
+M3 is complete when small programs using constructors, methods, visibility,
+inheritance, interfaces, traits, static state, and closures pass differential
+tests without breaking object identity, property aliasing, or branch isolation.
+
+## Deferred distribution work
+
+Packaging remains M5 work. Once M1-M3 meet their exit criteria, the project can
+choose the system-PHP policy, bundle the locked Composer dependencies and Z3,
+add macOS/Linux package smoke tests, and integrate PHP archives into nightly and
+versioned releases. Source-build CI should continue running throughout the
+semantic work, but standalone distribution should not drive the near-term
+design.
 
 ## Major risks
 

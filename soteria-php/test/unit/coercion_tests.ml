@@ -155,6 +155,77 @@ let differential_scalar_coercions () =
               fail test_path (Format.asprintf "%a" Coercion.pp_error error))
         [ "bool"; "int"; "float"; "string" ])
 
+let differential_numeric_operands () =
+  let oracle = run_oracle () in
+  member "$" "results" oracle
+  |> list "$.results"
+  |> List.iteri (fun index result ->
+      let path = Printf.sprintf "$.results[%d]" index in
+      let input = member path "input" result in
+      let label = member path "label" input |> string (path ^ ".input.label") in
+      let value = decode_input (path ^ ".input") input in
+      let expected = member path "numeric" result in
+      let warnings = member path "warnings" expected |> list path in
+      let has_error = Yojson.Safe.Util.member "error" expected <> `Null in
+      match (warnings, has_error, Coercion.to_number value) with
+      | [], false, Ok actual ->
+          check_result (label ^ " numeric") expected actual
+      | _ :: _, false, Error (Leading_numeric_string _) -> ()
+      | [], true, Error (Invalid_numeric_operand `String) -> ()
+      | _, _, Error error ->
+          fail label
+            (Format.asprintf "unexpected error: %a" Coercion.pp_error error)
+      | _ -> fail label "numeric operand result disagrees with PHP")
+
+let comparison_operator = function
+  | "equal" -> Coercion.Equal
+  | "less_than" -> Coercion.Less_than
+  | "less_than_or_equal" -> Coercion.Less_than_or_equal
+  | "greater_than" -> Coercion.Greater_than
+  | "greater_than_or_equal" -> Coercion.Greater_than_or_equal
+  | operator -> fail operator "unknown comparison operator"
+
+let differential_scalar_comparisons () =
+  let oracle = run_oracle () in
+  member "$" "comparisons" oracle
+  |> list "$.comparisons"
+  |> List.iteri (fun index result ->
+      let path = Printf.sprintf "$.comparisons[%d]" index in
+      let left_json = member path "left" result in
+      let right_json = member path "right" result in
+      let left = decode_input (path ^ ".left") left_json in
+      let right = decode_input (path ^ ".right") right_json in
+      let left_label = member path "label" left_json |> string path in
+      let right_label = member path "label" right_json |> string path in
+      List.iter
+        (fun operator_name ->
+          let label = left_label ^ " " ^ operator_name ^ " " ^ right_label in
+          let expected = member path operator_name result |> bool path in
+          match
+            Coercion.compare_scalar
+              (comparison_operator operator_name)
+              left right
+          with
+          | Ok actual ->
+              let actual =
+                actual
+                |> Value.Typed.untyped
+                |> Value.Typed.Eval.eval ~force:true
+                |> Value.Typed.type_
+              in
+              Alcotest.(check (option bool))
+                label (Some expected)
+                (Value.Typed.Bool.to_bool actual)
+          | Error error ->
+              fail label (Format.asprintf "%a" Coercion.pp_error error))
+        [
+          "equal";
+          "less_than";
+          "less_than_or_equal";
+          "greater_than";
+          "greater_than_or_equal";
+        ])
+
 let symbolic_coercions () =
   let open Value in
   let integer =
@@ -212,6 +283,10 @@ let () =
         [
           Alcotest.test_case "PHP differential oracle" `Quick
             differential_scalar_coercions;
+          Alcotest.test_case "numeric operands" `Quick
+            differential_numeric_operands;
+          Alcotest.test_case "scalar comparisons" `Quick
+            differential_scalar_comparisons;
           Alcotest.test_case "symbolic values" `Quick symbolic_coercions;
           Alcotest.test_case "array keys" `Quick array_key_coercions;
         ] );

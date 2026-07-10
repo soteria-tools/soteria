@@ -6,6 +6,11 @@ let coerce target value =
   | Ok value -> Phpsymex.Result.ok value
   | Error error -> coercion_error error
 
+let coerce_number value =
+  match Coercion.to_number value with
+  | Ok value -> Phpsymex.Result.ok value
+  | Error error -> coercion_error error
+
 let simplify_value value =
   let open Phpsymex.Syntax in
   let normalize value =
@@ -49,17 +54,22 @@ let concrete_numeric_float = function
   | Value.Float _ as value -> Value.float_value value
   | _ -> None
 
-let checked_integer operation check left right =
+let checked_integer check float left right =
   let result, overflow = check ~signed:true left right in
   Phpsymex.branch_on overflow ~left_branch_name:"Integer overflow"
     ~right_branch_name:"Integer result"
-    ~then_:(fun () -> unsupported "integer overflow in %s" operation)
+    ~then_:(fun () ->
+      let left = Option.get (numeric_float (Value.Int left)) in
+      let right = Option.get (numeric_float (Value.Int right)) in
+      Phpsymex.Result.ok (Value.Float (float left right)))
     ~else_:(fun () -> Phpsymex.Result.ok (Value.Int result))
 
-let arithmetic operation integer float concrete_float left right =
+let arithmetic integer float concrete_float left right =
+  let open Phpsymex.Syntax in
+  let** left = coerce_number left in
+  let** right = coerce_number right in
   match (left, right) with
-  | Value.Int left, Value.Int right ->
-      checked_integer operation integer left right
+  | Value.Int left, Value.Int right -> checked_integer integer float left right
   | _ -> (
       match (concrete_numeric_float left, concrete_numeric_float right) with
       | Some left, Some right ->
@@ -68,106 +78,28 @@ let arithmetic operation integer float concrete_float left right =
           match (numeric_float left, numeric_float right) with
           | Some left, Some right ->
               Phpsymex.Result.ok (Value.Float (float left right))
-          | _ ->
-              unsupported "operator %s for %s and %s" operation
-                (Value.type_name left) (Value.type_name right)))
-
-let symbolic_integer_division numerator denominator =
-  let open Phpsymex.Syntax in
-  let zero = Value.Typed.BitVec.zero Value.integer_bits in
-  let denominator_is_zero = Value.Typed.sem_eq denominator zero in
-  Phpsymex.branch_on denominator_is_zero ~left_branch_name:"Division by zero"
-    ~right_branch_name:"Division"
-    ~then_:(fun () -> Phpsymex.error Error.Division_by_zero)
-    ~else_:(fun () ->
-      let min_int =
-        Value.Typed.BitVec.mk_masked Value.integer_bits
-          (Z.of_int64 Int64.min_int)
-      in
-      let minus_one =
-        Value.Typed.BitVec.mk_masked Value.integer_bits Z.minus_one
-      in
-      let overflows =
-        Value.Typed.Bool.and_
-          (Value.Typed.sem_eq numerator min_int)
-          (Value.Typed.sem_eq denominator minus_one)
-      in
-      Phpsymex.branch_on overflows ~left_branch_name:"Division overflow"
-        ~right_branch_name:"Division in range"
-        ~then_:(fun () ->
-          let numerator = Option.get (numeric_float (Value.Int numerator)) in
-          let denominator =
-            Option.get (numeric_float (Value.Int denominator))
-          in
-          Phpsymex.Result.ok
-            (Value.Float (Value.Typed.Float.div numerator denominator)))
-        ~else_:(fun () ->
-          let denominator = Value.Typed.BitVec.cast_nonzero denominator in
-          let quotient =
-            Value.Typed.BitVec.div ~signed:true numerator denominator
-            |> Value.Typed.BitVec.no_ovf_unsafe
-          in
-          let remainder =
-            Value.Typed.BitVec.rem ~signed:true numerator denominator
-            |> Value.Typed.BitVec.no_ovf_unsafe
-          in
-          let divides_evenly = Value.Typed.sem_eq remainder zero in
-          Phpsymex.branch_on divides_evenly
-            ~left_branch_name:"Integral quotient"
-            ~right_branch_name:"Fractional quotient"
-            ~then_:(fun () -> Phpsymex.Result.ok (Value.Int quotient))
-            ~else_:(fun () ->
-              let numerator =
-                Option.get (numeric_float (Value.Int numerator))
-              in
-              let denominator =
-                Option.get (numeric_float (Value.Int denominator))
-              in
-              Phpsymex.Result.ok
-                (Value.Float (Value.Typed.Float.div numerator denominator)))))
+          | _ -> assert false))
 
 let division left right =
-  match (left, right) with
-  | Value.Int numerator, Value.Int denominator -> (
-      match
-        ( Value.int_value (Value.Int numerator),
-          Value.int_value (Value.Int denominator) )
-      with
-      | _, Some 0L -> Phpsymex.error Error.Division_by_zero
-      | Some numerator, Some denominator
-        when Int64.equal numerator Int64.min_int
-             && Int64.equal denominator (-1L) ->
-          Phpsymex.Result.ok
-            (Value.float
-               (Int64.to_float numerator /. Int64.to_float denominator))
-      | Some numerator, Some denominator ->
-          if Int64.equal (Int64.rem numerator denominator) 0L then
-            Phpsymex.Result.ok (Value.int (Int64.div numerator denominator))
-          else
-            Phpsymex.Result.ok
-              (Value.float
-                 (Int64.to_float numerator /. Int64.to_float denominator))
-      | _ -> symbolic_integer_division numerator denominator)
+  let open Phpsymex.Syntax in
+  let** left = coerce_number left in
+  let** right = coerce_number right in
+  match (concrete_numeric_float left, concrete_numeric_float right) with
+  | _, Some denominator when denominator = 0.0 ->
+      Phpsymex.error Error.Division_by_zero
+  | Some numerator, Some denominator ->
+      Phpsymex.Result.ok (Value.float (numerator /. denominator))
   | _ -> (
-      match (concrete_numeric_float left, concrete_numeric_float right) with
-      | _, Some denominator when denominator = 0.0 ->
-          Phpsymex.error Error.Division_by_zero
+      match (numeric_float left, numeric_float right) with
       | Some numerator, Some denominator ->
-          Phpsymex.Result.ok (Value.float (numerator /. denominator))
-      | _ -> (
-          match (numeric_float left, numeric_float right) with
-          | Some numerator, Some denominator ->
-              Phpsymex.branch_on
-                (Value.Typed.Float.is_zero denominator)
-                ~left_branch_name:"Division by zero"
-                ~right_branch_name:"Division"
-                ~then_:(fun () -> Phpsymex.error Error.Division_by_zero)
-                ~else_:(fun () ->
-                  Phpsymex.Result.ok
-                    (Value.Float (Value.Typed.Float.div numerator denominator)))
-          | _ ->
-              unsupported "operator / for %s and %s" (Value.type_name left)
-                (Value.type_name right)))
+          Phpsymex.branch_on
+            (Value.Typed.Float.is_zero denominator)
+            ~left_branch_name:"Division by zero" ~right_branch_name:"Division"
+            ~then_:(fun () -> Phpsymex.error Error.Division_by_zero)
+            ~else_:(fun () ->
+              Phpsymex.Result.ok
+                (Value.Float (Value.Typed.Float.div numerator denominator)))
+      | _ -> assert false)
 
 let rec strict_equal state left right =
   let result =
@@ -219,58 +151,22 @@ and strict_equal_arrays state left right =
       Value.Typed.Bool.v_true left right
 
 let loose_equal left right =
-  match (left, right) with
-  | ( (Value.Undef | Value.Null | Value.Bool _),
-      (Value.Undef | Value.Null | Value.Bool _) ) ->
-      let open Phpsymex.Syntax in
-      let** left = coerce Coercion.Boolean left in
-      let** right = coerce Coercion.Boolean right in
-      let left =
-        match left with Value.Bool value -> value | _ -> assert false
-      in
-      let right =
-        match right with Value.Bool value -> value | _ -> assert false
-      in
-      Phpsymex.Result.ok (Value.Bool (Value.Typed.sem_eq left right))
-  | Value.Int left, Value.Int right ->
-      Phpsymex.Result.ok (Value.Bool (Value.Typed.sem_eq left right))
-  | Value.Float left, Value.Float right ->
-      Phpsymex.Result.ok (Value.Bool (Value.Typed.Float.eq left right))
-  | (Value.Int _ | Value.Float _), (Value.Int _ | Value.Float _) ->
-      let left = Option.get (numeric_float left) in
-      let right = Option.get (numeric_float right) in
-      Phpsymex.Result.ok (Value.Bool (Value.Typed.Float.eq left right))
-  | _ ->
-      unsupported "loose equality for %s and %s" (Value.type_name left)
-        (Value.type_name right)
+  match Coercion.compare_scalar Coercion.Equal left right with
+  | Ok result -> Phpsymex.Result.ok (Value.Bool result)
+  | Error error -> coercion_error error
 
 let comparison operator left right =
-  let compare_int left right =
+  let operator =
     match operator with
-    | Php_ir.Less_than -> Value.Typed.BitVec.lt ~signed:true left right
-    | Less_than_or_equal -> Value.Typed.BitVec.leq ~signed:true left right
-    | Greater_than -> Value.Typed.BitVec.gt ~signed:true left right
-    | Greater_than_or_equal -> Value.Typed.BitVec.geq ~signed:true left right
+    | Php_ir.Less_than -> Coercion.Less_than
+    | Less_than_or_equal -> Coercion.Less_than_or_equal
+    | Greater_than -> Coercion.Greater_than
+    | Greater_than_or_equal -> Coercion.Greater_than_or_equal
     | _ -> failwith "non-ordering operator passed to comparison"
   in
-  let compare_float left right =
-    match operator with
-    | Php_ir.Less_than -> Value.Typed.Float.lt left right
-    | Less_than_or_equal -> Value.Typed.Float.leq left right
-    | Greater_than -> Value.Typed.Float.gt left right
-    | Greater_than_or_equal -> Value.Typed.Float.geq left right
-    | _ -> failwith "non-ordering operator passed to comparison"
-  in
-  match (left, right) with
-  | Value.Int left, Value.Int right ->
-      Phpsymex.Result.ok (Value.Bool (compare_int left right))
-  | _ -> (
-      match (numeric_float left, numeric_float right) with
-      | Some left, Some right ->
-          Phpsymex.Result.ok (Value.Bool (compare_float left right))
-      | _ ->
-          unsupported "ordering comparison for %s and %s" (Value.type_name left)
-            (Value.type_name right))
+  match Coercion.compare_scalar operator left right with
+  | Ok result -> Phpsymex.Result.ok (Value.Bool result)
+  | Error error -> coercion_error error
 
 let binary state operator left right =
   match operator with
@@ -279,13 +175,13 @@ let binary state operator left right =
       let right = Option.get (Value.array_value right) in
       Phpsymex.Result.ok (Value.array (Value.array_union left right))
   | Php_ir.Add ->
-      arithmetic "+" Value.Typed.BitVec.add_checked Value.Typed.Float.add ( +. )
+      arithmetic Value.Typed.BitVec.add_checked Value.Typed.Float.add ( +. )
         left right
   | Subtract ->
-      arithmetic "-" Value.Typed.BitVec.sub_checked Value.Typed.Float.sub ( -. )
+      arithmetic Value.Typed.BitVec.sub_checked Value.Typed.Float.sub ( -. )
         left right
   | Multiply ->
-      arithmetic "*" Value.Typed.BitVec.mul_checked Value.Typed.Float.mul ( *. )
+      arithmetic Value.Typed.BitVec.mul_checked Value.Typed.Float.mul ( *. )
         left right
   | Divide -> division left right
   | Concat ->
@@ -320,21 +216,22 @@ let unary operator value =
       let open Phpsymex.Syntax in
       let** condition = condition value in
       Phpsymex.Result.ok (Value.Bool (Value.Typed.Bool.not condition))
-  | Numeric_identity -> (
-      match value with
-      | Value.Int _ | Value.Float _ -> Phpsymex.Result.ok value
-      | _ -> unsupported "unary + for %s" (Value.type_name value))
+  | Numeric_identity -> coerce_number value
   | Numeric_negation -> (
+      let open Phpsymex.Syntax in
+      let** value = coerce_number value in
       match value with
       | Value.Int value ->
           let result, overflow = Value.Typed.BitVec.neg_checked value in
           Phpsymex.branch_on overflow ~left_branch_name:"Integer overflow"
             ~right_branch_name:"Integer result"
-            ~then_:(fun () -> unsupported "integer overflow in unary -")
+            ~then_:(fun () ->
+              let value = Option.get (numeric_float (Value.Int value)) in
+              Phpsymex.Result.ok (Value.Float (Value.Typed.Float.neg value)))
             ~else_:(fun () -> Phpsymex.Result.ok (Value.Int result))
       | Value.Float value ->
           Phpsymex.Result.ok (Value.Float (Value.Typed.Float.neg value))
-      | _ -> unsupported "unary - for %s" (Value.type_name value))
+      | _ -> assert false)
 
 module Function_map = Map.Make (String)
 module Class_map = Map.Make (String)

@@ -39,6 +39,7 @@ let call name arguments = expression (Call (name, arguments))
 let new_ name arguments = expression (New (name, arguments))
 let throw value = expression (Throw value)
 let binary left operator right = expression (Binary (left, operator, right))
+let unary operator operand = expression (Unary (operator, operand))
 let expression_statement expression = Php_ir.Expression (expression, location)
 let parameter name : Php_ir.parameter = { name; location }
 
@@ -85,6 +86,94 @@ let evaluates_assignments_and_division () =
   Alcotest.(check string) "output" "2:2.5" (State.output state);
   let x = Option.bind (State.find_variable "x" state) Value.int_value in
   Alcotest.(check (option int64)) "variable" (Some 4L) x
+
+let completes_scalar_coercion_and_comparison () =
+  let statements =
+    [
+      expression_statement
+        (assign "sum" (binary (literal Null) Add (literal (String "2"))));
+      expression_statement
+        (assign "product"
+           (binary (literal (Bool true)) Multiply (literal (String "2.5"))));
+      expression_statement
+        (assign "division"
+           (binary (literal (String "4")) Divide (literal (Int 2L))));
+      expression_statement
+        (assign "overflow"
+           (binary (literal (Int Int64.max_int)) Add (literal (Int 1L))));
+      expression_statement
+        (assign "negated_minimum"
+           (unary Numeric_negation (literal (Int Int64.min_int))));
+      expression_statement
+        (assign "numeric_string_equal"
+           (binary (literal (String " 12 \n")) Equal (literal (Int 12L))));
+      expression_statement
+        (assign "ordinary_string_order"
+           (binary (literal (Int 0L)) Less_than (literal (String "abc"))));
+      expression_statement
+        (assign "nan_equal"
+           (binary (literal (Float nan)) Equal (literal (Float nan))));
+      expression_statement
+        (assign "nan_order"
+           (binary (literal (Float nan)) Less_than (literal (Int 1L))));
+    ]
+  in
+  let state = run statements |> expect_single_ok "scalar semantics" in
+  let find name project =
+    Option.bind (State.find_variable name state) project
+  in
+  Alcotest.(check (option int64))
+    "weak integer addition" (Some 2L)
+    (find "sum" Value.int_value);
+  Alcotest.(check (option (float 0.0)))
+    "weak float multiplication" (Some 2.5)
+    (find "product" Value.float_value);
+  Alcotest.(check (option (float 0.0)))
+    "division result type" (Some 2.0)
+    (find "division" Value.float_value);
+  Alcotest.(check bool)
+    "integer overflow promotion" true
+    (Option.exists
+       (fun value -> Value.kind value = `Float)
+       (State.find_variable "overflow" state));
+  Alcotest.(check bool)
+    "unary overflow promotion" true
+    (Option.exists
+       (fun value -> Value.kind value = `Float)
+       (State.find_variable "negated_minimum" state));
+  Alcotest.(check (option bool))
+    "numeric string equality" (Some true)
+    (find "numeric_string_equal" Value.bool_value);
+  Alcotest.(check (option bool))
+    "ordinary string ordering" (Some true)
+    (find "ordinary_string_order" Value.bool_value);
+  Alcotest.(check (option bool))
+    "NAN equality" (Some false)
+    (find "nan_equal" Value.bool_value);
+  Alcotest.(check (option bool))
+    "NAN ordering" (Some false)
+    (find "nan_order" Value.bool_value)
+
+let branches_on_symbolic_numeric_string_comparison () =
+  let statements =
+    [
+      expression_statement (assign "input" (call "Soteria\\symbolic_int" []));
+      Php_ir.If
+        ( binary (variable "input") Equal (literal (String "0")),
+          [ expression_statement (assign "result" (literal (Int 1L))) ],
+          [ expression_statement (assign "result" (literal (Int 2L))) ],
+          location );
+    ]
+  in
+  let results =
+    run statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind (State.find_variable "result" state) Value.int_value
+      | _ -> None)
+    |> List.sort Int64.compare
+  in
+  Alcotest.(check (list int64)) "comparison branches" [ 1L; 2L ] results
 
 let isolates_symbolic_branches () =
   let statements =
@@ -874,6 +963,10 @@ let () =
         [
           Alcotest.test_case "assignments and division" `Quick
             evaluates_assignments_and_division;
+          Alcotest.test_case "scalar coercion and comparison" `Quick
+            completes_scalar_coercion_and_comparison;
+          Alcotest.test_case "symbolic numeric string comparison" `Quick
+            branches_on_symbolic_numeric_string_comparison;
           Alcotest.test_case "symbolic branch isolation" `Quick
             isolates_symbolic_branches;
           Alcotest.test_case "short-circuit calls" `Quick short_circuits_calls;

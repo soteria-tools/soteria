@@ -86,6 +86,33 @@ function observe_cast(string $target, mixed $value): array
     return $result;
 }
 
+function observe_numeric(mixed $value): array
+{
+    $warnings = [];
+    set_error_handler(
+        static function (int $severity, string $message) use (&$warnings): bool {
+            $warnings[] = ['severity' => $severity, 'message' => $message];
+            return true;
+        },
+    );
+
+    try {
+        $result = ['value' => encode_value(+$value)];
+    } catch (Throwable $error) {
+        $result = [
+            'error' => [
+                'class' => get_class($error),
+                'message' => $error->getMessage(),
+            ],
+        ];
+    } finally {
+        restore_error_handler();
+    }
+
+    $result['warnings'] = $warnings;
+    return $result;
+}
+
 if (PHP_VERSION !== TARGET_PHP_VERSION) {
     fwrite(STDERR, sprintf("expected PHP %s, found %s\n", TARGET_PHP_VERSION, PHP_VERSION));
     exit(2);
@@ -108,10 +135,35 @@ foreach ($cases as $case) {
     foreach ($targets as $target) {
         $casts[$target] = observe_cast($target, $value);
     }
-    $results[] = ['input' => $case, 'casts' => $casts];
+    $results[] = [
+        'input' => $case,
+        'casts' => $casts,
+        'numeric' => observe_numeric($value),
+    ];
+}
+
+$comparisons = [];
+foreach ($cases as $leftCase) {
+    $left = decode_value($leftCase);
+    foreach ($cases as $rightCase) {
+        $right = decode_value($rightCase);
+        $comparisons[] = [
+            'left' => $leftCase,
+            'right' => $rightCase,
+            'equal' => $left == $right,
+            'less_than' => $left < $right,
+            'less_than_or_equal' => $left <= $right,
+            'greater_than' => $left > $right,
+            'greater_than_or_equal' => $left >= $right,
+        ];
+    }
 }
 
 echo json_encode(
-    ['php_version' => PHP_VERSION, 'results' => $results],
+    [
+        'php_version' => PHP_VERSION,
+        'results' => $results,
+        'comparisons' => $comparisons,
+    ],
     JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES,
 ), "\n";
