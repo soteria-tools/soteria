@@ -61,8 +61,8 @@ let program ?(functions = []) ?(classes = []) statements : Php_ir.t =
     statements;
   }
 
-let run ?fuel ?functions ?classes statements =
-  Interp.run (program ?functions ?classes statements)
+let run ?fuel ?function_name ?functions ?classes statements =
+  Interp.run ?function_name (program ?functions ?classes statements)
   |> Phpsymex.Result.run ?fuel ~mode:Soteria.Symex.Approx.OX
 
 let expect_single_ok label = function
@@ -312,6 +312,31 @@ let defaults_to_null_on_fallthrough () =
   match State.find_variable "result" state with
   | Some Value.Null -> ()
   | _ -> Alcotest.fail "function fallthrough did not return null"
+
+let executes_a_selected_function_entry_point () =
+  let selected =
+    function_ "Selected" []
+      [ Php_ir.Echo ([ literal (String "selected") ], location) ]
+  in
+  let state =
+    run ~function_name:"sElEcTeD" ~functions:[ selected ]
+      [ expression_statement (call "Soteria\\assert" [ literal (Bool false) ]) ]
+    |> expect_single_ok "selected function entry point"
+  in
+  Alcotest.(check string) "selected output" "selected" (State.output state);
+  (match
+     Interp.validate_entry_point (program ~functions:[ selected ] []) "missing"
+   with
+  | Error _ -> ()
+  | Ok _ -> Alcotest.fail "a missing entry point should be rejected");
+  let parameterized = function_ "parameterized" [ "argument" ] [] in
+  match
+    Interp.validate_entry_point
+      (program ~functions:[ parameterized ] [])
+      "parameterized"
+  with
+  | Error _ -> ()
+  | Ok _ -> Alcotest.fail "a parameterized entry point should be rejected"
 
 let isolates_symbolic_function_returns () =
   let choose =
@@ -979,6 +1004,8 @@ let () =
             calls_functions_with_local_scopes;
           Alcotest.test_case "function fallthrough" `Quick
             defaults_to_null_on_fallthrough;
+          Alcotest.test_case "selected function entry point" `Quick
+            executes_a_selected_function_entry_point;
           Alcotest.test_case "symbolic function returns" `Quick
             isolates_symbolic_function_returns;
           Alcotest.test_case "missing function arguments" `Quick

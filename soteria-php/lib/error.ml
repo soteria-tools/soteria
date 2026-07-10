@@ -45,10 +45,14 @@ let pp formatter = function
       Format.fprintf formatter "Uncaught %s: %s" class_name message
 
 module Trace = struct
+  type symbolic_input = { name : string; value : Value.t }
+
   type t = {
     location : Php_ir.location option;
     call_trace : Php_ir.location Call_trace.t;
     fuel : Soteria.Symex.Fuel_gauge.t;
+    symbolic_inputs_rev : symbolic_input list;
+    expect_failure : bool;
   }
 
   let empty =
@@ -56,6 +60,8 @@ module Trace = struct
       location = None;
       call_trace = Call_trace.empty;
       fuel = Soteria.Symex.Fuel_gauge.infinite;
+      symbolic_inputs_rev = [];
+      expect_failure = false;
     }
 
   let with_fuel fuel = { empty with fuel }

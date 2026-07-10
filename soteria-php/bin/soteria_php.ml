@@ -4,7 +4,7 @@ let exits =
   [
     Cmd.Exit.info ~doc:"on success" 0;
     Cmd.Exit.info ~doc:"when execution finds a failure" 1;
-    Cmd.Exit.info ~doc:"on a frontend or IR error" 2;
+    Cmd.Exit.info ~doc:"on a frontend, IR, or entry-point error" 2;
     Cmd.Exit.info ~doc:"when execution is incomplete" 3;
   ]
 
@@ -23,7 +23,16 @@ let exec_command =
     Soteria.Symex.Fuel_gauge.Cli.term ~default:Soteria_php.Driver.default_fuel
       ()
   in
-  let term = Term.(const Soteria_php.Driver.execute $ fuel $ file_arg) in
+  let function_name =
+    Arg.(
+      value
+      & opt (some string) None
+      & info [ "function" ] ~docv:"NAME"
+          ~doc:"Execute the named zero-argument function as the entry point")
+  in
+  let term =
+    Term.(const Soteria_php.Driver.execute $ fuel $ function_name $ file_arg)
+  in
   Cmd.make
     (Cmd.info ~exits ~doc:"Symbolically execute a supported PHP script" "exec")
     term

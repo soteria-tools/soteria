@@ -9,6 +9,24 @@ include Monad
 let get_trace () = get_state ()
 let base_branch_on = branch_on
 
+let record_symbolic_input value =
+  let open Syntax in
+  let* trace = get_state () in
+  let index = List.length trace.Error.Trace.symbolic_inputs_rev in
+  let input : Error.Trace.symbolic_input =
+    { name = Printf.sprintf "input%d" index; value }
+  in
+  set_state
+    {
+      trace with
+      Error.Trace.symbolic_inputs_rev = input :: trace.symbolic_inputs_rev;
+    }
+
+let expect_failure () =
+  let open Syntax in
+  let* trace = get_state () in
+  set_state { trace with Error.Trace.expect_failure = true }
+
 let consume_fuel_steps count =
   let open Syntax in
   let* trace = get_state () in
@@ -87,5 +105,12 @@ module Result = struct
     in
     run_with_state ~state process
     |> Raw_symex.map drop_state
+    |> Raw_symex.Result.run ?stats ?flamegraph ?fail_fast ~mode
+
+  let run_with_trace ?stats ?flamegraph ?fuel ?fail_fast ~mode process =
+    let state =
+      Option.fold ~none:Error.Trace.empty ~some:Error.Trace.with_fuel fuel
+    in
+    run_with_state ~state process
     |> Raw_symex.Result.run ?stats ?flamegraph ?fail_fast ~mode
 end

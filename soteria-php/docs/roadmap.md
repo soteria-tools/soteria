@@ -40,12 +40,13 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first ten changes in the suggested pull request sequence have been
+The first eleven changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
-properties. The next work should close the remaining M1-M3 semantics before
-standalone packaging and release integration.
+properties, concrete counterexamples, expected-failure tests, and selected
+function entry points. The next work should close the remaining M2-M3 semantics
+before standalone packaging and release integration.
 
 Completing these pull requests is not the same as completing milestones M0-M3.
 The sequence deliberately established one sound path through each subsystem
@@ -559,9 +560,9 @@ and unsupported or malformed input produces a source-level frontend error.
 
 ### M1: scalar symbolic executor
 
-**Status:** Partial. Scalar execution, symbolic inputs, assertions, fuel, and
-basic diagnostics and the scalar coercion/comparison contract are implemented.
-Concrete counterexample reporting remains.
+**Status:** Complete. Scalar execution, symbolic inputs, assertions, fuel,
+counterexample models, analysis entry points, and the scalar
+coercion/comparison contract are implemented.
 
 Deliverables:
 
@@ -661,7 +662,8 @@ Changes should remain small and independently reviewable.
 8. **Complete:** Exceptions and structured control flow.
 9. **Complete:** Object identity and properties.
 10. **Complete:** Scalar coercion and comparison completion.
-11. Counterexample models, `expect_fail`, and function entry points.
+11. **Complete:** Counterexample models, `expect_fail`, and function entry
+    points.
 12. Undefined reads, warnings, and catchable runtime errors.
 13. `foreach` by value.
 14. `foreach` by reference and symbolic array-key insertion.

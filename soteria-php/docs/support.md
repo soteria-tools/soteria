@@ -30,6 +30,7 @@ The detailed cast and operand-kind tables are in
 | `&&`, `||`, `and`, and `or` | Supported | Right-hand evaluation is correctly short-circuited and may branch symbolically. |
 | Function calls | Partially supported | The callee must be a statically named user function or Soteria intrinsic. Arguments must be positional, non-reference, and non-unpacked. |
 | Named functions and returns | Partially supported | Top-level declarations, required untyped by-value parameters, case-insensitive calls, early returns, fallthrough-to-`null`, and recursion are supported. Extra arguments are evaluated and ignored as in PHP. Parameter defaults and types, return types, references, variadics, named arguments, attributes, nested declarations, and closures remain unsupported. |
+| Function entry points | Partially supported | `exec --function NAME` selects a named function case-insensitively and skips top-level executable statements. Entry-point functions must currently have no parameters. |
 | Function-local variables | Supported | Calls use a fresh persistent local scope initialized with the parameters. Assignments do not modify or leak into the caller's scope. Output remains visible across calls. PHP `global` and static local variables remain unsupported. |
 | Expression statements, `echo`, `if`, `else`, `while`, `return`, `break`, `continue`, and `unset` | Supported | `return` is supported in function bodies. `break` and `continue` use positive static depths and may target enclosing `while` loops. `unset` removes variable, nested array-element, or declared object-property bindings without destroying aliased cells. `elseif` and other loop forms remain unsupported. |
 | `throw`, `try`, multi-catch, and `finally` | Partially supported | Explicit throws propagate through expressions and function calls. Catch order and the supported subset of the built-in PHP throwable hierarchy are modelled, catch variables retain stable object identity, and finally runs for every structured completion. Non-object and non-`Throwable` object throws become catchable `Error` objects. Existing interpreter errors such as division by zero are not yet catchable. |
@@ -61,12 +62,15 @@ The symbolic runtime recognizes these case-insensitive intrinsic functions:
 | `Soteria\symbolic_float()` | Supported | Returns a fresh symbolic binary64 float. |
 | `Soteria\assume(bool)` | Supported | Restricts the current path and currently requires a boolean argument. |
 | `Soteria\assert(bool)` | Supported | Produces distinct success and failure paths and currently requires a boolean argument. |
-| `Soteria\expect_fail()` | Unsupported | Requires entry-point result handling that is not implemented yet. |
+| `Soteria\expect_fail()` | Supported | Marks the current entry point as expected to find a definite failure. Finding a failure succeeds, finding none fails, and incomplete exploration remains incomplete. |
 
 Builtin and user-function arity errors, failed assertions, division by zero,
 and uncaught explicit exceptions retain their source location and call trace.
-Failures reached in a user function also identify the call site. Unsupported
+Failures reached in a user function also identify the call site. Failing paths
+print deterministic PHP-level models for symbolic boolean, integer, and float
+inputs when Z3 supplies a model. Symbolic inputs are named `$input0`, `$input1`,
+and so on in creation order. Unsupported
 function names, unsupported builtins, and unsupported semantic cases explicitly
 give up the current path. The `exec` command returns status 1 when a definite
-failure is found, status 2 for frontend errors, and status 3 when exploration is
-incomplete.
+failure is found, status 2 for frontend or entry-point errors, and status 3 when
+exploration is incomplete.

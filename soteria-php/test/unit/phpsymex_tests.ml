@@ -1,4 +1,5 @@
 module Builtins = Soteria_php.Builtins
+module Counterexample = Soteria_php.Counterexample
 module Error = Soteria_php.Error
 module Php_ir = Soteria_php.Php_ir
 module Phpsymex = Soteria_php.Phpsymex
@@ -7,6 +8,9 @@ module Compo_res = Soteria.Soteria_std.Compo_res
 module Or_gave_up = Soteria.Symex.Or_gave_up
 
 let run process = Phpsymex.Result.run ~mode:Soteria.Symex.Approx.OX process
+
+let run_with_trace process =
+  Phpsymex.Result.run_with_trace ~mode:Soteria.Symex.Approx.OX process
 
 let expect_single_ok label results =
   match results with
@@ -64,6 +68,62 @@ let assume_restricts_assertion () =
   in
   let result = run process |> expect_single_ok "assume followed by assert" in
   Alcotest.(check string) "assert return type" "null" (Value.type_name result)
+
+let records_and_concretizes_symbolic_inputs () =
+  let process =
+    let open Phpsymex.Syntax in
+    let** boolean = Builtins.call "Soteria\\symbolic_bool" [] in
+    let** integer = Builtins.call "Soteria\\symbolic_int" [] in
+    let** float = Builtins.call "Soteria\\symbolic_float" [] in
+    let boolean =
+      match boolean with Value.Bool value -> value | _ -> assert false
+    in
+    let integer =
+      match integer with Value.Int value -> value | _ -> assert false
+    in
+    let float =
+      match float with Value.Float value -> value | _ -> assert false
+    in
+    let expected_integer =
+      match Value.int 42L with Value.Int value -> value | _ -> assert false
+    in
+    let expected_float =
+      match Value.float 1.5 with
+      | Value.Float value -> value
+      | _ -> assert false
+    in
+    let* () =
+      Phpsymex.assume
+        [
+          boolean;
+          Value.Typed.sem_eq integer expected_integer;
+          Value.Typed.Float.eq float expected_float;
+        ]
+    in
+    Builtins.call "Soteria\\assert" [ Value.bool false ]
+  in
+  match run_with_trace process with
+  | [ (Compo_res.Error (Or_gave_up.E (_, trace)), path_condition) ] -> (
+      match
+        Counterexample.bindings ~inputs:trace.Error.Trace.symbolic_inputs_rev
+          ~path_condition
+      with
+      | Some
+          [
+            { name = "input0"; value = Bool true };
+            { name = "input1"; value = Int 42L };
+            { name = "input2"; value = Float value };
+          ] ->
+          Alcotest.(check (float 0.0)) "float model" 1.5 value
+      | _ -> Alcotest.fail "counterexample did not contain the expected model")
+  | _ -> Alcotest.fail "expected one failing constrained path"
+
+let marks_expected_failures_in_the_trace () =
+  match run_with_trace (Builtins.call "Soteria\\expect_fail" []) with
+  | [ (Compo_res.Ok (Value.Null, trace), _) ] ->
+      Alcotest.(check bool)
+        "expect failure marker" true trace.Error.Trace.expect_failure
+  | _ -> Alcotest.fail "expect_fail should return null and mark the entry point"
 
 let position line column offset : Php_ir.position = { line; column; offset }
 
@@ -155,6 +215,10 @@ let () =
           Alcotest.test_case "symbolic assertion" `Quick
             symbolic_assertion_branches;
           Alcotest.test_case "assumption" `Quick assume_restricts_assertion;
+          Alcotest.test_case "counterexample models" `Quick
+            records_and_concretizes_symbolic_inputs;
+          Alcotest.test_case "expected failure marker" `Quick
+            marks_expected_failures_in_the_trace;
           Alcotest.test_case "argument validation" `Quick
             validates_builtin_calls;
         ] );

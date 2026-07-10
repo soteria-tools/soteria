@@ -43,7 +43,30 @@
   $ ../../../bin/soteria_php.exe exec symbolic.php
   symbolic ok
 
+  $ ../../../bin/soteria_php.exe exec counterexample.php
+  Entry point: counterexample.php
+  error: Failed assertion
+      --> counterexample.php:8:1
+    8 |  Soteria\assert(false);
+      |  ^^^^^^^^^^^^^^^^^^^^^ Triggering operation
+  Counterexample:
+  $input0 = true
+  $input1 = 42
+  $input2 = 1.5
+  [1]
+
+  $ ../../../bin/soteria_php.exe exec expect_fail.php
+
+  $ ../../../bin/soteria_php.exe exec expect_fail_missing.php
+  error: Expected failure in entry point expect_fail_missing.php, but none was found
+  [1]
+
+  $ ../../../bin/soteria_php.exe exec --step-fuel=5 expect_fail_incomplete.php
+  Step fuel exhausted
+  [3]
+
   $ ../../../bin/soteria_php.exe exec failure.php
+  Entry point: failure.php
   error: Failed assertion
       --> failure.php:2:1
     2 |  Soteria\assert(false);
@@ -51,6 +74,7 @@
   [1]
 
   $ ../../../bin/soteria_php.exe exec function_failure.php
+  Entry point: function_failure.php
   error: Failed assertion
       --> function_failure.php:3:5
     3 |      Soteria\assert(false);
@@ -60,7 +84,33 @@
       |  ----------- 1: Call to fail_here
   [1]
 
+  $ ../../../bin/soteria_php.exe exec function_entry.php --function selected_entry
+  Entry point: selected_entry
+  error: Failed assertion
+      --> function_entry.php:6:5
+    2 |    Soteria\assert(false);
+    3 | /  function selected_entry() {
+    4 | |      $number = Soteria\symbolic_int();
+    5 | |      Soteria\assume($number === 9);
+    6 | |      Soteria\assert(false);
+      | |      ^^^^^^^^^^^^^^^^^^^^^ Triggering operation
+    7 | |  }
+      | \--' 1: Call to selected_entry
+    8 |    Soteria\assert(false);
+  Counterexample:
+  $input0 = 9
+  [1]
+
+  $ ../../../bin/soteria_php.exe exec functions.php --function add
+  Entry point error: function add has 2 parameter(s); function entry points must have no parameters
+  [2]
+
+  $ ../../../bin/soteria_php.exe exec functions.php --function missing
+  Entry point error: function missing was not found
+  [2]
+
   $ ../../../bin/soteria_php.exe exec uncaught_exception.php
+  Entry point: uncaught_exception.php
   error: Uncaught RuntimeException: boom
       --> uncaught_exception.php:3:1
     3 |  throw new RuntimeException("boom");

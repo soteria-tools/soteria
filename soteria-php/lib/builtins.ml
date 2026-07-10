@@ -28,19 +28,31 @@ let symbolic_bool ~args =
   no_arguments "Soteria\\symbolic_bool()" args @@ fun () ->
   let open Phpsymex.Syntax in
   let* value = Phpsymex.nondet Value.Typed.t_bool in
-  Phpsymex.Result.ok (Value.Bool value)
+  let value = Value.Bool value in
+  let* () = Phpsymex.record_symbolic_input value in
+  Phpsymex.Result.ok value
 
 let symbolic_int ~args =
   no_arguments "Soteria\\symbolic_int()" args @@ fun () ->
   let open Phpsymex.Syntax in
   let* value = Phpsymex.nondet (Value.Typed.t_int Value.integer_bits) in
-  Phpsymex.Result.ok (Value.Int value)
+  let value = Value.Int value in
+  let* () = Phpsymex.record_symbolic_input value in
+  Phpsymex.Result.ok value
 
 let symbolic_float ~args =
   no_arguments "Soteria\\symbolic_float()" args @@ fun () ->
   let open Phpsymex.Syntax in
   let* value = Phpsymex.nondet Value.Typed.t_f64 in
-  Phpsymex.Result.ok (Value.Float value)
+  let value = Value.Float value in
+  let* () = Phpsymex.record_symbolic_input value in
+  Phpsymex.Result.ok value
+
+let expect_fail ~args =
+  no_arguments "Soteria\\expect_fail()" args @@ fun () ->
+  let open Phpsymex.Syntax in
+  let* () = Phpsymex.expect_failure () in
+  Phpsymex.Result.ok Value.null
 
 let assume ~args =
   boolean_argument "Soteria\\assume()" args @@ fun condition ->
@@ -63,6 +75,7 @@ let implementations : (string * implementation) list =
     ("soteria\\symbolic_float", symbolic_float);
     ("soteria\\assume", assume);
     ("soteria\\assert", assert_);
+    ("soteria\\expect_fail", expect_fail);
   ]
 
 let canonical_name name =

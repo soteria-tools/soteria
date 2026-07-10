@@ -966,17 +966,28 @@ let collect_classes declarations =
   in
   collect Class_map.empty declarations
 
-let run program =
-  let open Phpsymex.Syntax in
-  let** functions = collect_functions program.Php_ir.functions in
-  let** classes = collect_classes program.Php_ir.classes in
-  let declarations = { functions; classes } in
-  let** control, state =
-    exec_statements declarations State.empty program.statements
-  in
-  match control with
-  | Normal -> Phpsymex.Result.ok state
-  | Throw thrown -> (
+let find_entry_point program name =
+  let canonical_name = Builtins.canonical_name name in
+  List.find_opt
+    (fun (function_ : Php_ir.function_decl) ->
+      String.equal (Builtins.canonical_name function_.name) canonical_name)
+    program.Php_ir.functions
+
+let validate_entry_point program name =
+  match find_entry_point program name with
+  | None -> Error (Printf.sprintf "function %s was not found" name)
+  | Some function_ when function_.Php_ir.parameters <> [] ->
+      Error
+        (Printf.sprintf
+           "function %s has %d parameter(s); function entry points must have \
+            no parameters"
+           function_.name
+           (List.length function_.parameters))
+  | Some function_ -> Ok function_
+
+let finish state = function
+  | Evaluated _ -> Phpsymex.Result.ok state
+  | Raised thrown -> (
       match thrown.value with
       | Value.Object id -> (
           match State.find_object id state with
@@ -989,5 +1000,28 @@ let run program =
                    })
           | None -> failwith "uncaught PHP object is missing from state")
       | _ -> failwith "non-object escaped as an uncaught PHP exception")
-  | Return _ | Break _ | Continue _ ->
-      failwith "invalid structured control escaped the PHP program"
+
+let run ?function_name program =
+  let open Phpsymex.Syntax in
+  let** functions = collect_functions program.Php_ir.functions in
+  let** classes = collect_classes program.Php_ir.classes in
+  let declarations = { functions; classes } in
+  match function_name with
+  | Some name -> (
+      match find_entry_point program name with
+      | None -> unsupported "entry point function %s" name
+      | Some function_ ->
+          let** result, state =
+            call_function declarations State.empty function_.location
+              function_.name []
+          in
+          finish state result)
+  | None -> (
+      let** control, state =
+        exec_statements declarations State.empty program.statements
+      in
+      match control with
+      | Normal -> Phpsymex.Result.ok state
+      | Throw thrown -> finish state (Raised thrown)
+      | Return _ | Break _ | Continue _ ->
+          failwith "invalid structured control escaped the PHP program")
