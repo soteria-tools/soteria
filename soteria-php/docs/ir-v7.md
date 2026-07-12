@@ -1,5 +1,8 @@
 # Soteria PHP IR version 7
 
+Version 7 is historical. The current frontend emits version 8, documented in
+`ir-v8.md`.
+
 Version 7 extends version 6 with named class declarations, declared instance
 properties, and object-property lvalues. The program envelope uses
 `schema_version` `7`, adds a required `classes` array, and retains all version 6
@@ -28,7 +31,7 @@ declared properties:
 
 `default` is JSON `null` when an untyped property has no explicit initializer.
 An explicit PHP `null` initializer is represented by the ordinary `null`
-expression object. The version 7 frontend accepts ordinary named classes whose
+expression object. A version 7 frontend accepts ordinary named classes whose
 members are public, untyped, non-static properties. Property defaults are
 limited to supported scalar literals, nested array literals, and numeric unary
 signs. Inheritance, interfaces, traits, methods, attributes, property hooks,

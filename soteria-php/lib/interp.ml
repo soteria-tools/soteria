@@ -1119,6 +1119,63 @@ and exec_while functions state condition_expression body =
         | Return _ | Throw _ -> Phpsymex.Result.ok (control, state)
       else Phpsymex.Result.ok (Normal, state))
 
+and assign_foreach_target functions state target value =
+  let open Phpsymex.Syntax in
+  let*** place, state = resolve_lvalue functions state ~access:Write target in
+  write_place place value state
+
+and exec_foreach_entries functions state key_target value_target body entries =
+  let open Phpsymex.Syntax in
+  match entries with
+  | [] -> Phpsymex.Result.ok (Normal, state)
+  | (key, entry) :: entries ->
+      let key_value =
+        match key with
+        | Value.Integer_key key -> Value.int key
+        | Value.String_key key -> Value.string key
+      in
+      let value =
+        match State.value_of_array_entry entry state with
+        | Some value -> value
+        | None -> failwith "foreach entry refers to an unknown PHP cell"
+      in
+      finish_evaluation
+        (match key_target with
+        | None -> evaluated () state
+        | Some target -> assign_foreach_target functions state target key_value)
+        (fun () state ->
+          finish_evaluation
+            (assign_foreach_target functions state value_target value)
+            (fun () state ->
+              let** control, state = exec_statements functions state body in
+              match control with
+              | Normal | Continue 1 ->
+                  exec_foreach_entries functions state key_target value_target
+                    body entries
+              | Break 1 -> Phpsymex.Result.ok (Normal, state)
+              | Break depth -> Phpsymex.Result.ok (Break (depth - 1), state)
+              | Continue depth ->
+                  Phpsymex.Result.ok (Continue (depth - 1), state)
+              | Return _ | Throw _ -> Phpsymex.Result.ok (control, state)))
+
+and exec_foreach functions state iterable key_target value_target body =
+  finish_evaluation (eval_expression functions state iterable)
+    (fun value state ->
+      match value with
+      | Value.Array array ->
+          exec_foreach_entries functions state key_target value_target body
+            (Value.array_bindings array)
+      | Value.Object _ -> unsupported "foreach over objects"
+      | value ->
+          let message =
+            Printf.sprintf
+              "foreach() argument must be of type array|object, %s given"
+              (Value.type_name value)
+          in
+          finish_evaluation
+            (record_runtime_event Error.Runtime_event.Warning message state)
+            (fun () state -> Phpsymex.Result.ok (Normal, state)))
+
 and exec_try functions state body catches finally =
   let open Phpsymex.Syntax in
   let** control, state = exec_statements functions state body in
@@ -1165,6 +1222,7 @@ and exec_statement functions state statement =
     | Echo (_, location)
     | If (_, _, _, location)
     | While (_, _, location)
+    | Foreach (_, _, _, _, location)
     | Break (_, location)
     | Continue (_, location)
     | Return (_, location)
@@ -1192,6 +1250,8 @@ and exec_statement functions state statement =
             else exec_statements functions state else_)
     | While (condition_expression, body, _) ->
         exec_while functions state condition_expression body
+    | Foreach (iterable, key, value, body, _) ->
+        exec_foreach functions state iterable key value body
     | Break (depth, _) -> Phpsymex.Result.ok (Break depth, state)
     | Continue (depth, _) -> Phpsymex.Result.ok (Continue depth, state)
     | Return (expression, _) ->

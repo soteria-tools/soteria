@@ -16,6 +16,18 @@
   $ cat soteria.out
   kv:string:1:append:7:8:next:3:4:4:1
 
+  $ php foreach.php > php.out
+  $ ../../../bin/soteria_php.exe exec foreach.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  once;2=two;name=value;5=five;|changed:new;1:2:9;a:10:b:20;2:10;10;21;30;4;caught
+
+  $ php -d display_errors=0 foreach_invalid.php > php.out 2> /dev/null
+  $ ../../../bin/soteria_php.exe exec foreach_invalid.php --runtime-events ignore > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  done
+
   $ php references.php > php.out
   $ ../../../bin/soteria_php.exe exec references.php > soteria.out
   $ cmp php.out soteria.out

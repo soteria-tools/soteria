@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 final class LoweringError extends RuntimeException
 {
@@ -322,6 +322,12 @@ final class Lowerer
                 ),
                 'location' => $location,
             ],
+            $statement instanceof Node\Stmt\Foreach_ => $this->lowerForeach(
+                $statement,
+                $location,
+                $inFunction,
+                $loopDepth,
+            ),
             $statement instanceof Node\Stmt\Break_ => [
                 'kind' => 'break',
                 'depth' => $this->lowerLoopControlDepth(
@@ -370,6 +376,39 @@ final class Lowerer
             ],
             default => $this->unsupported($statement, 'statement'),
         };
+    }
+
+    private function lowerForeach(
+        Node\Stmt\Foreach_ $statement,
+        array $location,
+        bool $inFunction,
+        int $loopDepth,
+    ): array
+    {
+        if ($statement->byRef) {
+            return $this->unsupported(
+                $statement->valueVar,
+                'by-reference foreach',
+            );
+        }
+
+        return [
+            'kind' => 'foreach',
+            'iterable' => $this->lowerExpression($statement->expr),
+            'key' => $statement->keyVar === null
+                ? null
+                : $this->lowerLvalue($statement->keyVar, true),
+            'value' => $this->lowerLvalue($statement->valueVar, true),
+            'body' => array_map(
+                fn (Node\Stmt $bodyStatement): array => $this->lowerStatement(
+                    $bodyStatement,
+                    $inFunction,
+                    $loopDepth + 1,
+                ),
+                $statement->stmts,
+            ),
+            'location' => $location,
+        ];
     }
 
     private function lowerIf(

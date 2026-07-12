@@ -73,6 +73,7 @@ and statement =
   | Echo of expression list * location
   | If of expression * statement list * statement list * location
   | While of expression * statement list * location
+  | Foreach of expression * lvalue option * lvalue * statement list * location
   | Break of int * location
   | Continue of int * location
   | Return of expression option * location
@@ -107,7 +108,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 7
+let schema_version = 8
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -482,6 +483,28 @@ and decode_statement ~allow_return ~loop_depth path json =
         field path "condition" fields |> decode_expression (path ^ ".condition")
       in
       While (condition, statements ~depth:(loop_depth + 1) "body", location ())
+  | "foreach" ->
+      check_fields path
+        [ "kind"; "iterable"; "key"; "value"; "body"; "location" ]
+        fields;
+      let iterable =
+        field path "iterable" fields |> decode_expression (path ^ ".iterable")
+      in
+      let key =
+        match field path "key" fields with
+        | `Null -> None
+        | json -> Some (decode_lvalue ~allow_append:true (path ^ ".key") json)
+      in
+      let value =
+        field path "value" fields
+        |> decode_lvalue ~allow_append:true (path ^ ".value")
+      in
+      Foreach
+        ( iterable,
+          key,
+          value,
+          statements ~depth:(loop_depth + 1) "body",
+          location () )
   | "break" ->
       loop_control "break" (fun (depth, location) -> Break (depth, location))
   | "continue" ->
@@ -698,6 +721,12 @@ let rec iter_statement_locations f (statement : statement) =
   | While (condition, body, location) ->
       f location;
       iter_expression_locations f condition;
+      List.iter (iter_statement_locations f) body
+  | Foreach (iterable, key, value, body, location) ->
+      f location;
+      iter_expression_locations f iterable;
+      Option.iter (iter_lvalue_locations f) key;
+      iter_lvalue_locations f value;
       List.iter (iter_statement_locations f) body
   | Break (_, location) | Continue (_, location) -> f location
   | Return (expression, location) ->
@@ -1032,6 +1061,16 @@ let rec statement_to_yojson = function
         [
           ("kind", `String "while");
           ("condition", expression_to_yojson condition);
+          ("body", `List (List.map statement_to_yojson body));
+          ("location", location_to_yojson location);
+        ]
+  | Foreach (iterable, key, value, body, location) ->
+      `Assoc
+        [
+          ("kind", `String "foreach");
+          ("iterable", expression_to_yojson iterable);
+          ("key", Option.fold ~none:`Null ~some:lvalue_to_yojson key);
+          ("value", lvalue_to_yojson value);
           ("body", `List (List.map statement_to_yojson body));
           ("location", location_to_yojson location);
         ]

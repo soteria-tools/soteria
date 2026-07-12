@@ -468,6 +468,85 @@ let preserves_array_order_and_append_keys () =
   Alcotest.(check (list int64))
     "overwritten values" [ 50L; 20L; 30L; 40L ] values
 
+let iterates_arrays_by_value_over_a_snapshot () =
+  let source = variable_lvalue "source" in
+  let source_key key = array_element ~key source in
+  let statements =
+    [
+      expression_statement
+        (assign "source"
+           (array
+              [
+                array_item ~key:(literal (Int 2L)) (literal (String "two"));
+                array_item ~key:(literal (String "name"))
+                  (literal (String "value"));
+                array_item ~key:(literal (Int 5L)) (literal (String "five"));
+              ]));
+      Php_ir.Foreach
+        ( variable "source",
+          Some (variable_lvalue "key"),
+          variable_lvalue "value",
+          [
+            Php_ir.Echo
+              ( [ variable "key"; literal (String "="); variable "value" ],
+                location );
+            Php_ir.If
+              ( binary (variable "key") Identical (literal (Int 2L)),
+                [
+                  expression_statement
+                    (assign_lvalue
+                       (source_key (literal (String "name")))
+                       (literal (String "changed")));
+                  expression_statement
+                    (assign_lvalue (array_element source)
+                       (literal (String "new")));
+                ],
+                [],
+                location );
+          ],
+          location );
+    ]
+  in
+  let state = run statements |> expect_single_ok "foreach snapshot" in
+  Alcotest.(check string)
+    "insertion order and snapshot values" "2=twoname=value5=five"
+    (State.output state);
+  Alcotest.(check (option string))
+    "loop value remains assigned" (Some "five")
+    (Option.bind (State.find_variable "value" state) Value.string_value)
+
+let isolates_foreach_progress_across_symbolic_branches () =
+  let statements =
+    [
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.Foreach
+        ( array [ array_item (literal (Int 1L)); array_item (literal (Int 2L)) ],
+          None,
+          variable_lvalue "value",
+          [
+            Php_ir.If
+              ( binary
+                  (binary (variable "value") Identical (literal (Int 1L)))
+                  Boolean_and (variable "condition"),
+                [ Php_ir.Break (1, location) ],
+                [],
+                location );
+            Php_ir.Echo ([ variable "value" ], location);
+          ],
+          location );
+    ]
+  in
+  let outputs =
+    run statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ -> Some (State.output state)
+      | _ -> None)
+    |> List.sort String.compare
+  in
+  Alcotest.(check (list string))
+    "branch-local iterator progress" [ ""; "12" ] outputs
+
 let writes_nested_arrays_and_preserves_copies () =
   let original_item =
     array_element ~key:(literal (String "item")) (variable_lvalue "original")
@@ -1266,6 +1345,10 @@ let () =
             supports_recursive_calls;
           Alcotest.test_case "array order and append keys" `Quick
             preserves_array_order_and_append_keys;
+          Alcotest.test_case "foreach by-value snapshot" `Quick
+            iterates_arrays_by_value_over_a_snapshot;
+          Alcotest.test_case "foreach branch isolation" `Quick
+            isolates_foreach_progress_across_symbolic_branches;
           Alcotest.test_case "nested array writes and copies" `Quick
             writes_nested_arrays_and_preserves_copies;
           Alcotest.test_case "array branch isolation" `Quick

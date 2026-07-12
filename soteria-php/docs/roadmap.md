@@ -2,7 +2,7 @@
 
 Status: active implementation
 
-Last updated: 10 July 2026
+Last updated: 12 July 2026
 
 ## Overview
 
@@ -40,13 +40,14 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first twelve changes in the suggested pull request sequence have been
+The first thirteen changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
 properties, concrete counterexamples, expected-failure tests, and selected
-function entry points. The next work should close the remaining M2-M3 semantics
-before standalone packaging and release integration.
+function entry points, and by-value array iteration. The next work should close
+the remaining M2-M3 semantics before standalone packaging and release
+integration.
 
 Completing these pull requests is not the same as completing milestones M0-M3.
 The sequence deliberately established one sound path through each subsystem
@@ -581,8 +582,8 @@ verification success.
 
 **Status:** Partial. Persistent arrays, general lvalues, references, exceptions,
 undefined-read runtime events, catchable runtime errors, and mandatory
-branch-isolation tests are implemented. `foreach` and fresh symbolic array-key
-insertion remain.
+branch-isolation tests and `foreach` by value are implemented. By-reference
+`foreach` and fresh symbolic array-key insertion remain.
 
 Deliverables:
 
@@ -665,7 +666,7 @@ Changes should remain small and independently reviewable.
 11. **Complete:** Counterexample models, `expect_fail`, and function entry
     points.
 12. **Complete:** Undefined reads, warnings, and catchable runtime errors.
-13. `foreach` by value.
+13. **Complete:** `foreach` by value.
 14. `foreach` by reference and symbolic array-key insertion.
 15. Constructors, instance methods, and `$this`.
 16. Property and method visibility.
