@@ -3,7 +3,7 @@
 Soteria PHP targets PHP 8.4.19 with 64-bit integers. PHP 8.4.19 is the concrete
 semantics oracle, while the parser sidecar may run on any PHP version accepted
 by its Composer manifest. The frontend uses nikic/PHP-Parser 5.8.0 and emits
-Soteria PHP IR schema version 8.
+Soteria PHP IR schema version 9.
 
 The interpreter supports this deliberately bounded source subset:
 
@@ -18,9 +18,9 @@ The detailed cast and operand-kind tables are in
 | Array literals | Partially supported | Keyed and unkeyed items are evaluated in PHP order. Unpacking and items by reference remain unsupported. |
 | Array keys | Partially supported | Concrete null, boolean, integer, float, and string keys use PHP key normalization. Lossy float-to-integer keys emit PHP's deprecation event. Arrays raise a catchable `TypeError`. |
 | Array reads, writes, and append | Partially supported | Nested array lvalues, null/undefined and false autovivification, insertion order, negative next-integer keys, append exhaustion, missing-offset warnings, and invalid-container behavior are modelled. String offsets remain unsupported. |
-| Symbolic array keys | Partially supported | Symbolic integer and boolean keys branch against existing integer keys. A feasible fresh-key read or write explicitly gives up because persistent symbolic-key insertion is not implemented. |
+| Symbolic array keys | Partially supported | Symbolic integer and boolean keys branch against concrete and symbolic integer keys. Feasible fresh keys are retained persistently for reads and writes. Appending after a symbolic integer-key insertion and array union involving arrays with symbolic-key history remain unsupported because their resulting keys can themselves require symbolic branching. |
 | Array assignment and copying | Supported | Arrays are immutable values, so ordinary assignment copies the value while updates rebuild only the affected path. Array elements promoted to references retain their aliases in later copies; earlier copies remain independent. Mandatory branch-isolation tests cover ordinary and referenced cells. |
-| `foreach` by value | Supported | Array iterables are evaluated once and traversed in insertion order. The iteration snapshot is unaffected by structural mutation of the source array, while entries already containing references continue to observe their shared cells. Optional key targets, nested key/value lvalues, and structured loop control are supported. Object iteration and by-reference iteration remain unsupported. |
+| `foreach` | Partially supported | By-value array iteration uses an insertion-order snapshot. By-reference array iteration promotes visited entries to persistent cells, traverses live additions and removals, and preserves the lingering value alias. Optional key targets, nested key/value lvalues, structured loop control, copied references, and symbolic branch isolation are supported. Object iteration remains unsupported. |
 | Boolean, integer, float, and string casts | Partially supported | All concrete scalar casts are supported. Array-to-boolean, integer, and float conversion is supported. Array-to-string conversion, conversions requiring a symbolic string, and symbolic float-to-integer conversions explicitly give up. |
 | Unary `!`, `+`, and `-` | Partially supported | Numeric unary operators support null, booleans, integers, floats, and concrete numeric strings. Integer-negation overflow promotes to float. Leading-numeric strings emit a warning; invalid operand types raise a catchable `TypeError`. |
 | `+`, `-`, `*`, and `/` | Partially supported | Scalar weak numeric coercion, integer/float promotion, integer-overflow promotion, division's always-float result, and array union with `+` are supported. Leading-numeric strings emit a warning, invalid operand combinations raise `TypeError`, and division by zero raises `DivisionByZeroError`. |

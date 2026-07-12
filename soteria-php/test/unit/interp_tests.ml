@@ -454,7 +454,8 @@ let preserves_array_order_and_append_keys () =
     List.map
       (function
         | Value.Integer_key key, _ -> Int64.to_string key
-        | String_key key, _ -> key)
+        | String_key key, _ -> key
+        | Symbolic_integer_key _, _ -> Alcotest.fail "unexpected symbolic key")
       bindings
   in
   let values =
@@ -486,6 +487,7 @@ let iterates_arrays_by_value_over_a_snapshot () =
         ( variable "source",
           Some (variable_lvalue "key"),
           variable_lvalue "value",
+          false,
           [
             Php_ir.Echo
               ( [ variable "key"; literal (String "="); variable "value" ],
@@ -524,6 +526,7 @@ let isolates_foreach_progress_across_symbolic_branches () =
         ( array [ array_item (literal (Int 1L)); array_item (literal (Int 2L)) ],
           None,
           variable_lvalue "value",
+          false,
           [
             Php_ir.If
               ( binary
@@ -546,6 +549,99 @@ let isolates_foreach_progress_across_symbolic_branches () =
   in
   Alcotest.(check (list string))
     "branch-local iterator progress" [ ""; "12" ] outputs
+
+let iterates_arrays_by_reference_and_preserves_lingering_alias () =
+  let source = variable_lvalue "source" in
+  let statements =
+    [
+      expression_statement
+        (assign "source"
+           (array
+              [ array_item (literal (Int 1L)); array_item (literal (Int 2L)) ]));
+      Php_ir.Foreach
+        ( variable "source",
+          Some (variable_lvalue "key"),
+          variable_lvalue "value",
+          true,
+          [
+            Php_ir.Echo ([ variable "value" ], location);
+            Php_ir.If
+              ( binary (variable "key") Identical (literal (Int 0L)),
+                [
+                  expression_statement
+                    (assign_lvalue (array_element source) (literal (Int 3L)));
+                ],
+                [],
+                location );
+          ],
+          location );
+      expression_statement (assign "copy" (variable "source"));
+      expression_statement (assign "value" (literal (Int 9L)));
+    ]
+  in
+  let state = run statements |> expect_single_ok "foreach references" in
+  let array_values name =
+    Option.bind (State.find_variable name state) Value.array_value
+    |> Option.to_list
+    |> List.concat_map Value.array_bindings
+    |> List.map (fun (_, entry) ->
+        Option.bind (State.value_of_array_entry entry state) Value.int_value
+        |> Option.get)
+  in
+  Alcotest.(check string) "appended entry is visited" "123" (State.output state);
+  Alcotest.(check (list int64))
+    "lingering alias updates source" [ 1L; 2L; 9L ] (array_values "source");
+  Alcotest.(check (list int64))
+    "copied references retain aliases" [ 1L; 2L; 9L ] (array_values "copy")
+
+let isolates_foreach_reference_promotions_across_symbolic_branches () =
+  let statements =
+    [
+      expression_statement
+        (assign "source"
+           (array
+              [ array_item (literal (Int 1L)); array_item (literal (Int 1L)) ]));
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.Foreach
+        ( variable "source",
+          None,
+          variable_lvalue "value",
+          true,
+          [
+            Php_ir.If
+              ( variable "condition",
+                [
+                  expression_statement (assign "value" (literal (Int 2L)));
+                  Php_ir.Break (1, location);
+                ],
+                [ expression_statement (assign "value" (literal (Int 3L))) ],
+                location );
+            Php_ir.Echo ([ variable "value" ], location);
+          ],
+          location );
+    ]
+  in
+  let outcomes =
+    run statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind (State.find_variable "source" state) Value.array_value
+          |> Option.map (fun array ->
+              ( State.output state,
+                Value.array_bindings array
+                |> List.map (fun (_, entry) ->
+                    Option.bind
+                      (State.value_of_array_entry entry state)
+                      Value.int_value
+                    |> Option.get) ))
+      | _ -> None)
+    |> List.sort Stdlib.compare
+  in
+  Alcotest.(check (list (pair string (list int64))))
+    "branch-local iterator and promoted cells"
+    [ ("", [ 2L; 1L ]); ("33", [ 3L; 3L ]) ]
+    outcomes
 
 let writes_nested_arrays_and_preserves_copies () =
   let original_item =
@@ -679,6 +775,38 @@ let reads_existing_symbolic_array_keys () =
     |> List.sort Int64.compare
   in
   Alcotest.(check (list int64)) "symbolic offset values" [ 10L; 20L ] values
+
+let inserts_fresh_symbolic_array_keys_persistently () =
+  let target =
+    array_element ~key:(variable "index") (variable_lvalue "array")
+  in
+  let statements =
+    [
+      expression_statement
+        (assign "array" (array [ array_item (literal (Int 1L)) ]));
+      expression_statement (assign "index" (call "Soteria\\symbolic_int" []));
+      expression_statement (assign_lvalue target (literal (Int 2L)));
+      expression_statement (assign "result" (array_get target));
+    ]
+  in
+  let outcomes =
+    run statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          let length =
+            Option.bind (State.find_variable "array" state) Value.array_value
+            |> Option.map Value.array_length
+          in
+          Option.bind length (fun length ->
+              Option.bind (State.find_variable "result" state) Value.int_value
+              |> Option.map (fun result -> (length, result)))
+      | _ -> None)
+    |> List.sort Stdlib.compare
+  in
+  Alcotest.(check (list (pair int int64)))
+    "existing and fresh-key paths"
+    [ (1, 2L); (2, 2L) ]
+    outcomes
 
 let reports_array_append_overflow () =
   let statements =
@@ -1349,6 +1477,10 @@ let () =
             iterates_arrays_by_value_over_a_snapshot;
           Alcotest.test_case "foreach branch isolation" `Quick
             isolates_foreach_progress_across_symbolic_branches;
+          Alcotest.test_case "foreach by-reference" `Quick
+            iterates_arrays_by_reference_and_preserves_lingering_alias;
+          Alcotest.test_case "foreach reference branch isolation" `Quick
+            isolates_foreach_reference_promotions_across_symbolic_branches;
           Alcotest.test_case "nested array writes and copies" `Quick
             writes_nested_arrays_and_preserves_copies;
           Alcotest.test_case "array branch isolation" `Quick
@@ -1357,6 +1489,8 @@ let () =
             evaluates_array_keys_before_assignment_values;
           Alcotest.test_case "symbolic array keys" `Quick
             reads_existing_symbolic_array_keys;
+          Alcotest.test_case "fresh symbolic array keys" `Quick
+            inserts_fresh_symbolic_array_keys_persistently;
           Alcotest.test_case "array append overflow" `Quick
             reports_array_append_overflow;
           Alcotest.test_case "array append reservation" `Quick

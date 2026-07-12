@@ -3,12 +3,28 @@ module Typed =
 
 let integer_bits = 64
 
-type array_key = Integer_key of int64 | String_key of string
+type array_key =
+  | Integer_key of int64
+  | String_key of string
+  | Symbolic_integer_key of Typed.T.sint Typed.t
+
+let compare_array_key left right =
+  match (left, right) with
+  | Integer_key left, Integer_key right -> Int64.compare left right
+  | String_key left, String_key right -> String.compare left right
+  | Symbolic_integer_key left, Symbolic_integer_key right ->
+      Typed.compare left right
+  | Integer_key _, (String_key _ | Symbolic_integer_key _) -> -1
+  | String_key _, Integer_key _ -> 1
+  | String_key _, Symbolic_integer_key _ -> -1
+  | Symbolic_integer_key _, (Integer_key _ | String_key _) -> 1
+
+let same_array_key left right = compare_array_key left right = 0
 
 module Array_key_map = Map.Make (struct
   type t = array_key
 
-  let compare = Stdlib.compare
+  let compare = compare_array_key
 end)
 
 type t =
@@ -25,6 +41,7 @@ and php_array = {
   entries : array_entry Array_key_map.t;
   order_rev : array_key list;
   max_integer_key : int64 option;
+  symbolic_integer_history : bool;
 }
 
 and array_entry = Inline of t | Reference of int
@@ -50,7 +67,12 @@ let float value =
 let string value = String value
 
 let empty_array =
-  { entries = Array_key_map.empty; order_rev = []; max_integer_key = None }
+  {
+    entries = Array_key_map.empty;
+    order_rev = [];
+    max_integer_key = None;
+    symbolic_integer_history = false;
+  }
 
 let array value = Array value
 let object_ id = Object id
@@ -117,10 +139,17 @@ let array_bindings array =
 
 let array_integer_keys array =
   array_bindings array
-  |> List.filter_map (function Integer_key key, _ -> Some key | _ -> None)
+  |> List.filter_map (function
+    | ((Integer_key _ | Symbolic_integer_key _) as key), _ -> Some key
+    | String_key _, _ -> None)
+
+let array_next_key_is_symbolic array = array.symbolic_integer_history
 
 let array_set_entry key entry array =
-  let ordered = List.exists (fun existing -> existing = key) array.order_rev in
+  let ordered = List.exists (same_array_key key) array.order_rev in
+  let symbolic_integer_key =
+    match key with Symbolic_integer_key _ -> true | _ -> false
+  in
   let max_integer_key =
     match (key, array.max_integer_key) with
     | Integer_key key, None -> Some key
@@ -132,6 +161,8 @@ let array_set_entry key entry array =
     entries = Array_key_map.add key entry array.entries;
     order_rev = (if ordered then array.order_rev else key :: array.order_rev);
     max_integer_key;
+    symbolic_integer_history =
+      array.symbolic_integer_history || symbolic_integer_key;
   }
 
 let array_set key value array = array_set_entry key (Inline value) array
@@ -143,7 +174,10 @@ let array_remove key array =
   {
     array with
     entries = Array_key_map.remove key array.entries;
-    order_rev = List.filter (fun existing -> existing <> key) array.order_rev;
+    order_rev =
+      List.filter
+        (fun existing -> not (same_array_key existing key))
+        array.order_rev;
   }
 
 let array_next_key array =
@@ -155,7 +189,7 @@ let array_next_key array =
 let array_reserve_next array =
   match array_next_key array with
   | None -> None
-  | Some (String_key _) -> assert false
+  | Some (String_key _ | Symbolic_integer_key _) -> assert false
   | Some (Integer_key key as array_key) ->
       Some
         ( array_key,
@@ -175,6 +209,7 @@ let array_union left right =
 let pp_array_key formatter = function
   | Integer_key key -> Format.pp_print_string formatter (Int64.to_string key)
   | String_key key -> Format.fprintf formatter "%S" key
+  | Symbolic_integer_key key -> Format.fprintf formatter "int(%a)" Typed.ppa key
 
 let rec pp formatter = function
   | Undef -> Format.pp_print_string formatter "undefined"

@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 8) ?(functions = []) ?(classes = []) statement =
+let program ?(schema_version = 9) ?(functions = []) ?(classes = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -48,10 +48,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:9 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:10 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 9 (expected 8)"
+        "error" "$.schema_version: unsupported schema version 10 (expected 9)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -506,7 +506,7 @@ let decodes_classes_and_object_properties () =
   | Ok _ -> Alcotest.fail "decoded an unexpected class or property shape"
   | Error error -> Alcotest.fail error
 
-let decodes_foreach_by_value () =
+let decodes_foreach_by_reference () =
   let variable name =
     `Assoc
       [
@@ -522,6 +522,7 @@ let decodes_foreach_by_value () =
         ("iterable", variable "items");
         ("key", variable "key");
         ("value", variable "value");
+        ("by_reference", `Bool true);
         ( "body",
           `List
             [
@@ -544,6 +545,7 @@ let decodes_foreach_by_value () =
               ( { desc = Variable "items"; _ },
                 Some { desc = Variable_lvalue "key"; _ },
                 { desc = Variable_lvalue "value"; _ },
+                true,
                 [ Continue (1, _) ],
                 _ );
           ];
@@ -587,7 +589,8 @@ let () =
             decodes_exceptions_and_structured_control;
           Alcotest.test_case "classes and object properties" `Quick
             decodes_classes_and_object_properties;
-          Alcotest.test_case "foreach by value" `Quick decodes_foreach_by_value;
+          Alcotest.test_case "foreach by reference" `Quick
+            decodes_foreach_by_reference;
           Alcotest.test_case "loop-control validation" `Quick
             rejects_invalid_loop_control;
         ] );

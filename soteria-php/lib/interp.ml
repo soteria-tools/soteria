@@ -180,7 +180,23 @@ and strict_equal_arrays state left right =
   else
     List.fold_left2
       (fun equal (left_key, left_entry) (right_key, right_entry) ->
-        let keys_equal = Stdlib.compare left_key right_key = 0 in
+        let keys_equal =
+          match (left_key, right_key) with
+          | Value.Integer_key left, Value.Integer_key right ->
+              Value.Typed.Bool.of_bool (Int64.equal left right)
+          | Value.String_key left, Value.String_key right ->
+              Value.Typed.Bool.of_bool (String.equal left right)
+          | Value.Symbolic_integer_key left, Value.Symbolic_integer_key right ->
+              Value.Typed.sem_eq left right
+          | Value.Symbolic_integer_key symbolic, Integer_key concrete
+          | Integer_key concrete, Value.Symbolic_integer_key symbolic ->
+              Value.Typed.sem_eq symbolic
+                (Value.Typed.BitVec.mk_masked Value.integer_bits
+                   (Z.of_int64 concrete))
+          | (Integer_key _ | Symbolic_integer_key _), String_key _
+          | String_key _, (Integer_key _ | Symbolic_integer_key _) ->
+              Value.Typed.Bool.v_false
+        in
         let left_value =
           State.value_of_array_entry left_entry state
           |> Option.value ~default:Value.undef
@@ -196,9 +212,7 @@ and strict_equal_arrays state left right =
           | _ -> strict_equal state left_value right_value
         in
         Value.Typed.Bool.and_ equal
-          (Value.Typed.Bool.and_
-             (Value.Typed.Bool.of_bool keys_equal)
-             values_equal))
+          (Value.Typed.Bool.and_ keys_equal values_equal))
       Value.Typed.Bool.v_true left right
 
 let loose_equal left right =
@@ -224,8 +238,13 @@ let binary state operator left right =
   | Php_ir.Add -> (
       match (left, right) with
       | Value.Array left, Value.Array right ->
-          Phpsymex.Result.ok
-            (completed (Value.array (Value.array_union left right)))
+          if
+            Value.array_next_key_is_symbolic left
+            || Value.array_next_key_is_symbolic right
+          then unsupported "array union with symbolic integer keys"
+          else
+            Phpsymex.Result.ok
+              (completed (Value.array (Value.array_union left right)))
       | _ ->
           arithmetic state "+" Value.Typed.BitVec.add_checked
             Value.Typed.Float.add ( +. ) left right)
@@ -641,26 +660,39 @@ let normalized_array_key value state =
         }
   | Error error -> coercion_error error
 
-let resolve_array_key ~for_write array key state =
+let resolve_array_key ~for_write:_ array key state =
+  let symbolic_value = function
+    | Value.Integer_key key ->
+        Value.Typed.BitVec.mk_masked Value.integer_bits (Z.of_int64 key)
+    | Value.Symbolic_integer_key key -> key
+    | Value.String_key _ -> assert false
+  in
+  let choose symbolic_key fresh_key keys =
+    let rec choose = function
+      | [] -> evaluated fresh_key state
+      | key :: keys ->
+          let open Phpsymex.Syntax in
+          if%sat[@lname "Existing array key"] [@rname "Different array key"]
+            Value.Typed.sem_eq symbolic_key (symbolic_value key)
+          then evaluated key state
+          else choose keys
+    in
+    choose keys
+  in
   match key with
-  | Coercion.Concrete_key key -> evaluated key state
-  | Symbolic_integer_key symbolic_key ->
-      let rec choose = function
-        | [] ->
-            unsupported
-              (if for_write then "fresh symbolic array key assignment"
-               else "read of an undefined symbolic array offset")
-        | key :: keys ->
-            let concrete_key =
-              Value.Typed.BitVec.mk_masked Value.integer_bits (Z.of_int64 key)
-            in
-            let open Phpsymex.Syntax in
-            if%sat[@lname "Existing array key"] [@rname "Different array key"]
-              Value.Typed.sem_eq symbolic_key concrete_key
-            then evaluated (Value.Integer_key key) state
-            else choose keys
-      in
-      choose (Value.array_integer_keys array)
+  | Coercion.Concrete_key (Value.Integer_key _ as concrete_key) ->
+      choose
+        (symbolic_value concrete_key)
+        concrete_key
+        (Value.array_integer_keys array
+        |> List.filter (function
+          | Value.Symbolic_integer_key _ -> true
+          | Value.Integer_key _ | String_key _ -> false))
+  | Concrete_key (Value.String_key _ as key) -> evaluated key state
+  | Concrete_key (Value.Symbolic_integer_key _) -> assert false
+  | Coercion.Symbolic_integer_key symbolic_key ->
+      choose symbolic_key (Value.Symbolic_integer_key symbolic_key)
+        (Value.array_integer_keys array)
 
 let array_for_access ~for_write value state =
   match value with
@@ -732,16 +764,19 @@ and eval_array_items functions state array items =
         let*** key, state =
           match item.key with
           | None -> (
-              match Value.array_next_key array with
-              | Some key -> evaluated key state
-              | None ->
-                  raise_runtime_error state
-                    {
-                      Error.class_name = "Error";
-                      message =
-                        "Cannot add element to the array as the next element \
-                         is already occupied";
-                    })
+              if Value.array_next_key_is_symbolic array then
+                unsupported "append after symbolic array-key insertion"
+              else
+                match Value.array_next_key array with
+                | Some key -> evaluated key state
+                | None ->
+                    raise_runtime_error state
+                      {
+                        Error.class_name = "Error";
+                        message =
+                          "Cannot add element to the array as the next element \
+                           is already occupied";
+                      })
           | Some expression ->
               let*** value, state =
                 eval_expression functions state expression
@@ -806,6 +841,11 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
           match key_expression with
           | None -> (
               if access <> Write then unsupported "array append read"
+              else if
+                match read_place state parent with
+                | Value.Array array -> Value.array_next_key_is_symbolic array
+                | _ -> false
+              then unsupported "append after symbolic array-key insertion"
               else
                 let*** array, state =
                   array_for_access ~for_write:true (read_place state parent)
@@ -1124,16 +1164,22 @@ and assign_foreach_target functions state target value =
   let*** place, state = resolve_lvalue functions state ~access:Write target in
   write_place place value state
 
+and bind_foreach_target_reference functions state target cell =
+  let open Phpsymex.Syntax in
+  let*** place, state = resolve_lvalue functions state ~access:Write target in
+  bind_place_reference place cell state
+
+and foreach_key_value = function
+  | Value.Integer_key key -> Value.int key
+  | String_key key -> Value.string key
+  | Symbolic_integer_key key -> Value.Int key
+
 and exec_foreach_entries functions state key_target value_target body entries =
   let open Phpsymex.Syntax in
   match entries with
   | [] -> Phpsymex.Result.ok (Normal, state)
   | (key, entry) :: entries ->
-      let key_value =
-        match key with
-        | Value.Integer_key key -> Value.int key
-        | Value.String_key key -> Value.string key
-      in
+      let key_value = foreach_key_value key in
       let value =
         match State.value_of_array_entry entry state with
         | Some value -> value
@@ -1158,14 +1204,133 @@ and exec_foreach_entries functions state key_target value_target body entries =
                   Phpsymex.Result.ok (Continue (depth - 1), state)
               | Return _ | Throw _ -> Phpsymex.Result.ok (control, state)))
 
-and exec_foreach functions state iterable key_target value_target body =
-  finish_evaluation (eval_expression functions state iterable)
-    (fun value state ->
+and foreach_iterable_lvalue (expression : Php_ir.expression) =
+  match expression.desc with
+  | Variable name ->
+      Some
+        { Php_ir.desc = Variable_lvalue name; location = expression.location }
+  | Array_get target | Property_get target -> Some target
+  | _ -> None
+
+and eval_foreach_reference_iterable functions state iterable =
+  match foreach_iterable_lvalue iterable with
+  | None ->
+      let open Phpsymex.Syntax in
+      let*** value, state = eval_expression functions state iterable in
+      evaluated (value, None) state
+  | Some lvalue ->
+      let open Phpsymex.Syntax in
+      let*** place, state =
+        resolve_lvalue functions state ~access:Read lvalue
+      in
+      evaluated (read_place state place, Some place) state
+
+and exec_foreach_reference_entries functions state source array key_target
+    value_target body seen pending =
+  let current_array state fallback =
+    match source with
+    | None -> Some fallback
+    | Some place -> Value.array_value (read_place state place)
+  in
+  let keys array = List.map fst (Value.array_bindings array) in
+  let rec suffix_from predicate = function
+    | [] -> None
+    | key :: keys as all ->
+        if predicate key then Some all else suffix_from predicate keys
+  in
+  let pending_after_body array key cell seen pending =
+    let current_keys = keys array in
+    match
+      suffix_from
+        (fun key -> List.exists (Value.same_array_key key) pending)
+        current_keys
+    with
+    | Some pending -> pending
+    | None -> (
+        match suffix_from (Value.same_array_key key) current_keys with
+        | Some (_ :: keys as current_and_later) -> (
+            match Value.array_find key array with
+            | Some (Value.Reference current_cell) when current_cell = cell ->
+                keys
+            | Some (Inline _ | Reference _) -> current_and_later
+            | None -> assert false)
+        | Some [] -> assert false
+        | None ->
+            List.filter
+              (fun key -> not (List.exists (Value.same_array_key key) seen))
+              current_keys)
+  in
+  let rec continue state array seen pending =
+    let pending =
+      match pending with
+      | _ :: _ -> pending
+      | [] ->
+          keys array
+          |> List.filter (fun key ->
+              not (List.exists (Value.same_array_key key) seen))
+    in
+    match pending with
+    | [] -> Phpsymex.Result.ok (Normal, state)
+    | key :: pending -> (
+        match Value.array_find key array with
+        | None -> continue state array (key :: seen) pending
+        | Some entry ->
+            let cell, array, state =
+              match entry with
+              | Value.Reference cell -> (cell, array, state)
+              | Inline value ->
+                  let cell, state = State.allocate_cell value state in
+                  (cell, Value.array_set_reference key cell array, state)
+            in
+            let open Phpsymex.Syntax in
+            finish_evaluation
+              (match source with
+              | None -> evaluated () state
+              | Some place -> write_place place (Value.array array) state)
+              (fun () state ->
+                finish_evaluation
+                  (match key_target with
+                  | None -> evaluated () state
+                  | Some target ->
+                      assign_foreach_target functions state target
+                        (foreach_key_value key))
+                  (fun () state ->
+                    finish_evaluation
+                      (bind_foreach_target_reference functions state
+                         value_target cell) (fun () state ->
+                        let** control, state =
+                          exec_statements functions state body
+                        in
+                        match control with
+                        | Normal | Continue 1 -> (
+                            match current_array state array with
+                            | Some array ->
+                                let seen = key :: seen in
+                                let pending =
+                                  pending_after_body array key cell seen pending
+                                in
+                                continue state array seen pending
+                            | None -> Phpsymex.Result.ok (Normal, state))
+                        | Break 1 -> Phpsymex.Result.ok (Normal, state)
+                        | Break depth ->
+                            Phpsymex.Result.ok (Break (depth - 1), state)
+                        | Continue depth ->
+                            Phpsymex.Result.ok (Continue (depth - 1), state)
+                        | Return _ | Throw _ ->
+                            Phpsymex.Result.ok (control, state)))))
+  in
+  continue state array seen pending
+
+and exec_foreach_reference functions state iterable key_target value_target body
+    =
+  finish_evaluation (eval_foreach_reference_iterable functions state iterable)
+    (fun (value, source) state ->
       match value with
       | Value.Array array ->
-          exec_foreach_entries functions state key_target value_target body
-            (Value.array_bindings array)
-      | Value.Object _ -> unsupported "foreach over objects"
+          exec_foreach_reference_entries functions state source array key_target
+            value_target body []
+            (List.map fst (Value.array_bindings array))
+      | Value.Object _ -> unsupported "foreach over objects by reference"
       | value ->
           let message =
             Printf.sprintf
@@ -1175,6 +1340,28 @@ and exec_foreach functions state iterable key_target value_target body =
           finish_evaluation
             (record_runtime_event Error.Runtime_event.Warning message state)
             (fun () state -> Phpsymex.Result.ok (Normal, state)))
+
+and exec_foreach functions state iterable key_target value_target by_reference
+    body =
+  if by_reference then
+    exec_foreach_reference functions state iterable key_target value_target body
+  else
+    finish_evaluation (eval_expression functions state iterable)
+      (fun value state ->
+        match value with
+        | Value.Array array ->
+            exec_foreach_entries functions state key_target value_target body
+              (Value.array_bindings array)
+        | Value.Object _ -> unsupported "foreach over objects"
+        | value ->
+            let message =
+              Printf.sprintf
+                "foreach() argument must be of type array|object, %s given"
+                (Value.type_name value)
+            in
+            finish_evaluation
+              (record_runtime_event Error.Runtime_event.Warning message state)
+              (fun () state -> Phpsymex.Result.ok (Normal, state)))
 
 and exec_try functions state body catches finally =
   let open Phpsymex.Syntax in
@@ -1222,7 +1409,7 @@ and exec_statement functions state statement =
     | Echo (_, location)
     | If (_, _, _, location)
     | While (_, _, location)
-    | Foreach (_, _, _, _, location)
+    | Foreach (_, _, _, _, _, location)
     | Break (_, location)
     | Continue (_, location)
     | Return (_, location)
@@ -1250,8 +1437,8 @@ and exec_statement functions state statement =
             else exec_statements functions state else_)
     | While (condition_expression, body, _) ->
         exec_while functions state condition_expression body
-    | Foreach (iterable, key, value, body, _) ->
-        exec_foreach functions state iterable key value body
+    | Foreach (iterable, key, value, by_reference, body, _) ->
+        exec_foreach functions state iterable key value by_reference body
     | Break (depth, _) -> Phpsymex.Result.ok (Break depth, state)
     | Continue (depth, _) -> Phpsymex.Result.ok (Continue depth, state)
     | Return (expression, _) ->

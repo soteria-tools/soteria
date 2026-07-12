@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 9;
 
 final class LoweringError extends RuntimeException
 {
@@ -385,13 +385,6 @@ final class Lowerer
         int $loopDepth,
     ): array
     {
-        if ($statement->byRef) {
-            return $this->unsupported(
-                $statement->valueVar,
-                'by-reference foreach',
-            );
-        }
-
         return [
             'kind' => 'foreach',
             'iterable' => $this->lowerExpression($statement->expr),
@@ -399,6 +392,7 @@ final class Lowerer
                 ? null
                 : $this->lowerLvalue($statement->keyVar, true),
             'value' => $this->lowerLvalue($statement->valueVar, true),
+            'by_reference' => $statement->byRef,
             'body' => array_map(
                 fn (Node\Stmt $bodyStatement): array => $this->lowerStatement(
                     $bodyStatement,

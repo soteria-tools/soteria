@@ -40,20 +40,20 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first thirteen changes in the suggested pull request sequence have been
+The first fourteen changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
 properties, concrete counterexamples, expected-failure tests, and selected
-function entry points, and by-value array iteration. The next work should close
-the remaining M2-M3 semantics before standalone packaging and release
-integration.
+function entry points, by-value and by-reference array iteration, and symbolic
+array-key insertion. The next work should close the remaining M3 semantics
+before standalone packaging and release integration.
 
 Completing these pull requests is not the same as completing milestones M0-M3.
 The sequence deliberately established one sound path through each subsystem
-before filling out PHP's semantic breadth. M0 is complete; M1, M2, and M3 remain
-partial as described below. The authoritative language boundary is maintained
-in `support.md`.
+before filling out PHP's semantic breadth. M0 and M2 are complete; M1 and M3
+remain partial as described below. The authoritative language boundary is
+maintained in `support.md`.
 
 ## Goals
 
@@ -580,10 +580,10 @@ verification success.
 
 ### M2: PHP core state semantics
 
-**Status:** Partial. Persistent arrays, general lvalues, references, exceptions,
+**Status:** Complete. Persistent arrays, general lvalues, references, exceptions,
 undefined-read runtime events, catchable runtime errors, and mandatory
-branch-isolation tests and `foreach` by value are implemented. By-reference
-`foreach` and fresh symbolic array-key insertion remain.
+branch-isolation tests, both forms of `foreach`, and fresh symbolic array-key
+insertion are implemented.
 
 Deliverables:
 
@@ -667,7 +667,7 @@ Changes should remain small and independently reviewable.
     points.
 12. **Complete:** Undefined reads, warnings, and catchable runtime errors.
 13. **Complete:** `foreach` by value.
-14. `foreach` by reference and symbolic array-key insertion.
+14. **Complete:** `foreach` by reference and symbolic array-key insertion.
 15. Constructors, instance methods, and `$this`.
 16. Property and method visibility.
 17. Inheritance, interfaces, and traits.

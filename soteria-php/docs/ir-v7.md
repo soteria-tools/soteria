@@ -1,7 +1,7 @@
 # Soteria PHP IR version 7
 
-Version 7 is historical. The current frontend emits version 8, documented in
-`ir-v8.md`.
+Version 7 is historical. The current frontend emits version 9, documented in
+`ir-v9.md`.
 
 Version 7 extends version 6 with named class declarations, declared instance
 properties, and object-property lvalues. The program envelope uses

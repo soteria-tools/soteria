@@ -1,5 +1,8 @@
 # Soteria PHP IR version 8
 
+Version 8 is historical. The current frontend emits version 9, documented in
+`ir-v9.md`.
+
 Version 8 extends version 7 with by-value `foreach`. The program envelope uses
 `schema_version` `8`; all version 7 constructs retain their existing
 representation.
@@ -41,6 +44,4 @@ visited in insertion order using a snapshot of the array structure; later
 structural mutations do not alter the pending entries, while reference entries
 continue to name their persistent cells.
 
-Version 8 does not encode by-reference iteration. The frontend rejects
-`foreach ($items as &$value)` explicitly; that form requires a later schema
-version.
+Version 8 does not encode by-reference iteration.

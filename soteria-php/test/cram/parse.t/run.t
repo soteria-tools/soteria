@@ -2,7 +2,7 @@
   $ ../../../bin/soteria_php.exe parse valid.php > second.json
   $ cmp first.json second.json
   $ php summarize.php first.json
-  schema=8 php=8.4.19 source=valid.php
+  schema=9 php=8.4.19 source=valid.php
   echo 2:1-2:42 [6,47)
     null=-
     bool=true
@@ -20,9 +20,7 @@
   Frontend error: unsupported_function.php:2:20: unsupported function parameter (Param)
   [2]
 
-  $ ../../../bin/soteria_php.exe parse foreach_reference.php
-  Frontend error: foreach_reference.php:2:21: unsupported by-reference foreach (Expr_Variable)
-  [2]
+  $ ../../../bin/soteria_php.exe parse foreach_reference.php > /dev/null
 
   $ ../../../bin/soteria_php.exe parse malformed.php
   Frontend error: malformed.php:2:6: parse error: Syntax error, unexpected ';'
