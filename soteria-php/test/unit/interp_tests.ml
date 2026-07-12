@@ -36,6 +36,10 @@ let property_get target = expression (Property_get target)
 let array_item ?key value : Php_ir.array_item = { key; value; location }
 let array items = expression (Array items)
 let call name arguments = expression (Call (name, arguments))
+
+let method_call object_ name arguments =
+  expression (Method_call (object_, name, arguments))
+
 let new_ name arguments = expression (New (name, arguments))
 let throw value = expression (Throw value)
 let binary left operator right = expression (Binary (left, operator, right))
@@ -47,7 +51,18 @@ let function_ name parameters body : Php_ir.function_decl =
   { name; parameters = List.map parameter parameters; body; location }
 
 let property ?default name : Php_ir.property_decl = { name; default; location }
-let class_ name properties : Php_ir.class_decl = { name; properties; location }
+
+let method_ name parameters body : Php_ir.method_decl =
+  {
+    name;
+    parameters = List.map parameter parameters;
+    body;
+    modifiers = [ Public ];
+    location;
+  }
+
+let class_ ?(methods = []) name properties : Php_ir.class_decl =
+  { name; properties; methods; location }
 
 let catch ?variable types body : Php_ir.catch_clause =
   { types; variable; body; location }
@@ -1084,6 +1099,141 @@ let isolates_object_properties_across_symbolic_branches () =
   in
   Alcotest.(check (list int64)) "branch-local property stores" [ 2L; 3L ] values
 
+let runs_constructors_instance_methods_and_recursive_calls () =
+  let this_value = object_property (variable_lvalue "this") "value" in
+  let constructor =
+    method_ "__construct" [ "value" ]
+      [ expression_statement (assign_lvalue this_value (variable "value")) ]
+  in
+  let set =
+    method_ "set" [ "value" ]
+      [
+        expression_statement (assign_lvalue this_value (variable "value"));
+        Php_ir.Return (Some (property_get this_value), location);
+      ]
+  in
+  let recurse =
+    method_ "recurse" [ "depth" ]
+      [
+        Php_ir.If
+          ( binary (variable "depth") Identical (literal (Int 0L)),
+            [ Php_ir.Return (Some (property_get this_value), location) ],
+            [
+              Php_ir.Return
+                ( Some
+                    (method_call (variable "this") "recurse"
+                       [ binary (variable "depth") Subtract (literal (Int 1L)) ]),
+                  location );
+            ],
+            location );
+      ]
+  in
+  let box =
+    class_
+      ~methods:[ constructor; set; recurse ]
+      "Box"
+      [ property ~default:(literal (Int 1L)) "value" ]
+  in
+  let statements =
+    [
+      expression_statement (assign "box" (new_ "Box" [ literal (Int 4L) ]));
+      expression_statement (assign "alias" (variable "box"));
+      expression_statement
+        (assign "set_result"
+           (method_call (variable "alias") "SET" [ literal (Int 7L) ]));
+      expression_statement
+        (assign "recursive_result"
+           (method_call (variable "box") "recurse" [ literal (Int 3L) ]));
+      expression_statement
+        (assign "property_result"
+           (property_get (object_property (variable_lvalue "box") "value")));
+    ]
+  in
+  let state =
+    run ~classes:[ box ] statements |> expect_single_ok "object methods"
+  in
+  let integer name =
+    Option.bind (State.find_variable name state) Value.int_value
+  in
+  Alcotest.(check (option int64))
+    "method return" (Some 7L) (integer "set_result");
+  Alcotest.(check (option int64))
+    "recursive return" (Some 7L)
+    (integer "recursive_result");
+  Alcotest.(check (option int64))
+    "aliased mutation" (Some 7L)
+    (integer "property_result")
+
+let propagates_constructor_throws_and_isolates_method_branches () =
+  let throwing =
+    class_
+      ~methods:
+        [
+          method_ "__construct" []
+            [
+              expression_statement
+                (throw (new_ "RuntimeException" [ literal (String "boom") ]));
+            ];
+        ]
+      "Throwing" []
+  in
+  let this_value = object_property (variable_lvalue "this") "value" in
+  let box =
+    class_
+      ~methods:
+        [
+          method_ "set" [ "value" ]
+            [
+              expression_statement (assign_lvalue this_value (variable "value"));
+            ];
+        ]
+      "Box"
+      [ property ~default:(literal (Int 1L)) "value" ]
+  in
+  let statements =
+    [
+      Php_ir.Try
+        ( [ expression_statement (new_ "Throwing" []) ],
+          [
+            catch [ "RuntimeException" ]
+              [ expression_statement (assign "caught" (literal (Bool true))) ];
+          ],
+          None,
+          location );
+      expression_statement (assign "box" (new_ "Box" []));
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.If
+        ( variable "condition",
+          [
+            expression_statement
+              (method_call (variable "box") "set" [ literal (Int 2L) ]);
+          ],
+          [
+            expression_statement
+              (method_call (variable "box") "set" [ literal (Int 3L) ]);
+          ],
+          location );
+      expression_statement
+        (assign "result"
+           (property_get (object_property (variable_lvalue "box") "value")));
+    ]
+  in
+  let values =
+    run ~classes:[ throwing; box ] statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind
+            (Option.bind (State.find_variable "caught" state) Value.bool_value)
+            (fun caught ->
+              if caught then
+                Option.bind (State.find_variable "result" state) Value.int_value
+              else None)
+      | _ -> None)
+    |> List.sort Int64.compare
+  in
+  Alcotest.(check (list int64)) "branch-local method mutation" [ 2L; 3L ] values
+
 let propagates_nested_loop_control_through_finally () =
   let increment =
     expression_statement
@@ -1509,6 +1659,10 @@ let () =
             shares_object_identity_and_property_cells;
           Alcotest.test_case "object property branch isolation" `Quick
             isolates_object_properties_across_symbolic_branches;
+          Alcotest.test_case "constructors and recursive methods" `Quick
+            runs_constructors_instance_methods_and_recursive_calls;
+          Alcotest.test_case "constructor throws and method branch isolation"
+            `Quick propagates_constructor_throws_and_isolates_method_branches;
           Alcotest.test_case "loop control through finally" `Quick
             propagates_nested_loop_control_through_finally;
           Alcotest.test_case "undefined read warnings" `Quick

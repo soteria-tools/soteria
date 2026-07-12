@@ -1,7 +1,7 @@
 # Soteria PHP IR version 8
 
-Version 8 is historical. The current frontend emits version 9, documented in
-`ir-v9.md`.
+Version 8 is historical. The current frontend emits version 10, documented in
+`ir-v10.md`.
 
 Version 8 extends version 7 with by-value `foreach`. The program envelope uses
 `schema_version` `8`; all version 7 constructs retain their existing

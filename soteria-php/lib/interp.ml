@@ -739,6 +739,13 @@ let bind_parameters (parameters : Php_ir.parameter list) arguments =
   in
   bind [] parameters arguments
 
+let find_method (class_ : Php_ir.class_decl) name =
+  let canonical_name = Builtins.canonical_name name in
+  List.find_opt
+    (fun (method_ : Php_ir.method_decl) ->
+      String.equal (Builtins.canonical_name method_.name) canonical_name)
+    class_.methods
+
 let finish_evaluation evaluation continuation =
   let open Phpsymex.Syntax in
   let** result, state = evaluation in
@@ -804,18 +811,28 @@ and eval_property_defaults declarations state properties =
       in
       evaluated ((property.name, value) :: values) state
 
-and construct_object declarations state name arguments =
+and construct_object declarations state location name arguments =
   let canonical_name = Builtins.canonical_name name in
   match Class_map.find_opt canonical_name declarations.classes with
   | None -> unsupported "object construction for class %s" name
-  | Some (class_ : Php_ir.class_decl) ->
+  | Some (class_ : Php_ir.class_decl) -> (
       let open Phpsymex.Syntax in
       let*** properties, state =
         eval_property_defaults declarations state class_.properties
       in
-      let _ = arguments in
       let id, state = State.allocate_object ~properties class_.name "" state in
-      evaluated (Value.object_ id) state
+      let object_ = Value.object_ id in
+      match find_method class_ "__construct" with
+      | None -> evaluated object_ state
+      | Some constructor -> (
+          let open Phpsymex.Syntax in
+          let** result, state =
+            call_method declarations state location id class_ constructor
+              arguments
+          in
+          match result with
+          | Evaluated _ -> evaluated object_ state
+          | Raised thrown -> Phpsymex.Result.ok (Raised thrown, state)))
 
 and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
   let process =
@@ -1061,11 +1078,54 @@ and eval_expression functions state expression =
                 evaluated value state)
         | None ->
             call_function functions state expression.location name arguments)
+    | Method_call (object_expression, name, arguments) -> (
+        let*** object_value, state =
+          eval_expression functions state object_expression
+        in
+        match object_value with
+        | Value.Object object_id -> (
+            let object_state =
+              match State.find_object object_id state with
+              | Some object_ -> object_
+              | None -> failwith "PHP object value refers to an unknown object"
+            in
+            let class_ =
+              Class_map.find_opt
+                (Builtins.canonical_name object_state.class_name)
+                functions.classes
+            in
+            match
+              Option.bind class_ (fun class_ -> find_method class_ name)
+            with
+            | None ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message =
+                      Printf.sprintf "Call to undefined method %s::%s()"
+                        object_state.class_name name;
+                  }
+            | Some method_ ->
+                let class_ = Option.get class_ in
+                let*** arguments, state =
+                  eval_expressions functions state arguments
+                in
+                call_method functions state expression.location object_id class_
+                  method_ arguments)
+        | value ->
+            raise_runtime_error state
+              {
+                Error.class_name = "Error";
+                message =
+                  Printf.sprintf "Call to a member function %s() on %s" name
+                    (Value.type_name value);
+              })
     | New (name, arguments) -> (
         let*** arguments, state = eval_expressions functions state arguments in
         match find_throwable_class name with
         | Some _ -> construct_throwable state name arguments
-        | None -> construct_object functions state name arguments)
+        | None ->
+            construct_object functions state expression.location name arguments)
     | Throw expression ->
         let*** value, state = eval_expression functions state expression in
         raise_value value state
@@ -1108,6 +1168,42 @@ and call_function functions state location name arguments =
         Phpsymex.with_call ~location
           ~message:("Call to " ^ function_.name)
           process
+
+and call_method declarations state location object_id
+    (class_ : Php_ir.class_decl) (method_ : Php_ir.method_decl) arguments =
+  let expected = List.length method_.parameters in
+  let actual = List.length arguments in
+  if actual < expected then
+    raise_runtime_error state
+      {
+        Error.class_name = "ArgumentCountError";
+        message =
+          Printf.sprintf "%s::%s() expects exactly %d argument%s, %d given"
+            class_.name method_.name expected
+            (if expected = 1 then "" else "s")
+            actual;
+      }
+  else
+    let bindings =
+      bind_parameters method_.parameters arguments
+      @ [ ("this", Value.object_ object_id) ]
+    in
+    let local_state = State.enter_scope bindings state in
+    let process =
+      let open Phpsymex.Syntax in
+      let** control, local_state =
+        exec_statements declarations local_state method_.body
+      in
+      let state = State.leave_scope local_state in
+      match control with
+      | Normal -> evaluated Value.null state
+      | Return value -> evaluated value state
+      | Throw thrown -> Phpsymex.Result.ok (Raised thrown, state)
+      | Break _ | Continue _ -> failwith "loop control escaped a PHP method"
+    in
+    Phpsymex.with_call ~location
+      ~message:(Printf.sprintf "Call to %s::%s" class_.name method_.name)
+      process
 
 and emit_expressions functions state expressions =
   let open Phpsymex.Syntax in

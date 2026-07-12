@@ -40,14 +40,15 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first fourteen changes in the suggested pull request sequence have been
+The first fifteen changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
 properties, concrete counterexamples, expected-failure tests, and selected
 function entry points, by-value and by-reference array iteration, and symbolic
-array-key insertion. The next work should close the remaining M3 semantics
-before standalone packaging and release integration.
+array-key insertion, constructors, public instance methods, and `$this`. The
+next work should close the remaining M3 semantics before standalone packaging
+and release integration.
 
 Completing these pull requests is not the same as completing milestones M0-M3.
 The sequence deliberately established one sound path through each subsystem
@@ -601,9 +602,9 @@ branch-isolation tests.
 
 **Status:** Partial. Stable object handles, assignment by handle, persistent
 declared-property stores, property references, `unset`, nested array access, and
-branch isolation are implemented. Constructors, methods, visibility beyond
-public properties, inheritance, interfaces, traits, static state, cloning,
-closures, and magic methods remain.
+branch isolation, constructors, public instance methods, and `$this` are
+implemented. Visibility beyond public members, inheritance, interfaces, traits,
+static state, cloning, closures, and magic methods remain.
 
 Deliverables:
 
@@ -668,7 +669,7 @@ Changes should remain small and independently reviewable.
 12. **Complete:** Undefined reads, warnings, and catchable runtime errors.
 13. **Complete:** `foreach` by value.
 14. **Complete:** `foreach` by reference and symbolic array-key insertion.
-15. Constructors, instance methods, and `$this`.
+15. **Complete:** Constructors, instance methods, and `$this`.
 16. Property and method visibility.
 17. Inheritance, interfaces, and traits.
 18. Static state, closures, and callable values.

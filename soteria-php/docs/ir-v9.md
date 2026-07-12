@@ -1,5 +1,8 @@
 # Soteria PHP IR version 9
 
+Version 9 is historical. The current frontend emits version 10, documented in
+`ir-v10.md`.
+
 Version 9 extends version 8 with by-reference `foreach`. The program envelope
 uses `schema_version` `9`; all version 8 constructs retain their existing
 representation.

@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 9) ?(functions = []) ?(classes = []) statement =
+let program ?(schema_version = 10) ?(functions = []) ?(classes = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -48,10 +48,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:10 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:11 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 10 (expected 9)"
+        "error" "$.schema_version: unsupported schema version 11 (expected 10)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -428,6 +428,7 @@ let decodes_classes_and_object_properties () =
       [
         ("name", `String "Box");
         ("properties", `List [ property ]);
+        ("methods", `List []);
         ("location", location);
       ]
   in
@@ -504,6 +505,103 @@ let decodes_classes_and_object_properties () =
       } ->
       ()
   | Ok _ -> Alcotest.fail "decoded an unexpected class or property shape"
+  | Error error -> Alcotest.fail error
+
+let decodes_methods_and_method_calls () =
+  let variable name =
+    `Assoc
+      [
+        ("kind", `String "variable");
+        ("name", `String name);
+        ("location", location);
+      ]
+  in
+  let parameter =
+    `Assoc [ ("name", `String "value"); ("location", location) ]
+  in
+  let return =
+    `Assoc
+      [
+        ("kind", `String "return");
+        ("expression", variable "value");
+        ("location", location);
+      ]
+  in
+  let method_ =
+    `Assoc
+      [
+        ("name", `String "identity");
+        ("parameters", `List [ parameter ]);
+        ("body", `List [ return ]);
+        ("modifiers", `List [ `String "public" ]);
+        ("location", location);
+      ]
+  in
+  let class_ =
+    `Assoc
+      [
+        ("name", `String "Box");
+        ("properties", `List []);
+        ("methods", `List [ method_ ]);
+        ("location", location);
+      ]
+  in
+  let call =
+    `Assoc
+      [
+        ("kind", `String "method_call");
+        ("object", variable "box");
+        ("method", `String "identity");
+        ("arguments", `List [ variable "argument" ]);
+        ("location", location);
+      ]
+  in
+  let statement =
+    `Assoc
+      [
+        ("kind", `String "expression");
+        ("expression", call);
+        ("location", location);
+      ]
+  in
+  match
+    Soteria_php.Php_ir.of_yojson (program ~classes:[ class_ ] statement)
+  with
+  | Ok
+      {
+        classes =
+          [
+            {
+              methods =
+                [
+                  {
+                    name = "identity";
+                    parameters = [ { name = "value"; _ } ];
+                    body = [ Return (Some { desc = Variable "value"; _ }, _) ];
+                    modifiers = [ Public ];
+                    _;
+                  };
+                ];
+              _;
+            };
+          ];
+        statements =
+          [
+            Expression
+              ( {
+                  desc =
+                    Method_call
+                      ( { desc = Variable "box"; _ },
+                        "identity",
+                        [ { desc = Variable "argument"; _ } ] );
+                  _;
+                },
+                _ );
+          ];
+        _;
+      } ->
+      ()
+  | Ok _ -> Alcotest.fail "decoded an unexpected method shape"
   | Error error -> Alcotest.fail error
 
 let decodes_foreach_by_reference () =
@@ -589,6 +687,8 @@ let () =
             decodes_exceptions_and_structured_control;
           Alcotest.test_case "classes and object properties" `Quick
             decodes_classes_and_object_properties;
+          Alcotest.test_case "methods and method calls" `Quick
+            decodes_methods_and_method_calls;
           Alcotest.test_case "foreach by reference" `Quick
             decodes_foreach_by_reference;
           Alcotest.test_case "loop-control validation" `Quick

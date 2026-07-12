@@ -46,6 +46,12 @@
   $ cat soteria.out
   same:different:2:1:3:4:3:second:first:5
 
+  $ php methods.php > php.out
+  $ ../../../bin/soteria_php.exe exec methods.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  initial=1:result=:receiver:argument:method7:value=7:recursive=7:missing:null:method-throw:constructing:caught
+
   $ php exceptions.php > php.out
   $ ../../../bin/soteria_php.exe exec exceptions.php > soteria.out
   $ cmp php.out soteria.out

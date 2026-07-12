@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 
 final class LoweringError extends RuntimeException
 {
@@ -99,26 +99,90 @@ final class Lowerer
             : $class->name->toString();
         $properties = [];
         $propertyNames = [];
+        $methods = [];
+        $methodNames = [];
         foreach ($class->stmts as $statement) {
-            if (!($statement instanceof Node\Stmt\Property)) {
-                return $this->unsupported($statement, 'class member');
-            }
-            foreach ($this->lowerProperties($statement) as $property) {
-                if (array_key_exists($property['name'], $propertyNames)) {
+            if ($statement instanceof Node\Stmt\Property) {
+                foreach ($this->lowerProperties($statement) as $property) {
+                    if (array_key_exists($property['name'], $propertyNames)) {
+                        return $this->unsupported(
+                            $statement,
+                            'duplicate property declaration',
+                        );
+                    }
+                    $propertyNames[$property['name']] = true;
+                    $properties[] = $property;
+                }
+            } elseif ($statement instanceof Node\Stmt\ClassMethod) {
+                $method = $this->lowerMethod($statement);
+                $canonicalName = strtolower($method['name']);
+                if (array_key_exists($canonicalName, $methodNames)) {
                     return $this->unsupported(
                         $statement,
-                        'duplicate property declaration',
+                        'duplicate method declaration',
                     );
                 }
-                $propertyNames[$property['name']] = true;
-                $properties[] = $property;
+                $methodNames[$canonicalName] = true;
+                $methods[] = $method;
+            } else {
+                return $this->unsupported($statement, 'class member');
             }
         }
 
         return [
             'name' => $name,
             'properties' => $properties,
+            'methods' => $methods,
             'location' => $this->location($class),
+        ];
+    }
+
+    private function lowerMethod(Node\Stmt\ClassMethod $method): array
+    {
+        if (
+            $method->byRef
+            || $method->returnType !== null
+            || $method->attrGroups !== []
+            || $method->stmts === null
+            || !in_array(
+                $method->flags,
+                [0, Node\Stmt\Class_::MODIFIER_PUBLIC],
+                true,
+            )
+        ) {
+            return $this->unsupported($method, 'method declaration');
+        }
+
+        $parameters = [];
+        $parameterNames = [];
+        foreach ($method->params as $parameter) {
+            $lowered = $this->lowerParameter($parameter);
+            if (array_key_exists($lowered['name'], $parameterNames)) {
+                return $this->unsupported(
+                    $parameter,
+                    'duplicate method parameter',
+                );
+            }
+            if ($lowered['name'] === 'this') {
+                return $this->unsupported($parameter, 'method parameter named this');
+            }
+            $parameterNames[$lowered['name']] = true;
+            $parameters[] = $lowered;
+        }
+
+        return [
+            'name' => $method->name->toString(),
+            'parameters' => $parameters,
+            'body' => array_map(
+                fn (Node\Stmt $statement): array => $this->lowerStatement(
+                    $statement,
+                    true,
+                    0,
+                ),
+                $method->stmts,
+            ),
+            'modifiers' => ['public'],
+            'location' => $this->location($method),
         ];
     }
 
@@ -736,6 +800,35 @@ final class Lowerer
             return [
                 'kind' => 'new',
                 'class' => $this->resolvedName($expression->class),
+                'arguments' => array_map(
+                    fn (Node\Arg $argument): array => $this->lowerExpression(
+                        $argument->value,
+                    ),
+                    $expression->args,
+                ),
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\MethodCall) {
+            if (!($expression->name instanceof Node\Identifier)) {
+                return $this->unsupported($expression->name, 'dynamic method call');
+            }
+            foreach ($expression->args as $argument) {
+                if (
+                    !($argument instanceof Node\Arg)
+                    || $argument->byRef
+                    || $argument->unpack
+                    || $argument->name !== null
+                ) {
+                    return $this->unsupported($argument, 'method argument');
+                }
+            }
+
+            return [
+                'kind' => 'method_call',
+                'object' => $this->lowerExpression($expression->var),
+                'method' => $expression->name->toString(),
                 'arguments' => array_map(
                     fn (Node\Arg $argument): array => $this->lowerExpression(
                         $argument->value,

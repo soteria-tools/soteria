@@ -43,6 +43,7 @@ and expression_desc =
   | Binary of expression * binary_operator * expression
   | Cast of cast * expression
   | Call of string * expression list
+  | Method_call of expression * string * expression list
   | New of string * expression list
   | Throw of expression
 
@@ -95,9 +96,20 @@ type property_decl = {
   location : location;
 }
 
+type method_modifier = Public
+
+type method_decl = {
+  name : string;
+  parameters : parameter list;
+  body : statement list;
+  modifiers : method_modifier list;
+  location : location;
+}
+
 type class_decl = {
   name : string;
   properties : property_decl list;
+  methods : method_decl list;
   location : location;
 }
 
@@ -109,7 +121,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 9
+let schema_version = 10
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -352,6 +364,23 @@ let rec decode_expression path json =
               decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
         in
         Call (name, arguments)
+    | "method_call" ->
+        check_fields path
+          [ "kind"; "object"; "method"; "arguments"; "location" ]
+          fields;
+        let object_ =
+          field path "object" fields |> decode_expression (path ^ ".object")
+        in
+        let method_name =
+          field path "method" fields |> as_string (path ^ ".method")
+        in
+        let arguments =
+          field path "arguments" fields
+          |> as_list (path ^ ".arguments")
+          |> List.mapi (fun index ->
+              decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
+        in
+        Method_call (object_, method_name, arguments)
     | "new" ->
         check_fields path [ "kind"; "class"; "arguments"; "location" ] fields;
         let class_name =
@@ -663,9 +692,46 @@ let decode_property path json =
   in
   { name; default; location }
 
+let decode_method_modifier path = function
+  | "public" -> Public
+  | modifier -> decode_error path ("unknown method modifier " ^ modifier)
+
+let decode_method path json =
+  let fields = as_assoc path json in
+  check_fields path
+    [ "name"; "parameters"; "body"; "modifiers"; "location" ]
+    fields;
+  let name = field path "name" fields |> as_string (path ^ ".name") in
+  let parameters =
+    field path "parameters" fields
+    |> as_list (path ^ ".parameters")
+    |> List.mapi (fun index ->
+        decode_parameter (Printf.sprintf "%s.parameters[%d]" path index))
+  in
+  let body =
+    field path "body" fields
+    |> as_list (path ^ ".body")
+    |> List.mapi (fun index ->
+        decode_statement ~allow_return:true ~loop_depth:0
+          (Printf.sprintf "%s.body[%d]" path index))
+  in
+  let modifiers =
+    field path "modifiers" fields
+    |> as_list (path ^ ".modifiers")
+    |> List.mapi (fun index json ->
+        let path = Printf.sprintf "%s.modifiers[%d]" path index in
+        json |> as_string path |> decode_method_modifier path)
+  in
+  if modifiers <> [ Public ] then
+    decode_error (path ^ ".modifiers") "expected exactly one public modifier";
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { name; parameters; body; modifiers; location }
+
 let decode_class path json =
   let fields = as_assoc path json in
-  check_fields path [ "name"; "properties"; "location" ] fields;
+  check_fields path [ "name"; "properties"; "methods"; "location" ] fields;
   let name = field path "name" fields |> as_string (path ^ ".name") in
   let properties =
     field path "properties" fields
@@ -673,10 +739,16 @@ let decode_class path json =
     |> List.mapi (fun index ->
         decode_property (Printf.sprintf "%s.properties[%d]" path index))
   in
+  let methods =
+    field path "methods" fields
+    |> as_list (path ^ ".methods")
+    |> List.mapi (fun index ->
+        decode_method (Printf.sprintf "%s.methods[%d]" path index))
+  in
   let location =
     field path "location" fields |> decode_location (path ^ ".location")
   in
-  { name; properties; location }
+  { name; properties; methods; location }
 
 let rec iter_expression_locations f (expression : expression) =
   f expression.location;
@@ -695,6 +767,9 @@ let rec iter_expression_locations f (expression : expression) =
       iter_expression_locations f left;
       iter_expression_locations f right
   | Call (_, arguments) | New (_, arguments) ->
+      List.iter (iter_expression_locations f) arguments
+  | Method_call (object_, _, arguments) ->
+      iter_expression_locations f object_;
       List.iter (iter_expression_locations f) arguments
   | Throw expression -> iter_expression_locations f expression
 
@@ -766,7 +841,15 @@ let iter_class_locations f (class_ : class_decl) =
     (fun (property : property_decl) ->
       f property.location;
       Option.iter (iter_expression_locations f) property.default)
-    class_.properties
+    class_.properties;
+  List.iter
+    (fun (method_ : method_decl) ->
+      f method_.location;
+      List.iter
+        (fun (parameter : parameter) -> f parameter.location)
+        method_.parameters;
+      List.iter (iter_statement_locations f) method_.body)
+    class_.methods
 
 let validate_source_file source_file functions classes statements =
   let validate location =
@@ -823,6 +906,37 @@ let validate_class_names classes =
                 properties
         in
         validate_properties [] 0 class_.properties;
+        let rec validate_methods seen method_index = function
+          | [] -> ()
+          | (method_ : method_decl) :: methods ->
+              let method_name = String.lowercase_ascii method_.name in
+              if List.mem method_name seen then
+                decode_error
+                  (Printf.sprintf "$.classes[%d].methods[%d].name" index
+                     method_index)
+                  ("duplicate method " ^ method_.name);
+              let rec validate_parameters seen parameter_index = function
+                | [] -> ()
+                | (parameter : parameter) :: parameters ->
+                    if String.equal parameter.name "this" then
+                      decode_error
+                        (Printf.sprintf
+                           "$.classes[%d].methods[%d].parameters[%d].name" index
+                           method_index parameter_index)
+                        "method parameter cannot be named this";
+                    if List.mem parameter.name seen then
+                      decode_error
+                        (Printf.sprintf
+                           "$.classes[%d].methods[%d].parameters[%d].name" index
+                           method_index parameter_index)
+                        ("duplicate parameter " ^ parameter.name);
+                    validate_parameters (parameter.name :: seen)
+                      (parameter_index + 1) parameters
+              in
+              validate_parameters [] 0 method_.parameters;
+              validate_methods (method_name :: seen) (method_index + 1) methods
+        in
+        validate_methods [] 0 class_.methods;
         validate (name :: seen) (index + 1) classes
   in
   validate [] 0 classes
@@ -997,6 +1111,13 @@ let rec expression_to_yojson expression =
           ("name", `String name);
           ("arguments", `List (List.map expression_to_yojson arguments));
         ]
+    | Method_call (object_, method_name, arguments) ->
+        [
+          ("kind", `String "method_call");
+          ("object", expression_to_yojson object_);
+          ("method", `String method_name);
+          ("arguments", `List (List.map expression_to_yojson arguments));
+        ]
     | New (class_name, arguments) ->
         [
           ("kind", `String "new");
@@ -1164,11 +1285,24 @@ let property_to_yojson (property : property_decl) =
       ("location", location_to_yojson property.location);
     ]
 
+let method_modifier_to_yojson = function Public -> `String "public"
+
+let method_to_yojson (method_ : method_decl) =
+  `Assoc
+    [
+      ("name", `String method_.name);
+      ("parameters", `List (List.map parameter_to_yojson method_.parameters));
+      ("body", `List (List.map statement_to_yojson method_.body));
+      ("modifiers", `List (List.map method_modifier_to_yojson method_.modifiers));
+      ("location", location_to_yojson method_.location);
+    ]
+
 let class_to_yojson (class_ : class_decl) =
   `Assoc
     [
       ("name", `String class_.name);
       ("properties", `List (List.map property_to_yojson class_.properties));
+      ("methods", `List (List.map method_to_yojson class_.methods));
       ("location", location_to_yojson class_.location);
     ]
 
