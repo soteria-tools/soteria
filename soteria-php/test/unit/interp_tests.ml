@@ -59,13 +59,50 @@ let method_ ?(visibility = Php_ir.Public) name parameters body :
   {
     name;
     parameters = List.map parameter parameters;
-    body;
+    body = Some body;
     modifiers = [ visibility ];
     location;
   }
 
-let class_ ?(methods = []) name properties : Php_ir.class_decl =
-  { name; properties; methods; location }
+let class_ ?parent ?(interfaces = []) ?(traits = []) ?(methods = []) name
+    properties : Php_ir.class_decl =
+  {
+    kind = Class;
+    name;
+    parent;
+    interfaces;
+    traits;
+    properties;
+    methods;
+    location;
+  }
+
+let interface_ ?(parents = []) name methods : Php_ir.class_decl =
+  {
+    kind = Interface;
+    name;
+    parent = None;
+    interfaces = parents;
+    traits = [];
+    properties = [];
+    methods =
+      List.map (fun method_ -> { method_ with Php_ir.body = None }) methods;
+    location;
+  }
+
+let trait_ ?(methods = []) name properties : Php_ir.class_decl =
+  {
+    kind = Trait;
+    name;
+    parent = None;
+    interfaces = [];
+    traits = [];
+    properties;
+    methods;
+    location;
+  }
+
+let trait_use traits : Php_ir.trait_use = { traits; adaptations = []; location }
 
 let catch ?variable types body : Php_ir.catch_clause =
   { types; variable; body; location }
@@ -86,6 +123,10 @@ let run ?fuel ?function_name ?functions ?classes statements =
 let expect_single_ok label = function
   | [ (Compo_res.Ok state, _) ] -> state
   | _ -> Alcotest.failf "%s: expected one successful path" label
+
+let expect_single_give_up label = function
+  | [ (Compo_res.Error (Or_gave_up.Gave_up _), _) ] -> ()
+  | _ -> Alcotest.failf "%s: expected one unsupported path" label
 
 let evaluates_assignments_and_division () =
   let statements =
@@ -1128,6 +1169,51 @@ let isolates_object_properties_across_symbolic_branches () =
   in
   Alcotest.(check (list int64)) "branch-local property stores" [ 2L; 3L ] values
 
+let isolates_inherited_properties_across_symbolic_branches () =
+  let base = class_ "Base" [ property ~default:(literal (Int 1L)) "value" ] in
+  let child = class_ ~parent:"Base" "Child" [] in
+  let value = object_property (variable_lvalue "object") "value" in
+  let statements =
+    [
+      expression_statement (assign "object" (new_ "Child" []));
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.If
+        ( variable "condition",
+          [ expression_statement (assign_lvalue value (literal (Int 2L))) ],
+          [ expression_statement (assign_lvalue value (literal (Int 3L))) ],
+          location );
+      expression_statement (assign "result" (property_get value));
+    ]
+  in
+  let values =
+    run ~classes:[ base; child ] statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind (State.find_variable "result" state) Value.int_value
+      | _ -> None)
+    |> List.sort Int64.compare
+  in
+  Alcotest.(check (list int64))
+    "branch-local inherited property stores" [ 2L; 3L ] values
+
+let rejects_invalid_class_graphs_and_composition () =
+  let first = class_ ~parent:"Second" "First" [] in
+  let second = class_ ~parent:"First" "Second" [] in
+  run ~classes:[ first; second ] [] |> expect_single_give_up "inheritance cycle";
+  let requirement = method_ "required" [] [] in
+  let interface = interface_ "Required" [ requirement ] in
+  let incomplete = class_ ~interfaces:[ "Required" ] "Incomplete" [] in
+  run ~classes:[ interface; incomplete ] []
+  |> expect_single_give_up "interface obligation";
+  let left = trait_ ~methods:[ method_ "conflict" [] [] ] "Left" [] in
+  let right = trait_ ~methods:[ method_ "conflict" [] [] ] "Right" [] in
+  let conflict =
+    class_ ~traits:[ trait_use [ "Left"; "Right" ] ] "Conflict" []
+  in
+  run ~classes:[ left; right; conflict ] []
+  |> expect_single_give_up "trait conflict"
+
 let runs_constructors_instance_methods_and_recursive_calls () =
   let this_value = object_property (variable_lvalue "this") "value" in
   let constructor =
@@ -1690,6 +1776,10 @@ let () =
             keeps_declaring_class_in_property_identity;
           Alcotest.test_case "object property branch isolation" `Quick
             isolates_object_properties_across_symbolic_branches;
+          Alcotest.test_case "inherited property branch isolation" `Quick
+            isolates_inherited_properties_across_symbolic_branches;
+          Alcotest.test_case "class graph and composition validation" `Quick
+            rejects_invalid_class_graphs_and_composition;
           Alcotest.test_case "constructors and recursive methods" `Quick
             runs_constructors_instance_methods_and_recursive_calls;
           Alcotest.test_case "constructor throws and method branch isolation"

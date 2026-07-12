@@ -89,6 +89,13 @@ let allocate_object ?(properties = []) class_name message state =
 
 let find_object id state = Object_map.find_opt id state.objects
 
+let set_object_message id message state =
+  match find_object id state with
+  | None -> failwith "message write on an unknown PHP object"
+  | Some object_ ->
+      let object_ = { object_ with message } in
+      { state with objects = Object_map.add id object_ state.objects }
+
 let declared_property ~declaring_class source_name =
   Declared_property { declaring_class; source_name }
 

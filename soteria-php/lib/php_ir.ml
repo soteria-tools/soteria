@@ -44,6 +44,7 @@ and expression_desc =
   | Cast of cast * expression
   | Call of string * expression list
   | Method_call of expression * string * expression list
+  | Parent_method_call of string * expression list
   | New of string * expression list
   | Throw of expression
 
@@ -102,13 +103,40 @@ type property_decl = {
 type method_decl = {
   name : string;
   parameters : parameter list;
-  body : statement list;
+  body : statement list option;
   modifiers : member_modifier list;
   location : location;
 }
 
+type declaration_kind = Class | Interface | Trait
+
+type trait_adaptation =
+  | Trait_precedence of {
+      trait : string;
+      method_name : string;
+      instead_of : string list;
+      location : location;
+    }
+  | Trait_alias of {
+      trait : string option;
+      method_name : string;
+      alias : string option;
+      visibility : member_modifier option;
+      location : location;
+    }
+
+type trait_use = {
+  traits : string list;
+  adaptations : trait_adaptation list;
+  location : location;
+}
+
 type class_decl = {
+  kind : declaration_kind;
   name : string;
+  parent : string option;
+  interfaces : string list;
+  traits : trait_use list;
   properties : property_decl list;
   methods : method_decl list;
   location : location;
@@ -122,7 +150,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 11
+let schema_version = 12
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -382,6 +410,18 @@ let rec decode_expression path json =
               decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
         in
         Method_call (object_, method_name, arguments)
+    | "parent_method_call" ->
+        check_fields path [ "kind"; "method"; "arguments"; "location" ] fields;
+        let method_name =
+          field path "method" fields |> as_string (path ^ ".method")
+        in
+        let arguments =
+          field path "arguments" fields
+          |> as_list (path ^ ".arguments")
+          |> List.mapi (fun index ->
+              decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
+        in
+        Parent_method_call (method_name, arguments)
     | "new" ->
         check_fields path [ "kind"; "class"; "arguments"; "location" ] fields;
         let class_name =
@@ -726,11 +766,15 @@ let decode_method path json =
         decode_parameter (Printf.sprintf "%s.parameters[%d]" path index))
   in
   let body =
-    field path "body" fields
-    |> as_list (path ^ ".body")
-    |> List.mapi (fun index ->
-        decode_statement ~allow_return:true ~loop_depth:0
-          (Printf.sprintf "%s.body[%d]" path index))
+    match field path "body" fields with
+    | `Null -> None
+    | json ->
+        Some
+          (json
+          |> as_list (path ^ ".body")
+          |> List.mapi (fun index ->
+              decode_statement ~allow_return:true ~loop_depth:0
+                (Printf.sprintf "%s.body[%d]" path index)))
   in
   let modifiers =
     field path "modifiers" fields
@@ -745,10 +789,120 @@ let decode_method path json =
   in
   { name; parameters; body; modifiers; location }
 
+let decode_declaration_kind path = function
+  | "class" -> Class
+  | "interface" -> Interface
+  | "trait" -> Trait
+  | kind -> decode_error path ("unknown declaration kind " ^ kind)
+
+let decode_optional_string path = function
+  | `Null -> None
+  | json -> Some (as_string path json)
+
+let decode_trait_adaptation path json =
+  let fields = as_assoc path json in
+  let kind = field path "kind" fields |> as_string (path ^ ".kind") in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  match kind with
+  | "precedence" ->
+      check_fields path
+        [ "kind"; "trait"; "method"; "instead_of"; "location" ]
+        fields;
+      let trait = field path "trait" fields |> as_string (path ^ ".trait") in
+      let method_name =
+        field path "method" fields |> as_string (path ^ ".method")
+      in
+      let instead_of =
+        field path "instead_of" fields
+        |> as_list (path ^ ".instead_of")
+        |> List.mapi (fun index ->
+            as_string (Printf.sprintf "%s.instead_of[%d]" path index))
+      in
+      Trait_precedence { trait; method_name; instead_of; location }
+  | "alias" ->
+      check_fields path
+        [ "kind"; "trait"; "method"; "alias"; "visibility"; "location" ]
+        fields;
+      let trait =
+        field path "trait" fields |> decode_optional_string (path ^ ".trait")
+      in
+      let method_name =
+        field path "method" fields |> as_string (path ^ ".method")
+      in
+      let alias =
+        field path "alias" fields |> decode_optional_string (path ^ ".alias")
+      in
+      let visibility =
+        match field path "visibility" fields with
+        | `Null -> None
+        | json ->
+            Some
+              (json
+              |> as_string (path ^ ".visibility")
+              |> decode_member_modifier (path ^ ".visibility"))
+      in
+      if Option.is_none alias && Option.is_none visibility then
+        decode_error path "trait alias must change its name or visibility";
+      Trait_alias { trait; method_name; alias; visibility; location }
+  | kind -> decode_error (path ^ ".kind") ("unknown trait adaptation " ^ kind)
+
+let decode_trait_use path json =
+  let fields = as_assoc path json in
+  check_fields path [ "traits"; "adaptations"; "location" ] fields;
+  let traits =
+    field path "traits" fields
+    |> as_list (path ^ ".traits")
+    |> List.mapi (fun index ->
+        as_string (Printf.sprintf "%s.traits[%d]" path index))
+  in
+  let adaptations =
+    field path "adaptations" fields
+    |> as_list (path ^ ".adaptations")
+    |> List.mapi (fun index ->
+        decode_trait_adaptation (Printf.sprintf "%s.adaptations[%d]" path index))
+  in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { traits; adaptations; location }
+
 let decode_class path json =
   let fields = as_assoc path json in
-  check_fields path [ "name"; "properties"; "methods"; "location" ] fields;
+  check_fields path
+    [
+      "kind";
+      "name";
+      "parent";
+      "interfaces";
+      "traits";
+      "properties";
+      "methods";
+      "location";
+    ]
+    fields;
+  let kind =
+    field path "kind" fields
+    |> as_string (path ^ ".kind")
+    |> decode_declaration_kind (path ^ ".kind")
+  in
   let name = field path "name" fields |> as_string (path ^ ".name") in
+  let parent =
+    field path "parent" fields |> decode_optional_string (path ^ ".parent")
+  in
+  let interfaces =
+    field path "interfaces" fields
+    |> as_list (path ^ ".interfaces")
+    |> List.mapi (fun index ->
+        as_string (Printf.sprintf "%s.interfaces[%d]" path index))
+  in
+  let traits =
+    field path "traits" fields
+    |> as_list (path ^ ".traits")
+    |> List.mapi (fun index ->
+        decode_trait_use (Printf.sprintf "%s.traits[%d]" path index))
+  in
   let properties =
     field path "properties" fields
     |> as_list (path ^ ".properties")
@@ -764,7 +918,7 @@ let decode_class path json =
   let location =
     field path "location" fields |> decode_location (path ^ ".location")
   in
-  { name; properties; methods; location }
+  { kind; name; parent; interfaces; traits; properties; methods; location }
 
 let rec iter_expression_locations f (expression : expression) =
   f expression.location;
@@ -782,7 +936,8 @@ let rec iter_expression_locations f (expression : expression) =
   | Binary (left, _, right) ->
       iter_expression_locations f left;
       iter_expression_locations f right
-  | Call (_, arguments) | New (_, arguments) ->
+  | Call (_, arguments) | New (_, arguments) | Parent_method_call (_, arguments)
+    ->
       List.iter (iter_expression_locations f) arguments
   | Method_call (object_, _, arguments) ->
       iter_expression_locations f object_;
@@ -854,6 +1009,15 @@ let iter_function_locations f (function_ : function_decl) =
 let iter_class_locations f (class_ : class_decl) =
   f class_.location;
   List.iter
+    (fun (trait_use : trait_use) ->
+      f trait_use.location;
+      List.iter
+        (function
+          | Trait_precedence { location; _ } | Trait_alias { location; _ } ->
+              f location)
+        trait_use.adaptations)
+    class_.traits;
+  List.iter
     (fun (property : property_decl) ->
       f property.location;
       Option.iter (iter_expression_locations f) property.default)
@@ -864,7 +1028,7 @@ let iter_class_locations f (class_ : class_decl) =
       List.iter
         (fun (parameter : parameter) -> f parameter.location)
         method_.parameters;
-      List.iter (iter_statement_locations f) method_.body)
+      Option.iter (List.iter (iter_statement_locations f)) method_.body)
     class_.methods
 
 let validate_source_file source_file functions classes statements =
@@ -953,6 +1117,47 @@ let validate_class_names classes =
               validate_methods (method_name :: seen) (method_index + 1) methods
         in
         validate_methods [] 0 class_.methods;
+        (match class_.kind with
+        | Class ->
+            if
+              List.exists
+                (fun method_ -> Option.is_none method_.body)
+                class_.methods
+            then
+              decode_error
+                (Printf.sprintf "$.classes[%d].methods" index)
+                "class methods must have bodies"
+        | Interface ->
+            if Option.is_some class_.parent then
+              decode_error
+                (Printf.sprintf "$.classes[%d].parent" index)
+                "interfaces cannot have a class parent";
+            if class_.properties <> [] || class_.traits <> [] then
+              decode_error
+                (Printf.sprintf "$.classes[%d]" index)
+                "interfaces cannot contain properties or trait uses";
+            if
+              List.exists
+                (fun method_ ->
+                  Option.is_some method_.body || method_.modifiers <> [ Public ])
+                class_.methods
+            then
+              decode_error
+                (Printf.sprintf "$.classes[%d].methods" index)
+                "interface methods must be public declarations without bodies"
+        | Trait ->
+            if Option.is_some class_.parent || class_.interfaces <> [] then
+              decode_error
+                (Printf.sprintf "$.classes[%d]" index)
+                "traits cannot extend classes or implement interfaces";
+            if
+              List.exists
+                (fun method_ -> Option.is_none method_.body)
+                class_.methods
+            then
+              decode_error
+                (Printf.sprintf "$.classes[%d].methods" index)
+                "trait methods must have bodies");
         validate (name :: seen) (index + 1) classes
   in
   validate [] 0 classes
@@ -1131,6 +1336,12 @@ let rec expression_to_yojson expression =
         [
           ("kind", `String "method_call");
           ("object", expression_to_yojson object_);
+          ("method", `String method_name);
+          ("arguments", `List (List.map expression_to_yojson arguments));
+        ]
+    | Parent_method_call (method_name, arguments) ->
+        [
+          ("kind", `String "parent_method_call");
           ("method", `String method_name);
           ("arguments", `List (List.map expression_to_yojson arguments));
         ]
@@ -1313,15 +1524,64 @@ let method_to_yojson (method_ : method_decl) =
     [
       ("name", `String method_.name);
       ("parameters", `List (List.map parameter_to_yojson method_.parameters));
-      ("body", `List (List.map statement_to_yojson method_.body));
+      ( "body",
+        Option.fold ~none:`Null
+          ~some:(fun body -> `List (List.map statement_to_yojson body))
+          method_.body );
       ("modifiers", `List (List.map member_modifier_to_yojson method_.modifiers));
       ("location", location_to_yojson method_.location);
+    ]
+
+let declaration_kind_to_yojson = function
+  | Class -> `String "class"
+  | Interface -> `String "interface"
+  | Trait -> `String "trait"
+
+let trait_adaptation_to_yojson = function
+  | Trait_precedence { trait; method_name; instead_of; location } ->
+      `Assoc
+        [
+          ("kind", `String "precedence");
+          ("trait", `String trait);
+          ("method", `String method_name);
+          ("instead_of", `List (List.map (fun name -> `String name) instead_of));
+          ("location", location_to_yojson location);
+        ]
+  | Trait_alias { trait; method_name; alias; visibility; location } ->
+      `Assoc
+        [
+          ("kind", `String "alias");
+          ( "trait",
+            Option.fold ~none:`Null ~some:(fun name -> `String name) trait );
+          ("method", `String method_name);
+          ( "alias",
+            Option.fold ~none:`Null ~some:(fun name -> `String name) alias );
+          ( "visibility",
+            Option.fold ~none:`Null ~some:member_modifier_to_yojson visibility
+          );
+          ("location", location_to_yojson location);
+        ]
+
+let trait_use_to_yojson (trait_use : trait_use) =
+  `Assoc
+    [
+      ("traits", `List (List.map (fun name -> `String name) trait_use.traits));
+      ( "adaptations",
+        `List (List.map trait_adaptation_to_yojson trait_use.adaptations) );
+      ("location", location_to_yojson trait_use.location);
     ]
 
 let class_to_yojson (class_ : class_decl) =
   `Assoc
     [
+      ("kind", declaration_kind_to_yojson class_.kind);
       ("name", `String class_.name);
+      ( "parent",
+        Option.fold ~none:`Null ~some:(fun name -> `String name) class_.parent
+      );
+      ( "interfaces",
+        `List (List.map (fun name -> `String name) class_.interfaces) );
+      ("traits", `List (List.map trait_use_to_yojson class_.traits));
       ("properties", `List (List.map property_to_yojson class_.properties));
       ("methods", `List (List.map method_to_yojson class_.methods));
       ("location", location_to_yojson class_.location);

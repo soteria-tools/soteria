@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 11) ?(functions = []) ?(classes = []) statement =
+let program ?(schema_version = 12) ?(functions = []) ?(classes = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -48,10 +48,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:12 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:13 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 12 (expected 11)"
+        "error" "$.schema_version: unsupported schema version 13 (expected 12)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -431,7 +431,11 @@ let decodes_classes_and_object_properties () =
   let class_ =
     `Assoc
       [
+        ("kind", `String "class");
         ("name", `String "Box");
+        ("parent", `Null);
+        ("interfaces", `List []);
+        ("traits", `List []);
         ("properties", `List [ property ]);
         ("methods", `List []);
         ("location", location);
@@ -546,7 +550,11 @@ let decodes_methods_and_method_calls () =
   let class_ =
     `Assoc
       [
+        ("kind", `String "class");
         ("name", `String "Box");
+        ("parent", `Null);
+        ("interfaces", `List []);
+        ("traits", `List []);
         ("properties", `List []);
         ("methods", `List [ method_ ]);
         ("location", location);
@@ -583,7 +591,8 @@ let decodes_methods_and_method_calls () =
                   {
                     name = "identity";
                     parameters = [ { name = "value"; _ } ];
-                    body = [ Return (Some { desc = Variable "value"; _ }, _) ];
+                    body =
+                      Some [ Return (Some { desc = Variable "value"; _ }, _) ];
                     modifiers = [ Private ];
                     _;
                   };
@@ -623,7 +632,11 @@ let rejects_invalid_member_visibility () =
   let class_ =
     `Assoc
       [
+        ("kind", `String "class");
         ("name", `String "Box");
+        ("parent", `Null);
+        ("interfaces", `List []);
+        ("traits", `List []);
         ("properties", `List [ property ]);
         ("methods", `List []);
         ("location", location);

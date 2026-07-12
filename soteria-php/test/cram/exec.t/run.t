@@ -58,6 +58,12 @@
   $ cat soteria.out
   123:45:function-private-read:6:unrelated-private-read:side-effect:unrelated-protected-write:unrelated-private-reference:unrelated-protected-unset:unrelated-private-method:unrelated-protected-method:global-private-read:side-effect:global-protected-write:side-effect:global-private-nested-write:global-private-method:private-constructor
 
+  $ php inheritance.php > php.out
+  $ ../../../bin/soteria_php.exe exec inheritance.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  base:3:child:name=child:left:selected:right:trait:base:child:base:5:base:7:caught
+
   $ php exceptions.php > php.out
   $ ../../../bin/soteria_php.exe exec exceptions.php > soteria.out
   $ cmp php.out soteria.out

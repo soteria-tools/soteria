@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 
 final class LoweringError extends RuntimeException
 {
@@ -56,8 +56,12 @@ final class Lowerer
                 }
                 $functionNames[$canonicalName] = true;
                 $functions[] = $function;
-            } elseif ($statement instanceof Node\Stmt\Class_) {
-                $class = $this->lowerClass($statement);
+            } elseif (
+                $statement instanceof Node\Stmt\Class_
+                || $statement instanceof Node\Stmt\Interface_
+                || $statement instanceof Node\Stmt\Trait_
+            ) {
+                $class = $this->lowerClassLike($statement);
                 $canonicalName = strtolower($class['name']);
                 if (array_key_exists($canonicalName, $classNames)) {
                     return $this->unsupported(
@@ -82,27 +86,44 @@ final class Lowerer
         ];
     }
 
-    private function lowerClass(Node\Stmt\Class_ $class): array
+    private function lowerClassLike(
+        Node\Stmt\Class_|Node\Stmt\Interface_|Node\Stmt\Trait_ $class,
+    ): array
     {
-        if (
-            $class->name === null
-            || $class->flags !== 0
-            || $class->extends !== null
-            || $class->implements !== []
-            || $class->attrGroups !== []
-        ) {
+        if ($class->name === null || $class->attrGroups !== []) {
+            return $this->unsupported($class, 'class declaration');
+        }
+        if ($class instanceof Node\Stmt\Class_ && $class->flags !== 0) {
             return $this->unsupported($class, 'class declaration');
         }
 
         $name = $class->namespacedName instanceof Node\Name
             ? $class->namespacedName->toString()
             : $class->name->toString();
+        $kind = match (true) {
+            $class instanceof Node\Stmt\Class_ => 'class',
+            $class instanceof Node\Stmt\Interface_ => 'interface',
+            $class instanceof Node\Stmt\Trait_ => 'trait',
+        };
+        $parent = $class instanceof Node\Stmt\Class_
+            && $class->extends instanceof Node\Name
+            ? $this->resolvedName($class->extends)
+            : null;
+        $interfaces = match (true) {
+            $class instanceof Node\Stmt\Class_ => $class->implements,
+            $class instanceof Node\Stmt\Interface_ => $class->extends,
+            $class instanceof Node\Stmt\Trait_ => [],
+        };
         $properties = [];
         $propertyNames = [];
         $methods = [];
         $methodNames = [];
+        $traits = [];
         foreach ($class->stmts as $statement) {
             if ($statement instanceof Node\Stmt\Property) {
+                if ($kind === 'interface') {
+                    return $this->unsupported($statement, 'interface member');
+                }
                 foreach ($this->lowerProperties($statement) as $property) {
                     if (array_key_exists($property['name'], $propertyNames)) {
                         return $this->unsupported(
@@ -114,7 +135,7 @@ final class Lowerer
                     $properties[] = $property;
                 }
             } elseif ($statement instanceof Node\Stmt\ClassMethod) {
-                $method = $this->lowerMethod($statement);
+                $method = $this->lowerMethod($statement, $kind === 'interface');
                 $canonicalName = strtolower($method['name']);
                 if (array_key_exists($canonicalName, $methodNames)) {
                     return $this->unsupported(
@@ -124,27 +145,95 @@ final class Lowerer
                 }
                 $methodNames[$canonicalName] = true;
                 $methods[] = $method;
+            } elseif ($statement instanceof Node\Stmt\TraitUse) {
+                if ($kind === 'interface') {
+                    return $this->unsupported($statement, 'interface member');
+                }
+                $traits[] = $this->lowerTraitUse($statement);
             } else {
                 return $this->unsupported($statement, 'class member');
             }
         }
 
         return [
+            'kind' => $kind,
             'name' => $name,
+            'parent' => $parent,
+            'interfaces' => array_map(
+                fn (Node\Name $interface): string => $this->resolvedName($interface),
+                $interfaces,
+            ),
+            'traits' => $traits,
             'properties' => $properties,
             'methods' => $methods,
             'location' => $this->location($class),
         ];
     }
 
-    private function lowerMethod(Node\Stmt\ClassMethod $method): array
+    private function lowerTraitUse(Node\Stmt\TraitUse $use): array
     {
-        $visibility = $this->lowerVisibility($method->flags);
+        $adaptations = [];
+        foreach ($use->adaptations as $adaptation) {
+            if ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Precedence) {
+                $adaptations[] = [
+                    'kind' => 'precedence',
+                    'trait' => $this->resolvedName($adaptation->trait),
+                    'method' => $adaptation->method->toString(),
+                    'instead_of' => array_map(
+                        fn (Node\Name $trait): string => $this->resolvedName($trait),
+                        $adaptation->insteadof,
+                    ),
+                    'location' => $this->location($adaptation),
+                ];
+            } elseif ($adaptation instanceof Node\Stmt\TraitUseAdaptation\Alias) {
+                $visibility = $adaptation->newModifier === null
+                    ? null
+                    : $this->lowerVisibility($adaptation->newModifier);
+                if ($adaptation->newModifier !== null && $visibility === null) {
+                    return $this->unsupported($adaptation, 'trait alias modifier');
+                }
+                $adaptations[] = [
+                    'kind' => 'alias',
+                    'trait' => $adaptation->trait === null
+                        ? null
+                        : $this->resolvedName($adaptation->trait),
+                    'method' => $adaptation->method->toString(),
+                    'alias' => $adaptation->newName?->toString(),
+                    'visibility' => $visibility,
+                    'location' => $this->location($adaptation),
+                ];
+            } else {
+                return $this->unsupported($adaptation, 'trait adaptation');
+            }
+        }
+
+        return [
+            'traits' => array_map(
+                fn (Node\Name $trait): string => $this->resolvedName($trait),
+                $use->traits,
+            ),
+            'adaptations' => $adaptations,
+            'location' => $this->location($use),
+        ];
+    }
+
+    private function lowerMethod(
+        Node\Stmt\ClassMethod $method,
+        bool $interfaceMethod,
+    ): array
+    {
+        $visibilityMask = Node\Stmt\Class_::MODIFIER_PUBLIC
+            | Node\Stmt\Class_::MODIFIER_PROTECTED
+            | Node\Stmt\Class_::MODIFIER_PRIVATE;
+        $allowedFlags = $visibilityMask
+            | ($interfaceMethod ? Node\Stmt\Class_::MODIFIER_ABSTRACT : 0);
+        $visibility = $this->lowerVisibility($method->flags & $visibilityMask);
         if (
             $method->byRef
             || $method->returnType !== null
             || $method->attrGroups !== []
-            || $method->stmts === null
+            || ($interfaceMethod !== ($method->stmts === null))
+            || ($method->flags & ~$allowedFlags) !== 0
             || $visibility === null
         ) {
             return $this->unsupported($method, 'method declaration');
@@ -170,14 +259,16 @@ final class Lowerer
         return [
             'name' => $method->name->toString(),
             'parameters' => $parameters,
-            'body' => array_map(
-                fn (Node\Stmt $statement): array => $this->lowerStatement(
-                    $statement,
-                    true,
-                    0,
+            'body' => $method->stmts === null
+                ? null
+                : array_map(
+                    fn (Node\Stmt $statement): array => $this->lowerStatement(
+                        $statement,
+                        true,
+                        0,
+                    ),
+                    $method->stmts,
                 ),
-                $method->stmts,
-            ),
             'modifiers' => [$visibility],
             'location' => $this->location($method),
         ];
@@ -837,6 +928,38 @@ final class Lowerer
             return [
                 'kind' => 'method_call',
                 'object' => $this->lowerExpression($expression->var),
+                'method' => $expression->name->toString(),
+                'arguments' => array_map(
+                    fn (Node\Arg $argument): array => $this->lowerExpression(
+                        $argument->value,
+                    ),
+                    $expression->args,
+                ),
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\StaticCall) {
+            if (
+                !($expression->class instanceof Node\Name)
+                || strtolower($expression->class->toString()) !== 'parent'
+                || !($expression->name instanceof Node\Identifier)
+            ) {
+                return $this->unsupported($expression, 'static method call');
+            }
+            foreach ($expression->args as $argument) {
+                if (
+                    !($argument instanceof Node\Arg)
+                    || $argument->byRef
+                    || $argument->unpack
+                    || $argument->name !== null
+                ) {
+                    return $this->unsupported($argument, 'method argument');
+                }
+            }
+
+            return [
+                'kind' => 'parent_method_call',
                 'method' => $expression->name->toString(),
                 'arguments' => array_map(
                     fn (Node\Arg $argument): array => $this->lowerExpression(

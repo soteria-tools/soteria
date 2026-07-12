@@ -327,9 +327,29 @@ let unary operator value =
 module Function_map = Map.Make (String)
 module Class_map = Map.Make (String)
 
+type method_member = {
+  declaring_class : string;
+  declaration : Php_ir.method_decl;
+}
+
+type property_member = {
+  declaring_class : string;
+  declaration : Php_ir.property_decl;
+}
+
+type class_info = {
+  kind : Php_ir.declaration_kind;
+  name : string;
+  parent : string option;
+  interfaces : string list;
+  properties : property_member list;
+  methods : method_member list;
+  location : Php_ir.location;
+}
+
 type declarations = {
   functions : Php_ir.function_decl Function_map.t;
-  classes : Php_ir.class_decl Class_map.t;
+  classes : class_info Class_map.t;
 }
 
 type thrown = { value : Value.t; trace : Error.Trace.t }
@@ -389,13 +409,29 @@ let find_throwable_class name =
     (fun class_ -> String.equal (String.lowercase_ascii class_.name) name)
     throwable_classes
 
-let rec class_is_a actual expected =
+let rec builtin_class_is_a actual expected =
   let expected = Builtins.canonical_name expected in
   if String.equal (String.lowercase_ascii actual) expected then true
   else
     match find_throwable_class actual with
-    | Some { parent = Some parent; _ } -> class_is_a parent expected
+    | Some { parent = Some parent; _ } -> builtin_class_is_a parent expected
     | Some { parent = None; _ } | None -> false
+
+let rec class_is_a declarations actual expected =
+  let expected = Builtins.canonical_name expected in
+  if String.equal (String.lowercase_ascii actual) expected then true
+  else
+    match
+      Class_map.find_opt (Builtins.canonical_name actual) declarations.classes
+    with
+    | Some class_ ->
+        List.exists
+          (fun name -> class_is_a declarations name expected)
+          class_.interfaces
+        || Option.fold ~none:false
+             ~some:(fun parent -> class_is_a declarations parent expected)
+             class_.parent
+    | None -> builtin_class_is_a actual expected
 
 let evaluated value state = Phpsymex.Result.ok (Evaluated value, state)
 
@@ -408,29 +444,36 @@ let bind_evaluation evaluation continuation =
 
 let ( let*** ) = bind_evaluation
 
+let throwable_message name arguments =
+  let open Phpsymex.Syntax in
+  match arguments with
+  | [] -> Phpsymex.Result.ok ""
+  | [ value ] ->
+      let** value = coerce Coercion.String value in
+      Phpsymex.Result.ok (string_value value)
+  | _ -> unsupported "%s::__construct() arguments beyond the message" name
+
 let construct_throwable state name arguments =
   match find_throwable_class name with
   | Some { constructible = true; name; _ } ->
       let open Phpsymex.Syntax in
-      let** message =
-        match arguments with
-        | [] -> Phpsymex.Result.ok ""
-        | [ value ] ->
-            let** value = coerce Coercion.String value in
-            Phpsymex.Result.ok (string_value value)
-        | _ -> unsupported "%s::__construct() arguments beyond the message" name
-      in
+      let** message = throwable_message name arguments in
       let id, state = State.allocate_object name message state in
       evaluated (Value.object_ id) state
   | Some { constructible = false; _ } -> unsupported "construction of Throwable"
   | None -> failwith "non-throwable class passed to throwable construction"
 
-let raise_value value state =
+let raise_value ?declarations value state =
   let value, state =
     match value with
     | Value.Object id -> (
         match State.find_object id state with
-        | Some object_ when class_is_a object_.class_name "Throwable" ->
+        | Some object_
+          when Option.fold
+                 ~none:(builtin_class_is_a object_.class_name "Throwable")
+                 ~some:(fun declarations ->
+                   class_is_a declarations object_.class_name "Throwable")
+                 declarations ->
             (value, state)
         | Some _ ->
             let id, state =
@@ -750,33 +793,109 @@ let bind_parameters (parameters : Php_ir.parameter list) arguments =
   in
   bind [] parameters arguments
 
-let find_method (class_ : Php_ir.class_decl) name =
+let find_local_method (class_ : class_info) name =
   let canonical_name = Builtins.canonical_name name in
   List.find_opt
-    (fun (method_ : Php_ir.method_decl) ->
-      String.equal (Builtins.canonical_name method_.name) canonical_name)
+    (fun (method_ : method_member) ->
+      String.equal
+        (Builtins.canonical_name method_.declaration.Php_ir.name)
+        canonical_name)
     class_.methods
 
-let find_property (class_ : Php_ir.class_decl) name =
+let rec find_method_from declarations class_ name =
+  match find_local_method class_ name with
+  | Some method_ -> Some method_
+  | None ->
+      Option.bind class_.parent (fun parent ->
+          Option.bind
+            (Class_map.find_opt
+               (Builtins.canonical_name parent)
+               declarations.classes)
+            (fun parent -> find_method_from declarations parent name))
+
+let find_method declarations state class_ name =
+  let contextual_private =
+    Option.bind (State.current_class_context state) (fun context ->
+        match
+          Option.bind
+            (Class_map.find_opt
+               (Builtins.canonical_name context)
+               declarations.classes)
+            (fun context -> find_local_method context name)
+        with
+        | Some method_ when method_.declaration.modifiers = [ Php_ir.Private ]
+          ->
+            Some method_
+        | Some _ | None -> None)
+  in
+  match contextual_private with
+  | Some method_ -> Some method_
+  | None -> find_method_from declarations class_ name
+
+let rec find_builtin_parent declarations (class_ : class_info) =
+  Option.bind class_.parent (fun parent ->
+      match
+        Class_map.find_opt (Builtins.canonical_name parent) declarations.classes
+      with
+      | Some parent -> find_builtin_parent declarations parent
+      | None -> find_throwable_class parent)
+
+let find_local_property (class_ : class_info) name =
   List.find_opt
-    (fun (property : Php_ir.property_decl) -> String.equal property.name name)
+    (fun (property : property_member) ->
+      String.equal property.declaration.Php_ir.name name)
     class_.properties
 
-let member_accessible state declaring_class = function
+let rec find_property_from declarations class_ name =
+  match find_local_property class_ name with
+  | Some property -> Some property
+  | None ->
+      Option.bind class_.parent (fun parent ->
+          Option.bind
+            (Class_map.find_opt
+               (Builtins.canonical_name parent)
+               declarations.classes)
+            (fun parent -> find_property_from declarations parent name))
+
+let find_property declarations state class_ name =
+  let contextual_private =
+    Option.bind (State.current_class_context state) (fun context ->
+        match
+          Option.bind
+            (Class_map.find_opt
+               (Builtins.canonical_name context)
+               declarations.classes)
+            (fun context -> find_local_property context name)
+        with
+        | Some property_
+          when property_.declaration.modifiers = [ Php_ir.Private ] ->
+            Some property_
+        | Some _ | None -> None)
+  in
+  match contextual_private with
+  | Some property -> Some property
+  | None -> find_property_from declarations class_ name
+
+let member_accessible declarations state declaring_class = function
   | [ Php_ir.Public ] -> true
-  | [ (Protected | Private) ] -> (
+  | [ Private ] -> (
       match State.current_class_context state with
       | Some current_class ->
           String.equal
             (Builtins.canonical_name current_class)
             (Builtins.canonical_name declaring_class)
       | None -> false)
+  | [ Protected ] -> (
+      match State.current_class_context state with
+      | Some current_class ->
+          class_is_a declarations current_class declaring_class
+          || class_is_a declarations declaring_class current_class
+      | None -> false)
   | _ -> failwith "PHP member has invalid visibility modifiers"
 
-let inaccessible_method_error state (class_ : Php_ir.class_decl)
-    (method_ : Php_ir.method_decl) =
+let inaccessible_method_error state (method_ : method_member) =
   let visibility =
-    match method_.modifiers with
+    match method_.declaration.modifiers with
     | [ Private ] -> "private"
     | [ Protected ] -> "protected"
     | [ Public ] -> failwith "public PHP method reported as inaccessible"
@@ -788,19 +907,24 @@ let inaccessible_method_error state (class_ : Php_ir.class_decl)
     | None -> "global scope"
   in
   let member =
-    if String.equal (Builtins.canonical_name method_.name) "__construct" then
-      Printf.sprintf "%s::%s()" class_.name method_.name
-    else Printf.sprintf "method %s::%s()" class_.name method_.name
+    if
+      String.equal
+        (Builtins.canonical_name method_.declaration.name)
+        "__construct"
+    then
+      Printf.sprintf "%s::%s()" method_.declaring_class method_.declaration.name
+    else
+      Printf.sprintf "method %s::%s()" method_.declaring_class
+        method_.declaration.name
   in
   {
     Error.class_name = "Error";
     message = Printf.sprintf "Call to %s %s from %s" visibility member scope;
   }
 
-let inaccessible_property_error (class_ : Php_ir.class_decl)
-    (property : Php_ir.property_decl) =
+let inaccessible_property_error (property : property_member) =
   let visibility =
-    match property.modifiers with
+    match property.declaration.modifiers with
     | [ Private ] -> "private"
     | [ Protected ] -> "protected"
     | [ Public ] -> failwith "public PHP property reported as inaccessible"
@@ -809,8 +933,8 @@ let inaccessible_property_error (class_ : Php_ir.class_decl)
   {
     Error.class_name = "Error";
     message =
-      Printf.sprintf "Cannot access %s property %s::$%s" visibility class_.name
-        property.name;
+      Printf.sprintf "Cannot access %s property %s::$%s" visibility
+        property.declaring_class property.declaration.name;
   }
 
 let finish_evaluation evaluation continuation =
@@ -863,40 +987,79 @@ and eval_array_items functions state array items =
       in
       Phpsymex.with_location ~location:item.location process
 
-and eval_property_defaults declarations state declaring_class properties =
+and eval_property_defaults declarations state properties =
   match properties with
   | [] -> evaluated [] state
-  | (property : Php_ir.property_decl) :: properties ->
+  | (property : property_member) :: properties ->
       let open Phpsymex.Syntax in
       let*** value, state =
-        match property.default with
+        match property.declaration.default with
         | None -> evaluated Value.null state
         | Some expression -> eval_expression declarations state expression
       in
       let*** values, state =
-        eval_property_defaults declarations state declaring_class properties
+        eval_property_defaults declarations state properties
       in
-      let property = State.declared_property ~declaring_class property.name in
-      evaluated ((property, value) :: values) state
+      let property_key =
+        State.declared_property ~declaring_class:property.declaring_class
+          property.declaration.name
+      in
+      evaluated ((property_key, value) :: values) state
+
+and property_layout (declarations : declarations) (class_ : class_info) =
+  let inherited =
+    Option.bind class_.parent (fun parent ->
+        Option.map
+          (property_layout declarations)
+          (Class_map.find_opt
+             (Builtins.canonical_name parent)
+             declarations.classes))
+    |> Option.value ~default:[]
+  in
+  List.fold_left
+    (fun layout (property : property_member) ->
+      match property.declaration.modifiers with
+      | [ Php_ir.Private ] -> layout @ [ property ]
+      | [ (Public | Protected) ] ->
+          List.filter
+            (fun (inherited : property_member) ->
+              not
+                (String.equal inherited.declaration.name
+                   property.declaration.name
+                && inherited.declaration.modifiers <> [ Php_ir.Private ]))
+            layout
+          @ [ property ]
+      | _ -> failwith "PHP property has invalid visibility modifiers")
+    inherited class_.properties
 
 and construct_object declarations state location name arguments =
   let canonical_name = Builtins.canonical_name name in
   match Class_map.find_opt canonical_name declarations.classes with
   | None -> unsupported "object construction for class %s" name
-  | Some (class_ : Php_ir.class_decl) -> (
+  | Some class_ when class_.kind <> Php_ir.Class ->
+      unsupported "construction of %s %s"
+        (match class_.kind with
+        | Interface -> "interface"
+        | Trait -> "trait"
+        | Class -> assert false)
+        class_.name
+  | Some class_ -> (
       let open Phpsymex.Syntax in
       let*** properties, state =
-        eval_property_defaults declarations state class_.name class_.properties
+        eval_property_defaults declarations state
+          (property_layout declarations class_)
       in
       let id, state = State.allocate_object ~properties class_.name "" state in
       let object_ = Value.object_ id in
-      match find_method class_ "__construct" with
+      match find_method_from declarations class_ "__construct" with
+      | None when class_is_a declarations class_.name "Throwable" ->
+          let** message = throwable_message class_.name arguments in
+          evaluated object_ (State.set_object_message id message state)
       | None -> evaluated object_ state
       | Some constructor -> (
           let open Phpsymex.Syntax in
           let** result, state =
-            call_method declarations state location id class_ constructor
-              arguments
+            call_method declarations state location id constructor arguments
           in
           match result with
           | Evaluated _ -> evaluated object_ state
@@ -1004,18 +1167,21 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
                 functions.classes
             in
             let property =
-              Option.bind class_ (fun class_ -> find_property class_ name)
+              Option.bind class_ (fun class_ ->
+                  find_property functions state class_ name)
             in
             match (class_, property) with
-            | Some class_, Some property
-              when not (member_accessible state class_.name property.modifiers)
-              -> (
-                let error = inaccessible_property_error class_ property in
+            | Some _, Some property
+              when not
+                     (member_accessible functions state property.declaring_class
+                        property.declaration.modifiers) -> (
+                let error = inaccessible_property_error property in
                 match access with
                 | Write ->
                     let property_key =
-                      State.declared_property ~declaring_class:class_.name
-                        property.name
+                      State.declared_property
+                        ~declaring_class:property.declaring_class
+                        property.declaration.name
                     in
                     let property = Object_property (object_id, property_key) in
                     evaluated (Inaccessible_property (property, error)) state
@@ -1023,9 +1189,10 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
             | _ -> (
                 let property_key =
                   match (class_, property) with
-                  | Some class_, Some property ->
-                      State.declared_property ~declaring_class:class_.name
-                        property.name
+                  | Some _, Some property ->
+                      State.declared_property
+                        ~declaring_class:property.declaring_class
+                        property.declaration.name
                   | _ -> State.dynamic_property name
                 in
                 let place = Object_property (object_id, property_key) in
@@ -1196,7 +1363,8 @@ and eval_expression functions state expression =
                 functions.classes
             in
             match
-              Option.bind class_ (fun class_ -> find_method class_ name)
+              Option.bind class_ (fun class_ ->
+                  find_method functions state class_ name)
             with
             | None ->
                 raise_runtime_error state
@@ -1207,16 +1375,18 @@ and eval_expression functions state expression =
                         object_state.class_name name;
                   }
             | Some method_ ->
-                let class_ = Option.get class_ in
-                if member_accessible state class_.name method_.modifiers then
+                if
+                  member_accessible functions state method_.declaring_class
+                    method_.declaration.modifiers
+                then
                   let*** arguments, state =
                     eval_expressions functions state arguments
                   in
                   call_method functions state expression.location object_id
-                    class_ method_ arguments
+                    method_ arguments
                 else
                   raise_runtime_error state
-                    (inaccessible_method_error state class_ method_))
+                    (inaccessible_method_error state method_))
         | value ->
             raise_runtime_error state
               {
@@ -1225,6 +1395,85 @@ and eval_expression functions state expression =
                   Printf.sprintf "Call to a member function %s() on %s" name
                     (Value.type_name value);
               })
+    | Parent_method_call (name, arguments) -> (
+        match
+          (State.current_class_context state, State.find_variable "this" state)
+        with
+        | Some current_class, Some (Value.Object object_id) -> (
+            match
+              Class_map.find_opt
+                (Builtins.canonical_name current_class)
+                functions.classes
+            with
+            | Some { parent = Some parent; _ } -> (
+                match
+                  Class_map.find_opt
+                    (Builtins.canonical_name parent)
+                    functions.classes
+                with
+                | Some parent -> (
+                    match find_method_from functions parent name with
+                    | Some method_ ->
+                        if
+                          member_accessible functions state
+                            method_.declaring_class
+                            method_.declaration.modifiers
+                        then
+                          let*** arguments, state =
+                            eval_expressions functions state arguments
+                          in
+                          call_method functions state expression.location
+                            object_id method_ arguments
+                        else
+                          raise_runtime_error state
+                            (inaccessible_method_error state method_)
+                    | None -> (
+                        match find_builtin_parent functions parent with
+                        | Some { constructible = true; name = builtin; _ }
+                          when String.equal
+                                 (Builtins.canonical_name name)
+                                 "__construct" ->
+                            let*** arguments, state =
+                              eval_expressions functions state arguments
+                            in
+                            let** message =
+                              throwable_message builtin arguments
+                            in
+                            evaluated Value.null
+                              (State.set_object_message object_id message state)
+                        | Some _ | None ->
+                            raise_runtime_error state
+                              {
+                                Error.class_name = "Error";
+                                message =
+                                  Printf.sprintf
+                                    "Call to undefined method %s::%s()"
+                                    parent.name name;
+                              }))
+                | None -> (
+                    match find_throwable_class parent with
+                    | Some { constructible = true; _ }
+                      when String.equal
+                             (Builtins.canonical_name name)
+                             "__construct" ->
+                        let*** arguments, state =
+                          eval_expressions functions state arguments
+                        in
+                        let** message = throwable_message parent arguments in
+                        evaluated Value.null
+                          (State.set_object_message object_id message state)
+                    | Some _ | None ->
+                        unsupported "parent method call into built-in class %s"
+                          parent))
+            | Some { parent = None; _ } | None ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message =
+                      "Cannot access parent when current class scope has no \
+                       parent";
+                  })
+        | _ -> unsupported "parent method call outside an instance method")
     | New (name, arguments) -> (
         match find_throwable_class name with
         | Some _ ->
@@ -1239,14 +1488,22 @@ and eval_expression functions state expression =
                 functions.classes
             with
             | None -> unsupported "object construction for class %s" name
+            | Some class_ when class_.kind <> Php_ir.Class ->
+                unsupported "construction of %s %s"
+                  (match class_.kind with
+                  | Interface -> "interface"
+                  | Trait -> "trait"
+                  | Class -> assert false)
+                  class_.name
             | Some class_ -> (
-                match find_method class_ "__construct" with
+                match find_method_from functions class_ "__construct" with
                 | Some constructor
                   when not
-                         (member_accessible state class_.name
-                            constructor.modifiers) ->
+                         (member_accessible functions state
+                            constructor.declaring_class
+                            constructor.declaration.modifiers) ->
                     raise_runtime_error state
-                      (inaccessible_method_error state class_ constructor)
+                      (inaccessible_method_error state constructor)
                 | Some _ | None ->
                     let*** arguments, state =
                       eval_expressions functions state arguments
@@ -1255,7 +1512,7 @@ and eval_expression functions state expression =
                       arguments)))
     | Throw expression ->
         let*** value, state = eval_expression functions state expression in
-        raise_value value state
+        raise_value ~declarations:functions value state
   in
   Phpsymex.with_location ~location:expression.location process
 
@@ -1296,9 +1553,10 @@ and call_function functions state location name arguments =
           ~message:("Call to " ^ function_.name)
           process
 
-and call_method declarations state location object_id
-    (class_ : Php_ir.class_decl) (method_ : Php_ir.method_decl) arguments =
-  let expected = List.length method_.parameters in
+and call_method declarations state location object_id (method_ : method_member)
+    arguments =
+  let declaration = method_.declaration in
+  let expected = List.length declaration.parameters in
   let actual = List.length arguments in
   if actual < expected then
     raise_runtime_error state
@@ -1306,22 +1564,23 @@ and call_method declarations state location object_id
         Error.class_name = "ArgumentCountError";
         message =
           Printf.sprintf "%s::%s() expects exactly %d argument%s, %d given"
-            class_.name method_.name expected
+            method_.declaring_class declaration.name expected
             (if expected = 1 then "" else "s")
             actual;
       }
   else
     let bindings =
-      bind_parameters method_.parameters arguments
+      bind_parameters declaration.parameters arguments
       @ [ ("this", Value.object_ object_id) ]
     in
     let local_state =
-      State.enter_scope ~class_context:(Some class_.name) bindings state
+      State.enter_scope ~class_context:(Some method_.declaring_class) bindings
+        state
     in
     let process =
       let open Phpsymex.Syntax in
       let** control, local_state =
-        exec_statements declarations local_state method_.body
+        exec_statements declarations local_state (Option.get declaration.body)
       in
       let state = State.leave_scope local_state in
       match control with
@@ -1331,7 +1590,9 @@ and call_method declarations state location object_id
       | Break _ | Continue _ -> failwith "loop control escaped a PHP method"
     in
     Phpsymex.with_call ~location
-      ~message:(Printf.sprintf "Call to %s::%s" class_.name method_.name)
+      ~message:
+        (Printf.sprintf "Call to %s::%s" method_.declaring_class
+           declaration.name)
       process
 
 and emit_expressions functions state expressions =
@@ -1618,7 +1879,7 @@ and exec_catches functions state thrown catches =
             | None -> failwith "thrown PHP object is missing from state")
         | _ -> failwith "non-object escaped as a PHP exception"
       in
-      if List.exists (class_is_a object_.class_name) catch.types then
+      if List.exists (class_is_a functions object_.class_name) catch.types then
         let state =
           match catch.variable with
           | None -> state
@@ -1693,20 +1954,486 @@ let collect_functions declarations =
   in
   collect Function_map.empty declarations
 
-let collect_classes declarations =
-  let rec collect classes = function
-    | [] -> Phpsymex.Result.ok classes
-    | (class_ : Php_ir.class_decl) :: declarations ->
-        let name = Builtins.canonical_name class_.Php_ir.name in
+type class_error = Php_ir.location * string
+type imported_method = { source_trait : string; member : method_member }
+
+let class_error location format =
+  Format.kasprintf (fun message -> Error (location, message)) format
+
+let ( let* ) result continuation =
+  match result with Ok value -> continuation value | Error _ as error -> error
+
+let method_name (method_ : method_member) =
+  Builtins.canonical_name method_.declaration.Php_ir.name
+
+let visibility_rank = function
+  | [ Php_ir.Private ] -> 0
+  | [ Protected ] -> 1
+  | [ Public ] -> 2
+  | _ -> failwith "PHP member has invalid visibility modifiers"
+
+let replace_method ?name ?visibility declaring_class (method_ : imported_method)
+    : method_member =
+  let declaration =
+    {
+      method_.member.declaration with
+      name = Option.value name ~default:method_.member.declaration.name;
+      modifiers =
+        Option.fold ~none:method_.member.declaration.modifiers
+          ~some:(fun visibility -> [ visibility ])
+          visibility;
+    }
+  in
+  ({ declaring_class; declaration } : method_member)
+
+let has_duplicate_names names =
+  let rec duplicate seen = function
+    | [] -> false
+    | name :: names ->
+        let name = Builtins.canonical_name name in
+        List.mem name seen || duplicate (name :: seen) names
+  in
+  duplicate [] names
+
+let compose_trait_methods resolve declaration =
+  let trait_names =
+    List.concat_map
+      (fun (use : Php_ir.trait_use) -> use.traits)
+      declaration.Php_ir.traits
+  in
+  if has_duplicate_names trait_names then
+    class_error declaration.location "duplicate trait use"
+  else
+    let own_names =
+      List.map
+        (fun (method_ : Php_ir.method_decl) ->
+          Builtins.canonical_name method_.name)
+        declaration.Php_ir.methods
+    in
+    let rec collect_uses accumulated_methods accumulated_properties = function
+      | [] -> Ok (accumulated_methods, accumulated_properties)
+      | (use : Php_ir.trait_use) :: uses ->
+          let rec collect_traits imported properties = function
+            | [] -> Ok (imported, properties)
+            | trait_name :: traits -> (
+                match resolve trait_name with
+                | Error _ as error -> error
+                | Ok trait_ when trait_.kind <> Php_ir.Trait ->
+                    class_error use.location "%s is not a trait" trait_name
+                | Ok trait_ ->
+                    let methods =
+                      List.map
+                        (fun member -> { source_trait = trait_.name; member })
+                        trait_.methods
+                    in
+                    collect_traits (imported @ methods)
+                      (properties @ trait_.properties)
+                      traits)
+          in
+          let open Stdlib.Result in
+          let* imported, imported_properties =
+            collect_traits [] [] use.traits
+          in
+          let original = imported in
+          let rec precedences imported = function
+            | [] -> Ok imported
+            | Php_ir.Trait_alias _ :: adaptations ->
+                precedences imported adaptations
+            | Trait_precedence
+                { trait; method_name = name; instead_of; location }
+              :: adaptations ->
+                let trait = Builtins.canonical_name trait in
+                let name = Builtins.canonical_name name in
+                let instead_of = List.map Builtins.canonical_name instead_of in
+                if List.mem trait instead_of || has_duplicate_names instead_of
+                then class_error location "invalid insteadof trait list"
+                else if
+                  not
+                    (List.exists
+                       (fun imported ->
+                         String.equal
+                           (Builtins.canonical_name imported.source_trait)
+                           trait
+                         && String.equal (method_name imported.member) name)
+                       original)
+                then
+                  class_error location
+                    "trait method selected by insteadof was not found"
+                else if
+                  List.exists
+                    (fun excluded ->
+                      not
+                        (List.exists
+                           (fun imported ->
+                             String.equal
+                               (Builtins.canonical_name imported.source_trait)
+                               excluded
+                             && String.equal (method_name imported.member) name)
+                           original))
+                    instead_of
+                then
+                  class_error location
+                    "trait method excluded by insteadof was not found"
+                else
+                  let imported =
+                    List.filter
+                      (fun imported ->
+                        not
+                          (String.equal (method_name imported.member) name
+                          && List.mem
+                               (Builtins.canonical_name imported.source_trait)
+                               instead_of))
+                      imported
+                  in
+                  precedences imported adaptations
+          in
+          let* selected = precedences imported use.adaptations in
+          let rec aliases selected additions = function
+            | [] -> Ok (selected, additions)
+            | Php_ir.Trait_precedence _ :: adaptations ->
+                aliases selected additions adaptations
+            | Trait_alias
+                { trait; method_name = name; alias; visibility; location }
+              :: adaptations -> (
+                let name = Builtins.canonical_name name in
+                let candidates =
+                  List.filter
+                    (fun imported ->
+                      String.equal (method_name imported.member) name
+                      && Option.fold ~none:true
+                           ~some:(fun trait ->
+                             String.equal
+                               (Builtins.canonical_name imported.source_trait)
+                               (Builtins.canonical_name trait))
+                           trait)
+                    original
+                in
+                match candidates with
+                | [ candidate ] ->
+                    let selected, additions =
+                      match alias with
+                      | Some alias ->
+                          ( selected,
+                            replace_method ~name:alias ?visibility
+                              declaration.name candidate
+                            :: additions )
+                      | None ->
+                          let selected =
+                            List.map
+                              (fun imported ->
+                                if
+                                  String.equal
+                                    (Builtins.canonical_name
+                                       imported.source_trait)
+                                    (Builtins.canonical_name
+                                       candidate.source_trait)
+                                  && String.equal
+                                       (method_name imported.member)
+                                       name
+                                then
+                                  {
+                                    imported with
+                                    member =
+                                      replace_method ?visibility
+                                        declaration.name imported;
+                                  }
+                                else imported)
+                              selected
+                          in
+                          (selected, additions)
+                    in
+                    aliases selected additions adaptations
+                | [] ->
+                    class_error location
+                      "trait method selected by alias was not found"
+                | _ ->
+                    class_error location
+                      "trait alias is ambiguous without an explicit trait name")
+          in
+          let* selected, aliases = aliases selected [] use.adaptations in
+          let selected =
+            List.filter
+              (fun imported ->
+                not (List.mem (method_name imported.member) own_names))
+              selected
+          in
+          let rec reject_conflicts seen = function
+            | [] -> Ok ()
+            | imported :: methods ->
+                let name = method_name imported.member in
+                if List.mem name seen then
+                  class_error use.location "trait method conflict for %s" name
+                else reject_conflicts (name :: seen) methods
+          in
+          let* () = reject_conflicts [] selected in
+          let methods =
+            List.map (replace_method declaration.name) selected @ aliases
+          in
+          collect_uses
+            (accumulated_methods @ methods)
+            (accumulated_properties @ imported_properties)
+            uses
+    in
+    let open Stdlib.Result in
+    let* methods, properties = collect_uses [] [] declaration.traits in
+    let methods =
+      List.filter
+        (fun method_ -> not (List.mem (method_name method_) own_names))
+        methods
+    in
+    let rec reject_method_conflicts seen = function
+      | [] -> Ok ()
+      | (method_ : method_member) :: methods ->
+          let name = method_name method_ in
+          if List.mem name seen then
+            class_error declaration.location "trait method conflict for %s" name
+          else reject_method_conflicts (name :: seen) methods
+    in
+    let* () = reject_method_conflicts [] methods in
+    let own_methods =
+      List.map
+        (fun (method_ : Php_ir.method_decl) ->
+          ({ declaring_class = declaration.name; declaration = method_ }
+            : method_member))
+        declaration.methods
+    in
+    let own_properties =
+      List.map
+        (fun (property : Php_ir.property_decl) ->
+          ({ declaring_class = declaration.name; declaration = property }
+            : property_member))
+        declaration.properties
+    in
+    let properties =
+      List.map
+        (fun (property : property_member) ->
+          { property with declaring_class = declaration.name })
+        properties
+    in
+    let rec reject_property_conflicts seen = function
+      | [] -> Ok ()
+      | (property : property_member) :: properties ->
+          if List.mem property.declaration.Php_ir.name seen then
+            class_error declaration.location "trait property conflict for %s"
+              property.declaration.name
+          else
+            reject_property_conflicts
+              (property.declaration.name :: seen)
+              properties
+    in
+    let properties = own_properties @ properties in
+    let* () = reject_property_conflicts [] properties in
+    Ok (own_methods @ methods, properties)
+
+let build_classes declarations =
+  let rec collect_raw classes = function
+    | [] -> Ok classes
+    | (declaration : Php_ir.class_decl) :: rest ->
+        let name = Builtins.canonical_name declaration.name in
         if
           Class_map.mem name classes
           || Option.is_some (find_throwable_class name)
         then
-          Phpsymex.with_location ~location:class_.location
-            (unsupported "duplicate class %s" class_.name)
-        else collect (Class_map.add name class_ classes) declarations
+          class_error declaration.location "duplicate declaration %s"
+            declaration.name
+        else collect_raw (Class_map.add name declaration classes) rest
   in
-  collect Class_map.empty declarations
+  let open Stdlib.Result in
+  let* raw = collect_raw Class_map.empty declarations in
+  let rec resolve stack name =
+    let canonical_name = Builtins.canonical_name name in
+    if List.mem canonical_name stack then
+      match Class_map.find_opt canonical_name raw with
+      | Some declaration ->
+          class_error declaration.location "cyclic declaration involving %s"
+            declaration.name
+      | None -> assert false
+    else
+      match Class_map.find_opt canonical_name raw with
+      | None ->
+          class_error
+            (match declarations with
+            | declaration :: _ -> declaration.Php_ir.location
+            | [] -> failwith "missing declaration without a source location")
+            "unknown declaration %s" name
+      | Some declaration ->
+          let resolve = resolve (canonical_name :: stack) in
+          let* () =
+            match declaration.parent with
+            | None -> Ok ()
+            | Some parent -> (
+                match find_throwable_class parent with
+                | Some { constructible = true; _ }
+                  when declaration.kind = Php_ir.Class ->
+                    Ok ()
+                | Some _ ->
+                    class_error declaration.location "%s cannot be extended"
+                      parent
+                | None ->
+                    let* parent = resolve parent in
+                    if parent.kind = Php_ir.Class && declaration.kind = Class
+                    then Ok ()
+                    else
+                      class_error declaration.location "%s is not a class"
+                        parent.name)
+          in
+          let expected_interface = declaration.kind <> Php_ir.Trait in
+          let rec validate_interfaces = function
+            | [] -> Ok ()
+            | interface :: interfaces ->
+                let* interface_ = resolve interface in
+                if expected_interface && interface_.kind = Php_ir.Interface then
+                  validate_interfaces interfaces
+                else
+                  class_error declaration.location "%s is not an interface"
+                    interface
+          in
+          let* () =
+            if has_duplicate_names declaration.interfaces then
+              class_error declaration.location "duplicate interface reference"
+            else validate_interfaces declaration.interfaces
+          in
+          let* methods, properties =
+            compose_trait_methods resolve declaration
+          in
+          Ok
+            {
+              kind = declaration.kind;
+              name = declaration.name;
+              parent = declaration.parent;
+              interfaces = declaration.interfaces;
+              properties;
+              methods;
+              location = declaration.location;
+            }
+  in
+  let* classes =
+    Class_map.fold
+      (fun name _ result ->
+        let* classes = result in
+        let* class_ = resolve [] name in
+        Ok (Class_map.add name class_ classes))
+      raw (Ok Class_map.empty)
+  in
+  let rec interface_methods seen (class_ : class_info) =
+    let name = Builtins.canonical_name class_.name in
+    if List.mem name seen then []
+    else
+      class_.methods
+      @ List.concat_map
+          (fun parent ->
+            match
+              Class_map.find_opt (Builtins.canonical_name parent) classes
+            with
+            | Some parent -> interface_methods (name :: seen) parent
+            | None -> [])
+          class_.interfaces
+  in
+  let validate_class (class_ : class_info) =
+    match class_.kind with
+    | Php_ir.Interface | Trait -> Ok ()
+    | Class -> (
+        let requirements =
+          List.concat_map
+            (fun interface ->
+              match
+                Class_map.find_opt (Builtins.canonical_name interface) classes
+              with
+              | Some interface -> interface_methods [] interface
+              | None -> [])
+            class_.interfaces
+        in
+        let rec validate_requirements = function
+          | [] -> Ok ()
+          | (requirement : method_member) :: requirements -> (
+              match
+                find_method_from
+                  { functions = Function_map.empty; classes }
+                  class_ requirement.declaration.name
+              with
+              | Some implementation
+                when implementation.declaration.body <> None
+                     && implementation.declaration.modifiers = [ Php_ir.Public ]
+                     && List.length implementation.declaration.parameters
+                        = List.length requirement.declaration.parameters ->
+                  validate_requirements requirements
+              | Some _ | None ->
+                  class_error class_.location
+                    "%s does not implement interface method %s::%s" class_.name
+                    requirement.declaring_class requirement.declaration.name)
+        in
+        let* () = validate_requirements requirements in
+        match class_.parent with
+        | None -> Ok ()
+        | Some parent -> (
+            match
+              Class_map.find_opt (Builtins.canonical_name parent) classes
+            with
+            | None -> Ok ()
+            | Some parent ->
+                let rec validate_overrides = function
+                  | [] -> Ok ()
+                  | (method_ : method_member) :: methods -> (
+                      match
+                        find_method_from
+                          { functions = Function_map.empty; classes }
+                          parent method_.declaration.name
+                      with
+                      | Some inherited
+                        when inherited.declaration.modifiers
+                             <> [ Php_ir.Private ]
+                             && (not
+                                   (String.equal
+                                      (Builtins.canonical_name
+                                         method_.declaration.name)
+                                      "__construct"))
+                             && (visibility_rank method_.declaration.modifiers
+                                 < visibility_rank
+                                     inherited.declaration.modifiers
+                                || List.length method_.declaration.parameters
+                                   <> List.length
+                                        inherited.declaration.parameters) ->
+                          class_error method_.declaration.location
+                            "incompatible override of %s::%s"
+                            inherited.declaring_class inherited.declaration.name
+                      | Some _ | None -> validate_overrides methods)
+                in
+                let* () = validate_overrides class_.methods in
+                let rec validate_property_overrides = function
+                  | [] -> Ok ()
+                  | (property : property_member) :: properties -> (
+                      match
+                        find_property_from
+                          { functions = Function_map.empty; classes }
+                          parent property.declaration.name
+                      with
+                      | Some inherited
+                        when inherited.declaration.modifiers
+                             <> [ Php_ir.Private ]
+                             && visibility_rank property.declaration.modifiers
+                                < visibility_rank
+                                    inherited.declaration.modifiers ->
+                          class_error property.declaration.location
+                            "incompatible property override of %s::$%s"
+                            inherited.declaring_class inherited.declaration.name
+                      | Some _ | None -> validate_property_overrides properties)
+                in
+                validate_property_overrides class_.properties))
+  in
+  let* () =
+    Class_map.fold
+      (fun _ class_ result ->
+        let* () = result in
+        validate_class class_)
+      classes (Ok ())
+  in
+  Ok classes
+
+let collect_classes declarations =
+  match build_classes declarations with
+  | Ok classes -> Phpsymex.Result.ok classes
+  | Error (location, message) ->
+      Phpsymex.with_location ~location (unsupported "%s" message)
 
 let find_entry_point program name =
   let canonical_name = Builtins.canonical_name name in
