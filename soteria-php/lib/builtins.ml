@@ -88,6 +88,46 @@ let canonical_name name =
 
 let find name = List.assoc_opt (canonical_name name) implementations
 
+let runtime_error name args =
+  let name = canonical_name name in
+  let count function_name expected =
+    let actual = List.length args in
+    if actual = expected then None
+    else
+      Some
+        {
+          Error.class_name = "ArgumentCountError";
+          message =
+            Printf.sprintf "%s expects exactly %d argument%s, %d given"
+              function_name expected
+              (if expected = 1 then "" else "s")
+              actual;
+        }
+  in
+  match name with
+  | "soteria\\symbolic_bool" -> count "Soteria\\symbolic_bool()" 0
+  | "soteria\\symbolic_int" -> count "Soteria\\symbolic_int()" 0
+  | "soteria\\symbolic_float" -> count "Soteria\\symbolic_float()" 0
+  | "soteria\\expect_fail" -> count "Soteria\\expect_fail()" 0
+  | ("soteria\\assume" | "soteria\\assert") as name -> (
+      let function_name =
+        if String.equal name "soteria\\assume" then "Soteria\\assume()"
+        else "Soteria\\assert()"
+      in
+      match (count function_name 1, args) with
+      | Some error, _ -> Some error
+      | None, [ Value.Bool _ ] -> None
+      | None, [ value ] ->
+          Some
+            {
+              Error.class_name = "TypeError";
+              message =
+                Printf.sprintf "%s argument #1 must be of type bool, %s given"
+                  function_name (Value.type_name value);
+            }
+      | None, _ -> assert false)
+  | _ -> None
+
 let call name args =
   match find name with
   | Some implementation -> implementation ~args

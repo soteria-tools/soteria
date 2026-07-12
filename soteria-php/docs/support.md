@@ -16,13 +16,13 @@ The detailed cast and operand-kind tables are in
 | String literals | Partially supported | UTF-8 string values only. |
 | Variables, assignment, and references | Supported | Scopes map variables to immutable cells. Ordinary and reference assignment targets may be variables, nested array elements, or declared object properties. Reference assignment aliases these bindings through persistent cells. Dynamic variables and other lvalues remain unsupported. |
 | Array literals | Partially supported | Keyed and unkeyed items are evaluated in PHP order. Unpacking and items by reference remain unsupported. |
-| Array keys | Partially supported | Concrete null, boolean, integer, float, and string keys use PHP key normalization. Float-to-integer deprecation notices are not yet reported. Arrays are rejected as keys. |
-| Array reads, writes, and append | Partially supported | Nested array lvalues, null/undefined autovivification, insertion order, negative next-integer keys, and append exhaustion are modelled. Missing-offset warning/value behavior remains unsupported. |
+| Array keys | Partially supported | Concrete null, boolean, integer, float, and string keys use PHP key normalization. Lossy float-to-integer keys emit PHP's deprecation event. Arrays raise a catchable `TypeError`. |
+| Array reads, writes, and append | Partially supported | Nested array lvalues, null/undefined and false autovivification, insertion order, negative next-integer keys, append exhaustion, missing-offset warnings, and invalid-container behavior are modelled. String offsets remain unsupported. |
 | Symbolic array keys | Partially supported | Symbolic integer and boolean keys branch against existing integer keys. A feasible fresh-key read or write explicitly gives up because persistent symbolic-key insertion is not implemented. |
 | Array assignment and copying | Supported | Arrays are immutable values, so ordinary assignment copies the value while updates rebuild only the affected path. Array elements promoted to references retain their aliases in later copies; earlier copies remain independent. Mandatory branch-isolation tests cover ordinary and referenced cells. |
 | Boolean, integer, float, and string casts | Partially supported | All concrete scalar casts are supported. Array-to-boolean, integer, and float conversion is supported. Array-to-string conversion, conversions requiring a symbolic string, and symbolic float-to-integer conversions explicitly give up. |
-| Unary `!`, `+`, and `-` | Partially supported | Numeric unary operators support null, booleans, integers, floats, and well-formed concrete numeric strings. Integer-negation overflow promotes to float. Leading-numeric strings explicitly give up until warning events are modelled; invalid operand types give up until their `TypeError` is catchable. |
-| `+`, `-`, `*`, and `/` | Partially supported | Scalar weak numeric coercion, integer/float promotion, integer-overflow promotion, division's always-float result, and array union with `+` are supported. Leading-numeric strings and invalid operand types explicitly give up pending warning and catchable-error support. |
+| Unary `!`, `+`, and `-` | Partially supported | Numeric unary operators support null, booleans, integers, floats, and concrete numeric strings. Integer-negation overflow promotes to float. Leading-numeric strings emit a warning; invalid operand types raise a catchable `TypeError`. |
+| `+`, `-`, `*`, and `/` | Partially supported | Scalar weak numeric coercion, integer/float promotion, integer-overflow promotion, division's always-float result, and array union with `+` are supported. Leading-numeric strings emit a warning, invalid operand combinations raise `TypeError`, and division by zero raises `DivisionByZeroError`. |
 | `.` concatenation | Partially supported | Supported when both operands can be converted to concrete strings. |
 | `===` and `!==` | Supported | Supported for all current value kinds, including ordered recursive arrays, symbolic scalar payloads, and stable object identity. |
 | `==` and `!=` | Partially supported | Supported for every scalar pair, including boolean/null precedence, integer/float promotion, numeric strings, ordinary strings, and `NAN`. Array and object loose equality remain unsupported. |
@@ -33,11 +33,11 @@ The detailed cast and operand-kind tables are in
 | Function entry points | Partially supported | `exec --function NAME` selects a named function case-insensitively and skips top-level executable statements. Entry-point functions must currently have no parameters. |
 | Function-local variables | Supported | Calls use a fresh persistent local scope initialized with the parameters. Assignments do not modify or leak into the caller's scope. Output remains visible across calls. PHP `global` and static local variables remain unsupported. |
 | Expression statements, `echo`, `if`, `else`, `while`, `return`, `break`, `continue`, and `unset` | Supported | `return` is supported in function bodies. `break` and `continue` use positive static depths and may target enclosing `while` loops. `unset` removes variable, nested array-element, or declared object-property bindings without destroying aliased cells. `elseif` and other loop forms remain unsupported. |
-| `throw`, `try`, multi-catch, and `finally` | Partially supported | Explicit throws propagate through expressions and function calls. Catch order and the supported subset of the built-in PHP throwable hierarchy are modelled, catch variables retain stable object identity, and finally runs for every structured completion. Non-object and non-`Throwable` object throws become catchable `Error` objects. Existing interpreter errors such as division by zero are not yet catchable. |
+| `throw`, `try`, multi-catch, and `finally` | Partially supported | Explicit throws and modelled runtime errors propagate through expressions and function calls. Catch order and the supported subset of the built-in PHP throwable hierarchy are modelled, catch variables retain stable object identity, and finally runs for every structured completion. Non-object and non-`Throwable` object throws become catchable `Error` objects. |
 | Class declarations | Partially supported | Ordinary named classes containing only public, untyped, non-static properties are supported. Property defaults may use supported scalar literals, nested array literals, and numeric unary signs. Inheritance, interfaces, traits, methods, attributes, property hooks, typed properties, and other class or property modifiers remain unsupported. |
 | `new` | Partially supported | Statically named supported user classes and built-in throwable classes may be constructed. User classes currently have no constructors; arguments are evaluated and ignored as PHP does for a class without a constructor. Throwable constructors accept no arguments or one concrete or coercible message argument. Dynamic class names remain unsupported. |
-| Object identity and properties | Partially supported | Each construction creates a stable object handle and a persistent property store. Assignment copies the handle, so aliases share updates while separate objects remain independent. Declared property reads, writes, references, `unset`, nested array access, and branch isolation are supported. Property names must be static; dynamic and undeclared properties, methods, cloning, and serialization remain unsupported. |
-| Undefined variable, array-offset, and property reads | Unsupported | The execution path explicitly gives up. PHP warning and resulting-value semantics are not implemented yet. |
+| Object identity and properties | Partially supported | Each construction creates a stable object handle and a persistent property store. Assignment copies the handle, so aliases share updates while separate objects remain independent. Declared property reads, writes, references, `unset`, nested array access, and branch isolation are supported. Static-name dynamic-property writes emit PHP's deprecation event; dynamic property names, methods, cloning, and serialization remain unsupported. |
+| Undefined variable, array-offset, and property reads | Supported | PHP 8.4 warning events are retained with their source and call trace, and execution continues with `null`. Nested reads retain each warning in evaluation order. |
 
 Throwable construction and catch inheritance currently cover `Throwable`,
 `Exception`, `LogicException`, `InvalidArgumentException`, `DomainException`,
@@ -53,6 +53,12 @@ cannot be reported as successful verification. `--step-fuel`,
 `--branching-fuel`, and `--infinite-fuel` configure these limits; exhausting a
 finite limit produces an explicit incomplete result.
 
+Runtime events are stored persistently in each symbolic state, including their
+severity, source location, and call trace. `--runtime-events conservative` is
+the default: warnings and error events are reported as bugs, while notices and
+deprecations remain diagnostics. `--runtime-events report` retains every event
+as a non-failing diagnostic, and `--runtime-events ignore` suppresses them.
+
 The symbolic runtime recognizes these case-insensitive intrinsic functions:
 
 | Function | Status | Notes |
@@ -65,7 +71,10 @@ The symbolic runtime recognizes these case-insensitive intrinsic functions:
 | `Soteria\expect_fail()` | Supported | Marks the current entry point as expected to find a definite failure. Finding a failure succeeds, finding none fails, and incomplete exploration remains incomplete. |
 
 Builtin and user-function arity errors, failed assertions, division by zero,
-and uncaught explicit exceptions retain their source location and call trace.
+invalid operand and offset errors, and uncaught explicit exceptions retain
+their source location and call trace. PHP runtime errors first follow the
+ordinary `throw` path so matching `catch` and `finally` blocks execute; only an
+uncaught throwable becomes a final failure.
 Failures reached in a user function also identify the call site. Failing paths
 print deterministic PHP-level models for symbolic boolean, integer, and float
 inputs when Z3 supplies a model. Symbolic inputs are named `$input0`, `$input1`,

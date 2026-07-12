@@ -40,7 +40,7 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first eleven changes in the suggested pull request sequence have been
+The first twelve changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
@@ -580,9 +580,9 @@ verification success.
 ### M2: PHP core state semantics
 
 **Status:** Partial. Persistent arrays, general lvalues, references, exceptions,
-and mandatory branch-isolation tests are implemented. `foreach`, undefined
-variable and offset behavior, fresh symbolic array-key insertion, and converting
-interpreter failures such as division by zero into catchable PHP errors remain.
+undefined-read runtime events, catchable runtime errors, and mandatory
+branch-isolation tests are implemented. `foreach` and fresh symbolic array-key
+insertion remain.
 
 Deliverables:
 
@@ -664,7 +664,7 @@ Changes should remain small and independently reviewable.
 10. **Complete:** Scalar coercion and comparison completion.
 11. **Complete:** Counterexample models, `expect_fail`, and function entry
     points.
-12. Undefined reads, warnings, and catchable runtime errors.
+12. **Complete:** Undefined reads, warnings, and catchable runtime errors.
 13. `foreach` by value.
 14. `foreach` by reference and symbolic array-key insertion.
 15. Constructors, instance methods, and `$this`.

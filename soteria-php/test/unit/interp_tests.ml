@@ -213,14 +213,18 @@ let reports_division_by_zero_at_expression () =
   | [
    ( Compo_res.Error
        (Or_gave_up.E
-          ( Error.Division_by_zero,
+          ( Error.Uncaught_exception
+              {
+                class_name = "DivisionByZeroError";
+                message = "Division by zero";
+              },
             [ { Soteria.Terminal.Call_trace.loc = actual; _ } ] )),
      _ );
   ] ->
       Alcotest.(check string)
         "location" "test.php:1:1"
         (Format.asprintf "%a" Error.pp_location actual)
-  | _ -> Alcotest.fail "division by zero did not produce a located error"
+  | _ -> Alcotest.fail "division by zero did not produce a located throwable"
 
 let exhausts_loop_fuel () =
   let open Soteria.Symex.Fuel_gauge in
@@ -379,13 +383,16 @@ let reports_missing_function_arguments () =
   | [
    ( Compo_res.Error
        (Or_gave_up.E
-          ( Error.Invalid_argument_count
-              { function_name = "needs_two()"; expected = 2; actual = 1 },
+          ( Error.Uncaught_exception
+              {
+                class_name = "ArgumentCountError";
+                message = "needs_two() expects exactly 2 arguments, 1 given";
+              },
             _ )),
      _ );
   ] ->
       ()
-  | _ -> Alcotest.fail "missing function argument did not produce an error"
+  | _ -> Alcotest.fail "missing function argument did not produce a throwable"
 
 let supports_recursive_calls () =
   let count_down =
@@ -610,9 +617,21 @@ let reports_array_append_overflow () =
     ]
   in
   match run statements with
-  | [ (Compo_res.Error (Or_gave_up.E (Error.Array_append_overflow, _)), _) ] ->
+  | [
+   ( Compo_res.Error
+       (Or_gave_up.E
+          ( Error.Uncaught_exception
+              {
+                class_name = "Error";
+                message =
+                  "Cannot add element to the array as the next element is \
+                   already occupied";
+              },
+            _ )),
+     _ );
+  ] ->
       ()
-  | _ -> Alcotest.fail "append after PHP_INT_MAX did not produce an error"
+  | _ -> Alcotest.fail "append after PHP_INT_MAX did not produce a throwable"
 
 let reserves_append_keys_before_values () =
   let append = array_element (variable_lvalue "array") in
@@ -898,6 +917,239 @@ let propagates_nested_loop_control_through_finally () =
     "loop count" (Some 2L)
     (Option.bind (State.find_variable "count" state) Value.int_value)
 
+let models_undefined_reads_as_warnings_and_null () =
+  let missing_key =
+    array_element ~key:(literal (String "missing")) (variable_lvalue "array")
+  in
+  let property_target = object_property (variable_lvalue "object") "property" in
+  let missing_property = object_property (variable_lvalue "object") "missing" in
+  let statements =
+    [
+      expression_statement (assign "variable" (variable "undefined"));
+      expression_statement (assign "array" (array []));
+      expression_statement (assign "offset" (array_get missing_key));
+      expression_statement (assign "object" (new_ "Container" []));
+      Php_ir.Unset ([ property_target ], location);
+      expression_statement (assign "property" (property_get property_target));
+      expression_statement
+        (assign "missing_property" (property_get missing_property));
+    ]
+  in
+  let state =
+    run ~classes:[ class_ "Container" [ property "property" ] ] statements
+    |> expect_single_ok "undefined reads"
+  in
+  List.iter
+    (fun name ->
+      match State.find_variable name state with
+      | Some Value.Null -> ()
+      | _ -> Alcotest.failf "$%s did not receive null" name)
+    [ "variable"; "offset"; "property"; "missing_property" ];
+  let messages =
+    State.runtime_events state
+    |> List.map (fun event -> event.Error.Runtime_event.message)
+  in
+  Alcotest.(check (list string))
+    "warning messages"
+    [
+      "Undefined variable $undefined";
+      "Undefined array key \"missing\"";
+      "Undefined property: Container::$property";
+      "Undefined property: Container::$missing";
+    ]
+    messages;
+  let warn =
+    function_ "warn" [] [ expression_statement (variable "missing") ]
+  in
+  let state =
+    run ~functions:[ warn ] [ expression_statement (call "warn" []) ]
+    |> expect_single_ok "runtime event call trace"
+  in
+  match State.runtime_events state with
+  | [
+   {
+     Error.Runtime_event.trace = { location = Some _; call_trace = [ _ ]; _ };
+     _;
+   };
+  ] ->
+      ()
+  | _ -> Alcotest.fail "runtime event did not retain its source and call trace"
+
+let records_leading_numeric_warnings_persistently () =
+  let statements =
+    [
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.If
+        ( variable "condition",
+          [
+            expression_statement
+              (assign "value"
+                 (binary (literal (String "12x")) Add (literal (Int 1L))));
+          ],
+          [ expression_statement (assign "value" (literal (Int 0L))) ],
+          location );
+    ]
+  in
+  let paths =
+    run statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Some
+            ( Option.bind (State.find_variable "value" state) Value.int_value,
+              List.map
+                (fun event -> event.Error.Runtime_event.message)
+                (State.runtime_events state) )
+      | _ -> None)
+    |> List.sort Stdlib.compare
+  in
+  Alcotest.(check (list (pair (option int64) (list string))))
+    "branch-local warnings"
+    [ (Some 0L, []); (Some 13L, [ "A non-numeric value encountered" ]) ]
+    paths;
+  let state =
+    run
+      [
+        Php_ir.Try
+          ( [
+              expression_statement
+                (binary (literal (String "12x")) Divide (literal (Int 0L)));
+            ],
+            [ catch [ "DivisionByZeroError" ] [] ],
+            None,
+            location );
+      ]
+    |> expect_single_ok "warning before caught error"
+  in
+  let messages =
+    State.runtime_events state
+    |> List.map (fun event -> event.Error.Runtime_event.message)
+  in
+  Alcotest.(check (list string))
+    "warning retained before throw"
+    [ "A non-numeric value encountered" ]
+    messages
+
+let records_array_and_dynamic_property_deprecations () =
+  let float_key =
+    array_element ~key:(literal (Float 1.25)) (variable_lvalue "array")
+  in
+  let false_element =
+    array_element ~key:(literal (Int 0L)) (variable_lvalue "false_value")
+  in
+  let dynamic_property = object_property (variable_lvalue "object") "dynamic" in
+  let statements =
+    [
+      expression_statement (assign "array" (array []));
+      expression_statement (array_get float_key);
+      expression_statement (assign "false_value" (literal (Bool false)));
+      expression_statement (assign_lvalue false_element (literal (Int 1L)));
+      expression_statement (assign "object" (new_ "Container" []));
+      expression_statement (assign_lvalue dynamic_property (literal (Int 2L)));
+    ]
+  in
+  let state =
+    run ~classes:[ class_ "Container" [] ] statements
+    |> expect_single_ok "runtime deprecations"
+  in
+  let events =
+    State.runtime_events state
+    |> List.map (fun event ->
+        (event.Error.Runtime_event.severity, event.message))
+  in
+  Alcotest.(check (list (pair string string)))
+    "deprecation events"
+    [
+      ( "deprecation",
+        "Implicit conversion from float 1.25 to int loses precision" );
+      ("warning", "Undefined array key 1");
+      ("deprecation", "Automatic conversion of false to array is deprecated");
+      ( "deprecation",
+        "Creation of dynamic property Container::$dynamic is deprecated" );
+    ]
+    (List.map
+       (fun (severity, message) ->
+         let severity =
+           match severity with
+           | Error.Runtime_event.Notice -> "notice"
+           | Warning -> "warning"
+           | Deprecation -> "deprecation"
+           | Error -> "error"
+         in
+         (severity, message))
+       events)
+
+let catches_runtime_errors_and_runs_finally () =
+  let needs_argument = function_ "needs_argument" [ "argument" ] [] in
+  let divide =
+    function_ "divide" []
+      [
+        Php_ir.Return
+          (Some (binary (literal (Int 1L)) Divide (literal (Int 0L))), location);
+      ]
+  in
+  let invalid_offset =
+    array_element ~key:(array []) (variable_lvalue "array")
+  in
+  let cases =
+    [
+      (call "divide" [], "DivisionByZeroError", "division");
+      ( binary (literal (String "not numeric")) Add (literal (Int 1L)),
+        "TypeError",
+        "operand" );
+      (call "needs_argument" [], "ArgumentCountError", "argument");
+      (array_get invalid_offset, "TypeError", "offset");
+      ( assign_lvalue
+          (object_property (variable_lvalue "scalar") "property")
+          (literal (Int 1L)),
+        "Error",
+        "property" );
+    ]
+  in
+  let loop_error =
+    Php_ir.Try
+      ( [
+          Php_ir.While
+            ( literal (Bool true),
+              [
+                expression_statement
+                  (binary (literal (Int 1L)) Divide (literal (Int 0L)));
+              ],
+              location );
+        ],
+        [
+          catch [ "DivisionByZeroError" ]
+            [ Php_ir.Echo ([ literal (String "loop") ], location) ];
+        ],
+        Some [ Php_ir.Echo ([ literal (String ":finally;") ], location) ],
+        location )
+  in
+  let statements =
+    expression_statement (assign "array" (array []))
+    :: expression_statement (assign "scalar" (literal (Int 1L)))
+    :: (List.map
+          (fun (expression, class_name, output) ->
+            Php_ir.Try
+              ( [ expression_statement expression ],
+                [
+                  catch [ class_name ]
+                    [ Php_ir.Echo ([ literal (String output) ], location) ];
+                ],
+                Some
+                  [ Php_ir.Echo ([ literal (String ":finally;") ], location) ],
+                location ))
+          cases
+       @ [ loop_error ])
+  in
+  let state =
+    run ~functions:[ needs_argument; divide ] statements
+    |> expect_single_ok "caught runtime errors"
+  in
+  Alcotest.(check string)
+    "catch and finally output"
+    "division:finally;operand:finally;argument:finally;offset:finally;property:finally;loop:finally;"
+    (State.output state)
+
 let catches_function_exceptions_and_preserves_identity () =
   let fail =
     function_ "fail" []
@@ -1042,6 +1294,14 @@ let () =
             isolates_object_properties_across_symbolic_branches;
           Alcotest.test_case "loop control through finally" `Quick
             propagates_nested_loop_control_through_finally;
+          Alcotest.test_case "undefined read warnings" `Quick
+            models_undefined_reads_as_warnings_and_null;
+          Alcotest.test_case "persistent runtime warnings" `Quick
+            records_leading_numeric_warnings_persistently;
+          Alcotest.test_case "runtime deprecations" `Quick
+            records_array_and_dynamic_property_deprecations;
+          Alcotest.test_case "catchable runtime errors" `Quick
+            catches_runtime_errors_and_runs_finally;
           Alcotest.test_case "exception catches" `Quick
             catches_function_exceptions_and_preserves_identity;
           Alcotest.test_case "finally overrides throw" `Quick

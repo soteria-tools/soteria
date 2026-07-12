@@ -21,6 +21,7 @@ type t = {
   objects : php_object Object_map.t;
   next_object : object_id;
   output_rev : string list;
+  runtime_events_rev : Error.Runtime_event.t list;
 }
 
 let empty =
@@ -31,6 +32,7 @@ let empty =
     objects = Object_map.empty;
     next_object = 0;
     output_rev = [];
+    runtime_events_rev = [];
   }
 
 let current_scope = function
@@ -192,3 +194,8 @@ let leave_scope state =
 
 let emit output state = { state with output_rev = output :: state.output_rev }
 let output state = state.output_rev |> List.rev |> String.concat ""
+
+let emit_runtime_event event state =
+  { state with runtime_events_rev = event :: state.runtime_events_rev }
+
+let runtime_events state = List.rev state.runtime_events_rev

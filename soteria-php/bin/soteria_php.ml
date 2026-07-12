@@ -30,8 +30,35 @@ let exec_command =
       & info [ "function" ] ~docv:"NAME"
           ~doc:"Execute the named zero-argument function as the entry point")
   in
+  let runtime_event_policy =
+    let parse = function
+      | "conservative" -> Ok Soteria_php.Config.Conservative
+      | "report" -> Ok Report
+      | "ignore" -> Ok Ignore
+      | value -> Error (`Msg ("unknown runtime-event policy " ^ value))
+    in
+    let print formatter = function
+      | Soteria_php.Config.Conservative ->
+          Format.pp_print_string formatter "conservative"
+      | Report -> Format.pp_print_string formatter "report"
+      | Ignore -> Format.pp_print_string formatter "ignore"
+    in
+    Arg.(
+      value
+      & opt (conv (parse, print)) Soteria_php.Config.Conservative
+      & info [ "runtime-events" ] ~docv:"POLICY"
+          ~doc:
+            "Handle PHP runtime events using $(docv): conservative treats \
+             warnings and errors as bugs; report retains diagnostics; ignore \
+             suppresses them")
+  in
   let term =
-    Term.(const Soteria_php.Driver.execute $ fuel $ function_name $ file_arg)
+    Term.(
+      const Soteria_php.Driver.execute
+      $ runtime_event_policy
+      $ fuel
+      $ function_name
+      $ file_arg)
   in
   Cmd.make
     (Cmd.info ~exits ~doc:"Symbolically execute a supported PHP script" "exec")

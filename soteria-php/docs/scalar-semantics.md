@@ -28,12 +28,12 @@ concrete string. Symbolic float-to-integer conversion also gives up.
 | `bool` | S | S | S |
 | `int` | S | S | S |
 | `float` | S | S | S |
-| `string` | S | S/G | S/G |
+| `string` | S | S | S |
 
 Unary numeric operators use the centralized numeric-string classifier.
-Well-formed numeric strings are supported. Leading-numeric strings give up
-because their PHP warning cannot be represented until runtime events are added;
-non-numeric strings give up instead of approximating the PHP `TypeError`.
+Well-formed numeric strings are supported. Leading-numeric strings emit PHP's
+non-numeric-value warning and use their numeric prefix. Non-numeric strings
+raise a catchable PHP `TypeError`.
 Negating the minimum integer promotes the result to float.
 
 ## Arithmetic operators
@@ -42,17 +42,16 @@ The same matrix applies independently to `+`, `-`, `*`, and `/`.
 
 | Left / right | `null` | `bool` | `int` | `float` | `string` |
 | --- | --- | --- | --- | --- | --- |
-| `null` | S | S | S | S | S/G |
-| `bool` | S | S | S | S | S/G |
-| `int` | S | S | S | S | S/G |
-| `float` | S | S | S | S | S/G |
-| `string` | S/G | S/G | S/G | S/G | S/G |
+| `null` | S | S | S | S | S |
+| `bool` | S | S | S | S | S |
+| `int` | S | S | S | S | S |
+| `float` | S | S | S | S | S |
+| `string` | S | S | S | S | S |
 
-`S/G` is supported for a well-formed numeric string and gives up for a leading
-or non-numeric string as described above. Integer `+`, `-`, and `*` preserve an
+Numeric and leading-numeric strings are supported as described above;
+non-numeric strings raise a catchable PHP `TypeError`. Integer `+`, `-`, and `*` preserve an
 integer result when it fits and promote to float on overflow. Division always
-returns float and division by zero remains a located interpreter error until
-PHP runtime errors become catchable.
+returns float and division by zero raises a catchable `DivisionByZeroError`.
 
 The concatenation matrix is:
 

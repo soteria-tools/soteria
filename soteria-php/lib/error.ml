@@ -88,6 +88,27 @@ let pp_with_trace formatter (error, call_trace) =
     (Call_trace.pp pp_location)
     call_trace
 
+type runtime_error = { class_name : string; message : string }
+
+module Runtime_event = struct
+  type severity = Notice | Warning | Deprecation | Error
+  type t = { severity : severity; message : string; trace : Trace.t }
+
+  let make severity message trace = { severity; message; trace }
+
+  let pp_severity formatter = function
+    | Notice -> Format.pp_print_string formatter "Notice"
+    | Warning -> Format.pp_print_string formatter "Warning"
+    | Deprecation -> Format.pp_print_string formatter "Deprecated"
+    | Error -> Format.pp_print_string formatter "Error"
+
+  let pp formatter event =
+    Format.fprintf formatter "%a: %s" pp_severity event.severity event.message
+
+  let with_trace event =
+    decorate ~message:"Triggering operation" event.trace event.message
+end
+
 module Diagnostic = struct
   let as_ranges location =
     let position position = (position.Php_ir.line - 1, position.column - 1) in
@@ -100,4 +121,12 @@ module Diagnostic = struct
     Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace ~as_ranges
       ~msg:(Format.asprintf "%a" pp error)
       ~severity:Error
+end
+
+module Runtime_event_diagnostic = struct
+  let print ?(as_bug = false) (event : Runtime_event.t) =
+    let message, call_trace = Runtime_event.with_trace event in
+    Soteria.Terminal.Diagnostic.print_diagnostic ~call_trace
+      ~as_ranges:Diagnostic.as_ranges ~msg:message
+      ~severity:(if as_bug then Error else Warning)
 end

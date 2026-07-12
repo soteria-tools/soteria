@@ -34,6 +34,34 @@
   $ cat soteria.out
   ififdone:caught:same:finally7:9:error
 
+  $ php catchable_errors.php > php.out
+  $ ../../../bin/soteria_php.exe exec catchable_errors.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  division:finally;operand:finally;argument:finally;offset:finally;property:finally;loop:finally;
+
+  $ ../../../bin/soteria_php.exe exec runtime_events.php --runtime-events ignore
+
+  $ php -d display_errors=0 deprecations.php > php.out 2> /dev/null
+  $ ../../../bin/soteria_php.exe exec deprecations.php --runtime-events ignore > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  1:2
+
+  $ ../../../bin/soteria_php.exe exec runtime_events.php --runtime-events report
+  warning: Undefined variable $undefined
+      --> runtime_events.php:3:10
+    3 |  $value = $undefined;
+      |           ^^^^^^^^^^ Triggering operation
+
+  $ ../../../bin/soteria_php.exe exec runtime_events.php
+  Entry point: runtime_events.php
+  error: Undefined variable $undefined
+      --> runtime_events.php:3:10
+    3 |  $value = $undefined;
+      |           ^^^^^^^^^^ Triggering operation
+  [1]
+
   $ php functions.php > php.out
   $ ../../../bin/soteria_php.exe exec functions.php > soteria.out
   $ cmp php.out soteria.out

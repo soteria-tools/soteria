@@ -20,7 +20,7 @@ type failure = {
   path_condition : Value.Typed.Expr.t list;
 }
 
-let execute fuel function_name filename =
+let execute runtime_event_policy fuel function_name filename =
   let fuel = Soteria.Symex.Fuel_gauge.Cli.validate_or_exit fuel in
   match Frontend.parse_file filename with
   | Error error ->
@@ -44,6 +44,8 @@ let execute fuel function_name filename =
                  ~mode:Soteria.Symex.Approx.OX
           in
           let failures = ref [] in
+          let runtime_event_failures = ref [] in
+          let runtime_event_diagnostics = ref [] in
           let incomplete = ref false in
           let expect_failure = ref false in
           List.iter
@@ -52,7 +54,20 @@ let execute fuel function_name filename =
               | Soteria.Soteria_std.Compo_res.Ok (state, trace) ->
                   expect_failure :=
                     trace.Error.Trace.expect_failure || !expect_failure;
-                  print_string (State.output state)
+                  print_string (State.output state);
+                  State.runtime_events state
+                  |> List.iter (fun event ->
+                      match
+                        Config.runtime_event_disposition runtime_event_policy
+                          event.Error.Runtime_event.severity
+                      with
+                      | Config.Ignore_event -> ()
+                      | Diagnostic ->
+                          runtime_event_diagnostics :=
+                            event :: !runtime_event_diagnostics
+                      | Bug ->
+                          runtime_event_failures :=
+                            (event, path_condition) :: !runtime_event_failures)
               | Error (Soteria.Symex.Or_gave_up.E (error, trace)) ->
                   expect_failure :=
                     trace.Error.Trace.expect_failure || !expect_failure;
@@ -65,9 +80,13 @@ let execute fuel function_name filename =
                   Format.eprintf "Incomplete symbolic execution@.")
             results;
           let failures = List.rev !failures in
+          let runtime_event_failures = List.rev !runtime_event_failures in
+          let runtime_event_diagnostics = List.rev !runtime_event_diagnostics in
+          List.iter Error.Runtime_event_diagnostic.print
+            runtime_event_diagnostics;
           if !expect_failure then
             if !incomplete then 3
-            else if failures <> [] then 0
+            else if failures <> [] || runtime_event_failures <> [] then 0
             else (
               Soteria.Terminal.Diagnostic.print_diagnostic_simple
                 ~severity:Error
@@ -84,4 +103,15 @@ let execute fuel function_name filename =
                   ~inputs:trace.Error.Trace.symbolic_inputs_rev ~path_condition
                 |> Option.iter Counterexample.print)
               failures;
-            if failures <> [] then 1 else if !incomplete then 3 else 0))
+            List.iter
+              (fun (event, path_condition) ->
+                Format.eprintf "Entry point: %s@." entry_point;
+                Error.Runtime_event_diagnostic.print ~as_bug:true event;
+                Counterexample.bindings
+                  ~inputs:event.Error.Runtime_event.trace.symbolic_inputs_rev
+                  ~path_condition
+                |> Option.iter Counterexample.print)
+              runtime_event_failures;
+            if failures <> [] || runtime_event_failures <> [] then 1
+            else if !incomplete then 3
+            else 0))

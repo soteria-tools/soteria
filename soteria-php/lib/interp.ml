@@ -1,15 +1,35 @@
 let unsupported format = Format.kasprintf Phpsymex.not_impl format
 let coercion_error error = unsupported "%a" Coercion.pp_error error
 
+type pending_event = Error.Runtime_event.severity * string
+
+type 'a operation =
+  | Completed of 'a * pending_event list
+  | Runtime_error of Error.runtime_error * pending_event list
+
+let completed ?(events = []) value = Completed (value, events)
+
+let runtime_error ?(events = []) class_name message =
+  Runtime_error ({ Error.class_name; message }, events)
+
 let coerce target value =
   match Coercion.coerce target value with
   | Ok value -> Phpsymex.Result.ok value
   | Error error -> coercion_error error
 
-let coerce_number value =
+let numeric_operand value =
   match Coercion.to_number value with
-  | Ok value -> Phpsymex.Result.ok value
-  | Error error -> coercion_error error
+  | Ok value -> Ok (value, [])
+  | Error (Leading_numeric_string string) -> (
+      match Coercion.classify_numeric_string string with
+      | Leading_numeric number ->
+          Ok
+            ( Coercion.value_of_number number,
+              [
+                (Error.Runtime_event.Warning, "A non-numeric value encountered");
+              ] )
+      | Numeric _ | Non_numeric -> assert false)
+  | Error error -> Error error
 
 let boolean_value = function
   | Value.Bool value -> value
@@ -69,38 +89,76 @@ let checked_integer check float left right =
       (Value.Float (float (float_of_integer left) (float_of_integer right)))
   else Phpsymex.Result.ok (Value.Int result)
 
-let arithmetic integer float concrete_float left right =
-  let open Phpsymex.Syntax in
-  let** left = coerce_number left in
-  let** right = coerce_number right in
-  match (left, right) with
-  | Value.Int left, Value.Int right -> checked_integer integer float left right
-  | _ -> (
-      match (concrete_numeric_float left, concrete_numeric_float right) with
-      | Some left, Some right ->
-          Phpsymex.Result.ok (Value.float (concrete_float left right))
-      | _ ->
-          Phpsymex.Result.ok
-            (Value.Float (float (numeric_float left) (numeric_float right))))
+let runtime_type_name state = function
+  | Value.Object id -> (
+      match State.find_object id state with
+      | Some object_ -> object_.class_name
+      | None -> failwith "PHP object value refers to an unknown object")
+  | value -> Value.type_name value
 
-let division left right =
+let unsupported_operand_types state operator left right =
+  Printf.sprintf "Unsupported operand types: %s %s %s"
+    (runtime_type_name state left)
+    operator
+    (runtime_type_name state right)
+
+let arithmetic state operator integer float concrete_float left right =
   let open Phpsymex.Syntax in
-  let** left = coerce_number left in
-  let** right = coerce_number right in
-  match (concrete_numeric_float left, concrete_numeric_float right) with
-  | _, Some denominator when denominator = 0.0 ->
-      Phpsymex.error Error.Division_by_zero
-  | Some numerator, Some denominator ->
-      Phpsymex.Result.ok (Value.float (numerator /. denominator))
-  | _ ->
-      let numerator = numeric_float left in
-      let denominator = numeric_float right in
-      if%sat[@lname "Division by zero"] [@rname "Division"]
-        Value.Typed.Float.is_zero denominator
-      then Phpsymex.error Error.Division_by_zero
-      else
-        Phpsymex.Result.ok
-          (Value.Float (Value.Typed.Float.div numerator denominator))
+  match (numeric_operand left, numeric_operand right) with
+  | Error _, _ | _, Error _ ->
+      Phpsymex.Result.ok
+        (runtime_error "TypeError"
+           (unsupported_operand_types state operator left right))
+  | Ok (left_number, left_events), Ok (right_number, right_events) -> (
+      let events = left_events @ right_events in
+      match (left_number, right_number) with
+      | Value.Int left, Value.Int right ->
+          let** value = checked_integer integer float left right in
+          Phpsymex.Result.ok (completed ~events value)
+      | _ -> (
+          match
+            ( concrete_numeric_float left_number,
+              concrete_numeric_float right_number )
+          with
+          | Some left, Some right ->
+              Phpsymex.Result.ok
+                (completed ~events (Value.float (concrete_float left right)))
+          | _ ->
+              Phpsymex.Result.ok
+                (completed ~events
+                   (Value.Float
+                      (float
+                         (numeric_float left_number)
+                         (numeric_float right_number))))))
+
+let division state left right =
+  let open Phpsymex.Syntax in
+  match (numeric_operand left, numeric_operand right) with
+  | Error _, _ | _, Error _ ->
+      Phpsymex.Result.ok
+        (runtime_error "TypeError"
+           (unsupported_operand_types state "/" left right))
+  | Ok (left, left_events), Ok (right, right_events) -> (
+      let events = left_events @ right_events in
+      match (concrete_numeric_float left, concrete_numeric_float right) with
+      | _, Some denominator when denominator = 0.0 ->
+          Phpsymex.Result.ok
+            (runtime_error ~events "DivisionByZeroError" "Division by zero")
+      | Some numerator, Some denominator ->
+          Phpsymex.Result.ok
+            (completed ~events (Value.float (numerator /. denominator)))
+      | _ ->
+          let numerator = numeric_float left in
+          let denominator = numeric_float right in
+          if%sat[@lname "Division by zero"] [@rname "Division"]
+            Value.Typed.Float.is_zero denominator
+          then
+            Phpsymex.Result.ok
+              (runtime_error ~events "DivisionByZeroError" "Division by zero")
+          else
+            Phpsymex.Result.ok
+              (completed ~events
+                 (Value.Float (Value.Typed.Float.div numerator denominator))))
 
 let rec strict_equal state left right =
   match (left, right) with
@@ -166,34 +224,44 @@ let binary state operator left right =
   | Php_ir.Add -> (
       match (left, right) with
       | Value.Array left, Value.Array right ->
-          Phpsymex.Result.ok (Value.array (Value.array_union left right))
+          Phpsymex.Result.ok
+            (completed (Value.array (Value.array_union left right)))
       | _ ->
-          arithmetic Value.Typed.BitVec.add_checked Value.Typed.Float.add ( +. )
-            left right)
+          arithmetic state "+" Value.Typed.BitVec.add_checked
+            Value.Typed.Float.add ( +. ) left right)
   | Subtract ->
-      arithmetic Value.Typed.BitVec.sub_checked Value.Typed.Float.sub ( -. )
-        left right
+      arithmetic state "-" Value.Typed.BitVec.sub_checked Value.Typed.Float.sub
+        ( -. ) left right
   | Multiply ->
-      arithmetic Value.Typed.BitVec.mul_checked Value.Typed.Float.mul ( *. )
-        left right
-  | Divide -> division left right
+      arithmetic state "*" Value.Typed.BitVec.mul_checked Value.Typed.Float.mul
+        ( *. ) left right
+  | Divide -> division state left right
   | Concat ->
       let open Phpsymex.Syntax in
       let** left = coerce Coercion.String left in
       let** right = coerce Coercion.String right in
-      Phpsymex.Result.ok (Value.string (string_value left ^ string_value right))
-  | Identical -> Phpsymex.Result.ok (Value.Bool (strict_equal state left right))
+      Phpsymex.Result.ok
+        (completed (Value.string (string_value left ^ string_value right)))
+  | Identical ->
+      Phpsymex.Result.ok
+        (completed (Value.Bool (strict_equal state left right)))
   | Not_identical ->
       Phpsymex.Result.ok
-        (Value.Bool (Value.Typed.Bool.not (strict_equal state left right)))
-  | Equal -> loose_equal left right
+        (completed
+           (Value.Bool (Value.Typed.Bool.not (strict_equal state left right))))
+  | Equal ->
+      let open Phpsymex.Syntax in
+      let** value = loose_equal left right in
+      Phpsymex.Result.ok (completed value)
   | Not_equal ->
       let open Phpsymex.Syntax in
       let** equal = loose_equal left right in
       Phpsymex.Result.ok
-        (Value.Bool (Value.Typed.Bool.not (boolean_value equal)))
+        (completed (Value.Bool (Value.Typed.Bool.not (boolean_value equal))))
   | Less_than | Less_than_or_equal | Greater_than | Greater_than_or_equal ->
-      comparison operator left right
+      let open Phpsymex.Syntax in
+      let** value = comparison operator left right in
+      Phpsymex.Result.ok (completed value)
   | Boolean_and | Boolean_or ->
       failwith "short-circuit operator passed to eager evaluation"
 
@@ -202,22 +270,40 @@ let unary operator value =
   | Php_ir.Boolean_not ->
       let open Phpsymex.Syntax in
       let** condition = condition value in
-      Phpsymex.Result.ok (Value.Bool (Value.Typed.Bool.not condition))
-  | Numeric_identity -> coerce_number value
+      Phpsymex.Result.ok
+        (completed (Value.Bool (Value.Typed.Bool.not condition)))
+  | Numeric_identity -> (
+      match numeric_operand value with
+      | Ok (value, events) -> Phpsymex.Result.ok (completed ~events value)
+      | Error _ ->
+          Phpsymex.Result.ok
+            (runtime_error "TypeError"
+               (Printf.sprintf "Unsupported operand type: %s"
+                  (Value.type_name value))))
   | Numeric_negation -> (
       let open Phpsymex.Syntax in
-      let** value = coerce_number value in
-      match value with
-      | Value.Int value ->
-          let result, overflow = Value.Typed.BitVec.neg_checked value in
-          if%sat[@lname "Integer overflow"] [@rname "Integer result"] overflow
-          then
-            Phpsymex.Result.ok
-              (Value.Float (Value.Typed.Float.neg (float_of_integer value)))
-          else Phpsymex.Result.ok (Value.Int result)
-      | Value.Float value ->
-          Phpsymex.Result.ok (Value.Float (Value.Typed.Float.neg value))
-      | _ -> assert false)
+      match numeric_operand value with
+      | Error _ ->
+          Phpsymex.Result.ok
+            (runtime_error "TypeError"
+               (Printf.sprintf "Unsupported operand type: %s"
+                  (Value.type_name value)))
+      | Ok (value, events) -> (
+          match value with
+          | Value.Int value ->
+              let result, overflow = Value.Typed.BitVec.neg_checked value in
+              if%sat[@lname "Integer overflow"] [@rname "Integer result"]
+                overflow
+              then
+                Phpsymex.Result.ok
+                  (completed ~events
+                     (Value.Float
+                        (Value.Typed.Float.neg (float_of_integer value))))
+              else Phpsymex.Result.ok (completed ~events (Value.Int result))
+          | Value.Float value ->
+              Phpsymex.Result.ok
+                (completed ~events (Value.Float (Value.Typed.Float.neg value)))
+          | _ -> assert false))
 
 module Function_map = Map.Make (String)
 module Class_map = Map.Make (String)
@@ -243,6 +329,7 @@ type place =
   | Variable of string
   | Array_element of place * Value.array_key
   | Object_property of State.object_id * string
+  | Invalid_read
 
 type throwable_class = {
   name : string;
@@ -342,6 +429,35 @@ let raise_value value state =
   let* trace = Phpsymex.get_trace () in
   Phpsymex.Result.ok (Raised { value; trace }, state)
 
+let raise_runtime_error state (error : Error.runtime_error) =
+  let id, state = State.allocate_object error.class_name error.message state in
+  raise_value (Value.object_ id) state
+
+let record_runtime_event severity message state =
+  let open Phpsymex.Syntax in
+  let* trace = Phpsymex.get_trace () in
+  let event = Error.Runtime_event.make severity message trace in
+  evaluated () (State.emit_runtime_event event state)
+
+let rec record_runtime_events events state =
+  match events with
+  | [] -> evaluated () state
+  | (severity, message) :: events ->
+      let open Phpsymex.Syntax in
+      let*** (), state = record_runtime_event severity message state in
+      record_runtime_events events state
+
+let apply_operation operation state =
+  match operation with
+  | Runtime_error (error, events) ->
+      let open Phpsymex.Syntax in
+      let*** (), state = record_runtime_events events state in
+      raise_runtime_error state error
+  | Completed (value, events) ->
+      let open Phpsymex.Syntax in
+      let*** (), state = record_runtime_events events state in
+      evaluated value state
+
 let rec read_place state = function
   | Variable name ->
       Option.value ~default:Value.undef (State.find_variable name state)
@@ -354,35 +470,57 @@ let rec read_place state = function
   | Object_property (object_id, name) ->
       State.find_object_property object_id name state
       |> Option.value ~default:Value.undef
+  | Invalid_read -> Value.null
+
+let cannot_use_as_array state value =
+  match value with
+  | Value.Object id -> (
+      match State.find_object id state with
+      | Some object_ ->
+          {
+            Error.class_name = "Error";
+            message =
+              Printf.sprintf "Cannot use object of type %s as array"
+                object_.class_name;
+          }
+      | None -> failwith "PHP object value refers to an unknown object")
+  | _ ->
+      {
+        Error.class_name = "Error";
+        message = "Cannot use a scalar value as an array";
+      }
 
 let rec write_place place value state =
   match place with
-  | Variable name -> Phpsymex.Result.ok (State.set_variable name value state)
+  | Variable name -> evaluated () (State.set_variable name value state)
   | Array_element (parent, key) -> (
       let array =
         match read_place state parent with
         | Value.Array array -> Some array
         | Value.Undef | Value.Null -> Some Value.empty_array
+        | Value.Bool value when Value.Typed.Bool.to_bool value = Some false ->
+            Some Value.empty_array
         | _ -> None
       in
       match array with
       | Some array -> (
           match Value.array_find key array with
           | Some (Value.Reference cell) ->
-              Phpsymex.Result.ok (State.set_cell cell value state)
+              evaluated () (State.set_cell cell value state)
           | Some (Value.Inline _) | None ->
               write_place parent
                 (Value.array (Value.array_set key value array))
                 state)
       | None ->
-          Phpsymex.error
-            (Error.Cannot_use_as_array (Value.kind (read_place state parent))))
+          raise_runtime_error state
+            (cannot_use_as_array state (read_place state parent)))
   | Object_property (object_id, name) ->
-      Phpsymex.Result.ok (State.set_object_property object_id name value state)
+      evaluated () (State.set_object_property object_id name value state)
+  | Invalid_read -> failwith "write through an invalid PHP read"
 
 let bind_place_reference place cell state =
   match place with
-  | Variable name -> Phpsymex.Result.ok (State.bind_variable name cell state)
+  | Variable name -> evaluated () (State.bind_variable name cell state)
   | Array_element (parent, key) -> (
       match read_place state parent with
       | Value.Array array ->
@@ -393,9 +531,14 @@ let bind_place_reference place cell state =
           write_place parent
             (Value.array (Value.array_set_reference key cell Value.empty_array))
             state
-      | value -> Phpsymex.error (Error.Cannot_use_as_array (Value.kind value)))
+      | Value.Bool value when Value.Typed.Bool.to_bool value = Some false ->
+          write_place parent
+            (Value.array (Value.array_set_reference key cell Value.empty_array))
+            state
+      | value -> raise_runtime_error state (cannot_use_as_array state value))
   | Object_property (object_id, name) ->
-      Phpsymex.Result.ok (State.bind_object_property object_id name cell state)
+      evaluated () (State.bind_object_property object_id name cell state)
+  | Invalid_read -> failwith "bind through an invalid PHP read"
 
 let cell_for_reference place state =
   match place with
@@ -407,21 +550,23 @@ let cell_for_reference place state =
         | Some _ -> state
         | None -> failwith "variable is bound to an unknown PHP cell"
       in
-      Phpsymex.Result.ok (cell, state)
+      evaluated cell state
   | Array_element (parent, key) -> (
       let array =
         match read_place state parent with
         | Value.Array array -> Some array
         | Value.Undef | Value.Null -> Some Value.empty_array
+        | Value.Bool value when Value.Typed.Bool.to_bool value = Some false ->
+            Some Value.empty_array
         | _ -> None
       in
       match array with
       | None ->
-          Phpsymex.error
-            (Error.Cannot_use_as_array (Value.kind (read_place state parent)))
+          raise_runtime_error state
+            (cannot_use_as_array state (read_place state parent))
       | Some array -> (
           match Value.array_find key array with
-          | Some (Value.Reference cell) -> Phpsymex.Result.ok (cell, state)
+          | Some (Value.Reference cell) -> evaluated cell state
           | entry ->
               let value =
                 match entry with
@@ -431,41 +576,74 @@ let cell_for_reference place state =
               in
               let cell, state = State.allocate_cell value state in
               let open Phpsymex.Syntax in
-              let** state =
+              let*** (), state =
                 write_place parent
                   (Value.array (Value.array_set_reference key cell array))
                   state
               in
-              Phpsymex.Result.ok (cell, state)))
+              evaluated cell state))
   | Object_property (object_id, name) -> (
       match State.find_object_property_cell object_id name state with
-      | Some cell -> Phpsymex.Result.ok (cell, state)
+      | Some cell -> evaluated cell state
       | None ->
           let cell, state = State.allocate_cell Value.null state in
           let state = State.bind_object_property object_id name cell state in
-          Phpsymex.Result.ok (cell, state))
+          evaluated cell state)
+  | Invalid_read -> failwith "take a reference through an invalid PHP read"
 
 let unset_place place state =
   match place with
-  | Variable name -> Phpsymex.Result.ok (State.unset_variable name state)
+  | Variable name -> evaluated () (State.unset_variable name state)
   | Array_element (parent, key) -> (
       match read_place state parent with
       | Value.Array array ->
           write_place parent (Value.array (Value.array_remove key array)) state
-      | Value.Undef | Value.Null -> Phpsymex.Result.ok state
-      | value -> Phpsymex.error (Error.Cannot_use_as_array (Value.kind value)))
+      | Value.Undef | Value.Null -> evaluated () state
+      | Value.Object _ as value ->
+          raise_runtime_error state (cannot_use_as_array state value)
+      | _ ->
+          raise_runtime_error state
+            {
+              Error.class_name = "Error";
+              message = "Cannot unset offset in a non-array variable";
+            })
   | Object_property (object_id, name) ->
-      Phpsymex.Result.ok (State.unset_object_property object_id name state)
+      evaluated () (State.unset_object_property object_id name state)
+  | Invalid_read -> evaluated () state
 
-let normalized_array_key value =
+let normalized_array_key value state =
   match Coercion.to_array_key value with
-  | Ok key -> Phpsymex.Result.ok key
-  | Error (Invalid_array_key kind) ->
-      Phpsymex.error (Error.Illegal_offset_type kind)
+  | Ok key -> (
+      let deprecation =
+        match Value.float_value value with
+        | Some float when Float.trunc float <> float ->
+            Some
+              (Printf.sprintf
+                 "Implicit conversion from float %s to int loses precision"
+                 (Coercion.string_of_float float))
+        | Some _ | None -> None
+      in
+      match deprecation with
+      | None -> evaluated key state
+      | Some message ->
+          let open Phpsymex.Syntax in
+          let*** (), state =
+            record_runtime_event Error.Runtime_event.Deprecation message state
+          in
+          evaluated key state)
+  | Error (Invalid_array_key _) ->
+      raise_runtime_error state
+        {
+          Error.class_name = "TypeError";
+          message =
+            Printf.sprintf "Cannot access offset of type %s on array"
+              (runtime_type_name state value);
+        }
   | Error error -> coercion_error error
 
-let resolve_array_key ~for_write array = function
-  | Coercion.Concrete_key key -> Phpsymex.Result.ok key
+let resolve_array_key ~for_write array key state =
+  match key with
+  | Coercion.Concrete_key key -> evaluated key state
   | Symbolic_integer_key symbolic_key ->
       let rec choose = function
         | [] ->
@@ -479,18 +657,45 @@ let resolve_array_key ~for_write array = function
             let open Phpsymex.Syntax in
             if%sat[@lname "Existing array key"] [@rname "Different array key"]
               Value.Typed.sem_eq symbolic_key concrete_key
-            then Phpsymex.Result.ok (Value.Integer_key key)
+            then evaluated (Value.Integer_key key) state
             else choose keys
       in
       choose (Value.array_integer_keys array)
 
-let array_for_access ~for_write = function
-  | Value.Array array -> Phpsymex.Result.ok array
+let array_for_access ~for_write value state =
+  match value with
+  | Value.Array array -> evaluated (Some array) state
   | (Value.Undef | Value.Null) when for_write ->
-      Phpsymex.Result.ok Value.empty_array
+      evaluated (Some Value.empty_array) state
+  | Value.Bool value when for_write -> (
+      match Value.Typed.Bool.to_bool value with
+      | Some false ->
+          let open Phpsymex.Syntax in
+          let*** (), state =
+            record_runtime_event Error.Runtime_event.Deprecation
+              "Automatic conversion of false to array is deprecated" state
+          in
+          evaluated (Some Value.empty_array) state
+      | Some true ->
+          raise_runtime_error state
+            (cannot_use_as_array state (Value.Bool value))
+      | None -> unsupported "symbolic boolean array autovivification")
+  | Value.String _ when for_write -> unsupported "string offset assignment"
   | value when for_write ->
-      Phpsymex.error (Error.Cannot_use_as_array (Value.kind value))
-  | value -> unsupported "array access on %s" (Value.type_name value)
+      raise_runtime_error state (cannot_use_as_array state value)
+  | Value.Object _ as value ->
+      raise_runtime_error state (cannot_use_as_array state value)
+  | Value.String _ -> unsupported "string offset access"
+  | value ->
+      let message =
+        Printf.sprintf "Trying to access array offset on %s"
+          (Value.type_name value)
+      in
+      let open Phpsymex.Syntax in
+      let*** (), state =
+        record_runtime_event Error.Runtime_event.Warning message state
+      in
+      evaluated None state
 
 let bind_parameters (parameters : Php_ir.parameter list) arguments =
   let rec bind bindings parameters arguments =
@@ -529,14 +734,20 @@ and eval_array_items functions state array items =
           | None -> (
               match Value.array_next_key array with
               | Some key -> evaluated key state
-              | None -> Phpsymex.error Error.Array_append_overflow)
+              | None ->
+                  raise_runtime_error state
+                    {
+                      Error.class_name = "Error";
+                      message =
+                        "Cannot add element to the array as the next element \
+                         is already occupied";
+                    })
           | Some expression ->
               let*** value, state =
                 eval_expression functions state expression
               in
-              let** key = normalized_array_key value in
-              let** key = resolve_array_key ~for_write:true array key in
-              evaluated key state
+              let*** key, state = normalized_array_key value state in
+              resolve_array_key ~for_write:true array key state
         in
         let*** value, state = eval_expression functions state item.value in
         eval_array_items functions state (Value.array_set key value array) items
@@ -579,67 +790,130 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
         match access with
         | Write | Unset -> evaluated (Variable name) state
         | Read -> (
-            match State.find_variable_cell name state with
-            | Some _ -> evaluated (Variable name) state
-            | None -> unsupported "read of undefined variable $%s" name))
+            match State.find_variable name state with
+            | Some value when Value.kind value <> `Undefined ->
+                evaluated (Variable name) state
+            | Some _ | None ->
+                let*** (), state =
+                  record_runtime_event Error.Runtime_event.Warning
+                    (Printf.sprintf "Undefined variable $%s" name)
+                    state
+                in
+                evaluated Invalid_read state))
     | Array_element_lvalue (parent, key_expression) ->
         let*** parent, state = resolve_lvalue functions state ~access parent in
-        let*** key, state =
+        let*** place, state =
           match key_expression with
           | None -> (
               if access <> Write then unsupported "array append read"
               else
-                let** array =
-                  read_place state parent |> array_for_access ~for_write:true
+                let*** array, state =
+                  array_for_access ~for_write:true (read_place state parent)
+                    state
                 in
+                let array = Option.get array in
                 match Value.array_reserve_next array with
                 | Some (key, array) ->
-                    let** state =
+                    let*** (), state =
                       write_place parent (Value.array array) state
                     in
-                    evaluated key state
-                | None -> Phpsymex.error Error.Array_append_overflow)
-          | Some expression ->
+                    evaluated (Array_element (parent, key)) state
+                | None ->
+                    raise_runtime_error state
+                      {
+                        Error.class_name = "Error";
+                        message =
+                          "Cannot add element to the array as the next element \
+                           is already occupied";
+                      })
+          | Some expression -> (
               let*** value, state =
                 eval_expression functions state expression
               in
-              let** array =
+              let*** array, state =
                 match (access, read_place state parent) with
-                | Unset, Value.Array array -> Phpsymex.Result.ok array
-                | Unset, _ -> Phpsymex.Result.ok Value.empty_array
+                | Unset, Value.Array array -> evaluated (Some array) state
+                | Unset, _ -> evaluated (Some Value.empty_array) state
                 | (Read | Write), value ->
-                    array_for_access ~for_write:(access = Write) value
+                    array_for_access ~for_write:(access = Write) value state
               in
-              let** key = normalized_array_key value in
-              let** key =
-                resolve_array_key ~for_write:(access = Write) array key
-              in
-              evaluated key state
+              match array with
+              | None -> evaluated Invalid_read state
+              | Some array ->
+                  let*** key, state = normalized_array_key value state in
+                  let*** key, state =
+                    resolve_array_key ~for_write:(access = Write) array key
+                      state
+                  in
+                  let place = Array_element (parent, key) in
+                  if
+                    access <> Read
+                    || Value.kind (read_place state place) <> `Undefined
+                  then evaluated place state
+                  else
+                    let key = Format.asprintf "%a" Value.pp_array_key key in
+                    let*** (), state =
+                      record_runtime_event Error.Runtime_event.Warning
+                        ("Undefined array key " ^ key)
+                        state
+                    in
+                    evaluated Invalid_read state)
         in
-        evaluated (Array_element (parent, key)) state
+        evaluated place state
     | Object_property_lvalue (object_, name) -> (
         let*** object_, state =
           resolve_lvalue functions state ~access object_
         in
         match read_place state object_ with
-        | Value.Object object_id ->
+        | Value.Object object_id -> (
             let object_state =
               match State.find_object object_id state with
               | Some object_ -> object_
               | None -> failwith "PHP object value refers to an unknown object"
             in
-            if not (State.object_declares_property object_id name state) then
-              unsupported "undeclared property %s::$%s" object_state.class_name
-                name
-            else if
-              access = Read
-              && Option.is_none
-                   (State.find_object_property_cell object_id name state)
-            then
-              unsupported "read of unset property %s::$%s"
-                object_state.class_name name
-            else evaluated (Object_property (object_id, name)) state
-        | value -> unsupported "property access on %s" (Value.type_name value))
+            let place = Object_property (object_id, name) in
+            match
+              ( access,
+                State.object_declares_property object_id name state,
+                State.find_object_property_cell object_id name state )
+            with
+            | Read, _, None ->
+                let*** (), state =
+                  record_runtime_event Error.Runtime_event.Warning
+                    (Printf.sprintf "Undefined property: %s::$%s"
+                       object_state.class_name name)
+                    state
+                in
+                evaluated Invalid_read state
+            | Write, false, None ->
+                let*** (), state =
+                  record_runtime_event Error.Runtime_event.Deprecation
+                    (Printf.sprintf
+                       "Creation of dynamic property %s::$%s is deprecated"
+                       object_state.class_name name)
+                    state
+                in
+                evaluated place state
+            | (Read | Write | Unset), _, _ -> evaluated place state)
+        | value -> (
+            match access with
+            | Read ->
+                let*** (), state =
+                  record_runtime_event Error.Runtime_event.Warning
+                    (Printf.sprintf "Attempt to read property %S on %s" name
+                       (Value.type_name value))
+                    state
+                in
+                evaluated Invalid_read state
+            | Write ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message =
+                      Printf.sprintf "Attempt to assign property %S on %s" name
+                        (Value.type_name value);
+                  }
+            | Unset -> evaluated Invalid_read state))
   in
   Phpsymex.with_location ~location:lvalue.location process
 
@@ -675,16 +949,20 @@ and eval_expression functions state expression =
     | Array items -> eval_array_items functions state Value.empty_array items
     | Variable name -> (
         match State.find_variable name state with
-        | Some value -> evaluated value state
-        | None -> unsupported "read of undefined variable $%s" name)
+        | Some value when Value.kind value <> `Undefined ->
+            evaluated value state
+        | Some _ | None ->
+            let*** (), state =
+              record_runtime_event Error.Runtime_event.Warning
+                (Printf.sprintf "Undefined variable $%s" name)
+                state
+            in
+            evaluated Value.null state)
     | Array_get target ->
         let*** place, state =
           resolve_lvalue functions state ~access:Read target
         in
-        let value = read_place state place in
-        if Value.kind value = `Undefined then
-          unsupported "read of an undefined array offset"
-        else evaluated value state
+        evaluated (read_place state place) state
     | Property_get target ->
         let*** place, state =
           resolve_lvalue functions state ~access:Read target
@@ -695,7 +973,7 @@ and eval_expression functions state expression =
           resolve_lvalue functions state ~access:Write target
         in
         let*** value, state = eval_expression functions state expression in
-        let** state = write_place place value state in
+        let*** (), state = write_place place value state in
         evaluated value state
     | Assign_reference (target, source) ->
         let*** target, state =
@@ -704,23 +982,23 @@ and eval_expression functions state expression =
         let*** source, state =
           resolve_lvalue functions state ~access:Write source
         in
-        let** cell, state = cell_for_reference source state in
-        let** state = bind_place_reference target cell state in
+        let*** cell, state = cell_for_reference source state in
+        let*** (), state = bind_place_reference target cell state in
         let value =
           State.find_cell cell state |> Option.value ~default:Value.undef
         in
         evaluated value state
     | Unary (operator, expression) ->
         let*** value, state = eval_expression functions state expression in
-        let** value = unary operator value in
-        evaluated value state
+        let** operation = unary operator value in
+        apply_operation operation state
     | Binary (left, ((Boolean_and | Boolean_or) as operator), right) ->
         eval_short_circuit functions state left operator right
     | Binary (left, operator, right) ->
         let*** left, state = eval_expression functions state left in
         let*** right, state = eval_expression functions state right in
-        let** value = binary state operator left right in
-        evaluated value state
+        let** operation = binary state operator left right in
+        apply_operation operation state
     | Cast (cast, expression) ->
         let*** value, state = eval_expression functions state expression in
         let target =
@@ -735,9 +1013,12 @@ and eval_expression functions state expression =
     | Call (name, arguments) -> (
         let*** arguments, state = eval_expressions functions state arguments in
         match Builtins.find name with
-        | Some implementation ->
-            let** value = implementation ~args:arguments in
-            evaluated value state
+        | Some implementation -> (
+            match Builtins.runtime_error name arguments with
+            | Some error -> raise_runtime_error state error
+            | None ->
+                let** value = implementation ~args:arguments in
+                evaluated value state)
         | None ->
             call_function functions state expression.location name arguments)
     | New (name, arguments) -> (
@@ -759,9 +1040,15 @@ and call_function functions state location name arguments =
       let expected = List.length function_.parameters in
       let actual = List.length arguments in
       if actual < expected then
-        Phpsymex.error
-          (Error.Invalid_argument_count
-             { function_name = function_.name ^ "()"; expected; actual })
+        raise_runtime_error state
+          {
+            Error.class_name = "ArgumentCountError";
+            message =
+              Printf.sprintf "%s() expects exactly %d argument%s, %d given"
+                function_.name expected
+                (if expected = 1 then "" else "s")
+                actual;
+          }
       else
         let bindings = bind_parameters function_.parameters arguments in
         let local_state = State.enter_scope bindings state in
@@ -802,7 +1089,7 @@ and unset_lvalues functions state lvalues =
       let*** place, state =
         resolve_lvalue functions state ~access:Unset lvalue
       in
-      let** state = unset_place place state in
+      let*** (), state = unset_place place state in
       unset_lvalues functions state lvalues
 
 and exec_statements functions state statements =
