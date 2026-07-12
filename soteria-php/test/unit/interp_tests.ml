@@ -50,14 +50,17 @@ let parameter name : Php_ir.parameter = { name; location }
 let function_ name parameters body : Php_ir.function_decl =
   { name; parameters = List.map parameter parameters; body; location }
 
-let property ?default name : Php_ir.property_decl = { name; default; location }
+let property ?default ?(visibility = Php_ir.Public) name : Php_ir.property_decl
+    =
+  { name; default; modifiers = [ visibility ]; location }
 
-let method_ name parameters body : Php_ir.method_decl =
+let method_ ?(visibility = Php_ir.Public) name parameters body :
+    Php_ir.method_decl =
   {
     name;
     parameters = List.map parameter parameters;
     body;
-    modifiers = [ Public ];
+    modifiers = [ visibility ];
     location;
   }
 
@@ -1073,6 +1076,32 @@ let shares_object_identity_and_property_cells () =
   Alcotest.(check (option int64))
     "detached property reference" (Some 3L) (integer "reference")
 
+let keeps_declaring_class_in_property_identity () =
+  let parent_property =
+    State.declared_property ~declaring_class:"Parent" "value"
+  in
+  let child_property =
+    State.declared_property ~declaring_class:"Child" "value"
+  in
+  let object_id, state =
+    State.allocate_object
+      ~properties:
+        [
+          (parent_property, Value.of_literal (Int 1L));
+          (child_property, Value.of_literal (Int 2L));
+        ]
+      "Child" "" State.empty
+  in
+  let integer property =
+    Option.bind
+      (State.find_object_property object_id property state)
+      Value.int_value
+  in
+  Alcotest.(check (option int64))
+    "parent private property" (Some 1L) (integer parent_property);
+  Alcotest.(check (option int64))
+    "child private property" (Some 2L) (integer child_property)
+
 let isolates_object_properties_across_symbolic_branches () =
   let box = class_ "Box" [ property ~default:(literal (Int 1L)) "value" ] in
   let value = object_property (variable_lvalue "box") "value" in
@@ -1657,6 +1686,8 @@ let () =
             compares_self_referential_arrays;
           Alcotest.test_case "object identity and property cells" `Quick
             shares_object_identity_and_property_cells;
+          Alcotest.test_case "declaring-class property identity" `Quick
+            keeps_declaring_class_in_property_identity;
           Alcotest.test_case "object property branch isolation" `Quick
             isolates_object_properties_across_symbolic_branches;
           Alcotest.test_case "constructors and recursive methods" `Quick

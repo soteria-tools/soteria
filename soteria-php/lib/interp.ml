@@ -347,7 +347,8 @@ type access = Read | Write | Unset
 type place =
   | Variable of string
   | Array_element of place * Value.array_key
-  | Object_property of State.object_id * string
+  | Object_property of State.object_id * State.object_property
+  | Inaccessible_property of place * Error.runtime_error
   | Invalid_read
 
 type throwable_class = {
@@ -489,7 +490,13 @@ let rec read_place state = function
   | Object_property (object_id, name) ->
       State.find_object_property object_id name state
       |> Option.value ~default:Value.undef
+  | Inaccessible_property (property, _) -> read_place state property
   | Invalid_read -> Value.null
+
+let rec place_contains_inaccessible = function
+  | Array_element (parent, _) -> place_contains_inaccessible parent
+  | Inaccessible_property _ -> true
+  | Variable _ | Object_property _ | Invalid_read -> false
 
 let cannot_use_as_array state value =
   match value with
@@ -535,6 +542,7 @@ let rec write_place place value state =
             (cannot_use_as_array state (read_place state parent)))
   | Object_property (object_id, name) ->
       evaluated () (State.set_object_property object_id name value state)
+  | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> failwith "write through an invalid PHP read"
 
 let bind_place_reference place cell state =
@@ -557,6 +565,7 @@ let bind_place_reference place cell state =
       | value -> raise_runtime_error state (cannot_use_as_array state value))
   | Object_property (object_id, name) ->
       evaluated () (State.bind_object_property object_id name cell state)
+  | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> failwith "bind through an invalid PHP read"
 
 let cell_for_reference place state =
@@ -608,6 +617,7 @@ let cell_for_reference place state =
           let cell, state = State.allocate_cell Value.null state in
           let state = State.bind_object_property object_id name cell state in
           evaluated cell state)
+  | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> failwith "take a reference through an invalid PHP read"
 
 let unset_place place state =
@@ -628,6 +638,7 @@ let unset_place place state =
             })
   | Object_property (object_id, name) ->
       evaluated () (State.unset_object_property object_id name state)
+  | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> evaluated () state
 
 let normalized_array_key value state =
@@ -746,6 +757,62 @@ let find_method (class_ : Php_ir.class_decl) name =
       String.equal (Builtins.canonical_name method_.name) canonical_name)
     class_.methods
 
+let find_property (class_ : Php_ir.class_decl) name =
+  List.find_opt
+    (fun (property : Php_ir.property_decl) -> String.equal property.name name)
+    class_.properties
+
+let member_accessible state declaring_class = function
+  | [ Php_ir.Public ] -> true
+  | [ (Protected | Private) ] -> (
+      match State.current_class_context state with
+      | Some current_class ->
+          String.equal
+            (Builtins.canonical_name current_class)
+            (Builtins.canonical_name declaring_class)
+      | None -> false)
+  | _ -> failwith "PHP member has invalid visibility modifiers"
+
+let inaccessible_method_error state (class_ : Php_ir.class_decl)
+    (method_ : Php_ir.method_decl) =
+  let visibility =
+    match method_.modifiers with
+    | [ Private ] -> "private"
+    | [ Protected ] -> "protected"
+    | [ Public ] -> failwith "public PHP method reported as inaccessible"
+    | _ -> failwith "PHP method has invalid visibility modifiers"
+  in
+  let scope =
+    match State.current_class_context state with
+    | Some name -> "scope " ^ name
+    | None -> "global scope"
+  in
+  let member =
+    if String.equal (Builtins.canonical_name method_.name) "__construct" then
+      Printf.sprintf "%s::%s()" class_.name method_.name
+    else Printf.sprintf "method %s::%s()" class_.name method_.name
+  in
+  {
+    Error.class_name = "Error";
+    message = Printf.sprintf "Call to %s %s from %s" visibility member scope;
+  }
+
+let inaccessible_property_error (class_ : Php_ir.class_decl)
+    (property : Php_ir.property_decl) =
+  let visibility =
+    match property.modifiers with
+    | [ Private ] -> "private"
+    | [ Protected ] -> "protected"
+    | [ Public ] -> failwith "public PHP property reported as inaccessible"
+    | _ -> failwith "PHP property has invalid visibility modifiers"
+  in
+  {
+    Error.class_name = "Error";
+    message =
+      Printf.sprintf "Cannot access %s property %s::$%s" visibility class_.name
+        property.name;
+  }
+
 let finish_evaluation evaluation continuation =
   let open Phpsymex.Syntax in
   let** result, state = evaluation in
@@ -796,7 +863,7 @@ and eval_array_items functions state array items =
       in
       Phpsymex.with_location ~location:item.location process
 
-and eval_property_defaults declarations state properties =
+and eval_property_defaults declarations state declaring_class properties =
   match properties with
   | [] -> evaluated [] state
   | (property : Php_ir.property_decl) :: properties ->
@@ -807,9 +874,10 @@ and eval_property_defaults declarations state properties =
         | Some expression -> eval_expression declarations state expression
       in
       let*** values, state =
-        eval_property_defaults declarations state properties
+        eval_property_defaults declarations state declaring_class properties
       in
-      evaluated ((property.name, value) :: values) state
+      let property = State.declared_property ~declaring_class property.name in
+      evaluated ((property, value) :: values) state
 
 and construct_object declarations state location name arguments =
   let canonical_name = Builtins.canonical_name name in
@@ -818,7 +886,7 @@ and construct_object declarations state location name arguments =
   | Some (class_ : Php_ir.class_decl) -> (
       let open Phpsymex.Syntax in
       let*** properties, state =
-        eval_property_defaults declarations state class_.properties
+        eval_property_defaults declarations state class_.name class_.properties
       in
       let id, state = State.allocate_object ~properties class_.name "" state in
       let object_ = Value.object_ id in
@@ -872,7 +940,9 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
                 match Value.array_reserve_next array with
                 | Some (key, array) ->
                     let*** (), state =
-                      write_place parent (Value.array array) state
+                      if place_contains_inaccessible parent then
+                        evaluated () state
+                      else write_place parent (Value.array array) state
                     in
                     evaluated (Array_element (parent, key)) state
                 | None ->
@@ -928,30 +998,61 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
               | Some object_ -> object_
               | None -> failwith "PHP object value refers to an unknown object"
             in
-            let place = Object_property (object_id, name) in
-            match
-              ( access,
-                State.object_declares_property object_id name state,
-                State.find_object_property_cell object_id name state )
-            with
-            | Read, _, None ->
-                let*** (), state =
-                  record_runtime_event Error.Runtime_event.Warning
-                    (Printf.sprintf "Undefined property: %s::$%s"
-                       object_state.class_name name)
-                    state
+            let class_ =
+              Class_map.find_opt
+                (Builtins.canonical_name object_state.class_name)
+                functions.classes
+            in
+            let property =
+              Option.bind class_ (fun class_ -> find_property class_ name)
+            in
+            match (class_, property) with
+            | Some class_, Some property
+              when not (member_accessible state class_.name property.modifiers)
+              -> (
+                let error = inaccessible_property_error class_ property in
+                match access with
+                | Write ->
+                    let property_key =
+                      State.declared_property ~declaring_class:class_.name
+                        property.name
+                    in
+                    let property = Object_property (object_id, property_key) in
+                    evaluated (Inaccessible_property (property, error)) state
+                | Read | Unset -> raise_runtime_error state error)
+            | _ -> (
+                let property_key =
+                  match (class_, property) with
+                  | Some class_, Some property ->
+                      State.declared_property ~declaring_class:class_.name
+                        property.name
+                  | _ -> State.dynamic_property name
                 in
-                evaluated Invalid_read state
-            | Write, false, None ->
-                let*** (), state =
-                  record_runtime_event Error.Runtime_event.Deprecation
-                    (Printf.sprintf
-                       "Creation of dynamic property %s::$%s is deprecated"
-                       object_state.class_name name)
-                    state
-                in
-                evaluated place state
-            | (Read | Write | Unset), _, _ -> evaluated place state)
+                let place = Object_property (object_id, property_key) in
+                match
+                  ( access,
+                    property,
+                    State.find_object_property_cell object_id property_key state
+                  )
+                with
+                | Read, _, None ->
+                    let*** (), state =
+                      record_runtime_event Error.Runtime_event.Warning
+                        (Printf.sprintf "Undefined property: %s::$%s"
+                           object_state.class_name name)
+                        state
+                    in
+                    evaluated Invalid_read state
+                | Write, None, None ->
+                    let*** (), state =
+                      record_runtime_event Error.Runtime_event.Deprecation
+                        (Printf.sprintf
+                           "Creation of dynamic property %s::$%s is deprecated"
+                           object_state.class_name name)
+                        state
+                    in
+                    evaluated place state
+                | (Read | Write | Unset), _, _ -> evaluated place state))
         | value -> (
             match access with
             | Read ->
@@ -1107,11 +1208,15 @@ and eval_expression functions state expression =
                   }
             | Some method_ ->
                 let class_ = Option.get class_ in
-                let*** arguments, state =
-                  eval_expressions functions state arguments
-                in
-                call_method functions state expression.location object_id class_
-                  method_ arguments)
+                if member_accessible state class_.name method_.modifiers then
+                  let*** arguments, state =
+                    eval_expressions functions state arguments
+                  in
+                  call_method functions state expression.location object_id
+                    class_ method_ arguments
+                else
+                  raise_runtime_error state
+                    (inaccessible_method_error state class_ method_))
         | value ->
             raise_runtime_error state
               {
@@ -1121,11 +1226,33 @@ and eval_expression functions state expression =
                     (Value.type_name value);
               })
     | New (name, arguments) -> (
-        let*** arguments, state = eval_expressions functions state arguments in
         match find_throwable_class name with
-        | Some _ -> construct_throwable state name arguments
-        | None ->
-            construct_object functions state expression.location name arguments)
+        | Some _ ->
+            let*** arguments, state =
+              eval_expressions functions state arguments
+            in
+            construct_throwable state name arguments
+        | None -> (
+            match
+              Class_map.find_opt
+                (Builtins.canonical_name name)
+                functions.classes
+            with
+            | None -> unsupported "object construction for class %s" name
+            | Some class_ -> (
+                match find_method class_ "__construct" with
+                | Some constructor
+                  when not
+                         (member_accessible state class_.name
+                            constructor.modifiers) ->
+                    raise_runtime_error state
+                      (inaccessible_method_error state class_ constructor)
+                | Some _ | None ->
+                    let*** arguments, state =
+                      eval_expressions functions state arguments
+                    in
+                    construct_object functions state expression.location name
+                      arguments)))
     | Throw expression ->
         let*** value, state = eval_expression functions state expression in
         raise_value value state
@@ -1188,7 +1315,9 @@ and call_method declarations state location object_id
       bind_parameters method_.parameters arguments
       @ [ ("this", Value.object_ object_id) ]
     in
-    let local_state = State.enter_scope bindings state in
+    let local_state =
+      State.enter_scope ~class_context:(Some class_.name) bindings state
+    in
     let process =
       let open Phpsymex.Syntax in
       let** control, local_state =

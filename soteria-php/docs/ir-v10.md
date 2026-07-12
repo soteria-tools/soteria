@@ -1,5 +1,8 @@
 # Soteria PHP IR version 10
 
+Version 10 is historical. The current frontend emits version 11, documented in
+`ir-v11.md`.
+
 Version 10 extends version 9 with ordered class methods and statically named
 instance method calls. The program envelope uses `schema_version` `10`; all
 version 9 constructs retain their existing representation.

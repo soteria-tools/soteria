@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 
 final class LoweringError extends RuntimeException
 {
@@ -139,16 +139,13 @@ final class Lowerer
 
     private function lowerMethod(Node\Stmt\ClassMethod $method): array
     {
+        $visibility = $this->lowerVisibility($method->flags);
         if (
             $method->byRef
             || $method->returnType !== null
             || $method->attrGroups !== []
             || $method->stmts === null
-            || !in_array(
-                $method->flags,
-                [0, Node\Stmt\Class_::MODIFIER_PUBLIC],
-                true,
-            )
+            || $visibility === null
         ) {
             return $this->unsupported($method, 'method declaration');
         }
@@ -181,15 +178,16 @@ final class Lowerer
                 ),
                 $method->stmts,
             ),
-            'modifiers' => ['public'],
+            'modifiers' => [$visibility],
             'location' => $this->location($method),
         ];
     }
 
     private function lowerProperties(Node\Stmt\Property $property): array
     {
+        $visibility = $this->lowerVisibility($property->flags);
         if (
-            !in_array($property->flags, [0, Node\Stmt\Class_::MODIFIER_PUBLIC], true)
+            $visibility === null
             || $property->type !== null
             || $property->attrGroups !== []
             || $property->hooks !== []
@@ -198,7 +196,7 @@ final class Lowerer
         }
 
         return array_map(
-            function (Node\PropertyItem $item): array {
+            function (Node\PropertyItem $item) use ($visibility): array {
                 if (
                     $item->default !== null
                     && !$this->isSupportedPropertyDefault($item->default)
@@ -210,11 +208,22 @@ final class Lowerer
                     'default' => $item->default === null
                         ? null
                         : $this->lowerExpression($item->default),
+                    'modifiers' => [$visibility],
                     'location' => $this->location($item),
                 ];
             },
             $property->props,
         );
+    }
+
+    private function lowerVisibility(int $flags): ?string
+    {
+        return match ($flags) {
+            0, Node\Stmt\Class_::MODIFIER_PUBLIC => 'public',
+            Node\Stmt\Class_::MODIFIER_PROTECTED => 'protected',
+            Node\Stmt\Class_::MODIFIER_PRIVATE => 'private',
+            default => null,
+        };
     }
 
     private function isSupportedPropertyDefault(Node\Expr $expression): bool

@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 10) ?(functions = []) ?(classes = []) statement =
+let program ?(schema_version = 11) ?(functions = []) ?(classes = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -48,10 +48,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:11 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:12 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 11 (expected 10)"
+        "error" "$.schema_version: unsupported schema version 12 (expected 11)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -421,7 +421,12 @@ let decodes_classes_and_object_properties () =
   in
   let property =
     `Assoc
-      [ ("name", `String "value"); ("default", int); ("location", location) ]
+      [
+        ("name", `String "value");
+        ("default", int);
+        ("modifiers", `List [ `String "protected" ]);
+        ("location", location);
+      ]
   in
   let class_ =
     `Assoc
@@ -479,6 +484,7 @@ let decodes_classes_and_object_properties () =
                   {
                     name = "value";
                     default = Some { desc = Literal (Int 1L); _ };
+                    modifiers = [ Protected ];
                     _;
                   };
                 ];
@@ -533,7 +539,7 @@ let decodes_methods_and_method_calls () =
         ("name", `String "identity");
         ("parameters", `List [ parameter ]);
         ("body", `List [ return ]);
-        ("modifiers", `List [ `String "public" ]);
+        ("modifiers", `List [ `String "private" ]);
         ("location", location);
       ]
   in
@@ -578,7 +584,7 @@ let decodes_methods_and_method_calls () =
                     name = "identity";
                     parameters = [ { name = "value"; _ } ];
                     body = [ Return (Some { desc = Variable "value"; _ }, _) ];
-                    modifiers = [ Public ];
+                    modifiers = [ Private ];
                     _;
                   };
                 ];
@@ -603,6 +609,37 @@ let decodes_methods_and_method_calls () =
       ()
   | Ok _ -> Alcotest.fail "decoded an unexpected method shape"
   | Error error -> Alcotest.fail error
+
+let rejects_invalid_member_visibility () =
+  let property =
+    `Assoc
+      [
+        ("name", `String "value");
+        ("default", `Null);
+        ("modifiers", `List [ `String "public"; `String "private" ]);
+        ("location", location);
+      ]
+  in
+  let class_ =
+    `Assoc
+      [
+        ("name", `String "Box");
+        ("properties", `List [ property ]);
+        ("methods", `List []);
+        ("location", location);
+      ]
+  in
+  let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
+  match
+    Soteria_php.Php_ir.of_yojson (program ~classes:[ class_ ] statement)
+  with
+  | Error error ->
+      Alcotest.(check string)
+        "error"
+        "$.classes[0].properties[0].modifiers: expected exactly one visibility \
+         modifier"
+        error
+  | Ok _ -> Alcotest.fail "accepted multiple property visibility modifiers"
 
 let decodes_foreach_by_reference () =
   let variable name =
@@ -689,6 +726,8 @@ let () =
             decodes_classes_and_object_properties;
           Alcotest.test_case "methods and method calls" `Quick
             decodes_methods_and_method_calls;
+          Alcotest.test_case "member visibility validation" `Quick
+            rejects_invalid_member_visibility;
           Alcotest.test_case "foreach by reference" `Quick
             decodes_foreach_by_reference;
           Alcotest.test_case "loop-control validation" `Quick

@@ -1,7 +1,7 @@
 # Soteria PHP IR version 6
 
-Version 6 is historical. The current frontend emits version 10, documented in
-`ir-v10.md`.
+Version 6 is historical. The current frontend emits version 11, documented in
+`ir-v11.md`.
 
 Version 6 extends version 5 with structured loop control, exception handling,
 throw expressions, and statically named object construction. The program

@@ -90,19 +90,20 @@ type function_decl = {
   location : location;
 }
 
+type member_modifier = Public | Protected | Private
+
 type property_decl = {
   name : string;
   default : expression option;
+  modifiers : member_modifier list;
   location : location;
 }
-
-type method_modifier = Public
 
 type method_decl = {
   name : string;
   parameters : parameter list;
   body : statement list;
-  modifiers : method_modifier list;
+  modifiers : member_modifier list;
   location : location;
 }
 
@@ -121,7 +122,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 10
+let schema_version = 11
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -675,9 +676,21 @@ let rec validate_property_default path (expression : expression) =
         items
   | _ -> decode_error path "unsupported property default expression"
 
+let decode_member_modifier path = function
+  | "public" -> Public
+  | "protected" -> Protected
+  | "private" -> Private
+  | modifier -> decode_error path ("unknown member modifier " ^ modifier)
+
+let validate_visibility path = function
+  | [ (Public | Protected | Private) ] -> ()
+  | _ ->
+      decode_error (path ^ ".modifiers")
+        "expected exactly one visibility modifier"
+
 let decode_property path json =
   let fields = as_assoc path json in
-  check_fields path [ "name"; "default"; "location" ] fields;
+  check_fields path [ "name"; "default"; "modifiers"; "location" ] fields;
   let name = field path "name" fields |> as_string (path ^ ".name") in
   let default =
     match field path "default" fields with
@@ -687,14 +700,18 @@ let decode_property path json =
         validate_property_default (path ^ ".default") expression;
         Some expression
   in
+  let modifiers =
+    field path "modifiers" fields
+    |> as_list (path ^ ".modifiers")
+    |> List.mapi (fun index json ->
+        let path = Printf.sprintf "%s.modifiers[%d]" path index in
+        json |> as_string path |> decode_member_modifier path)
+  in
+  validate_visibility path modifiers;
   let location =
     field path "location" fields |> decode_location (path ^ ".location")
   in
-  { name; default; location }
-
-let decode_method_modifier path = function
-  | "public" -> Public
-  | modifier -> decode_error path ("unknown method modifier " ^ modifier)
+  { name; default; modifiers; location }
 
 let decode_method path json =
   let fields = as_assoc path json in
@@ -720,10 +737,9 @@ let decode_method path json =
     |> as_list (path ^ ".modifiers")
     |> List.mapi (fun index json ->
         let path = Printf.sprintf "%s.modifiers[%d]" path index in
-        json |> as_string path |> decode_method_modifier path)
+        json |> as_string path |> decode_member_modifier path)
   in
-  if modifiers <> [ Public ] then
-    decode_error (path ^ ".modifiers") "expected exactly one public modifier";
+  validate_visibility path modifiers;
   let location =
     field path "location" fields |> decode_location (path ^ ".location")
   in
@@ -1276,16 +1292,21 @@ let function_to_yojson (function_ : function_decl) =
       ("location", location_to_yojson function_.location);
     ]
 
+let member_modifier_to_yojson = function
+  | Public -> `String "public"
+  | Protected -> `String "protected"
+  | Private -> `String "private"
+
 let property_to_yojson (property : property_decl) =
   `Assoc
     [
       ("name", `String property.name);
       ( "default",
         Option.fold ~none:`Null ~some:expression_to_yojson property.default );
+      ( "modifiers",
+        `List (List.map member_modifier_to_yojson property.modifiers) );
       ("location", location_to_yojson property.location);
     ]
-
-let method_modifier_to_yojson = function Public -> `String "public"
 
 let method_to_yojson (method_ : method_decl) =
   `Assoc
@@ -1293,7 +1314,7 @@ let method_to_yojson (method_ : method_decl) =
       ("name", `String method_.name);
       ("parameters", `List (List.map parameter_to_yojson method_.parameters));
       ("body", `List (List.map statement_to_yojson method_.body));
-      ("modifiers", `List (List.map method_modifier_to_yojson method_.modifiers));
+      ("modifiers", `List (List.map member_modifier_to_yojson method_.modifiers));
       ("location", location_to_yojson method_.location);
     ]
 

@@ -52,6 +52,12 @@
   $ cat soteria.out
   initial=1:result=:receiver:argument:method7:value=7:recursive=7:missing:null:method-throw:constructing:caught
 
+  $ php visibility.php > php.out
+  $ ../../../bin/soteria_php.exe exec visibility.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  123:45:function-private-read:6:unrelated-private-read:side-effect:unrelated-protected-write:unrelated-private-reference:unrelated-protected-unset:unrelated-private-method:unrelated-protected-method:global-private-read:side-effect:global-protected-write:side-effect:global-private-nested-write:global-private-method:private-constructor
+
   $ php exceptions.php > php.out
   $ ../../../bin/soteria_php.exe exec exceptions.php > soteria.out
   $ cmp php.out soteria.out
