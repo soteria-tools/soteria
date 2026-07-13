@@ -1,15 +1,21 @@
 # Changelog
 
-All notable changes to Soteria, Soteria Rust and Soteria Rust are recorded here.
-The three are released together under a single version number. The format is
-based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); see
-[RELEASING.md](./RELEASING.md) for the versioning policy and the release
-process.
+All notable changes to Soteria, Soteria C, Soteria Rust, and Soteria PHP are
+recorded here. They are released together under a single version number. The
+format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); see
+[RELEASING.md](./RELEASING.md) for the versioning policy and the release process.
 
 Add entries for your change under `## [Unreleased]` as part of your pull
 request.
 
 ## [Unreleased]
+
+### Added
+
+- Soteria PHP: added standalone macOS arm64 and Linux x86_64 packages with
+  bundled Z3 and locked PHP-Parser dependencies, package smoke tests, and
+  nightly/versioned release assets. A compatible 64-bit system PHP runtime is
+  still required.
 
 ### Changed
 

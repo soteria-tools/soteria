@@ -5,6 +5,11 @@ semantics oracle, while the parser sidecar may run on any PHP version accepted
 by its Composer manifest. The frontend uses nikic/PHP-Parser 5.8.0 and emits
 Soteria PHP IR schema version 15.
 
+Standalone macOS arm64 and Linux x86_64 packages bundle Z3 and the locked
+PHP-Parser dependencies. They deliberately do not bundle PHP: a 64-bit system
+PHP runtime version 8.2 or newer must be available as `php` on `PATH`. Composer
+is needed for source development, but not for a prebuilt package.
+
 The interpreter supports this deliberately bounded source subset:
 
 The detailed cast and operand-kind tables are in

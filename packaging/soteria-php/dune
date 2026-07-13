@@ -1,0 +1,27 @@
+(executable
+ (name package)
+ (libraries packaging_common))
+
+(rule ; Verify macOS_dylibs.txt is up-to-date on macOS.
+ (alias soteria-php-dylist-file)
+ (enabled_if
+  (= %{system} "macosx"))
+ (deps %{bin:soteria-php} ./package.exe)
+ (action
+  (progn
+   (with-stdout-to
+    macOS_dylibs_found.txt
+    (run ./package.exe infer-dylibs %{bin:soteria-php}))
+   (diff? macOS_dylibs.txt macOS_dylibs_found.txt))))
+
+(rule ; Verify linux_dylibs.txt is up-to-date on Linux.
+ (alias soteria-php-dylist-file)
+ (enabled_if
+  (= %{system} "linux"))
+ (deps %{bin:soteria-php} ./package.exe)
+ (action
+  (progn
+   (with-stdout-to
+    linux_dylibs_found.txt
+    (run ./package.exe infer-dylibs %{bin:soteria-php}))
+   (diff? linux_dylibs.txt linux_dylibs_found.txt))))

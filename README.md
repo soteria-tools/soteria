@@ -24,13 +24,14 @@
 
 Soteria is an OCaml library for writing efficient symbolic interpreters directly in OCaml.
 
-The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. Currently, two symbolic interpreters have been written: Soteria Rust and Soteria C. Our current main focus is Soteria Rust.
+The core library provides a set of batteries-included abstractions for writing one's own symbolic interpreter. The repository includes symbolic execution tools for Rust, C, and PHP. Our current main focus is Soteria Rust.
 
 ## Table of Contents
 
 - [Getting Started](#getting-started)
 - [Soteria Rust](#soteria-rust)
 - [Soteria C](#soteria-c)
+- [Soteria PHP](#soteria-php)
 - [Contributing](#contributing)
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
@@ -142,6 +143,41 @@ Use `--help` for a full list of options:
 ```sh
 soteria-c --help
 ```
+
+## Soteria PHP
+
+Soteria PHP is a symbolic execution and bug-finding tool for the documented
+PHP subset. Prebuilt packages for macOS arm64 and Linux x86_64 are attached to
+nightly and versioned GitHub releases.
+
+The package bundles Z3 and the locked PHP-Parser frontend dependencies. It does
+not bundle PHP itself: install a 64-bit PHP runtime version 8.2 or newer and
+ensure `php` is on `PATH`. Composer is not required when using a prebuilt
+package.
+
+After extracting the package, configure its executable and native library
+paths:
+
+```sh
+export SOTERIA_PHP_HOME=/path/to/soteria-php
+export PATH="$SOTERIA_PHP_HOME/bin:$PATH"
+export SOTERIA_Z3_PATH="$SOTERIA_PHP_HOME/bin/z3"
+# Linux:
+export LD_LIBRARY_PATH="$SOTERIA_PHP_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# macOS:
+export DYLD_LIBRARY_PATH="$SOTERIA_PHP_HOME/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
+```
+
+Symbolically execute a script or a selected zero-argument function:
+
+```sh
+soteria-php exec example.php
+soteria-php exec example.php --function test_sort
+```
+
+<!-- [versionsync: PHP_VERSION=8.4.19] -->
+Soteria PHP targets PHP 8.4.19 semantics. Its supported subset and explicit
+limitations are recorded in the [support matrix](./soteria-php/docs/support.md).
 
 ## Contributing
 

@@ -1,9 +1,9 @@
 name: Publish release
 description: >-
-  Download the per-platform soteria-c/soteria-rust packages built by build.yml,
-  zip them, generate checksums, and create (or replace) a GitHub release. Shared
-  by the nightly and versioned release workflows. The caller must pass
-  github-token and check out the repository first.
+  Download the per-platform soteria-c/soteria-rust/soteria-php packages built
+  by build.yml, zip them, generate checksums, and create (or replace) a GitHub
+  release. Shared by the nightly and versioned release workflows. The caller
+  must pass github-token and check out the repository first.
 
 inputs:
   github-token:
@@ -31,8 +31,8 @@ inputs:
     default: "false"
   asset-version:
     description: >-
-      When non-empty, inserted into asset names as soteria-c-<version>-<platform>.zip
-      (used to version release assets). Empty for the moving nightly release.
+      When non-empty, inserted into asset names before the platform (used to
+      version release assets). Empty for the moving nightly release.
     required: false
     default: ""
   target:
@@ -65,6 +65,16 @@ runs:
       with:
         name: linux-x86_64-soteria-rust-package
         path: release-artifacts/soteria-rust-linux-x86_64
+    - name: Download soteria-php macOS package
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
+      with:
+        name: macos-arm64-soteria-php-package
+        path: release-artifacts/soteria-php-macos-arm64
+    - name: Download soteria-php Linux package
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
+      with:
+        name: linux-x86_64-soteria-php-package
+        path: release-artifacts/soteria-php-linux-x86_64
 
     - name: Zip packages and compute checksums
       shell: bash
@@ -78,7 +88,8 @@ runs:
           infix="-$ASSET_VERSION"
         fi
         for entry in "soteria-c macos-arm64" "soteria-c linux-x86_64" \
-                     "soteria-rust macos-arm64" "soteria-rust linux-x86_64"; do
+                     "soteria-rust macos-arm64" "soteria-rust linux-x86_64" \
+                     "soteria-php macos-arm64" "soteria-php linux-x86_64"; do
           # shellcheck disable=SC2086
           set -- $entry
           tool="$1"; platform="$2"

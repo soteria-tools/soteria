@@ -40,7 +40,7 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first twenty-one changes in the suggested pull request sequence have been
+The first twenty-two changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
@@ -50,8 +50,10 @@ array-key insertion, constructors, instance methods, `$this`, and property and
 method visibility, inheritance, interfaces, traits, static state, closures, and
 callable values, selected magic methods including `__callStatic` and `__invoke`,
 object builtins, and cloning with optional `__clone`. The M3 exit criteria have
-been audited and met for the documented subset; standalone packaging and
-release integration are next.
+been audited and met for the documented subset. Standalone macOS and Linux
+packages bundle Z3 and the locked Composer dependencies, require a compatible
+system PHP runtime, run package smoke tests, and ship through the nightly and
+versioned release workflows.
 
 Completing M0-M3 is not the same as completing PHP's semantic breadth. The
 sequence deliberately established one sound path through each subsystem before
@@ -640,9 +642,10 @@ coverage and give-up statistics.
 
 ### M5: distribution
 
-**Status:** Deferred until the M1-M3 exit criteria are met. The Dune package,
-executable, generated opam metadata, Composer lockfile, and source-build CI
-coverage already exist. Standalone packages and their release path do not.
+**Status:** Complete. The standalone package policy requires a compatible
+64-bit system PHP runtime and bundles Z3 plus the locked Composer dependencies.
+macOS arm64 and Linux x86_64 packages are built and smoke-tested in CI, then
+included in nightly and versioned releases.
 
 Deliverables:
 
@@ -684,7 +687,8 @@ Changes should remain small and independently reviewable.
 21. **Complete:** M3 exit-criterion audit and target-driven `__callStatic` and
     `__invoke` extensions, while keeping serialization and unrestricted dynamic
     properties explicitly unsupported.
-22. Packaging and CI distribution after the M1-M3 exit criteria pass.
+22. **Complete:** Packaging and CI distribution after the M1-M3 exit criteria
+    pass.
 23. Multi-file `include`/`require`, Composer autoloading, entry-point discovery,
     and supported attributes.
 24. Superglobal input models and configurable filesystem, environment,
@@ -862,14 +866,14 @@ M3 is complete when small programs using constructors, methods, visibility,
 inheritance, interfaces, traits, static state, and closures pass differential
 tests without breaking object identity, property aliasing, or branch isolation.
 
-## Deferred distribution work
+## Distribution policy
 
-Packaging remains M5 work. Once M1-M3 meet their exit criteria, the project can
-choose the system-PHP policy, bundle the locked Composer dependencies and Z3,
-add macOS/Linux package smoke tests, and integrate PHP archives into nightly and
-versioned releases. Source-build CI should continue running throughout the
-semantic work, but standalone distribution should not drive the near-term
-design.
+M5 distribution work is complete. Standalone packages use a compatible 64-bit
+system PHP runtime rather than bundling PHP itself, avoiding the size,
+licensing-review, platform-support, and security-update responsibilities of a
+second runtime distribution. The archives bundle the locked Composer
+dependencies and Z3, preserve Dune's frontend site layout, and are smoke-tested
+on macOS arm64 and Linux x86_64 before nightly or versioned publication.
 
 ## Major risks
 

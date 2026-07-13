@@ -1,7 +1,7 @@
 # Releasing Soteria
 
-The `soteria` library and the `soteria-c` / `soteria-rust` tools are released
-together under a single version number.
+The `soteria` library and the `soteria-c`, `soteria-rust`, and `soteria-php`
+tools are released together under a single version number.
 
 ## Versions
 
@@ -38,7 +38,8 @@ that changes behaviour adds a bullet under `## [Unreleased]`. CI
    - read `SOTERIA_VERSION`, verify the bump is legal and the tag is new;
    - rebuild and re-test everything (`build.yml` + `test-packages.yml`);
    - create the immutable tag `vX.Y.Z` at the tested commit and a GitHub
-     Release with the changelog section and the prebuilt binaries attached.
+     Release with the changelog section and the prebuilt C, Rust, and PHP
+     packages attached.
 
 The packaging/upload logic is shared with the nightly workflow via
 `.github/actions/publish-release`.

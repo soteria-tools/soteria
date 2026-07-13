@@ -19,6 +19,36 @@ let scripts_from_site directory =
     Filename.concat directory development_script;
   ]
 
+let is_executable path =
+  try
+    Unix.access path [ Unix.X_OK ];
+    not (Sys.is_directory path)
+  with Unix.Unix_error _ | Sys_error _ -> false
+
+let executable_path () =
+  let executable = Sys.executable_name in
+  let candidates =
+    if Filename.is_relative executable && not (String.contains executable '/')
+    then
+      Sys.getenv_opt "PATH"
+      |> Option.value ~default:""
+      |> String.split_on_char ':'
+      |> List.map (fun directory -> Filename.concat directory executable)
+    else if Filename.is_relative executable then
+      [ Filename.concat (Sys.getcwd ()) executable ]
+    else [ executable ]
+  in
+  List.find_opt is_executable candidates
+  |> Option.map (fun path ->
+      try Unix.realpath path with Unix.Unix_error _ -> path)
+
+let packaged_script () =
+  Option.map
+    (fun executable ->
+      let prefix = Filename.dirname (Filename.dirname executable) in
+      Filename.concat prefix "share/soteria-php/frontend/lower.php")
+    (executable_path ())
+
 let find_lower_script () =
   match Sys.getenv_opt "SOTERIA_PHP_FRONTEND" with
   | Some path when Sys.file_exists path -> Ok path
@@ -30,9 +60,11 @@ let find_lower_script () =
       in
       if Sys.file_exists development_path then Ok development_path
       else
+        let packaged_paths = Option.to_list (packaged_script ()) in
         match
           List.find_opt Sys.file_exists
-            (List.concat_map scripts_from_site Frontend_site.Sites.frontend)
+            (packaged_paths
+            @ List.concat_map scripts_from_site Frontend_site.Sites.frontend)
         with
         | Some path -> Ok path
         | None ->
