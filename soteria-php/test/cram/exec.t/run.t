@@ -122,6 +122,12 @@
   $ cat soteria.out
   get:secret;secret:effect;set:stored=7;get:stored;7:isset:stored;1:isset:missing;::isset:missing;:isset:nested;get:nested;1:isset:missing;::unset:stored;effect;call:missingMethod;9:call:hiddenMethod;5:string;box:string;value=box:get:throwing;magic-throw:bad-string:no-string:MagicBox:111:111:11:MagicBox:get-class-type:is-a-arity:property-exists-type:1
 
+  $ php magic_calls.php > php.out
+  $ ../../../bin/soteria_php.exe exec magic_calls.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  effect;static:child:missing;5:static:child:hidden;3:effect;invoke;4:3:non-static:not-callable
+
   $ ../../../bin/soteria_php.exe exec magic_symbolic.php
 
   $ ../../../bin/soteria_php.exe exec symbolic.php

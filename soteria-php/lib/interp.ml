@@ -1905,7 +1905,34 @@ and eval_expression functions state expression =
               arguments
         | Value.String _ -> unsupported "string callable invocation"
         | Value.Array _ -> unsupported "array callable invocation"
-        | Value.Object _ -> unsupported "invokable object"
+        | Value.Object object_id -> (
+            let object_state =
+              match State.find_object object_id state with
+              | Some object_ -> object_
+              | None -> failwith "PHP object value refers to an unknown object"
+            in
+            let method_ =
+              Option.bind
+                (Class_map.find_opt
+                   (Builtins.canonical_name object_state.class_name)
+                   functions.classes)
+                (fun class_ -> find_method_from functions class_ "__invoke")
+            in
+            match method_ with
+            | None ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message =
+                      Printf.sprintf "Object of type %s is not callable"
+                        object_state.class_name;
+                  }
+            | Some method_ ->
+                let*** arguments, state =
+                  eval_expressions functions state arguments
+                in
+                call_method functions state expression.location object_id
+                  method_ arguments)
         | value ->
             raise_runtime_error state
               {
@@ -2075,20 +2102,35 @@ and eval_expression functions state expression =
         call_static_expression functions state expression.location class_name
           name arguments
     | Static_method_callable (class_name, name) ->
-        let*** (class_name, (method_ : method_member)), state =
-          resolve_static_method functions state class_name name
+        let*** class_, state =
+          resolve_static_class functions state class_name
         in
-        let identity, state = State.fresh_callable_id state in
-        evaluated
-          (Value.callable
-             (Value.Static_method
-                {
-                  identity;
-                  called_class = class_name;
-                  declaring_class = method_.declaring_class;
-                  method_name = method_.declaration.name;
-                }))
-          state
+        let method_ = find_method functions state class_ name in
+        let magic = find_method_from functions class_ "__callStatic" in
+        if
+          Option.is_some magic
+          && Option.fold ~none:true
+               ~some:(fun (method_ : method_member) ->
+                 not
+                   (member_accessible functions state method_.declaring_class
+                      method_.declaration.modifiers))
+               method_
+        then unsupported "first-class callable through __callStatic"
+        else
+          let*** (class_name, (method_ : method_member)), state =
+            resolve_static_method functions state class_name name
+          in
+          let identity, state = State.fresh_callable_id state in
+          evaluated
+            (Value.callable
+               (Value.Static_method
+                  {
+                    identity;
+                    called_class = class_name;
+                    declaring_class = method_.declaring_class;
+                    method_name = method_.declaration.name;
+                  }))
+            state
     | Closure closure ->
         let*** captures, state =
           capture_closure_variables functions state closure.captures
@@ -2398,7 +2440,7 @@ and capture_closure_variables declarations state captures =
       in
       Phpsymex.with_location ~location:capture.location process
 
-and resolve_static_method declarations state class_reference name =
+and resolve_static_class declarations state class_reference =
   match resolve_class_reference declarations state class_reference with
   | None ->
       raise_runtime_error state
@@ -2419,45 +2461,89 @@ and resolve_static_method declarations state class_reference name =
               Error.class_name = "Error";
               message = Printf.sprintf "Class %S not found" class_name;
             }
-      | Some class_ -> (
-          match
-            (find_method declarations state class_ name : method_member option)
-          with
-          | None ->
-              raise_runtime_error state
-                {
-                  Error.class_name = "Error";
-                  message =
-                    Printf.sprintf "Call to undefined method %s::%s()"
-                      class_.name name;
-                }
-          | Some method_
-            when not (member_is_static method_.declaration.modifiers) ->
-              raise_runtime_error state
-                {
-                  Error.class_name = "Error";
-                  message =
-                    Printf.sprintf
-                      "Non-static method %s::%s() cannot be called statically"
-                      method_.declaring_class method_.declaration.name;
-                }
-          | Some method_
-            when not
-                   (member_accessible declarations state method_.declaring_class
-                      method_.declaration.modifiers) ->
-              raise_runtime_error state
-                (inaccessible_method_error state method_)
-          | Some (method_ : method_member) ->
-              evaluated (class_.name, method_) state))
+      | Some class_ -> evaluated class_ state)
+
+and resolve_static_method declarations state class_reference name =
+  let open Phpsymex.Syntax in
+  let*** class_, state =
+    resolve_static_class declarations state class_reference
+  in
+  match (find_method declarations state class_ name : method_member option) with
+  | None ->
+      raise_runtime_error state
+        {
+          Error.class_name = "Error";
+          message =
+            Printf.sprintf "Call to undefined method %s::%s()" class_.name name;
+        }
+  | Some method_ when not (member_is_static method_.declaration.modifiers) ->
+      raise_runtime_error state
+        {
+          Error.class_name = "Error";
+          message =
+            Printf.sprintf
+              "Non-static method %s::%s() cannot be called statically"
+              method_.declaring_class method_.declaration.name;
+        }
+  | Some method_
+    when not
+           (member_accessible declarations state method_.declaring_class
+              method_.declaration.modifiers) ->
+      raise_runtime_error state (inaccessible_method_error state method_)
+  | Some (method_ : method_member) -> evaluated (class_.name, method_) state
 
 and call_static_expression declarations state location class_name name arguments
     =
   let open Phpsymex.Syntax in
-  let*** (called_class, (method_ : method_member)), state =
-    resolve_static_method declarations state class_name name
-  in
-  let*** arguments, state = eval_expressions declarations state arguments in
-  call_static_method declarations state location called_class method_ arguments
+  let*** class_, state = resolve_static_class declarations state class_name in
+  let method_ = find_method declarations state class_ name in
+  let magic = find_method_from declarations class_ "__callStatic" in
+  match method_ with
+  | Some method_
+    when member_accessible declarations state method_.declaring_class
+           method_.declaration.modifiers ->
+      if not (member_is_static method_.declaration.modifiers) then
+        raise_runtime_error state
+          {
+            Error.class_name = "Error";
+            message =
+              Printf.sprintf
+                "Non-static method %s::%s() cannot be called statically"
+                method_.declaring_class method_.declaration.name;
+          }
+      else
+        let*** arguments, state =
+          eval_expressions declarations state arguments
+        in
+        call_static_method declarations state location class_.name method_
+          arguments
+  | Some inaccessible -> (
+      match magic with
+      | None ->
+          raise_runtime_error state
+            (inaccessible_method_error state inaccessible)
+      | Some magic ->
+          let*** arguments, state =
+            eval_expressions declarations state arguments
+          in
+          call_static_method declarations state location class_.name magic
+            [ Value.string name; array_of_values arguments ])
+  | None -> (
+      match magic with
+      | None ->
+          raise_runtime_error state
+            {
+              Error.class_name = "Error";
+              message =
+                Printf.sprintf "Call to undefined method %s::%s()" class_.name
+                  name;
+            }
+      | Some magic ->
+          let*** arguments, state =
+            eval_expressions declarations state arguments
+          in
+          call_static_method declarations state location class_.name magic
+            [ Value.string name; array_of_values arguments ])
 
 and call_object_builtin declarations state name arguments =
   let name = Builtins.canonical_name name in
@@ -3595,25 +3681,47 @@ let build_classes declarations =
           | [] -> Ok ()
           | (method_ : method_member) :: methods -> (
               let name = Builtins.canonical_name method_.declaration.name in
-              match magic_arity method_.declaration.name with
-              | None -> validate_magic_methods methods
-              | Some arity
-                when (String.equal name "__clone"
-                     || member_visibility method_.declaration.modifiers = Public
-                     )
-                     && (not (member_is_static method_.declaration.modifiers))
-                     && List.length method_.declaration.parameters = arity ->
-                  validate_magic_methods methods
-              | Some arity when String.equal name "__clone" ->
+              if String.equal name "__invoke" then
+                if
+                  member_visibility method_.declaration.modifiers = Public
+                  && not (member_is_static method_.declaration.modifiers)
+                then validate_magic_methods methods
+                else
                   class_error method_.declaration.location
-                    "%s::%s must be non-static and accept exactly %d arguments"
-                    method_.declaring_class method_.declaration.name arity
-              | Some arity ->
+                    "%s::%s must be public and non-static"
+                    method_.declaring_class method_.declaration.name
+              else if String.equal name "__callstatic" then
+                if
+                  member_visibility method_.declaration.modifiers = Public
+                  && member_is_static method_.declaration.modifiers
+                  && List.length method_.declaration.parameters = 2
+                then validate_magic_methods methods
+                else
                   class_error method_.declaration.location
-                    "%s::%s must be public, non-static, and accept exactly %d \
-                     argument%s"
-                    method_.declaring_class method_.declaration.name arity
-                    (if arity = 1 then "" else "s"))
+                    "%s::%s must be public, static, and accept exactly 2 \
+                     arguments"
+                    method_.declaring_class method_.declaration.name
+              else
+                match magic_arity method_.declaration.name with
+                | None -> validate_magic_methods methods
+                | Some arity
+                  when (String.equal name "__clone"
+                       || member_visibility method_.declaration.modifiers
+                          = Public)
+                       && (not (member_is_static method_.declaration.modifiers))
+                       && List.length method_.declaration.parameters = arity ->
+                    validate_magic_methods methods
+                | Some arity when String.equal name "__clone" ->
+                    class_error method_.declaration.location
+                      "%s::%s must be non-static and accept exactly %d \
+                       arguments"
+                      method_.declaring_class method_.declaration.name arity
+                | Some arity ->
+                    class_error method_.declaration.location
+                      "%s::%s must be public, non-static, and accept exactly \
+                       %d argument%s"
+                      method_.declaring_class method_.declaration.name arity
+                      (if arity = 1 then "" else "s"))
         in
         let* () = validate_magic_methods class_.methods in
         let requirements =

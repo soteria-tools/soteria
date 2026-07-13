@@ -44,6 +44,12 @@ let invoke callee arguments = expression (Invoke (callee, arguments))
 let method_call object_ name arguments =
   expression (Method_call (object_, name, arguments))
 
+let static_method_call class_name name arguments =
+  expression (Static_method_call (class_name, name, arguments))
+
+let static_method_callable class_name name =
+  expression (Static_method_callable (class_name, name))
+
 let new_ name arguments = expression (New (name, arguments))
 let clone value = expression (Clone value)
 let throw value = expression (Throw value)
@@ -64,13 +70,13 @@ let property ?default ?(visibility = Php_ir.Public) ?(static = false) name :
     location;
   }
 
-let method_ ?(visibility = Php_ir.Public) name parameters body :
-    Php_ir.method_decl =
+let method_ ?(visibility = Php_ir.Public) ?(static = false) name parameters body
+    : Php_ir.method_decl =
   {
     name;
     parameters = List.map parameter parameters;
     body = Some body;
-    modifiers = [ visibility ];
+    modifiers = (if static then [ visibility; Static ] else [ visibility ]);
     location;
   }
 
@@ -1320,6 +1326,78 @@ let isolates_clone_cells_and_references_across_symbolic_branches () =
     [ (1L, 3L); (2L, 2L) ]
     values
 
+let isolates_magic_call_state_across_symbolic_branches () =
+  let object_value = object_property (variable_lvalue "this") "value" in
+  let first_argument =
+    array_element ~key:(literal (Int 0L)) (variable_lvalue "arguments")
+  in
+  let invoke_method =
+    method_ "__invoke" [ "value" ]
+      [ expression_statement (assign_lvalue object_value (variable "value")) ]
+  in
+  let call_static_method =
+    method_ ~static:true "__callStatic" [ "name"; "arguments" ]
+      [
+        expression_statement
+          (assign_lvalue
+             (static_property "MagicCalls" "static_value")
+             (array_get first_argument));
+      ]
+  in
+  let magic_calls =
+    class_
+      ~methods:[ invoke_method; call_static_method ]
+      "MagicCalls"
+      [
+        property ~default:(literal (Int 0L)) "value";
+        property ~static:true ~default:(literal (Int 0L)) "static_value";
+      ]
+  in
+  let branch object_value static_value =
+    [
+      expression_statement
+        (invoke (variable "object") [ literal (Int object_value) ]);
+      expression_statement
+        (static_method_call "MagicCalls" "missing"
+           [ literal (Int static_value) ]);
+    ]
+  in
+  let statements =
+    [
+      expression_statement (assign "object" (new_ "MagicCalls" []));
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.If (variable "condition", branch 1L 11L, branch 2L 22L, location);
+      expression_statement
+        (assign "object_result"
+           (property_get (object_property (variable_lvalue "object") "value")));
+      expression_statement
+        (assign "static_result"
+           (property_get (static_property "MagicCalls" "static_value")));
+    ]
+  in
+  let values =
+    run ~classes:[ magic_calls ] statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind
+            (Option.bind
+               (State.find_variable "object_result" state)
+               Value.int_value)
+            (fun object_value ->
+              Option.map
+                (fun static_value -> (object_value, static_value))
+                (Option.bind
+                   (State.find_variable "static_result" state)
+                   Value.int_value))
+      | _ -> None)
+    |> List.sort Stdlib.compare
+  in
+  Alcotest.(check (list (pair int64 int64)))
+    "branch-local invokable object and magic static state"
+    [ (1L, 11L); (2L, 22L) ]
+    values
+
 let keeps_declaring_class_in_property_identity () =
   let parent_property =
     State.declared_property ~declaring_class:"Parent" "value"
@@ -1415,7 +1493,29 @@ let rejects_invalid_class_graphs_and_composition () =
     class_ ~traits:[ trait_use [ "Left"; "Right" ] ] "Conflict" []
   in
   run ~classes:[ left; right; conflict ] []
-  |> expect_single_give_up "trait conflict"
+  |> expect_single_give_up "trait conflict";
+  let invalid_call_static =
+    class_
+      ~methods:[ method_ "__callStatic" [ "name"; "arguments" ] [] ]
+      "InvalidCallStatic" []
+  in
+  run ~classes:[ invalid_call_static ] []
+  |> expect_single_give_up "non-static __callStatic";
+  let invalid_invoke =
+    class_ ~methods:[ method_ ~static:true "__invoke" [] [] ] "InvalidInvoke" []
+  in
+  run ~classes:[ invalid_invoke ] [] |> expect_single_give_up "static __invoke";
+  let magic_call_static =
+    class_
+      ~methods:
+        [ method_ ~static:true "__callStatic" [ "name"; "arguments" ] [] ]
+      "MagicCallStatic" []
+  in
+  run ~classes:[ magic_call_static ]
+    [
+      expression_statement (static_method_callable "MagicCallStatic" "missing");
+    ]
+  |> expect_single_give_up "first-class callable through __callStatic"
 
 let runs_constructors_instance_methods_and_recursive_calls () =
   let this_value = object_property (variable_lvalue "this") "value" in
@@ -1983,6 +2083,8 @@ let () =
             clones_objects_shallowly_and_runs_clone_method;
           Alcotest.test_case "clone branch isolation" `Quick
             isolates_clone_cells_and_references_across_symbolic_branches;
+          Alcotest.test_case "magic call branch isolation" `Quick
+            isolates_magic_call_state_across_symbolic_branches;
           Alcotest.test_case "declaring-class property identity" `Quick
             keeps_declaring_class_in_property_identity;
           Alcotest.test_case "object property branch isolation" `Quick
