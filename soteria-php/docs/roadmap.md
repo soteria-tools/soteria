@@ -40,7 +40,7 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first nineteen changes in the suggested pull request sequence have been
+The first twenty changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
@@ -48,14 +48,14 @@ properties, concrete counterexamples, expected-failure tests, and selected
 function entry points, by-value and by-reference array iteration, and symbolic
 array-key insertion, constructors, instance methods, `$this`, and property and
 method visibility, inheritance, interfaces, traits, static state, closures, and
-callable values, selected magic methods, and object builtins. The next work
-should finish the remaining M1-M3 semantic gaps before standalone packaging and
-release integration.
+callable values, selected magic methods, object builtins, and cloning with
+optional `__clone`. The next work should audit the remaining M3 semantic gaps
+before standalone packaging and release integration.
 
 Completing these pull requests is not the same as completing milestones M0-M3.
 The sequence deliberately established one sound path through each subsystem
-before filling out PHP's semantic breadth. M0 and M2 are complete; M1 and M3
-remain partial as described below. The authoritative language boundary is
+before filling out PHP's semantic breadth. M0, M1, and M2 are complete; M3
+remains partial as described below. The authoritative language boundary is
 maintained in `support.md`.
 
 ## Goals
@@ -606,8 +606,9 @@ branch-isolation tests.
 declared-property stores, property references, `unset`, nested array access, and
 branch isolation, constructors, instance methods, `$this`, and public,
 protected, and private visibility, inheritance, interfaces, and traits are
-implemented. Static state, callable values, and closures are also implemented.
-Cloning and the remaining magic methods remain.
+implemented. Static state, callable values, closures, cloning, and the selected
+magic methods are also implemented. The M3 exit-criterion audit and any
+target-driven magic extensions remain.
 
 Deliverables:
 
@@ -677,7 +678,20 @@ Changes should remain small and independently reviewable.
 17. **Complete:** Inheritance, interfaces, and traits.
 18. **Complete:** Static state, closures, and callable values.
 19. **Complete:** Selected magic methods and object builtins.
-20. Packaging and CI distribution after the M1-M3 exit criteria pass.
+20. **Complete:** Cloning and optional `__clone`, including fresh object
+    identity, shallow property-copy and reference semantics, differential tests,
+    and symbolic branch-isolation tests.
+21. M3 exit-criterion audit and target-driven magic extensions such as
+    `__callStatic` and `__invoke`, while keeping serialization and unrestricted
+    dynamic properties explicitly unsupported.
+22. Packaging and CI distribution after the M1-M3 exit criteria pass.
+23. Multi-file `include`/`require`, Composer autoloading, entry-point discovery,
+    and supported attributes.
+24. Superglobal input models and configurable filesystem, environment,
+    database, and network summaries, followed by sound function and method
+    summaries where useful.
+25. Representative Composer-project benchmarks with documented coverage,
+    give-up reasons, and analysis statistics.
 
 Each pull request should include focused tests and should not combine repository
 packaging work with substantial semantic changes.
@@ -833,14 +847,14 @@ subset documented in `support.md`.
 
 ### M3.5: selected object completion work
 
-1. Implement cloning with a fresh object identity, PHP's shallow property-copy
-   behavior, preserved references, and an optional supported `__clone` method.
-2. Select and implement the first required magic methods based on target
-   programs; likely candidates are `__get`, `__set`, `__isset`, `__unset`,
-   `__call`, and `__toString`.
-3. Add a small object-builtin set such as `get_class`, `is_a`,
-   `property_exists`, and `method_exists`, each with an explicit analysis
-   contract.
+1. **Complete:** Implement cloning with a fresh object identity, PHP's shallow
+   property-copy behavior, preserved references, and an optional supported
+   `__clone` method.
+2. **Complete:** Implement the selected `__get`, `__set`, `__isset`, `__unset`,
+   `__call`, and `__toString` methods. Add further magic methods only when
+   required by target programs.
+3. **Complete:** Add `get_class`, `is_a`, `property_exists`, and
+   `method_exists`, each with an explicit analysis contract.
 4. Keep serialization and dynamic properties unsupported until their state and
    deprecation behavior are designed explicitly.
 

@@ -1,7 +1,10 @@
 module String_map = Map.Make (String)
 module Cell_map = Map.Make (Int)
+module Cell_set = Set.Make (Int)
 module Object_map = Map.Make (Int)
+module Object_set = Set.Make (Int)
 module Closure_map = Map.Make (Int)
+module Closure_set = Set.Make (Int)
 
 module Magic_property_set = Set.Make (struct
   type t = int * string * string
@@ -177,6 +180,144 @@ let fresh_callable_id state =
 
 let find_closure id state = Closure_map.find_opt id state.closures
 let find_object id state = Object_map.find_opt id state.objects
+
+type traversal = {
+  visited_cells : Cell_set.t;
+  visited_objects : Object_set.t;
+  visited_closures : Closure_set.t;
+  occurrences : int;
+}
+
+let rec visit_cell target cell state traversal =
+  if Cell_set.mem cell traversal.visited_cells then traversal
+  else
+    let traversal =
+      {
+        traversal with
+        visited_cells = Cell_set.add cell traversal.visited_cells;
+      }
+    in
+    match find_cell cell state with
+    | Some value -> visit_value target value state traversal
+    | None -> failwith "PHP binding refers to an unknown cell"
+
+and visit_binding target cell state traversal =
+  let traversal =
+    if cell = target then
+      { traversal with occurrences = traversal.occurrences + 1 }
+    else traversal
+  in
+  visit_cell target cell state traversal
+
+and visit_value target value state traversal =
+  match value with
+  | Value.Array array ->
+      List.fold_left
+        (fun traversal (_, entry) ->
+          match entry with
+          | Value.Inline value -> visit_value target value state traversal
+          | Value.Reference cell -> visit_binding target cell state traversal)
+        traversal
+        (Value.array_bindings array)
+  | Value.Object id -> visit_object target id state traversal
+  | Value.Callable (Value.Object_method { object_id; _ }) ->
+      visit_object target object_id state traversal
+  | Value.Callable (Value.Closure id) -> visit_closure target id state traversal
+  | Value.Undef | Null | Bool _ | Int _ | Float _ | String _
+  | Callable (Function _ | First_class_function _ | Static_method _) ->
+      traversal
+
+and visit_object target id state traversal =
+  if Object_set.mem id traversal.visited_objects then traversal
+  else
+    let traversal =
+      {
+        traversal with
+        visited_objects = Object_set.add id traversal.visited_objects;
+      }
+    in
+    match find_object id state with
+    | Some object_ ->
+        Property_map.fold
+          (fun _ cell traversal -> visit_binding target cell state traversal)
+          object_.properties traversal
+    | None -> failwith "PHP value refers to an unknown object"
+
+and visit_closure target id state traversal =
+  if Closure_set.mem id traversal.visited_closures then traversal
+  else
+    let traversal =
+      {
+        traversal with
+        visited_closures = Closure_set.add id traversal.visited_closures;
+      }
+    in
+    match find_closure id state with
+    | Some closure ->
+        String_map.fold
+          (fun _ capture traversal ->
+            match capture with
+            | By_value value -> visit_value target value state traversal
+            | By_reference cell -> visit_binding target cell state traversal)
+          closure.captures traversal
+    | None -> failwith "PHP value refers to an unknown closure"
+
+let cell_occurrences_from_roots target root_object state =
+  let initial =
+    {
+      visited_cells = Cell_set.empty;
+      visited_objects = Object_set.empty;
+      visited_closures = Closure_set.empty;
+      occurrences = 0;
+    }
+  in
+  let traversal = visit_object target root_object state initial in
+  let traversal =
+    List.fold_left
+      (fun traversal scope ->
+        String_map.fold
+          (fun _ cell traversal -> visit_binding target cell state traversal)
+          scope traversal)
+      traversal state.scopes
+  in
+  Static_property_map.fold
+    (fun _ cell traversal -> visit_binding target cell state traversal)
+    state.static_properties traversal
+  |> fun traversal -> traversal.occurrences
+
+let clone_object id state =
+  match find_object id state with
+  | None -> failwith "clone of an unknown PHP object"
+  | Some object_ ->
+      let properties =
+        Property_map.bindings object_.properties
+        |> List.map (fun (property, cell) ->
+            (property, cell, cell_occurrences_from_roots cell id state > 1))
+      in
+      let cloned_properties, state =
+        List.fold_left
+          (fun (properties, state) (property, cell, is_reference) ->
+            if is_reference then
+              (Property_map.add property cell properties, state)
+            else
+              let value =
+                match find_cell cell state with
+                | Some value -> value
+                | None -> failwith "PHP property refers to an unknown cell"
+              in
+              let cell, state = allocate_cell value state in
+              (Property_map.add property cell properties, state))
+          (Property_map.empty, state)
+          properties
+      in
+      let clone = { object_ with properties = cloned_properties } in
+      let clone_id = state.next_object in
+      ( clone_id,
+        {
+          state with
+          objects = Object_map.add clone_id clone state.objects;
+          next_object = clone_id + 1;
+        } )
 
 let magic_property_key object_id property method_name =
   (object_id, property, String.lowercase_ascii method_name)

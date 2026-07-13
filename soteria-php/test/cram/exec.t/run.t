@@ -46,6 +46,12 @@
   $ cat soteria.out
   same:different:2:1:3:4:3:second:first:5
 
+  $ php cloning.php > php.out
+  $ ../../../bin/soteria_php.exe exec cloning.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  clone;1:1:11:1:2:3:7:7;5:6;private;PrivateClone;throw:9;non-object;uncloneable
+
   $ php methods.php > php.out
   $ ../../../bin/soteria_php.exe exec methods.php > soteria.out
   $ cmp php.out soteria.out

@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 14;
+const SCHEMA_VERSION = 15;
 
 final class LoweringError extends RuntimeException
 {
@@ -1000,6 +1000,14 @@ final class Lowerer
                     ),
                     $expression->args,
                 ),
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\Clone_) {
+            return [
+                'kind' => 'clone',
+                'expression' => $this->lowerExpression($expression->expr),
                 'location' => $location,
             ];
         }

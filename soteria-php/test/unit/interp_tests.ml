@@ -45,6 +45,7 @@ let method_call object_ name arguments =
   expression (Method_call (object_, name, arguments))
 
 let new_ name arguments = expression (New (name, arguments))
+let clone value = expression (Clone value)
 let throw value = expression (Throw value)
 let binary left operator right = expression (Binary (left, operator, right))
 let unary operator operand = expression (Unary (operator, operand))
@@ -1195,6 +1196,130 @@ let shares_object_identity_and_property_cells () =
   Alcotest.(check (option int64))
     "detached property reference" (Some 3L) (integer "reference")
 
+let clones_objects_shallowly_and_runs_clone_method () =
+  let this_value = object_property (variable_lvalue "this") "value" in
+  let clone_method =
+    method_ "__clone" []
+      [
+        expression_statement
+          (assign_lvalue this_value
+             (binary (property_get this_value) Add (literal (Int 10L))));
+      ]
+  in
+  let nested =
+    class_ "Nested" [ property ~default:(literal (Int 1L)) "value" ]
+  in
+  let box =
+    class_ ~methods:[ clone_method ] "Box"
+      [
+        property ~default:(literal (Int 1L)) "value";
+        property ~default:(literal (Int 0L)) "reference";
+        property "nested";
+      ]
+  in
+  let original_value = object_property (variable_lvalue "original") "value" in
+  let copy_value = object_property (variable_lvalue "copy") "value" in
+  let original_reference =
+    object_property (variable_lvalue "original") "reference"
+  in
+  let copy_reference = object_property (variable_lvalue "copy") "reference" in
+  let original_nested = object_property (variable_lvalue "original") "nested" in
+  let copy_nested = object_property (variable_lvalue "copy") "nested" in
+  let copy_nested_value = object_property copy_nested "value" in
+  let original_nested_value = object_property original_nested "value" in
+  let statements =
+    [
+      expression_statement (assign "shared" (literal (Int 4L)));
+      expression_statement (assign "original" (new_ "Box" []));
+      expression_statement (assign "nested" (new_ "Nested" []));
+      expression_statement (assign_lvalue original_nested (variable "nested"));
+      expression_statement
+        (assign_reference original_reference (variable_lvalue "shared"));
+      expression_statement (assign "copy" (clone (variable "original")));
+      expression_statement (assign_lvalue copy_nested_value (literal (Int 3L)));
+      expression_statement (assign_lvalue copy_reference (literal (Int 7L)));
+      expression_statement
+        (assign "distinct"
+           (binary (variable "original") Not_identical (variable "copy")));
+      expression_statement
+        (assign "original_value" (property_get original_value));
+      expression_statement (assign "copy_value" (property_get copy_value));
+      expression_statement
+        (assign "nested_value" (property_get original_nested_value));
+      expression_statement
+        (assign "reference_value" (property_get original_reference));
+    ]
+  in
+  let state =
+    run ~classes:[ nested; box ] statements |> expect_single_ok "object cloning"
+  in
+  let integer name =
+    Option.bind (State.find_variable name state) Value.int_value
+  in
+  Alcotest.(check (option bool))
+    "fresh object identity" (Some true)
+    (Option.bind (State.find_variable "distinct" state) Value.bool_value);
+  Alcotest.(check (option int64))
+    "ordinary property copied before __clone" (Some 1L)
+    (integer "original_value");
+  Alcotest.(check (option int64))
+    "clone hook mutates only the clone" (Some 11L) (integer "copy_value");
+  Alcotest.(check (option int64))
+    "nested object handle is shared" (Some 3L) (integer "nested_value");
+  Alcotest.(check (option int64))
+    "property reference is preserved" (Some 7L)
+    (integer "reference_value")
+
+let isolates_clone_cells_and_references_across_symbolic_branches () =
+  let box = class_ "Box" [ property ~default:(literal (Int 1L)) "value" ] in
+  let original_value = object_property (variable_lvalue "original") "value" in
+  let copy_value = object_property (variable_lvalue "copy") "value" in
+  let statements =
+    [
+      expression_statement (assign "shared" (literal (Int 1L)));
+      expression_statement (assign "original" (new_ "Box" []));
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.If
+        ( variable "condition",
+          [
+            expression_statement
+              (assign_reference original_value (variable_lvalue "shared"));
+            expression_statement (assign "copy" (clone (variable "original")));
+            expression_statement (assign_lvalue copy_value (literal (Int 2L)));
+          ],
+          [
+            expression_statement (assign "copy" (clone (variable "original")));
+            expression_statement (assign_lvalue copy_value (literal (Int 3L)));
+          ],
+          location );
+      expression_statement
+        (assign "original_result" (property_get original_value));
+      expression_statement (assign "copy_result" (property_get copy_value));
+    ]
+  in
+  let values =
+    run ~classes:[ box ] statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind
+            (Option.bind
+               (State.find_variable "original_result" state)
+               Value.int_value)
+            (fun original ->
+              Option.map
+                (fun copy -> (original, copy))
+                (Option.bind
+                   (State.find_variable "copy_result" state)
+                   Value.int_value))
+      | _ -> None)
+    |> List.sort Stdlib.compare
+  in
+  Alcotest.(check (list (pair int64 int64)))
+    "branch-local clone cells and reference promotion"
+    [ (1L, 3L); (2L, 2L) ]
+    values
+
 let keeps_declaring_class_in_property_identity () =
   let parent_property =
     State.declared_property ~declaring_class:"Parent" "value"
@@ -1854,6 +1979,10 @@ let () =
             compares_self_referential_arrays;
           Alcotest.test_case "object identity and property cells" `Quick
             shares_object_identity_and_property_cells;
+          Alcotest.test_case "object cloning and clone hook" `Quick
+            clones_objects_shallowly_and_runs_clone_method;
+          Alcotest.test_case "clone branch isolation" `Quick
+            isolates_clone_cells_and_references_across_symbolic_branches;
           Alcotest.test_case "declaring-class property identity" `Quick
             keeps_declaring_class_in_property_identity;
           Alcotest.test_case "object property branch isolation" `Quick

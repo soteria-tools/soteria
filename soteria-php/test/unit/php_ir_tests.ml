@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 14) ?(functions = []) ?(classes = []) statement =
+let program ?(schema_version = 15) ?(functions = []) ?(classes = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -48,10 +48,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:15 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:16 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 15 (expected 14)"
+        "error" "$.schema_version: unsupported schema version 16 (expected 15)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -579,6 +579,42 @@ let decodes_isset_targets () =
   | Ok _ -> Alcotest.fail "decoded an unexpected isset shape"
   | Error error -> Alcotest.fail error
 
+let decodes_clone_expressions () =
+  let variable =
+    `Assoc
+      [
+        ("kind", `String "variable");
+        ("name", `String "box");
+        ("location", location);
+      ]
+  in
+  let clone =
+    `Assoc
+      [
+        ("kind", `String "clone");
+        ("expression", variable);
+        ("location", location);
+      ]
+  in
+  let statement =
+    `Assoc
+      [
+        ("kind", `String "expression");
+        ("expression", clone);
+        ("location", location);
+      ]
+  in
+  match Soteria_php.Php_ir.of_yojson (program statement) with
+  | Ok
+      {
+        statements =
+          [ Expression ({ desc = Clone { desc = Variable "box"; _ }; _ }, _) ];
+        _;
+      } ->
+      ()
+  | Ok _ -> Alcotest.fail "decoded an unexpected clone shape"
+  | Error error -> Alcotest.fail error
+
 let decodes_methods_and_method_calls () =
   let variable name =
     `Assoc
@@ -800,6 +836,8 @@ let () =
           Alcotest.test_case "classes and object properties" `Quick
             decodes_classes_and_object_properties;
           Alcotest.test_case "isset targets" `Quick decodes_isset_targets;
+          Alcotest.test_case "clone expressions" `Quick
+            decodes_clone_expressions;
           Alcotest.test_case "methods and method calls" `Quick
             decodes_methods_and_method_calls;
           Alcotest.test_case "member visibility validation" `Quick

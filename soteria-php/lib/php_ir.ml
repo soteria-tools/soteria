@@ -53,6 +53,7 @@ and expression_desc =
   | Parent_method_call of string * expression list
   | Closure of closure_decl
   | New of string * expression list
+  | Clone of expression
   | Throw of expression
 
 and array_item = {
@@ -171,7 +172,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 14
+let schema_version = 15
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -580,6 +581,13 @@ let rec decode_expression path json =
               decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
         in
         New (class_name, arguments)
+    | "clone" ->
+        check_fields path [ "kind"; "expression"; "location" ] fields;
+        let expression =
+          field path "expression" fields
+          |> decode_expression (path ^ ".expression")
+        in
+        Clone expression
     | "throw" ->
         check_fields path [ "kind"; "expression"; "location" ] fields;
         let expression =
@@ -1102,7 +1110,8 @@ let rec iter_expression_locations f (expression : expression) =
   | Assign_reference (target, source) ->
       iter_lvalue_locations f target;
       iter_lvalue_locations f source
-  | Unary (_, value) | Cast (_, value) -> iter_expression_locations f value
+  | Unary (_, value) | Cast (_, value) | Clone value ->
+      iter_expression_locations f value
   | Binary (left, _, right) ->
       iter_expression_locations f left;
       iter_expression_locations f right
@@ -1578,6 +1587,11 @@ let rec expression_to_yojson expression =
           ("kind", `String "new");
           ("class", `String class_name);
           ("arguments", `List (List.map expression_to_yojson arguments));
+        ]
+    | Clone expression ->
+        [
+          ("kind", `String "clone");
+          ("expression", expression_to_yojson expression);
         ]
     | Throw expression ->
         [

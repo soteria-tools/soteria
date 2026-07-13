@@ -1031,9 +1031,9 @@ let inaccessible_method_error state (method_ : method_member) =
   in
   let member =
     if
-      String.equal
+      List.mem
         (Builtins.canonical_name method_.declaration.name)
-        "__construct"
+        [ "__construct"; "__clone" ]
     then
       Printf.sprintf "%s::%s()" method_.declaring_class method_.declaration.name
     else
@@ -2292,6 +2292,68 @@ and eval_expression functions state expression =
                     in
                     construct_object functions state expression.location name
                       arguments)))
+    | Clone operand -> (
+        let*** value, state = eval_expression functions state operand in
+        match value with
+        | Value.Object object_id -> (
+            let object_ =
+              match State.find_object object_id state with
+              | Some object_ -> object_
+              | None -> failwith "PHP object value refers to an unknown object"
+            in
+            match
+              Class_map.find_opt
+                (Builtins.canonical_name object_.class_name)
+                functions.classes
+            with
+            | None ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message =
+                      Printf.sprintf
+                        "Trying to clone an uncloneable object of class %s"
+                        object_.class_name;
+                  }
+            | Some _ when class_is_a functions object_.class_name "Throwable" ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message =
+                      Printf.sprintf
+                        "Trying to clone an uncloneable object of class %s"
+                        object_.class_name;
+                  }
+            | Some class_ -> (
+                match find_method_from functions class_ "__clone" with
+                | Some method_
+                  when not
+                         (member_accessible functions state
+                            method_.declaring_class
+                            method_.declaration.modifiers) ->
+                    raise_runtime_error state
+                      (inaccessible_method_error state method_)
+                | clone_method -> (
+                    let clone_id, state = State.clone_object object_id state in
+                    let clone = Value.object_ clone_id in
+                    match clone_method with
+                    | None -> evaluated clone state
+                    | Some method_ -> (
+                        let** result, state =
+                          call_method functions state expression.location
+                            clone_id method_ []
+                        in
+                        match result with
+                        | Evaluated _ -> evaluated clone state
+                        | Raised thrown ->
+                            Phpsymex.Result.ok (Raised thrown, state)))))
+        | Value.Undef | Null | Bool _ | Int _ | Float _ | String _ | Array _
+        | Callable _ ->
+            raise_runtime_error state
+              {
+                Error.class_name = "Error";
+                message = "__clone method called on non-object";
+              })
     | Throw expression ->
         let*** value, state = eval_expression functions state expression in
         raise_value ~declarations:functions value state
@@ -3526,18 +3588,26 @@ let build_classes declarations =
               ("__unset", 1);
               ("__call", 2);
               ("__tostring", 0);
+              ("__clone", 0);
             ]
         in
         let rec validate_magic_methods = function
           | [] -> Ok ()
           | (method_ : method_member) :: methods -> (
+              let name = Builtins.canonical_name method_.declaration.name in
               match magic_arity method_.declaration.name with
               | None -> validate_magic_methods methods
               | Some arity
-                when member_visibility method_.declaration.modifiers = Public
+                when (String.equal name "__clone"
+                     || member_visibility method_.declaration.modifiers = Public
+                     )
                      && (not (member_is_static method_.declaration.modifiers))
                      && List.length method_.declaration.parameters = arity ->
                   validate_magic_methods methods
+              | Some arity when String.equal name "__clone" ->
+                  class_error method_.declaration.location
+                    "%s::%s must be non-static and accept exactly %d arguments"
+                    method_.declaring_class method_.declaration.name arity
               | Some arity ->
                   class_error method_.declaration.location
                     "%s::%s must be public, non-static, and accept exactly %d \
