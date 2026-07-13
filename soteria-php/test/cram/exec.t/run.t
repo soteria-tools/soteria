@@ -110,6 +110,29 @@
   $ cat soteria.out
   5:7:9
 
+  $ php multi_file.php > php.out
+  $ ../../../bin/soteria_php.exe exec multi_file.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  files:12
+
+  $ php composer_run.php > php.out
+  $ ../../../bin/soteria_php.exe exec composer_run.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  composer:autoload:23:package
+
+  $ ../../../bin/soteria_php.exe discover composer_project.php
+  composer_entry
+  ComposerCases::static_entry
+  ComposerCases::instance_entry
+
+  $ ../../../bin/soteria_php.exe exec composer_project.php --function ComposerCases::static_entry
+  static
+
+  $ ../../../bin/soteria_php.exe exec composer_project.php --function ComposerCases::instance_entry
+  instance
+
   $ php static_closures.php > php.out
   $ ../../../bin/soteria_php.exe exec static_closures.php > soteria.out
   $ cmp php.out soteria.out

@@ -1,0 +1,13 @@
+{
+  "packages": [
+    {
+      "name": "demo/package",
+      "install-path": "../demo/package",
+      "autoload": {
+        "psr-4": {
+          "Package\\": "src/"
+        }
+      }
+    }
+  ]
+}

@@ -168,11 +168,14 @@ export LD_LIBRARY_PATH="$SOTERIA_PHP_HOME/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PAT
 export DYLD_LIBRARY_PATH="$SOTERIA_PHP_HOME/lib${DYLD_LIBRARY_PATH:+:$DYLD_LIBRARY_PATH}"
 ```
 
-Symbolically execute a script or a selected zero-argument function:
+Symbolically execute a script or a selected zero-argument function or public
+method. `discover` lists entry points marked with `#[Soteria\Test]`:
 
 ```sh
 soteria-php exec example.php
 soteria-php exec example.php --function test_sort
+soteria-php exec example.php --function Tests::test_sort
+soteria-php discover example.php
 ```
 
 <!-- [versionsync: PHP_VERSION=8.4.19] -->

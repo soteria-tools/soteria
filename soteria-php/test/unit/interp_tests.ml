@@ -57,9 +57,16 @@ let binary left operator right = expression (Binary (left, operator, right))
 let unary operator operand = expression (Unary (operator, operand))
 let expression_statement expression = Php_ir.Expression (expression, location)
 let parameter name : Php_ir.parameter = { name; location }
+let test_attribute : Php_ir.attribute = { name = "Soteria\\Test"; location }
 
-let function_ name parameters body : Php_ir.function_decl =
-  { name; parameters = List.map parameter parameters; body; location }
+let function_ ?(test = false) name parameters body : Php_ir.function_decl =
+  {
+    name;
+    parameters = List.map parameter parameters;
+    body;
+    attributes = (if test then [ test_attribute ] else []);
+    location;
+  }
 
 let property ?default ?(visibility = Php_ir.Public) ?(static = false) name :
     Php_ir.property_decl =
@@ -70,13 +77,14 @@ let property ?default ?(visibility = Php_ir.Public) ?(static = false) name :
     location;
   }
 
-let method_ ?(visibility = Php_ir.Public) ?(static = false) name parameters body
-    : Php_ir.method_decl =
+let method_ ?(visibility = Php_ir.Public) ?(static = false) ?(test = false) name
+    parameters body : Php_ir.method_decl =
   {
     name;
     parameters = List.map parameter parameters;
     body = Some body;
     modifiers = (if static then [ visibility; Static ] else [ visibility ]);
+    attributes = (if test then [ test_attribute ] else []);
     location;
   }
 
@@ -127,6 +135,7 @@ let program ?(functions = []) ?(classes = []) statements : Php_ir.t =
   {
     target_php_version = Php_ir.target_php_version;
     source_file = location.file;
+    source_files = [ location.file ];
     functions;
     classes;
     statements;
@@ -485,6 +494,37 @@ let executes_a_selected_function_entry_point () =
   with
   | Error _ -> ()
   | Ok _ -> Alcotest.fail "a parameterized entry point should be rejected"
+
+let discovers_and_executes_method_entry_points () =
+  let function_entry = function_ ~test:true "function_entry" [] [] in
+  let static_entry =
+    method_ ~static:true ~test:true "static_entry" []
+      [ Php_ir.Echo ([ literal (String "static") ], location) ]
+  in
+  let instance_entry =
+    method_ ~test:true "instance_entry" []
+      [ Php_ir.Echo ([ literal (String "instance") ], location) ]
+  in
+  let class_ = class_ ~methods:[ static_entry; instance_entry ] "Cases" [] in
+  let program = program ~functions:[ function_entry ] ~classes:[ class_ ] [] in
+  Alcotest.(check (list string))
+    "discovered entries"
+    [ "function_entry"; "Cases::static_entry"; "Cases::instance_entry" ]
+    (Interp.discover_entry_points program);
+  let static_state =
+    run ~function_name:"Cases::static_entry" ~functions:[ function_entry ]
+      ~classes:[ class_ ] []
+    |> expect_single_ok "static method entry point"
+  in
+  Alcotest.(check string) "static output" "static" (State.output static_state);
+  let instance_state =
+    run ~function_name:"cases::INSTANCE_ENTRY" ~functions:[ function_entry ]
+      ~classes:[ class_ ] []
+    |> expect_single_ok "instance method entry point"
+  in
+  Alcotest.(check string)
+    "instance output" "instance"
+    (State.output instance_state)
 
 let isolates_symbolic_function_returns () =
   let choose =
@@ -2037,6 +2077,8 @@ let () =
             defaults_to_null_on_fallthrough;
           Alcotest.test_case "selected function entry point" `Quick
             executes_a_selected_function_entry_point;
+          Alcotest.test_case "discovered method entry points" `Quick
+            discovers_and_executes_method_entry_points;
           Alcotest.test_case "symbolic function returns" `Quick
             isolates_symbolic_function_returns;
           Alcotest.test_case "missing function arguments" `Quick

@@ -106,10 +106,13 @@ and statement =
   | Unset of lvalue list * location
   | Nop of location
 
+type attribute = { name : string; location : location }
+
 type function_decl = {
   name : string;
   parameters : parameter list;
   body : statement list;
+  attributes : attribute list;
   location : location;
 }
 
@@ -127,6 +130,7 @@ type method_decl = {
   parameters : parameter list;
   body : statement list option;
   modifiers : member_modifier list;
+  attributes : attribute list;
   location : location;
 }
 
@@ -167,12 +171,13 @@ type class_decl = {
 type t = {
   target_php_version : string;
   source_file : string;
+  source_files : string list;
   functions : function_decl list;
   classes : class_decl list;
   statements : statement list;
 }
 
-let schema_version = 15
+let schema_version = 16
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -847,9 +852,33 @@ and decode_catch_clause ~allow_return ~loop_depth path json =
   in
   { types; variable; body; location }
 
+let decode_attribute path json =
+  let fields = as_assoc path json in
+  check_fields path [ "name"; "location" ] fields;
+  let name = field path "name" fields |> as_string (path ^ ".name") in
+  if not (String.equal (String.lowercase_ascii name) "soteria\\test") then
+    decode_error (path ^ ".name") ("unsupported attribute " ^ name);
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { name; location }
+
+let decode_attributes path fields =
+  let attributes =
+    field path "attributes" fields
+    |> as_list (path ^ ".attributes")
+    |> List.mapi (fun index ->
+        decode_attribute (Printf.sprintf "%s.attributes[%d]" path index))
+  in
+  match attributes with
+  | [] | [ _ ] -> attributes
+  | _ -> decode_error (path ^ ".attributes") "duplicate Soteria\\Test attribute"
+
 let decode_function path json =
   let fields = as_assoc path json in
-  check_fields path [ "name"; "parameters"; "body"; "location" ] fields;
+  check_fields path
+    [ "name"; "parameters"; "body"; "attributes"; "location" ]
+    fields;
   let name = field path "name" fields |> as_string (path ^ ".name") in
   let parameters =
     field path "parameters" fields
@@ -864,10 +893,11 @@ let decode_function path json =
         decode_statement ~allow_return:true ~loop_depth:0
           (Printf.sprintf "%s.body[%d]" path index))
   in
+  let attributes = decode_attributes path fields in
   let location =
     field path "location" fields |> decode_location (path ^ ".location")
   in
-  { name; parameters; body; location }
+  { name; parameters; body; attributes; location }
 
 let rec validate_property_default path (expression : expression) =
   let rec numeric = function
@@ -932,7 +962,7 @@ let decode_property path json =
 let decode_method path json =
   let fields = as_assoc path json in
   check_fields path
-    [ "name"; "parameters"; "body"; "modifiers"; "location" ]
+    [ "name"; "parameters"; "body"; "modifiers"; "attributes"; "location" ]
     fields;
   let name = field path "name" fields |> as_string (path ^ ".name") in
   let parameters =
@@ -960,10 +990,11 @@ let decode_method path json =
         json |> as_string path |> decode_member_modifier path)
   in
   validate_visibility path modifiers;
+  let attributes = decode_attributes path fields in
   let location =
     field path "location" fields |> decode_location (path ^ ".location")
   in
-  { name; parameters; body; modifiers; location }
+  { name; parameters; body; modifiers; attributes; location }
 
 let decode_declaration_kind path = function
   | "class" -> Class
@@ -1196,6 +1227,9 @@ and iter_catch_clause_locations f (catch : catch_clause) =
 let iter_function_locations f (function_ : function_decl) =
   f function_.location;
   List.iter
+    (fun (attribute : attribute) -> f attribute.location)
+    function_.attributes;
+  List.iter
     (fun (parameter : parameter) -> f parameter.location)
     function_.parameters;
   List.iter (iter_statement_locations f) function_.body
@@ -1220,15 +1254,31 @@ let iter_class_locations f (class_ : class_decl) =
     (fun (method_ : method_decl) ->
       f method_.location;
       List.iter
+        (fun (attribute : attribute) -> f attribute.location)
+        method_.attributes;
+      List.iter
         (fun (parameter : parameter) -> f parameter.location)
         method_.parameters;
       Option.iter (List.iter (iter_statement_locations f)) method_.body)
     class_.methods
 
-let validate_source_file source_file functions classes statements =
+let validate_source_files source_file source_files functions classes statements
+    =
+  if source_files = [] then
+    decode_error "$.source_files" "expected at least one file";
+  if not (String.equal source_file (List.hd source_files)) then
+    decode_error "$.source_files" "first file must be source_file";
+  let rec reject_duplicates seen = function
+    | [] -> ()
+    | file :: files ->
+        if List.mem file seen then
+          decode_error "$.source_files" ("duplicate source file " ^ file);
+        reject_duplicates (file :: seen) files
+  in
+  reject_duplicates [] source_files;
   let validate location =
-    if not (String.equal source_file location.file) then
-      decode_error "$" "location file differs from source_file"
+    if not (List.mem location.file source_files) then
+      decode_error "$" "location file is not listed in source_files"
   in
   List.iter (iter_function_locations validate) functions;
   List.iter (iter_class_locations validate) classes;
@@ -1367,6 +1417,7 @@ let of_yojson json =
         "schema_version";
         "target_php_version";
         "source_file";
+        "source_files";
         "functions";
         "classes";
         "statements";
@@ -1389,6 +1440,12 @@ let of_yojson json =
     let source_file =
       field "$" "source_file" fields |> as_string "$.source_file"
     in
+    let source_files =
+      field "$" "source_files" fields
+      |> as_list "$.source_files"
+      |> List.mapi (fun index ->
+          as_string (Printf.sprintf "$.source_files[%d]" index))
+    in
     let functions =
       field "$" "functions" fields
       |> as_list "$.functions"
@@ -1410,11 +1467,12 @@ let of_yojson json =
     in
     validate_function_names functions;
     validate_class_names classes;
-    validate_source_file source_file functions classes statements;
+    validate_source_files source_file source_files functions classes statements;
     Ok
       {
         target_php_version = actual_php_version;
         source_file;
+        source_files;
         functions;
         classes;
         statements;
@@ -1750,12 +1808,20 @@ and closure_capture_to_yojson (capture : closure_capture) =
       ("location", location_to_yojson capture.location);
     ]
 
+let attribute_to_yojson (attribute : attribute) =
+  `Assoc
+    [
+      ("name", `String attribute.name);
+      ("location", location_to_yojson attribute.location);
+    ]
+
 let function_to_yojson (function_ : function_decl) =
   `Assoc
     [
       ("name", `String function_.name);
       ("parameters", `List (List.map parameter_to_yojson function_.parameters));
       ("body", `List (List.map statement_to_yojson function_.body));
+      ("attributes", `List (List.map attribute_to_yojson function_.attributes));
       ("location", location_to_yojson function_.location);
     ]
 
@@ -1786,6 +1852,7 @@ let method_to_yojson (method_ : method_decl) =
           ~some:(fun body -> `List (List.map statement_to_yojson body))
           method_.body );
       ("modifiers", `List (List.map member_modifier_to_yojson method_.modifiers));
+      ("attributes", `List (List.map attribute_to_yojson method_.attributes));
       ("location", location_to_yojson method_.location);
     ]
 
@@ -1850,6 +1917,8 @@ let to_yojson program =
       ("schema_version", `Int schema_version);
       ("target_php_version", `String program.target_php_version);
       ("source_file", `String program.source_file);
+      ( "source_files",
+        `List (List.map (fun file -> `String file) program.source_files) );
       ("functions", `List (List.map function_to_yojson program.functions));
       ("classes", `List (List.map class_to_yojson program.classes));
       ("statements", `List (List.map statement_to_yojson program.statements));

@@ -3871,17 +3871,99 @@ let find_entry_point program name =
       String.equal (Builtins.canonical_name function_.name) canonical_name)
     program.Php_ir.functions
 
+let test_attribute attributes =
+  List.exists
+    (fun (attribute : Php_ir.attribute) ->
+      String.equal (Builtins.canonical_name attribute.name) "soteria\\test")
+    attributes
+
+let split_method_entry_point name =
+  match String.split_on_char ':' name with
+  | [ class_name; ""; method_name ]
+    when not (String.equal class_name "" || String.equal method_name "") ->
+      Some (class_name, method_name)
+  | _ -> None
+
+let find_declared_method (class_ : Php_ir.class_decl) name =
+  List.find_opt
+    (fun (method_ : Php_ir.method_decl) ->
+      String.equal
+        (Builtins.canonical_name method_.name)
+        (Builtins.canonical_name name))
+    class_.methods
+
+let find_entry_class program name =
+  List.find_opt
+    (fun (class_ : Php_ir.class_decl) ->
+      String.equal
+        (Builtins.canonical_name class_.name)
+        (Builtins.canonical_name name))
+    program.Php_ir.classes
+
+let validate_method_entry_point program class_name method_name =
+  match find_entry_class program class_name with
+  | None -> Error (Printf.sprintf "class %s was not found" class_name)
+  | Some class_ when class_.kind <> Php_ir.Class ->
+      Error (Printf.sprintf "%s is not a concrete class" class_.name)
+  | Some class_ -> (
+      match find_declared_method class_ method_name with
+      | None ->
+          Error
+            (Printf.sprintf "method %s::%s was not found" class_.name
+               method_name)
+      | Some method_ when member_visibility method_.modifiers <> Php_ir.Public
+        ->
+          Error
+            (Printf.sprintf "method %s::%s must be public" class_.name
+               method_.name)
+      | Some method_ when method_.body = None ->
+          Error
+            (Printf.sprintf "method %s::%s has no body" class_.name method_.name)
+      | Some method_ when method_.parameters <> [] ->
+          Error
+            (Printf.sprintf
+               "method %s::%s has %d parameter(s); method entry points must \
+                have no parameters"
+               class_.name method_.name
+               (List.length method_.parameters))
+      | Some method_ -> Ok (`Method (class_, method_)))
+
 let validate_entry_point program name =
-  match find_entry_point program name with
-  | None -> Error (Printf.sprintf "function %s was not found" name)
-  | Some function_ when function_.Php_ir.parameters <> [] ->
-      Error
-        (Printf.sprintf
-           "function %s has %d parameter(s); function entry points must have \
-            no parameters"
-           function_.name
-           (List.length function_.parameters))
-  | Some function_ -> Ok function_
+  match split_method_entry_point name with
+  | Some (class_name, method_name) ->
+      validate_method_entry_point program class_name method_name
+  | None -> (
+      match find_entry_point program name with
+      | None -> Error (Printf.sprintf "function %s was not found" name)
+      | Some function_ when function_.Php_ir.parameters <> [] ->
+          Error
+            (Printf.sprintf
+               "function %s has %d parameter(s); function entry points must \
+                have no parameters"
+               function_.name
+               (List.length function_.parameters))
+      | Some function_ -> Ok (`Function function_))
+
+let discover_entry_points program =
+  let functions =
+    List.filter_map
+      (fun (function_ : Php_ir.function_decl) ->
+        if test_attribute function_.attributes then Some function_.name
+        else None)
+      program.Php_ir.functions
+  in
+  let methods =
+    List.concat_map
+      (fun (class_ : Php_ir.class_decl) ->
+        List.filter_map
+          (fun (method_ : Php_ir.method_decl) ->
+            if test_attribute method_.attributes then
+              Some (Printf.sprintf "%s::%s" class_.name method_.name)
+            else None)
+          class_.methods)
+      program.Php_ir.classes
+  in
+  functions @ methods
 
 let finish state = function
   | Evaluated _ -> Phpsymex.Result.ok state
@@ -3913,14 +3995,52 @@ let run ?function_name program =
   | Evaluated () -> (
       match function_name with
       | Some name -> (
-          match find_entry_point program name with
-          | None -> unsupported "entry point function %s" name
-          | Some function_ ->
-              let** result, state =
-                call_function declarations initial_state function_.location
-                  function_.name []
-              in
-              finish state result)
+          match split_method_entry_point name with
+          | None -> (
+              match find_entry_point program name with
+              | None -> unsupported "entry point function %s" name
+              | Some function_ ->
+                  let** result, state =
+                    call_function declarations initial_state function_.location
+                      function_.name []
+                  in
+                  finish state result)
+          | Some (class_name, method_name) -> (
+              match
+                Class_map.find_opt
+                  (Builtins.canonical_name class_name)
+                  declarations.classes
+              with
+              | None -> unsupported "entry point class %s" class_name
+              | Some class_ -> (
+                  match find_method_from declarations class_ method_name with
+                  | None ->
+                      unsupported "entry point method %s::%s" class_.name
+                        method_name
+                  | Some method_
+                    when member_is_static method_.declaration.modifiers ->
+                      let** result, state =
+                        call_static_method declarations initial_state
+                          method_.declaration.location class_.name method_ []
+                      in
+                      finish state result
+                  | Some method_ -> (
+                      let** object_, state =
+                        construct_object declarations initial_state
+                          method_.declaration.location class_.name []
+                      in
+                      match object_ with
+                      | Raised thrown -> finish state (Raised thrown)
+                      | Evaluated (Value.Object object_id) ->
+                          let** result, state =
+                            call_method declarations state
+                              method_.declaration.location object_id method_ []
+                          in
+                          finish state result
+                      | Evaluated _ ->
+                          failwith
+                            "method entry-point construction returned a \
+                             non-object"))))
       | None -> (
           let** control, state =
             exec_statements declarations initial_state program.statements

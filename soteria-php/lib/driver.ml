@@ -10,6 +10,15 @@ let parse filename =
       Format.eprintf "Frontend error: %a@." Frontend.Error.pp error;
       2
 
+let discover filename =
+  match Frontend.parse_file filename with
+  | Ok program ->
+      List.iter print_endline (Interp.discover_entry_points program);
+      0
+  | Error error ->
+      Format.eprintf "Frontend error: %a@." Frontend.Error.pp error;
+      2
+
 let default_fuel =
   let open Soteria.Symex.Fuel_gauge in
   { steps = Finite 1_000; branching = Finite 100 }

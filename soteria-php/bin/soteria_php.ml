@@ -18,6 +18,14 @@ let parse_command =
        "parse")
     term
 
+let discover_command =
+  let term = Term.(const Soteria_php.Driver.discover $ file_arg) in
+  Cmd.make
+    (Cmd.info ~exits
+       ~doc:"List zero-argument entry points marked with #[Soteria\\\\Test]"
+       "discover")
+    term
+
 let exec_command =
   let fuel =
     Soteria.Symex.Fuel_gauge.Cli.term ~default:Soteria_php.Driver.default_fuel
@@ -28,7 +36,9 @@ let exec_command =
       value
       & opt (some string) None
       & info [ "function" ] ~docv:"NAME"
-          ~doc:"Execute the named zero-argument function as the entry point")
+          ~doc:
+            "Execute the named zero-argument function or Class::method as the \
+             entry point")
   in
   let runtime_event_policy =
     let parse = function
@@ -68,6 +78,6 @@ let command =
   Cmd.group
     (Cmd.info ~exits ~version:Soteria.Version.version
        ~doc:"Symbolic execution and bug finding for PHP" "soteria-php")
-    [ parse_command; exec_command ]
+    [ parse_command; discover_command; exec_command ]
 
 let () = exit (Cmd.eval' command)

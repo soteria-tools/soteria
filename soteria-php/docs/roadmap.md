@@ -40,7 +40,7 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first twenty-two changes in the suggested pull request sequence have been
+The first twenty-three changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
@@ -50,10 +50,13 @@ array-key insertion, constructors, instance methods, `$this`, and property and
 method visibility, inheritance, interfaces, traits, static state, closures, and
 callable values, selected magic methods including `__callStatic` and `__invoke`,
 object builtins, and cloning with optional `__clone`. The M3 exit criteria have
-been audited and met for the documented subset. Standalone macOS and Linux
-packages bundle Z3 and the locked Composer dependencies, require a compatible
-system PHP runtime, run package smoke tests, and ship through the nightly and
-versioned release workflows.
+been audited and met for the documented subset. Static multi-file bootstraps,
+Composer PSR-4/classmap/files autoload metadata, namespace name resolution,
+`#[Soteria\Test]` discovery, and function, static-method, and instance-method
+entry points establish the first M4 project-analysis slice. Standalone macOS and
+Linux packages bundle Z3 and the locked Composer dependencies, require a
+compatible system PHP runtime, run package smoke tests, and ship through the
+nightly and versioned release workflows.
 
 Completing M0-M3 is not the same as completing PHP's semantic breadth. The
 sequence deliberately established one sound path through each subsystem before
@@ -625,13 +628,17 @@ shortcuts that break object identity or property isolation.
 
 ### M4: project analysis
 
-**Status:** Not started.
+**Status:** In progress. The multi-file loading, Composer autoloading, and
+attribute-based entry discovery slice is complete for the bounded subset in
+`support.md`.
 
 Deliverables:
 
-- Multi-file programs, `include`, and `require`.
-- Composer autoloading.
-- Entry-point discovery and attributes.
+- **Complete:** Static leading multi-file `include` and `require` bootstraps.
+- **Complete:** Composer PSR-4, classmap, and files autoload metadata for
+  statically referenced classes.
+- **Complete:** `#[Soteria\Test]` function and public-method discovery and
+  execution entry points.
 - Superglobal input models.
 - Configurable filesystem, environment, database, and network summaries.
 - Function and method summaries where sound.
@@ -689,8 +696,11 @@ Changes should remain small and independently reviewable.
     properties explicitly unsupported.
 22. **Complete:** Packaging and CI distribution after the M1-M3 exit criteria
     pass.
-23. Multi-file `include`/`require`, Composer autoloading, entry-point discovery,
-    and supported attributes.
+23. **Complete:** Static multi-file `include`/`require`, Composer
+    PSR-4/classmap/files autoloading without executing project PHP, namespace
+    resolution, `#[Soteria\Test]` discovery, and zero-argument function and
+    public-method entry points. Dynamic or late includes, side-effectful loaded
+    units, and broader attributes remain explicitly unsupported.
 24. Superglobal input models and configurable filesystem, environment,
     database, and network summaries, followed by sound function and method
     summaries where useful.

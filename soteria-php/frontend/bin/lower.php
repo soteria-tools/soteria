@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 15;
+const SCHEMA_VERSION = 16;
 
 final class LoweringError extends RuntimeException
 {
@@ -39,6 +39,7 @@ final class Lowerer
     /** @param list<Node\Stmt> $statements */
     public function lowerProgram(array $statements): array
     {
+        $statements = $this->flattenProgramStatements($statements);
         $functions = [];
         $functionNames = [];
         $classes = [];
@@ -71,6 +72,11 @@ final class Lowerer
                 }
                 $classNames[$canonicalName] = true;
                 $classes[] = $class;
+            } elseif (
+                $statement instanceof Node\Stmt\Expression
+                && $statement->expr instanceof Node\Expr\Include_
+            ) {
+                $body[] = $this->lowerInclude($statement->expr, $statement);
             } else {
                 $body[] = $this->lowerStatement($statement, false, 0);
             }
@@ -80,10 +86,89 @@ final class Lowerer
             'schema_version' => SCHEMA_VERSION,
             'target_php_version' => TARGET_PHP_VERSION,
             'source_file' => $this->filename,
+            'source_files' => [$this->filename],
             'functions' => $functions,
             'classes' => $classes,
             'statements' => $body,
         ];
+    }
+
+    /**
+     * @param list<Node\Stmt> $statements
+     * @return list<Node\Stmt>
+     */
+    private function flattenProgramStatements(array $statements): array
+    {
+        $flattened = [];
+        foreach ($statements as $statement) {
+            if ($statement instanceof Node\Stmt\Namespace_) {
+                array_push(
+                    $flattened,
+                    ...$this->flattenProgramStatements($statement->stmts),
+                );
+            } elseif (
+                $statement instanceof Node\Stmt\Use_
+                || $statement instanceof Node\Stmt\GroupUse
+            ) {
+                continue;
+            } elseif ($statement instanceof Node\Stmt\Declare_) {
+                if (
+                    $statement->stmts !== null
+                    || count($statement->declares) !== 1
+                    || strtolower($statement->declares[0]->key->toString()) !== 'strict_types'
+                    || !($statement->declares[0]->value instanceof Node\Scalar\Int_)
+                    || $statement->declares[0]->value->value !== 1
+                ) {
+                    return $this->unsupported($statement, 'declare statement');
+                }
+            } else {
+                $flattened[] = $statement;
+            }
+        }
+        return $flattened;
+    }
+
+    private function lowerInclude(
+        Node\Expr\Include_ $include,
+        Node\Stmt\Expression $statement,
+    ): array {
+        $type = match ($include->type) {
+            Node\Expr\Include_::TYPE_INCLUDE => 'include',
+            Node\Expr\Include_::TYPE_INCLUDE_ONCE => 'include_once',
+            Node\Expr\Include_::TYPE_REQUIRE => 'require',
+            Node\Expr\Include_::TYPE_REQUIRE_ONCE => 'require_once',
+        };
+        $path = $this->includePath($include->expr);
+        if (
+            !str_starts_with($path, DIRECTORY_SEPARATOR)
+            && !file_exists($path)
+        ) {
+            $path = dirname($this->filename) . DIRECTORY_SEPARATOR . $path;
+        }
+        return [
+            'kind' => '__include',
+            'type' => $type,
+            'path' => $path,
+            'location' => $this->location($statement),
+        ];
+    }
+
+    private function includePath(Node\Expr $expression): string
+    {
+        if ($expression instanceof Node\Scalar\String_) {
+            return $expression->value;
+        }
+        if ($expression instanceof Node\Scalar\MagicConst\Dir) {
+            return dirname($this->filename);
+        }
+        if ($expression instanceof Node\Scalar\MagicConst\File) {
+            return $this->filename;
+        }
+        if ($expression instanceof Node\Expr\BinaryOp\Concat) {
+            return $this->includePath($expression->left)
+                . $this->includePath($expression->right);
+        }
+        return $this->unsupported($expression, 'dynamic include path');
     }
 
     private function lowerClassLike(
@@ -136,6 +221,19 @@ final class Lowerer
                 }
             } elseif ($statement instanceof Node\Stmt\ClassMethod) {
                 $method = $this->lowerMethod($statement, $kind === 'interface');
+                if (
+                    $method['attributes'] !== []
+                    && (
+                        $kind !== 'class'
+                        || $method['parameters'] !== []
+                        || $method['modifiers'][0] !== 'public'
+                    )
+                ) {
+                    return $this->unsupported(
+                        $statement,
+                        'Soteria\\Test method entry point',
+                    );
+                }
                 $canonicalName = strtolower($method['name']);
                 if (array_key_exists($canonicalName, $methodNames)) {
                     return $this->unsupported(
@@ -232,13 +330,13 @@ final class Lowerer
         if (
             $method->byRef
             || $method->returnType !== null
-            || $method->attrGroups !== []
             || ($interfaceMethod !== ($method->stmts === null))
             || ($method->flags & ~$allowedFlags) !== 0
             || $visibility === null
         ) {
             return $this->unsupported($method, 'method declaration');
         }
+        $attributes = $this->lowerAttributes($method->attrGroups);
 
         $parameters = [];
         $parameterNames = [];
@@ -276,6 +374,7 @@ final class Lowerer
                     ? 'static'
                     : null,
             ])),
+            'attributes' => $attributes,
             'location' => $this->location($method),
         ];
     }
@@ -402,9 +501,7 @@ final class Lowerer
         if ($function->returnType !== null) {
             return $this->unsupported($function->returnType, 'function return type');
         }
-        if ($function->attrGroups !== []) {
-            return $this->unsupported($function->attrGroups[0], 'function attribute');
-        }
+        $attributes = $this->lowerAttributes($function->attrGroups);
 
         $name = $function->namespacedName instanceof Node\Name
             ? $function->namespacedName->toString()
@@ -423,6 +520,12 @@ final class Lowerer
             $parameterNames[$lowered['name']] = true;
             $parameters[] = $lowered;
         }
+        if ($attributes !== [] && $parameters !== []) {
+            return $this->unsupported(
+                $function,
+                'Soteria\\Test function entry point',
+            );
+        }
 
         return [
             'name' => $name,
@@ -435,8 +538,35 @@ final class Lowerer
                 ),
                 $function->stmts,
             ),
+            'attributes' => $attributes,
             'location' => $this->location($function),
         ];
+    }
+
+    /**
+     * @param list<Node\AttributeGroup> $groups
+     * @return list<array{name: string, location: array}>
+     */
+    private function lowerAttributes(array $groups): array
+    {
+        $attributes = [];
+        foreach ($groups as $group) {
+            foreach ($group->attrs as $attribute) {
+                $name = $this->resolvedName($attribute->name);
+                if (
+                    strtolower($name) !== 'soteria\\test'
+                    || $attribute->args !== []
+                    || $attributes !== []
+                ) {
+                    return $this->unsupported($attribute, 'attribute');
+                }
+                $attributes[] = [
+                    'name' => $name,
+                    'location' => $this->location($attribute),
+                ];
+            }
+        }
+        return $attributes;
     }
 
     private function lowerParameter(Node\Param $parameter): array
@@ -1286,6 +1416,449 @@ final class Lowerer
     }
 }
 
+final class ProjectLowerer
+{
+    /** @var array<string, array> */
+    private array $programs = [];
+
+    /** @var array<string, true> */
+    private array $includedFiles = [];
+
+    /** @var array<string, true> */
+    private array $composerAutoloaders = [];
+
+    /** @var list<string> */
+    private array $sourceFiles = [];
+
+    /** @var list<array> */
+    private array $functions = [];
+
+    /** @var list<array> */
+    private array $classes = [];
+
+    /** @var array<string, true> */
+    private array $declaredClasses = [];
+
+    /** @var list<array{prefix: string, directory: string}> */
+    private array $psr4 = [];
+
+    /** @var array<string, string> */
+    private array $classmap = [];
+
+    private ?string $rootDirectory = null;
+
+    private ?string $rootDisplayDirectory = null;
+
+    public function __construct(private readonly PhpParser\Parser $parser)
+    {
+    }
+
+    public function lower(string $filename): array
+    {
+        $identity = realpath($filename);
+        if ($identity !== false) {
+            $this->includedFiles[$identity] = true;
+            $this->rootDirectory = dirname($identity);
+            $this->rootDisplayDirectory = dirname($filename);
+        }
+        $root = $this->parseFile($filename, $filename);
+        $this->mergeDeclarations($root);
+        $root['statements'] = $this->expandBootstrap($root, true);
+        $this->autoloadReferencedClasses($root);
+        $root['source_files'] = $this->sourceFiles;
+        $root['functions'] = $this->functions;
+        $root['classes'] = $this->classes;
+        return $root;
+    }
+
+    private function parseFile(string $filename, ?string $displayName = null): array
+    {
+        $identity = realpath($filename);
+        if ($identity === false || !is_file($identity)) {
+            throw new LoweringError(sprintf('%s: unable to read source file', $filename));
+        }
+        if (array_key_exists($identity, $this->programs)) {
+            return $this->programs[$identity];
+        }
+        $displayName ??= $this->displayPath($identity);
+        $source = @file_get_contents($identity);
+        if ($source === false) {
+            throw new LoweringError(sprintf('%s: unable to read source file', $displayName));
+        }
+        try {
+            $statements = $this->parser->parse($source) ?? [];
+        } catch (Error $error) {
+            $position = $error->hasColumnInfo()
+                ? sprintf('%d:%d', $error->getStartLine(), $error->getStartColumn($source))
+                : (string) $error->getStartLine();
+            throw new LoweringError(sprintf(
+                '%s:%s: parse error: %s',
+                $displayName,
+                $position,
+                $error->getRawMessage(),
+            ));
+        }
+        $traverser = new NodeTraverser();
+        $traverser->addVisitor(new NameResolver());
+        $statements = $traverser->traverse($statements);
+        $program = (new Lowerer($displayName, $source))->lowerProgram($statements);
+        $this->programs[$identity] = $program;
+        $this->sourceFiles[] = $displayName;
+        return $program;
+    }
+
+    /** @return list<array> */
+    private function expandBootstrap(array $program, bool $root): array
+    {
+        $body = [];
+        $executableSeen = false;
+        foreach ($program['statements'] as $statement) {
+            if ($statement['kind'] === '__include') {
+                if ($executableSeen) {
+                    $this->unsupportedAt(
+                        $statement['location'],
+                        'include after executable top-level code',
+                    );
+                }
+                $this->loadInclude($statement);
+            } elseif ($statement['kind'] === 'nop') {
+                if ($root) {
+                    $body[] = $statement;
+                }
+            } elseif ($root) {
+                $executableSeen = true;
+                $body[] = $statement;
+            } else {
+                $this->unsupportedAt(
+                    $statement['location'],
+                    'executable code in an included or autoloaded file',
+                );
+            }
+        }
+        return $body;
+    }
+
+    private function loadInclude(array $include): void
+    {
+        $identity = realpath($include['path']);
+        if ($identity === false || !is_file($identity)) {
+            $this->unsupportedAt($include['location'], 'missing included file');
+        }
+        $once = str_ends_with($include['type'], '_once');
+        if (array_key_exists($identity, $this->includedFiles)) {
+            if ($once) {
+                return;
+            }
+            $this->unsupportedAt($include['location'], 'repeated include without _once');
+        }
+        $this->includedFiles[$identity] = true;
+        if ($this->isComposerAutoloader($identity)) {
+            $this->loadComposerAutoloader($identity);
+            return;
+        }
+        $program = $this->parseFile($identity);
+        $this->mergeDeclarations($program);
+        $this->expandBootstrap($program, false);
+    }
+
+    private function isComposerAutoloader(string $filename): bool
+    {
+        $vendor = dirname($filename);
+        return basename($filename) === 'autoload.php'
+            && basename($vendor) === 'vendor'
+            && is_file($vendor . '/composer/installed.json');
+    }
+
+    private function loadComposerAutoloader(string $filename): void
+    {
+        if (array_key_exists($filename, $this->composerAutoloaders)) {
+            return;
+        }
+        $this->composerAutoloaders[$filename] = true;
+        $vendor = dirname($filename);
+        $base = dirname($vendor);
+        $rootManifest = $base . '/composer.json';
+        if (is_file($rootManifest)) {
+            $manifest = $this->readJsonObject($rootManifest);
+            $this->registerAutoload($manifest['autoload'] ?? [], $base);
+            $this->registerAutoload($manifest['autoload-dev'] ?? [], $base);
+        }
+        $installedFile = $vendor . '/composer/installed.json';
+        $installed = $this->readJsonObject($installedFile);
+        foreach ($installed['packages'] ?? [] as $package) {
+            if (!is_array($package) || !isset($package['install-path'])) {
+                continue;
+            }
+            $packageBase = $vendor . '/composer/' . $package['install-path'];
+            $this->registerAutoload($package['autoload'] ?? [], $packageBase);
+        }
+    }
+
+    private function readJsonObject(string $filename): array
+    {
+        $contents = @file_get_contents($filename);
+        if ($contents === false) {
+            throw new LoweringError(sprintf('%s: unable to read Composer metadata', $filename));
+        }
+        try {
+            $value = json_decode($contents, true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException $error) {
+            throw new LoweringError(sprintf(
+                '%s: invalid Composer metadata: %s',
+                $filename,
+                $error->getMessage(),
+            ));
+        }
+        if (!is_array($value)) {
+            throw new LoweringError(sprintf('%s: invalid Composer metadata', $filename));
+        }
+        return $value;
+    }
+
+    private function registerAutoload(mixed $autoload, string $base): void
+    {
+        if (!is_array($autoload)) {
+            return;
+        }
+        foreach ($autoload['psr-4'] ?? [] as $prefix => $directories) {
+            foreach ((array) $directories as $directory) {
+                if (is_string($directory)) {
+                    $this->psr4[] = [
+                        'prefix' => $prefix,
+                        'directory' => $base . '/' . $directory,
+                    ];
+                }
+            }
+        }
+        foreach ((array) ($autoload['classmap'] ?? []) as $path) {
+            if (is_string($path)) {
+                $this->indexClassmapPath($base . '/' . $path);
+            }
+        }
+        foreach ((array) ($autoload['files'] ?? []) as $path) {
+            if (!is_string($path)) {
+                continue;
+            }
+            $identity = realpath($base . '/' . $path);
+            if ($identity === false || !is_file($identity)) {
+                throw new LoweringError(sprintf('%s/%s: Composer autoload file not found', $base, $path));
+            }
+            if (!array_key_exists($identity, $this->includedFiles)) {
+                $this->includedFiles[$identity] = true;
+                $program = $this->parseFile($identity);
+                $this->mergeDeclarations($program);
+                $this->expandBootstrap($program, false);
+            }
+        }
+    }
+
+    private function indexClassmapPath(string $path): void
+    {
+        $identity = realpath($path);
+        if ($identity === false) {
+            return;
+        }
+        if (is_file($identity)) {
+            $this->indexClassmapFile($identity);
+            return;
+        }
+        if (!is_dir($identity)) {
+            return;
+        }
+        $files = [];
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($identity, FilesystemIterator::SKIP_DOTS),
+        );
+        foreach ($iterator as $file) {
+            if ($file->isFile() && strtolower($file->getExtension()) === 'php') {
+                $files[] = $file->getPathname();
+            }
+        }
+        sort($files, SORT_STRING);
+        foreach ($files as $file) {
+            $this->indexClassmapFile($file);
+        }
+    }
+
+    private function indexClassmapFile(string $filename): void
+    {
+        $source = @file_get_contents($filename);
+        if ($source === false) {
+            return;
+        }
+        try {
+            $statements = $this->parser->parse($source) ?? [];
+        } catch (Error) {
+            return;
+        }
+        $traverser = new NodeTraverser();
+        $traverser->addVisitor(new NameResolver());
+        $statements = $traverser->traverse($statements);
+        foreach ($this->classNames($statements) as $className) {
+            $this->classmap[strtolower($className)] = $filename;
+        }
+    }
+
+    /**
+     * @param list<Node\Stmt> $statements
+     * @return list<string>
+     */
+    private function classNames(array $statements): array
+    {
+        $names = [];
+        foreach ($statements as $statement) {
+            if ($statement instanceof Node\Stmt\Namespace_) {
+                array_push($names, ...$this->classNames($statement->stmts));
+            } elseif (
+                $statement instanceof Node\Stmt\ClassLike
+                && $statement->name !== null
+            ) {
+                $name = $statement->namespacedName instanceof Node\Name
+                    ? $statement->namespacedName->toString()
+                    : $statement->name->toString();
+                $names[] = $name;
+            }
+        }
+        return $names;
+    }
+
+    private function autoloadReferencedClasses(array $root): void
+    {
+        $examined = [];
+        while (true) {
+            $references = [];
+            $this->collectClassReferences(
+                [
+                    'functions' => $this->functions,
+                    'classes' => $this->classes,
+                    'statements' => $root['statements'],
+                ],
+                $references,
+            );
+            $loaded = false;
+            foreach (array_keys($references) as $className) {
+                $canonical = strtolower($className);
+                if (
+                    isset($examined[$canonical])
+                    || isset($this->declaredClasses[$canonical])
+                    || in_array($canonical, ['self', 'parent', 'static'], true)
+                ) {
+                    continue;
+                }
+                $examined[$canonical] = true;
+                $filename = $this->autoloadFile($className);
+                if ($filename === null) {
+                    continue;
+                }
+                $program = $this->parseFile($filename);
+                $this->mergeDeclarations($program);
+                $this->expandBootstrap($program, false);
+                $loaded = true;
+            }
+            if (!$loaded) {
+                return;
+            }
+        }
+    }
+
+    private function autoloadFile(string $className): ?string
+    {
+        $canonical = strtolower($className);
+        if (isset($this->classmap[$canonical])) {
+            return $this->classmap[$canonical];
+        }
+        $mappings = $this->psr4;
+        usort(
+            $mappings,
+            fn (array $left, array $right): int => strlen($right['prefix']) <=> strlen($left['prefix']),
+        );
+        foreach ($mappings as $mapping) {
+            if (!str_starts_with($className, $mapping['prefix'])) {
+                continue;
+            }
+            $relative = substr($className, strlen($mapping['prefix']));
+            $candidate = $mapping['directory'] . '/' . str_replace('\\', '/', $relative) . '.php';
+            $identity = realpath($candidate);
+            if ($identity !== false && is_file($identity)) {
+                return $identity;
+            }
+        }
+        return null;
+    }
+
+    private function collectClassReferences(mixed $value, array &$references, ?string $key = null): void
+    {
+        if (is_string($value)) {
+            if (in_array($key, ['class', 'parent', 'trait'], true)) {
+                $references[$value] = true;
+            }
+            return;
+        }
+        if (!is_array($value)) {
+            return;
+        }
+        if (in_array($key, ['interfaces', 'traits', 'types', 'instead_of'], true)) {
+            foreach ($value as $item) {
+                if (is_string($item)) {
+                    $references[$item] = true;
+                } else {
+                    $this->collectClassReferences($item, $references);
+                }
+            }
+            return;
+        }
+        foreach ($value as $childKey => $child) {
+            $this->collectClassReferences(
+                $child,
+                $references,
+                is_string($childKey) ? $childKey : null,
+            );
+        }
+    }
+
+    private function mergeDeclarations(array $program): void
+    {
+        array_push($this->functions, ...$program['functions']);
+        foreach ($program['classes'] as $class) {
+            $this->declaredClasses[strtolower($class['name'])] = true;
+            $this->classes[] = $class;
+        }
+    }
+
+    private function displayPath(string $filename): string
+    {
+        if (
+            $this->rootDirectory !== null
+            && $this->rootDisplayDirectory !== null
+            && str_starts_with($filename, $this->rootDirectory . DIRECTORY_SEPARATOR)
+        ) {
+            $relative = substr($filename, strlen($this->rootDirectory) + 1);
+            return $this->rootDisplayDirectory === '.'
+                ? $relative
+                : $this->rootDisplayDirectory . DIRECTORY_SEPARATOR . $relative;
+        }
+        $workingDirectory = realpath(getcwd());
+        if (
+            $workingDirectory !== false
+            && str_starts_with($filename, $workingDirectory . DIRECTORY_SEPARATOR)
+        ) {
+            return substr($filename, strlen($workingDirectory) + 1);
+        }
+        return $filename;
+    }
+
+    private function unsupportedAt(array $location, string $description): never
+    {
+        throw new LoweringError(sprintf(
+            '%s:%d:%d: unsupported %s',
+            $location['file'],
+            $location['start']['line'],
+            $location['start']['column'],
+            $description,
+        ));
+    }
+}
+
 function fail(string $message, int $exitCode = 2): never
 {
     fwrite(STDERR, $message . PHP_EOL);
@@ -1318,31 +1891,13 @@ if ($autoload === null) {
 }
 require $autoload;
 
-$filename = $argv[1];
-$source = @file_get_contents($filename);
-if ($source === false) {
-    fail(sprintf('%s: unable to read source file', $filename));
-}
-
 $version = array_map('intval', explode('.', TARGET_PHP_VERSION));
 $parser = (new ParserFactory())->createForVersion(
     PhpVersion::fromComponents($version[0], $version[1]),
 );
 
 try {
-    $statements = $parser->parse($source) ?? [];
-} catch (Error $error) {
-    $position = $error->hasColumnInfo()
-        ? sprintf('%d:%d', $error->getStartLine(), $error->getStartColumn($source))
-        : (string) $error->getStartLine();
-    fail(sprintf('%s:%s: parse error: %s', $filename, $position, $error->getRawMessage()));
-}
-
-try {
-    $traverser = new NodeTraverser();
-    $traverser->addVisitor(new NameResolver());
-    $statements = $traverser->traverse($statements);
-    $ir = (new Lowerer($filename, $source))->lowerProgram($statements);
+    $ir = (new ProjectLowerer($parser))->lower($argv[1]);
     $json = json_encode(
         $ir,
         JSON_PRETTY_PRINT

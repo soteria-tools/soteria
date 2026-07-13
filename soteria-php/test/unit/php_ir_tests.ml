@@ -10,12 +10,13 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 15) ?(functions = []) ?(classes = []) statement =
+let program ?(schema_version = 16) ?(functions = []) ?(classes = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
       ("target_php_version", `String "8.4.19");
       ("source_file", `String "test.php");
+      ("source_files", `List [ `String "test.php" ]);
       ("functions", `List functions);
       ("classes", `List classes);
       ("statements", `List [ statement ]);
@@ -48,10 +49,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:16 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:17 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 16 (expected 15)"
+        "error" "$.schema_version: unsupported schema version 17 (expected 16)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -88,12 +89,16 @@ let decodes_functions_and_returns () =
   let parameter =
     `Assoc [ ("name", `String "value"); ("location", location) ]
   in
+  let attribute =
+    `Assoc [ ("name", `String "Soteria\\Test"); ("location", location) ]
+  in
   let function_ =
     `Assoc
       [
         ("name", `String "identity");
         ("parameters", `List [ parameter ]);
         ("body", `List [ return ]);
+        ("attributes", `List [ attribute ]);
         ("location", location);
       ]
   in
@@ -109,6 +114,7 @@ let decodes_functions_and_returns () =
               name = "identity";
               parameters = [ { name = "value"; _ } ];
               body = [ Return (Some { desc = Variable "value"; _ }, _) ];
+              attributes = [ { name = "Soteria\\Test"; _ } ];
               _;
             };
           ];
@@ -642,6 +648,7 @@ let decodes_methods_and_method_calls () =
         ("parameters", `List [ parameter ]);
         ("body", `List [ return ]);
         ("modifiers", `List [ `String "private" ]);
+        ("attributes", `List []);
         ("location", location);
       ]
   in

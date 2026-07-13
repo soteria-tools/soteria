@@ -12,6 +12,9 @@ request.
 
 ### Added
 
+- Soteria PHP: added static multi-file `include`/`require`, Composer PSR-4,
+  classmap, and files autoloading, plus `#[Soteria\Test]` discovery and function
+  or public-method analysis entry points.
 - Soteria PHP: added standalone macOS arm64 and Linux x86_64 packages with
   bundled Z3 and locked PHP-Parser dependencies, package smoke tests, and
   nightly/versioned release assets. A compatible 64-bit system PHP runtime is
