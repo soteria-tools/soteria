@@ -81,7 +81,7 @@ let to_bool = function
   | Value.String value ->
       Ok (Value.bool (not (String.equal value "" || String.equal value "0")))
   | Value.Array array -> Ok (Value.bool (not (Value.array_is_empty array)))
-  | Value.Object _ -> Ok (Value.bool true)
+  | Value.Object _ | Value.Callable _ -> Ok (Value.bool true)
 
 let integer_min = Z.of_int64 Int64.min_int
 let integer_max = Z.of_int64 Int64.max_int
@@ -209,6 +209,8 @@ let to_int = function
       Ok (Value.int (if Value.array_is_empty array then 0L else 1L))
   | Value.Object _ ->
       Error (Invalid_conversion { source = `Object; target = Integer })
+  | Value.Callable _ ->
+      Error (Invalid_conversion { source = `Callable; target = Integer })
 
 let float_of_numeric_string value =
   match numeric_prefix value with
@@ -243,6 +245,8 @@ let to_float = function
       Ok (Value.float (if Value.array_is_empty array then 0.0 else 1.0))
   | Value.Object _ ->
       Error (Invalid_conversion { source = `Object; target = Float })
+  | Value.Callable _ ->
+      Error (Invalid_conversion { source = `Callable; target = Float })
 
 let add_decimal_to_exponent value =
   match String.index_opt value 'E' with
@@ -281,6 +285,8 @@ let to_string = function
       Error (Invalid_conversion { source = `Array; target = String })
   | Value.Object _ ->
       Error (Invalid_conversion { source = `Object; target = String })
+  | Value.Callable _ ->
+      Error (Invalid_conversion { source = `Callable; target = String })
 
 let integer_string_array_key value =
   let length = String.length value in
@@ -325,6 +331,7 @@ let to_array_key = function
       | None -> Ok (Concrete_key (Value.String_key value)))
   | Value.Array _ -> Error (Invalid_array_key `Array)
   | Value.Object _ -> Error (Invalid_array_key `Object)
+  | Value.Callable _ -> Error (Invalid_array_key `Callable)
 
 let coerce target value =
   match target with
@@ -349,6 +356,7 @@ let to_number = function
       | Non_numeric -> Error (Invalid_numeric_operand `String))
   | Value.Array _ -> Error (Invalid_numeric_operand `Array)
   | Value.Object _ -> Error (Invalid_numeric_operand `Object)
+  | Value.Callable _ -> Error (Invalid_numeric_operand `Callable)
 
 let compare_boolean operator left right =
   let open Value.Typed.Bool in

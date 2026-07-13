@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 
 final class LoweringError extends RuntimeException
 {
@@ -226,6 +226,7 @@ final class Lowerer
             | Node\Stmt\Class_::MODIFIER_PROTECTED
             | Node\Stmt\Class_::MODIFIER_PRIVATE;
         $allowedFlags = $visibilityMask
+            | Node\Stmt\Class_::MODIFIER_STATIC
             | ($interfaceMethod ? Node\Stmt\Class_::MODIFIER_ABSTRACT : 0);
         $visibility = $this->lowerVisibility($method->flags & $visibilityMask);
         if (
@@ -269,16 +270,26 @@ final class Lowerer
                     ),
                     $method->stmts,
                 ),
-            'modifiers' => [$visibility],
+            'modifiers' => array_values(array_filter([
+                $visibility,
+                ($method->flags & Node\Stmt\Class_::MODIFIER_STATIC) !== 0
+                    ? 'static'
+                    : null,
+            ])),
             'location' => $this->location($method),
         ];
     }
 
     private function lowerProperties(Node\Stmt\Property $property): array
     {
-        $visibility = $this->lowerVisibility($property->flags);
+        $visibilityMask = Node\Stmt\Class_::MODIFIER_PUBLIC
+            | Node\Stmt\Class_::MODIFIER_PROTECTED
+            | Node\Stmt\Class_::MODIFIER_PRIVATE;
+        $allowedFlags = $visibilityMask | Node\Stmt\Class_::MODIFIER_STATIC;
+        $visibility = $this->lowerVisibility($property->flags & $visibilityMask);
         if (
             $visibility === null
+            || ($property->flags & ~$allowedFlags) !== 0
             || $property->type !== null
             || $property->attrGroups !== []
             || $property->hooks !== []
@@ -287,7 +298,7 @@ final class Lowerer
         }
 
         return array_map(
-            function (Node\PropertyItem $item) use ($visibility): array {
+            function (Node\PropertyItem $item) use ($visibility, $property): array {
                 if (
                     $item->default !== null
                     && !$this->isSupportedPropertyDefault($item->default)
@@ -299,7 +310,12 @@ final class Lowerer
                     'default' => $item->default === null
                         ? null
                         : $this->lowerExpression($item->default),
-                    'modifiers' => [$visibility],
+                    'modifiers' => array_values(array_filter([
+                        $visibility,
+                        ($property->flags & Node\Stmt\Class_::MODIFIER_STATIC) !== 0
+                            ? 'static'
+                            : null,
+                    ])),
                     'location' => $this->location($item),
                 ];
             },
@@ -435,6 +451,7 @@ final class Lowerer
             || $parameter->hooks !== []
             || !($parameter->var instanceof Node\Expr\Variable)
             || !is_string($parameter->var->name)
+            || $parameter->var->name === 'this'
         ) {
             return $this->unsupported($parameter, 'function parameter');
         }
@@ -812,6 +829,14 @@ final class Lowerer
             ];
         }
 
+        if ($expression instanceof Node\Expr\StaticPropertyFetch) {
+            return [
+                'kind' => 'property_get',
+                'target' => $this->lowerLvalue($expression, false),
+                'location' => $location,
+            ];
+        }
+
         if ($expression instanceof Node\Expr\AssignRef) {
             return [
                 'kind' => 'assign_reference',
@@ -871,6 +896,61 @@ final class Lowerer
             ];
         }
 
+        if ($expression instanceof Node\Expr\Closure) {
+            if (
+                $expression->static
+                || $expression->byRef
+                || $expression->returnType !== null
+                || $expression->attrGroups !== []
+            ) {
+                return $this->unsupported($expression, 'closure declaration');
+            }
+            $parameters = [];
+            $parameterNames = [];
+            foreach ($expression->params as $parameter) {
+                $lowered = $this->lowerParameter($parameter);
+                if (array_key_exists($lowered['name'], $parameterNames)) {
+                    return $this->unsupported($parameter, 'duplicate closure parameter');
+                }
+                $parameterNames[$lowered['name']] = true;
+                $parameters[] = $lowered;
+            }
+            $captures = [];
+            $captureNames = [];
+            foreach ($expression->uses as $capture) {
+                if (
+                    !($capture->var instanceof Node\Expr\Variable)
+                    || !is_string($capture->var->name)
+                    || array_key_exists($capture->var->name, $captureNames)
+                    || array_key_exists($capture->var->name, $parameterNames)
+                    || $capture->var->name === 'this'
+                ) {
+                    return $this->unsupported($capture, 'closure capture');
+                }
+                $captureNames[$capture->var->name] = true;
+                $captures[] = [
+                    'name' => $capture->var->name,
+                    'by_reference' => $capture->byRef,
+                    'location' => $this->location($capture),
+                ];
+            }
+
+            return [
+                'kind' => 'closure',
+                'parameters' => $parameters,
+                'captures' => $captures,
+                'body' => array_map(
+                    fn (Node\Stmt $statement): array => $this->lowerStatement(
+                        $statement,
+                        true,
+                        0,
+                    ),
+                    $expression->stmts,
+                ),
+                'location' => $location,
+            ];
+        }
+
         if ($expression instanceof Node\Expr\Throw_) {
             return [
                 'kind' => 'throw',
@@ -914,6 +994,14 @@ final class Lowerer
             if (!($expression->name instanceof Node\Identifier)) {
                 return $this->unsupported($expression->name, 'dynamic method call');
             }
+            if ($this->isFirstClassCallable($expression->args)) {
+                return [
+                    'kind' => 'object_method_callable',
+                    'object' => $this->lowerExpression($expression->var),
+                    'method' => $expression->name->toString(),
+                    'location' => $location,
+                ];
+            }
             foreach ($expression->args as $argument) {
                 if (
                     !($argument instanceof Node\Arg)
@@ -942,10 +1030,20 @@ final class Lowerer
         if ($expression instanceof Node\Expr\StaticCall) {
             if (
                 !($expression->class instanceof Node\Name)
-                || strtolower($expression->class->toString()) !== 'parent'
                 || !($expression->name instanceof Node\Identifier)
             ) {
                 return $this->unsupported($expression, 'static method call');
+            }
+            $className = strtolower($expression->class->toString()) === 'parent'
+                ? 'parent'
+                : $this->resolvedName($expression->class);
+            if ($this->isFirstClassCallable($expression->args)) {
+                return [
+                    'kind' => 'static_method_callable',
+                    'class' => $className,
+                    'method' => $expression->name->toString(),
+                    'location' => $location,
+                ];
             }
             foreach ($expression->args as $argument) {
                 if (
@@ -959,7 +1057,10 @@ final class Lowerer
             }
 
             return [
-                'kind' => 'parent_method_call',
+                'kind' => $className === 'parent'
+                    ? 'parent_method_call'
+                    : 'static_method_call',
+                ...($className === 'parent' ? [] : ['class' => $className]),
                 'method' => $expression->name->toString(),
                 'arguments' => array_map(
                     fn (Node\Arg $argument): array => $this->lowerExpression(
@@ -972,8 +1073,18 @@ final class Lowerer
         }
 
         if ($expression instanceof Node\Expr\FuncCall) {
-            if (!($expression->name instanceof Node\Name)) {
-                return $this->unsupported($expression, 'dynamic function call');
+            if (
+                $expression->name instanceof Node\Name
+                && $this->isFirstClassCallable($expression->args)
+            ) {
+                return [
+                    'kind' => 'function_callable',
+                    'name' => $this->resolvedName($expression->name),
+                    'location' => $location,
+                ];
+            }
+            if ($this->isFirstClassCallable($expression->args)) {
+                return $this->unsupported($expression, 'dynamic callable creation');
             }
             foreach ($expression->args as $argument) {
                 if (
@@ -987,8 +1098,10 @@ final class Lowerer
             }
 
             return [
-                'kind' => 'call',
-                'name' => $this->resolvedName($expression->name),
+                'kind' => $expression->name instanceof Node\Name ? 'call' : 'invoke',
+                ...($expression->name instanceof Node\Name
+                    ? ['name' => $this->resolvedName($expression->name)]
+                    : ['callee' => $this->lowerExpression($expression->name)]),
                 'arguments' => array_map(
                     fn (Node\Arg $argument): array => $this->lowerExpression(
                         $argument->value,
@@ -1000,6 +1113,13 @@ final class Lowerer
         }
 
         return $this->unsupported($expression, 'expression');
+    }
+
+    /** @param array<Node\Arg|Node\VariadicPlaceholder> $arguments */
+    private function isFirstClassCallable(array $arguments): bool
+    {
+        return count($arguments) === 1
+            && $arguments[0] instanceof Node\VariadicPlaceholder;
     }
 
     private function lowerLvalue(
@@ -1041,6 +1161,22 @@ final class Lowerer
             return [
                 'kind' => 'object_property',
                 'object' => $this->lowerLvalue($expression->var, $allowAppend),
+                'name' => $expression->name->toString(),
+                'location' => $this->location($expression),
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\StaticPropertyFetch) {
+            if (
+                !($expression->class instanceof Node\Name)
+                || !($expression->name instanceof Node\VarLikeIdentifier)
+            ) {
+                return $this->unsupported($expression, 'dynamic static property');
+            }
+
+            return [
+                'kind' => 'static_property',
+                'class' => $this->resolvedName($expression->class),
                 'name' => $expression->name->toString(),
                 'location' => $this->location($expression),
             ];

@@ -31,11 +31,15 @@ let array_element ?key array : Php_ir.lvalue =
 let object_property object_ name : Php_ir.lvalue =
   { desc = Object_property_lvalue (object_, name); location }
 
+let static_property class_name name : Php_ir.lvalue =
+  { desc = Static_property_lvalue (class_name, name); location }
+
 let array_get target = expression (Array_get target)
 let property_get target = expression (Property_get target)
 let array_item ?key value : Php_ir.array_item = { key; value; location }
 let array items = expression (Array items)
 let call name arguments = expression (Call (name, arguments))
+let invoke callee arguments = expression (Invoke (callee, arguments))
 
 let method_call object_ name arguments =
   expression (Method_call (object_, name, arguments))
@@ -50,9 +54,14 @@ let parameter name : Php_ir.parameter = { name; location }
 let function_ name parameters body : Php_ir.function_decl =
   { name; parameters = List.map parameter parameters; body; location }
 
-let property ?default ?(visibility = Php_ir.Public) name : Php_ir.property_decl
-    =
-  { name; default; modifiers = [ visibility ]; location }
+let property ?default ?(visibility = Php_ir.Public) ?(static = false) name :
+    Php_ir.property_decl =
+  {
+    name;
+    default;
+    modifiers = (if static then [ visibility; Static ] else [ visibility ]);
+    location;
+  }
 
 let method_ ?(visibility = Php_ir.Public) name parameters body :
     Php_ir.method_decl =
@@ -255,6 +264,75 @@ let isolates_symbolic_branches () =
     |> List.sort Int64.compare
   in
   Alcotest.(check (list int64)) "branch-local values" [ 1L; 2L ] values
+
+let isolates_static_properties_across_symbolic_branches () =
+  let target = static_property "Counter" "value" in
+  let counter =
+    class_ "Counter"
+      [ property ~static:true ~default:(literal (Int 0L)) "value" ]
+  in
+  let statements =
+    [
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      Php_ir.If
+        ( variable "condition",
+          [ expression_statement (assign_lvalue target (literal (Int 1L))) ],
+          [ expression_statement (assign_lvalue target (literal (Int 2L))) ],
+          location );
+      expression_statement (assign "result" (property_get target));
+    ]
+  in
+  let values =
+    run ~classes:[ counter ] statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind (State.find_variable "result" state) Value.int_value
+      | _ -> None)
+    |> List.sort Int64.compare
+  in
+  Alcotest.(check (list int64)) "branch-local static values" [ 1L; 2L ] values
+
+let isolates_closure_reference_captures_across_symbolic_branches () =
+  let capture : Php_ir.closure_capture =
+    { name = "shared"; by_reference = true; location }
+  in
+  let closure : Php_ir.closure_decl =
+    {
+      parameters = [];
+      captures = [ capture ];
+      body =
+        [
+          expression_statement
+            (assign "shared"
+               (binary (variable "shared") Add (literal (Int 1L))));
+        ];
+      location;
+    }
+  in
+  let statements =
+    [
+      expression_statement (assign "shared" (literal (Int 0L)));
+      expression_statement
+        (assign "condition" (call "Soteria\\symbolic_bool" []));
+      expression_statement (assign "closure" (expression (Closure closure)));
+      Php_ir.If
+        ( variable "condition",
+          [ expression_statement (invoke (variable "closure") []) ],
+          [ expression_statement (assign "shared" (literal (Int 2L))) ],
+          location );
+    ]
+  in
+  let values =
+    run statements
+    |> List.filter_map (function
+      | Compo_res.Ok state, _ ->
+          Option.bind (State.find_variable "shared" state) Value.int_value
+      | _ -> None)
+    |> List.sort Int64.compare
+  in
+  Alcotest.(check (list int64))
+    "branch-local captured references" [ 1L; 2L ] values
 
 let short_circuits_calls () =
   let missing = call "Soteria\\missing" [] in
@@ -1718,6 +1796,10 @@ let () =
             branches_on_symbolic_numeric_string_comparison;
           Alcotest.test_case "symbolic branch isolation" `Quick
             isolates_symbolic_branches;
+          Alcotest.test_case "static property branch isolation" `Quick
+            isolates_static_properties_across_symbolic_branches;
+          Alcotest.test_case "closure reference branch isolation" `Quick
+            isolates_closure_reference_captures_across_symbolic_branches;
           Alcotest.test_case "short-circuit calls" `Quick short_circuits_calls;
           Alcotest.test_case "division by zero" `Quick
             reports_division_by_zero_at_expression;

@@ -104,6 +104,12 @@
   $ cat soteria.out
   5:7:9
 
+  $ php static_closures.php > php.out
+  $ ../../../bin/soteria_php.exe exec static_closures.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  1::3:4:4:15:21:1:6:3:3:10:2
+
   $ ../../../bin/soteria_php.exe exec symbolic.php
   symbolic ok
 

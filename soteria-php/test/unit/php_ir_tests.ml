@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 12) ?(functions = []) ?(classes = []) statement =
+let program ?(schema_version = 13) ?(functions = []) ?(classes = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -48,10 +48,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:13 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:14 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 13 (expected 12)"
+        "error" "$.schema_version: unsupported schema version 14 (expected 13)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -649,8 +649,8 @@ let rejects_invalid_member_visibility () =
   | Error error ->
       Alcotest.(check string)
         "error"
-        "$.classes[0].properties[0].modifiers: expected exactly one visibility \
-         modifier"
+        "$.classes[0].properties[0].modifiers: expected one visibility \
+         modifier followed by optional static"
         error
   | Ok _ -> Alcotest.fail "accepted multiple property visibility modifiers"
 

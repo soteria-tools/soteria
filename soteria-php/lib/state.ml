@@ -1,6 +1,13 @@
 module String_map = Map.Make (String)
 module Cell_map = Map.Make (Int)
 module Object_map = Map.Make (Int)
+module Closure_map = Map.Make (Int)
+
+module Static_property_map = Map.Make (struct
+  type t = string * string
+
+  let compare = Stdlib.compare
+end)
 
 type object_property =
   | Declared_property of { declaring_class : string; source_name : string }
@@ -22,13 +29,26 @@ type php_object = {
   message : string;
 }
 
+type closure_capture = By_value of Value.t | By_reference of cell_id
+
+type php_closure = {
+  declaration : Php_ir.closure_decl;
+  captures : closure_capture String_map.t;
+  class_context : string option;
+  called_class : string option;
+}
+
 type t = {
   scopes : scope list;
   class_contexts : string option list;
+  called_classes : string option list;
   cells : Value.t Cell_map.t;
   next_cell : cell_id;
   objects : php_object Object_map.t;
   next_object : object_id;
+  static_properties : cell_id Static_property_map.t;
+  closures : php_closure Closure_map.t;
+  next_closure : int;
   output_rev : string list;
   runtime_events_rev : Error.Runtime_event.t list;
 }
@@ -37,10 +57,14 @@ let empty =
   {
     scopes = [ String_map.empty ];
     class_contexts = [ None ];
+    called_classes = [ None ];
     cells = Cell_map.empty;
     next_cell = 0;
     objects = Object_map.empty;
     next_object = 0;
+    static_properties = Static_property_map.empty;
+    closures = Closure_map.empty;
+    next_closure = 0;
     output_rev = [];
     runtime_events_rev = [];
   }
@@ -52,6 +76,10 @@ let current_scope = function
 let current_class_context = function
   | { class_contexts = context :: _; _ } -> context
   | { class_contexts = []; _ } -> failwith "PHP state has no class context"
+
+let current_called_class = function
+  | { called_classes = called_class :: _; _ } -> called_class
+  | { called_classes = []; _ } -> failwith "PHP state has no called class"
 
 let find_cell cell state = Cell_map.find_opt cell state.cells
 
@@ -87,6 +115,59 @@ let allocate_object ?(properties = []) class_name message state =
       next_object = id + 1;
     } )
 
+let static_property_key ~declaring_class name =
+  (String.lowercase_ascii declaring_class, name)
+
+let allocate_static_property ~declaring_class name value state =
+  let key = static_property_key ~declaring_class name in
+  if Static_property_map.mem key state.static_properties then
+    failwith "duplicate PHP static property cell";
+  let cell, state = allocate_cell value state in
+  {
+    state with
+    static_properties = Static_property_map.add key cell state.static_properties;
+  }
+
+let find_static_property_cell ~declaring_class name state =
+  Static_property_map.find_opt
+    (static_property_key ~declaring_class name)
+    state.static_properties
+
+let find_static_property ~declaring_class name state =
+  Option.bind (find_static_property_cell ~declaring_class name state)
+    (fun cell -> find_cell cell state)
+
+let set_static_property ~declaring_class name value state =
+  match find_static_property_cell ~declaring_class name state with
+  | Some cell -> set_cell cell value state
+  | None -> failwith "write to an unknown PHP static property"
+
+let bind_static_property ~declaring_class name cell state =
+  if not (Cell_map.mem cell state.cells) then
+    failwith "bind static property to an unknown PHP cell";
+  let key = static_property_key ~declaring_class name in
+  if not (Static_property_map.mem key state.static_properties) then
+    failwith "bind unknown PHP static property";
+  {
+    state with
+    static_properties = Static_property_map.add key cell state.static_properties;
+  }
+
+let allocate_closure declaration captures class_context called_class state =
+  let id = state.next_closure in
+  let closure = { declaration; captures; class_context; called_class } in
+  ( id,
+    {
+      state with
+      closures = Closure_map.add id closure state.closures;
+      next_closure = id + 1;
+    } )
+
+let fresh_callable_id state =
+  let id = state.next_closure in
+  (id, { state with next_closure = id + 1 })
+
+let find_closure id state = Closure_map.find_opt id state.closures
 let find_object id state = Object_map.find_opt id state.objects
 
 let set_object_message id message state =
@@ -196,7 +277,8 @@ let find_array_value key array state =
   Option.bind (Value.array_find key array) (fun entry ->
       value_of_array_entry entry state)
 
-let enter_scope ?(class_context = None) bindings state =
+let enter_scope ?(class_context = None) ?(called_class = class_context) bindings
+    state =
   let scope, state =
     List.fold_left
       (fun (scope, state) (name, value) ->
@@ -208,13 +290,40 @@ let enter_scope ?(class_context = None) bindings state =
     state with
     scopes = scope :: state.scopes;
     class_contexts = class_context :: state.class_contexts;
+    called_classes = called_class :: state.called_classes;
   }
 
+let enter_closure_scope ?(class_context = None) ?(called_class = class_context)
+    captures bindings state =
+  let captured, state =
+    String_map.fold
+      (fun name capture (scope, state) ->
+        match capture with
+        | By_reference cell -> (String_map.add name cell scope, state)
+        | By_value value ->
+            let cell, state = allocate_cell value state in
+            (String_map.add name cell scope, state))
+      captures (String_map.empty, state)
+  in
+  let state =
+    {
+      state with
+      scopes = captured :: state.scopes;
+      class_contexts = class_context :: state.class_contexts;
+      called_classes = called_class :: state.called_classes;
+    }
+  in
+  List.fold_left
+    (fun state (name, value) -> set_variable name value state)
+    state bindings
+
 let leave_scope state =
-  match (state.scopes, state.class_contexts) with
-  | _ :: (_ :: _ as scopes), _ :: (_ :: _ as class_contexts) ->
-      { state with scopes; class_contexts }
-  | [ _ ], [ _ ] -> failwith "cannot leave the global PHP scope"
+  match (state.scopes, state.class_contexts, state.called_classes) with
+  | ( _ :: (_ :: _ as scopes),
+      _ :: (_ :: _ as class_contexts),
+      _ :: (_ :: _ as called_classes) ) ->
+      { state with scopes; class_contexts; called_classes }
+  | [ _ ], [ _ ], [ _ ] -> failwith "cannot leave the global PHP scope"
   | _ -> failwith "PHP scope and class-context stacks are inconsistent"
 
 let emit output state = { state with output_rev = output :: state.output_rev }

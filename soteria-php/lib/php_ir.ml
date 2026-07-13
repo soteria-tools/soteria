@@ -43,8 +43,14 @@ and expression_desc =
   | Binary of expression * binary_operator * expression
   | Cast of cast * expression
   | Call of string * expression list
+  | Invoke of expression * expression list
+  | Function_callable of string
   | Method_call of expression * string * expression list
+  | Object_method_callable of expression * string
+  | Static_method_call of string * string * expression list
+  | Static_method_callable of string * string
   | Parent_method_call of string * expression list
+  | Closure of closure_decl
   | New of string * expression list
   | Throw of expression
 
@@ -60,10 +66,24 @@ and lvalue_desc =
   | Variable_lvalue of string
   | Array_element_lvalue of lvalue * expression option
   | Object_property_lvalue of lvalue * string
+  | Static_property_lvalue of string * string
 
-type parameter = { name : string; location : location }
+and parameter = { name : string; location : location }
 
-type catch_clause = {
+and closure_capture = {
+  name : string;
+  by_reference : bool;
+  location : location;
+}
+
+and closure_decl = {
+  parameters : parameter list;
+  captures : closure_capture list;
+  body : statement list;
+  location : location;
+}
+
+and catch_clause = {
   types : string list;
   variable : string option;
   body : statement list;
@@ -91,7 +111,7 @@ type function_decl = {
   location : location;
 }
 
-type member_modifier = Public | Protected | Private
+type member_modifier = Public | Protected | Private | Static
 
 type property_decl = {
   name : string;
@@ -150,7 +170,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 12
+let schema_version = 13
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -321,8 +341,9 @@ let rec decode_expression path json =
           |> decode_lvalue ~allow_append:false (path ^ ".target")
         in
         match target.desc with
-        | Object_property_lvalue _ -> Property_get target
-        | _ -> decode_error (path ^ ".target") "expected an object property")
+        | Object_property_lvalue _ | Static_property_lvalue _ ->
+            Property_get target
+        | _ -> decode_error (path ^ ".target") "expected a property")
     | "assign" ->
         check_fields path [ "kind"; "target"; "value"; "location" ] fields;
         let target =
@@ -393,6 +414,22 @@ let rec decode_expression path json =
               decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
         in
         Call (name, arguments)
+    | "invoke" ->
+        check_fields path [ "kind"; "callee"; "arguments"; "location" ] fields;
+        let callee =
+          field path "callee" fields |> decode_expression (path ^ ".callee")
+        in
+        let arguments =
+          field path "arguments" fields
+          |> as_list (path ^ ".arguments")
+          |> List.mapi (fun index ->
+              decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
+        in
+        Invoke (callee, arguments)
+    | "function_callable" ->
+        check_fields path [ "kind"; "name"; "location" ] fields;
+        Function_callable
+          (field path "name" fields |> as_string (path ^ ".name"))
     | "method_call" ->
         check_fields path
           [ "kind"; "object"; "method"; "arguments"; "location" ]
@@ -410,6 +447,41 @@ let rec decode_expression path json =
               decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
         in
         Method_call (object_, method_name, arguments)
+    | "object_method_callable" ->
+        check_fields path [ "kind"; "object"; "method"; "location" ] fields;
+        let object_ =
+          field path "object" fields |> decode_expression (path ^ ".object")
+        in
+        let method_name =
+          field path "method" fields |> as_string (path ^ ".method")
+        in
+        Object_method_callable (object_, method_name)
+    | "static_method_call" ->
+        check_fields path
+          [ "kind"; "class"; "method"; "arguments"; "location" ]
+          fields;
+        let class_name =
+          field path "class" fields |> as_string (path ^ ".class")
+        in
+        let method_name =
+          field path "method" fields |> as_string (path ^ ".method")
+        in
+        let arguments =
+          field path "arguments" fields
+          |> as_list (path ^ ".arguments")
+          |> List.mapi (fun index ->
+              decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
+        in
+        Static_method_call (class_name, method_name, arguments)
+    | "static_method_callable" ->
+        check_fields path [ "kind"; "class"; "method"; "location" ] fields;
+        let class_name =
+          field path "class" fields |> as_string (path ^ ".class")
+        in
+        let method_name =
+          field path "method" fields |> as_string (path ^ ".method")
+        in
+        Static_method_callable (class_name, method_name)
     | "parent_method_call" ->
         check_fields path [ "kind"; "method"; "arguments"; "location" ] fields;
         let method_name =
@@ -422,6 +494,67 @@ let rec decode_expression path json =
               decode_expression (Printf.sprintf "%s.arguments[%d]" path index))
         in
         Parent_method_call (method_name, arguments)
+    | "closure" ->
+        check_fields path
+          [ "kind"; "parameters"; "captures"; "body"; "location" ]
+          fields;
+        let parameters =
+          field path "parameters" fields
+          |> as_list (path ^ ".parameters")
+          |> List.mapi (fun index ->
+              decode_parameter (Printf.sprintf "%s.parameters[%d]" path index))
+        in
+        let captures =
+          field path "captures" fields
+          |> as_list (path ^ ".captures")
+          |> List.mapi (fun index ->
+              decode_closure_capture
+                (Printf.sprintf "%s.captures[%d]" path index))
+        in
+        let rec validate_parameters seen index = function
+          | [] -> seen
+          | (parameter : parameter) :: parameters ->
+              if String.equal parameter.name "this" then
+                decode_error
+                  (Printf.sprintf "%s.parameters[%d].name" path index)
+                  "closure parameter cannot be named this";
+              if List.mem parameter.name seen then
+                decode_error
+                  (Printf.sprintf "%s.parameters[%d].name" path index)
+                  ("duplicate parameter " ^ parameter.name);
+              validate_parameters (parameter.name :: seen) (index + 1)
+                parameters
+        in
+        let parameter_names = validate_parameters [] 0 parameters in
+        let rec validate_captures seen index = function
+          | [] -> ()
+          | (capture : closure_capture) :: captures ->
+              if String.equal capture.name "this" then
+                decode_error
+                  (Printf.sprintf "%s.captures[%d].name" path index)
+                  "closure cannot explicitly capture this";
+              if List.mem capture.name parameter_names then
+                decode_error
+                  (Printf.sprintf "%s.captures[%d].name" path index)
+                  ("capture duplicates parameter " ^ capture.name);
+              if List.mem capture.name seen then
+                decode_error
+                  (Printf.sprintf "%s.captures[%d].name" path index)
+                  ("duplicate capture " ^ capture.name);
+              validate_captures (capture.name :: seen) (index + 1) captures
+        in
+        validate_captures [] 0 captures;
+        let body =
+          field path "body" fields
+          |> as_list (path ^ ".body")
+          |> List.mapi (fun index ->
+              decode_statement ~allow_return:true ~loop_depth:0
+                (Printf.sprintf "%s.body[%d]" path index))
+        in
+        let location =
+          field path "location" fields |> decode_location (path ^ ".location")
+        in
+        Closure { parameters; captures; body; location }
     | "new" ->
         check_fields path [ "kind"; "class"; "arguments"; "location" ] fields;
         let class_name =
@@ -493,12 +626,40 @@ and decode_lvalue ~allow_append path json =
         in
         let name = field path "name" fields |> as_string (path ^ ".name") in
         Object_property_lvalue (object_, name)
+    | "static_property" ->
+        check_fields path [ "kind"; "class"; "name"; "location" ] fields;
+        let class_name =
+          field path "class" fields |> as_string (path ^ ".class")
+        in
+        let name = field path "name" fields |> as_string (path ^ ".name") in
+        Static_property_lvalue (class_name, name)
     | kind -> decode_error (path ^ ".kind") ("unknown lvalue kind " ^ kind)
   in
   let location =
     field path "location" fields |> decode_location (path ^ ".location")
   in
   { desc; location }
+
+and decode_parameter path json =
+  let fields = as_assoc path json in
+  check_fields path [ "name"; "location" ] fields;
+  let name = field path "name" fields |> as_string (path ^ ".name") in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { name; location }
+
+and decode_closure_capture path json =
+  let fields = as_assoc path json in
+  check_fields path [ "name"; "by_reference"; "location" ] fields;
+  let name = field path "name" fields |> as_string (path ^ ".name") in
+  let by_reference =
+    field path "by_reference" fields |> as_bool (path ^ ".by_reference")
+  in
+  let location =
+    field path "location" fields |> decode_location (path ^ ".location")
+  in
+  { name; by_reference; location }
 
 and decode_statement ~allow_return ~loop_depth path json =
   let fields = as_assoc path json in
@@ -665,15 +826,6 @@ and decode_catch_clause ~allow_return ~loop_depth path json =
   in
   { types; variable; body; location }
 
-let decode_parameter path json =
-  let fields = as_assoc path json in
-  check_fields path [ "name"; "location" ] fields;
-  let name = field path "name" fields |> as_string (path ^ ".name") in
-  let location =
-    field path "location" fields |> decode_location (path ^ ".location")
-  in
-  { name; location }
-
 let decode_function path json =
   let fields = as_assoc path json in
   check_fields path [ "name"; "parameters"; "body"; "location" ] fields;
@@ -720,13 +872,16 @@ let decode_member_modifier path = function
   | "public" -> Public
   | "protected" -> Protected
   | "private" -> Private
+  | "static" -> Static
   | modifier -> decode_error path ("unknown member modifier " ^ modifier)
 
 let validate_visibility path = function
-  | [ (Public | Protected | Private) ] -> ()
+  | [ (Public | Protected | Private) ]
+  | [ (Public | Protected | Private); Static ] ->
+      ()
   | _ ->
       decode_error (path ^ ".modifiers")
-        "expected exactly one visibility modifier"
+        "expected one visibility modifier followed by optional static"
 
 let decode_property path json =
   let fields = as_assoc path json in
@@ -923,7 +1078,8 @@ let decode_class path json =
 let rec iter_expression_locations f (expression : expression) =
   f expression.location;
   match expression.desc with
-  | Literal _ | Variable _ -> ()
+  | Literal _ | Variable _ | Function_callable _ | Static_method_callable _ ->
+      ()
   | Array items -> List.iter (iter_array_item_locations f) items
   | Array_get target | Property_get target -> iter_lvalue_locations f target
   | Assign (target, value) ->
@@ -936,12 +1092,27 @@ let rec iter_expression_locations f (expression : expression) =
   | Binary (left, _, right) ->
       iter_expression_locations f left;
       iter_expression_locations f right
-  | Call (_, arguments) | New (_, arguments) | Parent_method_call (_, arguments)
-    ->
+  | Call (_, arguments)
+  | New (_, arguments)
+  | Parent_method_call (_, arguments)
+  | Static_method_call (_, _, arguments) ->
+      List.iter (iter_expression_locations f) arguments
+  | Invoke (callee, arguments) ->
+      iter_expression_locations f callee;
       List.iter (iter_expression_locations f) arguments
   | Method_call (object_, _, arguments) ->
       iter_expression_locations f object_;
       List.iter (iter_expression_locations f) arguments
+  | Object_method_callable (object_, _) -> iter_expression_locations f object_
+  | Closure closure ->
+      f closure.location;
+      List.iter
+        (fun (parameter : parameter) -> f parameter.location)
+        closure.parameters;
+      List.iter
+        (fun (capture : closure_capture) -> f capture.location)
+        closure.captures;
+      List.iter (iter_statement_locations f) closure.body
   | Throw expression -> iter_expression_locations f expression
 
 and iter_array_item_locations f (item : array_item) =
@@ -952,13 +1123,13 @@ and iter_array_item_locations f (item : array_item) =
 and iter_lvalue_locations f (lvalue : lvalue) =
   f lvalue.location;
   match lvalue.desc with
-  | Variable_lvalue _ -> ()
+  | Variable_lvalue _ | Static_property_lvalue _ -> ()
   | Array_element_lvalue (array, key) ->
       iter_lvalue_locations f array;
       Option.iter (iter_expression_locations f) key
   | Object_property_lvalue (object_, _) -> iter_lvalue_locations f object_
 
-let rec iter_statement_locations f (statement : statement) =
+and iter_statement_locations f (statement : statement) =
   match statement with
   | Expression (expression, location) ->
       f location;
@@ -1139,7 +1310,10 @@ let validate_class_names classes =
             if
               List.exists
                 (fun method_ ->
-                  Option.is_some method_.body || method_.modifiers <> [ Public ])
+                  Option.is_some method_.body
+                  || not
+                       (method_.modifiers = [ Public ]
+                       || method_.modifiers = [ Public; Static ]))
                 class_.methods
             then
               decode_error
@@ -1332,6 +1506,14 @@ let rec expression_to_yojson expression =
           ("name", `String name);
           ("arguments", `List (List.map expression_to_yojson arguments));
         ]
+    | Invoke (callee, arguments) ->
+        [
+          ("kind", `String "invoke");
+          ("callee", expression_to_yojson callee);
+          ("arguments", `List (List.map expression_to_yojson arguments));
+        ]
+    | Function_callable name ->
+        [ ("kind", `String "function_callable"); ("name", `String name) ]
     | Method_call (object_, method_name, arguments) ->
         [
           ("kind", `String "method_call");
@@ -1339,11 +1521,38 @@ let rec expression_to_yojson expression =
           ("method", `String method_name);
           ("arguments", `List (List.map expression_to_yojson arguments));
         ]
+    | Object_method_callable (object_, method_name) ->
+        [
+          ("kind", `String "object_method_callable");
+          ("object", expression_to_yojson object_);
+          ("method", `String method_name);
+        ]
+    | Static_method_call (class_name, method_name, arguments) ->
+        [
+          ("kind", `String "static_method_call");
+          ("class", `String class_name);
+          ("method", `String method_name);
+          ("arguments", `List (List.map expression_to_yojson arguments));
+        ]
+    | Static_method_callable (class_name, method_name) ->
+        [
+          ("kind", `String "static_method_callable");
+          ("class", `String class_name);
+          ("method", `String method_name);
+        ]
     | Parent_method_call (method_name, arguments) ->
         [
           ("kind", `String "parent_method_call");
           ("method", `String method_name);
           ("arguments", `List (List.map expression_to_yojson arguments));
+        ]
+    | Closure closure ->
+        [
+          ("kind", `String "closure");
+          ("parameters", `List (List.map parameter_to_yojson closure.parameters));
+          ( "captures",
+            `List (List.map closure_capture_to_yojson closure.captures) );
+          ("body", `List (List.map statement_to_yojson closure.body));
         ]
     | New (class_name, arguments) ->
         [
@@ -1384,10 +1593,16 @@ and lvalue_to_yojson lvalue =
           ("object", lvalue_to_yojson object_);
           ("name", `String name);
         ]
+    | Static_property_lvalue (class_name, name) ->
+        [
+          ("kind", `String "static_property");
+          ("class", `String class_name);
+          ("name", `String name);
+        ]
   in
   `Assoc (fields @ [ ("location", location_to_yojson lvalue.location) ])
 
-let rec statement_to_yojson = function
+and statement_to_yojson = function
   | Expression (expression, location) ->
       `Assoc
         [
@@ -1487,11 +1702,19 @@ and catch_clause_to_yojson (catch : catch_clause) =
       ("location", location_to_yojson catch.location);
     ]
 
-let parameter_to_yojson (parameter : parameter) =
+and parameter_to_yojson (parameter : parameter) =
   `Assoc
     [
       ("name", `String parameter.name);
       ("location", location_to_yojson parameter.location);
+    ]
+
+and closure_capture_to_yojson (capture : closure_capture) =
+  `Assoc
+    [
+      ("name", `String capture.name);
+      ("by_reference", `Bool capture.by_reference);
+      ("location", location_to_yojson capture.location);
     ]
 
 let function_to_yojson (function_ : function_decl) =
@@ -1507,6 +1730,7 @@ let member_modifier_to_yojson = function
   | Public -> `String "public"
   | Protected -> `String "protected"
   | Private -> `String "private"
+  | Static -> `String "static"
 
 let property_to_yojson (property : property_decl) =
   `Assoc

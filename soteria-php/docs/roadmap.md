@@ -40,16 +40,16 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first seventeen changes in the suggested pull request sequence have been
+The first eighteen changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
 properties, concrete counterexamples, expected-failure tests, and selected
 function entry points, by-value and by-reference array iteration, and symbolic
 array-key insertion, constructors, instance methods, `$this`, and property and
-method visibility, inheritance, interfaces, and traits. The next work should add
-static state, closures, and callable values before standalone packaging and
-release integration.
+method visibility, inheritance, interfaces, traits, static state, closures, and
+callable values. The next work should add selected magic methods and object
+builtins before standalone packaging and release integration.
 
 Completing these pull requests is not the same as completing milestones M0-M3.
 The sequence deliberately established one sound path through each subsystem
@@ -605,7 +605,8 @@ branch-isolation tests.
 declared-property stores, property references, `unset`, nested array access, and
 branch isolation, constructors, instance methods, `$this`, and public,
 protected, and private visibility, inheritance, interfaces, and traits are
-implemented. Static state, cloning, closures, and magic methods remain.
+implemented. Static state, callable values, and closures are also implemented.
+Cloning and magic methods remain.
 
 Deliverables:
 
@@ -673,7 +674,7 @@ Changes should remain small and independently reviewable.
 15. **Complete:** Constructors, instance methods, and `$this`.
 16. **Complete:** Property and method visibility.
 17. **Complete:** Inheritance, interfaces, and traits.
-18. Static state, closures, and callable values.
+18. **Complete:** Static state, closures, and callable values.
 19. Selected magic methods and object builtins.
 20. Packaging and CI distribution after the M1-M3 exit criteria pass.
 
@@ -816,6 +817,9 @@ outside that subset remain explicitly unsupported as documented in
    and trait conflicts.
 
 ### M3.4: static state, callables, and closures
+
+**Status:** Complete for the supported static-member and anonymous-function
+subset documented in `support.md`.
 
 1. Add persistent per-class static property cells and static method lookup;
    static state must remain isolated across symbolic branches.

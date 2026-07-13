@@ -57,8 +57,8 @@ let simplify_value value =
   | Value.Float value ->
       let+ value = Phpsymex.simplify value in
       Value.Float (normalize value)
-  | (Value.Undef | Value.Null | Value.String _ | Value.Array _ | Value.Object _)
-    as value ->
+  | ( Value.Undef | Value.Null | Value.String _ | Value.Array _ | Value.Object _
+    | Value.Callable _ ) as value ->
       Phpsymex.return value
 
 let condition value =
@@ -170,6 +170,8 @@ let rec strict_equal state left right =
       Value.Typed.Bool.of_bool (String.equal left right)
   | Value.Array left, Value.Array right -> strict_equal_arrays state left right
   | Value.Object left, Value.Object right ->
+      Value.Typed.Bool.of_bool (left = right)
+  | Value.Callable left, Value.Callable right ->
       Value.Typed.Bool.of_bool (left = right)
   | _ -> Value.Typed.Bool.v_false
 
@@ -368,6 +370,7 @@ type place =
   | Variable of string
   | Array_element of place * Value.array_key
   | Object_property of State.object_id * State.object_property
+  | Static_property of string * string
   | Inaccessible_property of place * Error.runtime_error
   | Invalid_read
 
@@ -533,13 +536,16 @@ let rec read_place state = function
   | Object_property (object_id, name) ->
       State.find_object_property object_id name state
       |> Option.value ~default:Value.undef
+  | Static_property (declaring_class, name) ->
+      State.find_static_property ~declaring_class name state
+      |> Option.value ~default:Value.undef
   | Inaccessible_property (property, _) -> read_place state property
   | Invalid_read -> Value.null
 
 let rec place_contains_inaccessible = function
   | Array_element (parent, _) -> place_contains_inaccessible parent
   | Inaccessible_property _ -> true
-  | Variable _ | Object_property _ | Invalid_read -> false
+  | Variable _ | Object_property _ | Static_property _ | Invalid_read -> false
 
 let cannot_use_as_array state value =
   match value with
@@ -585,6 +591,8 @@ let rec write_place place value state =
             (cannot_use_as_array state (read_place state parent)))
   | Object_property (object_id, name) ->
       evaluated () (State.set_object_property object_id name value state)
+  | Static_property (declaring_class, name) ->
+      evaluated () (State.set_static_property ~declaring_class name value state)
   | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> failwith "write through an invalid PHP read"
 
@@ -608,6 +616,8 @@ let bind_place_reference place cell state =
       | value -> raise_runtime_error state (cannot_use_as_array state value))
   | Object_property (object_id, name) ->
       evaluated () (State.bind_object_property object_id name cell state)
+  | Static_property (declaring_class, name) ->
+      evaluated () (State.bind_static_property ~declaring_class name cell state)
   | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> failwith "bind through an invalid PHP read"
 
@@ -660,6 +670,11 @@ let cell_for_reference place state =
           let cell, state = State.allocate_cell Value.null state in
           let state = State.bind_object_property object_id name cell state in
           evaluated cell state)
+  | Static_property (declaring_class, name) ->
+      evaluated
+        (State.find_static_property_cell ~declaring_class name state
+        |> Option.get)
+        state
   | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> failwith "take a reference through an invalid PHP read"
 
@@ -681,6 +696,12 @@ let unset_place place state =
             })
   | Object_property (object_id, name) ->
       evaluated () (State.unset_object_property object_id name state)
+  | Static_property _ ->
+      raise_runtime_error state
+        {
+          Error.class_name = "Error";
+          message = "Attempt to unset static property";
+        }
   | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> evaluated () state
 
@@ -793,6 +814,14 @@ let bind_parameters (parameters : Php_ir.parameter list) arguments =
   in
   bind [] parameters arguments
 
+let member_is_static modifiers = List.mem Php_ir.Static modifiers
+
+let member_visibility = function
+  | Php_ir.Public :: _ -> Php_ir.Public
+  | Protected :: _ -> Protected
+  | Private :: _ -> Private
+  | _ -> failwith "PHP member has invalid visibility modifiers"
+
 let find_local_method (class_ : class_info) name =
   let canonical_name = Builtins.canonical_name name in
   List.find_opt
@@ -823,7 +852,8 @@ let find_method declarations state class_ name =
                declarations.classes)
             (fun context -> find_local_method context name)
         with
-        | Some method_ when method_.declaration.modifiers = [ Php_ir.Private ]
+        | Some method_
+          when member_visibility method_.declaration.modifiers = Php_ir.Private
           ->
             Some method_
         | Some _ | None -> None)
@@ -840,14 +870,15 @@ let rec find_builtin_parent declarations (class_ : class_info) =
       | Some parent -> find_builtin_parent declarations parent
       | None -> find_throwable_class parent)
 
-let find_local_property (class_ : class_info) name =
+let find_local_property ?(static = false) (class_ : class_info) name =
   List.find_opt
     (fun (property : property_member) ->
-      String.equal property.declaration.Php_ir.name name)
+      String.equal property.declaration.Php_ir.name name
+      && Bool.equal (member_is_static property.declaration.modifiers) static)
     class_.properties
 
-let rec find_property_from declarations class_ name =
-  match find_local_property class_ name with
+let rec find_property_from ?(static = false) declarations class_ name =
+  match find_local_property ~static class_ name with
   | Some property -> Some property
   | None ->
       Option.bind class_.parent (fun parent ->
@@ -855,7 +886,23 @@ let rec find_property_from declarations class_ name =
             (Class_map.find_opt
                (Builtins.canonical_name parent)
                declarations.classes)
-            (fun parent -> find_property_from declarations parent name))
+            (fun parent -> find_property_from ~static declarations parent name))
+
+let rec find_any_property_from declarations class_ name =
+  match
+    List.find_opt
+      (fun (property : property_member) ->
+        String.equal property.declaration.Php_ir.name name)
+      class_.properties
+  with
+  | Some property -> Some property
+  | None ->
+      Option.bind class_.parent (fun parent ->
+          Option.bind
+            (Class_map.find_opt
+               (Builtins.canonical_name parent)
+               declarations.classes)
+            (fun parent -> find_any_property_from declarations parent name))
 
 let find_property declarations state class_ name =
   let contextual_private =
@@ -868,7 +915,8 @@ let find_property declarations state class_ name =
             (fun context -> find_local_property context name)
         with
         | Some property_
-          when property_.declaration.modifiers = [ Php_ir.Private ] ->
+          when member_visibility property_.declaration.modifiers
+               = Php_ir.Private ->
             Some property_
         | Some _ | None -> None)
   in
@@ -877,15 +925,15 @@ let find_property declarations state class_ name =
   | None -> find_property_from declarations class_ name
 
 let member_accessible declarations state declaring_class = function
-  | [ Php_ir.Public ] -> true
-  | [ Private ] -> (
+  | modifiers when member_visibility modifiers = Php_ir.Public -> true
+  | modifiers when member_visibility modifiers = Private -> (
       match State.current_class_context state with
       | Some current_class ->
           String.equal
             (Builtins.canonical_name current_class)
             (Builtins.canonical_name declaring_class)
       | None -> false)
-  | [ Protected ] -> (
+  | modifiers when member_visibility modifiers = Protected -> (
       match State.current_class_context state with
       | Some current_class ->
           class_is_a declarations current_class declaring_class
@@ -895,11 +943,11 @@ let member_accessible declarations state declaring_class = function
 
 let inaccessible_method_error state (method_ : method_member) =
   let visibility =
-    match method_.declaration.modifiers with
-    | [ Private ] -> "private"
-    | [ Protected ] -> "protected"
-    | [ Public ] -> failwith "public PHP method reported as inaccessible"
-    | _ -> failwith "PHP method has invalid visibility modifiers"
+    match member_visibility method_.declaration.modifiers with
+    | Private -> "private"
+    | Protected -> "protected"
+    | Public -> failwith "public PHP method reported as inaccessible"
+    | Static -> assert false
   in
   let scope =
     match State.current_class_context state with
@@ -924,11 +972,11 @@ let inaccessible_method_error state (method_ : method_member) =
 
 let inaccessible_property_error (property : property_member) =
   let visibility =
-    match property.declaration.modifiers with
-    | [ Private ] -> "private"
-    | [ Protected ] -> "protected"
-    | [ Public ] -> failwith "public PHP property reported as inaccessible"
-    | _ -> failwith "PHP property has invalid visibility modifiers"
+    match member_visibility property.declaration.modifiers with
+    | Private -> "private"
+    | Protected -> "protected"
+    | Public -> failwith "public PHP property reported as inaccessible"
+    | Static -> assert false
   in
   {
     Error.class_name = "Error";
@@ -936,6 +984,19 @@ let inaccessible_property_error (property : property_member) =
       Printf.sprintf "Cannot access %s property %s::$%s" visibility
         property.declaring_class property.declaration.name;
   }
+
+let resolve_class_reference declarations state name =
+  match Builtins.canonical_name name with
+  | "self" -> State.current_class_context state
+  | "static" -> State.current_called_class state
+  | "parent" ->
+      Option.bind (State.current_class_context state) (fun current ->
+          Option.bind
+            (Class_map.find_opt
+               (Builtins.canonical_name current)
+               declarations.classes)
+            (fun class_ -> class_.parent))
+  | _ -> Some name
 
 let finish_evaluation evaluation continuation =
   let open Phpsymex.Syntax in
@@ -1018,18 +1079,21 @@ and property_layout (declarations : declarations) (class_ : class_info) =
   in
   List.fold_left
     (fun layout (property : property_member) ->
-      match property.declaration.modifiers with
-      | [ Php_ir.Private ] -> layout @ [ property ]
-      | [ (Public | Protected) ] ->
-          List.filter
-            (fun (inherited : property_member) ->
-              not
-                (String.equal inherited.declaration.name
-                   property.declaration.name
-                && inherited.declaration.modifiers <> [ Php_ir.Private ]))
-            layout
-          @ [ property ]
-      | _ -> failwith "PHP property has invalid visibility modifiers")
+      if member_is_static property.declaration.modifiers then layout
+      else
+        match member_visibility property.declaration.modifiers with
+        | Php_ir.Private -> layout @ [ property ]
+        | Public | Protected ->
+            List.filter
+              (fun (inherited : property_member) ->
+                not
+                  (String.equal inherited.declaration.name
+                     property.declaration.name
+                  && member_visibility inherited.declaration.modifiers
+                     <> Php_ir.Private))
+              layout
+            @ [ property ]
+        | Static -> assert false)
     inherited class_.properties
 
 and construct_object declarations state location name arguments =
@@ -1071,11 +1135,25 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
     match lvalue.desc with
     | Variable_lvalue name -> (
         match access with
+        | (Write | Unset) when String.equal name "this" ->
+            raise_runtime_error state
+              {
+                Error.class_name = "Error";
+                message =
+                  (if access = Unset then "Cannot unset $this"
+                   else "Cannot re-assign $this");
+              }
         | Write | Unset -> evaluated (Variable name) state
         | Read -> (
             match State.find_variable name state with
             | Some value when Value.kind value <> `Undefined ->
                 evaluated (Variable name) state
+            | (Some _ | None) when String.equal name "this" ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message = "Using $this when not in object context";
+                  }
             | Some _ | None ->
                 let*** (), state =
                   record_runtime_event Error.Runtime_event.Warning
@@ -1150,9 +1228,53 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
                     evaluated Invalid_read state)
         in
         evaluated place state
+    | Static_property_lvalue (class_name, name) -> (
+        match resolve_class_reference functions state class_name with
+        | None ->
+            raise_runtime_error state
+              {
+                Error.class_name = "Error";
+                message =
+                  "Cannot access parent when current class scope has no parent";
+              }
+        | Some class_name -> (
+            match
+              Class_map.find_opt
+                (Builtins.canonical_name class_name)
+                functions.classes
+            with
+            | None ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message = Printf.sprintf "Class %S not found" class_name;
+                  }
+            | Some class_ -> (
+                match find_property_from ~static:true functions class_ name with
+                | None ->
+                    raise_runtime_error state
+                      {
+                        Error.class_name = "Error";
+                        message =
+                          Printf.sprintf
+                            "Access to undeclared static property %s::$%s"
+                            class_.name name;
+                      }
+                | Some property
+                  when not
+                         (member_accessible functions state
+                            property.declaring_class
+                            property.declaration.modifiers) ->
+                    raise_runtime_error state
+                      (inaccessible_property_error property)
+                | Some property ->
+                    evaluated
+                      (Static_property
+                         (property.declaring_class, property.declaration.name))
+                      state)))
     | Object_property_lvalue (object_, name) -> (
         let*** object_, state =
-          resolve_lvalue functions state ~access object_
+          resolve_lvalue functions state ~access:Read object_
         in
         match read_place state object_ with
         | Value.Object object_id -> (
@@ -1276,6 +1398,12 @@ and eval_expression functions state expression =
         match State.find_variable name state with
         | Some value when Value.kind value <> `Undefined ->
             evaluated value state
+        | (Some _ | None) when String.equal name "this" ->
+            raise_runtime_error state
+              {
+                Error.class_name = "Error";
+                message = "Using $this when not in object context";
+              }
         | Some _ | None ->
             let*** (), state =
               record_runtime_event Error.Runtime_event.Warning
@@ -1335,17 +1463,45 @@ and eval_expression functions state expression =
         in
         let** value = coerce target value in
         evaluated value state
-    | Call (name, arguments) -> (
+    | Call (name, arguments) ->
         let*** arguments, state = eval_expressions functions state arguments in
-        match Builtins.find name with
-        | Some implementation -> (
-            match Builtins.runtime_error name arguments with
-            | Some error -> raise_runtime_error state error
-            | None ->
-                let** value = implementation ~args:arguments in
-                evaluated value state)
-        | None ->
-            call_function functions state expression.location name arguments)
+        invoke_callable functions state expression.location
+          (Value.Function name) arguments
+    | Invoke (callee, arguments) -> (
+        let*** callee, state = eval_expression functions state callee in
+        match callee with
+        | Value.Callable callable ->
+            let*** arguments, state =
+              eval_expressions functions state arguments
+            in
+            invoke_callable functions state expression.location callable
+              arguments
+        | Value.String _ -> unsupported "string callable invocation"
+        | Value.Array _ -> unsupported "array callable invocation"
+        | Value.Object _ -> unsupported "invokable object"
+        | value ->
+            raise_runtime_error state
+              {
+                Error.class_name = "Error";
+                message =
+                  Printf.sprintf "Value of type %s is not callable"
+                    (runtime_type_name state value);
+              })
+    | Function_callable name ->
+        if
+          Option.is_some (Builtins.find name)
+          || Function_map.mem (Builtins.canonical_name name) functions.functions
+        then
+          let identity, state = State.fresh_callable_id state in
+          evaluated
+            (Value.callable (Value.First_class_function { identity; name }))
+            state
+        else
+          raise_runtime_error state
+            {
+              Error.class_name = "Error";
+              message = Printf.sprintf "Call to undefined function %s()" name;
+            }
     | Method_call (object_expression, name, arguments) -> (
         let*** object_value, state =
           eval_expression functions state object_expression
@@ -1382,8 +1538,12 @@ and eval_expression functions state expression =
                   let*** arguments, state =
                     eval_expressions functions state arguments
                   in
-                  call_method functions state expression.location object_id
-                    method_ arguments
+                  if member_is_static method_.declaration.modifiers then
+                    call_static_method functions state expression.location
+                      object_state.class_name method_ arguments
+                  else
+                    call_method functions state expression.location object_id
+                      method_ arguments
                 else
                   raise_runtime_error state
                     (inaccessible_method_error state method_))
@@ -1395,6 +1555,93 @@ and eval_expression functions state expression =
                   Printf.sprintf "Call to a member function %s() on %s" name
                     (Value.type_name value);
               })
+    | Object_method_callable (object_expression, name) -> (
+        let*** object_value, state =
+          eval_expression functions state object_expression
+        in
+        match object_value with
+        | Value.Object object_id -> (
+            let object_state =
+              State.find_object object_id state |> Option.get
+            in
+            let class_ =
+              Class_map.find_opt
+                (Builtins.canonical_name object_state.class_name)
+                functions.classes
+            in
+            match
+              Option.bind class_ (fun class_ ->
+                  find_method functions state class_ name)
+            with
+            | Some method_
+              when member_accessible functions state method_.declaring_class
+                     method_.declaration.modifiers ->
+                let identity, state = State.fresh_callable_id state in
+                evaluated
+                  (Value.callable
+                     (Value.Object_method
+                        {
+                          identity;
+                          object_id;
+                          declaring_class = method_.declaring_class;
+                          method_name = method_.declaration.name;
+                        }))
+                  state
+            | Some method_ ->
+                raise_runtime_error state
+                  (inaccessible_method_error state method_)
+            | None ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message =
+                      Printf.sprintf "Call to undefined method %s::%s()"
+                        object_state.class_name name;
+                  })
+        | value ->
+            raise_runtime_error state
+              {
+                Error.class_name = "Error";
+                message =
+                  Printf.sprintf "Call to a member function %s() on %s" name
+                    (Value.type_name value);
+              })
+    | Static_method_call (class_name, name, arguments) ->
+        call_static_expression functions state expression.location class_name
+          name arguments
+    | Static_method_callable (class_name, name) ->
+        let*** (class_name, (method_ : method_member)), state =
+          resolve_static_method functions state class_name name
+        in
+        let identity, state = State.fresh_callable_id state in
+        evaluated
+          (Value.callable
+             (Value.Static_method
+                {
+                  identity;
+                  called_class = class_name;
+                  declaring_class = method_.declaring_class;
+                  method_name = method_.declaration.name;
+                }))
+          state
+    | Closure closure ->
+        let*** captures, state =
+          capture_closure_variables functions state closure.captures
+        in
+        let captures, state =
+          match State.find_variable "this" state with
+          | Some value ->
+              ( State.String_map.add "this" (State.By_value value) captures,
+                state )
+          | None -> (captures, state)
+        in
+        let id, state =
+          State.allocate_closure closure captures
+            (State.current_class_context state)
+            (State.current_called_class state)
+            state
+        in
+        evaluated (Value.callable (Value.Closure id)) state
     | Parent_method_call (name, arguments) -> (
         match
           (State.current_class_context state, State.find_variable "this" state)
@@ -1422,8 +1669,16 @@ and eval_expression functions state expression =
                           let*** arguments, state =
                             eval_expressions functions state arguments
                           in
-                          call_method functions state expression.location
-                            object_id method_ arguments
+                          if member_is_static method_.declaration.modifiers then
+                            let called_class =
+                              State.current_called_class state
+                              |> Option.value ~default:parent.name
+                            in
+                            call_static_method functions state
+                              expression.location called_class method_ arguments
+                          else
+                            call_method functions state expression.location
+                              object_id method_ arguments
                         else
                           raise_runtime_error state
                             (inaccessible_method_error state method_)
@@ -1473,7 +1728,69 @@ and eval_expression functions state expression =
                       "Cannot access parent when current class scope has no \
                        parent";
                   })
-        | _ -> unsupported "parent method call outside an instance method")
+        | Some current_class, _ -> (
+            match
+              Class_map.find_opt
+                (Builtins.canonical_name current_class)
+                functions.classes
+            with
+            | Some { parent = Some parent_name; _ } -> (
+                match
+                  Class_map.find_opt
+                    (Builtins.canonical_name parent_name)
+                    functions.classes
+                with
+                | Some parent -> (
+                    match find_method_from functions parent name with
+                    | Some method_
+                      when member_is_static method_.declaration.modifiers
+                           && member_accessible functions state
+                                method_.declaring_class
+                                method_.declaration.modifiers ->
+                        let*** arguments, state =
+                          eval_expressions functions state arguments
+                        in
+                        let called_class =
+                          State.current_called_class state
+                          |> Option.value ~default:parent.name
+                        in
+                        call_static_method functions state expression.location
+                          called_class method_ arguments
+                    | Some method_
+                      when not (member_is_static method_.declaration.modifiers)
+                      ->
+                        raise_runtime_error state
+                          {
+                            Error.class_name = "Error";
+                            message =
+                              Printf.sprintf
+                                "Non-static method %s::%s() cannot be called \
+                                 statically"
+                                method_.declaring_class method_.declaration.name;
+                          }
+                    | Some method_ ->
+                        raise_runtime_error state
+                          (inaccessible_method_error state method_)
+                    | None ->
+                        raise_runtime_error state
+                          {
+                            Error.class_name = "Error";
+                            message =
+                              Printf.sprintf "Call to undefined method %s::%s()"
+                                parent.name name;
+                          })
+                | None ->
+                    unsupported "parent method call into built-in class %s"
+                      parent_name)
+            | Some { parent = None; _ } | None ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message =
+                      "Cannot access parent when current class scope has no \
+                       parent";
+                  })
+        | None, _ -> unsupported "parent method call outside a method")
     | New (name, arguments) -> (
         match find_throwable_class name with
         | Some _ ->
@@ -1516,6 +1833,194 @@ and eval_expression functions state expression =
   in
   Phpsymex.with_location ~location:expression.location process
 
+and capture_closure_variables declarations state captures =
+  let open Phpsymex.Syntax in
+  match captures with
+  | [] -> evaluated State.String_map.empty state
+  | (capture : Php_ir.closure_capture) :: captures ->
+      let process =
+        let*** binding, state =
+          if capture.by_reference then
+            let cell, state = State.ensure_variable capture.name state in
+            let state =
+              match State.find_cell cell state with
+              | Some Value.Undef -> State.set_cell cell Value.null state
+              | Some _ -> state
+              | None -> failwith "closure capture refers to an unknown cell"
+            in
+            evaluated (State.By_reference cell) state
+          else
+            let*** value, state =
+              match State.find_variable capture.name state with
+              | Some value when Value.kind value <> `Undefined ->
+                  evaluated value state
+              | Some _ | None ->
+                  let*** (), state =
+                    record_runtime_event Error.Runtime_event.Warning
+                      (Printf.sprintf "Undefined variable $%s" capture.name)
+                      state
+                  in
+                  evaluated Value.null state
+            in
+            evaluated (State.By_value value) state
+        in
+        let*** environment, state =
+          capture_closure_variables declarations state captures
+        in
+        evaluated (State.String_map.add capture.name binding environment) state
+      in
+      Phpsymex.with_location ~location:capture.location process
+
+and resolve_static_method declarations state class_reference name =
+  match resolve_class_reference declarations state class_reference with
+  | None ->
+      raise_runtime_error state
+        {
+          Error.class_name = "Error";
+          message =
+            "Cannot access parent when current class scope has no parent";
+        }
+  | Some class_name -> (
+      match
+        Class_map.find_opt
+          (Builtins.canonical_name class_name)
+          declarations.classes
+      with
+      | None ->
+          raise_runtime_error state
+            {
+              Error.class_name = "Error";
+              message = Printf.sprintf "Class %S not found" class_name;
+            }
+      | Some class_ -> (
+          match
+            (find_method declarations state class_ name : method_member option)
+          with
+          | None ->
+              raise_runtime_error state
+                {
+                  Error.class_name = "Error";
+                  message =
+                    Printf.sprintf "Call to undefined method %s::%s()"
+                      class_.name name;
+                }
+          | Some method_
+            when not (member_is_static method_.declaration.modifiers) ->
+              raise_runtime_error state
+                {
+                  Error.class_name = "Error";
+                  message =
+                    Printf.sprintf
+                      "Non-static method %s::%s() cannot be called statically"
+                      method_.declaring_class method_.declaration.name;
+                }
+          | Some method_
+            when not
+                   (member_accessible declarations state method_.declaring_class
+                      method_.declaration.modifiers) ->
+              raise_runtime_error state
+                (inaccessible_method_error state method_)
+          | Some (method_ : method_member) ->
+              evaluated (class_.name, method_) state))
+
+and call_static_expression declarations state location class_name name arguments
+    =
+  let open Phpsymex.Syntax in
+  let*** (called_class, (method_ : method_member)), state =
+    resolve_static_method declarations state class_name name
+  in
+  let*** arguments, state = eval_expressions declarations state arguments in
+  call_static_method declarations state location called_class method_ arguments
+
+and invoke_callable declarations state location callable arguments =
+  match callable with
+  | Value.Function name -> (
+      match Builtins.find name with
+      | Some implementation -> (
+          match Builtins.runtime_error name arguments with
+          | Some error -> raise_runtime_error state error
+          | None ->
+              let open Phpsymex.Syntax in
+              let** value = implementation ~args:arguments in
+              evaluated value state)
+      | None -> call_function declarations state location name arguments)
+  | First_class_function { name; _ } ->
+      invoke_callable declarations state location (Value.Function name)
+        arguments
+  | Static_method { called_class; declaring_class; method_name; _ } -> (
+      match
+        Class_map.find_opt
+          (Builtins.canonical_name declaring_class)
+          declarations.classes
+      with
+      | None -> failwith "callable has an unknown declaring PHP class"
+      | Some class_ -> (
+          match find_local_method class_ method_name with
+          | Some method_ ->
+              call_static_method declarations state location called_class
+                method_ arguments
+          | None -> failwith "callable refers to an unknown PHP static method"))
+  | Object_method { object_id; declaring_class; method_name; _ } -> (
+      match State.find_object object_id state with
+      | None -> failwith "callable refers to an unknown PHP object"
+      | Some object_ -> (
+          match
+            Class_map.find_opt
+              (Builtins.canonical_name declaring_class)
+              declarations.classes
+          with
+          | None -> failwith "callable object has an unknown PHP class"
+          | Some class_ -> (
+              match find_local_method class_ method_name with
+              | None ->
+                  raise_runtime_error state
+                    {
+                      Error.class_name = "Error";
+                      message =
+                        Printf.sprintf "Call to undefined method %s::%s()"
+                          object_.class_name method_name;
+                    }
+              | Some method_ when member_is_static method_.declaration.modifiers
+                ->
+                  call_static_method declarations state location
+                    object_.class_name method_ arguments
+              | Some method_ ->
+                  call_method declarations state location object_id method_
+                    arguments)))
+  | Closure id -> call_closure declarations state location id arguments
+
+and initialize_static_properties declarations state classes =
+  let open Phpsymex.Syntax in
+  match classes with
+  | [] -> evaluated () state
+  | (_, class_) :: classes ->
+      let properties =
+        List.filter
+          (fun (property : property_member) ->
+            member_is_static property.declaration.modifiers)
+          class_.properties
+      in
+      let*** (), state =
+        initialize_class_static_properties declarations state properties
+      in
+      initialize_static_properties declarations state classes
+
+and initialize_class_static_properties declarations state properties =
+  let open Phpsymex.Syntax in
+  match properties with
+  | [] -> evaluated () state
+  | (property : property_member) :: properties ->
+      let*** value, state =
+        match property.declaration.default with
+        | None -> evaluated Value.null state
+        | Some expression -> eval_expression declarations state expression
+      in
+      let state =
+        State.allocate_static_property ~declaring_class:property.declaring_class
+          property.declaration.name value state
+      in
+      initialize_class_static_properties declarations state properties
+
 and call_function functions state location name arguments =
   let canonical_name = Builtins.canonical_name name in
   match Function_map.find_opt canonical_name functions.functions with
@@ -1553,6 +2058,82 @@ and call_function functions state location name arguments =
           ~message:("Call to " ^ function_.name)
           process
 
+and call_static_method declarations state location called_class
+    (method_ : method_member) arguments =
+  let declaration = method_.declaration in
+  let expected = List.length declaration.parameters in
+  let actual = List.length arguments in
+  if actual < expected then
+    raise_runtime_error state
+      {
+        Error.class_name = "ArgumentCountError";
+        message =
+          Printf.sprintf "%s::%s() expects exactly %d argument%s, %d given"
+            method_.declaring_class declaration.name expected
+            (if expected = 1 then "" else "s")
+            actual;
+      }
+  else
+    let bindings = bind_parameters declaration.parameters arguments in
+    let local_state =
+      State.enter_scope ~class_context:(Some method_.declaring_class)
+        ~called_class:(Some called_class) bindings state
+    in
+    let process =
+      let open Phpsymex.Syntax in
+      let** control, local_state =
+        exec_statements declarations local_state (Option.get declaration.body)
+      in
+      let state = State.leave_scope local_state in
+      match control with
+      | Normal -> evaluated Value.null state
+      | Return value -> evaluated value state
+      | Throw thrown -> Phpsymex.Result.ok (Raised thrown, state)
+      | Break _ | Continue _ ->
+          failwith "loop control escaped a PHP static method"
+    in
+    Phpsymex.with_call ~location
+      ~message:(Printf.sprintf "Call to %s::%s" called_class declaration.name)
+      process
+
+and call_closure declarations state location id arguments =
+  match State.find_closure id state with
+  | None -> failwith "callable refers to an unknown PHP closure"
+  | Some closure ->
+      let declaration = closure.declaration in
+      let expected = List.length declaration.parameters in
+      let actual = List.length arguments in
+      if actual < expected then
+        raise_runtime_error state
+          {
+            Error.class_name = "ArgumentCountError";
+            message =
+              Printf.sprintf "Closure expects exactly %d argument%s, %d given"
+                expected
+                (if expected = 1 then "" else "s")
+                actual;
+          }
+      else
+        let bindings = bind_parameters declaration.parameters arguments in
+        let local_state =
+          State.enter_closure_scope ~class_context:closure.class_context
+            ~called_class:closure.called_class closure.captures bindings state
+        in
+        let process =
+          let open Phpsymex.Syntax in
+          let** control, local_state =
+            exec_statements declarations local_state declaration.body
+          in
+          let state = State.leave_scope local_state in
+          match control with
+          | Normal -> evaluated Value.null state
+          | Return value -> evaluated value state
+          | Throw thrown -> Phpsymex.Result.ok (Raised thrown, state)
+          | Break _ | Continue _ ->
+              failwith "loop control escaped a PHP closure"
+        in
+        Phpsymex.with_call ~location ~message:"Call to closure" process
+
 and call_method declarations state location object_id (method_ : method_member)
     arguments =
   let declaration = method_.declaration in
@@ -1574,8 +2155,12 @@ and call_method declarations state location object_id (method_ : method_member)
       @ [ ("this", Value.object_ object_id) ]
     in
     let local_state =
-      State.enter_scope ~class_context:(Some method_.declaring_class) bindings
-        state
+      let called_class =
+        State.find_object object_id state |> Option.get |> fun object_ ->
+        Some object_.class_name
+      in
+      State.enter_scope ~class_context:(Some method_.declaring_class)
+        ~called_class bindings state
     in
     let process =
       let open Phpsymex.Syntax in
@@ -1967,10 +2552,12 @@ let method_name (method_ : method_member) =
   Builtins.canonical_name method_.declaration.Php_ir.name
 
 let visibility_rank = function
-  | [ Php_ir.Private ] -> 0
-  | [ Protected ] -> 1
-  | [ Public ] -> 2
-  | _ -> failwith "PHP member has invalid visibility modifiers"
+  | modifiers -> (
+      match member_visibility modifiers with
+      | Php_ir.Private -> 0
+      | Protected -> 1
+      | Public -> 2
+      | Static -> assert false)
 
 let replace_method ?name ?visibility declaring_class (method_ : imported_method)
     : method_member =
@@ -1980,7 +2567,10 @@ let replace_method ?name ?visibility declaring_class (method_ : imported_method)
       name = Option.value name ~default:method_.member.declaration.name;
       modifiers =
         Option.fold ~none:method_.member.declaration.modifiers
-          ~some:(fun visibility -> [ visibility ])
+          ~some:(fun visibility ->
+            if member_is_static method_.member.declaration.modifiers then
+              [ visibility; Php_ir.Static ]
+            else [ visibility ])
           visibility;
     }
   in
@@ -2353,7 +2943,11 @@ let build_classes declarations =
               with
               | Some implementation
                 when implementation.declaration.body <> None
-                     && implementation.declaration.modifiers = [ Php_ir.Public ]
+                     && member_visibility implementation.declaration.modifiers
+                        = Php_ir.Public
+                     && Bool.equal
+                          (member_is_static implementation.declaration.modifiers)
+                          (member_is_static requirement.declaration.modifiers)
                      && List.length implementation.declaration.parameters
                         = List.length requirement.declaration.parameters ->
                   validate_requirements requirements
@@ -2380,8 +2974,25 @@ let build_classes declarations =
                           parent method_.declaration.name
                       with
                       | Some inherited
-                        when inherited.declaration.modifiers
-                             <> [ Php_ir.Private ]
+                        when member_visibility inherited.declaration.modifiers
+                             <> Php_ir.Private
+                             && not
+                                  (Bool.equal
+                                     (member_is_static
+                                        method_.declaration.modifiers)
+                                     (member_is_static
+                                        inherited.declaration.modifiers)) ->
+                          class_error method_.declaration.location
+                            "incompatible static override of %s::%s"
+                            inherited.declaring_class inherited.declaration.name
+                      | Some inherited
+                        when member_visibility inherited.declaration.modifiers
+                             <> Php_ir.Private
+                             && Bool.equal
+                                  (member_is_static
+                                     method_.declaration.modifiers)
+                                  (member_is_static
+                                     inherited.declaration.modifiers)
                              && (not
                                    (String.equal
                                       (Builtins.canonical_name
@@ -2403,13 +3014,30 @@ let build_classes declarations =
                   | [] -> Ok ()
                   | (property : property_member) :: properties -> (
                       match
-                        find_property_from
+                        find_any_property_from
                           { functions = Function_map.empty; classes }
                           parent property.declaration.name
                       with
                       | Some inherited
-                        when inherited.declaration.modifiers
-                             <> [ Php_ir.Private ]
+                        when member_visibility inherited.declaration.modifiers
+                             <> Php_ir.Private
+                             && not
+                                  (Bool.equal
+                                     (member_is_static
+                                        property.declaration.modifiers)
+                                     (member_is_static
+                                        inherited.declaration.modifiers)) ->
+                          class_error property.declaration.location
+                            "incompatible static property override of %s::$%s"
+                            inherited.declaring_class inherited.declaration.name
+                      | Some inherited
+                        when member_visibility inherited.declaration.modifiers
+                             <> Php_ir.Private
+                             && Bool.equal
+                                  (member_is_static
+                                     property.declaration.modifiers)
+                                  (member_is_static
+                                     inherited.declaration.modifiers)
                              && visibility_rank property.declaration.modifiers
                                 < visibility_rank
                                     inherited.declaration.modifiers ->
@@ -2475,22 +3103,29 @@ let run ?function_name program =
   let** functions = collect_functions program.Php_ir.functions in
   let** classes = collect_classes program.Php_ir.classes in
   let declarations = { functions; classes } in
-  match function_name with
-  | Some name -> (
-      match find_entry_point program name with
-      | None -> unsupported "entry point function %s" name
-      | Some function_ ->
-          let** result, state =
-            call_function declarations State.empty function_.location
-              function_.name []
+  let** initialization, initial_state =
+    initialize_static_properties declarations State.empty
+      (Class_map.bindings classes)
+  in
+  match initialization with
+  | Raised thrown -> finish initial_state (Raised thrown)
+  | Evaluated () -> (
+      match function_name with
+      | Some name -> (
+          match find_entry_point program name with
+          | None -> unsupported "entry point function %s" name
+          | Some function_ ->
+              let** result, state =
+                call_function declarations initial_state function_.location
+                  function_.name []
+              in
+              finish state result)
+      | None -> (
+          let** control, state =
+            exec_statements declarations initial_state program.statements
           in
-          finish state result)
-  | None -> (
-      let** control, state =
-        exec_statements declarations State.empty program.statements
-      in
-      match control with
-      | Normal -> Phpsymex.Result.ok state
-      | Throw thrown -> finish state (Raised thrown)
-      | Return _ | Break _ | Continue _ ->
-          failwith "invalid structured control escaped the PHP program")
+          match control with
+          | Normal -> Phpsymex.Result.ok state
+          | Throw thrown -> finish state (Raised thrown)
+          | Return _ | Break _ | Continue _ ->
+              failwith "invalid structured control escaped the PHP program"))

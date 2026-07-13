@@ -36,6 +36,24 @@ type t =
   | String of string
   | Array of php_array
   | Object of int
+  | Callable of callable
+
+and callable =
+  | Function of string
+  | First_class_function of { identity : int; name : string }
+  | Static_method of {
+      identity : int;
+      called_class : string;
+      declaring_class : string;
+      method_name : string;
+    }
+  | Object_method of {
+      identity : int;
+      object_id : int;
+      declaring_class : string;
+      method_name : string;
+    }
+  | Closure of int
 
 and php_array = {
   entries : array_entry Array_key_map.t;
@@ -54,7 +72,8 @@ type kind =
   | `Float
   | `String
   | `Array
-  | `Object ]
+  | `Object
+  | `Callable ]
 
 let undef = Undef
 let null = Null
@@ -76,6 +95,7 @@ let empty_array =
 
 let array value = Array value
 let object_ id = Object id
+let callable value = Callable value
 
 let of_literal = function
   | Php_ir.Null -> null
@@ -93,6 +113,7 @@ let kind = function
   | String _ -> `String
   | Array _ -> `Array
   | Object _ -> `Object
+  | Callable _ -> `Callable
 
 let kind_name = function
   | `Undefined -> "undefined"
@@ -103,6 +124,7 @@ let kind_name = function
   | `String -> "string"
   | `Array -> "array"
   | `Object -> "object"
+  | `Callable -> "callable"
 
 let type_name value = kind_name (kind value)
 let bool_value = function Bool value -> Typed.Bool.to_bool value | _ -> None
@@ -125,6 +147,7 @@ let float_value = function
 let string_value = function String value -> Some value | _ -> None
 let array_value = function Array value -> Some value | _ -> None
 let object_value = function Object id -> Some id | _ -> None
+let callable_value = function Callable callable -> Some callable | _ -> None
 let array_is_empty array = Array_key_map.is_empty array.entries
 let array_length array = Array_key_map.cardinal array.entries
 let array_find key array = Array_key_map.find_opt key array.entries
@@ -244,3 +267,11 @@ let rec pp formatter = function
            pp_binding)
         (array_bindings array)
   | Object id -> Format.fprintf formatter "object(%d)" id
+  | Callable (Function name) -> Format.fprintf formatter "callable(%s)" name
+  | Callable (First_class_function { name; _ }) ->
+      Format.fprintf formatter "callable(%s)" name
+  | Callable (Static_method { called_class; method_name; _ }) ->
+      Format.fprintf formatter "callable(%s::%s)" called_class method_name
+  | Callable (Object_method { object_id; method_name; _ }) ->
+      Format.fprintf formatter "callable(object(%d)->%s)" object_id method_name
+  | Callable (Closure id) -> Format.fprintf formatter "closure(%d)" id
