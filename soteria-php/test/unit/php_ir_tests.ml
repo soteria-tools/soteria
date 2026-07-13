@@ -10,7 +10,7 @@ let location =
       ("end", position 1 2 1);
     ]
 
-let program ?(schema_version = 13) ?(functions = []) ?(classes = []) statement =
+let program ?(schema_version = 14) ?(functions = []) ?(classes = []) statement =
   `Assoc
     [
       ("schema_version", `Int schema_version);
@@ -48,10 +48,10 @@ let decodes_supported_ir () =
 
 let rejects_unknown_schema () =
   let statement = `Assoc [ ("kind", `String "nop"); ("location", location) ] in
-  match Soteria_php.Php_ir.of_yojson (program ~schema_version:14 statement) with
+  match Soteria_php.Php_ir.of_yojson (program ~schema_version:15 statement) with
   | Error error ->
       Alcotest.(check string)
-        "error" "$.schema_version: unsupported schema version 14 (expected 13)"
+        "error" "$.schema_version: unsupported schema version 15 (expected 14)"
         error
   | Ok _ -> Alcotest.fail "accepted an incompatible schema"
 
@@ -517,6 +517,68 @@ let decodes_classes_and_object_properties () =
   | Ok _ -> Alcotest.fail "decoded an unexpected class or property shape"
   | Error error -> Alcotest.fail error
 
+let decodes_isset_targets () =
+  let variable =
+    `Assoc
+      [
+        ("kind", `String "variable");
+        ("name", `String "box");
+        ("location", location);
+      ]
+  in
+  let property =
+    `Assoc
+      [
+        ("kind", `String "object_property");
+        ("object", variable);
+        ("name", `String "value");
+        ("location", location);
+      ]
+  in
+  let isset =
+    `Assoc
+      [
+        ("kind", `String "isset");
+        ("targets", `List [ variable; property ]);
+        ("location", location);
+      ]
+  in
+  let statement =
+    `Assoc
+      [
+        ("kind", `String "expression");
+        ("expression", isset);
+        ("location", location);
+      ]
+  in
+  match Soteria_php.Php_ir.of_yojson (program statement) with
+  | Ok
+      {
+        statements =
+          [
+            Expression
+              ( {
+                  desc =
+                    Isset
+                      [
+                        { desc = Variable_lvalue "box"; _ };
+                        {
+                          desc =
+                            Object_property_lvalue
+                              ({ desc = Variable_lvalue "box"; _ }, "value");
+                          _;
+                        };
+                      ];
+                  _;
+                },
+                _ );
+          ];
+        _;
+      } ->
+      ()
+  | Ok _ -> Alcotest.fail "decoded an unexpected isset shape"
+  | Error error -> Alcotest.fail error
+
 let decodes_methods_and_method_calls () =
   let variable name =
     `Assoc
@@ -737,6 +799,7 @@ let () =
             decodes_exceptions_and_structured_control;
           Alcotest.test_case "classes and object properties" `Quick
             decodes_classes_and_object_properties;
+          Alcotest.test_case "isset targets" `Quick decodes_isset_targets;
           Alcotest.test_case "methods and method calls" `Quick
             decodes_methods_and_method_calls;
           Alcotest.test_case "member visibility validation" `Quick

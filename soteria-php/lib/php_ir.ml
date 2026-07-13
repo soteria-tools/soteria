@@ -37,6 +37,7 @@ and expression_desc =
   | Array of array_item list
   | Array_get of lvalue
   | Property_get of lvalue
+  | Isset of lvalue list
   | Assign of lvalue * expression
   | Assign_reference of lvalue * lvalue
   | Unary of unary_operator * expression
@@ -170,7 +171,7 @@ type t = {
   statements : statement list;
 }
 
-let schema_version = 13
+let schema_version = 14
 
 (* [versionsync: PHP_VERSION=8.4.19] *)
 let target_php_version = "8.4.19"
@@ -344,6 +345,18 @@ let rec decode_expression path json =
         | Object_property_lvalue _ | Static_property_lvalue _ ->
             Property_get target
         | _ -> decode_error (path ^ ".target") "expected a property")
+    | "isset" ->
+        check_fields path [ "kind"; "targets"; "location" ] fields;
+        let targets =
+          field path "targets" fields
+          |> as_list (path ^ ".targets")
+          |> List.mapi (fun index ->
+              decode_lvalue ~allow_append:false
+                (Printf.sprintf "%s.targets[%d]" path index))
+        in
+        if targets = [] then
+          decode_error (path ^ ".targets") "must not be empty";
+        Isset targets
     | "assign" ->
         check_fields path [ "kind"; "target"; "value"; "location" ] fields;
         let target =
@@ -1082,6 +1095,7 @@ let rec iter_expression_locations f (expression : expression) =
       ()
   | Array items -> List.iter (iter_array_item_locations f) items
   | Array_get target | Property_get target -> iter_lvalue_locations f target
+  | Isset targets -> List.iter (iter_lvalue_locations f) targets
   | Assign (target, value) ->
       iter_lvalue_locations f target;
       iter_expression_locations f value
@@ -1468,6 +1482,11 @@ let rec expression_to_yojson expression =
     | Property_get target ->
         [
           ("kind", `String "property_get"); ("target", lvalue_to_yojson target);
+        ]
+    | Isset targets ->
+        [
+          ("kind", `String "isset");
+          ("targets", `List (List.map lvalue_to_yojson targets));
         ]
     | Assign (target, value) ->
         [

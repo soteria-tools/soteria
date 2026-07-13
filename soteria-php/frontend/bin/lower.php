@@ -12,7 +12,7 @@ use PhpParser\PhpVersion;
 
 // [versionsync: PHP_VERSION=8.4.19]
 const TARGET_PHP_VERSION = '8.4.19';
-const SCHEMA_VERSION = 13;
+const SCHEMA_VERSION = 14;
 
 final class LoweringError extends RuntimeException
 {
@@ -825,6 +825,20 @@ final class Lowerer
             return [
                 'kind' => 'property_get',
                 'target' => $this->lowerLvalue($expression, false),
+                'location' => $location,
+            ];
+        }
+
+        if ($expression instanceof Node\Expr\Isset_) {
+            return [
+                'kind' => 'isset',
+                'targets' => array_map(
+                    fn (Node\Expr $target): array => $this->lowerLvalue(
+                        $target,
+                        false,
+                    ),
+                    $expression->vars,
+                ),
                 'location' => $location,
             ];
         }

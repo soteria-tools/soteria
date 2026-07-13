@@ -3,6 +3,12 @@ module Cell_map = Map.Make (Int)
 module Object_map = Map.Make (Int)
 module Closure_map = Map.Make (Int)
 
+module Magic_property_set = Set.Make (struct
+  type t = int * string * string
+
+  let compare = Stdlib.compare
+end)
+
 module Static_property_map = Map.Make (struct
   type t = string * string
 
@@ -49,6 +55,7 @@ type t = {
   static_properties : cell_id Static_property_map.t;
   closures : php_closure Closure_map.t;
   next_closure : int;
+  active_magic_properties : Magic_property_set.t;
   output_rev : string list;
   runtime_events_rev : Error.Runtime_event.t list;
 }
@@ -65,6 +72,7 @@ let empty =
     static_properties = Static_property_map.empty;
     closures = Closure_map.empty;
     next_closure = 0;
+    active_magic_properties = Magic_property_set.empty;
     output_rev = [];
     runtime_events_rev = [];
   }
@@ -169,6 +177,32 @@ let fresh_callable_id state =
 
 let find_closure id state = Closure_map.find_opt id state.closures
 let find_object id state = Object_map.find_opt id state.objects
+
+let magic_property_key object_id property method_name =
+  (object_id, property, String.lowercase_ascii method_name)
+
+let magic_property_is_active object_id property method_name state =
+  Magic_property_set.mem
+    (magic_property_key object_id property method_name)
+    state.active_magic_properties
+
+let enter_magic_property object_id property method_name state =
+  {
+    state with
+    active_magic_properties =
+      Magic_property_set.add
+        (magic_property_key object_id property method_name)
+        state.active_magic_properties;
+  }
+
+let leave_magic_property object_id property method_name state =
+  {
+    state with
+    active_magic_properties =
+      Magic_property_set.remove
+        (magic_property_key object_id property method_name)
+        state.active_magic_properties;
+  }
 
 let set_object_message id message state =
   match find_object id state with

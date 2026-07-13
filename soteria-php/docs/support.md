@@ -3,7 +3,7 @@
 Soteria PHP targets PHP 8.4.19 with 64-bit integers. PHP 8.4.19 is the concrete
 semantics oracle, while the parser sidecar may run on any PHP version accepted
 by its Composer manifest. The frontend uses nikic/PHP-Parser 5.8.0 and emits
-Soteria PHP IR schema version 13.
+Soteria PHP IR schema version 14.
 
 The interpreter supports this deliberately bounded source subset:
 
@@ -43,6 +43,8 @@ The detailed cast and operand-kind tables are in
 | Callable values and closures | Partially supported | PHP first-class callable syntax is supported for named functions, static methods, and bound object methods, with visibility checked when the callable is created. Anonymous functions support required untyped by-value parameters, explicit `use` captures by value or reference, lexical `$this` and class scope, returns, recursion through captured references, and stable callable identity. Static closures, arrow functions, by-reference returns, typed/default/variadic parameters, and string or array callable syntax remain unsupported. |
 | Static state | Supported | Declared static property cells are persistent, initialized once per execution, shared through inheritance unless redeclared, referenceable, visibility-checked, and isolated across symbolic branches. Dynamic static properties and unsetting static properties are rejected with catchable errors. |
 | Object identity and properties | Partially supported | Each construction creates a stable object handle and a persistent inherited property store. Declared cells are keyed by declaring class and source name, so parent and child private properties remain distinct. Assignment copies the handle, so aliases share updates while separate objects remain independent. Visibility is enforced across related and unrelated classes with catchable `Error` values for reads, writes, references, `unset`, and nested access. Property-assignment right-hand sides run before an access error, matching PHP. Static-name dynamic-property writes emit PHP's deprecation event; dynamic property names, cloning, and serialization remain unsupported. |
+| Selected magic methods | Partially supported | Public, non-static `__get`, `__set`, `__isset`, `__unset`, `__call`, and `__toString` methods with their required arities are invoked for direct statically named operations. `isset` supports ordered variable, array-element, object-property, and static-property lvalues without undefined-read events. Magic property references, indirect modification of overloaded properties, magic first-class callables, recursion suppression, `__callStatic`, `__invoke`, `__clone`, serialization hooks, and dynamic member names remain unsupported. |
+| Object builtins | Partially supported | `get_class`, `is_a`, `property_exists`, and `method_exists` support object values and concrete class/member strings. `is_a` supports its optional concrete `allow_string` flag and implicit `Stringable` conformance through `__toString`. Property and method queries do not invoke magic hooks. Symbolic names and autoloading remain unsupported. |
 | Undefined variable, array-offset, and property reads | Supported | PHP 8.4 warning events are retained with their source and call trace, and execution continues with `null`. Nested reads retain each warning in evaluation order. |
 
 Throwable construction and catch inheritance currently cover `Throwable`,
@@ -65,7 +67,8 @@ the default: warnings and error events are reported as bugs, while notices and
 deprecations remain diagnostics. `--runtime-events report` retains every event
 as a non-failing diagnostic, and `--runtime-events ignore` suppresses them.
 
-The symbolic runtime recognizes these case-insensitive intrinsic functions:
+The interpreter recognizes these case-insensitive intrinsic and object
+functions:
 
 | Function | Status | Notes |
 | --- | --- | --- |
@@ -75,6 +78,10 @@ The symbolic runtime recognizes these case-insensitive intrinsic functions:
 | `Soteria\assume(bool)` | Supported | Restricts the current path and currently requires a boolean argument. |
 | `Soteria\assert(bool)` | Supported | Produces distinct success and failure paths and currently requires a boolean argument. |
 | `Soteria\expect_fail()` | Supported | Marks the current entry point as expected to find a definite failure. Finding a failure succeeds, finding none fails, and incomplete exploration remains incomplete. |
+| `get_class(object)` | Supported | Returns the runtime class name for a modelled object. |
+| `is_a(object|string, string, bool = false)` | Partially supported | Uses the modelled class/interface graph and requires concrete strings and a concrete optional flag. |
+| `property_exists(object|string, string)` | Partially supported | Checks declared and object-local dynamic properties without invoking magic hooks. Built-in throwable properties are not exposed. |
+| `method_exists(object|string, string)` | Partially supported | Checks modelled declared methods case-insensitively without invoking `__call`. Built-in throwable methods are not exposed. |
 
 Builtin and user-function arity errors, failed assertions, division by zero,
 invalid operand and offset errors, and uncaught explicit exceptions retain

@@ -371,6 +371,9 @@ type place =
   | Array_element of place * Value.array_key
   | Object_property of State.object_id * State.object_property
   | Static_property of string * string
+  | Temporary of Value.t
+  | Magic_set of State.object_id * string * method_member
+  | Magic_unset of State.object_id * string * method_member
   | Inaccessible_property of place * Error.runtime_error
   | Invalid_read
 
@@ -539,13 +542,18 @@ let rec read_place state = function
   | Static_property (declaring_class, name) ->
       State.find_static_property ~declaring_class name state
       |> Option.value ~default:Value.undef
+  | Temporary value -> value
+  | Magic_set _ | Magic_unset _ ->
+      failwith "read from a pending PHP magic-property operation"
   | Inaccessible_property (property, _) -> read_place state property
   | Invalid_read -> Value.null
 
 let rec place_contains_inaccessible = function
   | Array_element (parent, _) -> place_contains_inaccessible parent
   | Inaccessible_property _ -> true
-  | Variable _ | Object_property _ | Static_property _ | Invalid_read -> false
+  | Variable _ | Object_property _ | Static_property _ | Temporary _
+  | Magic_set _ | Magic_unset _ | Invalid_read ->
+      false
 
 let cannot_use_as_array state value =
   match value with
@@ -593,6 +601,9 @@ let rec write_place place value state =
       evaluated () (State.set_object_property object_id name value state)
   | Static_property (declaring_class, name) ->
       evaluated () (State.set_static_property ~declaring_class name value state)
+  | Magic_set _ -> unsupported "indirect write through an overloaded property"
+  | Temporary _ | Magic_unset _ ->
+      failwith "write through a non-writable PHP temporary"
   | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> failwith "write through an invalid PHP read"
 
@@ -618,6 +629,9 @@ let bind_place_reference place cell state =
       evaluated () (State.bind_object_property object_id name cell state)
   | Static_property (declaring_class, name) ->
       evaluated () (State.bind_static_property ~declaring_class name cell state)
+  | Magic_set _ | Magic_unset _ ->
+      unsupported "reference assignment involving an overloaded property"
+  | Temporary _ -> failwith "bind a reference to a PHP temporary"
   | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> failwith "bind through an invalid PHP read"
 
@@ -675,6 +689,9 @@ let cell_for_reference place state =
         (State.find_static_property_cell ~declaring_class name state
         |> Option.get)
         state
+  | Magic_set _ | Magic_unset _ ->
+      unsupported "reference assignment involving an overloaded property"
+  | Temporary _ -> unsupported "reference to an overloaded property value"
   | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> failwith "take a reference through an invalid PHP read"
 
@@ -702,6 +719,9 @@ let unset_place place state =
           Error.class_name = "Error";
           message = "Attempt to unset static property";
         }
+  | Magic_unset _ -> unsupported "nested unset through an overloaded property"
+  | Temporary _ | Magic_set _ ->
+      failwith "unset through a non-unsettable PHP temporary"
   | Inaccessible_property (_, error) -> raise_runtime_error state error
   | Invalid_read -> evaluated () state
 
@@ -814,6 +834,15 @@ let bind_parameters (parameters : Php_ir.parameter list) arguments =
   in
   bind [] parameters arguments
 
+let array_of_values values =
+  values
+  |> List.mapi (fun index value ->
+      (Value.Integer_key (Int64.of_int index), value))
+  |> List.fold_left
+       (fun array (key, value) -> Value.array_set key value array)
+       Value.empty_array
+  |> Value.array
+
 let member_is_static modifiers = List.mem Php_ir.Static modifiers
 
 let member_visibility = function
@@ -923,6 +952,52 @@ let find_property declarations state class_ name =
   match contextual_private with
   | Some property -> Some property
   | None -> find_property_from declarations class_ name
+
+let object_builtin_names =
+  [ "get_class"; "is_a"; "property_exists"; "method_exists" ]
+
+let is_object_builtin name =
+  List.mem (Builtins.canonical_name name) object_builtin_names
+
+let known_class declarations name =
+  Class_map.mem (Builtins.canonical_name name) declarations.classes
+  || Option.is_some (find_throwable_class name)
+
+let class_has_to_string declarations name =
+  match
+    Class_map.find_opt (Builtins.canonical_name name) declarations.classes
+  with
+  | Some class_ ->
+      Option.is_some (find_method_from declarations class_ "__toString")
+  | None -> Option.is_some (find_throwable_class name)
+
+let builtin_is_a declarations actual expected =
+  if String.equal (Builtins.canonical_name expected) "stringable" then
+    class_has_to_string declarations actual
+  else
+    known_class declarations expected && class_is_a declarations actual expected
+
+let rec declared_property_exists declarations ~include_private class_ name =
+  let local =
+    List.exists
+      (fun (property : property_member) ->
+        String.equal property.declaration.name name
+        && (include_private
+           || member_visibility property.declaration.modifiers <> Php_ir.Private
+           ))
+      class_.properties
+  in
+  local
+  || Option.fold ~none:false
+       ~some:(fun parent ->
+         Option.fold ~none:false
+           ~some:(fun parent ->
+             declared_property_exists declarations ~include_private:false parent
+               name)
+           (Class_map.find_opt
+              (Builtins.canonical_name parent)
+              declarations.classes))
+       class_.parent
 
 let member_accessible declarations state declaring_class = function
   | modifiers when member_visibility modifiers = Php_ir.Public -> true
@@ -1163,6 +1238,14 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
                 evaluated Invalid_read state))
     | Array_element_lvalue (parent, key_expression) ->
         let*** parent, state = resolve_lvalue functions state ~access parent in
+        let*** (), state =
+          match parent with
+          | Magic_set _ | Magic_unset _ ->
+              unsupported "indirect modification of an overloaded property"
+          | Variable _ | Array_element _ | Object_property _ | Static_property _
+          | Temporary _ | Inaccessible_property _ | Invalid_read ->
+              evaluated () state
+        in
         let*** place, state =
           match key_expression with
           | None -> (
@@ -1292,56 +1375,83 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
               Option.bind class_ (fun class_ ->
                   find_property functions state class_ name)
             in
-            match (class_, property) with
-            | Some _, Some property
-              when not
-                     (member_accessible functions state property.declaring_class
-                        property.declaration.modifiers) -> (
-                let error = inaccessible_property_error property in
-                match access with
-                | Write ->
-                    let property_key =
-                      State.declared_property
-                        ~declaring_class:property.declaring_class
-                        property.declaration.name
+            let property_key =
+              match property with
+              | Some property ->
+                  State.declared_property
+                    ~declaring_class:property.declaring_class
+                    property.declaration.name
+              | None -> State.dynamic_property name
+            in
+            let place = Object_property (object_id, property_key) in
+            let accessible =
+              Option.fold ~none:true
+                ~some:(fun property ->
+                  member_accessible functions state property.declaring_class
+                    property.declaration.modifiers)
+                property
+            in
+            let available =
+              accessible
+              && Option.is_some
+                   (State.find_object_property_cell object_id property_key state)
+            in
+            let magic method_name =
+              Option.bind class_ (fun class_ ->
+                  find_method_from functions class_ method_name)
+            in
+            match (access, available) with
+            | Read, false -> (
+                match magic "__get" with
+                | Some method_ ->
+                    let*** value, state =
+                      call_property_magic functions state lvalue.location
+                        object_id name method_
+                        [ Value.string name ]
                     in
-                    let property = Object_property (object_id, property_key) in
-                    evaluated (Inaccessible_property (property, error)) state
-                | Read | Unset -> raise_runtime_error state error)
-            | _ -> (
-                let property_key =
-                  match (class_, property) with
-                  | Some _, Some property ->
-                      State.declared_property
-                        ~declaring_class:property.declaring_class
-                        property.declaration.name
-                  | _ -> State.dynamic_property name
-                in
-                let place = Object_property (object_id, property_key) in
-                match
-                  ( access,
-                    property,
-                    State.find_object_property_cell object_id property_key state
-                  )
-                with
-                | Read, _, None ->
+                    evaluated (Temporary value) state
+                | None when not accessible ->
+                    raise_runtime_error state
+                      (inaccessible_property_error (Option.get property))
+                | None ->
                     let*** (), state =
                       record_runtime_event Error.Runtime_event.Warning
                         (Printf.sprintf "Undefined property: %s::$%s"
                            object_state.class_name name)
                         state
                     in
-                    evaluated Invalid_read state
-                | Write, None, None ->
-                    let*** (), state =
-                      record_runtime_event Error.Runtime_event.Deprecation
-                        (Printf.sprintf
-                           "Creation of dynamic property %s::$%s is deprecated"
-                           object_state.class_name name)
-                        state
+                    evaluated Invalid_read state)
+            | Write, false -> (
+                match magic "__set" with
+                | Some method_ ->
+                    evaluated (Magic_set (object_id, name, method_)) state
+                | None when not accessible ->
+                    let error =
+                      inaccessible_property_error (Option.get property)
                     in
-                    evaluated place state
-                | (Read | Write | Unset), _, _ -> evaluated place state))
+                    evaluated (Inaccessible_property (place, error)) state
+                | None ->
+                    let*** (), state =
+                      match property with
+                      | Some _ -> evaluated () state
+                      | None ->
+                          record_runtime_event Error.Runtime_event.Deprecation
+                            (Printf.sprintf
+                               "Creation of dynamic property %s::$%s is \
+                                deprecated"
+                               object_state.class_name name)
+                            state
+                    in
+                    evaluated place state)
+            | Unset, false -> (
+                match magic "__unset" with
+                | Some method_ ->
+                    evaluated (Magic_unset (object_id, name, method_)) state
+                | None when not accessible ->
+                    raise_runtime_error state
+                      (inaccessible_property_error (Option.get property))
+                | None -> evaluated place state)
+            | (Read | Write | Unset), true -> evaluated place state)
         | value -> (
             match access with
             | Read ->
@@ -1363,6 +1473,306 @@ and resolve_lvalue functions state ~access (lvalue : Php_ir.lvalue) =
             | Unset -> evaluated Invalid_read state))
   in
   Phpsymex.with_location ~location:lvalue.location process
+
+and call_property_magic declarations state location object_id property method_
+    arguments =
+  let method_name = method_.declaration.Php_ir.name in
+  if State.magic_property_is_active object_id property method_name state then
+    unsupported "recursive %s for property %s::$%s" method_name
+      (State.find_object object_id state |> Option.get).class_name property
+  else
+    let state =
+      State.enter_magic_property object_id property method_name state
+    in
+    let open Phpsymex.Syntax in
+    let** result, state =
+      call_method declarations state location object_id method_ arguments
+    in
+    Phpsymex.Result.ok
+      (result, State.leave_magic_property object_id property method_name state)
+
+and write_resolved_place declarations state location place value =
+  match place with
+  | Magic_set (object_id, name, method_) ->
+      let open Phpsymex.Syntax in
+      let*** _, state =
+        call_property_magic declarations state location object_id name method_
+          [ Value.string name; value ]
+      in
+      evaluated () state
+  | Variable _ | Array_element _ | Object_property _ | Static_property _
+  | Temporary _ | Magic_unset _ | Inaccessible_property _ | Invalid_read ->
+      write_place place value state
+
+and unset_resolved_place declarations state location place =
+  match place with
+  | Magic_unset (object_id, name, method_) ->
+      let open Phpsymex.Syntax in
+      let*** _, state =
+        call_property_magic declarations state location object_id name method_
+          [ Value.string name ]
+      in
+      evaluated () state
+  | Variable _ | Array_element _ | Object_property _ | Static_property _
+  | Temporary _ | Magic_set _ | Inaccessible_property _ | Invalid_read ->
+      unset_place place state
+
+and read_lvalue_quiet declarations state (lvalue : Php_ir.lvalue) =
+  let process =
+    let open Phpsymex.Syntax in
+    match lvalue.desc with
+    | Variable_lvalue name ->
+        evaluated
+          (State.find_variable name state |> Option.value ~default:Value.undef)
+          state
+    | Array_element_lvalue (parent, Some key_expression) -> (
+        let*** parent, state = read_lvalue_quiet declarations state parent in
+        let*** key_value, state =
+          eval_expression declarations state key_expression
+        in
+        let*** key, state = normalized_array_key key_value state in
+        match parent with
+        | Value.Array array ->
+            let*** key, state =
+              resolve_array_key ~for_write:false array key state
+            in
+            evaluated
+              (State.find_array_value key array state
+              |> Option.value ~default:Value.undef)
+              state
+        | Value.Undef | Null | Bool _ | Int _ | Float _ | String _ | Object _
+        | Callable _ ->
+            evaluated Value.undef state)
+    | Array_element_lvalue (_, None) ->
+        failwith "isset lvalue contains an array append"
+    | Object_property_lvalue (object_, name) -> (
+        let*** object_, state = read_lvalue_quiet declarations state object_ in
+        match object_ with
+        | Value.Object object_id -> (
+            let object_state =
+              State.find_object object_id state |> Option.get
+            in
+            let class_ =
+              Class_map.find_opt
+                (Builtins.canonical_name object_state.class_name)
+                declarations.classes
+            in
+            let property =
+              Option.bind class_ (fun class_ ->
+                  find_property declarations state class_ name)
+            in
+            let property_key =
+              match property with
+              | Some property ->
+                  State.declared_property
+                    ~declaring_class:property.declaring_class
+                    property.declaration.name
+              | None -> State.dynamic_property name
+            in
+            let accessible =
+              Option.fold ~none:true
+                ~some:(fun property ->
+                  member_accessible declarations state property.declaring_class
+                    property.declaration.modifiers)
+                property
+            in
+            let value =
+              if accessible then
+                State.find_object_property object_id property_key state
+              else None
+            in
+            match value with
+            | Some value -> evaluated value state
+            | None -> (
+                let magic method_name =
+                  Option.bind class_ (fun class_ ->
+                      find_method_from declarations class_ method_name)
+                in
+                let read state =
+                  match magic "__get" with
+                  | Some method_ ->
+                      call_property_magic declarations state lvalue.location
+                        object_id name method_
+                        [ Value.string name ]
+                  | None -> evaluated Value.undef state
+                in
+                match magic "__isset" with
+                | None -> read state
+                | Some method_ ->
+                    let*** value, state =
+                      call_property_magic declarations state lvalue.location
+                        object_id name method_
+                        [ Value.string name ]
+                    in
+                    let** guard = condition value in
+                    if%sat[@lname "Read isset property"]
+                          [@rname "Short-circuit unset property"]
+                      guard
+                    then read state
+                    else evaluated Value.undef state))
+        | Value.Undef | Null | Bool _ | Int _ | Float _ | String _ | Array _
+        | Callable _ ->
+            evaluated Value.undef state)
+    | Static_property_lvalue (class_name, name) -> (
+        match resolve_class_reference declarations state class_name with
+        | None -> evaluated Value.undef state
+        | Some class_name -> (
+            match
+              Class_map.find_opt
+                (Builtins.canonical_name class_name)
+                declarations.classes
+            with
+            | None ->
+                raise_runtime_error state
+                  {
+                    Error.class_name = "Error";
+                    message = Printf.sprintf "Class %S not found" class_name;
+                  }
+            | Some class_ -> (
+                match
+                  find_property_from ~static:true declarations class_ name
+                with
+                | None -> evaluated Value.undef state
+                | Some property
+                  when not
+                         (member_accessible declarations state
+                            property.declaring_class
+                            property.declaration.modifiers) ->
+                    evaluated Value.undef state
+                | Some property ->
+                    evaluated
+                      (State.find_static_property
+                         ~declaring_class:property.declaring_class
+                         property.declaration.name state
+                      |> Option.value ~default:Value.undef)
+                      state)))
+  in
+  Phpsymex.with_location ~location:lvalue.location process
+
+and eval_isset_lvalue declarations state (lvalue : Php_ir.lvalue) =
+  match lvalue.desc with
+  | Object_property_lvalue (object_, name) -> (
+      let open Phpsymex.Syntax in
+      let*** object_, state = read_lvalue_quiet declarations state object_ in
+      match object_ with
+      | Value.Object object_id -> (
+          let object_state = State.find_object object_id state |> Option.get in
+          let class_ =
+            Class_map.find_opt
+              (Builtins.canonical_name object_state.class_name)
+              declarations.classes
+          in
+          let property =
+            Option.bind class_ (fun class_ ->
+                find_property declarations state class_ name)
+          in
+          let property_key =
+            match property with
+            | Some property ->
+                State.declared_property
+                  ~declaring_class:property.declaring_class
+                  property.declaration.name
+            | None -> State.dynamic_property name
+          in
+          let accessible =
+            Option.fold ~none:true
+              ~some:(fun property ->
+                member_accessible declarations state property.declaring_class
+                  property.declaration.modifiers)
+              property
+          in
+          let value =
+            if accessible then
+              State.find_object_property object_id property_key state
+            else None
+          in
+          match value with
+          | Some (Value.Undef | Null) -> evaluated (Value.bool false) state
+          | Some _ -> evaluated (Value.bool true) state
+          | None -> (
+              match
+                Option.bind class_ (fun class_ ->
+                    find_method_from declarations class_ "__isset")
+              with
+              | None -> evaluated (Value.bool false) state
+              | Some method_ ->
+                  let*** value, state =
+                    call_property_magic declarations state lvalue.location
+                      object_id name method_
+                      [ Value.string name ]
+                  in
+                  let** value = condition value in
+                  evaluated (Value.Bool value) state))
+      | Value.Undef | Null | Bool _ | Int _ | Float _ | String _ | Array _
+      | Callable _ ->
+          evaluated (Value.bool false) state)
+  | Variable_lvalue _ | Array_element_lvalue _ | Static_property_lvalue _ ->
+      let open Phpsymex.Syntax in
+      let*** value, state = read_lvalue_quiet declarations state lvalue in
+      evaluated
+        (Value.bool
+           (match value with Value.Undef | Null -> false | _ -> true))
+        state
+
+and eval_isset_lvalues declarations state lvalues =
+  let open Phpsymex.Syntax in
+  match lvalues with
+  | [] -> evaluated (Value.bool true) state
+  | lvalue :: lvalues ->
+      let*** value, state = eval_isset_lvalue declarations state lvalue in
+      let** guard = condition value in
+      if%sat[@lname "Evaluate next isset target"] [@rname "Short-circuit isset"]
+        guard
+      then eval_isset_lvalues declarations state lvalues
+      else evaluated (Value.bool false) state
+
+and coerce_to_string declarations state location value =
+  match value with
+  | Value.Object object_id -> (
+      let object_state = State.find_object object_id state |> Option.get in
+      let class_ =
+        Class_map.find_opt
+          (Builtins.canonical_name object_state.class_name)
+          declarations.classes
+      in
+      match
+        Option.bind class_ (fun class_ ->
+            find_method_from declarations class_ "__toString")
+      with
+      | None when class_is_a declarations object_state.class_name "Throwable" ->
+          unsupported "built-in Throwable::__toString"
+      | None ->
+          raise_runtime_error state
+            {
+              Error.class_name = "Error";
+              message =
+                Printf.sprintf
+                  "Object of class %s could not be converted to string"
+                  object_state.class_name;
+            }
+      | Some method_ -> (
+          let open Phpsymex.Syntax in
+          let*** value, state =
+            call_method declarations state location object_id method_ []
+          in
+          match Coercion.coerce Coercion.String value with
+          | Ok (Value.String _ as value) -> evaluated value state
+          | Ok _ -> assert false
+          | Error _ ->
+              raise_runtime_error state
+                {
+                  Error.class_name = "TypeError";
+                  message =
+                    Printf.sprintf
+                      "%s::__toString(): Return value must be of type string, \
+                       %s returned"
+                      method_.declaring_class (Value.type_name value);
+                }))
+  | Value.Undef | Null | Bool _ | Int _ | Float _ | String _ | Array _
+  | Callable _ ->
+      let open Phpsymex.Syntax in
+      let** value = coerce Coercion.String value in
+      evaluated value state
 
 and eval_short_circuit functions state left operator right =
   let open Phpsymex.Syntax in
@@ -1421,12 +1831,15 @@ and eval_expression functions state expression =
           resolve_lvalue functions state ~access:Read target
         in
         evaluated (read_place state place) state
+    | Isset targets -> eval_isset_lvalues functions state targets
     | Assign (target, expression) ->
         let*** place, state =
           resolve_lvalue functions state ~access:Write target
         in
         let*** value, state = eval_expression functions state expression in
-        let*** (), state = write_place place value state in
+        let*** (), state =
+          write_resolved_place functions state target.location place value
+        in
         evaluated value state
     | Assign_reference (target, source) ->
         let*** target, state =
@@ -1447,22 +1860,36 @@ and eval_expression functions state expression =
         apply_operation operation state
     | Binary (left, ((Boolean_and | Boolean_or) as operator), right) ->
         eval_short_circuit functions state left operator right
+    | Binary (left, Concat, right) ->
+        let*** left, state = eval_expression functions state left in
+        let*** right, state = eval_expression functions state right in
+        let*** left, state =
+          coerce_to_string functions state expression.location left
+        in
+        let*** right, state =
+          coerce_to_string functions state expression.location right
+        in
+        evaluated (Value.string (string_value left ^ string_value right)) state
     | Binary (left, operator, right) ->
         let*** left, state = eval_expression functions state left in
         let*** right, state = eval_expression functions state right in
         let** operation = binary state operator left right in
         apply_operation operation state
-    | Cast (cast, expression) ->
+    | Cast (cast, expression) -> (
         let*** value, state = eval_expression functions state expression in
-        let target =
-          match cast with
-          | Php_ir.To_boolean -> Coercion.Boolean
-          | To_integer -> Coercion.Integer
-          | To_float -> Coercion.Float
-          | To_string -> Coercion.String
-        in
-        let** value = coerce target value in
-        evaluated value state
+        match cast with
+        | Php_ir.To_string ->
+            coerce_to_string functions state expression.location value
+        | To_boolean | To_integer | To_float ->
+            let target =
+              match cast with
+              | To_boolean -> Coercion.Boolean
+              | To_integer -> Coercion.Integer
+              | To_float -> Coercion.Float
+              | To_string -> assert false
+            in
+            let** value = coerce target value in
+            evaluated value state)
     | Call (name, arguments) ->
         let*** arguments, state = eval_expressions functions state arguments in
         invoke_callable functions state expression.location
@@ -1489,7 +1916,8 @@ and eval_expression functions state expression =
               })
     | Function_callable name ->
         if
-          Option.is_some (Builtins.find name)
+          is_object_builtin name
+          || Option.is_some (Builtins.find name)
           || Function_map.mem (Builtins.canonical_name name) functions.functions
         then
           let identity, state = State.fresh_callable_id state in
@@ -1518,35 +1946,56 @@ and eval_expression functions state expression =
                 (Builtins.canonical_name object_state.class_name)
                 functions.classes
             in
-            match
+            let method_ =
               Option.bind class_ (fun class_ ->
                   find_method functions state class_ name)
-            with
-            | None ->
-                raise_runtime_error state
-                  {
-                    Error.class_name = "Error";
-                    message =
-                      Printf.sprintf "Call to undefined method %s::%s()"
-                        object_state.class_name name;
-                  }
-            | Some method_ ->
-                if
-                  member_accessible functions state method_.declaring_class
-                    method_.declaration.modifiers
-                then
-                  let*** arguments, state =
-                    eval_expressions functions state arguments
-                  in
-                  if member_is_static method_.declaration.modifiers then
-                    call_static_method functions state expression.location
-                      object_state.class_name method_ arguments
-                  else
-                    call_method functions state expression.location object_id
-                      method_ arguments
+            in
+            let magic =
+              Option.bind class_ (fun class_ ->
+                  find_method_from functions class_ "__call")
+            in
+            match method_ with
+            | Some method_
+              when member_accessible functions state method_.declaring_class
+                     method_.declaration.modifiers ->
+                let*** arguments, state =
+                  eval_expressions functions state arguments
+                in
+                if member_is_static method_.declaration.modifiers then
+                  call_static_method functions state expression.location
+                    object_state.class_name method_ arguments
                 else
-                  raise_runtime_error state
-                    (inaccessible_method_error state method_))
+                  call_method functions state expression.location object_id
+                    method_ arguments
+            | Some inaccessible -> (
+                match magic with
+                | None ->
+                    raise_runtime_error state
+                      (inaccessible_method_error state inaccessible)
+                | Some magic ->
+                    let*** arguments, state =
+                      eval_expressions functions state arguments
+                    in
+                    call_method functions state expression.location object_id
+                      magic
+                      [ Value.string name; array_of_values arguments ])
+            | None -> (
+                match magic with
+                | None ->
+                    raise_runtime_error state
+                      {
+                        Error.class_name = "Error";
+                        message =
+                          Printf.sprintf "Call to undefined method %s::%s()"
+                            object_state.class_name name;
+                      }
+                | Some magic ->
+                    let*** arguments, state =
+                      eval_expressions functions state arguments
+                    in
+                    call_method functions state expression.location object_id
+                      magic
+                      [ Value.string name; array_of_values arguments ]))
         | value ->
             raise_runtime_error state
               {
@@ -1588,16 +2037,32 @@ and eval_expression functions state expression =
                         }))
                   state
             | Some method_ ->
-                raise_runtime_error state
-                  (inaccessible_method_error state method_)
+                if
+                  Option.exists
+                    (fun class_ ->
+                      Option.is_some
+                        (find_method_from functions class_ "__call"))
+                    class_
+                then unsupported "first-class callable through __call"
+                else
+                  raise_runtime_error state
+                    (inaccessible_method_error state method_)
             | None ->
-                raise_runtime_error state
-                  {
-                    Error.class_name = "Error";
-                    message =
-                      Printf.sprintf "Call to undefined method %s::%s()"
-                        object_state.class_name name;
-                  })
+                if
+                  Option.exists
+                    (fun class_ ->
+                      Option.is_some
+                        (find_method_from functions class_ "__call"))
+                    class_
+                then unsupported "first-class callable through __call"
+                else
+                  raise_runtime_error state
+                    {
+                      Error.class_name = "Error";
+                      message =
+                        Printf.sprintf "Call to undefined method %s::%s()"
+                          object_state.class_name name;
+                    })
         | value ->
             raise_runtime_error state
               {
@@ -1932,18 +2397,137 @@ and call_static_expression declarations state location class_name name arguments
   let*** arguments, state = eval_expressions declarations state arguments in
   call_static_method declarations state location called_class method_ arguments
 
+and call_object_builtin declarations state name arguments =
+  let name = Builtins.canonical_name name in
+  let invalid_count expected =
+    raise_runtime_error state
+      {
+        Error.class_name = "ArgumentCountError";
+        message =
+          Printf.sprintf "%s() expects exactly %d argument%s, %d given" name
+            expected
+            (if expected = 1 then "" else "s")
+            (List.length arguments);
+      }
+  in
+  let invalid_type position expected value =
+    raise_runtime_error state
+      {
+        Error.class_name = "TypeError";
+        message =
+          Printf.sprintf "%s(): Argument #%d must be of type %s, %s given" name
+            position expected (Value.type_name value);
+      }
+  in
+  let class_info name =
+    Class_map.find_opt (Builtins.canonical_name name) declarations.classes
+  in
+  let object_class id =
+    State.find_object id state |> Option.get |> fun object_ ->
+    object_.class_name
+  in
+  match (name, arguments) with
+  | "get_class", [ Value.Object id ] ->
+      evaluated (Value.string (object_class id)) state
+  | "get_class", [ value ] -> invalid_type 1 "object" value
+  | "get_class", _ -> invalid_count 1
+  | "is_a", [ subject; expected ] ->
+      call_object_builtin declarations state name
+        [ subject; expected; Value.bool false ]
+  | "is_a", [ subject; Value.String expected; Value.Bool allow_string ] -> (
+      match Value.Typed.Bool.to_bool allow_string with
+      | None -> unsupported "symbolic is_a() allow_string argument"
+      | Some allow_string ->
+          let result =
+            match subject with
+            | Value.Object id ->
+                builtin_is_a declarations (object_class id) expected
+            | Value.String actual
+              when allow_string && known_class declarations actual ->
+                builtin_is_a declarations actual expected
+            | Value.Undef | Null | Bool _ | Int _ | Float _ | String _ | Array _
+            | Callable _ ->
+                false
+          in
+          evaluated (Value.bool result) state)
+  | "is_a", [ _; (Value.String _ as expected); value ] ->
+      let _ = expected in
+      invalid_type 3 "bool" value
+  | "is_a", [ _; value; _ ] -> invalid_type 2 "string" value
+  | "is_a", arguments ->
+      let count = List.length arguments in
+      raise_runtime_error state
+        {
+          Error.class_name = "ArgumentCountError";
+          message =
+            Printf.sprintf "is_a() expects between 2 and 3 arguments, %d given"
+              count;
+        }
+  | ("property_exists" | "method_exists"), [ subject; Value.String member_name ]
+    -> (
+      match subject with
+      | Value.Object id ->
+          let class_name = object_class id in
+          let result =
+            match name with
+            | "property_exists" ->
+                let declared =
+                  Option.fold ~none:false
+                    ~some:(fun class_ ->
+                      declared_property_exists declarations
+                        ~include_private:true class_ member_name)
+                    (class_info class_name)
+                in
+                declared
+                || Option.is_some
+                     (State.find_object_property_cell id
+                        (State.dynamic_property member_name)
+                        state)
+            | "method_exists" ->
+                Option.fold ~none:false
+                  ~some:(fun class_ ->
+                    Option.is_some
+                      (find_method_from declarations class_ member_name))
+                  (class_info class_name)
+            | _ -> assert false
+          in
+          evaluated (Value.bool result) state
+      | Value.String class_name ->
+          let result =
+            match class_info class_name with
+            | None -> false
+            | Some class_ -> (
+                match name with
+                | "property_exists" ->
+                    declared_property_exists declarations ~include_private:true
+                      class_ member_name
+                | "method_exists" ->
+                    Option.is_some
+                      (find_method_from declarations class_ member_name)
+                | _ -> assert false)
+          in
+          evaluated (Value.bool result) state
+      | value -> invalid_type 1 "object|string" value)
+  | ("property_exists" | "method_exists"), [ _; value ] ->
+      invalid_type 2 "string" value
+  | ("property_exists" | "method_exists"), _ -> invalid_count 2
+  | _ -> failwith "non-object builtin passed to object builtin dispatch"
+
 and invoke_callable declarations state location callable arguments =
   match callable with
   | Value.Function name -> (
-      match Builtins.find name with
-      | Some implementation -> (
-          match Builtins.runtime_error name arguments with
-          | Some error -> raise_runtime_error state error
-          | None ->
-              let open Phpsymex.Syntax in
-              let** value = implementation ~args:arguments in
-              evaluated value state)
-      | None -> call_function declarations state location name arguments)
+      if is_object_builtin name then
+        call_object_builtin declarations state name arguments
+      else
+        match Builtins.find name with
+        | Some implementation -> (
+            match Builtins.runtime_error name arguments with
+            | Some error -> raise_runtime_error state error
+            | None ->
+                let open Phpsymex.Syntax in
+                let** value = implementation ~args:arguments in
+                evaluated value state)
+        | None -> call_function declarations state location name arguments)
   | First_class_function { name; _ } ->
       invoke_callable declarations state location (Value.Function name)
         arguments
@@ -2187,7 +2771,9 @@ and emit_expressions functions state expressions =
   | expression :: expressions ->
       let*** value, state = eval_expression functions state expression in
       let* value = simplify_value value in
-      let** value = coerce Coercion.String value in
+      let*** value, state =
+        coerce_to_string functions state expression.location value
+      in
       emit_expressions functions
         (State.emit (string_value value) state)
         expressions
@@ -2200,7 +2786,9 @@ and unset_lvalues functions state lvalues =
       let*** place, state =
         resolve_lvalue functions state ~access:Unset lvalue
       in
-      let*** (), state = unset_place place state in
+      let*** (), state =
+        unset_resolved_place functions state lvalue.location place
+      in
       unset_lvalues functions state lvalues
 
 and exec_statements functions state statements =
@@ -2233,7 +2821,7 @@ and exec_while functions state condition_expression body =
 and assign_foreach_target functions state target value =
   let open Phpsymex.Syntax in
   let*** place, state = resolve_lvalue functions state ~access:Write target in
-  write_place place value state
+  write_resolved_place functions state target.location place value
 
 and bind_foreach_target_reference functions state target cell =
   let open Phpsymex.Syntax in
@@ -2289,12 +2877,17 @@ and eval_foreach_reference_iterable functions state iterable =
       let open Phpsymex.Syntax in
       let*** value, state = eval_expression functions state iterable in
       evaluated (value, None) state
-  | Some lvalue ->
+  | Some lvalue -> (
       let open Phpsymex.Syntax in
       let*** place, state =
         resolve_lvalue functions state ~access:Read lvalue
       in
-      evaluated (read_place state place, Some place) state
+      match place with
+      | Temporary _ ->
+          unsupported "foreach by reference over overloaded property"
+      | Variable _ | Array_element _ | Object_property _ | Static_property _
+      | Magic_set _ | Magic_unset _ | Inaccessible_property _ | Invalid_read ->
+          evaluated (read_place state place, Some place) state)
 
 and exec_foreach_reference_entries functions state source array key_target
     value_target body seen pending =
@@ -2923,6 +3516,36 @@ let build_classes declarations =
     match class_.kind with
     | Php_ir.Interface | Trait -> Ok ()
     | Class -> (
+        let magic_arity name =
+          List.assoc_opt
+            (Builtins.canonical_name name)
+            [
+              ("__get", 1);
+              ("__set", 2);
+              ("__isset", 1);
+              ("__unset", 1);
+              ("__call", 2);
+              ("__tostring", 0);
+            ]
+        in
+        let rec validate_magic_methods = function
+          | [] -> Ok ()
+          | (method_ : method_member) :: methods -> (
+              match magic_arity method_.declaration.name with
+              | None -> validate_magic_methods methods
+              | Some arity
+                when member_visibility method_.declaration.modifiers = Public
+                     && (not (member_is_static method_.declaration.modifiers))
+                     && List.length method_.declaration.parameters = arity ->
+                  validate_magic_methods methods
+              | Some arity ->
+                  class_error method_.declaration.location
+                    "%s::%s must be public, non-static, and accept exactly %d \
+                     argument%s"
+                    method_.declaring_class method_.declaration.name arity
+                    (if arity = 1 then "" else "s"))
+        in
+        let* () = validate_magic_methods class_.methods in
         let requirements =
           List.concat_map
             (fun interface ->

@@ -40,7 +40,7 @@ and errors. The Dune and CLI integration is comparatively small.
 
 ## Current implementation status
 
-The first eighteen changes in the suggested pull request sequence have been
+The first nineteen changes in the suggested pull request sequence have been
 implemented and validated. The current vertical slice includes the versioned
 frontend IR, scalar symbolic execution, functions and scopes, persistent arrays,
 references, structured exceptions, stable object identity, and declared public
@@ -48,8 +48,9 @@ properties, concrete counterexamples, expected-failure tests, and selected
 function entry points, by-value and by-reference array iteration, and symbolic
 array-key insertion, constructors, instance methods, `$this`, and property and
 method visibility, inheritance, interfaces, traits, static state, closures, and
-callable values. The next work should add selected magic methods and object
-builtins before standalone packaging and release integration.
+callable values, selected magic methods, and object builtins. The next work
+should finish the remaining M1-M3 semantic gaps before standalone packaging and
+release integration.
 
 Completing these pull requests is not the same as completing milestones M0-M3.
 The sequence deliberately established one sound path through each subsystem
@@ -606,7 +607,7 @@ declared-property stores, property references, `unset`, nested array access, and
 branch isolation, constructors, instance methods, `$this`, and public,
 protected, and private visibility, inheritance, interfaces, and traits are
 implemented. Static state, callable values, and closures are also implemented.
-Cloning and magic methods remain.
+Cloning and the remaining magic methods remain.
 
 Deliverables:
 
@@ -675,7 +676,7 @@ Changes should remain small and independently reviewable.
 16. **Complete:** Property and method visibility.
 17. **Complete:** Inheritance, interfaces, and traits.
 18. **Complete:** Static state, closures, and callable values.
-19. Selected magic methods and object builtins.
+19. **Complete:** Selected magic methods and object builtins.
 20. Packaging and CI distribution after the M1-M3 exit criteria pass.
 
 Each pull request should include focused tests and should not combine repository

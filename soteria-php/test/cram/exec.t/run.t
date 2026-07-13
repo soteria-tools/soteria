@@ -110,6 +110,14 @@
   $ cat soteria.out
   1::3:4:4:15:21:1:6:3:3:10:2
 
+  $ php magic_objects.php > php.out
+  $ ../../../bin/soteria_php.exe exec magic_objects.php > soteria.out
+  $ cmp php.out soteria.out
+  $ cat soteria.out
+  get:secret;secret:effect;set:stored=7;get:stored;7:isset:stored;1:isset:missing;::isset:missing;:isset:nested;get:nested;1:isset:missing;::unset:stored;effect;call:missingMethod;9:call:hiddenMethod;5:string;box:string;value=box:get:throwing;magic-throw:bad-string:no-string:MagicBox:111:111:11:MagicBox:get-class-type:is-a-arity:property-exists-type:1
+
+  $ ../../../bin/soteria_php.exe exec magic_symbolic.php
+
   $ ../../../bin/soteria_php.exe exec symbolic.php
   symbolic ok
 
