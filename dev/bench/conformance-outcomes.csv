@@ -43,7 +43,7 @@ kani,BitwiseArithOperators/main.rs,pass
 kani,BitwiseEqualOperators/main.rs,pass
 kani,BitwiseShiftOperators/Usize/main.rs,pass
 kani,BitwiseShiftOperators/main.rs,pass
-kani,BitwiseShiftOperators/shift_neg_vals.rs,pass
+kani,BitwiseShiftOperators/shift_neg_vals.rs,timeout
 kani,Bool-BoolOperators/main.rs,pass
 kani,Cast/float_to_int_saturating.rs,fail
 kani,Cast/from_be_bytes.rs,pass
@@ -209,9 +209,9 @@ kani,Intrinsics/FastMath/div_f64.rs,timeout
 kani,Intrinsics/FastMath/div_overflow_f32.rs,pass
 kani,Intrinsics/FastMath/div_overflow_f64.rs,timeout
 kani,Intrinsics/FastMath/mul_f32.rs,pass
-kani,Intrinsics/FastMath/mul_f64.rs,pass
+kani,Intrinsics/FastMath/mul_f64.rs,timeout
 kani,Intrinsics/FastMath/mul_overflow_f32.rs,pass
-kani,Intrinsics/FastMath/mul_overflow_f64.rs,timeout
+kani,Intrinsics/FastMath/mul_overflow_f64.rs,pass
 kani,Intrinsics/FastMath/sub_f32.rs,pass
 kani,Intrinsics/FastMath/sub_f64.rs,timeout
 kani,Intrinsics/FastMath/sub_overflow_f32.rs,pass
