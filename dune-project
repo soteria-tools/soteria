@@ -40,7 +40,7 @@
   (cmdliner
    (>= 2.0.0))
   (ppx_expect
-   (>= 0.17.0))
+   (>= v0.17.0))
   (ppx_blob
    (>= 0.9.0))
   (ppx_subliner
