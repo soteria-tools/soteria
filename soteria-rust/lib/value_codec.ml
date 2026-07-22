@@ -368,10 +368,11 @@ struct
 end
 
 (** [encode ?depth ~offset v ty] Converts a [Typed.t] of type [ty] into an
-    iterator over its component {!Typed.block}s. [depth] is the number of
-    decomposition levels to apply (unlimited if unspecified): once it runs out,
-    aggregate components are left whole rather than decomposed further, with
-    their [ty] set. Offsets all blocks by [offset] if specified. *)
+    iterator over its component {{!Svalue.Typed.block}[block]}s. [depth] is the
+    number of decomposition levels to apply (unlimited if unspecified): once it
+    runs out, aggregate components are left whole rather than decomposed
+    further, with their [ty] set. Offsets all blocks by [offset] if specified.
+*)
 let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
     (Typed.block Iter.t, 'e, 'f) Rustsymex.Result.t =
   let open Rustsymex in
