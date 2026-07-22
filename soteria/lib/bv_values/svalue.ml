@@ -910,28 +910,30 @@ module Make (V : Value_ext) () = struct
               (BitVec.add ~checked:unchecked x
                  (BitVec.sub ~checked:unchecked r l))
       | ( BitVec n,
-          ( Binop
-              ( Mul { unsigned = true; _ },
-                { node = { kind = BitVec m; _ }; _ },
-                x )
-          | Binop
-              ( Mul { unsigned = true; _ },
-                x,
-                { node = { kind = BitVec m; _ }; _ } ) ) )
-      | ( ( Binop
-              ( Mul { unsigned = true; _ },
-                { node = { kind = BitVec m; _ }; _ },
-                x )
-          | Binop
-              ( Mul { unsigned = true; _ },
-                x,
-                { node = { kind = BitVec m; _ }; _ } ) ),
-          BitVec n ) ->
+          ( Binop (Mul ck, { node = { kind = BitVec m; _ }; _ }, x)
+          | Binop (Mul ck, x, { node = { kind = BitVec m; _ }; _ }) ) )
+      | ( ( Binop (Mul ck, { node = { kind = BitVec m; _ }; _ }, x)
+          | Binop (Mul ck, x, { node = { kind = BitVec m; _ }; _ }) ),
+          BitVec n )
+        when is_checked ck ->
+          (* the multiplication is exact in a checked signedness, so read the
+             constants in that signedness: the result must be a multiple of [m],
+             and dividing recovers [x] *)
+          let sz = size_of x.node.ty in
+          let signed = Stdlib.not ck.unsigned in
+          let m = BitVec.bv_to_z signed sz m in
+          let n = BitVec.bv_to_z signed sz n in
           if Z.(equal m zero) then of_bool (Z.equal n Z.zero)
-          else if Z.(equal n zero) then
-            sem_eq x (BitVec.zero (size_of x.node.ty))
+          else if Z.(equal n zero) then sem_eq x (BitVec.zero sz)
           else if Z.(divisible n m) then
-            sem_eq x (BitVec.mk (size_of x.node.ty) Z.(n / m))
+            let q = Z.(n / m) in
+            let fits =
+              if signed then
+                let h = Z.(one lsl Stdlib.(sz - 1)) in
+                Z.leq (Z.neg h) q && Z.lt q h
+              else Z.leq Z.zero q && Z.lt q Z.(one lsl sz)
+            in
+            if fits then sem_eq x (BitVec.mk_masked sz q) else v_false
           else v_false
       (* Cancelling a common factor [a] from [a*b == a*d] is only sound when [a]
          is odd (invertible modulo 2^n), or when both multiplications are
