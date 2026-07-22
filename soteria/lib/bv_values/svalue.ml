@@ -722,6 +722,15 @@ module Make (V : Value_ext) () = struct
           if Stdlib.( = ) (Z.geq l1 l2) keep_tighter then v1 else v2
       | _ -> assert false
 
+    (* Whether [ubv] (an upper bound on some [a]) and [lbv] (a lower bound on
+       the same [a]) jointly cover the whole domain, i.e. the lower bound starts
+       no later than one past the upper bound. *)
+    let complementary_bounds ubv lbv =
+      match (as_upper_bound ubv, as_lower_bound lbv) with
+      | Some (a1, s1, _, u), Some (a2, s2, _, l) ->
+          Stdlib.( = ) s1 s2 && equal a1 a2 && Z.leq l (Z.succ u)
+      | _ -> false
+
     (* Whether [boundv] (a bound on some [a]) is implied by [eqv] (an equality
        [a == k] with [k] constant), i.e. [k] satisfies the bound. *)
     let bound_implied_by_eq boundv eqv =
@@ -794,6 +803,11 @@ module Make (V : Value_ext) () = struct
           v_true
       | Binop (Or, a, b), _ when equal a v2 || equal b v2 -> v1
       | _, Binop (Or, a, b) when equal v1 a || equal v1 b -> v2
+      (* an upper and a lower bound on the same value that (at least) touch
+         cover the whole domain, e.g. [a <= 2] || [3 <= a] *)
+      | Binop ((Lt _ | Leq _), _, _), Binop ((Lt _ | Leq _), _, _)
+        when complementary_bounds v1 v2 || complementary_bounds v2 v1 ->
+          v_true
       (* a bound absorbs an equality it already allows, e.g. [a < c] || [a ==
          0] *)
       | Binop ((Lt _ | Leq _), _, _), Binop (Eq, _, _)
@@ -842,6 +856,8 @@ module Make (V : Value_ext) () = struct
       | _, _, Bool true -> or_ (not guard) if_
       | _, BitVec o, BitVec z when Z.(equal o one) && Z.equal z Z.zero ->
           BitVec.of_bool (size_of if_.node.ty) guard
+      | _ when equal guard if_ -> or_ guard else_
+      | _ when equal guard else_ -> and_ guard if_
       | _ when equal if_ else_ -> if_
       | _ -> Ite (guard, if_, else_) <| if_.node.ty
 
@@ -935,6 +951,9 @@ module Make (V : Value_ext) () = struct
             in
             if fits then sem_eq x (BitVec.mk_masked sz q) else v_false
           else v_false
+      (* distributing over a shared guard lets the branches cancel pairwise *)
+      | Ite (b, l, r), Ite (b', l', r') when equal b b' ->
+          ite b (sem_eq l l') (sem_eq r r')
       (* Cancelling a common factor [a] from [a*b == a*d] is only sound when [a]
          is odd (invertible modulo 2^n), or when both multiplications are
          overflow-checked (so they behave like exact integer arithmetic). *)
@@ -1279,6 +1298,11 @@ module Make (V : Value_ext) () = struct
           sub ~checked (add c1 v2) r
       | _, Binop (Sub _, l, r) when equal r v1 -> l
       | Binop (Sub _, l, r), _ when equal r v2 -> l
+      (* (a + b) + (c - a) = b + c (holds modulo 2^n) *)
+      | Binop (Add _, a, b), Binop (Sub _, c, a') when equal a a' -> add b c
+      | Binop (Add _, b, a), Binop (Sub _, c, a') when equal a a' -> add b c
+      | Binop (Sub _, c, a'), Binop (Add _, a, b) when equal a a' -> add b c
+      | Binop (Sub _, c, a'), Binop (Add _, b, a) when equal a a' -> add b c
       | Binop (Mul _, l1, r1), Binop (Mul _, l2, r2)
         when equal l1 l2 || equal l1 r2 || equal r1 l2 || equal r1 r2 ->
           if equal l1 l2 then mul ~checked l1 (add ~checked r1 r2)
@@ -1360,6 +1384,9 @@ module Make (V : Value_ext) () = struct
       | Binop (Add _, l1, r1), Binop (Add _, l2, r2) when equal l1 l2 ->
           sub ~checked r1 r2
       | _l, Binop (Sub _, l', r) when equal v1 l' -> r
+      (* distributing over a shared guard lets the branches cancel pairwise *)
+      | Ite (b, l, r), Ite (b', l', r') when equal b b' ->
+          Bool.ite b (sub l l') (sub r r')
       (* only propagate down ites if we know it's concrete *)
       | Ite (b, l, r), BitVec _ -> Bool.ite b (sub l v2) (sub r v2)
       | BitVec _, Ite (b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)

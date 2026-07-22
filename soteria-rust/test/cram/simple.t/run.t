@@ -764,24 +764,21 @@ Test a field access through a pointer derived from ptr.sub with a symbolic index
   PC 2: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
         (0x0000000000000000 != (0x0000000000000003 & V|1|)) /\
         (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000002) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) <=s (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffff9 -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))))) /\
-        (0b11 == extract[0-1](V|1|)) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) == (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffff9 -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))))
+        (0x0000000000000003 <=u (0x0000000000000003 & V|1|)) /\
+        (0b11 == extract[0-1](V|1|))
   PC 3: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
         (0x0000000000000000 != (0x0000000000000003 & V|1|)) /\
         (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
         (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000004) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) <=s (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffffb -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))))) /\
-        (extract[0-1](V|1|) == 0b10) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) == (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffffb -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))))
+        (0x0000000000000002 <=u (0x0000000000000003 & V|1|)) /\
+        (extract[0-1](V|1|) == 0b10)
   PC 4: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
         (0x0000000000000000 != (0x0000000000000003 & V|1|)) /\
         (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
         (0x0000000000000004 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
         (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000006) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) <=s (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffffd -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))))) /\
-        (0b01 == extract[0-1](V|1|)) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) == (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffffd -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))))
+        (0x0000000000000001 <=u (0x0000000000000003 & V|1|)) /\
+        (0b01 == extract[0-1](V|1|))
   
 Test the SIMD intrinsics used by hashbrown's NEON control group.
   $ soteria-rust exec simd.rs --target aarch64-apple-darwin
