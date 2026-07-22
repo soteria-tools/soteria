@@ -78,45 +78,38 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           left
       | _, _ -> Lazy
 
-    let rec split_rval (v : Typed.([< T.any ] t)) at =
+    (** Converts a scalar to its bitvector representation. *)
+    let scalar_to_bv (v : Typed.([< T.any ] t)) =
       match%ty v with
-      | TExtension TFullPtr -> (
+      | TBitVector _ -> return v
+      | TExtension TFullPtr ->
           let ptr, meta = Typed.Ptr.split v in
-          let* v = Sptr.decay ptr in
-          match meta with
-          | None -> split_rval (Typed.as_any v) at
-          | Some meta -> (
-              match%ty meta with
-              | TBitVector _ -> split_rval (BV.concat v meta) at
-              | TExtension TThinPtr ->
-                  let* v2 = Sptr.decay meta in
-                  split_rval (BV.concat v v2) at
-              | _ -> failwith "unexpected meta type"))
-      | TFloat _ ->
-          let* v = Value_codec.float_to_bv_bits v in
-          split_rval v at
-      | TBitVector size ->
-          (* get our starting size and unsigned integer *)
-          let size = size / 8 in
-          let+ at =
-            match BV.to_z at with
-            | Some at -> return (Z.to_int at)
-            | _ -> (
-                (* HACK: we need to branch on the concrete size, because the
-                   actual bitvector sort of the value must have a concrete size.
+          assert (Option.is_none meta);
+          Sptr.decay ptr
+      | TFloat _ -> Value_codec.float_to_bv_bits v
+      | _ -> not_impl "Unexpected value in lazy decoding: %a" Typed.ppa v
 
-                   As per the contract of [split], we know [at ∈ [1, size)] *)
-                let options = List.init (size - 1) (( + ) 1) in
-                let* res =
-                  match_on options ~constr:(fun x ->
-                      Typed.sem_eq at (BV.usizei x))
-                in
-                match res with Some i -> return i | None -> vanish ())
-          in
-          let mask_l = BV.extract 0 ((at * 8) - 1) v in
-          let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
-          (mask_l, mask_r)
-      | _ -> not_impl "Split unsupported: %a at %a" Typed.ppa v Typed.ppa at
+    let split_rval (v : Typed.([< T.any ] t)) at =
+      let* v = scalar_to_bv v in
+      (* get our starting size and unsigned integer *)
+      let size = Typed.size_of_int v / 8 in
+      let+ at =
+        match BV.to_z at with
+        | Some at -> return (Z.to_int at)
+        | _ -> (
+            (* HACK: we need to branch on the concrete size, because the actual
+               bitvector sort of the value must have a concrete size.
+
+               As per the contract of [split], we know [at ∈ [1, size)] *)
+            let options = List.init (size - 1) (( + ) 1) in
+            let* res =
+              match_on options ~constr:(fun x -> Typed.sem_eq at (BV.usizei x))
+            in
+            match res with Some i -> return i | None -> vanish ())
+      in
+      let mask_l = BV.extract 0 ((at * 8) - 1) v in
+      let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
+      (mask_l, mask_r)
 
     let split ~at node =
       match node with
