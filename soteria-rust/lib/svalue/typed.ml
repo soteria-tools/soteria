@@ -4,6 +4,19 @@ open Common.Charon_util
 open Soteria.Bv_values.Svalue
 open Ext.Rust_ext
 
+(* keep a handle on the unit [Ext], as [include Self] below shadows it with
+   [Ext.Rust_ext] *)
+module Ext0 = Ext
+
+(* re-export, so users of [Typed] can access the fields; use {!block} rather
+   than this *)
+type ('v, 'ofs, 'sz) block_raw = ('v, 'ofs, 'sz) Ext.block = {
+  value : 'v;
+  ty : Types.ty option;
+  offset : 'ofs;
+  size : 'sz;
+}
+
 (* [Make_transparent] exposes [t]/[ty] as the underlying untyped svalue, so the
    extension helpers below can be written without ghost-typing ceremony. The
    [typed.mli] re-seals [t]/[ty] as abstract for the rest of Soteria Rust. *)
@@ -30,6 +43,11 @@ module T = struct
   let pp_poly = Fmt.nop
   let pp_any = Fmt.nop
 end
+
+(** A typed view of {!Ext.block}. *)
+type block = (T.any t, T.sint t, T.nonzero t) block_raw
+
+let pp_block ft (block : block) = Ext0.pp_block ppa ppa ppa ft block
 
 (** [CastError (value, expected, got)] *)
 exception CastError of T.any t * T.any ty * T.any ty

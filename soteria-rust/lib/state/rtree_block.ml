@@ -47,7 +47,20 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     end
 
     type qty = Totally | Partially [@@deriving show { with_path = false }]
-    type leaf = Init of Typed.(T.any t) | Zeros | Uninit | Any | Unowned
+
+    type leaf =
+      | Init of Typed.(T.any t)
+          (** A leaf value: either a [TBitVector], [TFloat] or [TFullPtr] with
+              no metadata. *)
+      | Whole of Typed.(T.any t) * Types.ty
+          (** A whole aggregate value, stored unencoded along with its
+              (normalised) type; it is only (shallowly) decomposed when an
+              access requires it. *)
+      | Zeros
+      | Uninit
+      | Any
+      | Unowned
+
     type t = Leaf of leaf * Borrows.State.t option | Lazy
 
     let pp_leaf ft =
@@ -56,6 +69,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       | Zeros -> pf ft "Zeros"
       | Uninit -> pf ft "Uninit"
       | Init mv -> Typed.ppa ft mv
+      | Whole (mv, ty) ->
+          pf ft "%a : %a" Typed.ppa mv Common.Charon_util.pp_ty ty
       | Any -> pf ft "Any"
       | Unowned -> pf ft "Unowned"
 
@@ -111,7 +126,69 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       let mask_r = BV.extract (at * 8) ((size * 8) - 1) v in
       (mask_l, mask_r)
 
-    let split ~at node =
+    (** Builds a right-leaning split tree out of subtrees paired with the offset
+        of their (exclusive) upper end; [base] is the offset at which the
+        subtree starts. *)
+    let rec mk_split_tree base = function
+      | [] -> L.failwith "mk_split_tree: no parts"
+      | [ (t, _) ] -> t
+      | (t, high) :: rest ->
+          TB.Split_tree.Node (t, high -!!@ base, mk_split_tree high rest)
+
+    (** Sorts parts [(_, offset, _)] by their offset; if offsets are symbolic,
+        this may branch. *)
+    let sort_parts parts =
+      let rec insert ((_, o, _) as p) = function
+        | [] -> return [ p ]
+        | ((_, o', _) as p') :: rest as l ->
+            if%sat o <=@ o' then return (p :: l)
+            else
+              let+ rest = insert p rest in
+              p' :: rest
+      in
+      let rec sort = function
+        | [] -> return []
+        | p :: rest ->
+            let* rest = sort rest in
+            insert p rest
+      in
+      sort parts
+
+    (** Shallowly explodes an aggregate value into leaves, one component deep:
+        components that are themselves aggregates are kept whole, and padding
+        gaps become [Uninit]. Returns the parts as
+        [(leaf, offset, past-the-end offset)], sorted by offset, contiguously
+        covering the type's full size. If the layout is symbolic, this may
+        branch. *)
+    let explode_shallow value ty =
+      let*^ parts =
+        Value_codec.encode ~depth:1 ~offset:(BV.usizei 0) value ty
+      in
+      let parts = get_ok parts in
+      let*^ total = Layout.size_of ty in
+      let total = get_ok total in
+      let parts =
+        Iter.to_list parts
+        |> List.map (fun Typed.{ value = v; ty; offset; size } ->
+            let lf =
+              match ty with None -> Init v | Some ty -> Whole (v, ty)
+            in
+            (lf, offset, offset +!!@ (size :> Typed.T.sint Typed.t)))
+      in
+      let* parts = sort_parts parts in
+      (* fill the padding gaps with [Uninit] *)
+      let rec fill cur = function
+        | [] ->
+            if%sat cur <@ total then return [ (Uninit, cur, total) ]
+            else return []
+        | ((_, o, e) as p) :: rest ->
+            let* rest = fill e rest in
+            if%sat cur <@ o then return ((Uninit, cur, o) :: p :: rest)
+            else return (p :: rest)
+      in
+      fill (BV.usizei 0) parts
+
+    let rec split ~at node =
       match node with
       | Leaf ((Uninit | Zeros | Any | Unowned), _) ->
           return TB.Split_tree.(Leaf node, Leaf node)
@@ -120,10 +197,33 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           let ll = Leaf (Init vl, tb) in
           let lr = Leaf (Init vr, tb) in
           TB.Split_tree.(Leaf ll, Leaf lr)
+      | Leaf (Whole (value, ty), tb) ->
+          let* parts = explode_shallow value ty in
+          split_parts ~tb [] parts at
       | Lazy -> L.failwith "Should never split an intermediate node"
+
+    (** Splits the exploded parts (as per {!explode_shallow}) at [at],
+        recursively splitting the component that contains [at], if any. [left]
+        accumulates the (reversed) components before [at]. *)
+    and split_parts ~tb left parts at =
+      let mk_el (lf, _, e) = (TB.Split_tree.Leaf (Leaf (lf, tb)), e) in
+      (* as per the contract of [split], [at ∈ [1, size)], so it must fall
+         within one of the parts: the list cannot be empty. *)
+      let ((lf, o, e) as p), rest = List.split_hd parts in
+      if%sat at ==@ o then
+        return
+          ( mk_split_tree (BV.usizei 0) (List.rev left),
+            mk_split_tree at (List.map mk_el parts) )
+      else if%sat at <@ e then
+        (* [at] falls strictly inside this component *)
+        let+ sub_l, sub_r = split ~at:(at -!!@ o) (Leaf (lf, tb)) in
+        ( mk_split_tree (BV.usizei 0) (List.rev ((sub_l, at) :: left)),
+          mk_split_tree at ((sub_r, e) :: List.map mk_el rest) )
+      else split_parts ~tb (mk_el p :: left) rest at
 
     type syn =
       | SInit of Typed.Expr.t
+      | SWhole of Typed.Expr.t * Types.ty
       | SUninit
       | SZeros
       | SAny
@@ -132,7 +232,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     [@@deriving show { with_path = false }]
 
     let ins_outs = function
-      | SInit v -> ([], [ v ])
+      | SInit v | SWhole (v, _) -> ([], [ v ])
       | SUninit | SZeros | SAny -> ([], [])
       | STree_borrow_st s -> Borrows.State.ins_outs s
       | STree_borrow s -> Borrows.Tree.ins_outs s
@@ -162,6 +262,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           let leaf_ser =
             match leaf with
             | Init v -> SInit (Typed.Expr.of_value v)
+            | Whole (v, ty) -> SWhole (Typed.Expr.of_value v, ty)
             | Uninit -> SUninit
             | Zeros -> SZeros
             | Any -> SAny
@@ -176,11 +277,16 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       | Lazy -> None
 
     let mk_fix_typed ty () =
-      let+^ v = Value_codec.nondet_valid ty in
-      (* we're basically guaranteed this won't error (ie. layout error) by now,
+      (* we're basically guaranteed these won't error (ie. layout error) by now,
          so we can safely unwrap. *)
+      let*^ ty = Layout.normalise ty in
+      let ty = get_ok ty in
+      let*^ layout = Layout.layout_of ty in
+      let layout = get_ok layout in
+      let+^ v = Value_codec.nondet_valid ty in
       let v = get_ok v in
-      [ SInit (Typed.Expr.of_value v) ]
+      let v = Typed.Expr.of_value v in
+      [ (if Layout.is_aggregate layout then SInit v else SWhole (v, ty)) ]
 
     type tree = (t, Typed.(T.sint t)) TB.tree
 
@@ -208,7 +314,17 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
             let+ () = learn_eq e v in
             Unowned
         | SInit _, Zeros -> lift @@ not_impl "Assume rust_val.syn == 0s"
+        | SInit _, Whole _ | SWhole _, Init _ ->
+            lift @@ not_impl "consume whole/init mismatch"
         | SInit _, _ -> lfail Typed.v_false
+        (* whole values *)
+        | SWhole (e, ty_s), Whole (v, ty_v) ->
+            if Types.equal_ty ty_s ty_v then
+              let+ () = learn_eq e v in
+              Unowned
+            else lift @@ not_impl "consume whole values of different types"
+        | SWhole _, Zeros -> lift @@ not_impl "Assume whole value == 0s"
+        | SWhole _, _ -> lfail Typed.v_false
         (* any *)
         | SAny, _ -> ok Unowned
         (* uninit *)
@@ -216,7 +332,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         | SUninit, _ -> lfail Typed.v_false
         (* zeros *)
         | SZeros, Zeros -> ok Unowned
-        | SZeros, Init _ -> lift @@ not_impl "Assume rust_val == 0s"
+        | SZeros, (Init _ | Whole _) -> lift @@ not_impl "Assume rust_val == 0s"
         | SZeros, _ -> lfail Typed.v_false
         (* unrelated to value *)
         | (STree_borrow_st _ | STree_borrow _), _ -> ok v
@@ -230,7 +346,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
             L.failwith
               "TB structure syn in tree block, should have been caught before"
         (* unrelated to tree borrows *)
-        | SInit _ | SZeros | SUninit | SAny -> ok tb
+        | SInit _ | SWhole _ | SZeros | SUninit | SAny -> ok tb
       in
       mk_leaf t v tb
 
@@ -238,13 +354,16 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       let open DecayMap.SM.Producer in
       let open Syntax in
       match (s, t.node) with
-      | ( (SInit _ | SZeros | SUninit | SAny),
+      | ( (SInit _ | SWhole _ | SZeros | SUninit | SAny),
           (NotOwned Totally | Owned (Leaf (Unowned, _))) ) ->
           let* v =
             match s with
             | SInit v ->
                 let+ v = Producer.apply_subst Typed.Expr.subst v in
                 Init v
+            | SWhole (v, ty) ->
+                let+ v = Producer.apply_subst Typed.Expr.subst v in
+                Whole (v, ty)
             | SZeros -> return Zeros
             | SUninit -> return Uninit
             | SAny -> return Any
@@ -257,9 +376,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
             | _ -> assert false
           in
           return (mk_leaf t v tb)
-      | (SInit _ | SZeros | SUninit | SAny), Owned (Leaf _) -> vanish ()
-      | (SInit _ | SZeros | SUninit | SAny), (Owned Lazy | NotOwned Partially)
-        ->
+      | (SInit _ | SWhole _ | SZeros | SUninit | SAny), Owned (Leaf _) ->
+          vanish ()
+      | ( (SInit _ | SWhole _ | SZeros | SUninit | SAny),
+          (Owned Lazy | NotOwned Partially) ) ->
           let l, r = Option.get t.children in
           let* sl, sr =
             match s with
@@ -275,6 +395,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
                 let vl = Typed.Expr.of_value vl in
                 let vr = Typed.Expr.of_value vr in
                 (SInit vl, SInit vr)
+            | SWhole _ ->
+                lift @@ not_impl "Produce SWhole on a partially split tree"
             | _ -> assert false
           in
           let* l = produce sl l in
@@ -310,7 +432,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
           let l, r = Option.get t.children in
           let** () = assert_exclusively_owned l in
           assert_exclusively_owned r
-      | Owned (Leaf ((Zeros | Uninit | Any | Init _), tb)) ->
+      | Owned (Leaf ((Zeros | Uninit | Any | Init _ | Whole _), tb)) ->
           lift_tb_st_miss @@ Borrows.State.assert_exclusively_owned tb
   end
 
@@ -385,8 +507,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         | Zeros ->
             let+ sizei = sint_to_int size in
             let value = BV.zero (sizei * 8) in
-            Ok ((value, offset, size) :: vs)
-        | Init value -> ok ((value, offset, size) :: vs)
+            Ok ({ Typed.value; ty = None; offset; size } :: vs)
+        | Init value -> ok ({ Typed.value; ty = None; offset; size } :: vs)
+        | Whole (value, vty) ->
+            ok ({ Typed.value; ty = Some vty; offset; size } :: vs)
         | Any -> (
             match uninit with
             | `Ignore -> ok vs
@@ -401,6 +525,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     | Init value ->
         let+ res = Value_codec.transmute_one ~to_ty:ty value in
         Ok res
+    | Whole _ ->
+        L.failwith "decode_mem_val: whole values handled in decode_tree"
     | Zeros ->
         let**^ size = Layout.size_of ty in
         let* size = sint_to_int size in
@@ -419,22 +545,62 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         let+ fix = MemVal.mk_fix_typed ty () in
         Missing [ fix ]
 
+  (** Converts a whole aggregate value of type [vty] to a scalar representation.
+      If it is made of one scalar part, returns that; otherwise converts all
+      parts into bitvectors (decaying pointers) and concatenates them. Errors if
+      the type has any padding, as those bytes are uninitialised. *)
+  let whole_to_scalar (value : Typed.([< T.any ] t)) (vty : Types.ty) =
+    let**^ parts =
+      Value_codec.encode ~offset:(BV.usizei 0) (Typed.as_any value) vty
+    in
+    let parts =
+      parts
+      |> Iter.map (fun { Typed.value = v; offset; size; _ } ->
+          (v, offset, offset +!!@ (size :> Typed.T.sint Typed.t)))
+      |> Iter.to_list
+    in
+    let* parts = sort_parts parts in
+    (* the parts must contiguously cover the whole type, as padding bytes are
+       uninitialised *)
+    let**^ total = Layout.size_of vty in
+    let rec is_contiguous cur = function
+      | [] -> cur ==@ total
+      | (_, o, e) :: rest -> cur ==@ o &&@ is_contiguous e rest
+    in
+    let** () =
+      if%sat is_contiguous (BV.usizei 0) parts then ok ()
+      else error `UninitializedMemoryAccess
+    in
+    match parts with
+    | [ (scalar, _, _) ] -> ok scalar
+    | _ :: _ :: _ ->
+        let* bvs =
+          DecayMap.SM.map_list parts ~f:(fun (v, _, _) -> scalar_to_bv v)
+        in
+        let hd, tl = List.split_hd @@ List.rev bvs in
+        ok (Typed.as_any @@ List.fold_left BV.concat hd tl)
+    | [] -> L.failwith "whole_to_scalar: value has no parts"
+
   let decode_lazy ~ty (t : Tree.t) =
     (* The tree spans the entire type we're interested in. Furthermore, we only
        read/write scalars (int, float, pointers...) which cover the whole range
        with no gaps. For lazy nodes, we convert all of these to bitvectors, the
-       concatenate them and call the Value_codec to decode the full value. *)
+       concatenate them and call the Value_codec to decode the full value.
+
+       Note we avoid converting to bitvectors if there is a single scalar, to
+       not unnecessarily decay pointers. *)
     let** leaves = collect_leaves ~uninit:`Error t in
-    let* leaves : Typed.([< T.sint ] t) list =
-      DecayMap.SM.map_list leaves ~f:(fun (v, _, _) ->
-          match%ty v with
-          | TBitVector _ -> return v
-          | TExtension TFullPtr -> Sptr.decay (Typed.Ptr.ptr_of v)
-          | TFloat _ -> Value_codec.float_to_bv_bits v
-          | _ -> not_impl "Unexpected value in lazy decoding: %a" Typed.ppa v)
+    let** leaves =
+      Result.map_list leaves ~f:(fun { Typed.value = v; ty = tyo; _ } ->
+          match tyo with None -> ok v | Some vty -> whole_to_scalar v vty)
     in
     match List.rev leaves with
+    | [ scalar ] ->
+        let+ res = Value_codec.transmute_one ~to_ty:ty scalar in
+        Ok res
     | hd :: tl ->
+        let* hd = scalar_to_bv hd in
+        let* tl = DecayMap.SM.map_list tl ~f:scalar_to_bv in
         let bv = List.fold_left BV.concat hd tl in
         let+ res = Value_codec.transmute_one ~to_ty:ty bv in
         Ok res
@@ -443,6 +609,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   let decode_tree ~ty (t : Tree.t) =
     match t.node with
     | NotOwned _ -> miss []
+    | Owned (Leaf (Whole (value, vty), _)) when Types.equal_ty ty vty ->
+        ok (Typed.as_any value)
+    | Owned (Leaf (Whole _, _)) -> decode_lazy ~ty t
     | Owned Lazy -> decode_lazy ~ty t
     | Owned (Leaf (node, _)) ->
         let offset, len = t.range in
@@ -463,8 +632,9 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
             Ok (Some res))
       (Tree.iter_leaves_rev t)
 
-  let init range v tb : Tree.t =
-    Tree.make ~node:(TB.Owned (Leaf (Init v, tb))) ~range ()
+  let init ?ty range v tb : Tree.t =
+    let leaf = match ty with None -> Init v | Some ty -> Whole (v, ty) in
+    Tree.make ~node:(TB.Owned (Leaf (leaf, tb))) ~range ()
 
   let uninit range tb : Tree.t =
     Tree.make ~node:(TB.Owned (Leaf (Uninit, tb))) ~range ()
@@ -517,7 +687,42 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         let++ sval = decode_tree ~ty framed in
         (sval, tree))
 
-  let store (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.nonzero ] t))
+  (** Reads a value of (normalised) type [ty] over the given range, if the tree
+      stores it whole, i.e. as a single leaf holding a value of that exact type;
+      returns [None] otherwise, in which case the value must be read component
+      by component. Performs the borrow read access when the read succeeds. *)
+  let load_whole ~(ignore_borrow : bool) (ofs : Typed.([< T.sint ] t))
+      (ty : Types.ty) (tag : Ptr_tag.t option) (tb : Borrows.Tree.t option) =
+    let open SM.Syntax in
+    let** size = lift_symex @@ Layout.size_of ty in
+    let size = Typed.BV.cast_nonzero size in
+    let ((_, bound) as range) = Range.of_low_and_size ofs size in
+    let mk_fixes = mk_fix_typed ofs ty in
+    with_bound_check ~mk_fixes bound (fun t ->
+        let open DecayMap.SM.Syntax in
+        let as_whole (t : Tree.t) =
+          match t.node with
+          | Owned (Leaf (Whole (v, vty), _)) when Types.equal_ty ty vty ->
+              Some v
+          | _ -> None
+        in
+        let replace_node (t : Tree.t) =
+          match (as_whole t, ignore_borrow, tag) with
+          | Some _, false, Some tag ->
+              lift_miss ~offset:ofs ~len:bound
+              @@ Tree.map_leaves_tb (Borrows.State.access tag Read tb) t
+          | _ -> Result.ok t
+        in
+        let rebuild_parent = Tree.of_children in
+        let** framed, tree =
+          Tree.frame_range t ~replace_node ~rebuild_parent range
+        in
+        Result.ok (as_whole framed, tree))
+
+  (** Stores [value] at the given range. If [ty] is provided, the value is an
+      aggregate of that (normalised) type, and is stored whole, to be decomposed
+      lazily if a smaller access requires it. *)
+  let store ?ty (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.nonzero ] t))
       (value : Typed.([< T.any ] t)) (tag : Ptr_tag.t option)
       (tb : Borrows.Tree.t option) : (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
@@ -538,8 +743,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
                 @@ lift_tb_miss
                 @@ Borrows.State.access tag Write tb tb_st
               in
-              init range value tb_st'
-          | None -> ok (init range value tb_st)
+              init ?ty range value tb_st'
+          | None -> ok (init ?ty range value tb_st)
         in
         let rebuild_parent = Tree.of_children in
         let++ _, tree =
@@ -548,8 +753,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         ((), tree))
 
   let get_init_leaves (ofs : Typed.([< T.sint ] t))
-      (size : Typed.([< T.nonzero ] t)) :
-      (Typed.(T.any t * T.sint t * T.nonzero t) list, 'err, 'fix) SM.Result.t =
+      (size : Typed.([< T.nonzero ] t)) =
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     with_bound_check bound (fun t ->
         let open DecayMap.SM.Syntax in
@@ -621,7 +825,11 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       let**^ () = on_access () in
       get_init_leaves ofs size
     in
-    Decoder.ParserMonad.parse ~handler ~get_all parser
+    let query_whole ty ofs =
+      let**^ () = on_access () in
+      load_whole ~ignore_borrow ofs ty tag tb
+    in
+    Decoder.ParserMonad.parse ~handler ~get_all ~query_whole parser
 
   (* Tree borrow updates *)
 
