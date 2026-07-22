@@ -754,31 +754,42 @@ Test a field access through a pointer derived from ptr.sub with a symbolic index
   note: ptr_sub_field::main: done in <time>, ran 4 branches
   PC 1: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
         (0x0000000000000000 != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
-        (((0x0000000000000003 & V|1|) <=u 0x0000000000000001) || (0x0000000000000002 <=u (0x0000000000000003 & V|1|))) /\
-        (0x0000000000000002 <=u (0x0000000000000003 & V|1|)) /\
-        (((0x0000000000000003 & V|1|) <=u 0x0000000000000002) || (0x0000000000000003 <=u (0x0000000000000003 & V|1|))) /\
-        (0x0000000000000003 <=u (0x0000000000000003 & V|1|)) /\
-        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) == 0xfffffffffffffff8)
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) != 0xfffffffffffffff7) /\
+        (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
+        (0x0000000000000004 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
+        (0x0000000000000006 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000008) /\
+        (0xfffffffffffffffe == (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))
   PC 2: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
         (0x0000000000000000 != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
-        (((0x0000000000000003 & V|1|) <=u 0x0000000000000001) || (0x0000000000000002 <=u (0x0000000000000003 & V|1|))) /\
-        (0x0000000000000002 <=u (0x0000000000000003 & V|1|)) /\
-        (((0x0000000000000003 & V|1|) <=u 0x0000000000000002) || (0x0000000000000003 <=u (0x0000000000000003 & V|1|))) /\
-        ((0x0000000000000003 & V|1|) <u 0x0000000000000003) /\
-        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) == 0xfffffffffffffffa)
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) != 0xfffffffffffffff7) /\
+        (0xfffffffffffffffe != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000002) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) <=s (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffff9 -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))))) /\
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) == 0xfffffffffffffff8) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) == (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffff9 -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))))
   PC 3: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
         (0x0000000000000000 != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
-        (((0x0000000000000003 & V|1|) <=u 0x0000000000000001) || (0x0000000000000002 <=u (0x0000000000000003 & V|1|))) /\
-        ((0x0000000000000003 & V|1|) <u 0x0000000000000002) /\
-        ((0x0000000000000003 & V|1|) <=u 0x0000000000000001) /\
-        (0x0000000000000001 <=u (0x0000000000000003 & V|1|)) /\
-        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) == 0xfffffffffffffffc)
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) != 0xfffffffffffffff7) /\
+        (0xfffffffffffffffe != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) != 0xfffffffffffffff9) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000004) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) <=s (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffffb -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))))) /\
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) == 0xfffffffffffffffa) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) == (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffffb -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))))
   PC 4: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
         (0x0000000000000000 != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
-        (((0x0000000000000003 & V|1|) <=u 0x0000000000000001) || (0x0000000000000002 <=u (0x0000000000000003 & V|1|))) /\
-        ((0x0000000000000003 & V|1|) <u 0x0000000000000002) /\
-        ((0x0000000000000001 <u (0x0000000000000003 & V|1|)) || (0x0000000000000000 == (0x0000000000000003 & V|1|))) /\
-        (0xfffffffffffffffe == (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) != 0xfffffffffffffff7) /\
+        (0xfffffffffffffffe != (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
+        (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) != 0xfffffffffffffff9) /\
+        (0x0000000000000004 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) != 0xfffffffffffffffb) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000006) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) <=s (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffffd -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))))) /\
+        ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) == 0xfffffffffffffffc) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x000000000000000a) == (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) +ck (0xfffffffffffffffd -cks (0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))))))
   
 Test the SIMD intrinsics used by hashbrown's NEON control group.
   $ soteria-rust exec simd.rs --target aarch64-apple-darwin

@@ -20,6 +20,16 @@ and 'ghost ptr = {
   align : 'ghost sv;
 }
 
+(** A block of an encoded value: a value, along with the offset it is at and the
+    size it spans. [ty] is [Some] iff the value is a whole (unencoded) aggregate
+    of that (normalised) type. *)
+and ('v, 'ofs, 'sz) block = {
+  value : 'v;
+  ty : Types.ty option;
+  offset : 'ofs;
+  size : 'sz;
+}
+
 (* values *)
 and 'ghost ext_ty =
   | TEnum of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
@@ -41,12 +51,17 @@ and 'ghost ext_t =
   | Tuple of 'ghost sv list  (** structs and tuples: ordered values *)
   | Array of 'ghost sv Iarray.t
       (** arrays: ordered values, all of the same type *)
-  | Union of ('ghost sv * 'ghost sv * 'ghost sv) list
-      (** list of blocks in the union, with their offset and size *)
+  | Union of ('ghost sv, 'ghost sv, 'ghost sv) block list
+      (** list of blocks in the union *)
   | PolyVal of Charon.Types.type_var_id
       (** The opaque value of a type variable, identified by (type variable
           index, unique identifier). *)
 [@@deriving eq, ord]
+
+let pp_block pp_v pp_ofs pp_sz ft { value; ty; offset; size } =
+  Fmt.pf ft "(%a: %a%a-%a)" pp_ofs offset pp_v value
+    Fmt.(option (any " : " ++ Types.pp_ty))
+    ty pp_sz size
 
 let rec pp_ext_ty ft : 'ghost ext_ty -> unit = function
   | TEnum ty -> Crate.pp_type_decl_ref ft ty
@@ -85,10 +100,9 @@ module Rust_ext :
     | Tuple vals -> Fmt.pf ft "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp) vals
     | Array vals -> Fmt.pf ft "[%a]" (Iarray.pp ~sep:(Fmt.any ", ") pp) vals
     | Union vs ->
-        let pp_block ft (v, ofs, size) =
-          Fmt.pf ft "(%a: %a-%a)" pp ofs pp v pp size
-        in
-        Fmt.pf ft "Union(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_block) vs
+        Fmt.pf ft "Union(%a)"
+          (Fmt.list ~sep:(Fmt.any ", ") (pp_block pp pp pp))
+          vs
     | PolyVal tid -> Fmt.pf ft "PolyVal(%a)" Charon.Types.pp_type_var_id tid
 
   let iter_vars_ptr iter_vars { ptr; size; align; tag = _ } =
@@ -110,9 +124,9 @@ module Rust_ext :
     | Array vals -> Iarray.iter iter_vars vals
     | Union vs ->
         List.iter
-          (fun (v, ofs, size) ->
-            iter_vars v;
-            iter_vars ofs;
+          (fun { value; ty = _; offset; size } ->
+            iter_vars value;
+            iter_vars offset;
             iter_vars size)
           vs
     | PolyVal _ -> ()
@@ -148,8 +162,12 @@ module Rust_ext :
         Iarray.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 8 vals
     | Union vs ->
         List.fold_left
-          (fun acc ((v : _ sv), (ofs : _ sv), (size : _ sv)) ->
-            combine (combine (combine acc v.tag) ofs.tag) size.tag)
+          (fun acc { value : _ sv; ty; offset : _ sv; size : _ sv } ->
+            combine
+              (combine
+                 (combine (combine acc value.tag) (Hashtbl.hash ty))
+                 offset.tag)
+              size.tag)
           6 vs
     | PolyVal x -> combine 7 (Types.TypeVarId.to_int x)
 
@@ -212,11 +230,11 @@ module Rust_ext :
         let vs, s = apply_iarray apply ~missing_var s vs in
         (Array vs, s)
     | Union vs ->
-        let apply ~missing_var s (v, ofs, size) =
-          let v, s = apply ~missing_var s v in
-          let ofs, s = apply ~missing_var s ofs in
+        let apply ~missing_var s { value; ty; offset; size } =
+          let value, s = apply ~missing_var s value in
+          let offset, s = apply ~missing_var s offset in
           let size, s = apply ~missing_var s size in
-          ((v, ofs, size), s)
+          ({ value; ty; offset; size }, s)
         in
         let vs, s = apply_list apply ~missing_var s vs in
         (Union vs, s)
