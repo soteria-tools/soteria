@@ -229,6 +229,33 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
       in
       aux t
 
+    (** [split_at t p] splits [t] at position [p]. Precondition: [p] is strictly
+        inside [t.range]. Returns the subtrees left and right of [p], which
+        together cover [t.range]. Only leaves are ever split: if [p] falls
+        strictly inside a subtree we recurse into it, so intermediate nodes are
+        preserved. *)
+    let rec split_at (t : t) p : (t * t) Symex.t =
+      match t.children with
+      | Some (left, right) ->
+          let _, mid = left.range in
+          if%sat p ==@ mid then return (left, right)
+          else if%sat p <@ mid then
+            let* ll, lr = split_at left p in
+            let+ right = of_children_s ~left:lr ~right in
+            (ll, right)
+          else
+            let* rl, rr = split_at right p in
+            let+ left = of_children_s ~left ~right:rl in
+            (left, rr)
+      | None ->
+          let* left_node, right_node =
+            Node.split ~at:(p -@ fst t.range) t.node
+          in
+          let left_span, right_span = Range.split_at t.range p in
+          let* left = of_split_tree left_span left_node in
+          let+ right = of_split_tree right_span right_node in
+          (left, right)
+
     (** [split ~range t] isolates [range] from [t]. Precondition: [range] is a
         strict subrange of [t.range] (neither empty nor equal to [t.range]).
         Returns [(node, left, right)] where:
@@ -237,49 +264,25 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
           lies within either [left] or [right].
 
         If [range] touches the left or right edge of [t], a single split
-        suffices. Otherwise, we first split at [fst range] to peel off the left
-        part, then carve [range] out of the resulting right part. This makes the
-        procedure right-biased (it prefers introducing structure on the right)
+        suffices. Otherwise we split at both ends of [range], making the
+        procedure right-biased (it prefers introducing structure on the right).
     *)
-    let rec split ~range t : (Node.t * t * t) Symex.t =
-      let old_span = t.range in
-      let ol, oh = old_span in
+    let split ~range t : (Node.t * t * t) Symex.t =
+      let ol, oh = t.range in
       let nl, nh = range in
       if%sat ol ==@ nl then
-        let* left_node, right_node = Node.split ~at:(nh -@ ol) t.node in
-        let left_span, right_span = Range.split_at old_span nh in
-        let* left = of_split_tree left_span left_node in
-        let+ right = of_split_tree right_span right_node in
+        let+ left, right = split_at t nh in
         (left.node, left, right)
       else if%sat oh ==@ nh then
-        let* left_node, right_node = Node.split ~at:(nl -@ ol) t.node in
-        let left_span, right_span = Range.split_at old_span nl in
-        let* left = of_split_tree left_span left_node in
-        let+ right = of_split_tree right_span right_node in
+        let+ left, right = split_at t nl in
         (right.node, left, right)
       else
-        (* We're first splitting on the left then splitting again on the
-           right *)
-        let* left_node, right_node = Node.split ~at:(nl -@ ol) t.node in
-        let left_span, right_span = Range.split_at old_span nl in
-        let* left = of_split_tree left_span left_node in
-        let* full_right = of_split_tree right_span right_node in
-        (* we need to first extract the relevant part of the right subtree; as
-           constructing it may have yielded a complex tree *)
-        let* sub_right, right_extra = extract full_right range in
-        let* node, right_left, right_right = split ~range sub_right in
-        let* right =
-          with_children sub_right ~left:right_left ~right:right_right
-        in
-        let+ right =
-          match right_extra with
-          | None -> return right
-          | Some right_extra ->
-              with_children full_right ~left:right ~right:right_extra
-        in
-        (node, left, right)
+        let* left, rest = split_at t nl in
+        let* mid, right = split_at rest nh in
+        let+ right = of_children_s ~left:mid ~right in
+        (mid.node, left, right)
 
-    and extract (t : t) (range : Range.t) : (t * t option) Symex.t =
+    let rec extract (t : t) (range : Range.t) : (t * t option) Symex.t =
       (* First result is the extracted tree, second is the remain *)
       if%sat Range.sem_eq range t.range then return (t, None)
       else if Option.is_none t.children then return (t, None)
