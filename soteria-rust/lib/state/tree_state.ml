@@ -302,7 +302,7 @@ module Make (Borrows : Tree_borrows.T) = struct
   let pp_pretty ~ignore_freed ft { heap; _ } =
     let (ignore : 'a * Freeable_block_with_meta.t -> bool) =
       if ignore_freed then [%matches? _, { node = Freed; _ }]
-      else fun _ -> false
+      else Fun.const false
     in
     match heap with
     | None -> Fmt.pf ft "Empty State"
