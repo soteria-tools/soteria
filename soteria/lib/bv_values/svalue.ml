@@ -756,6 +756,12 @@ module Make (V : Value_ext) () = struct
       (* p && !p <=> false *)
       | _, Unop (Not, p) when equal v1 p -> v_false
       | Unop (Not, p), _ when equal v2 p -> v_false
+      (* (a && b) && a <=> a && b *)
+      | Binop (And, a, b), _ when equal a v2 || equal b v2 -> v1
+      | _, Binop (And, a, b) when equal v1 a || equal v1 b -> v2
+      (* (a || b) && a <=> a *)
+      | Binop (Or, a, b), _ when equal a v2 || equal b v2 -> v2
+      | _, Binop (Or, a, b) when equal v1 a || equal v1 b -> v1
       | Binop (Eq, l1, r1), Binop (Eq, l2, r2)
         when (equal l1 l2 && sure_neq r1 r2)
              || (equal l1 r2 && sure_neq r1 l2)
@@ -803,6 +809,9 @@ module Make (V : Value_ext) () = struct
           v_true
       | Binop (Or, a, b), _ when equal a v2 || equal b v2 -> v1
       | _, Binop (Or, a, b) when equal v1 a || equal v1 b -> v2
+      (* (a && b) || a <=> a *)
+      | Binop (And, a, b), _ when equal a v2 || equal b v2 -> v2
+      | _, Binop (And, a, b) when equal v1 a || equal v1 b -> v1
       (* an upper and a lower bound on the same value that (at least) touch
          cover the whole domain, e.g. [a <= 2] || [3 <= a] *)
       | Binop ((Lt _ | Leq _), _, _), Binop ((Lt _ | Leq _), _, _)
@@ -837,6 +846,7 @@ module Make (V : Value_ext) () = struct
         | Binop (Leq signed, v1, v2) -> BitVec.lt ~signed v2 v1
         | Binop (Or, v1, v2) -> and_ (not v1) (not v2)
         | Binop (And, v1, v2) -> or_ (not v1) (not v2)
+        | Ite (g, a, b) -> ite g (not a) (not b)
         | Binop (Eq, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }, v)
         | Binop (Eq, v, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ })
           ->
@@ -856,8 +866,15 @@ module Make (V : Value_ext) () = struct
       | _, _, Bool true -> or_ (not guard) if_
       | _, BitVec o, BitVec z when Z.(equal o one) && Z.equal z Z.zero ->
           BitVec.of_bool (size_of if_.node.ty) guard
+      | Unop (Not, g), _, _ -> ite g else_ if_
       | _ when equal guard if_ -> or_ guard else_
       | _ when equal guard else_ -> and_ guard if_
+      | _, Ite (g, x, _), _ when equal g guard -> ite guard x else_
+      | _, _, Ite (g, _, y) when equal g guard -> ite guard if_ y
+      | Binop (And, a, b), Ite (g, x, _), _ when equal g a || equal g b ->
+          ite guard x else_
+      | Binop (Or, a, b), _, Ite (g, _, y) when equal g a || equal g b ->
+          ite guard if_ y
       | _ when equal if_ else_ -> if_
       | _ -> Ite (guard, if_, else_) <| if_.node.ty
 
