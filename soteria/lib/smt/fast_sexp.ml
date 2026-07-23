@@ -80,13 +80,12 @@ module Reader = struct
     else None
 
   let[@inline] advance r = r.pos <- r.pos + 1
-  let[@inline] is_ws = function ' ' | '\t' | '\n' | '\r' -> true | _ -> false
+  let[@inline] is_ws = [%matches? ' ' | '\t' | '\n' | '\r']
 
   (* [;] ends a plain atom: in SMT-LIB it always starts a line comment, so a
      simple (unquoted) symbol can never contain one. *)
-  let[@inline] is_delim = function
-    | ' ' | '\t' | '\n' | '\r' | '(' | ')' | '|' | '"' | ';' -> true
-    | _ -> false
+  let[@inline] is_delim =
+    [%matches? ' ' | '\t' | '\n' | '\r' | '(' | ')' | '|' | '"' | ';']
 
   let rec skip_ws r =
     match peek r with

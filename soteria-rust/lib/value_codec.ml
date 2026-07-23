@@ -214,8 +214,7 @@ struct
              pointer anyway, and special case null-checking. Allows for
              optimising away decays happening for e.g. Option<NonNull<T>>. *)
           let* tag =
-            if match tag_ty with TInt Isize | TUInt Usize -> true | _ -> false
-            then
+            if [%matches? TInt Isize | TUInt Usize] tag_ty then
               let+ v = query unit_ptr (offset +!!@ tag_ofs) in
               `Ptr (Typed.Ptr.ptr_of (Typed.cast_ptr_f v))
             else
