@@ -25,7 +25,7 @@
   -open
   Soteria.Logs.Import)
  (preprocess
-  (pps ppx_deriving.std ppx_subliner soteria.ppx ppx_mixins))
+  (pps ppx_deriving.std ppx_subliner soteria.ppx ppx_matches ppx_mixins))
  (instrumentation
   (backend landmarks --auto)))
 

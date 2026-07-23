@@ -6,7 +6,7 @@ let pp_pretty ft t =
   pp' ~inner:(Freeable_ctree_block.pp' ~inner:Ctree_block.pp_pretty) ft t
 
 let is_freed (t : ('a Soteria.Sym_states.Freeable.freeable, 'b) with_info) =
-  match t.node with Freed -> true | _ -> false
+  [%matches? Freed] t.node
 
 let alloc ?loc ~zeroed size =
   {
