@@ -383,8 +383,8 @@ module Make (V : Value_ext) () = struct
   let t_ptr n = TPointer n
   let t_seq ty = TSeq ty
   let t_bv n = TBitVector n
-  let is_float = function TFloat _ -> true | _ -> false
-  let is_bv = function TBitVector _ -> true | _ -> false
+  let is_float = [%matches? TFloat _]
+  let is_bv = [%matches? TBitVector _]
 
   let precision_of_f = function
     | TFloat p -> p
@@ -393,7 +393,7 @@ module Make (V : Value_ext) () = struct
   let hash t = t.tag
   let kind t = t.node.kind
   let unique_tag t = t.tag
-  let is_bool_ty = function TBool -> true | _ -> false
+  let is_bool_ty = [%matches? TBool]
 
   let[@inline] iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
     let rec aux ~ignore (sv : t) : unit =
@@ -1612,8 +1612,7 @@ module Make (V : Value_ext) () = struct
       | _, _ -> mk_commut_binop BitAnd v1 v2 <| t_bv n
 
     and or_ v1 v2 =
-      assert (match v1.node.ty with TBitVector _ -> true | _ -> false);
-      assert (match v2.node.ty with TBitVector _ -> true | _ -> false);
+      assert (is_bv v1.node.ty && is_bv v2.node.ty);
       match[@warning "-ambiguous-var-in-pattern-guard"]
         (v1.node.kind, v2.node.kind)
       with

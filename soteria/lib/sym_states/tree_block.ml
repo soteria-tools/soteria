@@ -141,8 +141,8 @@ module Make (Symex : Symex.Base) (MemVal : MemVal(Symex).S) = struct
       | NotOwned qty -> Fmt.pf ft "NotOwned %a" pp_qty qty
       | Owned v -> MemVal.pp ft v
 
-    let is_empty = function NotOwned Totally -> true | _ -> false
-    let is_fully_owned = function NotOwned _ -> false | Owned _ -> true
+    let is_empty = [%matches? NotOwned Totally]
+    let is_fully_owned = [%matches? Owned _]
 
     (* NOTE: is this the right level of abstraction? Should we not pass the tree
        and instead just recurse through the leaves? *)

@@ -268,7 +268,7 @@ and translate_layout adt_kind ty (layout : Types.layout) =
             (tagger, Arbitrary ofs))
       layout.variant_layouts
   in
-  let is_enum = match adt_kind with Enum _ -> true | _ -> false in
+  let is_enum = [%matches? Enum _] adt_kind in
   let fields : Fields_shape.t =
     match (discriminator, variant_layouts) with
     (* no variants/invalid, so this is uninhabited; we can use primitive *)
@@ -507,10 +507,9 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   in
   let is_repr_transparent (adt : Types.type_decl_ref) =
     match adt.id with
-    | TAdtId id -> (
-        match (Crate.get_adt_raw id).layout with
-        | [ (_triple, { repr = { transparent = true; _ }; _ }) ] -> true
-        | _ -> false)
+    | TAdtId id ->
+        [%matches? [ (_triple, { repr = { transparent = true; _ }; _ }) ]]
+          (Crate.get_adt_raw id).layout
     | _ -> false
   in
   let rec find_non_zst_field = function

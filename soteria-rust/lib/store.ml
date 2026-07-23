@@ -57,7 +57,7 @@ module Place = struct
     (* metadata isn't navigable for in-place writes; spill to the heap *)
     | Metadata _ -> None
 
-  let is_local = function { kind = Local _; _ } -> true | _ -> false
+  let is_local = [%matches? { kind = Local _; _ }]
 
   let local local_id ty =
     { kind = Local local_id; origin = { kind = PlaceLocal local_id; ty } }
