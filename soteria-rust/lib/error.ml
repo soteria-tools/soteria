@@ -74,11 +74,10 @@ type t =
 
 type warn_reason = InvalidReference of Typed.T.sloc Typed.t [@@deriving hash]
 
-let is_unwindable : [> t ] -> bool = function
-  | `NullDereference | `OutOfBounds | `DivisionByZero | `FailedAssert _
-  | `Panic _ | `Overflow ->
-      true
-  | _ -> false
+let is_unwindable : [> t ] -> bool =
+  [%matches?
+    ( `NullDereference | `OutOfBounds | `DivisionByZero | `FailedAssert _
+    | `Panic _ | `Overflow )]
 
 let rec pp ft : [> t ] -> unit = function
   | `AccessedFnPointer -> Fmt.string ft "Accessed function pointer's pointee"

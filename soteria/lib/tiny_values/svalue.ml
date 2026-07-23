@@ -72,7 +72,7 @@ and t = t_node hash_consed [@@deriving show { with_path = false }, eq, ord]
 let unique_tag t = t.tag
 let hash t = t.tag
 let kind t = t.node.kind
-let is_bool_ty = function TBool -> true | _ -> false
+let is_bool_ty = [%matches? TBool]
 
 let rec iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
   match sv.node.kind with
