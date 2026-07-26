@@ -176,11 +176,8 @@ module Make (StateImpl : State.S) = struct
         Typed.Adt.mk_tuple vals
     | CAdt (Some var, fields) ->
         let adt = ty_as_adt const.ty in
-        let variants = Crate.as_enum @@ ty_as_adt const.ty in
-        let variant = Types.VariantId.nth variants var in
-        let discr = BV.of_literal variant.discriminant in
         let+ vals = map_list fields ~f:resolve_constant in
-        Typed.Adt.mk_enum adt discr vals
+        Typed.Adt.mk_enum adt var vals
     (* FIXME: this is hacky, but until we get proper monomorphisation this isn't
        too bad *)
     | CTraitConst (tref, const_id) -> (
@@ -797,7 +794,7 @@ module Make (StateImpl : State.S) = struct
                 Core.eval_lit_binop op ty v1 v2
             | AddChecked | SubChecked | MulChecked ->
                 Core.eval_checked_lit_binop op ty v1 v2
-            | Cmp -> ok (Core.cmp ~signed:(Layout.is_signed ty) v1 v2)
+            | Cmp -> Core.cmp ~signed:(Layout.is_signed ty) v1 v2
             | BitOr | BitAnd | BitXor -> (
                 let ty = TypesUtils.ty_as_literal (type_of_operand e1) in
                 let v1 = Typed.cast_lit ty v1 in
@@ -896,11 +893,8 @@ module Make (StateImpl : State.S) = struct
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
         let* adt = Poly.subst_tyref adt in
-        let variants = Crate.as_enum adt in
-        let variant = Types.VariantId.nth variants v_id in
-        let discr = BV.of_literal variant.discriminant in
         let+ vals = eval_operand_list vals in
-        Typed.Adt.mk_enum adt discr vals
+        Typed.Adt.mk_enum adt v_id vals
     (* Union aggregate *)
     | Aggregate (AggregatedAdt (adt, None, Some field), ops) ->
         let* adt = Poly.subst_tyref adt in

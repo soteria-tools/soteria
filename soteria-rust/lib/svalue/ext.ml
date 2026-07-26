@@ -47,7 +47,7 @@ and 'ghost ext_t =
   | Ptr of 'ghost sv * 'ghost sv option  (** pointer, with optional meta *)
   | ThinPtr of 'ghost ptr
       (** thin pointer, without metadata but with extra info on the pointer *)
-  | Enum of 'ghost sv * 'ghost sv list  (** discriminant * values *)
+  | Enum of Types.variant_id * 'ghost sv list  (** variant id * values *)
   | Tuple of 'ghost sv list  (** structs and tuples: ordered values *)
   | Array of 'ghost sv Iarray.t
       (** arrays: ordered values, all of the same type *)
@@ -95,8 +95,10 @@ module Rust_ext :
         Fmt.pf ft "%a[%a]" pp ptr.ptr
           Fmt.(option ~none:(any "*") Ptr_tag.pp)
           ptr.tag
-    | Enum (disc, vals) ->
-        Fmt.pf ft "Enum(%a: %a)" pp disc (Fmt.list ~sep:(Fmt.any ", ") pp) vals
+    | Enum (v, vals) ->
+        Fmt.pf ft "Enum(%a: %a)" Types.pp_variant_id v
+          (Fmt.list ~sep:(Fmt.any ", ") pp)
+          vals
     | Tuple vals -> Fmt.pf ft "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp) vals
     | Array vals -> Fmt.pf ft "[%a]" (Iarray.pp ~sep:(Fmt.any ", ") pp) vals
     | Union vs ->
@@ -117,10 +119,7 @@ module Rust_ext :
         iter_vars ptr;
         iter_vars meta
     | ThinPtr ptr -> iter_vars_ptr iter_vars ptr
-    | Enum (disc, vals) ->
-        iter_vars disc;
-        List.iter iter_vars vals
-    | Tuple vals -> List.iter iter_vars vals
+    | Enum (_, vals) | Tuple vals -> List.iter iter_vars vals
     | Array vals -> Iarray.iter iter_vars vals
     | Union vs ->
         List.iter
@@ -152,10 +151,11 @@ module Rust_ext :
         combine
           (combine (combine (combine ptr.tag 3) size.tag) align.tag)
           (Option.fold ~none:(-1) ~some:Ptr_tag.hash tag)
-    | Enum (disc, vals) ->
+    | Enum (var, vals) ->
         List.fold_left
           (fun acc (v : _ sv) -> combine acc v.tag)
-          (combine disc.tag 4) vals
+          (combine (Types.VariantId.to_int var) 4)
+          vals
     | Tuple vals ->
         List.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 5 vals
     | Array vals ->
@@ -219,10 +219,9 @@ module Rust_ext :
     | ThinPtr ptr ->
         let ptr, s = apply_subst_ptr apply ~missing_var s ptr in
         (ThinPtr ptr, s)
-    | Enum (discr, vs) ->
-        let discr, s = apply ~missing_var s discr in
+    | Enum (var, vs) ->
         let vs, s = apply_list apply ~missing_var s vs in
-        (Enum (discr, vs), s)
+        (Enum (var, vs), s)
     | Tuple vs ->
         let vs, s = apply_list apply ~missing_var s vs in
         (Tuple vs, s)

@@ -361,8 +361,7 @@ struct
         let* variant = variant_of_enum ~offset ty in
         let+ fields = iter (iter_fields ~variant ?meta layout ty) offset in
         let variant = Types.VariantId.nth variants variant in
-        let discr = BV.of_literal variant.discriminant in
-        Typed.Adt.mk_enum adt discr fields
+        Typed.Adt.mk_enum adt variant.id fields
     | Enum _, _ -> L.failwith "decode: expected enum type for enum layout"
 end
 
@@ -753,7 +752,7 @@ let rec nondet_raw :
             match variant with Some v -> return v | None -> vanish ()
           in
           let++ fields = nondets_raw @@ field_tys variant.fields in
-          Typed.Adt.mk_enum adt (BV.of_literal variant.discriminant) fields
+          Typed.Adt.mk_enum adt variant.id fields
       | Struct fields ->
           let++ fields = nondets_raw @@ field_tys fields in
           Typed.Adt.mk_tuple fields
@@ -860,7 +859,7 @@ let rec ref_tys_in
       let* var = variant_for_discr discr adt in
       let vs = Typed.Adt.as_enum_of_variant var.id v in
       let++ vs, acc = fs' init (field_tys Types.(var.fields)) vs in
-      (Typed.Adt.mk_enum adt discr vs, acc)
+      (Typed.Adt.mk_enum adt var.id vs, acc)
   | TPattern (inner, _) -> f init inner v
   | _ -> Result.ok (v, init)
 
