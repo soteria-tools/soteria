@@ -35,6 +35,16 @@ let nat_zk x = Atom (Z.to_string x)
 let fam f is = List (Atom "_" :: Atom f :: is)
 let ifam f is = fam f (List.map nat_k is)
 
+(** [quote s] is [s] as a quoted symbol, so that it can contain arbitrary
+    characters, except [|] and backslash characters which are replaced. *)
+let quote s =
+  let must_escape = [%matches? '|' | '\\'] in
+  let s =
+    if not (String.exists must_escape s) then s
+    else String.map (fun c -> if must_escape c then '!' else c) s
+  in
+  "|" ^ s ^ "|"
+
 (** {2 Booleans} *)
 
 let t_bool = Atom "Bool"
@@ -284,7 +294,7 @@ let bv_smulo l r = "bvsmulo" $$. [ l; r ]
 
 (* [t_seq $ elt] is the type of sequences of [elt]. *)
 let t_seq = atom "Seq"
-let seq_singl x = atom "seq.unit" $$ [ x ]
+let seq_singl x = atom "seq.unit" $ x
 let seq_concat xs = atom "seq.++" $$ xs
 
 (** {2 Commands} *)
@@ -308,6 +318,10 @@ let declare_datatype name type_params cons =
     | _ -> "par" $$. [ List (List.map atom type_params); mk_cons ]
   in
   "declare-datatype" $$. [ Atom name; def ]
+
+(** [tester con v] is [((_ is con) v)], true iff [v] was built with datatype
+    constructor [con]. *)
+let tester con v = fam "is" [ Atom con ] $ v
 
 let assume e = "assert" $$. [ e ]
 
