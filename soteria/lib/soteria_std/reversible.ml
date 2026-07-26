@@ -96,6 +96,10 @@ end) : sig
       and return that value. *)
   val find_map : t -> (Elt.t -> 'a option) -> 'a option
 
+  (** Returns true if there exists a value in the current state for which [f]
+      returns [true]. *)
+  val exists : t -> (Elt.t -> bool) -> bool
+
   (** Return a sequence of all values in the current state, in reverse order. *)
   val to_seq_rev : t -> Elt.t Seq.t
 end = struct
@@ -129,6 +133,7 @@ end = struct
   let add (slots, _) v = Dynarray.add_last slots v
   let iter (slots, _) f = Dynarray.iter f slots
   let find_map (slots, _) f = Dynarray.find_map f slots
+  let exists (slots, _) f = Dynarray.exists f slots
   let to_seq_rev (slots, _) = Dynarray.to_seq_rev slots
 end
 

@@ -26,7 +26,8 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | TBitVector n -> t_bits n
     | TExtension x -> Typed.Ext.encode_ty sort_of_ty x
 
-  let memo_encode_value_tbl : sexp Svalue.Hashtbl.t = Svalue.Hashtbl.create 1023
+  let memo_encode_value_tbl : (sexp * Solvers.Decls.t list) Svalue.Hashtbl.t =
+    Svalue.Hashtbl.create 1023
 
   let rm_to_smt : RoundingMode.t -> Smt.RoundingMode.t = function
     | NearestTiesToEven -> NearestTiesToEven
@@ -135,10 +136,20 @@ module Make (Typed : Typed_intf.Solver_value) = struct
 
   and encode_value_memo v =
     match Svalue.Hashtbl.find_opt memo_encode_value_tbl v with
-    | Some k -> k
+    | Some (k, decls) ->
+        List.iter (fun d -> Effect.perform (Solvers.Decls.Declare d)) decls;
+        k
     | None ->
-        let k = encode_value v in
-        Svalue.Hashtbl.add memo_encode_value_tbl v k;
+        let decls = ref [] in
+        let k =
+          try encode_value v
+          with effect Solvers.Decls.Declare d, cont ->
+            decls := d :: !decls;
+            (* forward to the solver's own handler *)
+            Effect.perform (Solvers.Decls.Declare d);
+            Effect.Deep.continue cont ()
+        in
+        Svalue.Hashtbl.add memo_encode_value_tbl v (k, List.rev !decls);
         k
 
   let encode_value (v : Svalue.t) =
