@@ -19,14 +19,14 @@ module Ptr_sort = struct
 
   (** The SMT-LIB constructor for [n]-bit pointers, applied to the location and
       offset terms. *)
-  let mk_ptr n loc ofs = atom (con n) $$ [ loc; ofs ]
+  let mk_ptr n loc ofs = con n $$. [ loc; ofs ]
 
   (** The SMT-LIB selector for the location of [n]-bit pointers. *)
   let loc_sel n = quote (Fmt.str "@ptr<%d>.loc" n)
 
   (** The SMT-LIB selector for the location of [n]-bit pointers, applied to a
       pointer term. *)
-  let get_loc n ptr = atom (loc_sel n) $ ptr
+  let get_loc n ptr = loc_sel n $. ptr
 
   (** The SMT-LIB selector for the offset of [n]-bit pointers. *)
   let ofs_sel n = quote (Fmt.str "@ptr<%d>.ofs" n)
@@ -61,7 +61,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | TFloat F32 -> t_f32
     | TFloat F64 -> t_f64
     | TFloat F128 -> t_f128
-    | TSeq ty -> t_seq $ sort_of_ty ty
+    | TSeq ty -> t_seq (sort_of_ty ty)
     | TPointer n -> Ptr_sort.sort n
     | TBitVector n -> t_bits n
     | TExtension x -> Typed.Ext.encode_ty sort_of_ty x
