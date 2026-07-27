@@ -164,20 +164,18 @@ let rec try_load (place : Place.t) (store : t) : Binding.kind option =
                L.failwith "tried loading metadata of non-pointer: %a" pp_ty
                  base.origin.ty
          in
-         match Typed.Ptr.meta_of ptr with
-         | None -> Value Typed.Adt.unit
-         | Some meta -> (
-             match%ty meta with
-             | TBitVector _ -> Value (Typed.as_any meta)
-             | TExtension TThinPtr ->
-                 let vt = Typed.Ptr.mk_ptr_f meta None in
-                 if
-                   Option.is_some_and
-                     (Crate.adt_has_lang_item "dyn_metadata")
-                     (ty_as_adt_opt place.origin.ty)
-                 then Value Typed.Adt.(mk_tuple [ mk_tuple [ vt ]; unit ])
-                 else Value vt
-             | _ -> L.failwith "invalid metadata type"))
+         let pointee = get_pointee base.origin.ty in
+         match Layout.dst_kind pointee with
+         | NoneKind -> Value Typed.Adt.unit
+         | LenKind -> Value (Typed.as_any (Typed.Ptr.len_meta ptr))
+         | VTableKind ->
+             let vt = Typed.Ptr.mk_ptr_f (Typed.Ptr.vtable_meta ptr) None in
+             if
+               Option.is_some_and
+                 (Crate.adt_has_lang_item "dyn_metadata")
+                 (ty_as_adt_opt place.origin.ty)
+             then Value Typed.Adt.(mk_tuple [ mk_tuple [ vt ]; unit ])
+             else Value vt)
 
 let try_store (place : Place.t) store value =
   let open Syntaxes.Option in

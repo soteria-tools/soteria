@@ -350,17 +350,22 @@ module Ptr = struct
   (** Like {!of_address}, but produces a full pointer with no metadata. *)
   let of_address_f addr = mk_ptr_f (of_address addr) None
 
-  let meta_of ptr =
+  let len_meta ptr =
     match kind ptr with
-    | Extension (Ptr (_, meta)) -> meta
+    | Extension (Ptr (_, Some meta)) -> cast_i Usize meta
+    | Extension (Ptr (_, None)) -> L.failwith "len_meta for thin ptr"
+    | _ -> todo_migration "PtrFull get meta"
+
+  let vtable_meta ptr =
+    match kind ptr with
+    | Extension (Ptr (_, Some meta)) -> cast_ptr_t meta
+    | Extension (Ptr (_, None)) -> L.failwith "vtable_meta for thin ptr"
     | _ -> todo_migration "PtrFull get meta"
 
   let ptr_of ptr =
     match kind ptr with
     | Extension (Ptr (ptr, _)) -> ptr
     | _ -> todo_migration "PtrFull get ptr"
-
-  let split ptr = (ptr_of ptr, meta_of ptr)
 end
 
 module Adt = struct

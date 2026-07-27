@@ -68,6 +68,7 @@ let rec dst_kind : Types.ty -> meta_kind = function
       match List.last_opt (Crate.as_struct adt) with
       | None -> NoneKind
       | Some last -> dst_kind Types.(last.field_ty))
+  | TTraitType _ | TVar (Bound _) -> L.failwith "dst_kind: unnormalized type"
   | _ -> NoneKind
 
 (** If this is a DST type with a slice tail, return the type of the slice's
@@ -105,6 +106,15 @@ let pointee_metadata (pointee : Types.ty) : Types.ty =
           id = TAdtId adt.def_id;
           generics = TypesUtils.mk_generic_args_from_types [ pointee ];
         }
+
+(** Reads the metadata of [ptr], a pointer to a value of type [pointee],
+    according to [pointee]'s {!dst_kind}. [pointee] must be normalised *)
+let ptr_meta (ptr : [< Typed.T.sptr_f ] Typed.t) (pointee : Types.ty) :
+    Typed.T.ptr_meta Typed.t option =
+  match dst_kind pointee with
+  | NoneKind -> None
+  | LenKind -> Some (Typed.Ptr.len_meta ptr)
+  | VTableKind -> Some (Typed.Ptr.vtable_meta ptr)
 
 let[@inline] size_to_fit ~size ~align =
   Typed.ite
