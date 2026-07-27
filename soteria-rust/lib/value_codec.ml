@@ -543,10 +543,21 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
   (* undefined.validity.enum *)
   | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_enum ~adt v in
-      let* variant = variant_for_enum v adt in
-      Iter.of_list (field_tys variant.fields)
-      |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of_variant variant.id i v))
-      |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
+      Iter.of_list (Crate.as_enum adt)
+      |> Iter.filter_map (fun (variant : Types.variant) ->
+          (* we filter variants we know aren't possible to avoid traversing
+             concrete enums in full for no reason *)
+          let guard = Typed.Adt.is_variant variant.id v in
+          if Typed.equal guard Typed.v_false then None else Some (variant, guard))
+      |> iter_iter ~f:(fun ((variant : Types.variant), guard) ->
+          let check_ref ptr ty =
+            if%sat guard then check_ref ptr ty else ok ()
+          in
+          let f c e = f (Typed.not guard ||@ c) e in
+          Iter.of_list (field_tys variant.fields)
+          |> Iter.mapi (fun i ty ->
+              (ty, Typed.Adt.field_of_variant variant.id i v))
+          |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f))
   (* undefined.validity.struct *)
   | TAdt adt when Crate.is_struct_or_tuple adt ->
       let v = Typed.cast_tuple v in
@@ -717,18 +728,10 @@ let rec nondet_raw :
       let type_decl = Crate.get_adt adt in
       match type_decl.kind with
       | Enum [] -> vanish ()
-      | Enum (v :: _ as variants) ->
-          let* discr = nondet (Typed.t_lit (lit_ty_of_lit v.discriminant)) in
-          let discr : Typed.(T.sint t) = Typed.cast discr in
-          let* variant =
-            match_on variants ~constr:(fun v ->
-                BV.of_literal v.discriminant ==@ discr)
-          in
-          let* variant =
-            match variant with Some v -> return v | None -> vanish ()
-          in
-          let++ fields = nondets_raw @@ field_tys variant.fields in
-          Typed.Adt.mk_enum adt variant.id fields
+      | Enum (_ :: _) ->
+          (* we don't recurse into the variants, to avoid branching *)
+          let+ enum = nondet (Typed.t_enum adt) in
+          Ok enum
       | Struct fields ->
           let++ fields = nondets_raw @@ field_tys fields in
           Typed.Adt.mk_tuple fields
