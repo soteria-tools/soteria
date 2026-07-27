@@ -15,4 +15,17 @@ let copy_and_update f vs =
   unsafe_of_array vs
 
 let copy_and_set idx x vs = copy_and_update (fun vs -> vs.(idx) <- x) vs
+
+let map_changed f vs =
+  let changed = ref false in
+  let res =
+    map
+      (fun x ->
+        let r = f x in
+        if r != x then changed := true;
+        r)
+      vs
+  in
+  (res, !changed)
+
 let pp ?sep pp_elt = Fmt.iter ?sep iter pp_elt
