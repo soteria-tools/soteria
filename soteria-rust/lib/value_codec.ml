@@ -9,12 +9,12 @@ open DecayMap.SM
 open Syntax
 
 (** Returns the variant id and variant matching the given discriminant. *)
-let variant_for_discr discr adt =
+let variant_for_enum (enum : Typed.([< T.enum ] t)) adt =
   let open Rustsymex in
   let open Syntax in
   let variants = Crate.as_enum adt in
   let* variant =
-    match_on variants ~constr:(fun v -> BV.of_literal v.discriminant ==@ discr)
+    match_on variants ~constr:(fun v -> Typed.Adt.is_variant v.id enum)
   in
   of_opt_not_impl "no matching variant for enum discriminant" variant
 
@@ -428,8 +428,7 @@ let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
     | Enum (_, layouts) -> (
         let adt = ty_as_adt ty in
         let value = Typed.cast_enum ~adt value in
-        let discr = Typed.Adt.discriminant_of value in
-        let* variant = variant_for_discr discr adt in
+        let* variant = variant_for_enum value adt in
         let variant = variant.id in
         let fields = Typed.Adt.as_enum_of_variant variant value in
         let++ fields =
@@ -566,8 +565,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
   (* undefined.validity.enum *)
   | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_enum ~adt v in
-      let discr = Typed.Adt.discriminant_of v in
-      let* variant = variant_for_discr discr adt in
+      let* variant = variant_for_enum v adt in
       Iter.of_list (field_tys variant.fields)
       |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of_variant variant.id i v))
       |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
@@ -855,8 +853,7 @@ let rec ref_tys_in
       (Typed.Adt.mk_array ty (Iarray.of_list vs), acc)
   | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_enum ~adt v in
-      let discr = Typed.Adt.discriminant_of v in
-      let* var = variant_for_discr discr adt in
+      let* var = variant_for_enum v adt in
       let vs = Typed.Adt.as_enum_of_variant var.id v in
       let++ vs, acc = fs' init (field_tys Types.(var.fields)) vs in
       (Typed.Adt.mk_enum adt var.id vs, acc)

@@ -421,15 +421,6 @@ module Adt = struct
     | Extension (PolyVal ty_id) -> ty_id
     | _ -> todo_migration "as_type_var unop"
 
-  let discriminant_of v =
-    match kind v with
-    | Extension (Enum (var_id, _)) ->
-        let adt = t_as_enum v.node.ty in
-        let vars = Crate.as_enum adt in
-        let variant = Types.VariantId.nth vars var_id in
-        BV.of_literal variant.discriminant
-    | _ -> todo_migration "discriminant_of unop"
-
   let field_of idx v =
     match kind v with
     | Extension (Tuple vs) -> (
@@ -489,6 +480,21 @@ module Adt = struct
 
   let update_field_of_variant var idx f v =
     set_field_of_variant var idx (f (field_of_variant var idx v)) v
+
+  let is_variant var_id v =
+    match kind v with
+    | Extension (Enum (var, _)) -> of_bool (Types.VariantId.equal_id var var_id)
+    | _ -> todo_migration "is_variant unop"
+
+  let discriminant_of (v : _ t) =
+    let variants = Crate.as_enum (t_as_enum v.node.ty) in
+    let rec aux : Types.variant list -> _ t = function
+      | [] -> L.failwith "discriminant_of: empty enum"
+      | [ var ] -> BV.of_literal var.discriminant
+      | var :: rest ->
+          ite (is_variant var.id v) (BV.of_literal var.discriminant) (aux rest)
+    in
+    aux variants
 
   module Checked = struct
     let mk_enum tref variant vs =

@@ -222,6 +222,12 @@ module Adt : sig
   val as_tuple2 : [< T.tuple ] t -> [> T.any ] t * [> T.any ] t
   val as_tuple3 : [< T.tuple ] t -> [> T.any ] t * [> T.any ] t * [> T.any ] t
   val as_type_var : [< T.poly ] t -> Types.type_var_id
+
+  (** Whether the enum value is of the given variant. *)
+  val is_variant : Types.variant_id -> [< T.enum ] t -> [> T.sbool ] t
+
+  (** Get the discriminant of an enum. This may generate a large expression; if
+      you only need to check the variant, use {!is_variant} instead. *)
   val discriminant_of : [< T.enum ] t -> [> T.sint ] t
 
   (** Get the field of a tuple *)
