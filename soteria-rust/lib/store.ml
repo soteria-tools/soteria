@@ -91,7 +91,7 @@ module Place = struct
         | NoneKind -> Typed.as_any Typed.Adt.unit
         | LenKind -> Typed.as_any (Typed.Ptr.len_meta ptr)
         | VTableKind ->
-            let vt = Typed.Ptr.mk_ptr_f (Typed.Ptr.vtable_meta ptr) None in
+            let vt = Typed.Ptr.of_ptr_t (Typed.Ptr.vtable_meta ptr) in
             if
               Option.is_some_and
                 (Crate.adt_has_lang_item RustcLangItemDynMetadata)

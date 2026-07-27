@@ -38,7 +38,7 @@ module Make (StateImpl : State.S) = struct
     | Uninit | Value _ -> (
         let* zst_dangling = Sptr.dangling_if_zst binding.ty in
         match zst_dangling with
-        | Some ptr -> ok (Typed.Ptr.mk_ptr_f ptr None)
+        | Some ptr -> ok (Typed.Ptr.of_ptr_t ptr)
         | None ->
             let* ptr = State.alloc_ty binding.ty in
             let* () =
@@ -268,7 +268,7 @@ module Make (StateImpl : State.S) = struct
                   let ptr = Typed.Ptr.ptr_of ptr in
                   let+ value =
                     if from_ = 0 && size = ptr_size then
-                      ok (Typed.Ptr.mk_ptr_f ptr None)
+                      ok (Typed.Ptr.of_ptr_t ptr)
                     else
                       let+ ptr_int = Sptr.decay ptr in
                       BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
@@ -299,13 +299,13 @@ module Make (StateImpl : State.S) = struct
         match expr.kind with
         | CGlobal glob ->
             let+ ptr = resolve_global glob in
-            Typed.Ptr.mk_ptr_f (Typed.Ptr.ptr_of ptr) meta
+            Typed.Ptr.mk_ptr_f_opt (Typed.Ptr.ptr_of ptr) meta
         | _ ->
             let* v = resolve_constant expr in
             let@ () = with_alloc_kind ~kind:AnonConst in
             let* ptr = State.alloc_ty expr.ty in
             let+ () = State.store ptr expr.ty v in
-            Typed.Ptr.mk_ptr_f (Typed.Ptr.ptr_of ptr) meta)
+            Typed.Ptr.mk_ptr_f_opt (Typed.Ptr.ptr_of ptr) meta)
     | CCall (ptr, args) ->
         let* args = map_list args ~f:resolve_constant in
         let* fn = resolve_fn_ptr ptr in
@@ -360,7 +360,7 @@ module Make (StateImpl : State.S) = struct
             Usize.(1s)
             ptr
         in
-        Typed.Ptr.mk_ptr_f ptr' None
+        Typed.Ptr.of_ptr_t ptr'
     | PlaceProjection (base, Field (kind, field)) ->
         let* ptr = resolve_place base in
         let* () = Sptr.check_aligned ptr base.ty in
@@ -399,7 +399,7 @@ module Make (StateImpl : State.S) = struct
         [%l.debug
           "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
             Typed.ppa ptr'];
-        Typed.Ptr.mk_ptr_f ptr' None
+        Typed.Ptr.of_ptr_t ptr'
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
         let* ptr = resolve_place base in
         let* pointee = Layout.normalise base.ty in
@@ -423,7 +423,7 @@ module Make (StateImpl : State.S) = struct
             Typed.ppa from Typed.ppa to_
             (if from_end then "(from end)" else "")
             Typed.ppa ptr' Typed.ppa slice_len];
-        Typed.Ptr.mk_ptr_f ptr' (Some slice_len)
+        Typed.Ptr.mk_ptr_f ptr' slice_len
 
   (* The length of an array or slice being indexed; used to bound-check. *)
   and len_of_indexable ~ptr ~pointee =
@@ -522,8 +522,7 @@ module Make (StateImpl : State.S) = struct
             Soteria.Stats.As_ctx.incr StatKeys.loads_from_store;
             let* dangling = Sptr.dangling_if_zst ty in
             match dangling with
-            | Some d ->
-                OptionM.lift @@ State.load (Typed.Ptr.mk_ptr_f d None) ty
+            | Some d -> OptionM.lift @@ State.load (Typed.Ptr.of_ptr_t d) ty
             | None -> error `UninitializedMemoryAccess)
         | _ -> ok None)
 
@@ -553,7 +552,7 @@ module Make (StateImpl : State.S) = struct
             let* vt_addr =
               Sptr.offset ~check_signed:true ~ty:unit_ptr (BV.usizei idx) vt
             in
-            let+ vt = State.load (Typed.Ptr.mk_ptr_f vt_addr None) unit_ptr in
+            let+ vt = State.load (Typed.Ptr.of_ptr_t vt_addr) unit_ptr in
             Typed.Ptr.ptr_of @@ Typed.cast_ptr_f vt)
         |> map (fun v -> (v :> Typed.(T.ptr_meta t)))
     | MetaUnknown -> (
@@ -730,7 +729,7 @@ module Make (StateImpl : State.S) = struct
                 if Layout.is_dst to_ty then v
                 else
                   let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f v) in
-                  Typed.Ptr.mk_ptr_f ptr None
+                  Typed.Ptr.of_ptr_t ptr
             | _ ->
                 L.failwith "unexpected types for CastRawPtr: %a -> %a" pp_ty
                   from_ty pp_ty to_ty)
@@ -752,7 +751,7 @@ module Make (StateImpl : State.S) = struct
                       pp_ty to_ty
                   in
                   let+ meta = resolve_unsizing_metadata ~help ~prev meta in
-                  Typed.Ptr.mk_ptr_f (Typed.Ptr.ptr_of prev) (Some meta)
+                  Typed.Ptr.mk_ptr_f (Typed.Ptr.ptr_of prev) meta
               | idx :: rest ->
                   let v = Typed.cast_tuple v in
                   let+ target = with_ptr_meta (Typed.Adt.field_of idx v) rest in
@@ -893,9 +892,7 @@ module Make (StateImpl : State.S) = struct
                   match dangling with
                   | Some d ->
                       OptionM.lift
-                      @@ State.load_discriminant
-                           (Typed.Ptr.mk_ptr_f d None)
-                           place.ty
+                      @@ State.load_discriminant (Typed.Ptr.of_ptr_t d) place.ty
                   | None -> error `UninitializedMemoryAccess)
               | _ -> none ())
         (* If a type doesn't have variants, return 0.
@@ -965,7 +962,7 @@ module Make (StateImpl : State.S) = struct
               L.failwith "Unexpected meta type AggregatedRawPtr: %a" pp_ty
                 meta_ty
         in
-        Typed.Ptr.mk_ptr_f ptr meta
+        Typed.Ptr.mk_ptr_f_opt ptr meta
     (* Array repetition *)
     | Repeat (value, ty, len) ->
         let+ value = eval_operand value in
@@ -1060,7 +1057,7 @@ module Make (StateImpl : State.S) = struct
                   | Constant _ -> L.failwith "unsized constant argument"
                 in
                 let+ ptr = resolve_place place in
-                Typed.Ptr.mk_ptr_f (Typed.Ptr.ptr_of ptr) None
+                Typed.Ptr.of_ptr_t (Typed.Ptr.ptr_of ptr)
               else
                 let* arg = eval_operand arg in
                 if Types.equal_ty from to_ then ok arg
