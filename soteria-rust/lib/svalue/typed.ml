@@ -422,27 +422,9 @@ module Adt = struct
   (** {2 Arrays} *)
 
   let mk_array elem_ty arr = Ext0.mk_array ~build:( <| ) elem_ty arr
-
-  let as_array v =
-    match kind v with
-    | Extension (Array vs) -> vs
-    | _ -> todo_migration "as_array unop"
-
-  let array_field_of idx v =
-    match kind v with
-    | Extension (Array vs) -> (
-        try vs.%(idx)
-        with Invalid_argument _ ->
-          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "array_field_of op"
-
-  let set_array_field idx x v =
-    match kind v with
-    | Extension (Array vs) -> (
-        try Extension (Array (Iarray.copy_and_set idx x vs)) <| v.node.ty
-        with Invalid_argument _ ->
-          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "set_array_field op"
+  let as_array v = Ext0.as_array ~build:( <| ) v
+  let array_field_of idx v = Ext0.array_field_of ~build:( <| ) idx v
+  let set_array_field idx f v = Ext0.set_array_field ~build:( <| ) idx f v
 
   let update_array_field idx f v =
     set_array_field idx (f (array_field_of idx v)) v

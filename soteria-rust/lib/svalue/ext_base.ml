@@ -12,6 +12,9 @@ module Unop = struct
     | FullPtrInner
     | Field of int
     | VariantField of (Types.variant_id[@hash Types.VariantId.to_int]) * int
+    (* TODO: we could make [ArrayField] a binop, with the second operator a
+       (possibly symbolic) value, to allow symbolically sized arrays! *)
+    | ArrayField of int
   [@@deriving eq, ord, hash]
 
   let pp_ptr_part ft = function
@@ -143,6 +146,16 @@ let t_as_array (ty : 'g svty) =
   | TExtension (TArray (elem_ty, n)) -> (elem_ty, n)
   | _ -> invalid_arg "t_as_array: not an array type"
 
+let array_length (ty : 'g svty) =
+  match ty with
+  | TExtension (TArray (_, n)) -> n
+  | _ -> invalid_arg "array_length: not an array type"
+
+let array_elem_ty (ty : 'g svty) =
+  match ty with
+  | TExtension (TArray (elem_ty, _)) -> elem_ty
+  | _ -> invalid_arg "array_elem_ty: not an array type"
+
 let t_as_enum (ty : 'g svty) =
   match ty with
   | TExtension (TEnum adt) -> adt
@@ -265,6 +278,22 @@ let mk_array ~(build : _ build) elem_ty (vs : _ sv Iarray.t) =
   in
   mk_array_of_svty ~build elem_ty vs
 
+let array_field_of ~build:(( <| ) : _ build) idx (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (Array vs) -> Iarray.get vs idx
+  | _ -> Extension (Unop (ArrayField idx, v)) <| array_elem_ty v.node.ty
+
+let as_array ~build (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (Array vs) -> vs
+  | _ ->
+      let n = array_length v.node.ty in
+      Iarray.init (Z.to_int n) (fun i -> array_field_of ~build i v)
+
+let set_array_field ~build idx x (v : 'ghost sv) =
+  mk_array_of_svty ~build (array_elem_ty v.node.ty)
+    (Iarray.copy_and_set idx x (as_array ~build v))
+
 (** {3 Unions and PolyVal} (limited support)  *)
 
 let mk_union ~build:(( <| ) : _ build) adt blocks =
@@ -280,3 +309,4 @@ let apply_unop ~build : Unop.t -> _ sv -> _ sv = function
   | FullPtrInner -> full_ptr_inner ~build
   | Field i -> field_of ~build i
   | VariantField (var_id, i) -> field_of_variant ~build var_id i
+  | ArrayField i -> array_field_of ~build i
