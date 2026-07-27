@@ -101,7 +101,7 @@ let hash = function
   | PolyVal x -> combine 7 (Types.TypeVarId.to_int x)
 
 (* TODO: re-apply the smart constructors here *)
-let mk _ty v : _ Sv.t_kind = Extension v
+let mk ( <| ) ty v = Sv.Extension v <| ty
 
 (* TODO: re-apply the smart constructors here *)
 let eval _eval x = x
