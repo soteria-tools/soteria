@@ -238,20 +238,25 @@ module Ptr = struct
 
   (* {1 Internal raw-pointer plumbing (never exposed)} *)
 
-  let _get_ptr ptr =
-    match kind ptr with
-    | Extension (ThinPtr ptr) -> ptr
-    | _ -> todo_migration "todo: ThinPtr.ptr getter"
+  let _thin_part part ptr = Ext0.thin_ptr_part ~build:( <| ) part ptr
 
   let _set_ptr ptr f =
-    match kind ptr with
-    | Extension (ThinPtr inner) -> Ext0.mk_thin_ptr ~build:( <| ) (f inner)
-    | _ ->
-        (* NOTE: i actually don't think we want a setter unop, we just want to
-           rebuild the ptr from scratch *)
-        todo_migration "ThinPtr.ptr setter"
+    let inner =
+      match kind ptr with
+      | Extension (ThinPtr inner) -> inner
+      | _ ->
+          (* Symbolic thin pointer: rebuild it from its parts. As in [tag_of],
+             we assume symbolic pointers have no tag. *)
+          {
+            ptr = _thin_part PtrInner ptr;
+            size = _thin_part PtrSize ptr;
+            align = _thin_part PtrAlign ptr;
+            tag = None;
+          }
+    in
+    Ext0.mk_thin_ptr ~build:( <| ) (f inner)
 
-  let _inner ptr = (_get_ptr ptr).ptr
+  let _inner ptr = _thin_part PtrInner ptr
 
   let of_raw ~ptr ~size ~align ~tag =
     Ext0.mk_thin_ptr ~build:( <| ) { ptr; size; align; tag }
@@ -269,17 +274,22 @@ module Ptr = struct
     _set_ptr ptr (fun inner ->
         { inner with ptr = Self.Ptr.add_ofs inner.ptr o })
 
-  (* Sets the (absolute) offset of a thin pointer, keeping its location, size,
-     alignment and tag. Rebuilds only the inner raw pointer. *)
   let set_ofs ptr o =
     _set_ptr ptr (fun inner ->
         { inner with ptr = Self.Ptr.mk (Self.Ptr.loc inner.ptr) o })
 
-  let align_of ptr = (_get_ptr ptr).align
-  let size_of ptr = (_get_ptr ptr).size
-  let allocation_info ptr = (size_of ptr, align_of ptr)
-  let tag_of ptr = (_get_ptr ptr).tag
   let with_tag ptr tag = _set_ptr ptr (fun inner -> { inner with tag })
+  let align_of ptr = _thin_part PtrAlign ptr
+  let size_of ptr = _thin_part PtrSize ptr
+  let allocation_info ptr = (size_of ptr, align_of ptr)
+
+  let tag_of ptr =
+    match kind ptr with
+    | Extension (ThinPtr inner) -> inner.tag
+    | _ ->
+        (* HACK: we assume symbolic pointers have no tag *)
+        None
+
   let has_provenance ptr = not (is_at_null_loc ptr)
   let have_same_provenance p1 p2 = sem_eq (loc p1) (loc p2)
 

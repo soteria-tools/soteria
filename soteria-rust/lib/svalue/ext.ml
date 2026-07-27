@@ -31,6 +31,7 @@ let pp pp ft v =
         (Fmt.list ~sep:(Fmt.any ", ") (pp_block pp pp pp))
         vs
   | PolyVal tid -> Fmt.pf ft "PolyVal(%a)" Charon.Types.pp_type_var_id tid
+  | Unop (ThinPtrPart part, v) -> Fmt.pf ft "%a.%a" pp v Unop.pp_ptr_part part
 
 let iter_vars_ptr iter_vars { ptr; size; align; tag = _ } =
   iter_vars ptr;
@@ -55,6 +56,7 @@ let iter_vars iter_vars = function
           iter_vars size)
         vs
   | PolyVal _ -> ()
+  | Unop (_, v) -> iter_vars v
 
 (* Allocation-free structural hash *)
 let[@inline] combine h x = (h * 65599) + x
@@ -99,6 +101,7 @@ let hash = function
             size.tag)
         6 vs
   | PolyVal x -> combine 7 (Types.TypeVarId.to_int x)
+  | Unop (op, v) -> combine (combine (Unop.hash op) 9) v.tag
 
 let mk build ty v =
   match v with
@@ -112,6 +115,7 @@ let mk build ty v =
   | Enum (v_id, vs) -> mk_enum ~build (t_as_enum ty) v_id vs
   | Union blocks -> mk_union ~build (t_as_union ty) blocks
   | PolyVal ty_id -> mk_poly ~build ty_id
+  | Unop (op, v) -> apply_unop ~build op v
 
 let eval eval v =
   match v with
@@ -154,6 +158,9 @@ let eval eval v =
       in
       if changed then Union vs' else v
   | PolyVal _ -> v
+  | Unop (op, x) ->
+      let x' = eval x in
+      if x == x' then v else Unop (op, x')
 
 let rec apply_list apply ~missing_var s vs =
   match vs with
@@ -220,6 +227,9 @@ let apply_subst apply ~missing_var s = function
       let vs, s = apply_list (apply_block apply) ~missing_var s vs in
       (Union vs, s)
   | PolyVal _ as v -> (v, s)
+  | Unop (op, v) ->
+      let v, s = apply ~missing_var s v in
+      (Unop (op, v), s)
 
 let encode_ty = Encoding.encode_ty
 let encode_value = Encoding.encode_value
