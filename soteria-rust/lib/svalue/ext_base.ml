@@ -7,7 +7,11 @@ module Sv = Soteria.Bv_values.Svalue
 module Unop = struct
   type ptr_part = PtrInner | PtrSize | PtrAlign
 
-  and t = ThinPtrPart of ptr_part | FullPtrInner | Field of int
+  and t =
+    | ThinPtrPart of ptr_part
+    | FullPtrInner
+    | Field of int
+    | VariantField of (Types.variant_id[@hash Types.VariantId.to_int]) * int
   [@@deriving eq, ord, hash]
 
   let pp_ptr_part ft = function
@@ -230,6 +234,31 @@ let set_field ~build idx x (v : 'ghost sv) =
 let mk_enum ~build:(( <| ) : _ build) adt var_id vs =
   Extension (Enum (var_id, vs)) <| TExtension (TEnum adt)
 
+let field_of_variant ~build:(( <| ) : _ build) var idx (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (Enum (v, vs)) ->
+      assert (Types.equal_variant_id v var);
+      List.nth vs idx
+  | _ ->
+      let adt = t_as_enum v.node.ty in
+      let variant = Types.VariantId.nth (Crate.as_enum adt) var in
+      let field : Types.field = List.nth variant.fields idx in
+      Extension (Unop (VariantField (var, idx), v)) <| ty_of_rust field.field_ty
+
+let as_enum_of_variant ~build var (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (Enum (v, vs)) ->
+      assert (Types.equal_variant_id v var);
+      vs
+  | _ ->
+      let adt = t_as_enum v.node.ty in
+      let variant = Types.VariantId.nth (Crate.as_enum adt) var in
+      List.mapi (fun i _ -> field_of_variant ~build var i v) variant.fields
+
+let set_field_of_variant ~build var idx x (v : 'ghost sv) =
+  let vs = List.set_nth idx x (as_enum_of_variant ~build var v) in
+  mk_enum ~build (t_as_enum v.node.ty) var vs
+
 (** {3 Arrays} *)
 
 let mk_array_of_svty ~build:(( <| ) : _ build) elem_ty vs =
@@ -257,3 +286,4 @@ let apply_unop ~build : Unop.t -> _ sv -> _ sv = function
   | ThinPtrPart part -> thin_ptr_part ~build part
   | FullPtrInner -> full_ptr_inner ~build
   | Field i -> field_of ~build i
+  | VariantField (var_id, i) -> field_of_variant ~build var_id i
