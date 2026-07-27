@@ -44,10 +44,16 @@ and 'ghost ext_ty =
       (** arrays (all elements share the same type) *)
   | TThinPtr
   | TFullPtr
+  | TPtrMeta
+      (** the type of a pointer's metadata (unit, length or metadata). this is
+          not exposed to the user! *)
   | TPolyType
 
+and 'g ptr_meta = MetaLen of 'g sv | MetaVTable of 'g sv | MetaUnit
+
 and 'ghost ext_t =
-  | Ptr of 'ghost sv * 'ghost sv option  (** pointer, with optional meta *)
+  | Ptr of 'ghost sv * 'ghost sv  (** pointer, with meta *)
+  | PtrMeta of 'ghost ptr_meta
   | ThinPtr of 'ghost ptr
       (** thin pointer, without metadata but with extra info on the pointer *)
   | Enum of Types.variant_id * 'ghost sv list  (** variant id * values *)
@@ -77,6 +83,7 @@ let rec pp_ext_ty ft : 'ghost ext_ty -> unit = function
   | TArray (ty, n) -> Fmt.pf ft "[%a; %a]" pp_svty ty Z.pp n
   | TThinPtr -> Fmt.string ft "TThinPtr"
   | TFullPtr -> Fmt.string ft "TFullPtr"
+  | TPtrMeta -> Fmt.string ft "TPtrMeta"
   | TPolyType -> Fmt.string ft "TPolyType"
 
 and pp_svty ft (ty : 'ghost svty) = Sv.pp_ty pp_ext_ty ft ty
@@ -96,8 +103,10 @@ module Rust_ext :
 
   let pp pp ft v =
     match v with
-    | Ptr (ptr, None) -> Fmt.pf ft "Ptr(%a)" pp ptr
-    | Ptr (ptr, Some meta) -> Fmt.pf ft "Ptr(%a, %a)" pp ptr pp meta
+    | Ptr (ptr, meta) -> Fmt.pf ft "Ptr(%a, %a)" pp ptr pp meta
+    | PtrMeta MetaUnit -> Fmt.pf ft "()"
+    | PtrMeta (MetaLen len) -> Fmt.pf ft "len(%a)" pp len
+    | PtrMeta (MetaVTable vtable) -> Fmt.pf ft "vtable(%a)" pp vtable
     | ThinPtr ptr ->
         Fmt.pf ft "%a[%a]" pp ptr.ptr
           Fmt.(option ~none:(any "*") Ptr_tag.pp)
@@ -130,10 +139,11 @@ module Rust_ext :
 
   (* TODO: derivable *)
   let iter_vars iter_vars = function
-    | Ptr (ptr, None) -> iter_vars ptr
-    | Ptr (ptr, Some meta) ->
+    | Ptr (ptr, meta) ->
         iter_vars ptr;
         iter_vars meta
+    | PtrMeta MetaUnit -> ()
+    | PtrMeta (MetaLen len | MetaVTable len) -> iter_vars len
     | ThinPtr ptr -> iter_vars_ptr iter_vars ptr
     | Enum (_, vals) | Tuple vals -> List.iter iter_vars vals
     | Array vals -> Iarray.iter iter_vars vals
@@ -152,11 +162,14 @@ module Rust_ext :
     | TFullPtr -> 4
     | TPolyType -> 5
     | TArray (ty, n) -> combine (combine 6 (Sv.hash_ty hash_ty ty)) (Z.hash n)
+    | TPtrMeta -> 7
 
   (* TODO: so derivable *)
   let hash = function
-    | Ptr (ptr, None) -> combine (combine ptr.tag 1) 0
-    | Ptr (ptr, Some meta) -> combine (combine ptr.tag 2) meta.tag
+    | Ptr (ptr, meta) -> combine (combine ptr.tag 1) meta.tag
+    | PtrMeta MetaUnit -> combine 2 0
+    | PtrMeta (MetaLen v) -> combine 2 (combine v.tag 1)
+    | PtrMeta (MetaVTable v) -> combine 2 (combine v.tag 2)
     | ThinPtr { ptr; tag; size; align } ->
         combine
           (combine (combine (combine ptr.tag 3) size.tag) align.tag)
@@ -234,13 +247,17 @@ module Rust_ext :
 
   (* TODO: derivable *)
   let apply_subst apply ~missing_var s = function
-    | Ptr (v, None) ->
+    | Ptr (v, m) ->
         let v, s = apply ~missing_var s v in
-        (Ptr (v, None), s)
-    | Ptr (v, Some meta) ->
+        let m, s = apply ~missing_var s m in
+        (Ptr (v, m), s)
+    | PtrMeta MetaUnit -> (PtrMeta MetaUnit, s)
+    | PtrMeta (MetaLen v) ->
         let v, s = apply ~missing_var s v in
-        let meta, s = apply ~missing_var s meta in
-        (Ptr (v, Some meta), s)
+        (PtrMeta (MetaLen v), s)
+    | PtrMeta (MetaVTable v) ->
+        let v, s = apply ~missing_var s v in
+        (PtrMeta (MetaVTable v), s)
     | ThinPtr ptr ->
         let ptr, s = apply_subst_ptr apply ~missing_var s ptr in
         (ThinPtr ptr, s)

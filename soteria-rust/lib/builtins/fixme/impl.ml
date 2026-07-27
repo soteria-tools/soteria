@@ -31,9 +31,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         Usize.(2s)
         vtable
     in
-    let align_ptr = Typed.Ptr.mk_ptr_f align_ptr None in
+    let align_ptr = Typed.Ptr.of_ptr_t align_ptr in
     let+ () = State.store align_ptr Charon_util.unit_ptr Usize.(1s) in
     Value_codec.mk_box
-      (Typed.Ptr.mk_ptr_f ptr (Some vtable))
+      (Typed.Ptr.mk_ptr_f ptr vtable)
       Typed.Adt.unit Typed.Adt.unit
 end

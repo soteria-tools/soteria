@@ -332,7 +332,7 @@ struct
           | TExtension TFullPtr -> Typed.Ptr.ptr_of meta
           | _ -> L.failwith "read invalid meta?"
         in
-        Typed.Ptr.mk_ptr_f ptr (Some meta)
+        Typed.Ptr.mk_ptr_f ptr meta
     | Array { is_ptr = false; _ }, _ ->
         let+ vs = iter (iter_fields ?ptr layout ty) offset in
         Typed.Adt.mk_array (index_ty ty) (Iarray.of_list vs)
@@ -404,12 +404,12 @@ let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         chain Iter.combine_iarray fields (iter_fields layout ty)
     | Array { is_ptr = true; _ } ->
         let fptr = Typed.cast_ptr_f value in
-        let ptr = Typed.Ptr.mk_ptr_f (Typed.Ptr.ptr_of fptr) None in
+        let ptr = Typed.Ptr.of_ptr_t (Typed.Ptr.ptr_of fptr) in
         let** pointee = Layout.normalise (get_pointee ty) in
         let meta =
           match Layout.dst_kind pointee with
           | LenKind -> Typed.Ptr.len_meta fptr
-          | VTableKind -> Typed.Ptr.mk_ptr_f (Typed.Ptr.vtable_meta fptr) None
+          | VTableKind -> Typed.Ptr.of_ptr_t (Typed.Ptr.vtable_meta fptr)
           | NoneKind -> L.failwith "encode: fat pointer with no metadata"
         in
         chain Iter.combine_list [ ptr; meta ] (iter_fields layout ty)
@@ -706,7 +706,7 @@ let rec nondet_raw :
       let** { size; align; _ } = Layout.layout_of pointee in
       let+ ptr = nondet (Typed.t_ptr ()) in
       let ptr = Typed.Ptr.of_raw ~ptr ~size ~align ~tag:None in
-      Ok (Typed.Ptr.mk_ptr_f ptr None)
+      Ok (Typed.Ptr.of_ptr_t ptr)
   | TAdt { id = TTuple; generics = { types; _ } } ->
       let++ fields = nondets_raw types in
       Typed.Adt.mk_tuple fields

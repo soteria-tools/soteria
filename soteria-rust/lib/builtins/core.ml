@@ -262,7 +262,7 @@ module M (StateM : State.StateM.S) = struct
         let@ () = with_alloc_kind ~kind:StaticString in
         let* ptr = State.alloc_ty str_ty in
         let ptr = Typed.Ptr.ptr_of ptr in
-        let ptr = Typed.Ptr.mk_ptr_f ptr (Some (BV.usizei len)) in
+        let ptr = Typed.Ptr.mk_ptr_f ptr (BV.usizei len) in
         let* () = State.store ptr str_ty char_arr in
         let+ () = State.store_str_global str ptr in
         ptr

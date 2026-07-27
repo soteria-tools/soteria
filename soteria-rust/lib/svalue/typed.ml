@@ -84,6 +84,7 @@ let float_precision :
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
 let t_ptr_f () : _ ty = TExtension TFullPtr
 let t_ptr_t () : _ ty = TExtension TThinPtr
+let t_ptr_meta () : _ ty = TExtension TPtrMeta
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
 let t_enum adt : _ ty = TExtension (TEnum adt)
@@ -347,24 +348,45 @@ module Ptr = struct
 
   (* {1 Full/wide pointers ([sptr_f])} *)
 
-  let mk_ptr_f ptr meta = Extension (Ptr (ptr, meta)) <| t_ptr_f ()
+  let mk_ptr_f ptr meta =
+    let meta =
+      match get_ty meta with
+      | TBitVector _ -> Extension (PtrMeta (MetaLen meta)) <| t_ptr_meta ()
+      | TExtension TThinPtr ->
+          Extension (PtrMeta (MetaVTable meta)) <| t_ptr_meta ()
+      | ty -> L.failwith "invalid meta ty: %a" ppa_ty ty
+    in
+    Extension (Ptr (ptr, meta)) <| t_ptr_f ()
+
+  let of_ptr_t ptr =
+    let unit_meta = Extension (PtrMeta MetaUnit) <| t_ptr_meta () in
+    Extension (Ptr (ptr, unit_meta)) <| t_ptr_f ()
+
+  let mk_ptr_f_opt ptr meta =
+    match meta with None -> of_ptr_t ptr | Some meta -> mk_ptr_f ptr meta
 
   (** The null full (wide) pointer: a {!null} thin pointer with no metadata. *)
-  let null_f () = mk_ptr_f (null ()) None
+  let null_f () = of_ptr_t (null ())
 
   (** Like {!of_address}, but produces a full pointer with no metadata. *)
-  let of_address_f addr = mk_ptr_f (of_address addr) None
+  let of_address_f addr = of_ptr_t (of_address addr)
 
   let len_meta ptr =
     match kind ptr with
-    | Extension (Ptr (_, Some meta)) -> cast_i Usize meta
-    | Extension (Ptr (_, None)) -> L.failwith "len_meta for thin ptr"
+    | Extension
+        (Ptr (_, { node = { kind = Extension (PtrMeta (MetaLen len)); _ }; _ }))
+      ->
+        len
+    | Extension (Ptr (_, _)) -> L.failwith "len_meta mismatch"
     | _ -> todo_migration "PtrFull get meta"
 
   let vtable_meta ptr =
     match kind ptr with
-    | Extension (Ptr (_, Some meta)) -> cast_ptr_t meta
-    | Extension (Ptr (_, None)) -> L.failwith "vtable_meta for thin ptr"
+    | Extension
+        (Ptr (_, { node = { kind = Extension (PtrMeta (MetaVTable vt)); _ }; _ }))
+      ->
+        vt
+    | Extension (Ptr (_, _)) -> L.failwith "vtable_meta mismatch"
     | _ -> todo_migration "PtrFull get meta"
 
   let ptr_of ptr =
@@ -374,7 +396,7 @@ module Ptr = struct
 
   let with_ptr fptr tptr =
     match kind fptr with
-    | Extension (Ptr (_, meta)) -> mk_ptr_f tptr meta
+    | Extension (Ptr (_, meta)) -> Extension (Ptr (tptr, meta)) <| fptr.node.ty
     | _ -> todo_migration "PtrFull set ptr"
 end
 

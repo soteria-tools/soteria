@@ -527,8 +527,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       else
         let* l = Sptr.offset inc l in
         let* r = Sptr.offset inc r in
-        let* bl = State.load (Typed.Ptr.mk_ptr_f l None) u8_ty in
-        let* br = State.load (Typed.Ptr.mk_ptr_f r None) u8_ty in
+        let* bl = State.load (Typed.Ptr.of_ptr_t l) u8_ty in
+        let* br = State.load (Typed.Ptr.of_ptr_t r) u8_ty in
         (* compare_bytes reads all bytes and mustn't short-circuit, so we must
            keep reading; here we only modify the result if we haven't reached a
            conclusion yet *)
@@ -1011,9 +1011,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       Sptr.offset ~check_signed:true ~ty:(TLiteral (TUInt Usize))
         (BV.usizei slot) ptr
     in
-    let+ align =
-      State.load (Typed.Ptr.mk_ptr_f ptr None) (TLiteral (TUInt Usize))
-    in
+    let+ align = State.load (Typed.Ptr.of_ptr_t ptr) (TLiteral (TUInt Usize)) in
     Typed.cast_i Usize align
 
   let vtable_align ~ptr = read_vtable ~slot:2 ~ptr
@@ -1057,7 +1055,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         ~f:(fun i ->
           let off = BV.usizei i in
           let* ptr = Sptr.offset ~check_signed:true off ptr in
-          State.store (Typed.Ptr.mk_ptr_f ptr None) u8_ty val_)
+          State.store (Typed.Ptr.of_ptr_t ptr) u8_ty val_)
 
   let volatile_load ~t ~src = State.load src t
   let volatile_set_memory = write_bytes

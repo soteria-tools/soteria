@@ -375,7 +375,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       let** field_size = Layout.size_of usize in
       let ofs = match field with `Size -> Usize.(1s) | `Align -> Usize.(2s) in
       let** ptr' = Sptr.raw_offset ptr (ofs *!!@ field_size) in
-      let ptr' = Typed.Ptr.mk_ptr_f ptr' None in
+      let ptr' = Typed.Ptr.of_ptr_t ptr' in
       let+ res, _ = load ~ignore_borrow:true ~check_refs:false ptr' usize st in
       Compo_res.map Typed.cast res
     in
@@ -776,7 +776,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     if%sat size ==@ Usize.(0s) then
       (* UX: we under-approximate and assume the address is align, though it can
          in fact be any well-aligned address. *)
-      Result.ok @@ Typed.Ptr.mk_ptr_f (Typed.Ptr.of_address align) None
+      Result.ok @@ Typed.Ptr.of_ptr_t (Typed.Ptr.of_address align)
     else
       let size = Typed.BV.cast_nonzero size in
       with_heap
@@ -789,7 +789,7 @@ module Make (Borrows : Tree_borrows.T) = struct
          let ptr = Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag ~align ~size in
          (* The pointer is necessarily not null *)
          let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-         ok (Typed.Ptr.mk_ptr_f ptr None))
+         ok (Typed.Ptr.of_ptr_t ptr))
 
   let alloc_untyped ?span ~zeroed ~size ~align = alloc ?span ~zeroed size align
 
@@ -918,7 +918,7 @@ module Make (Borrows : Tree_borrows.T) = struct
                    let ptr =
                      Typed.Ptr.mk_ptr_t ~loc ~ofs ~align ~size ~tag:None
                    in
-                   Result.ok (Typed.Ptr.mk_ptr_f ptr None)))
+                   Result.ok (Typed.Ptr.of_ptr_t ptr)))
 
   let leak_check () : (unit, Error.with_trace, syn list) Result.t =
     [%l.debug "Executing Leak_check"];
@@ -976,8 +976,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             ~tag:None ~align
             ~size:Usize.(0s)
         in
-        let ptr = Typed.Ptr.mk_ptr_f ptr None in
-        Result.ok ptr
+        Result.ok (Typed.Ptr.of_ptr_t ptr)
     | None ->
         let span =
           match fn_def with
@@ -994,7 +993,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         let ptr = Typed.Ptr.ptr_of ptr in
         let ptr = Typed.Ptr.with_tag ptr None in
         let loc = Typed.Ptr.loc ptr in
-        let ptr = Typed.Ptr.mk_ptr_f ptr None in
+        let ptr = Typed.Ptr.of_ptr_t ptr in
         with_functions_sym (fun fns ->
             Rustsymex.Result.ok (ptr, FunBiMap.add loc fn_def fns))
 
