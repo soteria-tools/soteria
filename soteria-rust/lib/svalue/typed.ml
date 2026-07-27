@@ -66,13 +66,7 @@ let () =
 let cast_error v ty = raise (CastError (v, ty, v.node.ty))
 let todo_migration msg = raise (TypedMigration msg)
 let ( <| ) = Self.Svalue.( <| )
-
-let float_precision :
-    Values.float_type -> Soteria.Bv_values.Svalue.FloatPrecision.t = function
-  | F16 -> F16
-  | F32 -> F32
-  | F64 -> F64
-  | F128 -> F128
+let float_precision = Ext0.float_precision
 
 (* The raw pointer type; only used to materialise a fully-symbolic nondet
    pointer in [Value_codec] (see {!Ptr.of_raw}). *)
@@ -83,10 +77,6 @@ let t_ptr_meta () : _ ty = TExtension TPtrMeta
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
 let t_enum adt : _ ty = TExtension (TEnum adt)
-
-let t_as_enum : _ ty -> Types.type_decl_ref = function
-  | TExtension (TEnum adt) -> adt
-  | ty -> L.failwith "t_as_enum: expected enum type, got %a" ppa_ty ty
 
 let t_lit : Types.literal_type -> [> T.sint ] ty = function
   | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
@@ -108,29 +98,6 @@ let t_union adt : [> T.union ] ty =
   TExtension (TUnion adt)
 
 let t_poly () : [> T.poly ] ty = TExtension TPolyType
-
-let rec ty_of_rust : Types.ty -> _ ty = function
-  | TLiteral (TFloat ft) -> t_float ft
-  | TLiteral lit -> t_lit lit
-  | TRef _ | TRawPtr _ | TFnPtr _ -> t_ptr_f ()
-  | TNever | TFnDef _ -> t_unit
-  | TVar _ -> t_poly ()
-  | TPattern (ty, _) -> ty_of_rust ty
-  | TArray (ty, n) -> t_array (ty_of_rust ty) (z_of_constant_expr n)
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      t_tuple (List.map ty_of_rust types)
-  | TAdt ({ id = TAdtId _; _ } as adt) -> (
-      match (Crate.get_adt adt).kind with
-      | Struct fs ->
-          t_tuple (List.map (fun (f : Types.field) -> ty_of_rust f.field_ty) fs)
-      | Enum _ -> t_enum adt
-      | Union _ -> t_union adt
-      | kind ->
-          L.failwith "ty_of_rust unexpected adt kind %a" Types.pp_type_decl_kind
-            kind)
-  | ( TError _ | TPtrMetadata _ | TTraitType _ | TDynTrait _ | TSlice _
-    | TAdt { id = TBuiltin _; _ } ) as ty ->
-      L.failwith "ty_of_rust unexpected type %a" Common.Charon_util.pp_ty ty
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -278,7 +245,7 @@ module Ptr = struct
 
   let _set_ptr ptr f =
     match kind ptr with
-    | Extension (ThinPtr inner) -> Extension (ThinPtr (f inner)) <| ptr.node.ty
+    | Extension (ThinPtr inner) -> Ext0.mk_thin_ptr ~build:( <| ) (f inner)
     | _ ->
         (* NOTE: i actually don't think we want a setter unop, we just want to
            rebuild the ptr from scratch *)
@@ -287,7 +254,7 @@ module Ptr = struct
   let _inner ptr = (_get_ptr ptr).ptr
 
   let of_raw ~ptr ~size ~align ~tag =
-    Extension (ThinPtr { ptr; size; align; tag }) <| t_ptr_t ()
+    Ext0.mk_thin_ptr ~build:( <| ) { ptr; size; align; tag }
 
   let mk_ptr_t ~loc ~ofs ~size ~align ~tag =
     of_raw ~ptr:(Self.Ptr.mk loc ofs) ~size ~align ~tag
@@ -346,15 +313,14 @@ module Ptr = struct
   let mk_ptr_f ptr meta =
     let meta =
       match get_ty meta with
-      | TBitVector _ -> Extension (PtrMeta (MetaLen meta)) <| t_ptr_meta ()
-      | TExtension TThinPtr ->
-          Extension (PtrMeta (MetaVTable meta)) <| t_ptr_meta ()
+      | TBitVector _ -> Ext0.mk_len_meta ~build:( <| ) meta
+      | TExtension TThinPtr -> Ext0.mk_vtable_meta ~build:( <| ) meta
       | ty -> L.failwith "invalid meta ty: %a" ppa_ty ty
     in
-    Extension (Ptr (ptr, meta)) <| t_ptr_f ()
+    Ext0.mk_full_ptr ~build:( <| ) ptr meta
 
   let of_ptr_t ptr =
-    let unit_meta = Extension (PtrMeta MetaUnit) <| t_ptr_meta () in
+    let unit_meta = Ext0.mk_unit_meta ~build:( <| ) () in
     Extension (Ptr (ptr, unit_meta)) <| t_ptr_f ()
 
   let mk_ptr_f_opt ptr meta =
@@ -396,17 +362,12 @@ module Ptr = struct
 end
 
 module Adt = struct
-  let unit = Extension (Tuple []) <| t_tuple []
-  let mk_tuple vs = Extension (Tuple vs) <| t_tuple (List.map get_ty vs)
-
-  let mk_array elem_ty arr =
-    let len = Iarray.length arr in
-    let elem_ty = if len = 0 then ty_of_rust elem_ty else get_ty arr.%(0) in
-    Extension (Array arr) <| t_array elem_ty (Z.of_int len)
-
-  let mk_enum adt v_id vs = Extension (Enum (v_id, vs)) <| t_enum adt
-  let mk_union adt blocks = Extension (Union blocks) <| t_union adt
-  let mk_poly ty_id = Extension (PolyVal ty_id) <| t_poly ()
+  let mk_tuple vs = Ext0.mk_tuple ~build:( <| ) vs
+  let mk_array elem_ty arr = Ext0.mk_array ~build:( <| ) elem_ty arr
+  let mk_enum adt v_id vs = Ext0.mk_enum ~build:( <| ) adt v_id vs
+  let mk_union adt blocks = Ext0.mk_union ~build:( <| ) adt blocks
+  let mk_poly ty_id = Ext0.mk_poly ~build:( <| ) ty_id
+  let unit = mk_tuple []
 
   (* HACK: i have no idea what this really means or how to lift this for
      variables... *)
