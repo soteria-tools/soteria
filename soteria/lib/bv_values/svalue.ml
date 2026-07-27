@@ -284,16 +284,24 @@ module type Value_ext = sig
   val hash : 'g t -> int
   val hash_ty : 'g ty -> int
 
-  (** [mk ty x] is the svalue node-kind representing extension value [x] at type
-      [ty] — typically [Extension x], but the extension may normalise to another
-      kind. {{!Soteria.Bv_values.Svalue.Make}[Make]} hash-conses the result.
-      Called when an svalue carrying an extension is rebuilt (e.g. after its
-      children are evaluated). *)
-  val mk : 'g super_ty -> 'g t -> ('g, 'g t, 'g ty) t_kind
+  (** [mk build ty x] is the value representing extension value [x] at type [ty]
+      — typically [build (Extension x) ty], but the extension may normalise to a
+      different svalue for simplifications.
+
+      [build] hash-conses a node kind at a type in the embedding
+      {{!Soteria.Bv_values.Svalue.Make}[Make]} application. It is provided as a
+      helper. *)
+  val mk :
+    (('g, 'g t, 'g ty) t_kind -> 'g super_ty -> 'g super_t) ->
+    'g super_ty ->
+    'g t ->
+    'g super_t
 
   (** [eval eval_super x] returns [x] with every enclosing svalue nested in it
-      replaced by [eval_super] applied to it — the extension's contribution to
-      the {{!Soteria.Bv_values.Eval}[Eval]} pass. *)
+      replaced by [eval_super] applied to it. This should {b not} attempt to
+      re-apply smart constructors: if the returned value is not physically equal
+      to the input, {!mk} will be applied to it, at which point smart
+      constructors are used. *)
   val eval : ('g super_t -> 'g super_t) -> 'g t -> 'g t
 
   val apply_subst :
@@ -306,8 +314,24 @@ module type Value_ext = sig
     'g t ->
     'g t * 'subst
 
+  (** [encode_ty encode_ty ty] is the SMT-LIB sort representing [ty];
+      [encode_ty] encodes the types nested inside it. The encoder may use
+      {{!Soteria.Solvers.Decls.declare}[Solvers.Decls.declare]} to introduce
+      auxiliary declarations (e.g. algebraic datatypes) its encoding relies on.
+  *)
   val encode_ty : ('g super_ty -> Smt.sexp) -> 'g ty -> Smt.sexp
-  val encode_value : ('g super_t -> Smt.sexp) -> 'g t -> Smt.sexp
+
+  (** [encode_value encode_ty encode ~ty x] is the SMT-LIB term representing
+      extension value [x], where [ty] is the type of the svalue whose kind is
+      [Extension x]; [encode_ty] (resp. [encode]) encodes nested types (resp.
+      values). Like {!encode_ty}, may call
+      {{!Soteria.Solvers.Decls.declare}[Solvers.Decls.declare]}. *)
+  val encode_value :
+    ('g super_ty -> Smt.sexp) ->
+    ('g super_t -> Smt.sexp) ->
+    ty:'g super_ty ->
+    'g t ->
+    Smt.sexp
 end
 
 (** The empty extension: [t] and [ty] are uninhabited, so an svalue built with
@@ -324,11 +348,11 @@ module Dummy_ext : Value_ext = struct
   let hash_ty (x : _ ty) = match x with _ -> .
   let pp _ _ (x : _ t) = match x with _ -> .
   let pp_ty _ (x : _ ty) = match x with _ -> .
-  let mk _ (x : _ t) = match x with _ -> .
+  let mk _ _ (x : _ t) = match x with _ -> .
   let eval _ (x : _ t) = match x with _ -> .
   let apply_subst _ ~missing_var:_ _ (x : _ t) = match x with _ -> .
   let encode_ty _ (x : _ ty) = match x with _ -> .
-  let encode_value _ (x : _ t) = match x with _ -> .
+  let encode_value _ _ ~ty:_ (x : _ t) = match x with _ -> .
 end
 
 (** Builds the untyped svalue layer for extension [V]: the value/type
