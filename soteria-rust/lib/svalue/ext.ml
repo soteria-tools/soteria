@@ -100,11 +100,60 @@ let hash = function
         6 vs
   | PolyVal x -> combine 7 (Types.TypeVarId.to_int x)
 
-(* TODO: re-apply the smart constructors here *)
-let mk ( <| ) ty v = Sv.Extension v <| ty
+let mk build ty v =
+  match v with
+  | ThinPtr ptr -> mk_thin_ptr ~build ptr
+  | Ptr (ptr, meta) -> mk_full_ptr ~build ptr meta
+  | PtrMeta MetaUnit -> mk_unit_meta ~build ()
+  | PtrMeta (MetaLen v) -> mk_len_meta ~build v
+  | PtrMeta (MetaVTable v) -> mk_vtable_meta ~build v
+  | Tuple vs -> mk_tuple ~build vs
+  | Array vs -> mk_array_of_svty ~build (fst (t_as_array ty)) vs
+  | Enum (v_id, vs) -> mk_enum ~build (t_as_enum ty) v_id vs
+  | Union blocks -> mk_union ~build (t_as_union ty) blocks
+  | PolyVal ty_id -> mk_poly ~build ty_id
 
-(* TODO: re-apply the smart constructors here *)
-let eval _eval x = x
+let eval eval v =
+  match v with
+  | Ptr (p, m) ->
+      let p' = eval p in
+      let m' = eval m in
+      if p == p' && m == m' then v else Ptr (p', m')
+  | PtrMeta MetaUnit -> v
+  | PtrMeta (MetaLen l) ->
+      let l' = eval l in
+      if l == l' then v else PtrMeta (MetaLen l')
+  | PtrMeta (MetaVTable vt) ->
+      let vt' = eval vt in
+      if vt == vt' then v else PtrMeta (MetaVTable vt')
+  | ThinPtr { ptr; size; align; tag } ->
+      let ptr' = eval ptr in
+      let size' = eval size in
+      let align' = eval align in
+      if ptr == ptr' && size == size' && align == align' then v
+      else ThinPtr { ptr = ptr'; size = size'; align = align'; tag }
+  | Enum (var_id, vs) ->
+      let vs', changed = List.map_changed eval vs in
+      if not changed then v else Enum (var_id, vs')
+  | Tuple vs ->
+      let vs', changed = List.map_changed eval vs in
+      if changed then Tuple vs' else v
+  | Array vs ->
+      let vs', changed = Iarray.map_changed eval vs in
+      if changed then Array vs' else v
+  | Union vs ->
+      let vs', changed =
+        List.map_changed
+          (fun ({ value; offset; size; _ } as blk) ->
+            let value' = eval value in
+            let offset' = eval offset in
+            let size' = eval size in
+            if value == value' && offset == offset' && size == size' then blk
+            else { blk with value = value'; offset = offset'; size = size' })
+          vs
+      in
+      if changed then Union vs' else v
+  | PolyVal _ -> v
 
 let rec apply_list apply ~missing_var s vs =
   match vs with
@@ -136,6 +185,12 @@ let apply_subst_ptr apply ~missing_var s { ptr; size; align; tag } =
   let align, s = apply ~missing_var s align in
   ({ ptr; size; align; tag }, s)
 
+let apply_block apply ~missing_var s { value; ty; offset; size } =
+  let value, s = apply ~missing_var s value in
+  let offset, s = apply ~missing_var s offset in
+  let size, s = apply ~missing_var s size in
+  ({ value; ty; offset; size }, s)
+
 (* TODO: derivable *)
 let apply_subst apply ~missing_var s = function
   | Ptr (v, m) ->
@@ -162,13 +217,7 @@ let apply_subst apply ~missing_var s = function
       let vs, s = apply_iarray apply ~missing_var s vs in
       (Array vs, s)
   | Union vs ->
-      let apply ~missing_var s { value; ty; offset; size } =
-        let value, s = apply ~missing_var s value in
-        let offset, s = apply ~missing_var s offset in
-        let size, s = apply ~missing_var s size in
-        ({ value; ty; offset; size }, s)
-      in
-      let vs, s = apply_list apply ~missing_var s vs in
+      let vs, s = apply_list (apply_block apply) ~missing_var s vs in
       (Union vs, s)
   | PolyVal _ as v -> (v, s)
 
