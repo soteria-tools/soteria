@@ -145,6 +145,12 @@ let encode_unop sort_of_ty ~ty : Unop.t -> sexp -> sexp = function
       gen_decl (Enum_sort.sort sort_of_ty adt);
       let variant = Types.VariantId.nth (Crate.as_enum adt) var in
       Enum_sort.get_field adt variant i
+  | IsVariant var ->
+      let adt = t_as_enum ty in
+      let variants = Crate.as_enum adt in
+      let variant = Types.VariantId.nth variants var in
+      gen_decl (Enum_sort.sort sort_of_ty adt);
+      Enum_sort.is_variant adt variant
   | ArrayField i -> fun v -> seq_nth v (int_k i)
 
 let encode_value sort_of_ty encode ~ty = function
