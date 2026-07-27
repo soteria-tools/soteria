@@ -2,7 +2,7 @@ open Iarray.Infix
 open Charon
 open Common.Charon_util
 open Soteria.Bv_values.Svalue
-open Ext.Rust_ext
+open Ext
 
 (* keep a handle on the unit [Ext], as [include Self] below shadows it with
    [Ext.Rust_ext] *)
@@ -21,7 +21,7 @@ type ('sc, 'ag, 'ofs, 'sz) block_raw = ('sc, 'ag, 'ofs, 'sz) Ext.block = {
 (* [Make_transparent] exposes [t]/[ty] as the underlying untyped svalue, so the
    extension helpers below can be written without ghost-typing ceremony. The
    [typed.mli] re-seals [t]/[ty] as abstract for the rest of Soteria Rust. *)
-module Self = Soteria.Bv_values.Typed.Make_transparent (Ext.Rust_ext) ()
+module Self = Soteria.Bv_values.Typed.Make_transparent (Ext) ()
 include Self
 
 module T = struct
