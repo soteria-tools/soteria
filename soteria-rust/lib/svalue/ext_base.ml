@@ -4,10 +4,20 @@ module Sv = Soteria.Bv_values.Svalue
 
 (** {2 Type definitions} *)
 
+module Unop = struct
+  type ptr_part = PtrInner | PtrSize | PtrAlign [@@deriving eq, ord, hash]
+
+  let pp_ptr_part ft = function
+    | PtrInner -> Fmt.string ft "ptr"
+    | PtrSize -> Fmt.string ft "size"
+    | PtrAlign -> Fmt.string ft "align"
+
+  let show_ptr_part = Fmt.to_to_string pp_ptr_part
+end
+
 (* the full values *)
 type 'g sv =
-  (('g, 'g ext_t, 'g ext_ty) Sv.t
-  [@equal fun a b -> Sv.equal a b] [@compare fun a b -> Sv.compare a b])
+  (('g, 'g ext_t, 'g ext_ty) Sv.t[@equal Sv.equal] [@compare Sv.compare])
 
 and 'g svty = 'g ext_ty Sv.ty
 
