@@ -59,7 +59,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
       let+ ptr = Alloc.alloc ~zeroed [ size; align ] in
-      let ptr, _ = Typed.Ptr.split (Typed.cast_ptr_f ptr) in
+      let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f ptr) in
       mk_res ptr size
 
   let handle_alloc_error ~layout:_ = do_panic ()

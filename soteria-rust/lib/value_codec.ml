@@ -91,22 +91,6 @@ let mk_box (ptr : Typed.([< T.sptr_f ] t)) allocator marker =
   let box = Typed.Adt.mk_tuple [ unique; allocator ] in
   box
 
-(** Given a pointer's (optional) metadata, unwraps it into a type that's easier
-    to match against. *)
-let discriminate_meta (meta : Typed.([< T.ptr_meta ] t) option) =
-  match meta with
-  | None -> `Thin
-  | Some meta -> (
-      match%ty meta with
-      | TBitVector _ -> `Len meta
-      | TExtension TThinPtr -> `VTable meta
-      | _ -> L.failwith "unexpected metadata type")
-
-let pp_meta ft = function
-  | `Thin -> Fmt.string ft "thin"
-  | `Len meta -> Fmt.pf ft "len(%a)" Typed.ppa meta
-  | `VTable meta -> Fmt.pf ft "vtable(%a)" Typed.ppa meta
-
 module Decoder (State_tys : sig
   module SM :
     Soteria.Sym_states.State_monad.S
@@ -420,14 +404,14 @@ let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         let fields = Typed.Adt.as_array (Typed.cast_array value) in
         chain Iter.combine_iarray fields (iter_fields layout ty)
     | Array { is_ptr = true; _ } ->
-        let ptr, meta = Typed.Ptr.split (Typed.cast_ptr_f value) in
-        let ptr = Typed.Ptr.mk_ptr_f ptr None in
-        let meta = Option.get meta in
+        let fptr = Typed.cast_ptr_f value in
+        let ptr = Typed.Ptr.mk_ptr_f (Typed.Ptr.ptr_of fptr) None in
+        let** pointee = Layout.normalise (get_pointee ty) in
         let meta =
-          match%ty meta with
-          | TBitVector _ -> (meta :> Typed.(T.any t))
-          | TExtension TThinPtr -> Typed.Ptr.mk_ptr_f meta None
-          | _ -> L.failwith "invalid meta"
+          match Layout.dst_kind pointee with
+          | LenKind -> Typed.Ptr.len_meta fptr
+          | VTableKind -> Typed.Ptr.mk_ptr_f (Typed.Ptr.vtable_meta fptr) None
+          | NoneKind -> L.failwith "encode: fat pointer with no metadata"
         in
         chain Iter.combine_list [ ptr; meta ] (iter_fields layout ty)
     | Enum (_, layouts) -> (
@@ -481,31 +465,24 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
   let open Syntax in
   let open Result in
   (* undefined.validity.wide *)
-  let metadata_validity ~is_raw_ptr pointee
-      (meta : Typed.T.ptr_meta Typed.t option) =
-    let meta = discriminate_meta meta in
-    match (meta, Layout.dst_kind pointee) with
-    | `Thin, NoneKind -> ok ()
-    | `Len len, LenKind ->
+  let metadata_validity ~is_raw_ptr pointee (fptr : Typed.([< T.sptr_f ] t)) =
+    match Layout.dst_kind pointee with
+    | NoneKind -> ok ()
+    | LenKind ->
+        let len = Typed.Ptr.len_meta fptr in
         if is_raw_ptr then ok ()
         else f Usize.(0s <=$@ len) (`UBTransmute "Negative slice length")
-    | `VTable vt, VTableKind ->
+    | VTableKind ->
         (* TODO: the vtable must always match the trait type of the pointee.
            Will require a new input to this function (?) *)
+        let vt = Typed.Ptr.vtable_meta fptr in
         f
           (Typed.not (Typed.Ptr.is_null vt))
           (`UBTransmute "Null vtable pointer")
-    | meta, dst_kind ->
-        let msg =
-          Fmt.str "Mismatch between metadata and DST kind; expected %a, got %a"
-            Layout.pp_meta_kind dst_kind pp_meta meta
-        in
-        f Typed.v_false (`UBTransmute msg)
   in
   (* undefined.validity.reference-box *)
   let ref_box_validity (fptr : Typed.([< T.sptr_f ] t)) pointee =
-    let meta = Typed.Ptr.meta_of fptr in
-    let** () = metadata_validity ~is_raw_ptr:false pointee meta in
+    let** () = metadata_validity ~is_raw_ptr:false pointee fptr in
     let** layout = Layout.layout_of pointee in
     if layout.uninhabited then f Typed.v_false (`RefToUninhabited pointee)
     else check_ref fptr pointee
@@ -564,8 +541,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       ref_box_validity ptr pointee
   (* undefined.validity.wide *)
   | TRawPtr (pointee, _) ->
-      let meta = Typed.Ptr.meta_of @@ Typed.cast_ptr_f v in
-      metadata_validity ~is_raw_ptr:true pointee meta
+      metadata_validity ~is_raw_ptr:true pointee (Typed.cast_ptr_f v)
   (* undefined.validity.enum *)
   | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_enum ~adt v in

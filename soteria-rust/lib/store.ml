@@ -86,20 +86,18 @@ module Place = struct
               L.failwith "tried loading metadata of non-pointer: %a" pp_ty
                 base.origin.ty
         in
-        match Typed.Ptr.meta_of ptr with
-        | None -> Typed.as_any Typed.Adt.unit
-        | Some meta -> (
-            match%ty meta with
-            | TBitVector _ -> Typed.as_any meta
-            | TExtension TThinPtr ->
-                let vt = Typed.Ptr.mk_ptr_f meta None in
-                if
-                  Option.is_some_and
-                    (Crate.adt_has_lang_item RustcLangItemDynMetadata)
-                    (ty_as_adt_opt origin.ty)
-                then Typed.as_any Typed.Adt.(mk_tuple [ mk_tuple [ vt ]; unit ])
-                else Typed.as_any vt
-            | _ -> L.failwith "invalid metadata type"))
+        let pointee = get_pointee base.origin.ty in
+        match Layout.dst_kind pointee with
+        | NoneKind -> Typed.as_any Typed.Adt.unit
+        | LenKind -> Typed.as_any (Typed.Ptr.len_meta ptr)
+        | VTableKind ->
+            let vt = Typed.Ptr.mk_ptr_f (Typed.Ptr.vtable_meta ptr) None in
+            if
+              Option.is_some_and
+                (Crate.adt_has_lang_item RustcLangItemDynMetadata)
+                (ty_as_adt_opt origin.ty)
+            then Typed.as_any Typed.Adt.(mk_tuple [ mk_tuple [ vt ]; unit ])
+            else Typed.as_any vt)
 
   let is_local = [%matches? { kind = Local _; _ }]
 

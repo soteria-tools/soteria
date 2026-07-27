@@ -31,12 +31,15 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let align_of ~t = Layout.align_of t
 
   let arith_offset ~t ~dst ~offset =
-    let dst, meta = Typed.Ptr.split dst in
+    let meta = Layout.ptr_meta dst t in
+    let dst = Typed.Ptr.ptr_of dst in
     let+ dst' = Sptr.offset ~ty:t offset dst in
     Typed.Ptr.mk_ptr_f dst' meta
 
   let offset ~ptr ~delta ~dst ~offset =
-    let dst, meta = Typed.Ptr.split @@ Typed.cast_ptr_f dst in
+    let dst = Typed.cast_ptr_f dst in
+    let meta = Layout.ptr_meta dst ptr in
+    let dst = Typed.Ptr.ptr_of dst in
     let offset = Typed.cast_i Usize offset in
     let check_signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
     let+ dst' = Sptr.offset ~check_signed ~ty:ptr offset dst in
@@ -122,8 +125,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     atomic_warn ();
     let* old = State.load dst t in
     match (t, u) with
-    | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
-        let old_ptr, meta = Typed.Ptr.split (Typed.cast_ptr_f old) in
+    | (TRawPtr (pointee, _) | TRef (_, pointee, _)), TLiteral (TUInt Usize) ->
+        let old_ptr = Typed.cast_ptr_f old in
+        let meta = Layout.ptr_meta old_ptr pointee in
+        let old_ptr = Typed.Ptr.ptr_of old_ptr in
         let* new_ptr = ptr_op (Typed.cast_i Usize src) old_ptr in
         let+ () = State.store dst t (Typed.Ptr.mk_ptr_f new_ptr meta) in
         old
@@ -829,10 +834,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let maxnumf32 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf64 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf128 ~x ~y = float_minmax ~is_min:false ~x ~y
-  let ptr_guaranteed_cmp ~t:_ ~ptr ~other = Core.eval_ptr_binop Eq ptr other
 
-  let ptr_mask ~t:_ ~ptr ~mask =
-    let ptr, meta = Typed.Ptr.split ptr in
+  let ptr_guaranteed_cmp ~t ~ptr ~other =
+    Core.eval_ptr_binop ~pointee:t Eq ptr other
+
+  let ptr_mask ~t ~ptr ~mask =
+    let meta = Layout.ptr_meta ptr t in
+    let ptr = Typed.Ptr.ptr_of ptr in
     let* addr = Sptr.decay ptr in
     let addr = addr &@ mask in
     ok (Typed.Ptr.mk_ptr_f (Typed.Ptr.of_address addr) meta)
@@ -966,12 +974,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let size_of ~t = Layout.size_of t
 
   let size_of_val ~t ~ptr =
-    let meta = Typed.Ptr.meta_of ptr in
+    let meta = Layout.ptr_meta ptr t in
     let+ size, _ = State.size_and_align_of_val t meta in
     size
 
   let align_of_val ~t ~ptr =
-    let meta = Typed.Ptr.meta_of ptr in
+    let meta = Layout.ptr_meta ptr t in
     let+ _, align = State.size_and_align_of_val t meta in
     align
 

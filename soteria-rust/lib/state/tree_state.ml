@@ -128,8 +128,9 @@ module Make (Borrows : Tree_borrows.T) = struct
         being reborrowed. *)
     let borrow ?(protect = false) (ptr_full : Typed.([< T.sptr_f ] t)) tag
         (ty : Types.ty) ofs =
-      let ptr, meta = Typed.Ptr.split ptr_full in
-      let pointee = get_pointee ty in
+      let**^ pointee = DecayMap.SM.lift @@ Layout.normalise (get_pointee ty) in
+      let ptr = Typed.Ptr.ptr_of ptr_full in
+      let meta = Layout.ptr_meta ptr_full pointee in
       (* FIXME: this logic is tree borrows related and should be handled there.
          https://github.com/soteria-tools/soteria/issues/301 *)
       let state : Tree_borrows.state =
@@ -385,7 +386,9 @@ module Make (Borrows : Tree_borrows.T) = struct
       metadata). *)
   and check_ptr_align (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     (* The expected alignment of a dyn pointer is stored inside the VTable *)
-    let ptr, meta = Typed.Ptr.split ptr in
+    let**^ ty = Layout.normalise ty in
+    let meta = Layout.ptr_meta ptr ty in
+    let ptr = Typed.Ptr.ptr_of ptr in
     let** size, exp_align = size_and_align_of_val ty meta in
     [%l.debug
       "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
@@ -426,7 +429,9 @@ module Make (Borrows : Tree_borrows.T) = struct
       check ptr' Typed.(cast_nonzero @@ BV.no_ovf_unsafe (BV.neg size))
 
   and check_non_dangling (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
-    let ptr, meta = Typed.Ptr.split ptr in
+    let**^ ty = Layout.normalise ty in
+    let meta = Layout.ptr_meta ptr ty in
+    let ptr = Typed.Ptr.ptr_of ptr in
     let**^ layout = Layout.layout_of ty in
     if layout.uninhabited then Result.error (`RefToUninhabited ty)
     else
@@ -455,7 +460,9 @@ module Make (Borrows : Tree_borrows.T) = struct
       (Typed.([> T.any ] t), Error.t, syn list) Result.t =
    fun ?ignore_borrow ?(check_refs = true) ptr ty ->
     let** size = check_ptr_align ptr ty in
-    let ptr, meta = Typed.Ptr.split ptr in
+    let**^ ty = Layout.normalise ty in
+    let meta = Layout.ptr_meta ptr ty in
+    let ptr = Typed.Ptr.ptr_of ptr in
     let parser ~offset = Tree_block.Decoder.decode ~meta ~offset ty in
     let** value =
       if%sat size ==@ Usize.(0s) then
@@ -493,21 +500,20 @@ module Make (Borrows : Tree_borrows.T) = struct
       a no-op. *)
   and fake_read ptr ty =
     let open Syntax in
+    let**^ ty = Layout.normalise ty in
     let lint_level = (Config.get ()).reference_to_invalid_memory in
     let skip_check =
-      match (Typed.Ptr.meta_of ptr, lint_level) with
+      match (Layout.dst_kind ty, lint_level) with
       | _, Allow -> true
       | _, Warn when Config.get_mode () = Compositional -> true
-      | None, _ -> false
-      | Some l, _ -> (
-          match%ty l with
-          | TBitVector _ ->
-              (* TODO: we don't support symbolic slices *)
-              Option.is_none (Typed.BitVec.to_z l)
-          | _ ->
-              (* FIXME: i am not certain how one checks for the validity of a
-                 &dyn *)
-              true)
+      | NoneKind, _ -> false
+      | LenKind, _ ->
+          (* TODO: we don't support symbolic slices *)
+          Option.is_none (Typed.BitVec.to_z (Typed.Ptr.len_meta ptr))
+      | VTableKind, _ ->
+          (* FIXME: i am not certain how one checks for the validity of a
+             &dyn *)
+          true
     in
     if skip_check then Result.ok ()
     else (
