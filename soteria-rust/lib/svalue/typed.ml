@@ -365,15 +365,12 @@ module Ptr = struct
     | Extension (Ptr (_, _)) -> L.failwith "vtable_meta mismatch"
     | _ -> todo_migration "PtrFull get meta"
 
-  let ptr_of ptr =
-    match kind ptr with
-    | Extension (Ptr (ptr, _)) -> ptr
-    | _ -> todo_migration "PtrFull get ptr"
-
   let with_ptr fptr tptr =
     match kind fptr with
     | Extension (Ptr (_, meta)) -> Extension (Ptr (tptr, meta)) <| fptr.node.ty
     | _ -> todo_migration "PtrFull set ptr"
+
+  let ptr_of ptr = Ext0.full_ptr_inner ~build:( <| ) ptr
 end
 
 module Adt = struct

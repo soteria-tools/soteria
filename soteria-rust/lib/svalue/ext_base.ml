@@ -6,7 +6,7 @@ module Sv = Soteria.Bv_values.Svalue
 
 module Unop = struct
   type ptr_part = PtrInner | PtrSize | PtrAlign
-  and t = ThinPtrPart of ptr_part [@@deriving eq, ord, hash]
+  and t = ThinPtrPart of ptr_part | FullPtrInner [@@deriving eq, ord, hash]
 
   let pp_ptr_part ft = function
     | PtrInner -> Fmt.string ft "ptr"
@@ -199,6 +199,11 @@ let mk_len_meta ~build:(( <| ) : _ build) len =
 let mk_vtable_meta ~build:(( <| ) : _ build) vtable =
   Extension (PtrMeta (MetaVTable vtable)) <| TExtension TPtrMeta
 
+let full_ptr_inner ~build:(( <| ) : _ build) (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (Ptr (p, _)) -> p
+  | _ -> Extension (Unop (FullPtrInner, v)) <| TExtension TThinPtr
+
 (** {3 Tuples} *)
 
 let mk_tuple ~build:(( <| ) : _ build) vs =
@@ -235,3 +240,4 @@ let mk_poly ~build:(( <| ) : _ build) ty_id =
 
 let apply_unop ~build : Unop.t -> _ sv -> _ sv = function
   | ThinPtrPart part -> thin_ptr_part ~build part
+  | FullPtrInner -> full_ptr_inner ~build
