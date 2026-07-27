@@ -378,14 +378,7 @@ module Adt = struct
 
   let mk_tuple vs = Ext0.mk_tuple ~build:( <| ) vs
   let unit = mk_tuple []
-
-  (* HACK: i don't like this; it forces all fields to be resolved, which is
-     often overkill. i think i want to get rid of this, and force clients to
-     instead go through [index_of] *)
-  let as_tuple v =
-    match kind v with
-    | Extension (Tuple vs) -> vs
-    | _ -> todo_migration "as_tuple unop"
+  let as_tuple v = Ext0.as_tuple ~build:( <| ) v
 
   let as_tuple1 v =
     match as_tuple v with [ a ] -> a | _ -> cast_error v (t_tuple [ t_int 1 ])
@@ -400,22 +393,8 @@ module Adt = struct
     | [ a; b; c ] -> (a, b, c)
     | _ -> cast_error v (t_tuple [ t_int 3 ])
 
-  let field_of idx v =
-    match kind v with
-    | Extension (Tuple vs) -> (
-        try List.nth vs idx
-        with Invalid_argument _ ->
-          L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "field_of op"
-
-  let set_field idx f v =
-    match kind v with
-    | Extension (Tuple vs) -> (
-        try Extension (Tuple (List.set_nth idx f vs)) <| v.node.ty
-        with Invalid_argument _ ->
-          L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "set_field op"
-
+  let field_of idx v = Ext0.field_of ~build:( <| ) idx v
+  let set_field idx f v = Ext0.set_field ~build:( <| ) idx f v
   let update_field idx f v = set_field idx (f (field_of idx v)) v
 
   (** {2 Enums} *)
