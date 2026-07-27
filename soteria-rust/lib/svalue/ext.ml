@@ -36,6 +36,7 @@ let pp pp ft v =
   | Unop (Field i, v) -> Fmt.pf ft "%a.%d" pp v i
   | Unop (VariantField (var, i), v) ->
       Fmt.pf ft "%a.as<%a>.%d" pp v Types.pp_variant_id var i
+  | Unop (ArrayField i, v) -> Fmt.pf ft "%a[%d]" pp v i
 
 let iter_vars_ptr iter_vars { ptr; size; align; tag = _ } =
   iter_vars ptr;
@@ -119,7 +120,7 @@ let mk build ty v =
   | PtrMeta (MetaLen v) -> mk_len_meta ~build v
   | PtrMeta (MetaVTable v) -> mk_vtable_meta ~build v
   | Tuple vs -> mk_tuple ~build vs
-  | Array vs -> mk_array_of_svty ~build (fst (t_as_array ty)) vs
+  | Array vs -> mk_array_of_svty ~build (array_elem_ty ty) vs
   | Enum (v_id, vs) -> mk_enum ~build (t_as_enum ty) v_id vs
   | Union blocks -> mk_union ~build (t_as_union ty) blocks
   | PolyVal ty_id -> mk_poly ~build ty_id
