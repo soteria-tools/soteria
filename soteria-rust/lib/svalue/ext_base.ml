@@ -5,7 +5,8 @@ module Sv = Soteria.Bv_values.Svalue
 (** {2 Type definitions} *)
 
 module Unop = struct
-  type ptr_part = PtrInner | PtrSize | PtrAlign [@@deriving eq, ord, hash]
+  type ptr_part = PtrInner | PtrSize | PtrAlign
+  and t = ThinPtrPart of ptr_part [@@deriving eq, ord, hash]
 
   let pp_ptr_part ft = function
     | PtrInner -> Fmt.string ft "ptr"
@@ -74,6 +75,7 @@ and 'g ext_t =
   | PolyVal of Charon.Types.type_var_id
       (** The opaque value of a type variable, identified by (type variable
           index, unique identifier). *)
+  | Unop of Unop.t * 'g sv  (** unary operation *)
 [@@deriving eq, ord]
 
 let pp_block_value pp_v pp_ag ft = function
@@ -167,6 +169,22 @@ type 'g build = ('g, 'g ext_t, 'g ext_ty) Sv.t_kind -> 'g svty -> 'g sv
 let mk_thin_ptr ~build:(( <| ) : _ build) ptr =
   Extension (ThinPtr ptr) <| TExtension TThinPtr
 
+let thin_ptr_part ~build:(( <| ) : _ build) (part : Unop.ptr_part)
+    (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (ThinPtr inner) -> (
+      match part with
+      | PtrInner -> inner.ptr
+      | PtrSize -> inner.size
+      | PtrAlign -> inner.align)
+  | _ ->
+      let ty : 'ghost svty =
+        match part with
+        | PtrInner -> TPointer (usize_bits ())
+        | PtrSize | PtrAlign -> TBitVector (usize_bits ())
+      in
+      Extension (Unop (ThinPtrPart part, v)) <| ty
+
 (** {3 Fat pointers} *)
 
 let mk_full_ptr ~build:(( <| ) : _ build) ptr meta =
@@ -212,3 +230,8 @@ let mk_union ~build:(( <| ) : _ build) adt blocks =
 
 let mk_poly ~build:(( <| ) : _ build) ty_id =
   Extension (PolyVal ty_id) <| TExtension TPolyType
+
+(** {3 Operators} *)
+
+let apply_unop ~build : Unop.t -> _ sv -> _ sv = function
+  | ThinPtrPart part -> thin_ptr_part ~build part
