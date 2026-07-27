@@ -169,7 +169,7 @@ let rec try_load (place : Place.t) (store : t) : Binding.kind option =
          | NoneKind -> Value Typed.Adt.unit
          | LenKind -> Value (Typed.as_any (Typed.Ptr.len_meta ptr))
          | VTableKind ->
-             let vt = Typed.Ptr.mk_ptr_f (Typed.Ptr.vtable_meta ptr) None in
+             let vt = Typed.Ptr.of_ptr_t (Typed.Ptr.vtable_meta ptr) in
              if
                Option.is_some_and
                  (Crate.adt_has_lang_item "dyn_metadata")

@@ -172,7 +172,12 @@ module Ptr : sig
   val as_id : [< T.sptr_t ] t -> [> T.sint ] t
 
   (* full pointers *)
-  val mk_ptr_f : [< T.sptr_t ] t -> [< T.ptr_meta ] t option -> [> T.sptr_f ] t
+  val of_ptr_t : [< T.sptr_t ] t -> [> T.sptr_f ] t
+  val mk_ptr_f : [< T.sptr_t ] t -> [< T.ptr_meta ] t -> [> T.sptr_f ] t
+
+  val mk_ptr_f_opt :
+    [< T.sptr_t ] t -> [< T.ptr_meta ] t option -> [> T.sptr_f ] t
+
   val null_f : unit -> [> T.sptr_f ] t
   val of_address_f : [< T.sint ] t -> [> T.sptr_f ] t
   val ptr_of : [< T.sptr_f ] t -> [> T.sptr_t ] t
