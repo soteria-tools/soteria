@@ -34,6 +34,8 @@ let pp pp ft v =
   | Unop (ThinPtrPart part, v) -> Fmt.pf ft "%a.%a" pp v Unop.pp_ptr_part part
   | Unop (FullPtrInner, v) -> Fmt.pf ft "thin(%a)" pp v
   | Unop (Field i, v) -> Fmt.pf ft "%a.%d" pp v i
+  | Unop (VariantField (var, i), v) ->
+      Fmt.pf ft "%a.as<%a>.%d" pp v Types.pp_variant_id var i
 
 let iter_vars_ptr iter_vars { ptr; size; align; tag = _ } =
   iter_vars ptr;
