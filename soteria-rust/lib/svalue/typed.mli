@@ -189,9 +189,9 @@ module Ptr : sig
   val mk_ptr_f : [< T.sptr_t ] t -> [< T.ptr_meta ] t option -> [> T.sptr_f ] t
   val null_f : unit -> [> T.sptr_f ] t
   val of_address_f : [< T.sint ] t -> [> T.sptr_f ] t
-  val split : [< T.sptr_f ] t -> [> T.sptr_t ] t * [> T.ptr_meta ] t option
-  val meta_of : [< T.sptr_f ] t -> [> T.ptr_meta ] t option
   val ptr_of : [< T.sptr_f ] t -> [> T.sptr_t ] t
+  val len_meta : [< T.sptr_f ] t -> [> T.sint ] t
+  val vtable_meta : [< T.sptr_f ] t -> [> T.sptr_t ] t
 end
 
 module Adt : sig
