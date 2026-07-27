@@ -140,6 +140,11 @@ let encode_unop sort_of_ty ~ty : Unop.t -> sexp -> sexp = function
       let sorts = List.map sort_of_ty (t_as_tuple ty) in
       gen_decl (Tuple_sort.sort sorts);
       Tuple_sort.get_field sorts i
+  | VariantField (var, i) ->
+      let adt = t_as_enum ty in
+      gen_decl (Enum_sort.sort sort_of_ty adt);
+      let variant = Types.VariantId.nth (Crate.as_enum adt) var in
+      Enum_sort.get_field adt variant i
 
 let encode_value sort_of_ty encode ~ty = function
   | Tuple vs ->

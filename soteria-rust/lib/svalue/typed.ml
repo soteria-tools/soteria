@@ -400,33 +400,11 @@ module Adt = struct
   (** {2 Enums} *)
 
   let mk_enum adt v_id vs = Ext0.mk_enum ~build:( <| ) adt v_id vs
+  let as_enum_of_variant var v = Ext0.as_enum_of_variant ~build:( <| ) var v
+  let field_of_variant var idx v = Ext0.field_of_variant ~build:( <| ) var idx v
 
-  let as_enum_of_variant var_id v =
-    match kind v with
-    | Extension (Enum (v, vs)) ->
-        assert (Types.VariantId.equal_id v var_id);
-        vs
-    | _ -> todo_migration "as_enum_of_variant unop"
-
-  let field_of_variant var_id idx v =
-    (* TODO: assert the variant? *)
-    match kind v with
-    | Extension (Enum (var, vs)) -> (
-        assert (Types.VariantId.equal_id var var_id);
-        try List.nth vs idx
-        with Invalid_argument _ ->
-          L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "field_of_variant op"
-
-  let set_field_of_variant var_id idx f v =
-    (* TODO: assert the variant *)
-    match kind v with
-    | Extension (Enum (var, vs)) -> (
-        assert (Types.VariantId.equal_id var var_id);
-        try Extension (Enum (var, List.set_nth idx f vs)) <| v.node.ty
-        with Invalid_argument _ ->
-          L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "set_field_of_variant op"
+  let set_field_of_variant var idx f v =
+    Ext0.set_field_of_variant ~build:( <| ) var idx f v
 
   let update_field_of_variant var idx f v =
     set_field_of_variant var idx (f (field_of_variant var idx v)) v
