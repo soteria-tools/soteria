@@ -32,6 +32,7 @@ let pp pp ft v =
         vs
   | PolyVal tid -> Fmt.pf ft "PolyVal(%a)" Charon.Types.pp_type_var_id tid
   | Unop (ThinPtrPart part, v) -> Fmt.pf ft "%a.%a" pp v Unop.pp_ptr_part part
+  | Unop (FullPtrInner, v) -> Fmt.pf ft "thin(%a)" pp v
 
 let iter_vars_ptr iter_vars { ptr; size; align; tag = _ } =
   iter_vars ptr;

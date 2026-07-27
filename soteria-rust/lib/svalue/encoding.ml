@@ -133,6 +133,9 @@ let encode_unop sort_of_ty ~ty : Unop.t -> sexp -> sexp = function
   | ThinPtrPart part ->
       gen_decl (Thin_ptr_sort.sort ());
       Thin_ptr_sort.get_part part
+  | FullPtrInner ->
+      gen_decl (Full_ptr_sort.sort ());
+      Full_ptr_sort.get_ptr
 
 let encode_value sort_of_ty encode ~ty = function
   | Tuple vs ->
