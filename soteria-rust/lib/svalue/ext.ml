@@ -241,5 +241,5 @@ let apply_subst apply ~missing_var s = function
       (Union vs, s)
   | PolyVal _ as v -> (v, s)
 
-let encode_ty _ = failwith "TODO: encode Rust ext_ty"
-let encode_value _ = failwith "TODO: encode Rust ext_t"
+let encode_ty = Encoding.encode_ty
+let encode_value = Encoding.encode_value
