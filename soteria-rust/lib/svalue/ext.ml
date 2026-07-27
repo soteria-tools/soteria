@@ -36,6 +36,8 @@ let pp pp ft v =
   | Unop (Field i, v) -> Fmt.pf ft "%a.%d" pp v i
   | Unop (VariantField (var, i), v) ->
       Fmt.pf ft "%a.as<%a>.%d" pp v Types.pp_variant_id var i
+  | Unop (IsVariant var, v) ->
+      Fmt.pf ft "%a.is<%a>" pp v Types.pp_variant_id var
   | Unop (ArrayField i, v) -> Fmt.pf ft "%a[%d]" pp v i
 
 let iter_vars_ptr iter_vars { ptr; size; align; tag = _ } =
