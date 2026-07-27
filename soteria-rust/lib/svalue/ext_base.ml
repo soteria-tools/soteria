@@ -12,6 +12,7 @@ module Unop = struct
     | FullPtrInner
     | Field of int
     | VariantField of (Types.variant_id[@hash Types.VariantId.to_int]) * int
+    | IsVariant of (Types.variant_id[@hash Types.VariantId.to_int])
     (* TODO: we could make [ArrayField] a binop, with the second operator a
        (possibly symbolic) value, to allow symbolically sized arrays! *)
     | ArrayField of int
@@ -265,6 +266,12 @@ let set_field_of_variant ~build var idx x (v : 'ghost sv) =
   let vs = List.set_nth idx x (as_enum_of_variant ~build var v) in
   mk_enum ~build (t_as_enum v.node.ty) var vs
 
+let is_variant ~build:(( <| ) : _ build) var (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (Enum (cur_var, _)) ->
+      Bool (Types.equal_variant_id var cur_var) <| TBool
+  | _ -> Extension (Unop (IsVariant var, v)) <| TBool
+
 (** {3 Arrays} *)
 
 let mk_array_of_svty ~build:(( <| ) : _ build) elem_ty vs =
@@ -309,4 +316,5 @@ let apply_unop ~build : Unop.t -> _ sv -> _ sv = function
   | FullPtrInner -> full_ptr_inner ~build
   | Field i -> field_of ~build i
   | VariantField (var_id, i) -> field_of_variant ~build var_id i
+  | IsVariant var_id -> is_variant ~build var_id
   | ArrayField i -> array_field_of ~build i

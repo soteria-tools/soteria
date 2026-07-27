@@ -404,10 +404,7 @@ module Adt = struct
   let update_field_of_variant var idx f v =
     set_field_of_variant var idx (f (field_of_variant var idx v)) v
 
-  let is_variant var_id v =
-    match kind v with
-    | Extension (Enum (var, _)) -> of_bool (Types.VariantId.equal_id var var_id)
-    | _ -> todo_migration "is_variant unop"
+  let is_variant var_id v = Ext0.is_variant ~build:( <| ) var_id v
 
   let discriminant_of (v : _ t) =
     let variants = Crate.as_enum (t_as_enum v.node.ty) in
