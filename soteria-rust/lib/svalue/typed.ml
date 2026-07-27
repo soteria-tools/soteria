@@ -374,19 +374,10 @@ module Ptr = struct
 end
 
 module Adt = struct
-  let mk_tuple vs = Ext0.mk_tuple ~build:( <| ) vs
-  let mk_array elem_ty arr = Ext0.mk_array ~build:( <| ) elem_ty arr
-  let mk_enum adt v_id vs = Ext0.mk_enum ~build:( <| ) adt v_id vs
-  let mk_union adt blocks = Ext0.mk_union ~build:( <| ) adt blocks
-  let mk_poly ty_id = Ext0.mk_poly ~build:( <| ) ty_id
-  let unit = mk_tuple []
+  (** {2 Tuples} *)
 
-  (* HACK: i have no idea what this really means or how to lift this for
-     variables... *)
-  let as_union v =
-    match kind v with
-    | Extension (Union blocks) -> blocks
-    | _ -> todo_migration "as_union unop"
+  let mk_tuple vs = Ext0.mk_tuple ~build:( <| ) vs
+  let unit = mk_tuple []
 
   (* HACK: i don't like this; it forces all fields to be resolved, which is
      often overkill. i think i want to get rid of this, and force clients to
@@ -395,18 +386,6 @@ module Adt = struct
     match kind v with
     | Extension (Tuple vs) -> vs
     | _ -> todo_migration "as_tuple unop"
-
-  let as_array v =
-    match kind v with
-    | Extension (Array vs) -> vs
-    | _ -> todo_migration "as_array unop"
-
-  let as_enum_of_variant var_id v =
-    match kind v with
-    | Extension (Enum (v, vs)) ->
-        assert (Types.VariantId.equal_id v var_id);
-        vs
-    | _ -> todo_migration "as_enum_of_variant unop"
 
   let as_tuple1 v =
     match as_tuple v with [ a ] -> a | _ -> cast_error v (t_tuple [ t_int 1 ])
@@ -421,11 +400,6 @@ module Adt = struct
     | [ a; b; c ] -> (a, b, c)
     | _ -> cast_error v (t_tuple [ t_int 3 ])
 
-  let as_type_var v =
-    match kind v with
-    | Extension (PolyVal ty_id) -> ty_id
-    | _ -> todo_migration "as_type_var unop"
-
   let field_of idx v =
     match kind v with
     | Extension (Tuple vs) -> (
@@ -434,13 +408,26 @@ module Adt = struct
           L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "field_of op"
 
-  let array_field_of idx v =
+  let set_field idx f v =
     match kind v with
-    | Extension (Array vs) -> (
-        try vs.%(idx)
+    | Extension (Tuple vs) -> (
+        try Extension (Tuple (List.set_nth idx f vs)) <| v.node.ty
         with Invalid_argument _ ->
-          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "array_field_of op"
+          L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
+    | _ -> todo_migration "set_field op"
+
+  let update_field idx f v = set_field idx (f (field_of idx v)) v
+
+  (** {2 Enums} *)
+
+  let mk_enum adt v_id vs = Ext0.mk_enum ~build:( <| ) adt v_id vs
+
+  let as_enum_of_variant var_id v =
+    match kind v with
+    | Extension (Enum (v, vs)) ->
+        assert (Types.VariantId.equal_id v var_id);
+        vs
+    | _ -> todo_migration "as_enum_of_variant unop"
 
   let field_of_variant var_id idx v =
     (* TODO: assert the variant? *)
@@ -452,14 +439,6 @@ module Adt = struct
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "field_of_variant op"
 
-  let set_field idx f v =
-    match kind v with
-    | Extension (Tuple vs) -> (
-        try Extension (Tuple (List.set_nth idx f vs)) <| v.node.ty
-        with Invalid_argument _ ->
-          L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "set_field op"
-
   let set_field_of_variant var_id idx f v =
     (* TODO: assert the variant *)
     match kind v with
@@ -469,19 +448,6 @@ module Adt = struct
         with Invalid_argument _ ->
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "set_field_of_variant op"
-
-  let set_array_field idx x v =
-    match kind v with
-    | Extension (Array vs) -> (
-        try Extension (Array (Iarray.copy_and_set idx x vs)) <| v.node.ty
-        with Invalid_argument _ ->
-          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "set_array_field op"
-
-  let update_field idx f v = set_field idx (f (field_of idx v)) v
-
-  let update_array_field idx f v =
-    set_array_field idx (f (array_field_of idx v)) v
 
   let update_field_of_variant var idx f v =
     set_field_of_variant var idx (f (field_of_variant var idx v)) v
@@ -500,6 +466,51 @@ module Adt = struct
           ite (is_variant var.id v) (BV.of_literal var.discriminant) (aux rest)
     in
     aux variants
+
+  (** {2 Arrays} *)
+
+  let mk_array elem_ty arr = Ext0.mk_array ~build:( <| ) elem_ty arr
+
+  let as_array v =
+    match kind v with
+    | Extension (Array vs) -> vs
+    | _ -> todo_migration "as_array unop"
+
+  let array_field_of idx v =
+    match kind v with
+    | Extension (Array vs) -> (
+        try vs.%(idx)
+        with Invalid_argument _ ->
+          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
+    | _ -> todo_migration "array_field_of op"
+
+  let set_array_field idx x v =
+    match kind v with
+    | Extension (Array vs) -> (
+        try Extension (Array (Iarray.copy_and_set idx x vs)) <| v.node.ty
+        with Invalid_argument _ ->
+          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
+    | _ -> todo_migration "set_array_field op"
+
+  let update_array_field idx f v =
+    set_array_field idx (f (array_field_of idx v)) v
+
+  (** {2 Unions and PolyVal} *)
+
+  let mk_union adt blocks = Ext0.mk_union ~build:( <| ) adt blocks
+  let mk_poly ty_id = Ext0.mk_poly ~build:( <| ) ty_id
+
+  (* HACK: i have no idea what this really means or how to lift this for
+     variables... *)
+  let as_union v =
+    match kind v with
+    | Extension (Union blocks) -> blocks
+    | _ -> todo_migration "as_union unop"
+
+  let as_type_var v =
+    match kind v with
+    | Extension (PolyVal ty_id) -> ty_id
+    | _ -> todo_migration "as_type_var unop"
 
   module Checked = struct
     let mk_enum tref variant vs =
