@@ -377,13 +377,13 @@ module Make (StateImpl : State.S) = struct
         in
         let off = Layout.Fields_shape.offset_of field fields in
         let* place_ty = Layout.normalise place.ty in
-        let meta = Layout.ptr_meta ptr place_ty in
-        let ptr = Typed.Ptr.ptr_of ptr in
-        let* ptr' = Sptr.offset ~check_signed:true off ptr in
+        let ptr_in = Typed.Ptr.ptr_of ptr in
+        let* ptr_in' = Sptr.offset ~check_signed:true off ptr_in in
         [%l.debug
           "Projecting ADT %a, field %d, with pointer %a to pointer %a"
-            Expressions.pp_field_proj_kind kind field Sptr.pp ptr Sptr.pp ptr'];
-        ok (Typed.Ptr.mk_ptr_f ptr' meta)
+            Expressions.pp_field_proj_kind kind field Sptr.pp ptr_in Sptr.pp
+            ptr_in'];
+        ok (Typed.Ptr.with_ptr ptr ptr_in')
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr = resolve_place base in
         let* pointee = Layout.normalise base.ty in
@@ -814,21 +814,20 @@ module Make (StateImpl : State.S) = struct
             let* pointee =
               match ty_l with
               | TRawPtr (pointee, _) | TRef (_, pointee, _) ->
-                  map Option.some (Layout.normalise pointee)
-              | _ -> ok None
+                  Layout.normalise pointee
+              | _ -> ok TypesUtils.mk_unit_ty
             in
-            Core.eval_ptr_binop ?pointee op p1 p2
+            Core.eval_ptr_binop ~pointee op p1 p2
         | ( (TRawPtr (pointee, _) | TRef (_, pointee, _)),
             TLiteral ((TInt Isize | TUInt Usize) as lit) ) ->
             assert (op = Offset);
             let p1 = Typed.cast_ptr_f v1 in
             let* pointee = Layout.normalise pointee in
-            let meta = Layout.ptr_meta p1 pointee in
             let p = Typed.Ptr.ptr_of p1 in
             let off = Typed.cast_i Usize v2 in
             let check_signed = Layout.is_signed lit in
             let+ p' = Sptr.offset ~check_signed ~ty:pointee off p in
-            Typed.Ptr.mk_ptr_f p' meta
+            Typed.Ptr.with_ptr p1 p'
         | TLiteral (TFloat fp), TLiteral (TFloat _) -> (
             let v1 = Typed.cast_f fp v1 and v2 = Typed.cast_f fp v2 in
             match op with

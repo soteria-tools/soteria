@@ -144,14 +144,19 @@ module M (StateM : State.StateM.S) = struct
     | None, None -> v_true
     | _, _ -> L.failwith "Comparing pointers with mismatched metadata"
 
-  let rec eval_ptr_binop ?pointee (bop : Expressions.binop)
+  let ptr_meta (ptr : [< Typed.T.sptr_f ] Typed.t) (pointee : Types.ty) :
+      Typed.T.ptr_meta Typed.t option =
+    match Layout.dst_kind pointee with
+    | NoneKind -> None
+    | LenKind -> Some (Typed.Ptr.len_meta ptr)
+    | VTableKind -> Some (Typed.Ptr.vtable_meta ptr)
+
+  let rec eval_ptr_binop ~pointee (bop : Expressions.binop)
       (l : Typed.([< T.sptr_f ] t)) (r : Typed.([< T.sptr_f ] t)) =
-    let meta p =
-      match pointee with None -> None | Some ty -> Layout.ptr_meta p ty
-    in
+    let meta p = ptr_meta p pointee in
     match bop with
     | Ne ->
-        let+ res = eval_ptr_binop ?pointee Eq l r in
+        let+ res = eval_ptr_binop ~pointee Eq l r in
         BV.not_bool (cast res)
     | Eq ->
         (* Pointer comparison just uses the address! See
