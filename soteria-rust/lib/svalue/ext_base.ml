@@ -6,7 +6,9 @@ module Sv = Soteria.Bv_values.Svalue
 
 module Unop = struct
   type ptr_part = PtrInner | PtrSize | PtrAlign
-  and t = ThinPtrPart of ptr_part | FullPtrInner [@@deriving eq, ord, hash]
+
+  and t = ThinPtrPart of ptr_part | FullPtrInner | Field of int
+  [@@deriving eq, ord, hash]
 
   let pp_ptr_part ft = function
     | PtrInner -> Fmt.string ft "ptr"
@@ -203,6 +205,19 @@ let mk_tuple ~build:(( <| ) : _ build) vs =
   let tys = List.map (fun (v : _ sv) -> v.node.ty) vs in
   Extension (Tuple vs) <| TExtension (TTuple tys)
 
+let field_of ~build:(( <| ) : _ build) idx (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (Tuple vs) -> List.nth vs idx
+  | _ -> Extension (Unop (Field idx, v)) <| List.nth (t_as_tuple v.node.ty) idx
+
+let as_tuple ~build (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (Tuple vs) -> vs
+  | _ -> List.mapi (fun i _ -> field_of ~build i v) (t_as_tuple v.node.ty)
+
+let set_field ~build idx x (v : 'ghost sv) =
+  mk_tuple ~build (List.set_nth idx x (as_tuple ~build v))
+
 (** {3 Enums} *)
 
 let mk_enum ~build:(( <| ) : _ build) adt var_id vs =
@@ -234,3 +249,4 @@ let mk_poly ~build:(( <| ) : _ build) ty_id =
 let apply_unop ~build : Unop.t -> _ sv -> _ sv = function
   | ThinPtrPart part -> thin_ptr_part ~build part
   | FullPtrInner -> full_ptr_inner ~build
+  | Field i -> field_of ~build i

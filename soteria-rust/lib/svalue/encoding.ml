@@ -136,6 +136,10 @@ let encode_unop sort_of_ty ~ty : Unop.t -> sexp -> sexp = function
   | FullPtrInner ->
       gen_decl (Full_ptr_sort.sort ());
       Full_ptr_sort.get_ptr
+  | Field i ->
+      let sorts = List.map sort_of_ty (t_as_tuple ty) in
+      gen_decl (Tuple_sort.sort sorts);
+      Tuple_sort.get_field sorts i
 
 let encode_value sort_of_ty encode ~ty = function
   | Tuple vs ->
