@@ -130,7 +130,6 @@ module Make (Borrows : Tree_borrows.T) = struct
         (ty : Types.ty) ofs =
       let**^ pointee = DecayMap.SM.lift @@ Layout.normalise (get_pointee ty) in
       let ptr = Typed.Ptr.ptr_of ptr_full in
-      let meta = Layout.ptr_meta ptr_full pointee in
       (* FIXME: this logic is tree borrows related and should be handled there.
          https://github.com/soteria-tools/soteria/issues/301 *)
       let state : Tree_borrows.state =
@@ -149,7 +148,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       in
       let** tag = with_borrow (Borrows.Tree.borrow ~state ?protector tag) in
       let ptr' = Typed.Ptr.with_tag ptr (Some tag) in
-      let ptr_full' = Typed.Ptr.mk_ptr_f ptr' meta in
+      let ptr_full' = Typed.Ptr.with_ptr ptr_full ptr' in
       [%l.debug
         "%s pointer %a -> %a (%a)"
           (if protect then "Protecting" else "Borrowing")
@@ -368,7 +367,7 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   let with_ptr access ptr f = with_heap @@ Heap.with_ptr access ptr f
 
-  let rec size_and_align_of_val t (meta : Typed.([< T.ptr_meta ] t) option) =
+  let rec size_and_align_of_val t (ptr : Typed.([< T.sptr_f ] t)) =
     let* st = get_state () in
     let load_vtable field ptr =
       let open Rustsymex.Syntax in
@@ -380,7 +379,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       let+ res, _ = load ~ignore_borrow:true ~check_refs:false ptr' usize st in
       Compo_res.map Typed.cast res
     in
-    lift @@ Value_codec.size_and_align_of_val ~load_vtable ~t ~meta
+    lift @@ Value_codec.size_and_align_of_val ~load_vtable ~t ~ptr
 
   (** Checks the given pointer is well-aligned for the given type, possibly
       reading in the heap to know what the alignment is (e.g. for [&dyn Trait]).
@@ -389,9 +388,8 @@ module Make (Borrows : Tree_borrows.T) = struct
   and check_ptr_align (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     (* The expected alignment of a dyn pointer is stored inside the VTable *)
     let**^ ty = Layout.normalise ty in
-    let meta = Layout.ptr_meta ptr ty in
+    let** size, exp_align = size_and_align_of_val ty ptr in
     let ptr = Typed.Ptr.ptr_of ptr in
-    let** size, exp_align = size_and_align_of_val ty meta in
     [%l.debug
       "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
         exp_align pp_ty ty];
@@ -432,13 +430,11 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   and check_non_dangling (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     let**^ ty = Layout.normalise ty in
-    let meta = Layout.ptr_meta ptr ty in
-    let ptr = Typed.Ptr.ptr_of ptr in
     let**^ layout = Layout.layout_of ty in
     if layout.uninhabited then Result.error (`RefToUninhabited ty)
     else
-      let** size, _ = size_and_align_of_val ty meta in
-      check_non_dangling_untyped ptr size
+      let** size, _ = size_and_align_of_val ty ptr in
+      check_non_dangling_untyped (Typed.Ptr.ptr_of ptr) size
 
   and check_validity ~check_refs ty value =
     let default_check ptr ty =
@@ -463,9 +459,7 @@ module Make (Borrows : Tree_borrows.T) = struct
    fun ?ignore_borrow ?(check_refs = true) ptr ty ->
     let** size = check_ptr_align ptr ty in
     let**^ ty = Layout.normalise ty in
-    let meta = Layout.ptr_meta ptr ty in
-    let ptr = Typed.Ptr.ptr_of ptr in
-    let parser ~offset = Tree_block.Decoder.decode ~meta ~offset ty in
+    let parser ~offset = Tree_block.Decoder.decode ~ptr ~offset ty in
     let** value =
       if%sat size ==@ Usize.(0s) then
         with_pointers
@@ -473,7 +467,9 @@ module Make (Borrows : Tree_borrows.T) = struct
              (Tree_block.apply_parser ~ignore_borrow:true None None
                 (parser ~offset:Usize.(0s)))
           |> ignore_state)
-      else apply_parser ?ignore_borrow ptr parser
+      else
+        let ptr = Typed.Ptr.ptr_of ptr in
+        apply_parser ?ignore_borrow ptr parser
     in
     [%l.debug "Finished reading rust value %a" Typed.ppa value];
     let++ () = check_validity ~check_refs ty value in
@@ -600,7 +596,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             in
             (* next, we read *)
             Tree_block.apply_parser ~ignore_borrow:true None None
-            @@ Tree_block.Decoder.decode ~meta:None ~offset:Usize.(0s) to_)
+            @@ Tree_block.Decoder.decode ~offset:Usize.(0s) to_)
          |> ignore_state)
     in
     let++ () = check_validity ~check_refs:true to_ value in
@@ -677,12 +673,10 @@ module Make (Borrows : Tree_borrows.T) = struct
       check_non_dangling ptr ty
   end
 
-  let size_and_align_of_val ty (meta : Typed.([< T.ptr_meta ] t) option) =
+  let size_and_align_of_val ty ptr =
     [%l.debug "Executing Size_and_align_of_val for %a" pp_ty ty];
     let@ () = with_loc_err ~trace:"Size and alignment check" () in
-    let++ size, align =
-      size_and_align_of_val ty (meta :> Typed.T.ptr_meta Typed.t option)
-    in
+    let++ size, align = size_and_align_of_val ty ptr in
     ( (size : Typed.T.sint Typed.t :> Typed.([> T.sint ] t)),
       (align : Typed.T.nonzero Typed.t :> Typed.([> T.nonzero ] t)) )
 

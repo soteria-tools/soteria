@@ -20,7 +20,7 @@ let variant_for_enum (enum : Typed.([< T.enum ] t)) adt =
 
 (** Iterator over the fields and offsets of a type; for primitive types, returns
     a singleton iterator for that value. *)
-let iter_fields ?variant ?meta layout (ty : Types.ty) =
+let iter_fields ?variant ?ptr layout (ty : Types.ty) =
   let rec to_fields ?variant fields : Types.ty -> Types.ty Iter.t = function
     | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
     | TArray (ty, len) -> Iter.repeatz (z_of_constant_expr len) ty
@@ -28,11 +28,9 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
         let sub_ty =
           match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
         in
-        let meta : [< Typed.T.ptr_meta ] Typed.t =
-          Option.get ~msg:"meta required for unsized iter_fields" meta
-        in
+        let ptr = Option.get ~msg:"ptr required for slice" ptr in
+        let len = Typed.Ptr.len_meta ptr in
         (* TODO: strings and slices of symbolic length *)
-        let len = Typed.cast_i Usize meta in
         match BV.to_z len with
         | Some len -> Iter.repeatz len sub_ty
         | None ->
@@ -266,16 +264,16 @@ struct
     | Arbitrary _ | Array _ | Primitive ->
         L.failwith "Unexpected layout for enum"
 
-  (** [decode ~meta ~offset ty] Parses a rust value of type [ty] at the given
-      offset, using the provided metadata for DSTs, and returns the associated
-      [Rust_val]. This does not perform any validity checking, aside from
-      erroring if the type is uninhabited. *)
-  let rec decode ~meta ~offset ty : Typed.T.any Typed.t ParserMonad.t =
+  (** [decode ?ptr ~offset ty] Parses a rust value of type [ty] at the given
+      offset, using the metadata of [ptr] for DSTs, and returns the read value.
+      This does not perform any validity checking, aside from uninhabited checks
+      (since such a value can't be represented) and uninit memory checks. *)
+  let rec decode ?ptr ~offset ty : Typed.T.any Typed.t ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let iter fields offset =
       fold_iter fields ~init:[] ~f:(fun vs (ty, o) ->
-          let+ v = decode ~meta ~offset:(offset +!!@ o) ty in
+          let+ v = decode ?ptr ~offset:(offset +!!@ o) ty in
           v :: vs)
       |> map List.rev
     in
@@ -321,7 +319,7 @@ struct
         else query ty offset
     | Primitive, _ -> query ty offset
     | Array { is_ptr = true; _ }, _ ->
-        let+ vs = iter (iter_fields ?meta layout ty) offset in
+        let+ vs = iter (iter_fields ?ptr layout ty) offset in
         let ptr, meta =
           match vs with
           | [ ptr; meta ] -> (Typed.cast_ptr_f ptr, meta)
@@ -336,15 +334,15 @@ struct
         in
         Typed.Ptr.mk_ptr_f ptr (Some meta)
     | Array { is_ptr = false; _ }, _ ->
-        let+ vs = iter (iter_fields ?meta layout ty) offset in
+        let+ vs = iter (iter_fields ?ptr layout ty) offset in
         Typed.Adt.mk_array (index_ty ty) (Iarray.of_list vs)
     | Arbitrary _, _ ->
-        let+ fields = iter (iter_fields ?meta layout ty) offset in
+        let+ fields = iter (iter_fields ?ptr layout ty) offset in
         Typed.Adt.mk_tuple fields
     | Enum _, TAdt adt ->
         let variants = Crate.as_enum adt in
         let* variant = variant_of_enum ~offset ty in
-        let+ fields = iter (iter_fields ~variant ?meta layout ty) offset in
+        let+ fields = iter (iter_fields ~variant ?ptr layout ty) offset in
         let variant = Types.VariantId.nth variants variant in
         Typed.Adt.mk_enum adt variant.id fields
     | Enum _, _ -> L.failwith "decode: expected enum type for enum layout"
@@ -841,10 +839,9 @@ let rec ref_tys_in
   | _ -> Result.ok (v, init)
 
 (** Calculates the size and alignment of a type [t], according to the pointer
-    metadata [meta]. Receives an arbitrary state and [load] function, to
-    possibly access a heap to get VTable information. *)
-let rec size_and_align_of_val ~load_vtable ~t
-    ~(meta : Typed.([< T.ptr_meta ] t) option) =
+    [ptr]. Receives an arbitrary state and [load] function, to possibly access a
+    heap to get VTable information. *)
+let rec size_and_align_of_val ~load_vtable ~t ~(ptr : Typed.([< T.sptr_f ] t)) =
   let open Rustsymex in
   let open Rustsymex.Syntax in
   (* Takes inspiration from rustc, to calculate the size and alignment of DSTs.
@@ -857,14 +854,12 @@ let rec size_and_align_of_val ~load_vtable ~t
     | TSlice _ | TAdt { id = TBuiltin TStr; _ } ->
         let sub_ty = Layout.dst_slice_ty t in
         let** layout = Layout.layout_of sub_ty in
-        let meta = Option.get ~msg:"size_of_val: missing slice meta" meta in
-        let len = Typed.cast_i Usize meta in
+        let len = Typed.Ptr.len_meta ptr in
         let size, ovf_mul = layout.size *?@ len in
         let++ () = assert_or_error (Typed.not ovf_mul) `Overflow in
         (size, layout.align)
     | TDynTrait _ ->
-        let meta = Option.get ~msg:"size_of_val: missing trait meta" meta in
-        let meta = Typed.cast_ptr_t meta in
+        let meta = Typed.Ptr.vtable_meta ptr in
         let** size = load_vtable `Size meta in
         let++ align = load_vtable `Align meta in
         let size = Typed.cast_i Usize size in
@@ -884,7 +879,7 @@ let rec size_and_align_of_val ~load_vtable ~t
           | _ -> L.failwith "size_and_align_of_val: Unexpected layout for ADT"
         in
         let++ unsized_size, unsized_align =
-          size_and_align_of_val ~load_vtable ~t:last_field_ty ~meta
+          size_and_align_of_val ~load_vtable ~t:last_field_ty ~ptr
         in
         (* TODO: we need to check if [layout] is packed, in which case
            unsized_align is 1! See 113-125 of above function. *)

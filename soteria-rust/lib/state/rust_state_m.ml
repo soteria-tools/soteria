@@ -242,9 +242,7 @@ module type S = sig
     val fake_read : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
 
     val size_and_align_of_val :
-      Types.ty ->
-      [< ptr_meta ] v option ->
-      ([> sint ] v * [> nonzero ] v, 'env) t
+      Types.ty -> [< sptr_f ] v -> ([> sint ] v * [> nonzero ] v, 'env) t
   end
 
   module Syntax : sig

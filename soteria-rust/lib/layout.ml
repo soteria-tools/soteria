@@ -107,15 +107,6 @@ let pointee_metadata (pointee : Types.ty) : Types.ty =
           generics = TypesUtils.mk_generic_args_from_types [ pointee ];
         }
 
-(** Reads the metadata of [ptr], a pointer to a value of type [pointee],
-    according to [pointee]'s {!dst_kind}. [pointee] must be normalised *)
-let ptr_meta (ptr : [< Typed.T.sptr_f ] Typed.t) (pointee : Types.ty) :
-    Typed.T.ptr_meta Typed.t option =
-  match dst_kind pointee with
-  | NoneKind -> None
-  | LenKind -> Some (Typed.Ptr.len_meta ptr)
-  | VTableKind -> Some (Typed.Ptr.vtable_meta ptr)
-
 let[@inline] size_to_fit ~size ~align =
   Typed.ite
     (size %@ align ==@ Usize.(0s))

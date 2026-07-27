@@ -30,20 +30,18 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let mul_with_overflow ~t ~x ~y = checked_op (Mul OUB) ~t ~x ~y
   let align_of ~t = Layout.align_of t
 
-  let arith_offset ~t ~dst ~offset =
-    let meta = Layout.ptr_meta dst t in
-    let dst = Typed.Ptr.ptr_of dst in
+  let arith_offset ~t ~dst:dst_full ~offset =
+    let dst = Typed.Ptr.ptr_of dst_full in
     let+ dst' = Sptr.offset ~ty:t offset dst in
-    Typed.Ptr.mk_ptr_f dst' meta
+    Typed.Ptr.with_ptr dst_full dst'
 
-  let offset ~ptr ~delta ~dst ~offset =
-    let dst = Typed.cast_ptr_f dst in
-    let meta = Layout.ptr_meta dst ptr in
-    let dst = Typed.Ptr.ptr_of dst in
+  let offset ~ptr ~delta ~dst:dst_full ~offset =
+    let dst_full = Typed.cast_ptr_f dst_full in
+    let dst = Typed.Ptr.ptr_of dst_full in
     let offset = Typed.cast_i Usize offset in
     let check_signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
     let+ dst' = Sptr.offset ~check_signed ~ty:ptr offset dst in
-    Typed.Ptr.mk_ptr_f dst' meta
+    Typed.Ptr.with_ptr dst_full dst'
 
   let assert_inhabited ~t =
     let* layout = Layout.layout_of t in
@@ -126,11 +124,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* old = State.load dst t in
     match (t, u) with
     | (TRawPtr (pointee, _) | TRef (_, pointee, _)), TLiteral (TUInt Usize) ->
-        let old_ptr = Typed.cast_ptr_f old in
-        let meta = Layout.ptr_meta old_ptr pointee in
-        let old_ptr = Typed.Ptr.ptr_of old_ptr in
+        let old_fptr = Typed.cast_ptr_f old in
+        let old_ptr = Typed.Ptr.ptr_of old_fptr in
         let* new_ptr = ptr_op (Typed.cast_i Usize src) old_ptr in
-        let+ () = State.store dst t (Typed.Ptr.mk_ptr_f new_ptr meta) in
+        let+ () = State.store dst t (Typed.Ptr.with_ptr old_fptr new_ptr) in
         old
     | TLiteral lit, _ ->
         let* res =
@@ -838,12 +835,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let ptr_guaranteed_cmp ~t ~ptr ~other =
     Core.eval_ptr_binop ~pointee:t Eq ptr other
 
-  let ptr_mask ~t ~ptr ~mask =
-    let meta = Layout.ptr_meta ptr t in
-    let ptr = Typed.Ptr.ptr_of ptr in
-    let* addr = Sptr.decay ptr in
+  let ptr_mask ~t ~ptr:ptr_full ~mask =
+    let ptr = Typed.Ptr.ptr_of ptr_full in
+    let+ addr = Sptr.decay ptr in
     let addr = addr &@ mask in
-    ok (Typed.Ptr.mk_ptr_f (Typed.Ptr.of_address addr) meta)
+    Typed.Ptr.with_ptr ptr_full (Typed.Ptr.of_address addr)
 
   let ptr_offset_from_ ~unsigned ~t ~ptr ~base : [> T.sint ] Typed.t ret =
     let zero = Usize.(0s) in
@@ -974,13 +970,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let size_of ~t = Layout.size_of t
 
   let size_of_val ~t ~ptr =
-    let meta = Layout.ptr_meta ptr t in
-    let+ size, _ = State.size_and_align_of_val t meta in
+    let+ size, _ = State.size_and_align_of_val t ptr in
     size
 
   let align_of_val ~t ~ptr =
-    let meta = Layout.ptr_meta ptr t in
-    let+ _, align = State.size_and_align_of_val t meta in
+    let+ _, align = State.size_and_align_of_val t ptr in
     align
 
   let transmute ~t_src ~dst ~src = State.transmute ~from:t_src ~to_:dst src

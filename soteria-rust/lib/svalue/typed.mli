@@ -190,6 +190,7 @@ module Ptr : sig
   val null_f : unit -> [> T.sptr_f ] t
   val of_address_f : [< T.sint ] t -> [> T.sptr_f ] t
   val ptr_of : [< T.sptr_f ] t -> [> T.sptr_t ] t
+  val with_ptr : [< T.sptr_f ] t -> [< T.sptr_t ] t -> [> T.sptr_f ] t
   val len_meta : [< T.sptr_f ] t -> [> T.sint ] t
   val vtable_meta : [< T.sptr_f ] t -> [> T.sptr_t ] t
 end

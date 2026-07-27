@@ -371,6 +371,11 @@ module Ptr = struct
     match kind ptr with
     | Extension (Ptr (ptr, _)) -> ptr
     | _ -> todo_migration "PtrFull get ptr"
+
+  let with_ptr fptr tptr =
+    match kind fptr with
+    | Extension (Ptr (_, meta)) -> mk_ptr_f tptr meta
+    | _ -> todo_migration "PtrFull set ptr"
 end
 
 module Adt = struct
