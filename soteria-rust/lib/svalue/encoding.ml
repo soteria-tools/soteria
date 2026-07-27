@@ -129,6 +129,11 @@ let encode_ty sort_of_ty = function
   | (TUnion _ | TPolyType) as ty ->
       L.failwith "Cannot encode type %a to SMT-LIB" pp_ext_ty ty
 
+let encode_unop sort_of_ty ~ty : Unop.t -> sexp -> sexp = function
+  | ThinPtrPart part ->
+      gen_decl (Thin_ptr_sort.sort ());
+      Thin_ptr_sort.get_part part
+
 let encode_value sort_of_ty encode ~ty = function
   | Tuple vs ->
       let tys = t_as_tuple ty in
