@@ -325,21 +325,20 @@ module Ptr = struct
 
   (* {1 Full/wide pointers ([sptr_f])} *)
 
-  let mk_ptr_f ptr meta =
+  let of_ptr_t ptr = Ext0.of_thin_ptr ~build:( <| ) ptr
+  let with_ptr fptr tptr = Ext0.full_ptr_set_inner ~build:( <| ) tptr fptr
+
+  let mk_ptr_f ptr (meta : _ t) =
     let meta =
-      match get_ty meta with
+      match meta.node.ty with
       | TBitVector _ -> Ext0.mk_len_meta ~build:( <| ) meta
       | TExtension TThinPtr -> Ext0.mk_vtable_meta ~build:( <| ) meta
-      | ty -> L.failwith "invalid meta ty: %a" ppa_ty ty
+      | ty -> L.failwith "mk_ptr_f: invalid metadata type %a" ppa_ty ty
     in
     Ext0.mk_full_ptr ~build:( <| ) ptr meta
 
-  let of_ptr_t ptr =
-    let unit_meta = Ext0.mk_unit_meta ~build:( <| ) () in
-    Extension (Ptr (ptr, unit_meta)) <| t_ptr_f ()
-
-  let mk_ptr_f_opt ptr meta =
-    match meta with None -> of_ptr_t ptr | Some meta -> mk_ptr_f ptr meta
+  let mk_ptr_f_opt ptr meta_opt =
+    match meta_opt with Some meta -> mk_ptr_f ptr meta | None -> of_ptr_t ptr
 
   (** The null full (wide) pointer: a {!null} thin pointer with no metadata. *)
   let null_f () = of_ptr_t (null ())
@@ -347,29 +346,8 @@ module Ptr = struct
   (** Like {!of_address}, but produces a full pointer with no metadata. *)
   let of_address_f addr = of_ptr_t (of_address addr)
 
-  let len_meta ptr =
-    match kind ptr with
-    | Extension
-        (Ptr (_, { node = { kind = Extension (PtrMeta (MetaLen len)); _ }; _ }))
-      ->
-        len
-    | Extension (Ptr (_, _)) -> L.failwith "len_meta mismatch"
-    | _ -> todo_migration "PtrFull get meta"
-
-  let vtable_meta ptr =
-    match kind ptr with
-    | Extension
-        (Ptr (_, { node = { kind = Extension (PtrMeta (MetaVTable vt)); _ }; _ }))
-      ->
-        vt
-    | Extension (Ptr (_, _)) -> L.failwith "vtable_meta mismatch"
-    | _ -> todo_migration "PtrFull get meta"
-
-  let with_ptr fptr tptr =
-    match kind fptr with
-    | Extension (Ptr (_, meta)) -> Extension (Ptr (tptr, meta)) <| fptr.node.ty
-    | _ -> todo_migration "PtrFull set ptr"
-
+  let len_meta ptr = Ext0.full_ptr_meta ~build:( <| ) MetaLen ptr
+  let vtable_meta ptr = Ext0.full_ptr_meta ~build:( <| ) MetaVTable ptr
   let ptr_of ptr = Ext0.full_ptr_inner ~build:( <| ) ptr
 end
 
