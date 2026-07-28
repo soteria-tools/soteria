@@ -6,10 +6,13 @@ module Sv = Soteria.Bv_values.Svalue
 
 module Unop = struct
   type ptr_part = PtrInner | PtrSize | PtrAlign
+  and ptr_meta = MetaLen | MetaVTable
 
   and t =
     | ThinPtrPart of ptr_part
     | FullPtrInner
+    | FullPtrMeta
+    | PtrMetaAs of ptr_meta
     | Field of int
     | VariantField of (Types.variant_id[@hash Types.VariantId.to_int]) * int
     | IsVariant of (Types.variant_id[@hash Types.VariantId.to_int])
@@ -24,6 +27,10 @@ module Unop = struct
     | PtrAlign -> Fmt.string ft "align"
 
   let show_ptr_part = Fmt.to_to_string pp_ptr_part
+
+  let pp_ptr_meta ft = function
+    | MetaLen -> Fmt.string ft "len"
+    | MetaVTable -> Fmt.string ft "vtable"
 end
 
 (* the full values *)
@@ -96,6 +103,11 @@ let pp_block pp_v pp_ag pp_ofs pp_sz ft { value; offset; size } =
   Fmt.pf ft "(%a: %a-%a)" pp_ofs offset
     (pp_block_value pp_v pp_ag)
     value pp_sz size
+
+let pp_ptr_meta_kind ft = function
+  | MetaUnit -> Fmt.string ft "unit"
+  | MetaLen _ -> Fmt.pf ft "len"
+  | MetaVTable _ -> Fmt.pf ft "vtable"
 
 let rec pp_ext_ty ft : 'g ext_ty -> unit = function
   | TEnum ty -> Crate.pp_type_decl_ref ft ty
@@ -224,6 +236,37 @@ let full_ptr_inner ~build:(( <| ) : _ build) (v : 'ghost sv) =
   | Extension (Ptr (p, _)) -> p
   | _ -> Extension (Unop (FullPtrInner, v)) <| TExtension TThinPtr
 
+let of_thin_ptr ~build v = mk_full_ptr ~build v (mk_unit_meta ~build ())
+
+let full_ptr_meta_raw ~build:(( <| ) : _ build) (v : 'ghost sv) =
+  match v.node.kind with
+  | Extension (Ptr (_, m)) -> m
+  | _ -> Extension (Unop (FullPtrMeta, v)) <| TExtension TPtrMeta
+
+let ptr_meta_as ~build:(( <| ) : _ build) (part : Unop.ptr_meta) (v : 'ghost sv)
+    =
+  match v.node.kind with
+  | Extension (PtrMeta m) -> (
+      match (part, m) with
+      | MetaLen, MetaLen len -> len
+      | MetaVTable, MetaVTable vtable -> vtable
+      | _ ->
+          L.failwith "ptr_meta_as: expected %a but got %a" Unop.pp_ptr_meta part
+            pp_ptr_meta_kind m)
+  | _ ->
+      let ty : 'ghost svty =
+        match part with
+        | MetaLen -> TBitVector (usize_bits ())
+        | MetaVTable -> TExtension TThinPtr
+      in
+      Extension (Unop (PtrMetaAs part, v)) <| ty
+
+let full_ptr_meta ~build (part : Unop.ptr_meta) (v : 'ghost sv) =
+  full_ptr_meta_raw ~build v |> ptr_meta_as ~build part
+
+let full_ptr_set_inner ~build inner (v : 'ghost sv) =
+  mk_full_ptr ~build inner (full_ptr_meta_raw ~build v)
+
 (** {3 Tuples} *)
 
 let mk_tuple ~build:(( <| ) : _ build) vs =
@@ -321,6 +364,8 @@ let mk_poly ~build:(( <| ) : _ build) ty_id =
 let apply_unop ~build : Unop.t -> _ sv -> _ sv = function
   | ThinPtrPart part -> thin_ptr_part ~build part
   | FullPtrInner -> full_ptr_inner ~build
+  | FullPtrMeta -> full_ptr_meta_raw ~build
+  | PtrMetaAs part -> ptr_meta_as ~build part
   | Field i -> field_of ~build i
   | VariantField (var_id, i) -> field_of_variant ~build var_id i
   | IsVariant var_id -> is_variant ~build var_id

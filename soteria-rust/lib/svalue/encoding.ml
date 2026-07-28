@@ -136,6 +136,11 @@ let encode_unop sort_of_ty ~ty : Unop.t -> sexp -> sexp = function
   | FullPtrInner ->
       gen_decl (Full_ptr_sort.sort ());
       Full_ptr_sort.get_ptr
+  | FullPtrMeta ->
+      gen_decl (Ptr_meta_sort.sort ());
+      Full_ptr_sort.get_meta
+  | PtrMetaAs MetaLen -> Ptr_meta_sort.get_int
+  | PtrMetaAs MetaVTable -> Ptr_meta_sort.get_ptr
   | Field i ->
       let sorts = List.map sort_of_ty (t_as_tuple ty) in
       gen_decl (Tuple_sort.sort sorts);
