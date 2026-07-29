@@ -1,11 +1,12 @@
-fn access(x: &mut u32) {
-    for _ in 0..2000 {
-        *x += 1;
+fn loop_incr<const N: u32>(r: &mut u32) {
+    let _old = *r;
+    *r = 0;
+    for _ in 0..N {
+        *r += 1;
     }
+    assert_eq!(*r, N);
 }
 
 fn main() {
-    let mut x = 0;
-    access(&mut x);
-    soteria::assert(x == 2000, "ok");
+    loop_incr::<2000>(&mut 0);
 }

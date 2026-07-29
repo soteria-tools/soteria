@@ -3,9 +3,17 @@ type t [@@deriving show, eq, ord, hash]
 val fresh_tag : unit -> t
 val zero : t
 
-module WeakMap : PatriciaTree.MAP with type key = t
+module type TagSet = sig
+  type tag := t
+  type t
 
-module WeakSet : sig
-  include Weak.S with type data = t
-  include Sigs.Printable with type t := t
+  val singleton : tag -> t
+  val pp : t Fmt.t
+  val copy_and_add : t -> tag -> t
+  val mem : t -> tag -> bool
 end
+
+module StrongMap : PatriciaTree.MAP with type key = t
+module StrongSet : TagSet
+module WeakMap : PatriciaTree.MAP with type key = t
+module WeakSet : TagSet
