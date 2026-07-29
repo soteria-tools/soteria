@@ -57,6 +57,50 @@ module Place = struct
     (* metadata isn't navigable for in-place writes; spill to the heap *)
     | Metadata _ -> None
 
+  (** [read_val sp v] reads the value at [sp] out of the root value [v]. Dual to
+      {!update_val}, but total: unlike writes, metadata is navigable for reads.
+  *)
+  let rec read_val { kind; origin } v : Typed.T.any Typed.t =
+    match kind with
+    | Local _ -> v
+    | Field (base, ProjAdt (_, Some var), field) ->
+        let idx = Types.FieldId.to_int field in
+        Typed.Adt.field_of_variant var idx (Typed.cast_enum (read_val base v))
+    | Field (base, _, field) ->
+        let idx = Types.FieldId.to_int field in
+        Typed.Adt.field_of idx (Typed.cast_tuple (read_val base v))
+    | Index (base, idx) ->
+        Typed.Adt.array_field_of idx (Typed.cast_array (read_val base v))
+    | Metadata base -> (
+        (* the metadata projection output: [()] for thin pointer, [usize] for
+           slices, and [ptr::DynMetadata] for VTables. However our frontend
+           likes to sometimes treat the metadata as a raw pointer, so we much
+           check for that. Additionally, we must flatten the value, because a
+           valid metadata target can be e.g. [Box<T>]. *)
+        let base_v = read_val base v in
+        let ptr =
+          match base.origin.ty with
+          | TRawPtr _ | TRef _ -> Typed.cast_ptr_f base_v
+          | TAdt adt when adt_is_box adt -> Value_codec.ptr_of_box base_v
+          | _ ->
+              L.failwith "tried loading metadata of non-pointer: %a" pp_ty
+                base.origin.ty
+        in
+        match Typed.Ptr.meta_of ptr with
+        | None -> Typed.as_any Typed.Adt.unit
+        | Some meta -> (
+            match%ty meta with
+            | TBitVector _ -> Typed.as_any meta
+            | TExtension TThinPtr ->
+                let vt = Typed.Ptr.mk_ptr_f meta None in
+                if
+                  Option.is_some_and
+                    (Crate.adt_has_lang_item "dyn_metadata")
+                    (ty_as_adt_opt origin.ty)
+                then Typed.as_any Typed.Adt.(mk_tuple [ mk_tuple [ vt ]; unit ])
+                else Typed.as_any vt
+            | _ -> L.failwith "invalid metadata type"))
+
   let is_local = function { kind = Local _; _ } -> true | _ -> false
 
   let local local_id ty =
@@ -92,12 +136,6 @@ module Binding = struct
     | Dead -> Fmt.pf ft "Dead : %a" pp_ty ty
 
   let as_value = function { kind = Value v; _ } -> Some v | _ -> None
-
-  let bind_value (f : Typed.(T.any t) -> kind) : kind option -> kind option =
-    function
-    | Some (Value v) -> Some (f v)
-    | (Some Uninit | Some Dead) as v -> v
-    | Some (Stackptr _) | None -> None
 end
 
 open Binding
@@ -131,53 +169,11 @@ let iter_bindings (store : t) = Iter.of_iter_bindings Map.iter store
 
 (** [try_load p s] tries loading [p] from the [s], returning [Some v] if it
     succeded, and [None] if it has to be spilled into the heap. *)
-let rec try_load (place : Place.t) (store : t) : Binding.kind option =
-  match place.kind with
-  | Local v -> Some (find v store).kind
-  | Field (base, ProjAdt (_, Some var), field) ->
-      let idx = Types.FieldId.to_int field in
-      try_load base store
-      |> bind_value @@ fun v ->
-         Value (Typed.Adt.field_of_variant var idx (Typed.cast_enum v))
-  | Field (base, _, field) ->
-      let idx = Types.FieldId.to_int field in
-      try_load base store
-      |> bind_value @@ fun v ->
-         Value (Typed.Adt.field_of idx (Typed.cast_tuple v))
-  | Index (base, idx) ->
-      try_load base store
-      |> bind_value @@ fun v ->
-         Value (Typed.Adt.array_field_of idx (Typed.cast_array v))
-  | Metadata base -> (
-      try_load base store
-      |> bind_value @@ fun v ->
-         (* the metadata projection output: [()] for thin pointer, [usize] for
-            slices, and [ptr::DynMetadata] for VTables. However our frontend
-            likes to sometimes treat the metadata as a raw pointer, so we much
-            check for that. Additionally, we must flatten the value, because a
-            valid metadata target can be e.g. [Box<T>]. *)
-         let ptr =
-           match base.origin.ty with
-           | TRawPtr _ | TRef _ -> Typed.cast_ptr_f v
-           | TAdt adt when adt_is_box adt -> Value_codec.ptr_of_box v
-           | _ ->
-               L.failwith "tried loading metadata of non-pointer: %a" pp_ty
-                 base.origin.ty
-         in
-         match Typed.Ptr.meta_of ptr with
-         | None -> Value Typed.Adt.unit
-         | Some meta -> (
-             match%ty meta with
-             | TBitVector _ -> Value (Typed.as_any meta)
-             | TExtension TThinPtr ->
-                 let vt = Typed.Ptr.mk_ptr_f meta None in
-                 if
-                   Option.is_some_and
-                     (Crate.adt_has_lang_item "dyn_metadata")
-                     (ty_as_adt_opt place.origin.ty)
-                 then Value Typed.Adt.(mk_tuple [ mk_tuple [ vt ]; unit ])
-                 else Value vt
-             | _ -> L.failwith "invalid metadata type"))
+let try_load (place : Place.t) (store : t) : Binding.kind option =
+  match (find (Place.root place) store).kind with
+  | Value c -> Some (Value (Place.read_val place c))
+  | (Uninit | Dead) as k -> Some k
+  | Stackptr _ as k -> if Place.is_local place then Some k else None
 
 let try_store (place : Place.t) store value =
   let open Syntaxes.Option in
