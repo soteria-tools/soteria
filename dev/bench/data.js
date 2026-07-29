@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1784649509473,
+  "lastUpdate": 1785331135889,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -6107,6 +6107,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 102.0024,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "1f945bdc2a48073714329496c297f73286c44ae1",
+          "message": "Minor store reorganisation (#452)\n\n* Minor store reorganisation\n\n* Try fixing CI",
+          "timestamp": "2026-07-29T12:12:40Z",
+          "tree_id": "4141bbccb9f161ea4660559d7f6fb95eff06c9f1",
+          "url": "https://github.com/soteria-tools/soteria/commit/1f945bdc2a48073714329496c297f73286c44ae1"
+        },
+        "date": 1785331133815,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.1558054197799996,
+            "range": "± 0.0171",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.9303692879,
+            "range": "± 0.0351",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6548720691600003,
+            "range": "± 0.0097",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.38039464321999994,
+            "range": "± 0.0042",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.27883765714,
+            "range": "± 0.0178",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.6789161425800001,
+            "range": "± 0.0043",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.3587961893,
+            "range": "± 0.0048",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.02091924054,
+            "range": "± 0.0277",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.41413075197488,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 371,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 17,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 122.1621,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 461,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 99,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 41,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 8,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 100.316,
             "unit": "s"
           }
         ]
