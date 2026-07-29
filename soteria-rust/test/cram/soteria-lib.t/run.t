@@ -47,27 +47,27 @@ Test branching on nondet enums: we want to avoid branching unless necessary (whe
   Compiling... done in <time>
   => Running nondet_branching::scalar_enum...
   note: nondet_branching::scalar_enum: done in <time>, ran 1 branch
-  PC 1: ((((V|3|.as<0>.0 <u 0x0000d800) || (0x0000dfff <u V|3|.as<0>.0)) && (V|3|.as<0>.0 <=u 0x0010ffff)) || !(V|3|.is<0>)) /\
-        ((V|3|.as<1>.0 <=u 0x01) || !(V|3|.is<1>)) /\ (V|2| <=u 0x01)
+  PC 1: ((((V|3|.as<A>.0 <u 0x0000d800) || (0x0000dfff <u V|3|.as<A>.0)) && (V|3|.as<A>.0 <=u 0x0010ffff)) || !(V|3|.is<A>)) /\
+        ((V|3|.as<B>.0 <=u 0x01) || !(V|3|.is<B>)) /\ (V|2| <=u 0x01)
   
   => Running nondet_branching::enum_large...
   note: nondet_branching::enum_large: done in <time>, ran 10 branches
-  PC 1: V|1|.is<0>
-  PC 2: !(V|1|.is<0>) /\ V|1|.is<1>
-  PC 3: !(V|1|.is<0>) /\ !(V|1|.is<1>) /\ V|1|.is<2>
-  PC 4: !(V|1|.is<0>) /\ !(V|1|.is<1>) /\ !(V|1|.is<2>) /\ V|1|.is<3>
-  PC 5: !(V|1|.is<0>) /\ !(V|1|.is<1>) /\ !(V|1|.is<2>) /\ !(V|1|.is<3>) /\
-        V|1|.is<4>
-  PC 6: !(V|1|.is<0>) /\ !(V|1|.is<1>) /\ !(V|1|.is<2>) /\ !(V|1|.is<3>) /\
-        !(V|1|.is<4>) /\ V|1|.is<5>
-  PC 7: !(V|1|.is<0>) /\ !(V|1|.is<1>) /\ !(V|1|.is<2>) /\ !(V|1|.is<3>) /\
-        !(V|1|.is<4>) /\ !(V|1|.is<5>) /\ V|1|.is<6>
-  PC 8: !(V|1|.is<0>) /\ !(V|1|.is<1>) /\ !(V|1|.is<2>) /\ !(V|1|.is<3>) /\
-        !(V|1|.is<4>) /\ !(V|1|.is<5>) /\ !(V|1|.is<6>) /\ V|1|.is<7>
-  PC 9: !(V|1|.is<0>) /\ !(V|1|.is<1>) /\ !(V|1|.is<2>) /\ !(V|1|.is<3>) /\
-        !(V|1|.is<4>) /\ !(V|1|.is<5>) /\ !(V|1|.is<6>) /\ !(V|1|.is<7>) /\
-        V|1|.is<8>
-  PC 10: !(V|1|.is<0>) /\ !(V|1|.is<1>) /\ !(V|1|.is<2>) /\ !(V|1|.is<3>) /\
-         !(V|1|.is<4>) /\ !(V|1|.is<5>) /\ !(V|1|.is<6>) /\ !(V|1|.is<7>) /\
-         !(V|1|.is<8>) /\ V|1|.is<9>
+  PC 1: V|1|.is<A>
+  PC 2: !(V|1|.is<A>) /\ V|1|.is<B>
+  PC 3: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ V|1|.is<C>
+  PC 4: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ V|1|.is<D>
+  PC 5: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
+        V|1|.is<E>
+  PC 6: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
+        !(V|1|.is<E>) /\ V|1|.is<F>
+  PC 7: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
+        !(V|1|.is<E>) /\ !(V|1|.is<F>) /\ V|1|.is<G>
+  PC 8: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
+        !(V|1|.is<E>) /\ !(V|1|.is<F>) /\ !(V|1|.is<G>) /\ V|1|.is<H>
+  PC 9: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
+        !(V|1|.is<E>) /\ !(V|1|.is<F>) /\ !(V|1|.is<G>) /\ !(V|1|.is<H>) /\
+        V|1|.is<I>
+  PC 10: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
+         !(V|1|.is<E>) /\ !(V|1|.is<F>) /\ !(V|1|.is<G>) /\ !(V|1|.is<H>) /\
+         !(V|1|.is<I>) /\ V|1|.is<J>
   
