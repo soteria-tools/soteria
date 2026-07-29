@@ -28,7 +28,7 @@ depends: [
   "printbox-text"
   "htmlit"
   "progress" {>= "0.5.0"}
-  "grace" {>= "0.3.0"}
+  "grace" {= "0.3.0"}
   "zarith"
   "odoc" {with-doc}
   "mdx" {with-test}
