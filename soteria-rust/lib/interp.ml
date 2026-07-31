@@ -264,7 +264,8 @@ module Make (StateImpl : State.S) = struct
               | `Byte (b, ofs) ->
                   let offset = BV.usizei ofs in
                   let size = BV.usizeinz (size_of_int b / 8) in
-                  ok { value = as_any b; ty = None; offset; size }
+                  let b = Typed.((b : T.sint t :> T.scalar t)) in
+                  ok ({ value = Scalar b; offset; size } : Typed.block)
               | `Ptr (p, from_, size, ofs) ->
                   let* ptr = ptr_of_provenance p in
                   let ptr = Typed.Ptr.ptr_of ptr in
@@ -277,7 +278,7 @@ module Make (StateImpl : State.S) = struct
                   in
                   let offset = BV.usizei ofs in
                   let size = BV.usizeinz size in
-                  { value; ty = None; offset; size })
+                  { value = Scalar value; offset; size })
         in
         (* let the value decoder handle it *)
         State.transmute_raw ~to_:const.ty blocks

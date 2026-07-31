@@ -156,11 +156,11 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       let total = get_ok total in
       let parts =
         Iter.to_list parts
-        |> List.map (fun Typed.{ value = v; ty; offset; size } ->
+        |> List.map (fun Typed.{ value; offset; size } ->
             let lf =
-              match ty with
-              | None -> Scalar (Typed.cast v)
-              | Some ty -> Aggregate (Typed.cast v, ty)
+              match value with
+              | Scalar v -> Scalar v
+              | Aggregate (v, ty) -> Aggregate (Typed.cast v, ty)
             in
             (lf, offset, offset +!!@ (size :> Typed.T.sint Typed.t)))
       in
@@ -497,13 +497,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
         | Zeros ->
             let+ sizei = sint_to_int size in
             let value = BV.zero (sizei * 8) in
-            Ok ({ Typed.value; ty = None; offset; size } :: vs)
-        | Scalar value ->
-            let value = Typed.as_any value in
-            ok ({ Typed.value; ty = None; offset; size } :: vs)
+            Ok (Typed.{ value = Scalar value; offset; size } :: vs)
+        | Scalar value -> ok (Typed.{ value = Scalar value; offset; size } :: vs)
         | Aggregate (value, vty) ->
-            let value = Typed.as_any value in
-            ok ({ Typed.value; ty = Some vty; offset; size } :: vs)
+            ok (Typed.{ value = Aggregate (value, vty); offset; size } :: vs)
         | Any -> (
             match uninit with
             | `Ignore -> ok vs
@@ -548,10 +545,11 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
     in
     let parts =
       parts
-      |> Iter.map (fun { Typed.value = v; offset; size; _ } ->
+      |> Iter.map (fun Typed.{ value; offset; size } ->
           (* We used [encode] with full depth, so we only get scalars *)
-          let v : Typed.(T.scalar t) = Typed.cast v in
-          (v, offset, offset +!!@ (size :> Typed.T.sint Typed.t)))
+          match value with
+          | Scalar v -> (v, offset, offset +!!@ (size :> Typed.T.sint Typed.t))
+          | Aggregate _ -> L.failwith "impossible: aggregate after encode")
       |> Iter.to_list
     in
     let* parts = sort_parts parts in
@@ -587,10 +585,10 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
        not unnecessarily decay pointers. *)
     let** leaves = collect_leaves ~uninit:`Error t in
     let** leaves =
-      Result.map_list leaves ~f:(fun { Typed.value = v; ty = tyo; _ } ->
-          match tyo with
-          | None -> ok (Typed.cast v) (* no type means it's a scalar *)
-          | Some vty -> whole_to_scalar (Typed.cast v) vty (* aggregate *))
+      Result.map_list leaves ~f:(fun Typed.{ value; _ } ->
+          match value with
+          | Scalar v -> ok v
+          | Aggregate (v, ty) -> whole_to_scalar v ty)
     in
     match List.rev leaves with
     | [ scalar ] ->
@@ -630,11 +628,11 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
             Ok (Some res))
       (Tree.iter_leaves_rev t)
 
-  let init ?ty range v tb : Tree.t =
+  let init ?ty range (v : Typed.block_value) tb : Tree.t =
     let leaf =
-      match ty with
-      | None -> Scalar (Typed.cast v)
-      | Some ty -> Aggregate (Typed.cast v, ty)
+      match v with
+      | Scalar v -> Scalar v
+      | Aggregate (v, ty) -> Aggregate (v, ty)
     in
     Tree.make ~node:(TB.Owned (Leaf (leaf, tb))) ~range ()
 
@@ -724,13 +722,12 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   (** Stores [value] at the given range. If [ty] is provided, the value is an
       aggregate of that type, and is stored whole, to be decomposed lazily if a
       smaller access requires it. *)
-  let store ?ty (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.nonzero ] t))
-      (value : Typed.([< T.any ] t)) (tag : Ptr_tag.t option)
+  let store (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.nonzero ] t))
+      (value : Typed.block_value) (tag : Ptr_tag.t option)
       (tb : Borrows.Tree.t option) : (unit, 'err, 'fix) SM.Result.t =
     let open SM.Syntax in
     (* manually coerce so types line up *)
     let ofs = (ofs :> Typed.(T.sint t)) in
-    let value = (value :> Typed.(T.any t)) in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in
     let mk_fixes = mk_fix_any_s ofs size in
     with_bound_check ~mk_fixes bound (fun t ->
@@ -745,8 +742,8 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
                 @@ lift_tb_miss
                 @@ Borrows.State.access tag Write tb tb_st
               in
-              init ?ty range value tb_st'
-          | None -> ok (init ?ty range value tb_st)
+              init range value tb_st'
+          | None -> ok (init range value tb_st)
         in
         let rebuild_parent = Tree.of_children in
         let++ _, tree =
