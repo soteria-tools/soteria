@@ -182,11 +182,7 @@ module type S = sig
     val nondet_valid : Types.ty -> (any v, 'env) monad
 
     val ref_tys_in :
-      f:
-        ('acc ->
-        Types.ty ->
-        [< sptr_f ] v ->
-        ([> sptr_f ] v * 'acc, 'env) monad) ->
+      f:('acc -> Types.ty -> sptr_f v -> (sptr_f v * 'acc, 'env) monad) ->
       init:'acc ->
       Types.ty ->
       any v ->
