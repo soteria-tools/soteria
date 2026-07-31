@@ -670,8 +670,8 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
 (** Transmutes a singular rust value, without splitting. This is under the
     assumption that [size_of to_ty = size_of v], and both are primitives
     (literal or pointer). *)
-let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
-    [> Typed.T.any ] Typed.t DecayMap.SM.t =
+let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.scalar ] Typed.t) :
+    [> Typed.T.scalar ] Typed.t DecayMap.SM.t =
   match%ty (v, to_ty) with
   (* Same-kind transmutes are the identity. *)
   | TBitVector _, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->

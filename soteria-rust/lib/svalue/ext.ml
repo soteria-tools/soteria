@@ -21,8 +21,8 @@ and 'ghost ptr = {
 }
 
 (** A block of an encoded value: a value, along with the offset it is at and the
-    size it spans. [ty] is [Some] iff the value is a whole (unencoded) aggregate
-    of that (normalised) type. *)
+    size it spans. [ty] is [Some] iff the value is a whole aggregate of that
+    type. *)
 and ('v, 'ofs, 'sz) block = {
   value : 'v;
   ty : Types.ty option;

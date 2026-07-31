@@ -24,9 +24,16 @@ module T : sig
   type poly = [ `Poly ]
   type ptr_meta = [ sptr_t | sint ]
 
+  (** Values with a direct scalar representation: integers, floats and full
+      pointers. Polymorphic values are scalars too, as they're not composite. *)
+  type scalar = [ sint | sfloat | sptr_f | poly ]
+
+  (** Structured values, made of several components. *)
+  type aggregate = [ tuple | enum | union ]
+
   (** The values that are allowed within the Rust interpreter as standalone
       values. *)
-  type any = [ sint | sfloat | sptr_f | tuple | enum | union | poly ]
+  type any = [ scalar | aggregate ]
 
   val pp_sptr_f : Format.formatter -> sptr_f -> unit
   val pp_sptr_t : Format.formatter -> sptr_t -> unit
@@ -34,6 +41,8 @@ module T : sig
   val pp_enum : Format.formatter -> enum -> unit
   val pp_union : Format.formatter -> union -> unit
   val pp_poly : Format.formatter -> poly -> unit
+  val pp_scalar : Format.formatter -> scalar -> unit
+  val pp_aggregate : Format.formatter -> aggregate -> unit
   val pp_any : Format.formatter -> any -> unit
 end
 

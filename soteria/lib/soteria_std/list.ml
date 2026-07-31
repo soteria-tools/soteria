@@ -213,12 +213,12 @@ let split_around l i =
   in
   aux [] l i
 
-(** [split_hd l] returns the head and tail of the list [l].
+(** [take_first l] returns the head and tail of the list [l].
 
     @raise Invalid_argument if [l] is empty. *)
-let[@inline] split_hd = function
+let[@inline] take_first = function
   | hd :: tl -> (hd, tl)
-  | [] -> invalid_arg "split_hd: empty list"
+  | [] -> invalid_arg "take_first: empty list"
 
 (** Equivalent to {!fold_left}; we re-export is as [fold] for compatibility with
     {!Sigs.Foldable}. *)
