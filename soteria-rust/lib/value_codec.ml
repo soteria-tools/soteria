@@ -393,23 +393,28 @@ let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
   else
     let size = Typed.cast_nonzero layout.size in
     match layout.fields with
-    | Primitive -> ok (Iter.singleton { Typed.value; ty = None; offset; size })
+    | Primitive ->
+        let value : Typed.(T.scalar t) = Typed.cast value in
+        ok (Iter.singleton Typed.{ value = Scalar value; offset; size })
     | _ when depth = Some 0 ->
-        ok (Iter.singleton { Typed.value; ty = Some ty; offset; size })
+        let value : Typed.(T.aggregate t) = Typed.cast value in
+        ok
+          (Iter.singleton Typed.{ value = Aggregate (value, ty); offset; size })
     | Arbitrary _ ->
         let adt = ty_as_adt ty in
         if Crate.is_union adt then
           let blocks = Typed.Adt.as_union (Typed.cast_union ~adt value) in
           Iter.of_list blocks
           |> Result.fold_iter ~init:Iter.empty
-               ~f:(fun acc { Typed.value; ty = bty; offset = o; size } ->
+               ~f:(fun acc Typed.{ value; offset = o; size } ->
                  let offset = offset +!!@ o in
-                 match bty with
-                 | Some bty ->
+                 match value with
+                 | Aggregate (value, bty) ->
+                     let value = Typed.as_any value in
                      let++ ys = encode ?depth:depth' ~offset value bty in
                      Iter.append acc ys
-                 | None ->
-                     ok (Iter.cons { Typed.value; ty = None; offset; size } acc))
+                 | Scalar _ as value ->
+                     ok (Iter.cons Typed.{ value; offset; size } acc))
         else
           let fields = Typed.Adt.as_tuple (Typed.cast_tuple value) in
           chain Iter.combine_list fields (iter_fields layout ty)
@@ -441,10 +446,9 @@ let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         | None -> fields
         | Some (ofs, tag) ->
             let size = BV.usizeinz (Typed.size_of_int tag / 8) in
+            let tag = Typed.((tag : T.sint t :> T.scalar t)) in
             let offset = ofs +!!@ offset in
-            Iter.cons
-              { Typed.value = Typed.as_any tag; ty = None; offset; size }
-              fields)
+            Iter.cons { Typed.value = Scalar tag; offset; size } fields)
 
 (** Iterates over the validity constraints of this particular value for a given
     type, traversing it recursively. For every requirement, this associates to
@@ -772,8 +776,7 @@ let rec nondet_raw :
               (Typed.Adt.mk_union adt
                  [
                    {
-                     Typed.value = Typed.as_any bytes;
-                     ty = None;
+                     value = Scalar bytes;
                      offset = Usize.(0s);
                      size = Typed.cast_nonzero size;
                    };

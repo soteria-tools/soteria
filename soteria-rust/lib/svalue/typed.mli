@@ -1,8 +1,11 @@
 open Charon
 
-type ('v, 'ofs, 'sz) block_raw = ('v, 'ofs, 'sz) Ext.block = {
-  value : 'v;
-  ty : Types.ty option;
+type ('sc, 'ag) block_value_raw = ('sc, 'ag) Ext.block_value =
+  | Scalar of 'sc
+  | Aggregate of 'ag * Types.ty
+
+type ('sc, 'ag, 'ofs, 'sz) block_raw = ('sc, 'ag, 'ofs, 'sz) Ext.block = {
+  value : ('sc, 'ag) block_value_raw;
   offset : 'ofs;
   size : 'sz;
 }
@@ -46,10 +49,12 @@ module T : sig
   val pp_any : Format.formatter -> any -> unit
 end
 
+(** A block's value: can either be an untyped scalar, or a typed aggregate. *)
+type block_value = (T.scalar t, T.aggregate t) block_value_raw
+
 (** A memory block: contains a value, with its offset and size inside some
-    unknown allocation or range. The type is [None] if the value is a raw
-    scalar, and [Some ty] if it is a typed aggregate value. *)
-type block = (T.any t, T.sint t, T.nonzero t) block_raw
+    unknown allocation or range. *)
+type block = (T.scalar t, T.aggregate t, T.sint t, T.nonzero t) block_raw
 
 val pp_block : Format.formatter -> block -> unit
 

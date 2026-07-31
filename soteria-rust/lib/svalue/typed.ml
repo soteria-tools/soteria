@@ -8,11 +8,12 @@ open Ext.Rust_ext
    [Ext.Rust_ext] *)
 module Ext0 = Ext
 
-(* re-export, so users of [Typed] can access the fields; use {!block} rather
-   than this *)
-type ('v, 'ofs, 'sz) block_raw = ('v, 'ofs, 'sz) Ext.block = {
-  value : 'v;
-  ty : Types.ty option;
+type ('sc, 'ag) block_value_raw = ('sc, 'ag) Ext.block_value =
+  | Scalar of 'sc
+  | Aggregate of 'ag * Types.ty
+
+type ('sc, 'ag, 'ofs, 'sz) block_raw = ('sc, 'ag, 'ofs, 'sz) Ext.block = {
+  value : ('sc, 'ag) block_value_raw;
   offset : 'ofs;
   size : 'sz;
 }
@@ -48,10 +49,10 @@ module T = struct
   let pp_any = Fmt.nop
 end
 
-(** A typed view of {!Ext.block}. *)
-type block = (T.any t, T.sint t, T.nonzero t) block_raw
+type block_value = (T.scalar t, T.aggregate t) block_value_raw
+type block = (T.scalar t, T.aggregate t, T.sint t, T.nonzero t) block_raw
 
-let pp_block ft (block : block) = Ext0.pp_block ppa ppa ppa ft block
+let pp_block ft (block : block) = Ext0.pp_block ppa ppa ppa ppa ft block
 
 (** [CastError (value, expected, got)] *)
 exception CastError of T.any t * T.any ty * T.any ty
