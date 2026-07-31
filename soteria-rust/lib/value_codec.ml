@@ -85,8 +85,8 @@ let ptr_of_box v =
 
 (** Given a pointer, allocator and marker, returns a value of type [Box<T, A>]
 *)
-let mk_box ptr allocator marker =
-  let nonnull = Typed.Adt.mk_tuple [ Typed.cast ptr ] in
+let mk_box (ptr : Typed.([< T.sptr_f ] t)) allocator marker =
+  let nonnull = Typed.Adt.mk_tuple [ ptr ] in
   let unique = Typed.Adt.mk_tuple [ nonnull; marker ] in
   let box = Typed.Adt.mk_tuple [ unique; allocator ] in
   box
@@ -807,8 +807,8 @@ let rec ref_tys_in
     (fn :
       'acc ->
       Types.ty ->
-      Typed.([< T.sptr_f ] t) ->
-      (Typed.([> T.sptr_f ] t) * 'acc, 'e, 'f) Rustsymex.Result.t) (init : 'acc)
+      Typed.(T.sptr_f t) ->
+      (Typed.(T.sptr_f t) * 'acc, 'e, 'f) Rustsymex.Result.t) (init : 'acc)
     (ty : Types.ty) (v : Typed.([< T.any ] t)) :
     (Typed.([> T.any ] t) * 'acc, 'e, 'f) Rustsymex.Result.t =
   let open Rustsymex in
@@ -839,7 +839,7 @@ let rec ref_tys_in
   | TRef (_, _, _) | TAdt { id = TBuiltin TBox; _ } ->
       let v = Typed.cast_ptr_f v in
       let++ res, acc = fn init ty v in
-      (Typed.cast res, acc)
+      (Typed.as_any res, acc)
   | TAdt adt when adt_is_box adt ->
       (* a box has only one non ZST, the pointer *)
       let ptr, allocator, marker = unwrap_box v in
