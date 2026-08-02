@@ -4,7 +4,7 @@ check_stat() {
 	local expected="$3"
 
 	local value
-	value="$(jq ".\"soteria-rust.$stat\" // 0" "$stats_file")"
+	value="$(jq ".\"$stat\" // 0" "$stats_file")"
 
 	if [ "$value" != "$expected" ]; then
 		echo "check_stat: expected '$expected', got '$value' for $stat" >&2
