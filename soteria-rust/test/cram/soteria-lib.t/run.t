@@ -42,8 +42,8 @@ Test #[soteria::*] annotations
   note: annots::test_expect_fail: done in <time>, ran 1 branch
   PC 1: empty
   
-Test branching on nondet enums: we want to avoid branching unless necessary (when comparing the discriminant, or accessing variant fields)
-  $ soteria-rust exec nondet_branching.rs
+Test branching on nondet enums: we want to avoid branching unless necessary (when comparing the discriminant, or accessing variant fields). Only 2 branches, as there are two tests, that must not branch.
+  $ soteria-rust exec nondet_branching.rs --stats stats.json && check_stat stats.json soteria.branches 2
   Compiling... done in <time>
   => Running nondet_branching::scalar_enum...
   note: nondet_branching::scalar_enum: done in <time>, ran 1 branch
@@ -51,23 +51,6 @@ Test branching on nondet enums: we want to avoid branching unless necessary (whe
         ((V|3|.as<B>.0 <=u 0x01) || !(V|3|.is<B>)) /\ (V|2| <=u 0x01)
   
   => Running nondet_branching::enum_large...
-  note: nondet_branching::enum_large: done in <time>, ran 10 branches
-  PC 1: V|1|.is<A>
-  PC 2: !(V|1|.is<A>) /\ V|1|.is<B>
-  PC 3: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ V|1|.is<C>
-  PC 4: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ V|1|.is<D>
-  PC 5: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
-        V|1|.is<E>
-  PC 6: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
-        !(V|1|.is<E>) /\ V|1|.is<F>
-  PC 7: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
-        !(V|1|.is<E>) /\ !(V|1|.is<F>) /\ V|1|.is<G>
-  PC 8: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
-        !(V|1|.is<E>) /\ !(V|1|.is<F>) /\ !(V|1|.is<G>) /\ V|1|.is<H>
-  PC 9: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
-        !(V|1|.is<E>) /\ !(V|1|.is<F>) /\ !(V|1|.is<G>) /\ !(V|1|.is<H>) /\
-        V|1|.is<I>
-  PC 10: !(V|1|.is<A>) /\ !(V|1|.is<B>) /\ !(V|1|.is<C>) /\ !(V|1|.is<D>) /\
-         !(V|1|.is<E>) /\ !(V|1|.is<F>) /\ !(V|1|.is<G>) /\ !(V|1|.is<H>) /\
-         !(V|1|.is<I>) /\ V|1|.is<J>
+  note: nondet_branching::enum_large: done in <time>, ran 1 branch
+  PC 1: empty
   

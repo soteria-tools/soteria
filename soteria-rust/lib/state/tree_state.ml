@@ -487,18 +487,8 @@ module Make (Borrows : Tree_borrows.T) = struct
         let** _, align = size_and_align_of_val ty ptr in
         check_align (Typed.Ptr.ptr_of ptr) align
     in
-    let**^ known_variant = Layout.enum_single_variant ty in
-    let++ variant_id =
-      match known_variant with
-      | Some variant -> Result.ok variant
-      | None ->
-          let parser ~offset = Tree_block.Decoder.variant_of_enum ty ~offset in
-          apply_parser (Typed.Ptr.ptr_of ptr) parser
-    in
-    let adt = Charon_util.ty_as_adt ty in
-    let variants = Crate.as_enum adt in
-    let variant = Types.VariantId.nth variants variant_id in
-    Typed.BV.of_literal variant.discriminant
+    Tree_block.Decoder.discriminant_of_enum ty
+    |> apply_parser (Typed.Ptr.ptr_of ptr)
 
   (** Performs a side-effect free ghost read -- this does not modify the state
       or the tree-borrow state. Returns [Some error] if an error occurred, and
