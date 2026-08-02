@@ -511,7 +511,7 @@ Test exactly-evaluated float operations, at every precision
   • Allocations: 50
   • SAT checks: 49 (0 unknowns)
   • SAT solving time: <time> (<%>)
-  • Branches: 16 (0 unexplored)
+  • Branches: 30 (0 unexplored)
   
 
 Test approximation of complex float operations -- warn (default)

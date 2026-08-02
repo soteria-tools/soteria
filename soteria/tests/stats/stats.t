@@ -11,7 +11,7 @@ Test printing stats to stdout (ensure this looks somewhat nice)
     - other miss no fix
   • SAT checks: 12 (0 unknowns)
   • SAT solving time: <time> (<%>)
-  • Branches: 4 (0 unexplored)
+  • Branches: 5 (0 unexplored)
   
   
   {
@@ -23,7 +23,7 @@ Test printing stats to stdout (ensure this looks somewhat nice)
     "soteria.miss-without-fix": [ "miss no fix", "other miss no fix" ],
     "soteria.sat-checks": 12,
     "soteria.sat-time": "<float>",
-    "soteria.branches": 4
+    "soteria.branches": 5
   }
   
   Serialization round-trip successful.
