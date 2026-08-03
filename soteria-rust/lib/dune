@@ -12,7 +12,6 @@
   iter
   soteria
   str
-  patricia-tree
   yojson
   zarith)
  (flags :standard -open Soteria.Soteria_std -open Soteria.Bv_values)

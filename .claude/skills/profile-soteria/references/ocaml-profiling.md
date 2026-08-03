@@ -246,7 +246,7 @@ flat to within run-to-run noise (~2%) on `writealot`, `writealotloop`,
 `btreeset_sort`, `ctpop` — if anything flambda was marginally *slower*.
 
 Why: a `sample` of `ctpop` shows the hot regions are the **memory model and
-persistent data structures**, not the monad — `PatriciaTree.filter_map_no_share`
+persistent data structures**, not the monad — the weak-map rebuild in `compact`
 (persistent-map rebuild that doesn't structurally share), `Tree_borrows`
 (`Concrete.access`/`Raw.access`), `Range_tree.map_leaves`, `Tree_block`/
 `Rtree_block`, plus `caml_runstack` (effects) and `caml_modify`/`caml_call_gc`/

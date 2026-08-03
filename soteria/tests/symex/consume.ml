@@ -43,9 +43,7 @@ let asrt_success =
   let open Svalue.Infix in
   (x @-> y) * (y @-> z) * p (y ==@ zero) * p (z ==@ one)
 
-let expected_subst = {|V|1337| -> V|1|
-V|67| -> V|2|
-V|42| -> V|3||}
+let expected_subst = {s|{V|1337| -> V|1|; V|67| -> V|2|; V|42| -> V|3|}|s}
 
 let asrt_lfail =
   let open Svalue.Infix in

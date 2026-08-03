@@ -13,7 +13,7 @@ module type TagSet = sig
   val mem : t -> tag -> bool
 end
 
-module StrongMap : PatriciaTree.MAP with type key = t
+module StrongMap : PatriciaTree.Map with type key = t
 module StrongSet : TagSet
-module WeakMap : PatriciaTree.MAP with type key = t
+module WeakMap : PatriciaTree.Map with type key = t
 module WeakSet : TagSet

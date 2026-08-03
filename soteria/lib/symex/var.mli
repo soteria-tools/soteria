@@ -36,6 +36,6 @@ module Incr_counter_mut : (_ : sig
 end
 
 module Hashset : Hashset.S with type elt = t
-module Set : PatriciaTree.SET with type elt = t
+module Set : PatriciaTree.Set with type elt = t
 module Hashtbl : Hashtbl.S with type key = t
-module Map : PatriciaTree.MAP with type key = t
+module Map : PatriciaTree.Map with type key = t

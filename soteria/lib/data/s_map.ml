@@ -78,7 +78,7 @@ module Make (Symex : Symex.Base) (Key : Key(Symex).S) =
 module Make_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) =
-  Build_base (Symex) (Key) (PatriciaTree.MakeMap (Key))
+  Build_base (Symex) (Key) (Soteria_std.PatriciaTree.MakeMap (Key))
 
 (** Sound to use when the keys of the map may depend on symbolic variables *)
 
@@ -174,7 +174,7 @@ module Direct_access (Symex : Symex.Base) (Key : Key(Symex).S) =
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) =
-  Build_direct_access (Symex) (Key) (PatriciaTree.MakeMap (Key))
+  Build_direct_access (Symex) (Key) (Soteria_std.PatriciaTree.MakeMap (Key))
 
 module Lazy (Symex : Symex.Base) (Key : Key(Symex).S) =
   Build_lazy (Symex) (Key) (Stdlib.Map.Make (Key))
@@ -182,7 +182,7 @@ module Lazy (Symex : Symex.Base) (Key : Key(Symex).S) =
 module Lazy_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) =
-  Build_lazy (Symex) (Key) (PatriciaTree.MakeMap (Key))
+  Build_lazy (Symex) (Key) (Soteria_std.PatriciaTree.MakeMap (Key))
 
 module Concrete (Symex : Symex.Base) (Key : Key(Symex).S) = struct
   include Build (Symex) (Key) (Stdlib.Map.Make (Key))

@@ -19,7 +19,6 @@ depends: [
   "soteria"
   "dune-site"
   "zarith"
-  "patricia-tree"
   "cmdliner"
   "iter"
   "ppx_deriving"

@@ -16,9 +16,8 @@ module Mk_concrete_key (Symex : Symex.Base) (K : Soteria_std.Ordered_type.S) :
     equality on all keys. *)
 module Make (Symex : Symex.Base) (Key : Key(Symex).S) : S(Symex)(Key).S
 
-(** Same as {!Make}, but backed by a
-    {{:https://ocaml.org/p/patricia-tree/latest/doc/index.html}Patricia Tree},
-    which may offer performance benefits. *)
+(** Same as {!Make}, but backed by a {!Soteria_std.PatriciaTree}, which may
+    offer performance benefits. *)
 module Make_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) : S(Symex)(Key).S
@@ -30,9 +29,8 @@ module Make_patricia_tree
 *)
 module Direct_access (Symex : Symex.Base) (Key : Key(Symex).S) : S(Symex)(Key).S
 
-(** Same as {!Direct_access}, but backed by a
-    {{:https://ocaml.org/p/patricia-tree/latest/doc/index.html}Patricia Tree},
-    which may offer performance benefits. *)
+(** Same as {!Direct_access}, but backed by a {!Soteria_std.PatriciaTree}, which
+    may offer performance benefits. *)
 module Direct_access_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) : S(Symex)(Key).S
@@ -41,9 +39,8 @@ module Direct_access_patricia_tree
     possible that the key is outside the map, only this path will be taken. *)
 module Lazy (Symex : Symex.Base) (Key : Key(Symex).S) : S(Symex)(Key).S
 
-(** Same as {!Lazy}, but backed by a
-    {{:https://ocaml.org/p/patricia-tree/latest/doc/index.html}Patricia Tree},
-    which may offer performance benefits. *)
+(** Same as {!Lazy}, but backed by a {!Soteria_std.PatriciaTree}, which may
+    offer performance benefits. *)
 module Lazy_patricia_tree
     (Symex : Symex.Base)
     (Key : Key(Symex).S_patricia_tree) : S(Symex)(Key).S
