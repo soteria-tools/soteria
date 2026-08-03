@@ -167,6 +167,6 @@ We would especially like to thank:
 
 ## License
 
-Soteria and derived tools in this repository are under Apache-2.0 license, copyright Soteria Tools Ltd 2026.
+Soteria and derived tools in this repository are under the Apache-2.0 license. Copyright 2024–2025 Imperial College London and 2025–2026 Soteria Tools Ltd.; see the [NOTICE](./NOTICE) file for how copyright is split between the two.
 
 The Soteria logo is a trademark of the Soteria Tools Ltd.
