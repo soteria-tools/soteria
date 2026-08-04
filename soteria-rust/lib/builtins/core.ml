@@ -14,12 +14,25 @@ module M (StateM : State.StateM.S) = struct
   open Syntax
 
   let cmp ~signed l r =
+    let open Typed.Adt.Checked in
     let ordering = Crate.get_adt_lang_item_ref "Ordering" in
     let ( < ) = if signed then ( <$@ ) else ( <@ ) in
-    let discr =
-      Typed.ite (l < r) U8.(-1s) (Typed.ite (l ==@ r) U8.(0s) U8.(1s))
-    in
-    Typed.Adt.mk_enum ordering discr []
+    let lt = l < r in
+    let eq = l ==@ r in
+    match (Typed.to_bool lt, Typed.to_bool eq) with
+    | Some true, _ -> ok @@ mk_enum ordering "Less" []
+    | _, Some true -> ok @@ mk_enum ordering "Equal" []
+    | Some false, Some false -> ok @@ mk_enum ordering "Greater" []
+    | _ ->
+        (* TODO: uncomment this when we support symbolic enums
+         * let*^ ord = Rustsymex.nondet (Typed.t_enum ordering) in
+         * let discr = Typed.Adt.discriminant_of ord in
+         * let exp_discr = Typed.ite lt U8.(-1s) (Typed.ite eq U8.(0s) U8.(1s)) in
+         * let+ () = assume [ discr ==@ exp_discr ] in
+         * (ord : T.enum Typed.t :> [> T.enum ] Typed.t) *)
+        if%sat lt then ok @@ mk_enum ordering "Less" []
+        else if%sat eq then ok @@ mk_enum ordering "Equal" []
+        else ok @@ mk_enum ordering "Greater" []
 
   (** Rust allows shift operations on integers of differents sizes, which isn't
       possible in SMT-Lib, so we normalise the righthand side to match the left
