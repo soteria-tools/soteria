@@ -85,8 +85,8 @@ let ptr_of_box v =
 
 (** Given a pointer, allocator and marker, returns a value of type [Box<T, A>]
 *)
-let mk_box ptr allocator marker =
-  let nonnull = Typed.Adt.mk_tuple [ Typed.cast ptr ] in
+let mk_box (ptr : Typed.([< T.sptr_f ] t)) allocator marker =
+  let nonnull = Typed.Adt.mk_tuple [ ptr ] in
   let unique = Typed.Adt.mk_tuple [ nonnull; marker ] in
   let box = Typed.Adt.mk_tuple [ unique; allocator ] in
   box
@@ -129,54 +129,61 @@ struct
     type handler = Types.ty -> Typed.(T.sint t) -> Typed.T.any Typed.t res
 
     type get_all_handler =
-      Typed.(T.nonzero t) ->
-      Typed.(T.sint t) ->
-      Typed.(T.any t * T.sint t * T.nonzero t) list res
+      Typed.(T.nonzero t) -> Typed.(T.sint t) -> Typed.block list res
+
+    (** Tries reading a whole value of the given type at the given offset, if
+        the state stores it as such; [None] means the value isn't stored whole
+        there, and must instead be read component by component. *)
+    type whole_handler =
+      Types.ty -> Typed.(T.sint t) -> Typed.T.any Typed.t option res
 
     (* A parser monad is an object such that, given a query handler with state
        ['state], returns a state monad-ish for that state which may fail or
        branch *)
-    type 'a t = handler -> get_all_handler -> 'a res
+    type 'a t = handler -> get_all_handler -> whole_handler -> 'a res
 
-    let parse ~(handler : handler) ~(get_all : get_all_handler) scheduler :
-        'a res =
-      scheduler handler get_all
+    let parse ~(handler : handler) ~(get_all : get_all_handler)
+        ~(query_whole : whole_handler) scheduler : 'a res =
+      scheduler handler get_all query_whole
 
-    let ok (x : 'a) : 'a t = fun _handler _get_all -> SM.Result.ok x
-    let error (e : Error.t) : 'a t = fun _handler _get_all -> SM.Result.error e
+    let ok (x : 'a) : 'a t = fun _handler _get_all _whole -> SM.Result.ok x
+
+    let error (e : Error.t) : 'a t =
+     fun _handler _get_all _whole -> SM.Result.error e
 
     let bind2 (f : 'a -> 'b t) (fe : 'err -> 'b t) (m : 'a t) : 'b t =
-     fun handler get_all ->
+     fun handler get_all whole ->
       let open SM.Syntax in
-      let* res = m handler get_all in
+      let* res = m handler get_all whole in
       match res with
-      | Compo_res.Ok x -> f x handler get_all
-      | Compo_res.Error e -> fe e handler get_all
+      | Compo_res.Ok x -> f x handler get_all whole
+      | Compo_res.Error e -> fe e handler get_all whole
       | Compo_res.Missing f -> SM.Result.miss f
 
     let bind (f : 'a -> 'b t) (m : 'a t) : 'b t =
-     fun handler get_all ->
+     fun handler get_all whole ->
       let open SM.Syntax in
-      let** x = m handler get_all in
-      f x handler get_all
+      let** x = m handler get_all whole in
+      f x handler get_all whole
 
     let map (f : 'a -> 'b) (m : 'a t) : 'b t =
-     fun handler get_all ->
+     fun handler get_all whole ->
       let open SM.Syntax in
-      let++ x = m handler get_all in
+      let++ x = m handler get_all whole in
       f x
 
-    let query ty ofs : 'a t = fun (handler : handler) _ -> handler ty ofs
-    let get_all size ofs : 'a t = fun _ get_all -> get_all size ofs
+    let query ty ofs : 'a t = fun (handler : handler) _ _ -> handler ty ofs
+    let get_all size ofs : 'a t = fun _ get_all _ -> get_all size ofs
+    let query_whole ty ofs : 'a t = fun _ _ whole -> whole ty ofs
 
     let[@inline] lift (m : 'a DecayMap.SM.t) : 'a t =
       let open SM.Syntax in
-      fun _handler _get_all ->
+      fun _handler _get_all _whole ->
         let*^ m in
         SM.Result.ok m
 
     let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) : 'a t =
-     fun _handler _get_all -> SM.lift (DecayMap.SM.lift m)
+     fun _handler _get_all _whole -> SM.lift (DecayMap.SM.lift m)
 
     let not_impl ?tip ?issue fmt =
       Fmt.kstr (fun msg -> lift @@ not_impl ?tip ?issue "%s" msg) fmt
@@ -188,7 +195,7 @@ struct
     let normalise ty = lift_rsymex @@ Layout.normalise ty
 
     let assert_or_error cond err =
-     fun _handler _get_all state ->
+     fun _handler _get_all _whole state ->
       DecayMap.SM.Result.map (fun () -> ((), state)) (assert_or_error cond err)
 
     let fold_iter x ~init ~f =
@@ -198,13 +205,14 @@ struct
       let ( let* ) x f = bind f x
       let ( let+ ) x f = map f x
       let ( let*^ ) x f = bind f (lift x)
+      let ( let- ) x f = match x with Some v -> ok v | None -> f ()
 
       module Symex_syntax = struct
         let branch_on ?left_branch_name ?right_branch_name guard ~then_ ~else_ =
-         fun handler get_all state ->
+         fun handler get_all whole state ->
           DecayMap.SM.branch_on ?left_branch_name ?right_branch_name guard
-            ~then_:(fun () -> then_ () handler get_all state)
-            ~else_:(fun () -> else_ () handler get_all state)
+            ~then_:(fun () -> then_ () handler get_all whole state)
+            ~else_:(fun () -> else_ () handler get_all whole state)
       end
     end
   end
@@ -289,6 +297,25 @@ struct
     in
     let* ty = normalise ty in
     let* layout = layout_of ty in
+    (* If the state stores a whole value of this exact type at this offset, we
+     * can read it as-is and avoid decoding it component by component. We can
+     * only do this if:
+     * - It is not a primitive value
+     * - It is inhabited
+     * - It is not a DST (since it's decoding depends on the metadata)
+     * - It is not a ZST *)
+    let can_read_whole =
+      Layout.is_aggregate layout
+      && (not layout.uninhabited)
+      && not (Layout.is_dst ty)
+    in
+    let can_read_whole =
+      Typed.of_bool can_read_whole &&@ Typed.not (layout.size ==@ Usize.(0s))
+    in
+    let* whole =
+      if%sat can_read_whole then query_whole ty offset else ok None
+    in
+    let- () = whole in
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error (`RefToUninhabited ty)
     | _, TDynTrait _ -> L.failwith "decode: cannot decode an unsized dyn value"
@@ -340,37 +367,54 @@ struct
     | Enum _, _ -> L.failwith "decode: expected enum type for enum layout"
 end
 
-(** [encode ?offset v ty] Converts a [Typed.t] of type [ty] into an iterator
-    over its sub values, along with their offset. Offsets all blocks by [offset]
-    if specified *)
-let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
-    (Typed.(T.any t * T.sint t * T.nonzero t) Iter.t, 'e, 'f) Rustsymex.Result.t
-    =
+(** [encode ?depth ~offset v ty] Converts a [Typed.t] of type [ty] into an
+    iterator over its component {{!Svalue.Typed.block}[block]}s. [depth] is the
+    number of decomposition levels to apply (unlimited if unspecified): once it
+    runs out, aggregate components are left whole rather than decomposed
+    further, with their [ty] set. Offsets all blocks by [offset] if specified.
+*)
+let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
+    (Typed.block Iter.t, 'e, 'f) Rustsymex.Result.t =
   let open Rustsymex in
   let open Syntax in
   let open Result in
+  let depth' = Option.map Int.pred depth in
   let chain combine fields iter =
     fields
     |> combine iter
     |> Result.fold_iter ~init:Iter.empty ~f:(fun acc ((ty, ofs), v) ->
         let offset = offset +!!@ ofs in
-        let++ ys = encode ~offset v ty in
+        let++ ys = encode ?depth:depth' ~offset v ty in
         Iter.append acc ys)
   in
   let** ty = Layout.normalise ty in
   let** layout = Layout.layout_of ty in
   if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
   else
+    let size = Typed.cast_nonzero layout.size in
     match layout.fields with
     | Primitive ->
-        ok (Iter.singleton (value, offset, Typed.cast_nonzero layout.size))
+        let value : Typed.(T.scalar t) = Typed.cast value in
+        ok (Iter.singleton Typed.{ value = Scalar value; offset; size })
+    | _ when depth = Some 0 ->
+        let value : Typed.(T.aggregate t) = Typed.cast value in
+        ok
+          (Iter.singleton Typed.{ value = Aggregate (value, ty); offset; size })
     | Arbitrary _ ->
         let adt = ty_as_adt ty in
         if Crate.is_union adt then
           let blocks = Typed.Adt.as_union (Typed.cast_union ~adt value) in
-          ok
-            (Iter.of_list blocks
-            |> Iter.map (fun (v, o, s) -> (v, offset +!!@ o, s)))
+          Iter.of_list blocks
+          |> Result.fold_iter ~init:Iter.empty
+               ~f:(fun acc Typed.{ value; offset = o; size } ->
+                 let offset = offset +!!@ o in
+                 match value with
+                 | Aggregate (value, bty) ->
+                     let value = Typed.as_any value in
+                     let++ ys = encode ?depth:depth' ~offset value bty in
+                     Iter.append acc ys
+                 | Scalar _ as value ->
+                     ok (Iter.cons Typed.{ value; offset; size } acc))
         else
           let fields = Typed.Adt.as_tuple (Typed.cast_tuple value) in
           chain Iter.combine_list fields (iter_fields layout ty)
@@ -402,8 +446,9 @@ let rec encode ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         | None -> fields
         | Some (ofs, tag) ->
             let size = BV.usizeinz (Typed.size_of_int tag / 8) in
+            let tag = Typed.((tag : T.sint t :> T.scalar t)) in
             let offset = ofs +!!@ offset in
-            Iter.cons (Typed.as_any tag, offset, size) fields)
+            Iter.cons { Typed.value = Scalar tag; offset; size } fields)
 
 (** Iterates over the validity constraints of this particular value for a given
     type, traversing it recursively. For every requirement, this associates to
@@ -629,8 +674,8 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
 (** Transmutes a singular rust value, without splitting. This is under the
     assumption that [size_of to_ty = size_of v], and both are primitives
     (literal or pointer). *)
-let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.any ] Typed.t) :
-    [> Typed.T.any ] Typed.t DecayMap.SM.t =
+let rec transmute_one ~(to_ty : Types.ty) (v : [< Typed.T.scalar ] Typed.t) :
+    [> Typed.T.scalar ] Typed.t DecayMap.SM.t =
   match%ty (v, to_ty) with
   (* Same-kind transmutes are the identity. *)
   | TBitVector _, TLiteral (TInt _ | TUInt _ | TBool | TChar) ->
@@ -729,10 +774,16 @@ let rec nondet_raw :
             let+ bytes = nondet (Typed.t_int (sizei * 8)) in
             Ok
               (Typed.Adt.mk_union adt
-                 [ (Typed.as_any bytes, Usize.(0s), Typed.cast_nonzero size) ])
+                 [
+                   {
+                     value = Scalar bytes;
+                     offset = Usize.(0s);
+                     size = Typed.cast_nonzero size;
+                   };
+                 ])
       | _ ->
-          Rustsymex.not_impl
-            "cannot create a symbolic value of unsupported type %a" pp_ty ty)
+          not_impl "cannot create a symbolic value of unsupported type %a" pp_ty
+            ty)
   | TPattern (inner, _) -> nondet_raw inner
   | TVar (Free id) -> Result.ok (Typed.Adt.mk_poly id)
   | ty -> not_impl "nondet: unsupported type %a" pp_ty ty
@@ -759,8 +810,8 @@ let rec ref_tys_in
     (fn :
       'acc ->
       Types.ty ->
-      Typed.([< T.sptr_f ] t) ->
-      (Typed.([> T.sptr_f ] t) * 'acc, 'e, 'f) Rustsymex.Result.t) (init : 'acc)
+      Typed.(T.sptr_f t) ->
+      (Typed.(T.sptr_f t) * 'acc, 'e, 'f) Rustsymex.Result.t) (init : 'acc)
     (ty : Types.ty) (v : Typed.([< T.any ] t)) :
     (Typed.([> T.any ] t) * 'acc, 'e, 'f) Rustsymex.Result.t =
   let open Rustsymex in
@@ -791,7 +842,7 @@ let rec ref_tys_in
   | TRef (_, _, _) | TAdt { id = TBuiltin TBox; _ } ->
       let v = Typed.cast_ptr_f v in
       let++ res, acc = fn init ty v in
-      (Typed.cast res, acc)
+      (Typed.as_any res, acc)
   | TAdt adt when adt_is_box adt ->
       (* a box has only one non ZST, the pointer *)
       let ptr, allocator, marker = unwrap_box v in

@@ -551,34 +551,26 @@ module Make (Borrows : Tree_borrows.T) = struct
     let**^ size = Layout.size_of ty in
     tb_load_untyped (Typed.Ptr.ptr_of ptr) size
 
-  let store (ptr : Typed.([< T.sptr_f ] t)) ty sval :
+  let store (ptr : Typed.([< T.sptr_f ] t)) ty (sval : Typed.([< T.any ] t)) :
       (unit, Error.with_trace, syn list) Result.t =
     [%l.debug "Executing Store with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Memory store" () in
-    let**^ parts =
-      Value_codec.encode ~offset:Usize.(0s) (sval :> Typed.T.any Typed.t) ty
-    in
-    if Iter.is_empty parts then Result.ok ()
+    let**^ ty = Layout.normalise ty in
+    let**^ layout = Layout.layout_of ty in
+    if%sat layout.size ==@ Usize.(0s) then Result.ok ()
     else
+      (* Aggregates are stored whole and only decomposed lazily *)
+      let sval : Typed.block_value =
+        if Layout.is_aggregate layout then Aggregate (Typed.cast sval, ty)
+        else Scalar (Typed.cast sval)
+      in
       let** size = check_ptr_align ptr ty in
-      (* [%l.debug
-       *   "Parsed to parts [%a]"
-       *   Fmt.(list ~sep:comma Encoder.pp_cval_info)
-       *   parts]; *)
       let* () = log "store" ptr in
-      (* the encoder returned parts, so the type can't be a ZST *)
       let size = Typed.BV.cast_nonzero size in
       let ptr = Typed.Ptr.ptr_of ptr in
       let tag = Typed.Ptr.tag_of ptr in
       let@ ofs = with_ptr Write ptr in
-      Block.with_block_read_tb (fun tb ->
-          let open Tree_block.SM in
-          let open Tree_block.SM.Syntax in
-          (* We uninitialise the whole range before writing, to ensure padding
-             bytes are copied if there are any. *)
-          let** () = Tree_block.uninit_range ofs size in
-          Result.iter_iter parts ~f:(fun (value, offset, size) ->
-              Tree_block.store (offset +!!@ ofs) size value tag tb))
+      Block.with_block_read_tb (fun tb -> Tree_block.store ofs size sval tag tb)
 
   let transmute_raw_inner ~to_ ~size blocks =
     (* a transmute is just a write of one type with a read of another type; we
@@ -597,7 +589,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             let open Syntax in
             (* first, we write *)
             let** () =
-              Result.iter_iter blocks ~f:(fun (value, offset, size) ->
+              Result.iter_iter blocks ~f:(fun Typed.{ value; offset; size } ->
                   Tree_block.store offset size value None None)
             in
             (* next, we read *)
@@ -623,9 +615,7 @@ module Make (Borrows : Tree_borrows.T) = struct
   let transmute_raw ~to_ blocks =
     [%l.debug
       "Transmuting (raw) %a -> %a"
-        Fmt.(
-          list ~sep:(any ", ") (fun ft (v, ofs, size) ->
-              pf ft "(%a: %a->%a)" Typed.ppa v Typed.ppa ofs Typed.ppa size))
+        Fmt.(list ~sep:(any ", ") Typed.pp_block)
         blocks pp_ty to_];
     let@ () = with_loc_err ~trace:"Transmute" () in
     let**^ size = Layout.size_of to_ in

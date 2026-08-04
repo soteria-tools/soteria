@@ -120,3 +120,7 @@ let iter_vars ({ size; align; fields; uninhabited = _ } : t)
   iter_vars size f;
   iter_vars align f;
   Fields_shape.iter_vars fields f
+
+(** Whether this layout is an aggregate layout, i.e. it has several fields,
+    rather than representing just one atomic value. *)
+let is_aggregate l = match l.fields with Primitive -> false | _ -> true
