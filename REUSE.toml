@@ -1,4 +1,5 @@
-# SPDX-FileCopyrightText: 2026 Soteria Tools Ltd.
+# SPDX-FileCopyrightText: 2024-2025 Imperial College London
+# SPDX-FileCopyrightText: 2025-2026 Soteria Tools Ltd.
 # SPDX-License-Identifier: Apache-2.0
 
 version = 1
@@ -44,7 +45,9 @@ path = [
   "AI_POLICY.md",
 ]
 precedence = "override"
-SPDX-FileCopyrightText = "2026 Soteria Tools Ltd."
+# Copyright is held jointly: Imperial College London for contributions made
+# through 18 Dec 2025, Soteria Tools Ltd. from 19 Dec 2025 onward (see NOTICE).
+SPDX-FileCopyrightText = ["2024-2025 Imperial College London", "2025-2026 Soteria Tools Ltd."]
 SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]

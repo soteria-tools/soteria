@@ -1,8 +1,19 @@
 Soteria
 
-Copyright 2026 Soteria Tools Ltd.
+Soteria was originally developed at Imperial College London and is now developed
+and maintained by Soteria Tools Ltd.
 
-This product includes software developed by Soteria Tools Ltd. and contributors.
+Copyright 2024-2025 Imperial College London
+Copyright 2025-2026 Soteria Tools Ltd.
+
+Copyright in contributions made on or before 18 December 2025 is held by Imperial
+College London. Copyright in contributions made on or after 19 December 2025 is
+held by Soteria Tools Ltd. All contributions are licensed under the Apache
+License, Version 2.0. Individual files may contain contributions from both
+periods and are therefore jointly attributed above.
+
+This product includes software developed at Imperial College London and by
+Soteria Tools Ltd. and contributors.
 
 Project maintainers:
 - Sacha-Élie Ayoun <s.ayoun17@imperial.ac.uk>
