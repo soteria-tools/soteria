@@ -25,6 +25,7 @@ let app_ f (args : sexp list) : sexp = app (Atom f) args
 let ( $$ ) = app
 let ( $$. ) = app_
 let ( $ ) f v = f $$ [ v ]
+let ( $. ) f v = f $$. [ v ]
 
 (* Type annotation *)
 let as_type x t = "as" $$. [ x; t ]
@@ -34,6 +35,16 @@ let nat_zk x = Atom (Z.to_string x)
 (* Indexed family *)
 let fam f is = List (Atom "_" :: Atom f :: is)
 let ifam f is = fam f (List.map nat_k is)
+
+(** [quote s] is [s] as a quoted symbol, so that it can contain arbitrary
+    characters, except [|] and backslash characters which are replaced. *)
+let quote s =
+  let must_escape = [%matches? '|' | '\\'] in
+  let s =
+    if not (String.exists must_escape s) then s
+    else String.map (fun c -> if must_escape c then '!' else c) s
+  in
+  "|" ^ s ^ "|"
 
 (** {2 Booleans} *)
 
@@ -216,7 +227,7 @@ let f128_k f =
 let f16_k f =
   app (ifam "to_fp" (float_shape 16)) [ RoundingMode.default; f32_k f ]
 
-let fp_abs f = "fp.abs" $$. [ f ]
+let fp_abs f = "fp.abs" $. f
 let fp_eq f1 f2 = "fp.eq" $$. [ f1; f2 ]
 let fp_leq f1 f2 = "fp.leq" $$. [ f1; f2 ]
 let fp_lt f1 f2 = "fp.lt" $$. [ f1; f2 ]
@@ -229,11 +240,11 @@ let fp_rem f1 f2 = "fp.rem" $$. [ f1; f2 ]
 (* [fp_is fc f] tests if [f] belongs to floating-point class [fc]. *)
 let fp_is (fc : fpclass) f =
   match fc with
-  | FP_normal -> "fp.isNormal" $$. [ f ]
-  | FP_subnormal -> "fp.isSubnormal" $$. [ f ]
-  | FP_zero -> "fp.isZero" $$. [ f ]
-  | FP_infinite -> "fp.isInfinite" $$. [ f ]
-  | FP_nan -> "fp.isNaN" $$. [ f ]
+  | FP_normal -> "fp.isNormal" $. f
+  | FP_subnormal -> "fp.isSubnormal" $. f
+  | FP_zero -> "fp.isZero" $. f
+  | FP_infinite -> "fp.isInfinite" $. f
+  | FP_nan -> "fp.isNaN" $. f
 
 let fp_round (rm : RoundingMode.t) f =
   "fp.roundToIntegral" $$. [ RoundingMode.to_sexp rm; f ]
@@ -241,34 +252,34 @@ let fp_round (rm : RoundingMode.t) f =
 (** {2 Float/bit-vector conversions} *)
 
 (* Bitwise reinterpretation of [bv] as a float of [size] bits (16/32/64/128). *)
-let float_of_bv size bv = app (ifam "to_fp" (float_shape size)) [ bv ]
+let float_of_bv size bv = ifam "to_fp" (float_shape size) $ bv
 
 (* Numeric conversion of an unsigned bit-vector to a float. *)
 let float_of_ubv rm size bv =
-  app (ifam "to_fp_unsigned" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
+  ifam "to_fp_unsigned" (float_shape size) $$ [ RoundingMode.to_sexp rm; bv ]
 
 (* Numeric conversion of a signed bit-vector to a float. *)
 let float_of_sbv rm size bv =
-  app (ifam "to_fp" (float_shape size)) [ RoundingMode.to_sexp rm; bv ]
+  ifam "to_fp" (float_shape size) $$ [ RoundingMode.to_sexp rm; bv ]
 
 (* Numeric conversion of a float to an unsigned [n]-bit bit-vector; undefined if
    out of range, NaN or inf. *)
 let ubv_of_float rm n f =
-  app (ifam "fp.to_ubv" [ n ]) [ RoundingMode.to_sexp rm; f ]
+  ifam "fp.to_ubv" [ n ] $$ [ RoundingMode.to_sexp rm; f ]
 
 (* Numeric conversion of a float to a signed [n]-bit bit-vector; undefined if
    out of range, NaN or inf. *)
 let sbv_of_float rm n f =
-  app (ifam "fp.to_sbv" [ n ]) [ RoundingMode.to_sexp rm; f ]
+  ifam "fp.to_sbv" [ n ] $$ [ RoundingMode.to_sexp rm; f ]
 
 (** {2 Int/bit-vector conversions} *)
 
 (* [int_of_bv signed bv] reads [bv] as a (signed or unsigned) integer. *)
 let int_of_bv signed bv =
-  if signed then "sbv_to_int" $$. [ bv ] else "ubv_to_int" $$. [ bv ]
+  if signed then "sbv_to_int" $. bv else "ubv_to_int" $. bv
 
 (* [bv_of_int size n] converts integer [n] to a [size]-bit bit-vector. *)
-let bv_of_int size n = app (ifam "int_to_bv" [ size ]) [ n ]
+let bv_of_int size n = ifam "int_to_bv" [ size ] $ n
 
 (** {2 Bit-vector overflow predicates} *)
 
@@ -282,10 +293,11 @@ let bv_smulo l r = "bvsmulo" $$. [ l; r ]
 
 (** {2 Sequences} *)
 
-(* [t_seq $ elt] is the type of sequences of [elt]. *)
-let t_seq = atom "Seq"
-let seq_singl x = atom "seq.unit" $$ [ x ]
-let seq_concat xs = atom "seq.++" $$ xs
+let t_seq elt = "Seq" $. elt
+let seq_empty = atom "seq.empty"
+let seq_singl x = "seq.unit" $. x
+let seq_concat xs = "seq.++" $$. xs
+let seq_nth s i = "seq.nth" $$. [ s; i ]
 
 (** {2 Commands} *)
 
@@ -298,6 +310,10 @@ let declare f t = declare_fun f [] t
 
 type con_field = string * sexp
 
+(** [declare_datatype name type_params cons] is the SMT-LIB command to declare a
+    datatype [name] with type parameters [type_params] and constructors [cons],
+    where each constructor is a pair of its name and a list of its fields, each
+    field being a pair of its name and its type. *)
 let declare_datatype name type_params cons =
   let mk_field ((f, arg_ty) : con_field) = List [ Atom f; arg_ty ] in
   let mk_con (c, fs) = List (Atom c :: List.map mk_field fs) in
@@ -308,6 +324,10 @@ let declare_datatype name type_params cons =
     | _ -> "par" $$. [ List (List.map atom type_params); mk_cons ]
   in
   "declare-datatype" $$. [ Atom name; def ]
+
+(** [tester con v] is [((_ is con) v)], true iff [v] was built with datatype
+    constructor [con]. *)
+let tester con v = fam "is" [ Atom con ] $ v
 
 let assume e = "assert" $$. [ e ]
 

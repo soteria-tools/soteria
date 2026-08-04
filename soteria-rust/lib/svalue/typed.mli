@@ -12,7 +12,10 @@ type ('sc, 'ag, 'ofs, 'sz) block_raw = ('sc, 'ag, 'ofs, 'sz) Ext.block = {
 
 (* The extended ghost-typed interface, sharing [Solver_value]'s [t]/[ty] so
    values flow between the interpreter and the symex monad. *)
-include Soteria.Bv_values.Typed.S with module Ext = Ext.Rust_ext
+include
+  Soteria.Bv_values.Typed.S
+    with type 'a Ext.t = 'a Ext.t
+     and type 'a Ext.ty = 'a Ext.ty
 
 (* T *)
 

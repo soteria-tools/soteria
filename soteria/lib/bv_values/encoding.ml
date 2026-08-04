@@ -3,12 +3,52 @@ open Soteria_std
 open Smt
 open Svalue
 
+(** Raw pointers are encoded as a pair datatype of location and offset, declared
+    on the fly through {!Solvers.Decls}. Exposed to allow extensions to depend
+    on it.
+
+    A pointer of width [n] is encoded as a datatype with two fields, both
+    bitvectors of width [n]: the location and the offset. *)
+module Ptr_sort = struct
+  (** The SMT-LIB sort for [n]-bit pointers. *)
+  let name n = quote (Fmt.str "@ptr<%d>" n)
+
+  (** The SMT-LIB constructor for [n]-bit pointers; receives the location and
+      offset as arguments. *)
+  let con n = quote (Fmt.str "@mk-ptr<%d>" n)
+
+  (** The SMT-LIB constructor for [n]-bit pointers, applied to the location and
+      offset terms. *)
+  let mk_ptr n loc ofs = con n $$. [ loc; ofs ]
+
+  (** The SMT-LIB selector for the location of [n]-bit pointers. *)
+  let loc_sel n = quote (Fmt.str "@ptr<%d>.loc" n)
+
+  (** The SMT-LIB selector for the location of [n]-bit pointers, applied to a
+      pointer term. *)
+  let get_loc n ptr = loc_sel n $. ptr
+
+  (** The SMT-LIB selector for the offset of [n]-bit pointers. *)
+  let ofs_sel n = quote (Fmt.str "@ptr<%d>.ofs" n)
+
+  (** The SMT-LIB selector for the offset of [n]-bit pointers, applied to a
+      pointer term. *)
+  let get_ofs n ptr = atom (ofs_sel n) $ ptr
+
+  (* Declares (at most once) the datatype for [n]-bit pointers; returns its
+     sort. *)
+  let sort n =
+    let name = name n in
+    Solvers.Decls.declare ~key:name (fun yield ->
+        yield
+          (declare_datatype name []
+             [ (con n, [ (loc_sel n, t_bits n); (ofs_sel n, t_bits n) ]) ]));
+    Atom name
+end
+
 (** Lowers the svalues of a built typed layer [Typed] (from {!Typed.Make}) into
     SMT terms and sorts for the Z3 backend. *)
 module Make (Typed : Typed_intf.Solver_value) = struct
-  let pointers_not_supported () =
-    L.failwith "Encoding of pointers is not supported in Bv_values"
-
   module Svalue = Typed.Svalue
 
   type t = Svalue.t
@@ -21,12 +61,13 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | TFloat F32 -> t_f32
     | TFloat F64 -> t_f64
     | TFloat F128 -> t_f128
-    | TSeq ty -> t_seq $ sort_of_ty ty
-    | TPointer _ -> pointers_not_supported ()
+    | TSeq ty -> t_seq (sort_of_ty ty)
+    | TPointer n -> Ptr_sort.sort n
     | TBitVector n -> t_bits n
     | TExtension x -> Typed.Ext.encode_ty sort_of_ty x
 
-  let memo_encode_value_tbl : sexp Svalue.Hashtbl.t = Svalue.Hashtbl.create 1023
+  let memo_encode_value_tbl : (sexp * Solvers.Decls.t list) Svalue.Hashtbl.t =
+    Svalue.Hashtbl.create 1023
 
   let rm_to_smt : RoundingMode.t -> Smt.RoundingMode.t = function
     | NearestTiesToEven -> NearestTiesToEven
@@ -35,11 +76,11 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | Floor -> Floor
     | Truncate -> Truncate
 
-  let smt_of_unop : Unop.t -> sexp -> sexp = function
+  let smt_of_unop ~ty : Unop.t -> sexp -> sexp = function
     | Not -> bool_not
     | FAbs -> fp_abs
-    | GetPtrLoc -> pointers_not_supported ()
-    | GetPtrOfs -> pointers_not_supported ()
+    | GetPtrLoc -> Ptr_sort.get_loc (Svalue.size_of ty)
+    | GetPtrOfs -> Ptr_sort.get_ofs (Svalue.size_of ty)
     | BvOfBool n -> fun b -> ite b (bv_k n Z.one) (bv_k n Z.zero)
     | BvOfFloat (rm, true, n) -> sbv_of_float (rm_to_smt rm) n
     | BvOfFloat (rm, false, n) -> ubv_of_float (rm_to_smt rm) n
@@ -109,7 +150,9 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | BitVec z ->
         let n = Svalue.size_of v.node.ty in
         bv_k n z
-    | Ptr _ -> pointers_not_supported ()
+    | Ptr (l, o) ->
+        Ptr_sort.mk_ptr (Svalue.size_of v.node.ty) (encode_value_memo l)
+          (encode_value_memo o)
     | Seq vs -> (
         match vs with
         | [] -> L.failwith "need type to encode empty lists"
@@ -122,8 +165,8 @@ module Make (Typed : Typed_intf.Solver_value) = struct
         let encode_binder (v, ty) = list [ encode_var v; sort_of_ty ty ] in
         exists (List.map encode_binder vs) (encode_value_memo sv)
     | Unop (unop, v1) ->
-        let v1 = encode_value_memo v1 in
-        smt_of_unop unop v1
+        let e1 = encode_value_memo v1 in
+        smt_of_unop ~ty:v1.node.ty unop e1
     | Binop (binop, v1, v2) ->
         let v1 = encode_value_memo v1 in
         let v2 = encode_value_memo v2 in
@@ -131,14 +174,25 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | Nop (Distinct, vs) ->
         let vs = List.map encode_value_memo vs in
         distinct vs
-    | Extension x -> Typed.Ext.encode_value encode_value_memo x
+    | Extension x ->
+        Typed.Ext.encode_value sort_of_ty encode_value_memo ~ty:v.node.ty x
 
   and encode_value_memo v =
     match Svalue.Hashtbl.find_opt memo_encode_value_tbl v with
-    | Some k -> k
+    | Some (k, decls) ->
+        List.iter (fun d -> Effect.perform (Solvers.Decls.Declare d)) decls;
+        k
     | None ->
-        let k = encode_value v in
-        Svalue.Hashtbl.add memo_encode_value_tbl v k;
+        let decls = ref [] in
+        let k =
+          try encode_value v
+          with effect Solvers.Decls.Declare d, cont ->
+            decls := d :: !decls;
+            (* forward to the solver's own handler *)
+            Effect.perform (Solvers.Decls.Declare d);
+            Effect.Deep.continue cont ()
+        in
+        Svalue.Hashtbl.add memo_encode_value_tbl v (k, List.rev !decls);
         k
 
   let encode_value (v : Svalue.t) =

@@ -202,31 +202,27 @@ let get_method_name (trait_ref : Types.trait_ref) method_id =
 
 let is_enum (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with
-  | TAdtId id -> (
-      match (get_adt_raw id).kind with Enum _ -> true | _ -> false)
+  | TAdtId id -> [%matches? Enum _] (get_adt_raw id).kind
   | _ -> false
 
 let is_struct (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with
-  | TAdtId id -> (
-      match (get_adt_raw id).kind with Struct _ -> true | _ -> false)
+  | TAdtId id -> [%matches? Struct _] (get_adt_raw id).kind
   | _ -> false
 
 let is_struct_or_tuple (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with
   | TTuple -> true
-  | TAdtId id -> (
-      match (get_adt_raw id).kind with Struct _ -> true | _ -> false)
+  | TAdtId id -> [%matches? Struct _] (get_adt_raw id).kind
   | _ -> false
 
 let is_union (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with
-  | TAdtId id -> (
-      match (get_adt_raw id).kind with Union _ -> true | _ -> false)
+  | TAdtId id -> [%matches? Union _] (get_adt_raw id).kind
   | _ -> false
 
 let is_union' (adt_id : Types.type_decl_id) =
-  match (get_adt_raw adt_id).kind with Union _ -> true | _ -> false
+  [%matches? Union _] (get_adt_raw adt_id).kind
 
 let as_enum adt_ref =
   match (get_adt adt_ref).kind with

@@ -17,6 +17,11 @@ val copy_and_update : ('a array -> unit) -> 'a t -> 'a t
 *)
 val copy_and_set : int -> 'a -> 'a t -> 'a t
 
+(** Map a function over an array and return both the resulting array and a
+    boolean indicating whether any element was changed (using physical equality
+    [!=]). *)
+val map_changed : ('a -> 'a) -> 'a t -> 'a t * bool
+
 val pp :
   ?sep:(Format.formatter -> unit -> unit) ->
   (Format.formatter -> 'a -> unit) ->

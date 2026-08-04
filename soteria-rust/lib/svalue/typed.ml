@@ -2,7 +2,7 @@ open Iarray.Infix
 open Charon
 open Common.Charon_util
 open Soteria.Bv_values.Svalue
-open Ext.Rust_ext
+open Ext
 
 (* keep a handle on the unit [Ext], as [include Self] below shadows it with
    [Ext.Rust_ext] *)
@@ -21,7 +21,7 @@ type ('sc, 'ag, 'ofs, 'sz) block_raw = ('sc, 'ag, 'ofs, 'sz) Ext.block = {
 (* [Make_transparent] exposes [t]/[ty] as the underlying untyped svalue, so the
    extension helpers below can be written without ghost-typing ceremony. The
    [typed.mli] re-seals [t]/[ty] as abstract for the rest of Soteria Rust. *)
-module Self = Soteria.Bv_values.Typed.Make_transparent (Ext.Rust_ext) ()
+module Self = Soteria.Bv_values.Typed.Make_transparent (Ext) ()
 include Self
 
 module T = struct
@@ -71,13 +71,7 @@ let () =
 let cast_error v ty = raise (CastError (v, ty, v.node.ty))
 let todo_migration msg = raise (TypedMigration msg)
 let ( <| ) = Self.Svalue.( <| )
-
-let float_precision :
-    Values.float_type -> Soteria.Bv_values.Svalue.FloatPrecision.t = function
-  | F16 -> F16
-  | F32 -> F32
-  | F64 -> F64
-  | F128 -> F128
+let float_precision = Ext0.float_precision
 
 (* The raw pointer type; only used to materialise a fully-symbolic nondet
    pointer in [Value_codec] (see {!Ptr.of_raw}). *)
@@ -88,10 +82,6 @@ let t_ptr_meta () : _ ty = TExtension TPtrMeta
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
 let t_enum adt : _ ty = TExtension (TEnum adt)
-
-let t_as_enum : _ ty -> Types.type_decl_ref = function
-  | TExtension (TEnum adt) -> adt
-  | ty -> L.failwith "t_as_enum: expected enum type, got %a" ppa_ty ty
 
 let t_lit : Types.literal_type -> [> T.sint ] ty = function
   | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
@@ -113,29 +103,6 @@ let t_union adt : [> T.union ] ty =
   TExtension (TUnion adt)
 
 let t_poly () : [> T.poly ] ty = TExtension TPolyType
-
-let rec ty_of_rust : Types.ty -> _ ty = function
-  | TLiteral (TFloat ft) -> t_float ft
-  | TLiteral lit -> t_lit lit
-  | TRef _ | TRawPtr _ | TFnPtr _ -> t_ptr_f ()
-  | TNever | TFnDef _ -> t_unit
-  | TVar _ -> t_poly ()
-  | TPattern (ty, _) -> ty_of_rust ty
-  | TArray (ty, n) -> t_array (ty_of_rust ty) (z_of_constant_expr n)
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      t_tuple (List.map ty_of_rust types)
-  | TAdt ({ id = TAdtId _; _ } as adt) -> (
-      match (Crate.get_adt adt).kind with
-      | Struct fs ->
-          t_tuple (List.map (fun (f : Types.field) -> ty_of_rust f.field_ty) fs)
-      | Enum _ -> t_enum adt
-      | Union _ -> t_union adt
-      | kind ->
-          L.failwith "ty_of_rust unexpected adt kind %a" Types.pp_type_decl_kind
-            kind)
-  | ( TError _ | TPtrMetadata _ | TTraitType _ | TDynTrait _ | TSlice _
-    | TAdt { id = TBuiltin _; _ } ) as ty ->
-      L.failwith "ty_of_rust unexpected type %a" Common.Charon_util.pp_ty ty
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -276,23 +243,28 @@ module Ptr = struct
 
   (* {1 Internal raw-pointer plumbing (never exposed)} *)
 
-  let _get_ptr ptr =
-    match kind ptr with
-    | Extension (ThinPtr ptr) -> ptr
-    | _ -> todo_migration "todo: ThinPtr.ptr getter"
+  let _thin_part part ptr = Ext0.thin_ptr_part ~build:( <| ) part ptr
 
   let _set_ptr ptr f =
-    match kind ptr with
-    | Extension (ThinPtr inner) -> Extension (ThinPtr (f inner)) <| ptr.node.ty
-    | _ ->
-        (* NOTE: i actually don't think we want a setter unop, we just want to
-           rebuild the ptr from scratch *)
-        todo_migration "ThinPtr.ptr setter"
+    let inner =
+      match kind ptr with
+      | Extension (ThinPtr inner) -> inner
+      | _ ->
+          (* Symbolic thin pointer: rebuild it from its parts. As in [tag_of],
+             we assume symbolic pointers have no tag. *)
+          {
+            ptr = _thin_part PtrInner ptr;
+            size = _thin_part PtrSize ptr;
+            align = _thin_part PtrAlign ptr;
+            tag = None;
+          }
+    in
+    Ext0.mk_thin_ptr ~build:( <| ) (f inner)
 
-  let _inner ptr = (_get_ptr ptr).ptr
+  let _inner ptr = _thin_part PtrInner ptr
 
   let of_raw ~ptr ~size ~align ~tag =
-    Extension (ThinPtr { ptr; size; align; tag }) <| t_ptr_t ()
+    Ext0.mk_thin_ptr ~build:( <| ) { ptr; size; align; tag }
 
   let mk_ptr_t ~loc ~ofs ~size ~align ~tag =
     of_raw ~ptr:(Self.Ptr.mk loc ofs) ~size ~align ~tag
@@ -307,17 +279,22 @@ module Ptr = struct
     _set_ptr ptr (fun inner ->
         { inner with ptr = Self.Ptr.add_ofs inner.ptr o })
 
-  (* Sets the (absolute) offset of a thin pointer, keeping its location, size,
-     alignment and tag. Rebuilds only the inner raw pointer. *)
   let set_ofs ptr o =
     _set_ptr ptr (fun inner ->
         { inner with ptr = Self.Ptr.mk (Self.Ptr.loc inner.ptr) o })
 
-  let align_of ptr = (_get_ptr ptr).align
-  let size_of ptr = (_get_ptr ptr).size
-  let allocation_info ptr = (size_of ptr, align_of ptr)
-  let tag_of ptr = (_get_ptr ptr).tag
   let with_tag ptr tag = _set_ptr ptr (fun inner -> { inner with tag })
+  let align_of ptr = _thin_part PtrAlign ptr
+  let size_of ptr = _thin_part PtrSize ptr
+  let allocation_info ptr = (size_of ptr, align_of ptr)
+
+  let tag_of ptr =
+    match kind ptr with
+    | Extension (ThinPtr inner) -> inner.tag
+    | _ ->
+        (* HACK: we assume symbolic pointers have no tag *)
+        None
+
   let has_provenance ptr = not (is_at_null_loc ptr)
   let have_same_provenance p1 p2 = sem_eq (loc p1) (loc p2)
 
@@ -348,22 +325,20 @@ module Ptr = struct
 
   (* {1 Full/wide pointers ([sptr_f])} *)
 
-  let mk_ptr_f ptr meta =
+  let of_ptr_t ptr = Ext0.of_thin_ptr ~build:( <| ) ptr
+  let with_ptr fptr tptr = Ext0.full_ptr_set_inner ~build:( <| ) tptr fptr
+
+  let mk_ptr_f ptr (meta : _ t) =
     let meta =
-      match get_ty meta with
-      | TBitVector _ -> Extension (PtrMeta (MetaLen meta)) <| t_ptr_meta ()
-      | TExtension TThinPtr ->
-          Extension (PtrMeta (MetaVTable meta)) <| t_ptr_meta ()
-      | ty -> L.failwith "invalid meta ty: %a" ppa_ty ty
+      match meta.node.ty with
+      | TBitVector _ -> Ext0.mk_len_meta ~build:( <| ) meta
+      | TExtension TThinPtr -> Ext0.mk_vtable_meta ~build:( <| ) meta
+      | ty -> L.failwith "mk_ptr_f: invalid metadata type %a" ppa_ty ty
     in
-    Extension (Ptr (ptr, meta)) <| t_ptr_f ()
+    Ext0.mk_full_ptr ~build:( <| ) ptr meta
 
-  let of_ptr_t ptr =
-    let unit_meta = Extension (PtrMeta MetaUnit) <| t_ptr_meta () in
-    Extension (Ptr (ptr, unit_meta)) <| t_ptr_f ()
-
-  let mk_ptr_f_opt ptr meta =
-    match meta with None -> of_ptr_t ptr | Some meta -> mk_ptr_f ptr meta
+  let mk_ptr_f_opt ptr meta_opt =
+    match meta_opt with Some meta -> mk_ptr_f ptr meta | None -> of_ptr_t ptr
 
   (** The null full (wide) pointer: a {!null} thin pointer with no metadata. *)
   let null_f () = of_ptr_t (null ())
@@ -371,74 +346,17 @@ module Ptr = struct
   (** Like {!of_address}, but produces a full pointer with no metadata. *)
   let of_address_f addr = of_ptr_t (of_address addr)
 
-  let len_meta ptr =
-    match kind ptr with
-    | Extension
-        (Ptr (_, { node = { kind = Extension (PtrMeta (MetaLen len)); _ }; _ }))
-      ->
-        len
-    | Extension (Ptr (_, _)) -> L.failwith "len_meta mismatch"
-    | _ -> todo_migration "PtrFull get meta"
-
-  let vtable_meta ptr =
-    match kind ptr with
-    | Extension
-        (Ptr (_, { node = { kind = Extension (PtrMeta (MetaVTable vt)); _ }; _ }))
-      ->
-        vt
-    | Extension (Ptr (_, _)) -> L.failwith "vtable_meta mismatch"
-    | _ -> todo_migration "PtrFull get meta"
-
-  let ptr_of ptr =
-    match kind ptr with
-    | Extension (Ptr (ptr, _)) -> ptr
-    | _ -> todo_migration "PtrFull get ptr"
-
-  let with_ptr fptr tptr =
-    match kind fptr with
-    | Extension (Ptr (_, meta)) -> Extension (Ptr (tptr, meta)) <| fptr.node.ty
-    | _ -> todo_migration "PtrFull set ptr"
+  let len_meta ptr = Ext0.full_ptr_meta ~build:( <| ) MetaLen ptr
+  let vtable_meta ptr = Ext0.full_ptr_meta ~build:( <| ) MetaVTable ptr
+  let ptr_of ptr = Ext0.full_ptr_inner ~build:( <| ) ptr
 end
 
 module Adt = struct
-  let unit = Extension (Tuple []) <| t_tuple []
-  let mk_tuple vs = Extension (Tuple vs) <| t_tuple (List.map get_ty vs)
+  (** {2 Tuples} *)
 
-  let mk_array elem_ty arr =
-    let len = Iarray.length arr in
-    let elem_ty = if len = 0 then ty_of_rust elem_ty else get_ty arr.%(0) in
-    Extension (Array arr) <| t_array elem_ty (Z.of_int len)
-
-  let mk_enum adt v_id vs = Extension (Enum (v_id, vs)) <| t_enum adt
-  let mk_union adt blocks = Extension (Union blocks) <| t_union adt
-  let mk_poly ty_id = Extension (PolyVal ty_id) <| t_poly ()
-
-  (* HACK: i have no idea what this really means or how to lift this for
-     variables... *)
-  let as_union v =
-    match kind v with
-    | Extension (Union blocks) -> blocks
-    | _ -> todo_migration "as_union unop"
-
-  (* HACK: i don't like this; it forces all fields to be resolved, which is
-     often overkill. i think i want to get rid of this, and force clients to
-     instead go through [index_of] *)
-  let as_tuple v =
-    match kind v with
-    | Extension (Tuple vs) -> vs
-    | _ -> todo_migration "as_tuple unop"
-
-  let as_array v =
-    match kind v with
-    | Extension (Array vs) -> vs
-    | _ -> todo_migration "as_array unop"
-
-  let as_enum_of_variant var_id v =
-    match kind v with
-    | Extension (Enum (v, vs)) ->
-        assert (Types.VariantId.equal_id v var_id);
-        vs
-    | _ -> todo_migration "as_enum_of_variant unop"
+  let mk_tuple vs = Ext0.mk_tuple ~build:( <| ) vs
+  let unit = mk_tuple []
+  let as_tuple v = Ext0.as_tuple ~build:( <| ) v
 
   let as_tuple1 v =
     match as_tuple v with [ a ] -> a | _ -> cast_error v (t_tuple [ t_int 1 ])
@@ -453,75 +371,23 @@ module Adt = struct
     | [ a; b; c ] -> (a, b, c)
     | _ -> cast_error v (t_tuple [ t_int 3 ])
 
-  let as_type_var v =
-    match kind v with
-    | Extension (PolyVal ty_id) -> ty_id
-    | _ -> todo_migration "as_type_var unop"
-
-  let field_of idx v =
-    match kind v with
-    | Extension (Tuple vs) -> (
-        try List.nth vs idx
-        with Invalid_argument _ ->
-          L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "field_of op"
-
-  let array_field_of idx v =
-    match kind v with
-    | Extension (Array vs) -> (
-        try vs.%(idx)
-        with Invalid_argument _ ->
-          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "array_field_of op"
-
-  let field_of_variant var_id idx v =
-    (* TODO: assert the variant? *)
-    match kind v with
-    | Extension (Enum (var, vs)) -> (
-        assert (Types.VariantId.equal_id var var_id);
-        try List.nth vs idx
-        with Invalid_argument _ ->
-          L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "field_of_variant op"
-
-  let set_field idx f v =
-    match kind v with
-    | Extension (Tuple vs) -> (
-        try Extension (Tuple (List.set_nth idx f vs)) <| v.node.ty
-        with Invalid_argument _ ->
-          L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "set_field op"
-
-  let set_field_of_variant var_id idx f v =
-    (* TODO: assert the variant *)
-    match kind v with
-    | Extension (Enum (var, vs)) -> (
-        assert (Types.VariantId.equal_id var var_id);
-        try Extension (Enum (var, List.set_nth idx f vs)) <| v.node.ty
-        with Invalid_argument _ ->
-          L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "set_field_of_variant op"
-
-  let set_array_field idx x v =
-    match kind v with
-    | Extension (Array vs) -> (
-        try Extension (Array (Iarray.copy_and_set idx x vs)) <| v.node.ty
-        with Invalid_argument _ ->
-          L.failwith "Array index %d out of bounds for value %a" idx ppa v)
-    | _ -> todo_migration "set_array_field op"
-
+  let field_of idx v = Ext0.field_of ~build:( <| ) idx v
+  let set_field idx f v = Ext0.set_field ~build:( <| ) idx f v
   let update_field idx f v = set_field idx (f (field_of idx v)) v
 
-  let update_array_field idx f v =
-    set_array_field idx (f (array_field_of idx v)) v
+  (** {2 Enums} *)
+
+  let mk_enum adt v_id vs = Ext0.mk_enum ~build:( <| ) adt v_id vs
+  let as_enum_of_variant var v = Ext0.as_enum_of_variant ~build:( <| ) var v
+  let field_of_variant var idx v = Ext0.field_of_variant ~build:( <| ) var idx v
+
+  let set_field_of_variant var idx f v =
+    Ext0.set_field_of_variant ~build:( <| ) var idx f v
 
   let update_field_of_variant var idx f v =
     set_field_of_variant var idx (f (field_of_variant var idx v)) v
 
-  let is_variant var_id v =
-    match kind v with
-    | Extension (Enum (var, _)) -> of_bool (Types.VariantId.equal_id var var_id)
-    | _ -> todo_migration "is_variant unop"
+  let is_variant var_id v = Ext0.is_variant ~build:( <| ) var_id v
 
   let discriminant_of (v : _ t) =
     let variants = Crate.as_enum (t_as_enum v.node.ty) in
@@ -532,6 +398,33 @@ module Adt = struct
           ite (is_variant var.id v) (BV.of_literal var.discriminant) (aux rest)
     in
     aux variants
+
+  (** {2 Arrays} *)
+
+  let mk_array elem_ty arr = Ext0.mk_array ~build:( <| ) elem_ty arr
+  let as_array v = Ext0.as_array ~build:( <| ) v
+  let array_field_of idx v = Ext0.array_field_of ~build:( <| ) idx v
+  let set_array_field idx f v = Ext0.set_array_field ~build:( <| ) idx f v
+
+  let update_array_field idx f v =
+    set_array_field idx (f (array_field_of idx v)) v
+
+  (** {2 Unions and PolyVal} *)
+
+  let mk_union adt blocks = Ext0.mk_union ~build:( <| ) adt blocks
+  let mk_poly ty_id = Ext0.mk_poly ~build:( <| ) ty_id
+
+  (* HACK: i have no idea what this really means or how to lift this for
+     variables... *)
+  let as_union v =
+    match kind v with
+    | Extension (Union blocks) -> blocks
+    | _ -> todo_migration "as_union unop"
+
+  let as_type_var v =
+    match kind v with
+    | Extension (PolyVal ty_id) -> ty_id
+    | _ -> todo_migration "as_type_var unop"
 
   module Checked = struct
     let mk_enum tref variant vs =

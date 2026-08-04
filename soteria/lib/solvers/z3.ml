@@ -85,7 +85,9 @@ module Make (Value : Value.S) :
             Logs.Printers.pp_time elapsed
   end
 
-  type t = Smt.solver
+  module Decl_store = Soteria_std.Reversible.Make_mutable_array (Decls)
+
+  type t = { smt : Smt.solver; decls : Decl_store.t }
   type value = Value.t
   type ty = Value.ty
 
@@ -108,23 +110,34 @@ module Make (Value : Value.S) :
     in
     let solver = { solver with ack_command; command } in
     !initialize_solver solver;
-    solver
+    { smt = solver; decls = Decl_store.init () }
+
+  (** Handle the {!Decls.Declare} effect. We make this recursive, in case the
+      iterator itself calls [declare] again. *)
+  let rec handle_decls : 'a. t -> (unit -> 'a) -> 'a =
+   fun t f ->
+    try f ()
+    with effect Decls.Declare d, k ->
+      if not (Decl_store.exists t.decls (Decls.equal d)) then (
+        Decl_store.add t.decls d;
+        handle_decls t (fun () -> d.commands (command t.smt)));
+      Effect.Deep.continue k ()
 
   let declare_var solver name ty =
     let name = Symex.Var.to_string name in
-    let ty = Value.sort_of_ty ty in
+    let ty = handle_decls solver (fun () -> Value.sort_of_ty ty) in
     let sexp = declare name ty in
-    command solver sexp
+    command solver.smt sexp
 
   let add_constraint solver v =
-    let v = Value.encode_value v in
+    let v = handle_decls solver (fun () -> Value.encode_value v) in
     let sexp = Smt.assume v in
-    command solver sexp
+    command solver.smt sexp
 
   let check_sat solver : Symex.Solver_result.t =
     Stats.As_ctx.incr StatKeys.check_sats;
     let smt_res =
-      try check solver
+      try check solver.smt
       with Smt.UnexpectedSolverResponse s ->
         [%l.error "Unexpected solver response: %s" (Smt.to_string s)];
         Unknown
@@ -136,14 +149,23 @@ module Make (Value : Value.S) :
         [%l.info "Solver returned unknown"];
         Unknown
 
-  let push solver n = command solver (Smt.push n)
-  let pop solver n = command solver (Smt.pop n)
+  let push solver n =
+    for _ = 1 to n do
+      Decl_store.save solver.decls
+    done;
+    command solver.smt (Smt.push n)
+
+  let pop solver n =
+    Decl_store.backtrack_n solver.decls n;
+    command solver.smt (Smt.pop n)
+
   let save solver = push solver 1
   let backtrack_n solver n = pop solver n
 
   let reset solver =
-    command solver reset;
-    !initialize_solver solver
+    command solver.smt reset;
+    Decl_store.reset solver.decls;
+    !initialize_solver solver.smt
 
-  let get_model solver = try Some (Smt.get_model solver) with _ -> None
+  let get_model solver = try Some (Smt.get_model solver.smt) with _ -> None
 end

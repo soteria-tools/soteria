@@ -99,7 +99,7 @@ module Place = struct
             then Typed.as_any Typed.Adt.(mk_tuple [ mk_tuple [ vt ]; unit ])
             else Typed.as_any vt)
 
-  let is_local = function { kind = Local _; _ } -> true | _ -> false
+  let is_local = [%matches? { kind = Local _; _ }]
 
   let local local_id ty =
     { kind = Local local_id; origin = { kind = PlaceLocal local_id; ty } }
