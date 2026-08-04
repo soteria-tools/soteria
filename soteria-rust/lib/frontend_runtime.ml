@@ -254,11 +254,12 @@ module Cmd = struct
         in
         (cmd, ("rustc" :: args) @ [ "--" ] @ rustc @ target_flag, [])
     | Cargo ->
+        let config = Config.get () in
         let cargo =
-          match (Config.get ()).test with
-          | Some "lib" -> [ "--lib" ]
-          | Some test -> [ "--test"; test ]
-          | None -> []
+          match (config.test, config.lib) with
+          | Some test, false -> [ "--test"; test ]
+          | None, true -> [ "--lib" ]
+          | _ -> []
         in
         let cargo = cargo @ cargo_flags () @ target_flag in
         let rustc = flags_for_cargo rustc in
