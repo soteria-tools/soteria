@@ -1,0 +1,16 @@
+(executable
+ (name fuzz_patricia)
+ (libraries soteria qcheck-core qcheck-alcotest alcotest))
+
+(rule
+ (alias slow-tests)
+ (action
+  (run ./fuzz_patricia.exe)))
+
+(rule
+ (alias very-slow-tests)
+ (action
+  (setenv
+   "QCHECK_TEST_COUNT"
+   "10000"
+   (run ./fuzz_patricia.exe))))
