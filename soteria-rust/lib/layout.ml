@@ -68,6 +68,7 @@ let rec dst_kind : Types.ty -> meta_kind = function
       match List.last_opt (Crate.as_struct adt) with
       | None -> NoneKind
       | Some last -> dst_kind Types.(last.field_ty))
+  | TTraitType _ | TVar (Bound _) -> L.failwith "dst_kind: unnormalized type"
   | _ -> NoneKind
 
 (** If this is a DST type with a slice tail, return the type of the slice's

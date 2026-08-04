@@ -20,7 +20,7 @@ let variant_for_enum (enum : Typed.([< T.enum ] t)) adt =
 
 (** Iterator over the fields and offsets of a type; for primitive types, returns
     a singleton iterator for that value. *)
-let iter_fields ?variant ?meta layout (ty : Types.ty) =
+let iter_fields ?variant ?ptr layout (ty : Types.ty) =
   let rec to_fields ?variant fields : Types.ty -> Types.ty Iter.t = function
     | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
     | TArray (ty, len) -> Iter.repeatz (z_of_constant_expr len) ty
@@ -28,11 +28,9 @@ let iter_fields ?variant ?meta layout (ty : Types.ty) =
         let sub_ty =
           match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
         in
-        let meta : [< Typed.T.ptr_meta ] Typed.t =
-          Option.get ~msg:"meta required for unsized iter_fields" meta
-        in
+        let ptr = Option.get ~msg:"ptr required for slice" ptr in
+        let len = Typed.Ptr.len_meta ptr in
         (* TODO: strings and slices of symbolic length *)
-        let len = Typed.cast_i Usize meta in
         match BV.to_z len with
         | Some len -> Iter.repeatz len sub_ty
         | None ->
@@ -90,22 +88,6 @@ let mk_box (ptr : Typed.([< T.sptr_f ] t)) allocator marker =
   let unique = Typed.Adt.mk_tuple [ nonnull; marker ] in
   let box = Typed.Adt.mk_tuple [ unique; allocator ] in
   box
-
-(** Given a pointer's (optional) metadata, unwraps it into a type that's easier
-    to match against. *)
-let discriminate_meta (meta : Typed.([< T.ptr_meta ] t) option) =
-  match meta with
-  | None -> `Thin
-  | Some meta -> (
-      match%ty meta with
-      | TBitVector _ -> `Len meta
-      | TExtension TThinPtr -> `VTable meta
-      | _ -> L.failwith "unexpected metadata type")
-
-let pp_meta ft = function
-  | `Thin -> Fmt.string ft "thin"
-  | `Len meta -> Fmt.pf ft "len(%a)" Typed.ppa meta
-  | `VTable meta -> Fmt.pf ft "vtable(%a)" Typed.ppa meta
 
 module Decoder (State_tys : sig
   module SM :
@@ -282,16 +264,16 @@ struct
     | Arbitrary _ | Array _ | Primitive ->
         L.failwith "Unexpected layout for enum"
 
-  (** [decode ~meta ~offset ty] Parses a rust value of type [ty] at the given
-      offset, using the provided metadata for DSTs, and returns the associated
-      [Rust_val]. This does not perform any validity checking, aside from
-      erroring if the type is uninhabited. *)
-  let rec decode ~meta ~offset ty : Typed.T.any Typed.t ParserMonad.t =
+  (** [decode ?ptr ~offset ty] Parses a rust value of type [ty] at the given
+      offset, using the metadata of [ptr] for DSTs, and returns the read value.
+      This does not perform any validity checking, aside from uninhabited checks
+      (since such a value can't be represented) and uninit memory checks. *)
+  let rec decode ?ptr ~offset ty : Typed.T.any Typed.t ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
     let iter fields offset =
       fold_iter fields ~init:[] ~f:(fun vs (ty, o) ->
-          let+ v = decode ~meta ~offset:(offset +!!@ o) ty in
+          let+ v = decode ?ptr ~offset:(offset +!!@ o) ty in
           v :: vs)
       |> map List.rev
     in
@@ -337,7 +319,7 @@ struct
         else query ty offset
     | Primitive, _ -> query ty offset
     | Array { is_ptr = true; _ }, _ ->
-        let+ vs = iter (iter_fields ?meta layout ty) offset in
+        let+ vs = iter (iter_fields ?ptr layout ty) offset in
         let ptr, meta =
           match vs with
           | [ ptr; meta ] -> (Typed.cast_ptr_f ptr, meta)
@@ -350,17 +332,17 @@ struct
           | TExtension TFullPtr -> Typed.Ptr.ptr_of meta
           | _ -> L.failwith "read invalid meta?"
         in
-        Typed.Ptr.mk_ptr_f ptr (Some meta)
+        Typed.Ptr.mk_ptr_f ptr meta
     | Array { is_ptr = false; _ }, _ ->
-        let+ vs = iter (iter_fields ?meta layout ty) offset in
+        let+ vs = iter (iter_fields ?ptr layout ty) offset in
         Typed.Adt.mk_array (index_ty ty) (Iarray.of_list vs)
     | Arbitrary _, _ ->
-        let+ fields = iter (iter_fields ?meta layout ty) offset in
+        let+ fields = iter (iter_fields ?ptr layout ty) offset in
         Typed.Adt.mk_tuple fields
     | Enum _, TAdt adt ->
         let variants = Crate.as_enum adt in
         let* variant = variant_of_enum ~offset ty in
-        let+ fields = iter (iter_fields ~variant ?meta layout ty) offset in
+        let+ fields = iter (iter_fields ~variant ?ptr layout ty) offset in
         let variant = Types.VariantId.nth variants variant in
         Typed.Adt.mk_enum adt variant.id fields
     | Enum _, _ -> L.failwith "decode: expected enum type for enum layout"
@@ -421,14 +403,14 @@ let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         let fields = Typed.Adt.as_array (Typed.cast_array value) in
         chain Iter.combine_iarray fields (iter_fields layout ty)
     | Array { is_ptr = true; _ } ->
-        let ptr, meta = Typed.Ptr.split (Typed.cast_ptr_f value) in
-        let ptr = Typed.Ptr.mk_ptr_f ptr None in
-        let meta = Option.get meta in
+        let fptr = Typed.cast_ptr_f value in
+        let ptr = Typed.Ptr.of_ptr_t (Typed.Ptr.ptr_of fptr) in
+        let** pointee = Layout.normalise (get_pointee ty) in
         let meta =
-          match%ty meta with
-          | TBitVector _ -> (meta :> Typed.(T.any t))
-          | TExtension TThinPtr -> Typed.Ptr.mk_ptr_f meta None
-          | _ -> L.failwith "invalid meta"
+          match Layout.dst_kind pointee with
+          | LenKind -> Typed.Ptr.len_meta fptr
+          | VTableKind -> Typed.Ptr.of_ptr_t (Typed.Ptr.vtable_meta fptr)
+          | NoneKind -> L.failwith "encode: fat pointer with no metadata"
         in
         chain Iter.combine_list [ ptr; meta ] (iter_fields layout ty)
     | Enum (_, layouts) -> (
@@ -482,31 +464,24 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
   let open Syntax in
   let open Result in
   (* undefined.validity.wide *)
-  let metadata_validity ~is_raw_ptr pointee
-      (meta : Typed.T.ptr_meta Typed.t option) =
-    let meta = discriminate_meta meta in
-    match (meta, Layout.dst_kind pointee) with
-    | `Thin, NoneKind -> ok ()
-    | `Len len, LenKind ->
+  let metadata_validity ~is_raw_ptr pointee (fptr : Typed.([< T.sptr_f ] t)) =
+    match Layout.dst_kind pointee with
+    | NoneKind -> ok ()
+    | LenKind ->
+        let len = Typed.Ptr.len_meta fptr in
         if is_raw_ptr then ok ()
         else f Usize.(0s <=$@ len) (`UBTransmute "Negative slice length")
-    | `VTable vt, VTableKind ->
+    | VTableKind ->
         (* TODO: the vtable must always match the trait type of the pointee.
            Will require a new input to this function (?) *)
+        let vt = Typed.Ptr.vtable_meta fptr in
         f
           (Typed.not (Typed.Ptr.is_null vt))
           (`UBTransmute "Null vtable pointer")
-    | meta, dst_kind ->
-        let msg =
-          Fmt.str "Mismatch between metadata and DST kind; expected %a, got %a"
-            Layout.pp_meta_kind dst_kind pp_meta meta
-        in
-        f Typed.v_false (`UBTransmute msg)
   in
   (* undefined.validity.reference-box *)
   let ref_box_validity (fptr : Typed.([< T.sptr_f ] t)) pointee =
-    let meta = Typed.Ptr.meta_of fptr in
-    let** () = metadata_validity ~is_raw_ptr:false pointee meta in
+    let** () = metadata_validity ~is_raw_ptr:false pointee fptr in
     let** layout = Layout.layout_of pointee in
     if layout.uninhabited then f Typed.v_false (`RefToUninhabited pointee)
     else check_ref fptr pointee
@@ -565,8 +540,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       ref_box_validity ptr pointee
   (* undefined.validity.wide *)
   | TRawPtr (pointee, _) ->
-      let meta = Typed.Ptr.meta_of @@ Typed.cast_ptr_f v in
-      metadata_validity ~is_raw_ptr:true pointee meta
+      metadata_validity ~is_raw_ptr:true pointee (Typed.cast_ptr_f v)
   (* undefined.validity.enum *)
   | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_enum ~adt v in
@@ -732,7 +706,7 @@ let rec nondet_raw :
       let** { size; align; _ } = Layout.layout_of pointee in
       let+ ptr = nondet (Typed.t_ptr ()) in
       let ptr = Typed.Ptr.of_raw ~ptr ~size ~align ~tag:None in
-      Ok (Typed.Ptr.mk_ptr_f ptr None)
+      Ok (Typed.Ptr.of_ptr_t ptr)
   | TAdt { id = TTuple; generics = { types; _ } } ->
       let++ fields = nondets_raw types in
       Typed.Adt.mk_tuple fields
@@ -865,10 +839,9 @@ let rec ref_tys_in
   | _ -> Result.ok (v, init)
 
 (** Calculates the size and alignment of a type [t], according to the pointer
-    metadata [meta]. Receives an arbitrary state and [load] function, to
-    possibly access a heap to get VTable information. *)
-let rec size_and_align_of_val ~load_vtable ~t
-    ~(meta : Typed.([< T.ptr_meta ] t) option) =
+    [ptr]. Receives an arbitrary state and [load] function, to possibly access a
+    heap to get VTable information. *)
+let rec size_and_align_of_val ~load_vtable ~t ~(ptr : Typed.([< T.sptr_f ] t)) =
   let open Rustsymex in
   let open Rustsymex.Syntax in
   (* Takes inspiration from rustc, to calculate the size and alignment of DSTs.
@@ -881,14 +854,12 @@ let rec size_and_align_of_val ~load_vtable ~t
     | TSlice _ | TAdt { id = TBuiltin TStr; _ } ->
         let sub_ty = Layout.dst_slice_ty t in
         let** layout = Layout.layout_of sub_ty in
-        let meta = Option.get ~msg:"size_of_val: missing slice meta" meta in
-        let len = Typed.cast_i Usize meta in
+        let len = Typed.Ptr.len_meta ptr in
         let size, ovf_mul = layout.size *?@ len in
         let++ () = assert_or_error (Typed.not ovf_mul) `Overflow in
         (size, layout.align)
     | TDynTrait _ ->
-        let meta = Option.get ~msg:"size_of_val: missing trait meta" meta in
-        let meta = Typed.cast_ptr_t meta in
+        let meta = Typed.Ptr.vtable_meta ptr in
         let** size = load_vtable `Size meta in
         let++ align = load_vtable `Align meta in
         let size = Typed.cast_i Usize size in
@@ -908,7 +879,7 @@ let rec size_and_align_of_val ~load_vtable ~t
           | _ -> L.failwith "size_and_align_of_val: Unexpected layout for ADT"
         in
         let++ unsized_size, unsized_align =
-          size_and_align_of_val ~load_vtable ~t:last_field_ty ~meta
+          size_and_align_of_val ~load_vtable ~t:last_field_ty ~ptr
         in
         (* TODO: we need to check if [layout] is packed, in which case
            unsized_align is 1! See 113-125 of above function. *)

@@ -49,7 +49,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     in
     let mk_res ptr len =
       let out_res = ty_as_adt fun_sig.output in
-      let ptr = Typed.Ptr.mk_ptr_f ptr (Some len) in
+      let ptr = Typed.Ptr.mk_ptr_f ptr len in
       let nonnull = Typed.Adt.mk_tuple [ ptr ] in
       Typed.Adt.Checked.mk_enum out_res "Ok" [ nonnull ]
     in
@@ -59,7 +59,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     else
       let* zeroed = if%sat zeroed then ok true else ok false in
       let+ ptr = Alloc.alloc ~zeroed [ size; align ] in
-      let ptr, _ = Typed.Ptr.split (Typed.cast_ptr_f ptr) in
+      let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f ptr) in
       mk_res ptr size
 
   let handle_alloc_error ~layout:_ = do_panic ()

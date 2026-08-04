@@ -141,18 +141,26 @@ module M (StateM : State.StateM.S) = struct
     | None, None -> v_true
     | _, _ -> L.failwith "Comparing pointers with mismatched metadata"
 
-  let rec eval_ptr_binop (bop : Expressions.binop) (l : Typed.([< T.sptr_f ] t))
-      (r : Typed.([< T.sptr_f ] t)) =
+  let ptr_meta (ptr : [< Typed.T.sptr_f ] Typed.t) (pointee : Types.ty) :
+      Typed.T.ptr_meta Typed.t option =
+    match Layout.dst_kind pointee with
+    | NoneKind -> None
+    | LenKind -> Some (Typed.Ptr.len_meta ptr)
+    | VTableKind -> Some (Typed.Ptr.vtable_meta ptr)
+
+  let rec eval_ptr_binop ~pointee (bop : Expressions.binop)
+      (l : Typed.([< T.sptr_f ] t)) (r : Typed.([< T.sptr_f ] t)) =
+    let meta p = ptr_meta p pointee in
     match bop with
     | Ne ->
-        let+ res = eval_ptr_binop Eq l r in
+        let+ res = eval_ptr_binop ~pointee Eq l r in
         BV.not_bool (cast res)
     | Eq ->
         (* Pointer comparison just uses the address! See
            https://doc.rust-lang.org/std/ptr/index.html#provenance *)
         let null_or_in_bound p = Typed.Ptr.is_null p ||@ Typed.Ptr.in_bound p in
-        let l, meta_l = Typed.Ptr.split l in
-        let r, meta_r = Typed.Ptr.split r in
+        let meta_l = meta l and meta_r = meta r in
+        let l = Typed.Ptr.ptr_of l and r = Typed.Ptr.ptr_of r in
         let same_provenance = Typed.Ptr.have_same_provenance l r in
         if%sure same_provenance then
           (* Fast path: if two pointer have the same provenance, it's enough to
@@ -180,8 +188,8 @@ module M (StateM : State.StateM.S) = struct
           let ptr_eq = distance ==@ Usize.(0s) in
           BV.of_bool (meta_eq &&@ ptr_eq)
     | Lt | Le | Gt | Ge -> (
-        let l, ml = Typed.Ptr.split l in
-        let r, mr = Typed.Ptr.split r in
+        let ml = meta l and mr = meta r in
+        let l = Typed.Ptr.ptr_of l and r = Typed.Ptr.ptr_of r in
         let* dist = Sptr.distance l r in
         let bop =
           match bop with
@@ -254,7 +262,7 @@ module M (StateM : State.StateM.S) = struct
         let@ () = with_alloc_kind ~kind:StaticString in
         let* ptr = State.alloc_ty str_ty in
         let ptr = Typed.Ptr.ptr_of ptr in
-        let ptr = Typed.Ptr.mk_ptr_f ptr (Some (BV.usizei len)) in
+        let ptr = Typed.Ptr.mk_ptr_f ptr (BV.usizei len) in
         let* () = State.store ptr str_ty char_arr in
         let+ () = State.store_str_global str ptr in
         ptr
