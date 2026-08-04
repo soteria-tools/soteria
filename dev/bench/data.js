@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785331135889,
+  "lastUpdate": 1785830621078,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -6234,6 +6234,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 100.316,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sachaayoun@gmail.com",
+            "name": "Sacha Ayoun",
+            "username": "giltho"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75e74a82cbfd08fee8f81f7b0e4395990bd5d203",
+          "message": "Fix the Licensing to reflect Imperial's ownership (#466)\n\nFix the notice to reflect Imperial College ownership\n\nSigned-off-by: Sacha Ayoun <sachaayoun@gmail.com>",
+          "timestamp": "2026-08-04T07:43:50Z",
+          "tree_id": "c5c614fb079d33dfc2979b947dc2400bf4ffaa7a",
+          "url": "https://github.com/soteria-tools/soteria/commit/75e74a82cbfd08fee8f81f7b0e4395990bd5d203"
+        },
+        "date": 1785830619454,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.16716520596,
+            "range": "± 0.0141",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.9112553594800001,
+            "range": "± 0.0049",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6380031279,
+            "range": "± 0.0153",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.38062911180000003,
+            "range": "± 0.0038",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.23305677806,
+            "range": "± 0.0267",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.6788556557400002,
+            "range": "± 0.0153",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.35853262658,
+            "range": "± 0.0046",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.00192904296,
+            "range": "± 0.0267",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.35028723400319,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 371,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 17,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 122.2843,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 461,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 99,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 41,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 8,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 100.7065,
             "unit": "s"
           }
         ]
