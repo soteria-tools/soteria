@@ -469,24 +469,24 @@ Print the callgraph
   
   digraph callgraph {
     node [shape=box fontname="monospace"];
-    n0 [label="Range<A>>::next" tooltip="std::iter::range::<impl std::iter::Iterator for std::ops::Range<A>>::next::<i32>"];
-    n13 [label="io::_print" tooltip="std::io::_print"];
+    n0 [label="range::next" tooltip="core::iter::range::{impl Iterator for Range::<_>}::next::<i32>"];
+    n12 [label="impls::lt" tooltip="core::cmp::impls::impl_PartialOrd_i32_for_i32::lt"];
+    n15 [label="stdio::_print" tooltip="std::io::stdio::_print"];
+    n13 [label="range::forward_unchecked" tooltip="core::iter::range::impl_Step_for_i32::forward_unchecked"];
     n7 [label="callgraph::limit" tooltip="callgraph::limit"];
     n2 [label="callgraph::choose" tooltip="callgraph::choose"];
-    n12 [label="callgraph::main" tooltip="callgraph::main"];
+    n16 [label="rt::new_display" tooltip="core::fmt::rt::{Argument::<'_>}::new_display::<'_, i32>"];
+    n14 [label="callgraph::main" tooltip="callgraph::main"];
     n6 [label="callgraph::run" tooltip="callgraph::run"];
-    n16 [label="Step>::forward_unchecked" tooltip="<i32 as std::iter::Step>::forward_unchecked"];
+    n8 [label="collect::into_iter" tooltip="core::iter::traits::collect::impl_IntoIterator_for_T::into_iter::<Range::<i32>>"];
     n3 [label="callgraph::twice" tooltip="callgraph::twice"];
-    n14 [label="Argument::<'_>::new_display" tooltip="core::fmt::rt::Argument::<'_>::new_display::<'_, i32>"];
     n4 [label="callgraph::dec" tooltip="callgraph::dec"];
-    n8 [label="callgraph::score" tooltip="callgraph::score"];
-    n17 [label="PartialOrd for i32>::lt" tooltip="std::cmp::impls::<impl std::cmp::PartialOrd for i32>::lt"];
+    n9 [label="callgraph::score" tooltip="callgraph::score"];
     n10 [label="callgraph::ping" tooltip="callgraph::ping"];
-    n9 [label="IntoIterator>::into_iter" tooltip="<I as std::iter::IntoIterator>::into_iter::<Range::<i32>>"];
-    n15 [label="Arguments::<'a>::new" tooltip="std::fmt::Arguments::<'a>::new::<'_, 12usize, 1usize>"];
+    n17 [label="fmt::new" tooltip="core::fmt::{Arguments::<'_>}::new::<'_, 12usize, 1usize>"];
     n11 [label="callgraph::pong" tooltip="callgraph::pong"];
     n5 [label="callgraph::inc" tooltip="callgraph::inc"];
-    n1 [label="RangeIteratorImpl>::spec_next" tooltip="<std::ops::Range<T> as std::iter::range::RangeIteratorImpl>::spec_next::<i32>"];
+    n1 [label="range::spec_next" tooltip="core::iter::range::{impl RangeIteratorImpl for Range::<_>}::spec_next::<i32>"];
     n0 -> n1;
     n2 -> n3;
     n2 -> n4;
@@ -496,15 +496,15 @@ Print the callgraph
     n6 -> n8;
     n6 -> n9;
     n10 -> n11;
-    n12 -> n13;
-    n12 -> n6;
-    n12 -> n14;
-    n12 -> n15;
-    n8 -> n2;
-    n8 -> n10;
+    n1 -> n12;
+    n1 -> n13;
+    n14 -> n15;
+    n14 -> n16;
+    n14 -> n6;
+    n14 -> n17;
+    n9 -> n2;
+    n9 -> n10;
     n11 -> n10;
-    n1 -> n16;
-    n1 -> n17;
   }
 
 Check we trust addresses for pointer alignment
@@ -595,15 +595,12 @@ Ensure we implement the caller_location intrinsic correctly; this used to cause 
   => Running unreachable::main...
   error: unreachable::main: found issues in <time>, errors in 1 branch (out of 1)
   error: Panic in unreachable::main
-      --> $RUSTLIB/library/core/src/panicking.rs:80:14
-   80 |      unsafe { panic_impl(&pi) }
-      |               ^^^^^^^^^^^^^^^
-      |               |
-      |               Triggering operation
-      |               4: Call trace
-      .  
+      --> $RUSTLIB/library/core/src/panicking.rs:240:5
   240 |      panic_fmt(format_args!("internal error: entered unreachable code: {}", *x));
-      |      --------------------------------------------------------------------------- 3: Call trace
+      |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |      |
+      |      Triggering operation
+      |      3: Call trace
       --> $TESTCASE_ROOT/unreachable.rs:2:5
     1 |  fn main() {
       |  --------- 1: Entry point

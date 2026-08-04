@@ -1,13 +1,13 @@
 Test running Soteria Rust on a crate with tests
   $ soteria-rust exec . --test tests
   Compiling... done in <time>
-  => Running tests::test_ok...
-  note: tests::test_ok: done in <time>, ran 1 branch
+  => Running tests::test_ok#1...
+  note: tests::test_ok#1: done in <time>, ran 1 branch
   PC 1: empty
   
-  => Running tests::test_nok...
-  error: tests::test_nok: found issues in <time>, errors in 1 branch (out of 1)
-  error: Failed assertion in tests::test_nok
+  => Running tests::test_nok#1...
+  error: tests::test_nok#1: found issues in <time>, errors in 1 branch (out of 1)
+  error: Failed assertion in tests::test_nok#1
       --> $RUSTLIB/library/core/src/panicking.rs:394:5
   394 |      assert_failed_inner(kind, &left, &right, args)
       |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -21,9 +21,9 @@ Test running Soteria Rust on a crate with tests
       |      ---------------------------- 2: Call trace
   PC 1: empty
   
-  => Running tests::test_nok_expected...
-  error: tests::test_nok_expected: found issues in <time>, errors in 1 branch (out of 1)
-  error: Failed assertion in tests::test_nok_expected
+  => Running tests::test_nok_expected#1...
+  error: tests::test_nok_expected#1: found issues in <time>, errors in 1 branch (out of 1)
+  error: Failed assertion in tests::test_nok_expected#1
       --> $RUSTLIB/library/core/src/panicking.rs:394:5
   394 |      assert_failed_inner(kind, &left, &right, args)
       |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -40,13 +40,13 @@ Test running Soteria Rust on a crate with tests
   [1]
   $ soteria-rust exec . --test soteria
   Compiling... done in <time>
-  => Running soteria::tests::test_ok...
-  note: soteria::tests::test_ok: done in <time>, ran 1 branch
+  => Running soteria::tests::test_ok#1...
+  note: soteria::tests::test_ok#1: done in <time>, ran 1 branch
   PC 1: (V|1| == 0x0000002a) /\ (V|1| == 0x0000002a)
   
-  => Running soteria::tests::test_nok...
-  error: soteria::tests::test_nok: found issues in <time>, errors in 1 branch (out of 2)
-  error: Failed assertion in soteria::tests::test_nok
+  => Running soteria::tests::test_nok#1...
+  error: soteria::tests::test_nok#1: found issues in <time>, errors in 1 branch (out of 2)
+  error: Failed assertion in soteria::tests::test_nok#1
       --> $RUSTLIB/library/core/src/panicking.rs:394:5
   394 |      assert_failed_inner(kind, &left, &right, args)
       |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -61,15 +61,15 @@ Test running Soteria Rust on a crate with tests
       |          --------------------------- 2: Call trace
   PC 1: (V|1| != 0x0000002a)
   
-  => Running soteria::tests::test_nok_ok...
-  note: soteria::tests::test_nok_ok: done in <time>, ran 2 branches
+  => Running soteria::tests::test_nok_ok#1...
+  note: soteria::tests::test_nok_ok#1: done in <time>, ran 2 branches
   PC 1: (V|1| != 0x0000002a)
   
   [1]
 
   $ soteria-rust exec . --test lib --cargo="--features my_feature"
   Compiling... done in <time>
-  => Running my_crate::test::test_in_src...
-  note: my_crate::test::test_in_src: done in <time>, ran 1 branch
+  => Running my_crate::test::test_in_src#1...
+  note: my_crate::test::test_in_src#1: done in <time>, ran 1 branch
   PC 1: empty
   

@@ -131,9 +131,13 @@ let get_adt_lang_item lang_item =
   try
     crate.type_decls
     |> Types.TypeDeclId.Map.iter (fun id (adt : Types.type_decl) ->
-        if Option.equal String.equal adt.item_meta.lang_item (Some lang_item)
+        if
+          Option.equal Types.equal_rustc_lang_item adt.item_meta.lang_item
+            (Some lang_item)
         then raise (Found adt));
-    raise (MissingDecl ("Missing ADT with lang item: " ^ lang_item))
+    raise
+      (MissingDecl
+         ("Missing ADT with lang item: " ^ Types.show_rustc_lang_item lang_item))
   with Found adt -> adt
 
 let get_adt_lang_item_ref lang_item =
@@ -144,8 +148,8 @@ let get_adt_lang_item_ref lang_item =
 let adt_has_lang_item lang_item (adt_ref : Types.type_decl_ref) =
   match adt_ref.id with
   | TAdtId id ->
-      Option.equal String.equal (get_adt_raw id).item_meta.lang_item
-        (Some lang_item)
+      Option.equal Types.equal_rustc_lang_item
+        (get_adt_raw id).item_meta.lang_item (Some lang_item)
   | TBuiltin _ | TTuple -> false
 
 let get_fun id =

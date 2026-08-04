@@ -14,7 +14,7 @@ module M (StateM : State.StateM.S) = struct
   open Syntax
 
   let cmp ~signed l r =
-    let ordering = Crate.get_adt_lang_item_ref "Ordering" in
+    let ordering = Crate.get_adt_lang_item_ref RustcLangItemOrderingEnum in
     let ( < ) = if signed then ( <$@ ) else ( <@ ) in
     let discr =
       Typed.ite (l < r) U8.(-1s) (Typed.ite (l ==@ r) U8.(0s) U8.(1s))
