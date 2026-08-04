@@ -3,7 +3,7 @@
  (libraries
   packaging_common
   cerberus-lib.c_parser
-  cerberus-lib.mem.concrete
+  cerberus-lib.mem.vip
   cerberus-lib.backend_common
   soteria_c_lib))
 

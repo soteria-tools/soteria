@@ -5,6 +5,7 @@
   "CHARON_COMMIT_HASH": "4986f2907dbe5899b0756ab623b5ef661ed2c58c",
   "OBOL_REPO": "soteria-tools/obol",
   "OBOL_COMMIT_HASH": "bdf52aa2082fbda85bb6b3bdb5a0d9c2b2c55a69",
+  "CERBERUS_COMMIT_HASH": "e88d46c3ed65a198ee14aaebaad80e3a005cf3fb",
   "OCAMLFORMAT_VERSION": "0.29.0",
   "OCAML_VERSION": "5.5.0",
   "DUNE_VERSION": "3.23.1"

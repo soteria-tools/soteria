@@ -1,3 +1,5 @@
+# Versions managed by scripts/versionsync.py - edit scripts/versions.json to change
 pin-depends: [
-  ["cerberus-lib.~dev" "git+https://github.com/kmemarian/cerberus#frontend-for-system-libc"]
+  # [versionsync: CERBERUS_COMMIT_HASH=e88d46c3ed65a198ee14aaebaad80e3a005cf3fb]
+  ["cerberus-lib.~dev" "git+https://github.com/rems-project/cerberus#e88d46c3ed65a198ee14aaebaad80e3a005cf3fb"]
 ]
