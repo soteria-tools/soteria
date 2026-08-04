@@ -12,18 +12,6 @@ exception CompilationError of string * string
 let compilation_err info msg = raise (CompilationError (info, msg))
 
 module Lib = struct
-  let target =
-    lazy
-      (match (Config.get ()).target with
-      | Some t -> t
-      | None -> (
-          let env = Cmd.rustc_as_env () in
-          let info = Exe.exec_exn ~env (Cmd.cargo ()) [ "-vV" ] in
-          match List.find_opt (String.starts_with ~prefix:"host") info with
-          | Some s -> String.sub s 6 (String.length s - 6)
-          | None ->
-              compilation_err "executing rustc" "Couldn't find target host"))
-
   let root =
     lazy
       (match
@@ -70,7 +58,7 @@ module Lib = struct
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
       in
       let args =
-        [ "build"; "--lib"; "--target"; Lazy.force target ]
+        [ "build"; "--lib"; "--target"; Lazy.force Cmd.target ]
         @ if (Config.get ()).log_compilation then [ "--verbose" ] else []
       in
       let args = if config.offline then args @ [ "--offline" ] else args in
@@ -78,7 +66,7 @@ module Lib = struct
 
   let with_compiled lib f =
     let path = path lib in
-    let target = Lazy.force target in
+    let target = Lazy.force Cmd.target in
     compile lib;
     let config : Cmd.t = f (path, target) in
     let lib_imports =
@@ -125,9 +113,7 @@ let default () =
          "--format=postcard";
          "--no-typecheck";
          "--no-normalize";
-         (* Use the normal distributed sysroot; Charon otherwise defaults to a
-            full-MIR Miri sysroot, whose std is incompatible with our
-            separately-compiled [soteria] support crate. *)
+         (* Tell Charon to not specify any sysroot; we have our own *)
          "--sysroot=default";
        ]
       @ opaque_names
