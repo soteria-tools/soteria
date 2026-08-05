@@ -10,6 +10,9 @@ module Copy_cerb_runtime = struct
     let dest_dir = dest_dir / "cerberus-lib" / "runtime" in
     let () = run "mkdir" [ "-p"; dest_dir ] |> eval in
     let () = run "cp" [ "-rL"; path ^ "/."; dest_dir ] |> eval in
+    (* [bmc] holds GPL-2.0-or-later model files derived from the Linux kernel;
+       removing them keeps GPL code out of the distributed package. See
+       THIRD_PARTY_NOTICES section 3. *)
     let () = run "rm" [ "-rf"; Filename.concat dest_dir "bmc" ] |> eval in
     Printf.printf "Copied Cerb runtime from %s to %s\n" path dest_dir
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Build the project documentation and present odoc's diagnostics readably.
 
-This replaces the body of ``make doc``: it runs ``dune build @doc``, applies the
-local odoc theme, then pretty-prints odoc's (otherwise very verbose) output —
-one diagnostic per block, blocks separated by a blank line, coloured by kind,
-with un-actionable noise filtered out.
+This replaces the body of ``make doc``: it runs ``dune build @doc``, then
+pretty-prints odoc's (otherwise very verbose) output — one diagnostic per
+block, blocks separated by a blank line, coloured by kind, with un-actionable
+noise filtered out.
 
 By default the build is incremental (fast), but dune caches odoc's warnings and
 stays silent on a no-op rebuild — so warnings in files you didn't just touch may
@@ -357,18 +357,6 @@ def open_index() -> None:
         pass  # no opener available (e.g. headless CI); the path is still printed
 
 
-def apply_theme() -> None:
-    css = REPO_ROOT / "_build/default/_doc/_html/odoc.support/odoc.css"
-    theme = REPO_ROOT / "doc/odoc-theme/odoc.css"
-    if not (css.exists() and theme.exists()):
-        return
-    try:
-        css.chmod(0o644)
-        shutil.copyfile(theme, css)
-    except OSError:
-        return
-
-
 def report(output: str, colour: bool, simplify: bool = True) -> None:
     preamble, blocks = parse_blocks(output)
 
@@ -434,11 +422,9 @@ def main() -> int:
     elif args.nocache:
         with Spinner("Force-rebuilding documentation (dune build @doc)…"):
             code, output = build_docs_forced()
-        apply_theme()
     else:
         with Spinner("Building documentation (dune build @doc)…"):
             code, output = build_docs()
-        apply_theme()
 
     if args.raw:
         sys.stdout.write(output)
