@@ -1,0 +1,10 @@
+The files under third-party-licenses/ are verbatim copies of the license texts
+of third-party components that Soteria links against or ships alongside. They
+are reproduced here to satisfy the notice requirements of those licenses, and
+are taken unmodified from the SPDX License List (https://spdx.org/licenses/).
+
+They are not license grants for any part of this repository; see LICENSE and
+THIRD_PARTY_NOTICES.
+
+Each of these documents may be copied and distributed verbatim, but changing
+them is not allowed.

@@ -167,6 +167,8 @@ We would especially like to thank:
 
 ## License
 
-Soteria and derived tools in this repository are under the Apache-2.0 license. Copyright 2024–2025 Imperial College London and 2025–2026 Soteria Tools Ltd.; see the [NOTICE](./NOTICE) file for how copyright is split between the two.
+Soteria and derived tools in this repository are under the Apache-2.0 license, see [LICENSE](./LICENSE). Copyright 2024–2025 Imperial College London and 2025–2026 Soteria Tools Ltd.; see the [NOTICE](./NOTICE) file for how copyright is split between the two.
+
+Third-party components linked into or shipped with the Soteria binaries are listed in [THIRD_PARTY_NOTICES](./THIRD_PARTY_NOTICES), with their license texts in [`third-party-licenses/`](./third-party-licenses).
 
 The Soteria logo is a trademark of the Soteria Tools Ltd.

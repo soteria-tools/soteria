@@ -1,3 +1,6 @@
+// Taken from
+// https://github.com/rust-lang/miri/blob/master/tests/pass/tree_borrows/tree-borrows.rs
+
 // This function checks that there is no issue with having two mutable references
 // from the same allocation both under a protector.
 // This is safe code, it must absolutely not be UB.

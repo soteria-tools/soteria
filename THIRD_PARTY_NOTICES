@@ -1,13 +1,252 @@
 Third-party notices
 
-- Kani plugins (directories: soteria-rust/plugins/kani, soteria-rust/plugins/kani_macros)
+This file lists the third-party components distributed as part of, or linked
+into, the Soteria binaries, together with their licenses. Soteria itself is
+licensed under Apache-2.0 (see LICENSE).
+
+Full license texts are in third-party-licenses/, except for Apache-2.0, MIT,
+CC-BY-4.0 and LGPL-3.0-or-later, whose texts are already in LICENSES/. Both
+directories, together with this file, LICENSE and NOTICE, accompany the
+distributed binaries.
+
+1. Source code included in this repository
+------------------------------------------
+
+- Kani plugins (soteria-rust/plugins/kani, soteria-rust/plugins/kani_macros)
   Copyright Kani Contributors
   License: Apache-2.0 OR MIT
   Upstream: https://github.com/model-checking/kani
 
-- Collections-C snippet used in tests (directory: soteria-c/test/cram/cc.t)
+- Collections-C snippet used in tests (soteria-c/test/cram/cc.t)
   Copyright (C) 2013-2014 Srđan Panić <srdja.panic@gmail.com>
   License: LGPL-3.0-or-later
   Upstream: https://github.com/srdja/Collections-C
 
-This file provides attribution only. See LICENSES/ for full license texts.
+- Tree Borrows examples (demo/aliasing.rs, and examples 6, 7, 9 and 10 in
+  soteria-rust/test/cram/treeborrow.t/{simple,simple-fail,raw-ptrs,offsets}.rs)
+  Copyright (c) 2025 Neven Villani, Johannes Hostert, Derek Dreyer, Ralf Jung
+  License: CC-BY-4.0
+  Upstream: https://perso.crans.org/vanille/treebor/aux/preprint.pdf
+  These examples have been modified: they are adapted into compilable Rust
+  test inputs, and demo/aliasing.rs additionally carries Kani annotations.
+
+- Tests and examples from the Rust project:
+    * demo/dll_test.rs — from Rust's standard library test suite
+    * soteria-rust/test/cram/simple.t/split_merges.rs — from rust-lang/miri
+      (tests/pass/union-overwrite.rs)
+    * soteria-rust/test/cram/simple.t/thread_local.rs — from the
+      std::thread_local documentation
+    * soteria-rust/test/cram/treeborrow.t/two-mut-protected.rs — from
+      rust-lang/miri (tests/pass/tree_borrows/tree-borrows.rs)
+  Copyright The Rust Project Developers (see https://thanks.rust-lang.org)
+  License: MIT OR Apache-2.0
+  Upstream: https://github.com/rust-lang/rust,
+            https://github.com/rust-lang/miri
+
+- Linked-list example (soteria-rust/test/cram/poly.t/linked_list.rs)
+  Copyright Aria Desires
+  License: MIT
+
+None of these are compiled into the shipped binaries. The test inputs stay in
+the source repository and are not included in the binary packages; the Kani
+plugin sources are redistributed as-is in the plugins/ directory of the
+soteria-rust package.
+
+
+2. OCaml libraries linked into both soteria-c and soteria-rust
+--------------------------------------------------------------
+
+Permissive:
+
+- cmdliner 2.1.1 — Copyright (c) 2011 The cmdliner programmers — ISC
+- dune 3.23.1 (dune-site, dune-private-libs) — Copyright (c) 2016 Jane Street
+  Group, LLC <opensource@janestreet.com> — MIT
+- fmt 0.11.0 — Copyright (c) 2016 The fmt programmers — ISC
+- grace 0.3.0 — Copyright (c) 2022 Alistair O'Brien — MIT
+- hc 0.5 — Copyright © 2019, Léo Andrès — ISC
+- htmlit 0.2.0 — Copyright (c) 2016 The htmlit programmers — ISC
+- iter 1.9 — Copyright (c) 2012-2016, Simon Cruanes — BSD-2-Clause
+- logs 0.10.0 — Copyright (c) 2016 The logs programmers — ISC
+- mtime 2.1.0 — Copyright (c) 2015 The mtime programmers — ISC
+- optint 0.3.0 — Copyright (c) 2018 Romain Calascibetta — ISC
+- parsexp v0.17.0 — Copyright (c) 2016--2024 Jane Street Group, LLC
+  <opensource-contacts@janestreet.com> — MIT
+- ppx_deriving 6.1.1 (runtime) — Copyright (c) 2014-2016 whitequark
+  <whitequark@whitequark.org> — MIT
+- ppx_deriving_yojson 3.10.0 (runtime) — Copyright (c) 2014 whitequark
+  <whitequark@whitequark.org> — MIT
+- ppx_sexp_conv v0.17.1 (runtime) — Copyright (c) 2015--2024 Jane Street Group,
+  LLC <opensource-contacts@janestreet.com> — MIT
+- printbox 0.12, printbox-text 0.12 — Copyright (c) 2016, Simon Cruanes,
+  Guillaume Bury — BSD-2-Clause
+- progress 0.5.0 — Copyright (c) 2020 Craig Ferguson — MIT
+- sexplib v0.17.0, sexplib0 v0.17.0 — Copyright (c) 2005--2024 Jane Street
+  Group, LLC <opensource-contacts@janestreet.com> — MIT
+- store 0.2 — Copyright (c) 2023-2025 Inria, Copyright (c) 2023-2025 OCamlPro
+  SAS — MIT
+- terminal 0.5.0 — Copyright (c) 2020 Craig Ferguson — MIT
+- tsort 2.2.0 — Copyright (c) 2019 Daniil Baturin — MIT
+- uucp 17.0.0 — Copyright (c) 2014 The uucp programmers — ISC
+- uutf 1.0.4 — Copyright (c) 2016 The uutf programmers — ISC
+- yojson 2.2.2 — Copyright (c) 2010-2012, Martin Jambon — BSD-3-Clause
+
+LGPL with the OCaml linking exception. Each of these grants the exception in
+third-party-licenses/OCaml-LGPL-linking-exception.txt, with the library's own
+name substituted for "the OCaml Core System"; the authoritative wording is the
+LICENSE file shipped with each library. The exception permits static or dynamic
+linking into an executable distributed under terms of our choice.
+
+- menhirLib 20260209 — François Pottier, Yann Régis-Gianas, INRIA —
+  LGPL-2.0-only WITH OCaml-LGPL-linking-exception
+- OCaml runtime and standard library 5.5.0 (str, unix, threads, seq, and the
+  runtime linked into every executable) — Copyright INRIA —
+  LGPL-2.1-or-later WITH OCaml-LGPL-linking-exception
+- stdlib-shims 0.3.0 — the OCaml developers —
+  LGPL-2.1-only WITH OCaml-LGPL-linking-exception
+- unionFind 20260226 — François Pottier, INRIA —
+  LGPL-2.0-only WITH OCaml-LGPL-linking-exception
+- zarith 1.14 — Copyright (c) 2010-2011 Antoine Miné, Abstraction project;
+  Xavier Leroy, Pascal Cuoq; INRIA —
+  LGPL-2.0-only WITH OCaml-LGPL-linking-exception
+
+
+3. Additional OCaml libraries linked into soteria-c only
+--------------------------------------------------------
+
+- cerberus-lib (~dev) — Copyright (c) 2011-2022 Kayvan Memarian, Victor B. F.
+  Gomes, Justus Matthiesen, Peter Sewell, Kyndylan Nienhuis, Stella Lau, Jean
+  Pichon-Pharabod, Christopher Pulte, Rodolphe Lepigre and contributors —
+  BSD-2-Clause, except for the files listed in its THIRD_PARTY_FILES.md. Of
+  those, the ones we link are derived from the U. Cambridge Cppmem project and
+  are BSD-3-Clause:
+    * backend/common/auxl.ml and frontend/concurrency/cmm_csem.lem —
+      copyright 2011, 2012 Mark Batty, Scott Owens, Jean Pichon, Susmit
+      Sarkar, Peter Sewell
+  Upstream: https://github.com/rems-project/cerberus
+
+- SibylFS, vendored into cerberus-lib as cerberus-lib.sibylfs and linked in
+  via cerberus-lib.frontend — Copyright (c) 2013, 2014, 2015 Tom Ridge, David
+  Sheets, Thomas Tuerk, Andrea Giugliano — ISC
+  Upstream: https://github.com/sibylfs/sibylfs_src
+
+- lem 2026-05-01 — (c) 2010-2026 Dominic Mulligan, Kathryn E. Gray, Scott
+  Owens, Peter Sewell, Thomas Tuerk and contributors — BSD-3-Clause, except:
+    * ocaml-lib/pmap.{ml,mli} and ocaml-lib/pset.{ml,mli}: modified copies of
+      the OCaml standard library's Map and Set. Each of the four files carries
+      INRIA's own header granting "the GNU Library General Public License,
+      with the special exception on linking", so the OCaml linking exception
+      applies.
+    * src/ulib (cut-down files from Batteries): LGPL-2.1-or-later WITH a
+      linking exception equivalent to the OCaml one.
+  Upstream: https://github.com/rems-project/lem
+
+- num 1.6 — Valérie Ménissier-Morain, Pierre Weis, Xavier Leroy, INRIA —
+  LGPL-2.1-only WITH OCaml-LGPL-linking-exception
+
+- pprint 20230830 — François Pottier, Nicolas Pouillard —
+  LGPL-2.0-only WITH OCaml-LGPL-linking-exception
+
+- sha 1.15.4 — Vincent Hanquez and contributors — ISC
+
+The Cerberus runtime files copied verbatim into the soteria-c package by
+packaging/soteria-c are part of cerberus-lib and are BSD-2-Clause, with these
+exceptions (per cerberus-lib's THIRD_PARTY_FILES.md):
+
+- runtime/libc/include/posix/sys/cdefs.h — Copyright (c) 1991 The Regents of
+  the University of California — BSD-4-Clause
+- runtime/libc/include/posix/sys/ioctl.h — Copyright (c) 1982, 1986, 1990 The
+  Regents of the University of California — BSD-4-Clause
+- runtime/libc/src/*.{c,h}, if present in the runtime tree being packaged —
+  musl-libc — MIT
+
+BSD-4-Clause carries an advertising clause: any advertising material that
+mentions features of or use of soteria-c must display the acknowledgement
+"This product includes software developed by the University of California,
+Berkeley and its contributors." The license text is in
+third-party-licenses/BSD-4-Clause.txt.
+
+Cerberus's runtime also ships GPL-2.0-or-later model files under runtime/bmc
+(derived from the Linux kernel). These are not included in the package;
+packaging/soteria-c/package.ml deletes that directory after copying the
+runtime.
+
+
+4. Additional OCaml libraries linked into soteria-rust only
+-----------------------------------------------------------
+
+- charon (~dev), name_matcher_parser (~dev) — Son Ho, Jonathan Protzenko,
+  Aymeric Fromherz, Sidney Congard and contributors — Apache-2.0
+  Upstream: https://github.com/AeneasVerif/charon
+  Built from the fork at https://github.com/soteria-tools/charon, which
+  carries our modifications to Charon; see section 5.
+
+- result 1.5 — Copyright (c) 2015, Jane Street Group, LLC
+  <opensource@janestreet.com> — BSD-3-Clause
+
+- visitors 20260520 (runtime) — François Pottier, INRIA —
+  LGPL-2.1-only WITH OCaml-LGPL-linking-exception
+
+
+5. Components shipped alongside the binaries
+--------------------------------------------
+
+Native libraries copied into the packages, linked dynamically:
+
+- GNU MP (libgmp), used by zarith — Copyright Free Software Foundation, Inc. —
+  LGPL-3.0-or-later OR GPL-2.0-or-later. Soteria relies on the
+  LGPL-3.0-or-later option; its text is in LICENSES/LGPL-3.0-or-later.txt, and
+  the GPL-3.0 text it incorporates by reference is in
+  third-party-licenses/GPL-3.0-only.txt. See section 6.
+  Upstream: https://gmplib.org/
+
+- Zstandard (libzstd), pulled in by the OCaml runtime, soteria-c only —
+  Copyright (c) Meta Platforms, Inc. and affiliates —
+  BSD-3-Clause OR GPL-2.0-only. Soteria relies on the BSD-3-Clause option.
+  Upstream: https://github.com/facebook/zstd
+
+Executables copied into the packages and invoked as subprocesses:
+
+- Z3 — Copyright (c) Microsoft Corporation — MIT
+  Upstream: https://github.com/Z3Prover/z3
+- charon, charon-driver (soteria-rust) — Apache-2.0
+  Upstream: https://github.com/soteria-tools/charon, a fork of
+  https://github.com/AeneasVerif/charon
+  These have been modified: the pinned commit (CHARON_COMMIT_HASH in
+  scripts/versions.json) carries changes of ours on top of upstream Charon,
+  removing copyleft-licensed Rust dependencies. They are Apache-2.0 like the
+  rest of Charon, are visible in the fork's history, and have been offered
+  upstream.
+- obol, obol-driver (soteria-rust) — Apache-2.0
+  Upstream: https://github.com/soteria-tools/obol
+
+The Rust dependency trees of charon and obol are entirely permissive
+(predominantly MIT OR Apache-2.0, with some Apache-2.0 WITH LLVM-exception,
+BSD-2-Clause, BSD-2-Clause-Patent, 0BSD, BSL-1.0, Zlib, Unlicense and
+Unicode-3.0); each of those binaries carries its own notices.
+
+
+6. Copyleft obligations that need attention when distributing binaries
+----------------------------------------------------------------------
+
+Nothing linked into either binary is under the GPL.
+
+Every LGPL-licensed OCaml library we link carries a linking exception, so none
+of them imposes a relink obligation. The one obligation is:
+
+- libgmp is shipped under LGPL-3.0-or-later. We bundle a copy of it in the
+  package's lib/ directory rather than relying on one already present on the
+  recipient's system, so section 4(d)(1) of that license does not apply and we
+  instead convey GMP itself under the LGPL. Accordingly the package includes
+  the LGPL-3.0 and GPL-3.0 texts (LICENSES/LGPL-3.0-or-later.txt and
+  third-party-licenses/GPL-3.0-only.txt), this notice states that GMP is used
+  and covered by them, and its source is offered below. Linking stays dynamic,
+  so a recipient can substitute a modified, interface-compatible GMP.
+
+  Written offer: the version of GMP shipped in a package is recorded in the
+  bundled library itself. Source for every released version is archived at
+  https://gmplib.org/download/gmp/. If you cannot obtain it there, request it
+  at https://github.com/soteria-tools/soteria/issues and we will provide it.
+  This offer is valid to anyone in possession of these binaries, for at least
+  three years from the date the package was released.
+
+This file provides attribution and is not legal advice.

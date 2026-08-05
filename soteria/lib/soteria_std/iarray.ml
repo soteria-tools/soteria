@@ -4,7 +4,7 @@ module Infix = struct
   let ( .%() ) = get
 end
 
-(* copied from stdlib, unsafe! *)
+(* mirrors the stdlib's binding to the compiler primitive; unsafe! *)
 external unsafe_of_array : 'a array -> 'a iarray = "%opaque"
 
 let fold = fold_left

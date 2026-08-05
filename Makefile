@@ -72,6 +72,16 @@ doc-json:
 .PHONY: package
 package: package-soteria-c package-soteria-rust
 
+# Apache-2.0 section 4(d), and the notice requirements of the MIT/BSD/ISC and
+# LGPL components listed in THIRD_PARTY_NOTICES, require these to accompany the
+# binaries. $(1) is the package directory.
+define copy_notices
+	mkdir -p $(1)/LICENSES $(1)/third-party-licenses
+	cp LICENSE NOTICE THIRD_PARTY_NOTICES $(1)/
+	cp LICENSES/*.txt $(1)/LICENSES/
+	cp third-party-licenses/*.txt $(1)/third-party-licenses/
+endef
+
 .PHONY: package-soteria-c
 package-soteria-c: ocaml packaging/soteria-c/bin-locations.txt $(DYLIB_LIST_FILE)
 	$(DUNE) build @soteria-c-dylist-file
@@ -80,6 +90,7 @@ package-soteria-c: ocaml packaging/soteria-c/bin-locations.txt $(DYLIB_LIST_FILE
 	mkdir -p $(SOTERIA_C_PACKAGE)/lib
 	$(PACKAGING_BIN) copy-cerb-runtime $(SOTERIA_C_PACKAGE)/lib
 	$(PACKAGING_BIN) copy-soteria-c-auto-includes $(SOTERIA_C_PACKAGE)/lib/
+	$(call copy_notices,$(SOTERIA_C_PACKAGE))
 
 
 packaging/soteria-c/bin-locations.txt:
@@ -103,6 +114,7 @@ package-soteria-rust: ocaml packaging/soteria-rust/bin-locations.txt $(SOTERIA_R
 	$(SOTERIA_RUST_PACKAGING_BIN) copy-files $(SOTERIA_RUST_DYLIB_LIST_FILE) $(SOTERIA_RUST_PACKAGE)/lib
 	$(SOTERIA_RUST_PACKAGING_BIN) copy-files packaging/soteria-rust/bin-locations.txt $(SOTERIA_RUST_PACKAGE)/bin
 	$(SOTERIA_RUST_PACKAGING_BIN) copy-soteria-rust-plugins $(SOTERIA_RUST_PACKAGE)/plugins
+	$(call copy_notices,$(SOTERIA_RUST_PACKAGE))
 
 packaging/soteria-rust/bin-locations.txt:
 	$(WHICHX) soteria-rust > $@
@@ -164,7 +176,6 @@ clean: clean-rust-tests
 	rm -rf packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt packaging/soteria-c/linux_dylibs.txt
 	rm -rf packaging/soteria-rust/bin-locations.txt packaging/soteria-rust/macOS_dylibs.txt packaging/soteria-rust/linux_dylibs.txt
 
+.PHONY: license-check
 license-check:
 	reuse lint
-
-.PHONY: license license-lint

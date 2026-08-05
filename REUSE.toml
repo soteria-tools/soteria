@@ -6,29 +6,26 @@ version = 1
 
 
 # Default annotations for source files in this repository.
-# Precedence "aggregate" means existing headers (if any) are kept and these
-# defaults are added when generating metadata.
+# Precedence "closest" means a file's own header, if it has one, wins over
+# these defaults — so vendored third-party files keep their real attribution
+# instead of being relabelled as ours.
 [[annotations]]
 path = [
   "soteria/**",
   "soteria-rust/**",
   "soteria-c/**",
   "soteria-linear/**",
-  "ppx/**",
   "packaging/**",
   "demo/**",
-  "doc/**",
   "scripts/**",
   "*.opam",
   "*.opam.template",
   "dune-project",
   "dune",
-  "package.json",
   "README.md",
   "CHANGELOG.md",
   "RELEASING.md",
   "Makefile",
-  "odoc-config.sexp",
   ".github/**",
   ".vscode/**",
   ".claude/skills/**",
@@ -44,7 +41,7 @@ path = [
   "AGENTS.md",
   "AI_POLICY.md",
 ]
-precedence = "override"
+precedence = "closest"
 # Copyright is held jointly: Imperial College London for contributions made
 # through 18 Dec 2025, Soteria Tools Ltd. from 19 Dec 2025 onward (see NOTICE).
 SPDX-FileCopyrightText = ["2024-2025 Imperial College London", "2025-2026 Soteria Tools Ltd."]
@@ -75,6 +72,17 @@ SPDX-FileCopyrightText = "2025 Neven Villani, Johannes Hostert, Derek Dreyer, an
 SPDX-License-Identifier = "CC-BY-4.0"
 
 [[annotations]]
+path = [
+  "soteria-rust/test/cram/treeborrow.t/simple.rs",
+  "soteria-rust/test/cram/treeborrow.t/simple-fail.rs",
+  "soteria-rust/test/cram/treeborrow.t/raw-ptrs.rs",
+  "soteria-rust/test/cram/treeborrow.t/offsets.rs",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "2025 Neven Villani, Johannes Hostert, Derek Dreyer, and Ralf Jung"
+SPDX-License-Identifier = "CC-BY-4.0"
+
+[[annotations]]
 path = "demo/dll_test.rs"
 precedence = "override"
 SPDX-FileCopyrightText = "The Rust Project Developers (see https://thanks.rust-lang.org)"
@@ -85,6 +93,39 @@ path = "soteria-rust/test/cram/poly.t/linked_list.rs"
 precedence = "override"
 SPDX-FileCopyrightText = "Aria Desires"
 SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = "soteria-rust/test/cram/simple.t/split_merges.rs"
+precedence = "override"
+SPDX-FileCopyrightText = "The Rust Project Developers (see https://thanks.rust-lang.org)"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
+[[annotations]]
+path = "soteria-rust/test/cram/simple.t/thread_local.rs"
+precedence = "override"
+SPDX-FileCopyrightText = "The Rust Project Developers (see https://thanks.rust-lang.org)"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
+[[annotations]]
+path = "soteria-rust/test/cram/treeborrow.t/two-mut-protected.rs"
+precedence = "override"
+SPDX-FileCopyrightText = "The Rust Project Developers (see https://thanks.rust-lang.org)"
+SPDX-License-Identifier = "MIT OR Apache-2.0"
+
+[[annotations]]
+path = "scripts/bench-index.html"
+precedence = "override"
+SPDX-FileCopyrightText = ["2019 rhysd", "2026 Soteria Tools Ltd."]
+SPDX-License-Identifier = "MIT"
+
+# Verbatim copies of the license texts of third-party components that Soteria
+# links against or ships alongside. See THIRD_PARTY_NOTICES for the mapping from
+# component to license text.
+[[annotations]]
+path = "third-party-licenses/**"
+precedence = "override"
+SPDX-FileCopyrightText = "The respective license stewards"
+SPDX-License-Identifier = "LicenseRef-Third-Party-License-Text"
 
 # Assets (images, vectors) — licensed under Apache-2.0 with the rest of the repo.
 [[annotations]]
