@@ -75,7 +75,7 @@ kani,Cover/simp_satisfied.rs,pass
 kani,Cover/simp_unsatisfiable.rs,pass
 kani,DerefCopy/check_deref_copy.rs,pass
 kani,Drop/drop_after_move_closure_call.rs,pass
-kani,Drop/drop_after_mutating_refcell.rs,fail
+kani,Drop/drop_after_mutating_refcell.rs,pass
 kani,Drop/drop_boxed_dyn.rs,pass
 kani,Drop/drop_concrete.rs,pass
 kani,Drop/drop_dyn_pointer.rs,pass
@@ -83,7 +83,7 @@ kani,Drop/drop_enum_only_one_called.rs,pass
 kani,Drop/drop_nested_boxed_dyn.rs,pass
 kani,Drop/dyn_struct_member.rs,pass
 kani,Drop/forget_no_drop.rs,pass
-kani,Drop/rc_dyn.rs,fail
+kani,Drop/rc_dyn.rs,pass
 kani,DynTrait/any_cast_int.rs,unsupported
 kani,DynTrait/boxed_closure.rs,pass
 kani,DynTrait/boxed_debug_cast.rs,pass
@@ -706,7 +706,7 @@ miri,fail/tree_borrows/wildcard/subtree_internal_relatedness_wildcard.rs,fail
 miri,fail/tree_borrows/write-during-2phase.rs,pass
 miri,fail/type-too-large.rs,pass
 miri,fail/unaligned_pointers/alignment.rs,pass
-miri,fail/unaligned_pointers/drop_in_place.rs,fail
+miri,fail/unaligned_pointers/drop_in_place.rs,pass
 miri,fail/unaligned_pointers/dyn_alignment.rs,pass
 miri,fail/unaligned_pointers/field_requires_parent_struct_alignment.rs,pass
 miri,fail/unaligned_pointers/field_requires_parent_struct_alignment2.rs,pass
@@ -847,7 +847,7 @@ miri,pass/drop_on_fat_ptr_array_elements.rs,pass
 miri,pass/drop_on_zst_array_elements.rs,pass
 miri,pass/drop_through_owned_slice.rs,pass
 miri,pass/drop_through_trait_object.rs,pass
-miri,pass/drop_through_trait_object_rc.rs,fail
+miri,pass/drop_through_trait_object_rc.rs,pass
 miri,pass/drop_type_without_drop_glue.rs,pass
 miri,pass/dst-field-align.rs,fail
 miri,pass/dst-irrefutable-bind.rs,pass
@@ -1016,7 +1016,7 @@ miri,pass/unops.rs,pass
 miri,pass/unsized.rs,unsupported
 miri,pass/validation_lifetime_resolution.rs,pass
 miri,pass/vec-matching-fold.rs,pass
-miri,pass/vec.rs,fail
+miri,pass/vec.rs,pass
 miri,pass/vecdeque.rs,pass
 miri,pass/weak-linkage-missing.rs,unsupported
 miri,pass/without-validation.rs,unsupported
