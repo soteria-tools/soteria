@@ -111,7 +111,7 @@ module Make (StateImpl : State.S) = struct
     let open Fun_kind in
     match fn.kind with
     | FunId (FRegular id) -> ok (Real { id; generics = fn.generics })
-    | TraitMethod (tref, method_id, _) -> (
+    | TraitMethod (tref, method_id) -> (
         let* tref = Poly.subst_tref tref in
         let trait_ref = tref.trait_decl_ref.binder_value in
         let* timplref =
@@ -120,7 +120,7 @@ module Make (StateImpl : State.S) = struct
           | Clause (Free _) -> (
               let trait_decl = Crate.get_trait_decl trait_ref in
               match trait_decl.item_meta.lang_item with
-              | Some "destruct" -> ok (`Synth GenericDropInPlace)
+              | Some RustcLangItemDestruct -> ok (`Synth GenericDropInPlace)
               | Some _ | None ->
                   not_impl "trait call %a::%s on generic" Crate.pp_name
                     trait_decl.item_meta.name
@@ -950,7 +950,8 @@ module Make (StateImpl : State.S) = struct
               ok (Some (Typed.cast_i Usize meta))
           | TRawPtr _ | TRef _ ->
               ok (Some (Typed.Ptr.ptr_of (Typed.cast_ptr_f meta)))
-          | TAdt adt when Crate.adt_has_lang_item "dyn_metadata" adt ->
+          | TAdt adt when Crate.adt_has_lang_item RustcLangItemDynMetadata adt
+            ->
               let nonnull, _marker =
                 Typed.Adt.as_tuple2 (Typed.cast_tuple meta)
               in
@@ -1017,16 +1018,8 @@ module Make (StateImpl : State.S) = struct
               `Panic name
         in
         assert_ cond_bool err
-    | CopyNonOverlapping { src; dst; count } ->
-        let ty = get_pointee (type_of_operand src) in
-        let* src = eval_operand src in
-        let* dst = eval_operand dst in
-        let* count = eval_operand count in
-        let src = Typed.cast_ptr_f src in
-        let dst = Typed.cast_ptr_f dst in
-        let count = Typed.cast_i Usize count in
-        with_env ~env:()
-        @@ Std_funs.Intrinsics.copy_nonoverlapping ~t:ty ~src ~dst ~count
+    | Borrowck (FakeRead _ | SetType _ | SetOutlives _ | PredicateHolds _) ->
+        ok ()
     | PlaceMention place ->
         let+ _ = resolve_place place in
         ()
@@ -1201,18 +1194,13 @@ module Make (StateImpl : State.S) = struct
               ~fe:(fun err ->
                 let* () = dealloc_stack protected in
                 error_raw err))
-    | OpaqueBody | TraitMethodWithoutDefaultBody | MissingBody | ErrorBody _
-      -> (
+    | OpaqueBody | MissingBody | ErrorBody _ -> (
         match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args
         | None -> (
             match fundef.body with
             | OpaqueBody ->
                 not_impl "can't execute function %a, compilation skipped it"
-                  Crate.pp_name name
-            | TraitMethodWithoutDefaultBody ->
-                not_impl
-                  "can't execute function %a, this is a trait method stub"
                   Crate.pp_name name
             | MissingBody ->
                 if Option.is_some (Config.get ()).sysroot then

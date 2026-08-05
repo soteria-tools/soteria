@@ -99,7 +99,7 @@ let pointee_metadata (pointee : Types.ty) : Types.ty =
   | NoneKind -> TypesUtils.mk_unit_ty
   | LenKind -> TLiteral (TUInt Usize)
   | VTableKind ->
-      let adt = Crate.get_adt_lang_item "dyn_metadata" in
+      let adt = Crate.get_adt_lang_item RustcLangItemDynMetadata in
       TAdt
         {
           id = TAdtId adt.def_id;

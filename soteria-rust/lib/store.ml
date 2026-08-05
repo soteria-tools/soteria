@@ -95,7 +95,7 @@ module Place = struct
                 let vt = Typed.Ptr.mk_ptr_f meta None in
                 if
                   Option.is_some_and
-                    (Crate.adt_has_lang_item "dyn_metadata")
+                    (Crate.adt_has_lang_item RustcLangItemDynMetadata)
                     (ty_as_adt_opt origin.ty)
                 then Typed.as_any Typed.Adt.(mk_tuple [ mk_tuple [ vt ]; unit ])
                 else Typed.as_any vt

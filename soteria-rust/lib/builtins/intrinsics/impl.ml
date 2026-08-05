@@ -240,7 +240,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      *     _filename: PhantomData<&'a str>,
      * }
      *)
-    let location_adt = Crate.get_adt_lang_item "panic_location" in
+    let location_adt = Crate.get_adt_lang_item RustcLangItemPanicLocation in
     let generics : Types.generic_args =
       TypesUtils.generic_args_of_params () location_adt.generics
     in

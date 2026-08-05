@@ -206,11 +206,13 @@ let adt_is_lang_item lang_item (adt : Types.type_decl_ref) =
   match adt.id with
   | TAdtId id ->
       let adt = Crate.get_adt_raw id in
-      Option.is_some_and (String.equal lang_item) adt.item_meta.lang_item
+      Option.is_some_and
+        (Types.equal_rustc_lang_item lang_item)
+        adt.item_meta.lang_item
   | _ -> false
 
-let adt_is_box = adt_is_lang_item "owned_box"
-let adt_is_unsafe_cell = adt_is_lang_item "unsafe_cell"
+let adt_is_box = adt_is_lang_item RustcLangItemOwnedBox
+let adt_is_unsafe_cell = adt_is_lang_item RustcLangItemUnsafeCell
 
 let rec get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
