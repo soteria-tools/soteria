@@ -1,0 +1,5 @@
+(executable
+ (package soteria-php)
+ (public_name soteria-php)
+ (name soteria_php)
+ (libraries cmdliner soteria soteria_php))

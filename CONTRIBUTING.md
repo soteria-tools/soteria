@@ -38,8 +38,15 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
 | OCaml | >= 5.5.0 | [ocaml.org/docs/installing-ocaml](https://ocaml.org/docs/installing-ocaml) |
 | opam | >= 2.0 | Included with OCaml installation |
 | Z3 | latest | [github.com/Z3Prover/z3](https://github.com/Z3Prover/z3) |
+| PHP | pinned version below | Required for Soteria PHP differential tests; the parser sidecar accepts >= 8.2 |
+| Composer | latest | Required for Soteria PHP frontend development |
 | Rustup | latest | Required for Soteria Rust; [rustup.rs](https://rustup.rs/) |
 | Obol / Charon | see below | Required for Soteria Rust; [Installing Rust Frontends](#installing-rust-frontends) |
+
+<!-- [versionsync: PHP_VERSION=8.4.19] -->
+Soteria PHP differential tests use PHP 8.4.19 as their concrete semantics
+oracle. Set `SOTERIA_PHP_ORACLE` to select that binary when it is not the
+default `php` on `PATH`.
 
 ### Installing for Use
 
@@ -76,6 +83,13 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
    ```
 
 2. **Build the project:**
+
+   Install the pinned Soteria PHP frontend dependencies once:
+
+   ```sh
+   composer install --working-dir=soteria-php/frontend
+   ```
+
    ```sh
    dune build
    ```
@@ -85,6 +99,7 @@ Soteria is developed and maintained by [Soteria Tools Ltd](https://soteria-tools
    dune test              # All tests (requires Rust frontends)
    dune test soteria      # Core library tests only
    dune test soteria-c    # Soteria C tests only
+   dune test soteria-php  # Soteria PHP frontend tests only
    dune build @doc        # Build documentation
    ```
 
@@ -197,6 +212,7 @@ To run tests for specific packages without Rust frontends:
 ```sh
 dune test soteria      # Core library tests only
 dune test soteria-c    # Soteria C tests only
+dune test soteria-php  # Soteria PHP frontend tests only
 ```
 
 ### Writing Tests

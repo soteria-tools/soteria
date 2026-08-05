@@ -1,0 +1,15 @@
+{
+  "name": "soteria-tools/soteria-php-frontend",
+  "description": "Parser and lowering sidecar for Soteria PHP",
+  "type": "project",
+  "license": "Apache-2.0",
+  "extra": {
+    "_php-version": "[versionsync: PHP_VERSION=8.4.19]",
+    "target-php-version": "8.4.19",
+    "_php-parser-version": "[versionsync: PHP_PARSER_VERSION=5.8.0]"
+  },
+  "require": {
+    "php": ">=8.2",
+    "nikic/php-parser": "5.8.0"
+  }
+}

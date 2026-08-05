@@ -1,0 +1,10 @@
+(library
+ (name soteria_php)
+ (public_name soteria-php)
+ (libraries dune-site soteria str yojson unix)
+ (preprocess
+  (pps soteria.ppx)))
+
+(generate_sites_module
+ (module frontend_site)
+ (sites soteria-php))

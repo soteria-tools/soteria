@@ -3,8 +3,8 @@ name: Release
 permissions:
   contents: write
 
-# Versioned release of the soteria library and the soteria-c / soteria-rust
-# tools, all under a single version number. The version is read from
+# Versioned release of the soteria library and the soteria-c, soteria-rust, and
+# soteria-php tools, all under a single version number. The version is read from
 # scripts/versions.json (SOTERIA_VERSION); bump it, update CHANGELOG.md, and
 # merge to main *before* running this workflow. See RELEASING.md.
 
@@ -83,6 +83,8 @@ jobs:
           set -euo pipefail
           CHARON=$(python3 -c 'import json; v=json.load(open("scripts/versions.json")); print(v["CHARON_REPO"], v["CHARON_COMMIT_HASH"])')
           OBOL=$(python3 -c 'import json; v=json.load(open("scripts/versions.json")); print(v["OBOL_REPO"], v["OBOL_COMMIT_HASH"])')
+          PHP=$(python3 -c 'import json; v=json.load(open("scripts/versions.json")); print(v["PHP_VERSION"])')
+          PHP_PARSER=$(python3 -c 'import json; v=json.load(open("scripts/versions.json")); print(v["PHP_PARSER_VERSION"])')
           {
             python3 scripts/changelog.py section "$VERSION"
             echo
@@ -91,6 +93,7 @@ jobs:
             echo "Built against:"
             echo "- Charon \`$CHARON\`"
             echo "- Obol \`$OBOL\`"
+            echo "- PHP \`$PHP\` with nikic/PHP-Parser \`$PHP_PARSER\`"
           } > notes.md
           cat notes.md
 
@@ -110,9 +113,11 @@ jobs:
     needs: [validate, release]
     if: ${{ inputs.publish_opam }}
     # Only the `soteria` library is publishable to the central opam-repository:
-    # soteria-c / soteria-rust depend on Charon/Obol via git pin-depends, which
-    # the opam-repository does not accept. Requires the OPAM_PUBLISH_TOKEN secret
-    # (a PAT with access to your opam-repository fork). See RELEASING.md.
+    # The language tools are not published here: soteria-c / soteria-rust
+    # depend on Charon/Obol via git pin-depends, which the opam-repository does
+    # not accept, while soteria-php's parser dependencies are managed by
+    # Composer. Requires the OPAM_PUBLISH_TOKEN secret (a PAT with access to
+    # your opam-repository fork). See RELEASING.md.
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
         with:

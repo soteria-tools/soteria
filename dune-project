@@ -155,3 +155,28 @@
     :with-dev-setup
     (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))
+
+(package
+ (name soteria-php)
+ (synopsis "PHP symbolic execution tool based on Soteria")
+ (description "PHP symbolic execution tool based on Soteria")
+ (sites
+  (share frontend))
+ (depends
+  ; [versionsync: OCAML_VERSION=5.5.0]
+  (ocaml
+   (>= 5.5.0))
+  soteria
+  cmdliner
+  dune-site
+  (yojson
+   (< 3.0))
+  (alcotest :with-test)
+  (dune
+   (>= 3.23))
+  ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
+  (ocamlformat
+   (and
+    :with-dev-setup
+    (= 0.29.0)))
+  (ocaml-lsp-server :with-dev-setup)))

@@ -122,6 +122,9 @@ jobs:
       - name: Add Charon to path
         run: echo "$PWD/charon-bin/" >> $GITHUB_PATH
 
+      - name: Install PHP frontend dependencies
+        run: composer install --working-dir=soteria-php/frontend --no-interaction --no-progress
+
       # Run tests
       - name: Test
         run: make ocaml-test
@@ -179,6 +182,15 @@ jobs:
         with:
           name: ${{ steps.platform.outputs.name }}-soteria-rust-package
           path: packages/soteria-rust
+          if-no-files-found: error
+
+      - name: Create soteria-php package
+        run: make package-soteria-php
+      - name: Upload soteria-php package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #[actionpin: v7]
+        with:
+          name: ${{ steps.platform.outputs.name }}-soteria-php-package
+          path: packages/soteria-php
           if-no-files-found: error
 
       - name: Build API documentation

@@ -191,3 +191,52 @@ jobs:
             exit 1
           fi
           echo "✓ vec.rs test passed (found expected assertion failure)"
+
+  test-soteria-php-package:
+    name: Test soteria-php Package
+    strategy:
+      matrix:
+        operating-system: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["macos-latest", "ubuntu-latest"]') }}
+    runs-on: ${{ matrix.operating-system }}
+    steps:
+      - name: Set platform artifact name
+        id: platform
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            echo "name=macos-arm64" >> $GITHUB_OUTPUT
+          else
+            echo "name=linux-x86_64" >> $GITHUB_OUTPUT
+          fi
+      - name: Checkout repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #[actionpin: v6]
+      - name: Download package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #[actionpin: v8]
+        with:
+          name: ${{ steps.platform.outputs.name }}-soteria-php-package
+          path: soteria-php-package
+      - name: Add executable permissions
+        run: |
+          chmod +x ./soteria-php-package/bin/soteria-php
+          chmod +x ./soteria-php-package/bin/z3
+      - name: Check system PHP runtime
+        run: |
+          php -r 'if (PHP_VERSION_ID < 80200 || PHP_INT_SIZE !== 8) { fwrite(STDERR, "Soteria PHP requires a 64-bit PHP runtime >= 8.2\n"); exit(1); }'
+      - name: Setup environment variables
+        run: |
+          PACKAGE_DIR="${GITHUB_WORKSPACE}/soteria-php-package"
+          echo "PACKAGE_DIR=${PACKAGE_DIR}" >> $GITHUB_ENV
+          echo "SOTERIA_Z3_PATH=${PACKAGE_DIR}/bin/z3" >> $GITHUB_ENV
+          echo "SOTERIA_PHP=${PACKAGE_DIR}/bin/soteria-php" >> $GITHUB_ENV
+      - name: Setup dynamic library path (Linux)
+        if: runner.os == 'Linux'
+        run: echo "LD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+      - name: Setup dynamic library path (macOS)
+        if: runner.os == 'macOS'
+        run: echo "DYLD_LIBRARY_PATH=${PACKAGE_DIR}/lib:${DYLD_LIBRARY_PATH}" >> $GITHUB_ENV
+      - name: Run soteria-php --help
+        run: TERM=dumb $SOTERIA_PHP --help
+      - name: Test bundled frontend and Z3
+        working-directory: soteria-php/test/cram/exec.t
+        run: |
+          set -o pipefail
+          $SOTERIA_PHP exec symbolic.php | grep -Fx "symbolic ok"

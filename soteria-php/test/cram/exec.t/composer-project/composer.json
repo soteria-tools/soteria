@@ -1,0 +1,14 @@
+{
+  "name": "soteria/test-project",
+  "autoload": {
+    "psr-4": {
+      "Demo\\": "src/"
+    },
+    "classmap": [
+      "legacy/"
+    ],
+    "files": [
+      "functions.php"
+    ]
+  }
+}

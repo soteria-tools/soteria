@@ -9,6 +9,7 @@ OPAM=opam
 OPAMX=$(OPAM) exec --
 DUNE=$(OPAMX) dune
 WHICHX=$(DUNE) exec -- which
+COMPOSER=composer
 
 PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-c/package.exe
 SOTERIA_C_BIN=_build/install/default/bin/soteria-c
@@ -16,17 +17,23 @@ SOTERIA_C_BIN=_build/install/default/bin/soteria-c
 SOTERIA_RUST_PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-rust/package.exe
 SOTERIA_RUST_BIN=_build/install/default/bin/soteria-rust
 
+SOTERIA_PHP_PACKAGING_BIN=$(DUNE) exec -- packaging/soteria-php/package.exe
+SOTERIA_PHP_BIN=_build/install/default/bin/soteria-php
+
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
   DYLIB_LIST_FILE=packaging/soteria-c/macOS_dylibs.txt
   SOTERIA_RUST_DYLIB_LIST_FILE=packaging/soteria-rust/macOS_dylibs.txt
+  SOTERIA_PHP_DYLIB_LIST_FILE=packaging/soteria-php/macOS_dylibs.txt
 else
   DYLIB_LIST_FILE=packaging/soteria-c/linux_dylibs.txt
   SOTERIA_RUST_DYLIB_LIST_FILE=packaging/soteria-rust/linux_dylibs.txt
+  SOTERIA_PHP_DYLIB_LIST_FILE=packaging/soteria-php/linux_dylibs.txt
 endif
 
 SOTERIA_C_PACKAGE=packages/soteria-c
 SOTERIA_RUST_PACKAGE=packages/soteria-rust
+SOTERIA_PHP_PACKAGE=packages/soteria-php
 
 COLOR_BLUE=\033[1;34m
 COLOR_GREEN=\033[1;32m
@@ -70,7 +77,7 @@ doc-json:
 # From inside the package folder one can run:
 # SOTERIA_Z3_PATH=./bin/z3 DYLD_LIBRARY_PATH=./lib:$DYLD_LIBRARY_PATH ./bin/soteria-c exec-main file.c
 .PHONY: package
-package: package-soteria-c package-soteria-rust
+package: package-soteria-c package-soteria-rust package-soteria-php
 
 .PHONY: package-soteria-c
 package-soteria-c: ocaml packaging/soteria-c/bin-locations.txt $(DYLIB_LIST_FILE)
@@ -118,6 +125,30 @@ packaging/soteria-rust/macOS_dylibs.txt:
 packaging/soteria-rust/linux_dylibs.txt:
 	$(SOTERIA_RUST_PACKAGING_BIN) infer-dylibs $(SOTERIA_RUST_BIN) > $@
 
+##### Packaging soteria-php ####
+
+# PHP itself is a system dependency. The package includes Z3 and the locked
+# Composer frontend dependencies.
+.PHONY: package-soteria-php
+package-soteria-php: ocaml soteria-php/frontend/vendor/autoload.php packaging/soteria-php/bin-locations.txt $(SOTERIA_PHP_DYLIB_LIST_FILE)
+	$(DUNE) build @soteria-php-dylist-file
+	$(SOTERIA_PHP_PACKAGING_BIN) copy-files $(SOTERIA_PHP_DYLIB_LIST_FILE) $(SOTERIA_PHP_PACKAGE)/lib
+	$(SOTERIA_PHP_PACKAGING_BIN) copy-files packaging/soteria-php/bin-locations.txt $(SOTERIA_PHP_PACKAGE)/bin
+	$(SOTERIA_PHP_PACKAGING_BIN) copy-frontend soteria-php/frontend $(SOTERIA_PHP_PACKAGE)/share/soteria-php/frontend
+
+soteria-php/frontend/vendor/autoload.php: soteria-php/frontend/composer.json soteria-php/frontend/composer.lock
+	$(COMPOSER) install --working-dir=soteria-php/frontend --no-interaction --no-progress
+
+packaging/soteria-php/bin-locations.txt:
+	$(WHICHX) soteria-php > $@
+	$(WHICHX) z3 >> $@ 2>/dev/null || true
+
+packaging/soteria-php/macOS_dylibs.txt:
+	$(SOTERIA_PHP_PACKAGING_BIN) infer-dylibs $(SOTERIA_PHP_BIN) > $@
+
+packaging/soteria-php/linux_dylibs.txt:
+	$(SOTERIA_PHP_PACKAGING_BIN) infer-dylibs $(SOTERIA_PHP_BIN) > $@
+
 ##### Switch creation / dependency setup #####
 
 .PHONY: switch
@@ -163,6 +194,7 @@ clean: clean-rust-tests
 	rm -rf packages
 	rm -rf packaging/soteria-c/bin-locations.txt packaging/soteria-c/macOS_dylibs.txt packaging/soteria-c/linux_dylibs.txt
 	rm -rf packaging/soteria-rust/bin-locations.txt packaging/soteria-rust/macOS_dylibs.txt packaging/soteria-rust/linux_dylibs.txt
+	rm -rf packaging/soteria-php/bin-locations.txt packaging/soteria-php/macOS_dylibs.txt packaging/soteria-php/linux_dylibs.txt
 
 license-check:
 	reuse lint
