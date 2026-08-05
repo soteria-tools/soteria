@@ -79,7 +79,6 @@ let transition =
    size rather than tag count means small maps (e.g. a freshly allocated
    variable with few borrows) never pay the GC cost. *)
 let compact_threshold = 256
-let compact_map = Ptr_tag_map.filter_map_no_share (Fun.const Option.some)
 
 type t = { tags : node Ptr_tag_map.t; known_size : int; next_compact_at : int }
 
@@ -105,7 +104,7 @@ let ub_state = fst @@ init ~initial_state:Disabled ()
    enough. *)
 let[@inline] collect tags =
   Gc.major ();
-  let tags = compact_map tags in
+  let tags = Ptr_tag_map.compact tags in
   (tags, Ptr_tag_map.cardinal tags)
 
 let[@inline] compact ({ tags; known_size; next_compact_at } as st : t) =
@@ -142,19 +141,11 @@ let unprotect tag ({ tags; _ } as st) =
   { st with tags }
 
 let strong_protector_exists { tags; _ } =
-  (* Annoyingly, there is no [exists], only [for_all] *)
-  not
-    (Ptr_tag_map.for_all
-       (fun _ { protector; _ } -> protector <> Some Strong)
-       tags)
+  Ptr_tag_map.exists (fun _ { protector; _ } -> protector = Some Strong) tags
 
 (** [tag -> (protected * state)], [protected] indicating the tag's protector
     (managed outside [tb_state]) was toggled. *)
 type tb_state = (bool * state) Ptr_tag_map.t
-
-(* Lets [access] walk the [root] trie (the structure, mapping tags to nodes) and
-   the [tb_state] trie together in a single pass. *)
-module WeakMap_with_root = Ptr_tag_map.WithForeign (Ptr_tag_map.BaseMap)
 
 let pp_tb_state =
   Fmt.iter_bindings ~sep:(Fmt.any ", ") Ptr_tag_map.iter
@@ -164,9 +155,7 @@ let pp_tb_state =
 
 let empty_state = Ptr_tag_map.empty
 let is_empty_state = Ptr_tag_map.is_empty
-
-let equal_state =
-  Ptr_tag_map.reflexive_equal (Pair.equal Bool.equal equal_state)
+let equal_state = Ptr_tag_map.equal (Pair.equal Bool.equal equal_state)
 
 let set_protector ~protected tag ({ tags; _ } : t) =
   Ptr_tag_map.update tag (function
@@ -182,26 +171,21 @@ let access accessed e ({ tags; _ } as root : t) (st : tb_state) =
   let accessed_node = Ptr_tag_map.find accessed tags in
   let parents = accessed_node.parents in
   try
-    WeakMap_with_root.update_multiple_from_foreign tags
-      {
-        f =
-          (fun tag old (Snd { protector; initial_state; _ }) ->
-            let protected0, st0 =
-              match old with None -> (false, initial_state) | Some ps -> ps
-            in
-            let rel = if Ptr_tag_set.mem parents tag then Local else Foreign in
-            (* if the tag has a protector and is accessed, this toggles the
-               protector! *)
-            let protected =
-              (protected0 || Ptr_tag.equal tag accessed)
-              && Option.is_some protector
-            in
-            let st' = transition ~protected st0 rel e in
-            if (not protected) && Common.equal_state st' initial_state then None
-            else if protected = protected0 && Common.equal_state st' st0 then
-              old
-            else Some (protected, st'));
-      }
+    Ptr_tag_map.update_from tags
+      (fun tag old { protector; initial_state; _ } ->
+        let protected0, st0 =
+          match old with None -> (false, initial_state) | Some ps -> ps
+        in
+        let rel = if Ptr_tag_set.mem parents tag then Local else Foreign in
+        (* if the tag has a protector and is accessed, this toggles the
+           protector! *)
+        let protected =
+          (protected0 || Ptr_tag.equal tag accessed) && Option.is_some protector
+        in
+        let st' = transition ~protected st0 rel e in
+        if (not protected) && Common.equal_state st' initial_state then None
+        else if protected = protected0 && Common.equal_state st' st0 then old
+        else Some (protected, st'))
       st
     |> Result.ok
   with AliasingError ->
@@ -210,4 +194,4 @@ let access accessed e ({ tags; _ } as root : t) (st : tb_state) =
         pp_access e Ptr_tag.pp accessed pp root];
     Result.error `AliasingError
 
-let merge = Ptr_tag_map.idempotent_union @@ fun _ -> meet'
+let merge = Ptr_tag_map.union @@ fun _ -> meet'

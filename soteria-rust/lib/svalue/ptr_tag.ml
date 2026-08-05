@@ -19,17 +19,6 @@ module Key = struct
   let pp = pp
 end
 
-module MapNode =
-  PatriciaTree.WeakNode
-    (struct
-      type 'k t = Key.t
-    end)
-    (PatriciaTree.WrappedHomogeneousValue)
-
-module SetNode = PatriciaTree.WeakSetNode (struct
-  type 'k t = Key.t
-end)
-
 module type TagMap = sig
   type tag := t
   type 'a t
@@ -56,7 +45,7 @@ module StrongSet = struct
   let mem set tag = mem tag set
 end
 
-module WeakMap = PatriciaTree.MakeCustomMap (Key) (PatriciaTree.Value) (MapNode)
+module WeakMap = PatriciaTree.MakeWeak (Key)
 
 module WeakSet = struct
   include Weak.Make (struct

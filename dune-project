@@ -36,7 +36,6 @@
   (tsort
    (>= 2.1.0))
   iter
-  patricia-tree
   (cmdliner
    (>= 2.0.0))
   (ppx_expect
@@ -131,7 +130,6 @@
   soteria
   dune-site
   zarith
-  patricia-tree
   cmdliner
   iter
   ppx_deriving

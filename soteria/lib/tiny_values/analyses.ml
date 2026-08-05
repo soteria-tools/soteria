@@ -110,7 +110,7 @@ module Interval : S = struct
   end)
 
   (** Union of two interval mappings, doing the union of the intervals *)
-  let st_inter = Var.Map.idempotent_inter (fun _ -> Range.union)
+  let st_inter = Var.Map.inter (fun _ -> Range.union)
 
   let get v st = Var.Map.find_opt v st |> Option.value ~default:(None, None)
 
