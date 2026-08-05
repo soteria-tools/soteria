@@ -6,13 +6,10 @@
 open Common
 open Svalue
 
-type fn = CorePtrDropInPlace | StdPanickingCatchUnwindCleanup
+type fn = StdPanickingCatchUnwindCleanup
 
 let fn_pats : (string * fn) list =
-  [
-    ("core::ptr::drop_in_place", CorePtrDropInPlace);
-    ("std::panicking::catch_unwind::cleanup", StdPanickingCatchUnwindCleanup);
-  ]
+  [ ("std::panicking::catch_unwind::cleanup", StdPanickingCatchUnwindCleanup) ]
 
 module M (StateM : State.StateM.S) = struct
   open StateM
@@ -28,10 +25,6 @@ module M (StateM : State.StateM.S) = struct
     match[@warning "-redundant-case"]
       (stub, generics.types, generics.const_generics, args)
     with
-    | CorePtrDropInPlace, [ t ], [], [ to_drop ] ->
-        let to_drop = Typed.cast_ptr_f to_drop in
-        let+ () = drop_in_place ~t ~to_drop in
-        Typed.Adt.unit
     | StdPanickingCatchUnwindCleanup, [], [], [ payload ] ->
         let payload = Typed.cast_ptr_f payload in
         cleanup ~payload

@@ -92,8 +92,7 @@
       {
         "pattern": "std::panicking::catch_unwind::cleanup",
         "include": "std::panicking::catch_unwind"
-      },
-      "core::ptr::drop_in_place"
+      }
     ]
   },
   "Soteria_lib": {

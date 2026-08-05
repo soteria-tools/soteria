@@ -8,8 +8,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
   open Syntax
 
-  let drop_in_place ~t:_ ~to_drop:_ = ok ()
-
   (* Emulate catch_unwind cleanup: build a &dyn Any trait object so the caller
      can inspect the panic payload. See
      https://doc.rust-lang.org/src/std/panicking.rs.html#557-565 *)

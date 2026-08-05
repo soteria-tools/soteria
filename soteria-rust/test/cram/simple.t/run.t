@@ -799,3 +799,10 @@ key, so the only branch is its equality with the concrete entry.
   PC 1: (0x00000007 == V|1|) /\ (0x00000007 == V|1|)
   PC 2: (0x00000007 != V|1|)
   
+Test destructors run when reached through `ptr::drop_in_place`.
+  $ soteria-rust exec drop_in_place.rs
+  Compiling... done in <time>
+  => Running drop_in_place::main...
+  note: drop_in_place::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
