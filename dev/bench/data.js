@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785921594299,
+  "lastUpdate": 1785923657212,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -6488,6 +6488,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 100.337,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "965529f839cbafefec48c14a981eafa462342dd0",
+          "message": "Bump Charon and Obol (#467)",
+          "timestamp": "2026-08-05T09:18:37Z",
+          "tree_id": "afbce970f74a0b2a6c8da1a48339b9c9789de7f4",
+          "url": "https://github.com/soteria-tools/soteria/commit/965529f839cbafefec48c14a981eafa462342dd0"
+        },
+        "date": 1785923655078,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.08181354286,
+            "range": "± 0.0277",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.8050546968600001,
+            "range": "± 0.0136",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.63461862772,
+            "range": "± 0.0155",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.40728868164,
+            "range": "± 0.0038",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 2.85842828546,
+            "range": "± 0.0152",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.57804824334,
+            "range": "± 0.0372",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.32884987438,
+            "range": "± 0.004",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9786427957400001,
+            "range": "± 0.0382",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.231341973994859,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 370,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 27,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 131.2239,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 459,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 101,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 40,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 117.0577,
             "unit": "s"
           }
         ]
