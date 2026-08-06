@@ -285,6 +285,12 @@ module type S = sig
   module Float : sig
     val mk : FloatPrecision.t -> string -> [> sfloat ] t
     val mk_bits : FloatPrecision.t -> Z.t -> [> sfloat ] t
+
+    (** We cannot represent a symbolic float as a bitvector, for lack of an
+        SMT-LIB function for it. However, we can return the bitvector
+        representation of a float if it is concrete. *)
+    val to_bits_opt : [< sfloat ] t -> [> sint ] t option
+
     val zero : FloatPrecision.t -> [> sfloat ] t
     val neg_zero : FloatPrecision.t -> [> sfloat ] t
     val one : FloatPrecision.t -> [> sfloat ] t

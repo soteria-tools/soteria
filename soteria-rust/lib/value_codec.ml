@@ -638,14 +638,18 @@ let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
     sorts" *)
 let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
     Typed.([> T.sint ] t) DecayMap.SM.t =
-  let fp = Typed.Float.fp_of f in
-  let size = Typed.FloatPrecision.size fp in
-  let* bv = nondet (Typed.t_int size) in
-  let bv_f = BV.to_float_raw bv in
-  (* here we use structural equality rather than float equality; this is
-     intended. *)
-  let+ () = assume [ bv_f ==@ f ] in
-  Typed.((bv : T.sint t :> [> T.sint ] t))
+  (* avoid creating a nondet value if possible! *)
+  match Typed.Float.to_bits_opt f with
+  | Some bv -> return bv
+  | None ->
+      let fp = Typed.Float.fp_of f in
+      let size = Typed.FloatPrecision.size fp in
+      let* bv = nondet (Typed.t_int size) in
+      let bv_f = BV.to_float_raw bv in
+      (* here we use structural equality rather than float equality; this is
+         intended. *)
+      let+ () = assume [ bv_f ==@ f ] in
+      Typed.((bv : T.sint t :> [> T.sint ] t))
 
 (** Transmutes a singular rust value, without splitting. This is under the
     assumption that [size_of to_ty = size_of v], and both are primitives
