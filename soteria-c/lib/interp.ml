@@ -395,6 +395,14 @@ module Make (State : State_intf.S) = struct
           let fp = Layout.precision fty in
           let signed = Layout.is_int_ty_signed ity in
           BV.to_float ~rounding:NearestTiesToEven ~signed ~fp v
+      | Basic (Floating from_fty), Basic (Floating to_fty) ->
+          let from_fp = Layout.precision from_fty in
+          let+ v =
+            of_opt_not_impl ~msg:"Non-float in float cast"
+            @@ Typed.cast_checked v (Typed.t_float from_fp)
+          in
+          Typed.Float.cast ~rounding:NearestTiesToEven
+            ~fp:(Layout.precision to_fty) v
       | Basic (Floating fty), Basic (Integer ity) ->
           let fp = Layout.precision fty in
           let* size = Layout.size_of_int_ty_unsupported ity in

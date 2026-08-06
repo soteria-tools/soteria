@@ -82,6 +82,37 @@ fn classification() {
     assert!((-3.0f64).copysign(2.0) == 3.0);
 }
 
+/// The sign of a zero is carried by its sign bit, not by its value: `-0.0` and
+/// `+0.0` compare equal, so anything deciding a sign by comparing against zero
+/// gets every assertion here wrong.
+#[soteria::test]
+fn signed_zeros() {
+    assert!((-0.0f16).is_sign_negative() && !(-0.0f16).is_sign_positive());
+    assert!((-0.0f32).is_sign_negative() && !(-0.0f32).is_sign_positive());
+    assert!((-0.0f64).is_sign_negative() && !(-0.0f64).is_sign_positive());
+    assert!((-0.0f128).is_sign_negative() && !(-0.0f128).is_sign_positive());
+
+    assert!((0.0f16).is_sign_positive() && !(0.0f16).is_sign_negative());
+    assert!((0.0f32).is_sign_positive() && !(0.0f32).is_sign_negative());
+    assert!((0.0f64).is_sign_positive() && !(0.0f64).is_sign_negative());
+    assert!((0.0f128).is_sign_positive() && !(0.0f128).is_sign_negative());
+
+    // negation flips the sign bit, so it does not fix a zero's sign the way
+    // `0.0 - x` would
+    assert!((-(0.0f16)).is_sign_negative());
+    assert!((-(0.0f32)).is_sign_negative());
+    assert!((-(0.0f64)).to_bits() == 0x8000_0000_0000_0000);
+    assert!((-(-0.0f128)).is_sign_positive());
+    assert!(0.0f32 - 0.0 == 0.0 && (0.0f32 - 0.0).is_sign_positive());
+
+    // copysign takes the sign bit of its argument, zeros included
+    assert!((1.0f32).copysign(-0.0) == -1.0);
+    assert!((-1.0f64).copysign(0.0) == 1.0);
+    assert!((0.0f16).copysign(-1.0).is_sign_negative());
+    assert!((-0.0f128).copysign(1.0).is_sign_positive());
+    assert!((-0.0f64).to_bits() == 0x8000_0000_0000_0000);
+}
+
 #[soteria::test]
 fn comparisons() {
     // NaN is unordered: every comparison with it is false, and it is not
@@ -151,6 +182,66 @@ fn int_conversions() {
     assert!(16777217i32 as f32 == 16777216.0);
 }
 
+/// `float as int` saturates in Rust rather than being undefined: NaN maps to
+/// zero, and anything out of range to the nearest bound.
+#[soteria::test]
+fn saturating_int_casts() {
+    assert!(f16::NAN as u8 == 0);
+    assert!(f32::NAN as i32 == 0);
+    assert!(f64::NAN as u64 == 0);
+    assert!(f128::NAN as i8 == 0);
+
+    assert!(f32::INFINITY as i32 == i32::MAX);
+    assert!(f32::NEG_INFINITY as i32 == i32::MIN);
+    assert!(f64::INFINITY as u8 == 255);
+    assert!(f64::NEG_INFINITY as u8 == 0);
+    assert!(f16::MAX as i8 == 127);
+    assert!(1.0e40f128 as u16 == 65535);
+
+    // finite values just outside the range saturate as well
+    assert!(256.0f32 as u8 == 255);
+    assert!(-1.0f32 as u8 == 0);
+    assert!(-1.0e30f64 as i16 == i16::MIN);
+
+    // ... while those inside it still truncate toward zero
+    assert!(255.9f32 as u8 == 255);
+    assert!(-0.9f64 as i8 == 0);
+    assert!(-2147483648.0f32 as i32 == i32::MIN);
+
+    // i32::MAX is not representable in f32: the literal below is really 2^31,
+    // which is out of range and so saturates
+    assert!(2147483647.0f32 as i32 == i32::MAX);
+}
+
+/// Casts between the float formats: widening is exact, narrowing rounds to
+/// nearest and overflows to infinity.
+#[soteria::test]
+fn float_casts() {
+    assert!(1.5f16 as f32 == 1.5 && 1.5f16 as f128 == 1.5);
+    assert!(1.5f32 as f64 == 1.5);
+    assert!(1.5f128 as f64 == 1.5 && 1.5f64 as f16 == 1.5);
+
+    // widening keeps the value, which is *not* the same as the wider format's
+    // rendering of the same decimal
+    assert!(0.1f32 as f64 != 0.1f64);
+    assert!(0.1f64 as f32 == 0.1f32);
+
+    // narrowing rounds to nearest, ties to even
+    assert!(16777217.0f64 as f32 == 16777216.0);
+    assert!(2049.0f32 as f16 == 2048.0);
+
+    // ... and saturates to infinity when the value does not fit
+    assert!((1.0e300f64 as f32).is_infinite());
+    assert!((f32::MAX as f16).is_infinite());
+    assert!((f128::MAX as f64).is_infinite());
+    assert!((-1.0e300f64 as f32) == f32::NEG_INFINITY);
+
+    // infinities and NaN survive in both directions
+    assert!((f32::INFINITY as f64).is_infinite());
+    assert!((f64::NAN as f32).is_nan());
+    assert!((f16::NAN as f128).is_nan());
+}
+
 /// The same operations, but on values the solver has to reason about rather
 /// than ones that fold away.
 #[soteria::test]
@@ -171,4 +262,31 @@ fn symbolic() {
     let w: f128 = soteria::nondet_bytes();
     soteria::assume(w > 1.0);
     assert!(!w.is_subnormal() && !w.is_nan());
+}
+
+/// The casts and sign tests above, on values rustc cannot constant-fold, so
+/// they are decided by Soteria and the solver rather than at compile time.
+#[soteria::test]
+fn symbolic_casts() {
+    let a: f32 = soteria::nondet_bytes();
+    soteria::assume(a.is_nan());
+    assert!(a as u8 == 0 && a as i64 == 0);
+
+    let b: f32 = soteria::nondet_bytes();
+    soteria::assume(b.is_infinite() && b > 0.0);
+    assert!(b as i32 == i32::MAX && b as u8 == 255);
+
+    let c: f64 = soteria::nondet_bytes();
+    soteria::assume(c < -1.0e30);
+    assert!(c as i16 == i16::MIN && c as u32 == 0);
+
+    // widening to f64 and back is the identity on every finite f32
+    let d: f32 = soteria::nondet_bytes();
+    soteria::assume(d.is_finite());
+    assert!((d as f64) as f32 == d);
+
+    // a symbolic negative zero is still negative
+    let e: f64 = soteria::nondet_bytes();
+    soteria::assume(e.is_sign_negative() && e == 0.0);
+    assert!(e.to_bits() == 0x8000_0000_0000_0000);
 }

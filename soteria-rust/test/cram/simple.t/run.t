@@ -440,6 +440,10 @@ Test exactly-evaluated float operations, at every precision
   note: float_ops::classification: done in <time>, ran 1 branch
   PC 1: empty
   
+  => Running float_ops::signed_zeros...
+  note: float_ops::signed_zeros: done in <time>, ran 1 branch
+  PC 1: empty
+  
   => Running float_ops::comparisons...
   note: float_ops::comparisons: done in <time>, ran 1 branch
   PC 1: empty
@@ -456,6 +460,14 @@ Test exactly-evaluated float operations, at every precision
   note: float_ops::int_conversions: done in <time>, ran 1 branch
   PC 1: empty
   
+  => Running float_ops::saturating_int_casts...
+  note: float_ops::saturating_int_casts: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running float_ops::float_casts...
+  note: float_ops::float_casts: done in <time>, ran 1 branch
+  PC 1: empty
+  
   => Running float_ops::symbolic...
   note: float_ops::symbolic: done in <time>, ran 1 branch
   PC 1: (V|1| ==. 2.5f) /\ ((V|1| +. V|1|) ==. 5f) /\
@@ -463,17 +475,32 @@ Test exactly-evaluated float operations, at every precision
         fis(NaN)(V|3|) /\ !((V|3| <. 0f)) /\ (1f <. V|4|) /\
         !(fis(Subnormal)(V|4|)) /\ !(fis(NaN)(V|4|))
   
+  => Running float_ops::symbolic_casts...
+  note: float_ops::symbolic_casts: done in <time>, ran 1 branch
+  PC 1: fis(NaN)(V|1|) /\ fis(Infinite)(V|2|) /\ (0f <. V|2|) /\
+        ((2.14748365E+9f <=. V|2|) || (0x7fffffff == f2sbv[Truncate,32](V|2|))) /\
+        !((V|2| <=. -2.14748365E+9f)) /\ !(fis(NaN)(V|2|)) /\
+        ((256f <=. V|2|) || (0xff == f2ubv[Truncate,8](V|2|))) /\
+        !((V|2| <=. 0f)) /\ (V|3| <. -1.0E+30f) /\ !(fis(NaN)(V|3|)) /\
+        ((V|3| <=. -32768f) || ((0x8000 == f2sbv[Truncate,16](V|3|)) && !((32768f <=. V|3|)))) /\
+        ((V|3| <=. 0f) || ((0x00000000 == f2ubv[Truncate,32](V|3|)) && !((4294967296f <=. V|3|)))) /\
+        !(fis(Infinite)(V|4|)) /\ !(fis(NaN)(V|4|)) /\
+        (V|4| ==. f2f[NearestTiesToEven,F32](f2f[NearestTiesToEven,F64](V|4|))) /\
+        (fisneg(V|5|) || fis(NaN)(V|5|)) /\ (0f ==. V|5|) /\
+        (0x8000000000000000 == V|6|) /\ (0x8000000000000000 == V|6|) /\
+        (V|5| == bv2f[F64](V|6|))
+  
   Statistics:
-  • Z3 check-sat calls: 9
-  • branch_on: branches 0.42% of calls (3 of 716)
+  • Z3 check-sat calls: 20
+  • branch_on: branches 0.87% of calls (11 of 1260)
   • Execution time: <time>
-  • Steps: 220
-  • Function calls: 92
-  • Load accesses: 299 (91.64% through store)
-  • Allocations: 22
-  • SAT checks: 17 (0 unknowns)
+  • Steps: 360
+  • Function calls: 151
+  • Load accesses: 503 (90.66% through store)
+  • Allocations: 42
+  • SAT checks: 37 (0 unknowns)
   • SAT solving time: <time> (<%>)
-  • Branches: 3 (0 unexplored)
+  • Branches: 11 (0 unexplored)
   
 
 Test approximation of complex float operations -- warn (default)

@@ -609,12 +609,23 @@ let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
       let sv = Typed.cast_f fty v in
       let signed = Layout.is_signed lit_ty in
       let size = 8 * size_of_literal_ty lit_ty in
-      BV.of_float ~rounding:Truncate ~signed ~size sv
+      let min_z = Layout.min_value_z lit_ty in
+      let max_z = Layout.max_value_z lit_ty in
+      let min_f = Typed.Float.mk fty (Z.to_string min_z) in
+      let max_f = Typed.Float.mk fty (Z.to_string (Z.succ max_z)) in
+      Typed.ite (Typed.Float.is_nan sv) (BV.mk_masked size Z.zero)
+      @@ Typed.ite (sv <=.@ min_f) (BV.mk_masked size min_z)
+      @@ Typed.ite (sv >=.@ max_f) (BV.mk_masked size max_z)
+      @@ BV.of_float ~rounding:Truncate ~signed ~size sv
   | (TInt _ | TUInt _), TFloat fp ->
       let sv = Typed.cast_lit from_ty v in
       let fp = Typed.float_precision fp in
       let signed = Layout.is_signed from_ty in
       BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv
+  | TFloat from_fp, TFloat to_fp ->
+      let sv = Typed.cast_f from_fp v in
+      let fp = Typed.float_precision to_fp in
+      Typed.Float.cast ~rounding:NearestTiesToEven ~fp sv
   | TFloat _, _ | _, TFloat _ ->
       L.failwith "Unhandled float transmute: %a -> %a" pp_literal_ty from_ty
         pp_literal_ty to_ty
