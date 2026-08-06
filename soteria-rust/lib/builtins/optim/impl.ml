@@ -78,11 +78,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let float_is_finite v =
     Typed.((not (Float.is_nan v)) &&@ not (Float.is_infinite v))
 
-  let float_is_sign sign v =
+  let float_is_sign sign (fp : Typed.FloatPrecision.t) v =
     let res =
       match sign with
-      | `Pos -> Typed.Float.(leq (like v 0.) v)
-      | `Neg -> Typed.Float.(leq v (like v (-0.)))
+      | `Pos -> Typed.Float.(leq (zero fp) v)
+      | `Neg -> Typed.Float.(leq v (neg_zero fp))
     in
     Typed.(res ||@ Float.is_nan v)
 
@@ -92,8 +92,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let f16_is_infinite ~arg = ok (float_is Infinite arg)
   let f16_is_nan ~arg = ok (float_is NaN arg)
   let f16_is_normal ~arg = ok (float_is Normal arg)
-  let f16_is_sign_negative ~arg = ok (float_is_sign `Neg arg)
-  let f16_is_sign_positive ~arg = ok (float_is_sign `Pos arg)
+  let f16_is_sign_negative ~arg = ok (float_is_sign `Neg F16 arg)
+  let f16_is_sign_positive ~arg = ok (float_is_sign `Pos F16 arg)
   let f16_is_subnormal ~arg = ok (float_is Subnormal arg)
 
   (* ---- f32 ---- *)
@@ -102,8 +102,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let f32_is_infinite ~arg = ok (float_is Infinite arg)
   let f32_is_nan ~arg = ok (float_is NaN arg)
   let f32_is_normal ~arg = ok (float_is Normal arg)
-  let f32_is_sign_negative ~arg = ok (float_is_sign `Neg arg)
-  let f32_is_sign_positive ~arg = ok (float_is_sign `Pos arg)
+  let f32_is_sign_negative ~arg = ok (float_is_sign `Neg F32 arg)
+  let f32_is_sign_positive ~arg = ok (float_is_sign `Pos F32 arg)
   let f32_is_subnormal ~arg = ok (float_is Subnormal arg)
 
   (* ---- f64 ---- *)
@@ -112,8 +112,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let f64_is_infinite ~arg = ok (float_is Infinite arg)
   let f64_is_nan ~arg = ok (float_is NaN arg)
   let f64_is_normal ~arg = ok (float_is Normal arg)
-  let f64_is_sign_negative ~arg = ok (float_is_sign `Neg arg)
-  let f64_is_sign_positive ~arg = ok (float_is_sign `Pos arg)
+  let f64_is_sign_negative ~arg = ok (float_is_sign `Neg F64 arg)
+  let f64_is_sign_positive ~arg = ok (float_is_sign `Pos F64 arg)
   let f64_is_subnormal ~arg = ok (float_is Subnormal arg)
 
   (* ---- f128 ---- *)
@@ -122,8 +122,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   let f128_is_infinite ~arg = ok (float_is Infinite arg)
   let f128_is_nan ~arg = ok (float_is NaN arg)
   let f128_is_normal ~arg = ok (float_is Normal arg)
-  let f128_is_sign_negative ~arg = ok (float_is_sign `Neg arg)
-  let f128_is_sign_positive ~arg = ok (float_is_sign `Pos arg)
+  let f128_is_sign_negative ~arg = ok (float_is_sign `Neg F128 arg)
+  let f128_is_sign_positive ~arg = ok (float_is_sign `Pos F128 arg)
   let f128_is_subnormal ~arg = ok (float_is Subnormal arg)
 
   (* ---- panics ---- *)

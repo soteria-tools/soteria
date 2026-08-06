@@ -1509,7 +1509,7 @@ Expected to correctly find the harness function
                 (0x0000000000000001,
                  { node =
                    MemVal {offset = 0x0000000000000000;
-                     len = 0x0000000000000008; v = 0.0f : float};
+                     len = 0x0000000000000008; v = 0f : float};
                    info = None }));
              (Ser_heap
                 (0x0000000000000002,
@@ -1528,7 +1528,7 @@ Expected to correctly find the harness function
                 (0x0000000000000001,
                  { node =
                    MemVal {offset = 0x0000000000000000;
-                     len = 0x0000000000000008; v = 0.0f : float};
+                     len = 0x0000000000000008; v = 0f : float};
                    info = None }));
              (Ser_globs (f_<id>, 0x0000000000000001))])]
   
