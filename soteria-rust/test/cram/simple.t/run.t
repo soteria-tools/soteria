@@ -425,6 +425,115 @@ Test recursive validity check for references; warn
   
   [1]
 
+Test exactly-evaluated float operations, at every precision
+  $ soteria-rust exec float_ops.rs --stats stdout
+  Compiling... done in <time>
+  => Running float_ops::arithmetic...
+  note: float_ops::arithmetic: done in <time>, ran 1 branch
+  PC 1: ((1.5f +. 2.25f) ==. 3.75f) /\ ((1.5f -. 2.25f) ==. -0.75f) /\
+        ((1.5f *. 2.25f) ==. 3.375f) /\ ((4.5f /. 2f) ==. 2.25f) /\
+        (1.5f ==. abs.(-1.5f)) /\ ((1f +. (2f *. 3f)) ==. 7f) /\
+        ((4.5f +. -4.5f) ==. 0f) /\ ((1f /. 0f) ==. +Inff) /\
+        ((-1f /. 0f) ==. -Inff) /\ fis(NaN)((0f /. 0f)) /\
+        fis(NaN)((+Inff -. +Inff))
+  
+  => Running float_ops::precision...
+  error: float_ops::precision: found issues in <time>, errors in 1 branch (out of 1)
+  error: Panic: assertion failed: 2048.0f16 + 1.0 == 2048.0 in float_ops::precision
+      --> $TESTCASE_ROOT/float_ops.rs:40:5
+   30 |  fn precision() {
+      |  -------------- 1: Entry point
+      .  
+   40 |      assert!(2048.0f16 + 1.0 == 2048.0); // 2^11
+      |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |      |
+      |      Triggering operation
+      |      2: Call trace
+  PC 1: ((0.100000001f +. 0.200000003f) ==. 0.300000012f) /\
+        !(((0.10000000000000001f +. 0.20000000000000001f) ==. 0.29999999999999999f)) /\
+        !((1.00000012f ==. 1f)) /\ !((2048f ==. (1f +. 2048f)))
+  
+  => Running float_ops::classification...
+  error: float_ops::classification: found issues in <time>, errors in 1 branch (out of 1)
+  error: Panic: assertion failed: (f128::MIN_POSITIVE / 2.0).is_subnormal() in float_ops::classification
+      --> $TESTCASE_ROOT/float_ops.rs:71:5
+   61 |  fn classification() {
+      |  ------------------- 1: Entry point
+      .  
+   71 |      assert!((f128::MIN_POSITIVE / 2.0).is_subnormal());
+      |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |      |
+      |      Triggering operation
+      |      2: Call trace
+  PC 1: fis(Subnormal)((6.1035E-5f /. 2f)) /\
+        fis(Subnormal)((1.17549435E-38f /. 2f)) /\
+        fis(Subnormal)((2.2250738585072014E-308f /. 2f)) /\
+        !(fis(Subnormal)((3.3621031431120935062626778173217526E-4932f /. 2f)))
+  
+  => Running float_ops::comparisons...
+  note: float_ops::comparisons: done in <time>, ran 1 branch
+  PC 1: (0f ==. -0f) /\ (0f ==. -0f) /\ (0f ==. -0f) /\ (0f ==. -0f) /\
+        (V|1| != V|2|) /\ (0f == bv2f[F64](V|1|)) /\ (-0f == bv2f[F64](V|2|))
+  
+  => Running float_ops::rounding...
+  note: float_ops::rounding: done in <time>, ran 1 branch
+  PC 1: (2f ==. fround(Ceil)(1.5f)) /\ (1f ==. fround(Floor)(1.5f)) /\
+        (-1f ==. fround(Truncate)(-1.5f)) /\ (-1f ==. fround(Ceil)(-1.5f)) /\
+        (3f ==. fround(NearestTiesToAway)(2.5f)) /\
+        (fround(NearestTiesToAway)(-2.5f) ==. -3f) /\
+        (fround(Floor)(1.75f) ==. 1f) /\
+        (2f ==. fround(NearestTiesToAway)(1.75f)) /\
+        fis(Infinite)(fround(Floor)(+Inff)) /\
+        fis(NaN)(fround(NearestTiesToAway)(NaNf))
+  
+  => Running float_ops::bit_patterns...
+  note: float_ops::bit_patterns: done in <time>, ran 1 branch
+  PC 1: (1.5f ==. bv2f[F16](0x3e00)) /\ (1.5f ==. bv2f[F32](0x3fc00000)) /\
+        (1.5f ==. bv2f[F64](0x3ff8000000000000)) /\
+        (1.5f ==. bv2f[F128](0x3fff8000000000000000000000000000)) /\
+        fis(NaN)(bv2f[F32](0x7fc00001)) /\
+        fis(Infinite)(bv2f[F64](0x7ff0000000000000)) /\ (V|1| == 0x3e00) /\
+        (V|2| == 0x3fc00000) /\ (V|3| == 0x3ff8000000000000) /\
+        (V|4| == 0x3fff8000000000000000000000000000) /\ (V|1| == 0x3e00) /\
+        (1.5f == bv2f[F16](V|1|)) /\ (V|2| == 0x3fc00000) /\
+        (1.5f == bv2f[F32](V|2|)) /\ (V|3| == 0x3ff8000000000000) /\
+        (1.5f == bv2f[F64](V|3|)) /\
+        (V|4| == 0x3fff8000000000000000000000000000) /\
+        (1.5f == bv2f[F128](V|4|))
+  
+  => Running float_ops::int_conversions...
+  note: float_ops::int_conversions: done in <time>, ran 1 branch
+  PC 1: (sbv2f[NearestTiesToEven,F16](0xff) ==. -1f) /\
+        (ubv2f[NearestTiesToEven,F32](0x0000012c) ==. 300f) /\
+        (sbv2f[NearestTiesToEven,F64](0x8000000000000000) ==. -9.2233720368547758E+18f) /\
+        (0f <. ubv2f[NearestTiesToEven,F128](0xffffffffffffffffffffffffffffffff)) /\
+        (sbv2f[NearestTiesToEven,F32](0x01000001) ==. 16777216f) /\
+        (f2sbv[Truncate,8](3.9902f) == 0x03) /\
+        (f2sbv[Truncate,32](-3.99000001f) == 0xfffffffd) /\
+        (f2sbv[Truncate,64](1.0E+18f) == 0x0de0b6b3a7640000) /\
+        (f2ubv[Truncate,8](2.5f) == 0x02)
+  
+  => Running float_ops::symbolic...
+  note: float_ops::symbolic: done in <time>, ran 1 branch
+  PC 1: (V|1| ==. 2.5f) /\ ((V|1| +. V|1|) ==. 5f) /\
+        ((V|2| *. V|2|) ==. 4f) /\ (0f <. V|2|) /\ (2f ==. V|2|) /\
+        fis(NaN)(V|3|) /\ !((V|3| <. 0f)) /\ (1f <. V|4|) /\
+        !(fis(Subnormal)(V|4|)) /\ !(fis(NaN)(V|4|))
+  
+  Statistics:
+  • Z3 check-sat calls: 112
+  • branch_on: branches 0.99% of calls (54 of 5474)
+  • Execution time: <time>
+  • Steps: 182
+  • Function calls: 76
+  • Load accesses: 257 (91.83% through store)
+  • Allocations: 20
+  • SAT checks: 121 (0 unknowns)
+  • SAT solving time: <time> (<%>)
+  • Branches: 54 (0 unexplored)
+  
+  [1]
+
 Test approximation of complex float operations -- warn (default)
   $ soteria-rust exec approx_float.rs
   Compiling... done in <time>
