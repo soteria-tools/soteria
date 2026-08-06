@@ -315,6 +315,15 @@ module type S = sig
     val is_zero : [< sfloat ] t -> [> sbool ] t
     val is_infinite : [< sfloat ] t -> [> sbool ] t
     val is_nan : [< sfloat ] t -> [> sbool ] t
+    val is_negative : [< sfloat ] t -> [> sbool ] t
+    val is_positive : [< sfloat ] t -> [> sbool ] t
+
+    val cast :
+      rounding:RoundingMode.t ->
+      fp:FloatPrecision.t ->
+      [< sfloat ] t ->
+      [> sfloat ] t
+
     val round : RoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
   end
 

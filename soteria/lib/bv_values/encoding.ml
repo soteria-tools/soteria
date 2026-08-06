@@ -79,6 +79,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
   let smt_of_unop ~ty : Unop.t -> sexp -> sexp = function
     | Not -> bool_not
     | FAbs -> fp_abs
+    | FNeg -> fp_neg
     | GetPtrLoc -> Ptr_sort.get_loc (Svalue.size_of ty)
     | GetPtrOfs -> Ptr_sort.get_ofs (Svalue.size_of ty)
     | BvOfBool n -> fun b -> ite b (bv_k n Z.one) (bv_k n Z.zero)
@@ -89,12 +90,16 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | FloatOfBv (rm, false, fp) ->
         float_of_ubv (rm_to_smt rm) (FloatPrecision.size fp)
     | FloatOfBvRaw fp -> float_of_bv (FloatPrecision.size fp)
+    | FloatOfFloat (rm, fp) ->
+        float_of_float (rm_to_smt rm) (FloatPrecision.size fp)
     | BvExtract (from_, to_) -> bv_extract to_ from_
     | BvExtend (true, by) -> bv_sign_extend by
     | BvExtend (false, by) -> bv_zero_extend by
     | BvNot -> bv_not
     | Neg _ -> bv_neg
     | FIs fc -> fp_is (FloatClass.as_fpclass fc)
+    | FIsNeg -> fp_is_negative
+    | FIsPos -> fp_is_positive
     | FRound rm -> fp_round (rm_to_smt rm)
 
   let smt_of_binop : Binop.t -> sexp -> sexp -> sexp = function

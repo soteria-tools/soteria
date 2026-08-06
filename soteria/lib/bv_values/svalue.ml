@@ -73,6 +73,7 @@ module Unop = struct
     | FloatOfBv of
         RoundingMode.t * bool * FloatPrecision.t (* signed * precision *)
     | FloatOfBvRaw of FloatPrecision.t
+    | FloatOfFloat of RoundingMode.t * FloatPrecision.t (* target precision *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
@@ -80,7 +81,10 @@ module Unop = struct
     (* is this negation overflow-checked (operand <> INT_MIN, so it behaves like
        exact integer negation)? for optimisations only *)
     | FAbs
+    | FNeg
     | FIs of FloatClass.t
+    | FIsNeg
+    | FIsPos
     | FRound of RoundingMode.t
   [@@deriving eq, ord, hash]
 
@@ -89,6 +93,7 @@ module Unop = struct
   let pp ft = function
     | Not -> Fmt.string ft "!"
     | FAbs -> Fmt.string ft "abs."
+    | FNeg -> Fmt.string ft "neg."
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
     | BvOfBool n -> Fmt.pf ft "b2bv[%d]" n
@@ -98,11 +103,15 @@ module Unop = struct
         Fmt.pf ft "%abv2f[%a,%a]" pp_signed signed RoundingMode.pp rm
           FloatPrecision.pp p
     | FloatOfBvRaw p -> Fmt.pf ft "bv2f[%a]" FloatPrecision.pp p
+    | FloatOfFloat (rm, p) ->
+        Fmt.pf ft "f2f[%a,%a]" RoundingMode.pp rm FloatPrecision.pp p
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
     | Neg checked -> Fmt.pf ft "-%s" (if checked then "ck" else "")
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
+    | FIsNeg -> Fmt.string ft "fisneg"
+    | FIsPos -> Fmt.string ft "fispos"
     | FRound mode -> Fmt.pf ft "fround(%a)" RoundingMode.pp mode
 end
 
@@ -697,6 +706,9 @@ module Make (V : Value_ext) () = struct
     val neg_infinity : FloatPrecision.t -> t
     val fp_of : t -> FloatPrecision.t
 
+    (* conversion between precisions *)
+    val cast : rounding:RoundingMode.t -> fp:FloatPrecision.t -> t -> t
+
     (* arithmetic *)
     val add : t -> t -> t
     val sub : t -> t -> t
@@ -721,6 +733,8 @@ module Make (V : Value_ext) () = struct
     val is_zero : t -> t
     val is_infinite : t -> t
     val is_nan : t -> t
+    val is_negative : t -> t
+    val is_positive : t -> t
   end
 
   (** {2 Booleans} *)
@@ -2826,12 +2840,27 @@ module Make (V : Value_ext) () = struct
     let is_nan = is_floatclass NaN
     let is_zero = is_floatclass Zero
 
+    let is_negative v =
+      match v.node.kind with
+      | Float f -> Bool.of_bool (F.is_negative f)
+      | _ -> Unop (FIsNeg, v) <| TBool
+
+    let is_positive v =
+      match v.node.kind with
+      | Float f -> Bool.of_bool (F.is_positive f)
+      | _ -> Unop (FIsPos, v) <| TBool
+
+    let cast ~rounding ~fp v =
+      match v.node.kind with
+      | Float f -> Float (F.convert rounding fp f) <| t_float fp
+      | _ when FloatPrecision.equal (fp_of v) fp -> v
+      | _ -> Unop (FloatOfFloat (rounding, fp), v) <| t_float fp
+
     let eq v1 v2 =
-      if equal v1 v2 then Bool.not (is_nan v1)
-      else
-        match (v1.node.kind, v2.node.kind) with
-        | Float f1, Float f2 -> Bool.of_bool (F.eq f1 f2)
-        | _ -> mk_commut_binop FEq v1 v2 <| TBool
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Bool.of_bool (F.eq f1 f2)
+      | _ when equal v1 v2 -> Bool.not (is_nan v1)
+      | _ -> mk_commut_binop FEq v1 v2 <| TBool
 
     let lt v1 v2 =
       match (v1.node.kind, v2.node.kind) with
@@ -2877,7 +2906,11 @@ module Make (V : Value_ext) () = struct
       | Unop (FAbs, _) -> v
       | _ -> Unop (FAbs, v) <| v.node.ty
 
-    let neg v = sub (zero (fp_of v)) v
+    let neg v =
+      match v.node.kind with
+      | Float f -> Float (F.neg f) <| v.node.ty
+      | Unop (FNeg, v) -> v
+      | _ -> Unop (FNeg, v) <| v.node.ty
 
     let round rm sv =
       match sv.node.kind with
