@@ -606,16 +606,15 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* () = State.store from t v_r in
     State.store to_ t v_l
 
-  let copy_sign fp ~x ~y =
-    let zero = Typed.Float.zero (Typed.float_precision fp) in
-    if%sat[@lname "copy_sign < 0"] [@rname "copy_sign >=0"] y <.@ zero then
+  let copy_sign ~x ~y =
+    if%sat Typed.Float.is_negative y then
       ok (Typed.Float.neg (Typed.Float.abs x))
     else ok (Typed.Float.abs x)
 
-  let copysignf128 ~x ~y = copy_sign F128 ~x ~y
-  let copysignf64 ~x ~y = copy_sign F64 ~x ~y
-  let copysignf32 ~x ~y = copy_sign F32 ~x ~y
-  let copysignf16 ~x ~y = copy_sign F16 ~x ~y
+  let copysignf128 = copy_sign
+  let copysignf64 = copy_sign
+  let copysignf32 = copy_sign
+  let copysignf16 = copy_sign
 
   (** Applies either [concrete] or [symbolic] to a bitvector. *)
   let binary_int_operation ~concrete ~symbolic ~t ~x : [> T.sint ] Typed.t ret =
