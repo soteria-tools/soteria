@@ -43,6 +43,7 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
   let eval_unop : Unop.t -> t -> t = function
     | Not -> Bool.not
     | FAbs -> Float.abs
+    | FNeg -> Float.neg
     | GetPtrLoc -> Ptr.loc
     | GetPtrOfs -> Ptr.ofs
     | BvOfBool n -> BitVec.of_bool n
@@ -50,11 +51,14 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
         BitVec.of_float ~rounding ~signed ~size
     | FloatOfBv (rounding, signed, fp) -> BitVec.to_float ~rounding ~signed ~fp
     | FloatOfBvRaw _ -> BitVec.to_float_raw
+    | FloatOfFloat (rounding, fp) -> Float.cast ~rounding ~fp
     | BvExtract (from, to_) -> BitVec.extract from to_
     | BvExtend (signed, by) -> BitVec.extend ~signed by
     | BvNot -> BitVec.not
     | Neg checked -> BitVec.neg ~checked
     | FIs fc -> Float.is_floatclass fc
+    | FIsNeg -> Float.is_negative
+    | FIsPos -> Float.is_positive
     | FRound rm -> Float.round rm
 
   let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct

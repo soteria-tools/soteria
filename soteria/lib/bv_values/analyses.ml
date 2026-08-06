@@ -586,8 +586,8 @@ module Make (Typed : Typed_intf.Solver_value) = struct
       | _ -> 1
 
     and cost_unop : Svalue.Unop.t -> int = function
-      | FRound _ | FIs _ -> 5
-      | BvOfFloat _ | FloatOfBv _ -> 4
+      | FRound _ | FIs _ | FIsNeg | FIsPos -> 5
+      | BvOfFloat _ | FloatOfBv _ | FloatOfFloat _ -> 4
       | _ -> 1
 
     let get_or_make v ((uf, refs) as st) =
