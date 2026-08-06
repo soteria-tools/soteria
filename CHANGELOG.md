@@ -11,6 +11,10 @@ request.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-07
+
+A small patch update while we work on large scale changes. A Soteria Rust flag was changed, and we saw overall performance improvements of Soteria Rust and C, by up to 20% and 8% respectively!
+
 ### Added
 
 - The binary packages now ship `LICENSE`, `NOTICE`, `THIRD_PARTY_NOTICES` and the `LICENSES/` and `third-party-licenses/` directories.
