@@ -664,6 +664,7 @@ module Make (V : Value_ext) () = struct
     (* constructors *)
     val mk : FloatPrecision.t -> string -> t
     val mk_bits : FloatPrecision.t -> Z.t -> t
+    val to_bits_opt : t -> t option
     val zero : FloatPrecision.t -> t
     val neg_zero : FloatPrecision.t -> t
     val one : FloatPrecision.t -> t
@@ -2736,6 +2737,13 @@ module Make (V : Value_ext) () = struct
     let nan fp = Float (F.nan fp) <| t_float fp
     let infinity fp = Float (F.infinity fp) <| t_float fp
     let neg_infinity fp = Float (F.neg_infinity fp) <| t_float fp
+
+    let to_bits_opt v =
+      match v.node.kind with
+      | Float f ->
+          let size = FloatPrecision.size (fp_of v) in
+          Some (BitVec.mk_masked size (F.to_z f))
+      | _ -> None
 
     let[@inline] is_floatclass fc =
      fun sv ->

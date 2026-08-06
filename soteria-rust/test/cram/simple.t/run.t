@@ -442,7 +442,7 @@ Test exactly-evaluated float operations, at every precision
   
   => Running float_ops::comparisons...
   note: float_ops::comparisons: done in <time>, ran 1 branch
-  PC 1: (V|1| != V|2|) /\ (0f == bv2f[F64](V|1|)) /\ (-0f == bv2f[F64](V|2|))
+  PC 1: empty
   
   => Running float_ops::rounding...
   note: float_ops::rounding: done in <time>, ran 1 branch
@@ -450,14 +450,7 @@ Test exactly-evaluated float operations, at every precision
   
   => Running float_ops::bit_patterns...
   note: float_ops::bit_patterns: done in <time>, ran 1 branch
-  PC 1: (V|1| == 0x3e00) /\ (V|2| == 0x3fc00000) /\
-        (V|3| == 0x3ff8000000000000) /\
-        (V|4| == 0x3fff8000000000000000000000000000) /\ (V|1| == 0x3e00) /\
-        (1.5f == bv2f[F16](V|1|)) /\ (V|2| == 0x3fc00000) /\
-        (1.5f == bv2f[F32](V|2|)) /\ (V|3| == 0x3ff8000000000000) /\
-        (1.5f == bv2f[F64](V|3|)) /\
-        (V|4| == 0x3fff8000000000000000000000000000) /\
-        (1.5f == bv2f[F128](V|4|))
+  PC 1: empty
   
   => Running float_ops::int_conversions...
   note: float_ops::int_conversions: done in <time>, ran 1 branch
@@ -471,16 +464,16 @@ Test exactly-evaluated float operations, at every precision
         !(fis(Subnormal)(V|4|)) /\ !(fis(NaN)(V|4|))
   
   Statistics:
-  • Z3 check-sat calls: 15
-  • branch_on: branches 1.12% of calls (8 of 716)
+  • Z3 check-sat calls: 9
+  • branch_on: branches 0.42% of calls (3 of 716)
   • Execution time: <time>
   • Steps: 220
   • Function calls: 92
   • Load accesses: 299 (91.64% through store)
   • Allocations: 22
-  • SAT checks: 27 (0 unknowns)
+  • SAT checks: 17 (0 unknowns)
   • SAT solving time: <time> (<%>)
-  • Branches: 8 (0 unexplored)
+  • Branches: 3 (0 unexplored)
   
 
 Test approximation of complex float operations -- warn (default)
