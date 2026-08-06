@@ -284,11 +284,13 @@ module type S = sig
 
   module Float : sig
     val mk : FloatPrecision.t -> string -> [> sfloat ] t
-    val f16 : float -> [> sfloat ] t
-    val f32 : float -> [> sfloat ] t
-    val f64 : float -> [> sfloat ] t
-    val f128 : float -> [> sfloat ] t
-    val like : [< sfloat ] t -> float -> [> sfloat ] t
+    val mk_bits : FloatPrecision.t -> Z.t -> [> sfloat ] t
+    val zero : FloatPrecision.t -> [> sfloat ] t
+    val neg_zero : FloatPrecision.t -> [> sfloat ] t
+    val one : FloatPrecision.t -> [> sfloat ] t
+    val nan : FloatPrecision.t -> [> sfloat ] t
+    val infinity : FloatPrecision.t -> [> sfloat ] t
+    val neg_infinity : FloatPrecision.t -> [> sfloat ] t
     val fp_of : [< sfloat ] t -> FloatPrecision.t
     val eq : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
     val geq : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t

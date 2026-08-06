@@ -140,12 +140,9 @@ module Make (Typed : Typed_intf.Solver_value) = struct
   let rec encode_value (v : Svalue.t) =
     match v.node.kind with
     | Var v -> encode_var v
-    | Float f -> (
-        match Svalue.precision_of_f v.node.ty with
-        | F16 -> f16_k @@ Float.of_string f
-        | F32 -> f32_k @@ Float.of_string f
-        | F64 -> f64_k @@ Float.of_string f
-        | F128 -> f128_k @@ Float.of_string f)
+    | Float f ->
+        let size = FloatPrecision.size (Svalue.precision_of_f v.node.ty) in
+        float_of_bv size (bv_k size (Floatml.AnyFloat.to_z f))
     | Bool b -> bool_k b
     | BitVec z ->
         let n = Svalue.size_of v.node.ty in

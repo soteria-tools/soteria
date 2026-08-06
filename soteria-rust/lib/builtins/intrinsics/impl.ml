@@ -347,6 +347,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let cos_ fp x =
     let* () = floating_inaccuracy_warn () in
+    let p = Typed.float_precision fp in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res = Typed.cast_float res in
     let* to_assume =
@@ -355,10 +356,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       else
         ok
           [
-            res <=.@ Typed.Float.mk fp "1.0";
-            res >=.@ Typed.Float.mk fp "-1.0";
-            Typed.not (x ==.@ Typed.Float.mk fp "0.0")
-            ||@ (res ==.@ Typed.Float.mk fp "1.0");
+            res <=.@ Typed.Float.one p;
+            res >=.@ Typed.Float.neg (Typed.Float.one p);
+            Typed.not (x ==.@ Typed.Float.zero p)
+            ||@ (res ==.@ Typed.Float.one p);
           ]
     in
     let+^ () = Rustsymex.assume to_assume in
@@ -371,6 +372,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let sin_ fp x =
     let* () = floating_inaccuracy_warn () in
+    let p = Typed.float_precision fp in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res = Typed.cast_float res in
     let* to_assume =
@@ -379,10 +381,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       else
         ok
           [
-            res <=.@ Typed.Float.mk fp "1.0";
-            res >=.@ Typed.Float.mk fp "-1.0";
-            Typed.not (x ==.@ Typed.Float.mk fp "0.0")
-            ||@ (res ==.@ Typed.Float.mk fp "0.0");
+            res <=.@ Typed.Float.one p;
+            res >=.@ Typed.Float.neg (Typed.Float.one p);
+            Typed.not (x ==.@ Typed.Float.zero p)
+            ||@ (res ==.@ Typed.Float.zero p);
           ]
     in
     let+^ () = Rustsymex.assume to_assume in
@@ -405,7 +407,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let powi_ fp x y =
     let* () = floating_inaccuracy_warn () in
-    if%sat y ==@ U32.(0s) then ok (Typed.Float.mk fp "1.0")
+    if%sat y ==@ U32.(0s) then ok (Typed.Float.one (Typed.float_precision fp))
     else if%sat y ==@ U32.(1s) then ok (Typed.cast_float x)
     else
       let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
@@ -418,10 +420,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let sqrt_ fp x =
     let* () = floating_inaccuracy_warn () in
-    if%sat x <.@ Typed.Float.mk fp "0.0" then ok (Typed.Float.mk fp "NaN")
+    let p = Typed.float_precision fp in
+    if%sat x <.@ Typed.Float.zero p then ok (Typed.Float.nan p)
     else if%sat
       Typed.Float.is_infinite x
-      ||@ (x ==.@ Typed.Float.mk fp "0.0")
+      ||@ (x ==.@ Typed.Float.zero p)
       ||@ Typed.Float.is_nan x
     then ok (Typed.cast_float x)
     else
@@ -435,16 +438,17 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let expf_ fp x =
     let* () = floating_inaccuracy_warn () in
+    let p = Typed.float_precision fp in
     if%sat
       Typed.Float.is_nan x
-      ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.mk fp "0.0"))
+      ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.zero p))
     then ok (Typed.cast_float x)
-    else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.mk fp "0.0")
-    then ok (Typed.Float.mk fp "0.0")
+    else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.zero p) then
+      ok (Typed.Float.zero p)
     else
       let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
       let res = Typed.cast_float res in
-      let+^ () = Rustsymex.assume [ res >.@ Typed.Float.mk fp "0.0" ] in
+      let+^ () = Rustsymex.assume [ res >.@ Typed.Float.zero p ] in
       res
 
   let expf16 ~x = expf_ F16 x
@@ -460,18 +464,18 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let logf_ ~exp fp x =
     let* () = floating_inaccuracy_warn () in
+    let p = Typed.float_precision fp in
     let exp = Typed.Float.mk fp exp in
-    if%sat x <.@ Typed.Float.mk fp "0.0" then ok (Typed.Float.mk fp "NaN")
-    else if%sat x ==.@ Typed.Float.mk fp "0.0" then
-      ok (Typed.Float.mk fp "-inf")
-    else if%sat Typed.Float.is_infinite x then ok (Typed.Float.mk fp "inf")
-    else if%sat x ==.@ exp then ok (Typed.Float.mk fp "1.0")
+    if%sat x <.@ Typed.Float.zero p then ok (Typed.Float.nan p)
+    else if%sat x ==.@ Typed.Float.zero p then ok (Typed.Float.neg_infinity p)
+    else if%sat Typed.Float.is_infinite x then ok (Typed.Float.infinity p)
+    else if%sat x ==.@ exp then ok (Typed.Float.one p)
     else
       let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
       let res = Typed.cast_float res in
       let* to_assume =
-        if%sat x <.@ exp then ok [ res <.@ Typed.Float.mk fp "1.0" ]
-        else ok [ res >.@ Typed.Float.mk fp "1.0" ]
+        if%sat x <.@ exp then ok [ res <.@ Typed.Float.one p ]
+        else ok [ res >.@ Typed.Float.one p ]
       in
       let+^ () = Rustsymex.assume to_assume in
       res
@@ -598,16 +602,16 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let* () = State.store from t v_r in
     State.store to_ t v_l
 
-  let copy_sign ~x ~y =
-    let zero = Typed.Float.like y 0.0 in
+  let copy_sign fp ~x ~y =
+    let zero = Typed.Float.zero (Typed.float_precision fp) in
     if%sat[@lname "copy_sign < 0"] [@rname "copy_sign >=0"] y <.@ zero then
       ok (Typed.Float.neg (Typed.Float.abs x))
     else ok (Typed.Float.abs x)
 
-  let copysignf128 = copy_sign
-  let copysignf64 = copy_sign
-  let copysignf32 = copy_sign
-  let copysignf16 = copy_sign
+  let copysignf128 ~x ~y = copy_sign F128 ~x ~y
+  let copysignf64 ~x ~y = copy_sign F64 ~x ~y
+  let copysignf32 ~x ~y = copy_sign F32 ~x ~y
+  let copysignf16 ~x ~y = copy_sign F16 ~x ~y
 
   (** Applies either [concrete] or [symbolic] to a bitvector. *)
   let binary_int_operation ~concrete ~symbolic ~t ~x : [> T.sint ] Typed.t ret =
@@ -781,8 +785,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let size = 8 * Layout.size_of_literal_ty ity in
     let max = Z.succ @@ Layout.max_value_z ity in
     let min = Z.pred @@ Layout.min_value_z ity in
-    let max = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float max in
-    let min = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float min in
+    let max = Typed.Float.mk fty @@ Z.to_string max in
+    let min = Typed.Float.mk fty @@ Z.to_string min in
     (* we use min-1 and max+1, to be able to have a strict inequality, which
        avoids issues in cases of float precision loss (I think?) *)
     let+ () =
