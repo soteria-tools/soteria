@@ -54,8 +54,7 @@ module Tag_defs = struct
   let find_opt id = Effect.perform (Find_tag id)
 end
 
-let is_int (Ctype (_, ty)) =
-  match ty with Basic (Integer _) -> true | _ -> false
+let is_int (Ctype (_, ty)) = [%matches? Basic (Integer _)] ty
 
 let precision (RealFloating f) : Svalue.FloatPrecision.t =
   match f with Float -> F32 | Double -> F64 | LongDouble -> F128

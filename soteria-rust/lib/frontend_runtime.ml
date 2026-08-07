@@ -26,7 +26,7 @@ module Exe = struct
     | Unix.WSIGNALED n -> Fmt.pf ft "Killed(%d)" n
     | Unix.WSTOPPED n -> Fmt.pf ft "Stopped(%d)" n
 
-  let is_ok = function Unix.WEXITED 0 -> true | _ -> false
+  let is_ok = [%matches? Unix.WEXITED 0]
 
   (** Read from both channels simultaneously to avoid blocking *)
   let read_both_nonblocking out err =

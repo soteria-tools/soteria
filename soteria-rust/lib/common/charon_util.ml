@@ -26,9 +26,7 @@ let size_of_literal_ty : Types.literal_type -> int = function
   | TFloat F64 -> 8
   | TFloat F128 -> 16
 
-let[@inline] is_signed : Types.literal_type -> bool = function
-  | TInt _ -> true
-  | _ -> false
+let[@inline] is_signed : Types.literal_type -> bool = [%matches? TInt _]
 
 let z_of_scalar : Values.scalar_value -> Z.t = function
   | SignedScalar (ty, v) when Z.lt v Z.zero ->

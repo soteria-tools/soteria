@@ -67,6 +67,8 @@
    (>= 0.38.0))
   (ppx_mixins
    (>= 0.2.0))
+  (ppx_matches
+   (>= 0.2.0))
   (hc
    (>= 0.5))
   (yojson
@@ -103,6 +105,8 @@
   ppx_deriving
   (ppx_subliner
    (>= 0.2.1))
+  (ppx_matches
+   (>= 0.2.0))
   fmt
   dune-site
   (odoc :with-doc)
@@ -138,6 +142,8 @@
   (ppx_subliner
    (>= 0.2.1))
   (ppx_mixins
+   (>= 0.2.0))
+  (ppx_matches
    (>= 0.2.0))
   fmt
   (unionFind
