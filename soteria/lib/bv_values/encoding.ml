@@ -73,6 +73,8 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | FMul -> fp_mul
     | FDiv -> fp_div
     | FRem -> fp_rem
+    | FMin -> fp_min
+    | FMax -> fp_max
     | BitAnd -> bv_and
     | BitOr -> bv_or
     | BitXor -> bv_xor

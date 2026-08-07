@@ -440,6 +440,10 @@ Test exactly-evaluated float operations, at every precision
   note: float_ops::classification: done in <time>, ran 1 branch
   PC 1: empty
   
+  => Running float_ops::min_max...
+  note: float_ops::min_max: done in <time>, ran 1 branch
+  PC 1: empty
+  
   => Running float_ops::signed_zeros...
   note: float_ops::signed_zeros: done in <time>, ran 1 branch
   PC 1: empty
@@ -470,10 +474,9 @@ Test exactly-evaluated float operations, at every precision
   
   => Running float_ops::symbolic...
   note: float_ops::symbolic: done in <time>, ran 1 branch
-  PC 1: (V|1| ==. 2.5f) /\ ((V|1| +. V|1|) ==. 5f) /\
-        ((V|2| *. V|2|) ==. 4f) /\ (0f <. V|2|) /\ (2f ==. V|2|) /\
-        fis(NaN)(V|3|) /\ !((V|3| <. 0f)) /\ (1f <. V|4|) /\
-        !(fis(Subnormal)(V|4|)) /\ !(fis(NaN)(V|4|))
+  PC 1: (0f <. V|2|) /\ fis(NaN)(V|3|) /\ !((V|3| <. 0f)) /\ (1f <. V|5|) /\
+        !(fis(Subnormal)(V|5|)) /\ !(fis(NaN)(V|5|)) /\ (V|1| == 2.5f) /\
+        (2f == V|2|) /\ ((V|2| *. V|2|) == 4f) /\ (V|4| == -5f)
   
   => Running float_ops::symbolic_casts...
   note: float_ops::symbolic_casts: done in <time>, ran 1 branch
@@ -491,16 +494,16 @@ Test exactly-evaluated float operations, at every precision
         (V|5| == bv2f[F64](V|6|))
   
   Statistics:
-  • Z3 check-sat calls: 20
-  • branch_on: branches 0.87% of calls (11 of 1260)
+  • Z3 check-sat calls: 18
+  • branch_on: branches 0.68% of calls (10 of 1463)
   • Execution time: <time>
-  • Steps: 360
-  • Function calls: 151
-  • Load accesses: 503 (90.66% through store)
-  • Allocations: 42
-  • SAT checks: 37 (0 unknowns)
+  • Steps: 459
+  • Function calls: 203
+  • Load accesses: 634 (90.69% through store)
+  • Allocations: 48
+  • SAT checks: 36 (0 unknowns)
   • SAT solving time: <time> (<%>)
-  • Branches: 11 (0 unexplored)
+  • Branches: 10 (0 unexplored)
   
 
 Test approximation of complex float operations -- warn (default)
@@ -510,7 +513,7 @@ Test approximation of complex float operations -- warn (default)
   warning: A complex floating point intrinsic was encountered; it will be executed with a significant over-approximation.
   note: approx_float::main: done in <time>, ran 1 branch
   PC 1: !(fis(Infinite)(V|1|)) /\ !(fis(NaN)(V|1|)) /\
-        ((V|2| ==. 1f) || !((V|1| ==. 0f))) /\ (-1f <=. V|2|) /\ (V|2| <=. 1f)
+        ((V|2| == 1f) || !((V|1| ==. 0f))) /\ (-1f <=. V|2|) /\ (V|2| <=. 1f)
   
 
 Test approximation of complex float operations -- denied
@@ -527,7 +530,7 @@ Test approximation of complex float operations -- allowed
   => Running approx_float::main...
   note: approx_float::main: done in <time>, ran 1 branch
   PC 1: !(fis(Infinite)(V|1|)) /\ !(fis(NaN)(V|1|)) /\
-        ((V|2| ==. 1f) || !((V|1| ==. 0f))) /\ (-1f <=. V|2|) /\ (V|2| <=. 1f)
+        ((V|2| == 1f) || !((V|1| ==. 0f))) /\ (-1f <=. V|2|) /\ (V|2| <=. 1f)
   
 Test enum constructors as functions; this broke with a rust toolchain update
   $ soteria-rust exec enum_constructor.rs

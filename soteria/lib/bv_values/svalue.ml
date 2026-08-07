@@ -159,6 +159,8 @@ module Binop = struct
     | FMul
     | FDiv
     | FRem
+    | FMin
+    | FMax
     (* BitVector arithmetic *)
     | Add of checked
       (* in which signedness(es) is this overflow-checked? for optimisations
@@ -207,6 +209,8 @@ module Binop = struct
     | FMul -> Fmt.string ft "*."
     | FDiv -> Fmt.string ft "/."
     | FRem -> Fmt.string ft "rem."
+    | FMin -> Fmt.string ft "min."
+    | FMax -> Fmt.string ft "max."
     | Add checked -> Fmt.pf ft "+%a" pp_checked checked
     | Sub checked -> Fmt.pf ft "-%a" pp_checked checked
     | Mul checked -> Fmt.pf ft "*%a" pp_checked checked
@@ -691,6 +695,11 @@ module Make (V : Value_ext) () = struct
     val mul : t -> t -> t
     val div : t -> t -> t
     val rem : t -> t -> t
+    val fmod : t -> t -> t
+    val min : t -> t -> t
+    val max : t -> t -> t
+    val minimum : t -> t -> t
+    val maximum : t -> t -> t
     val abs : t -> t
     val neg : t -> t
     val round : RoundingMode.t -> t -> t
@@ -2791,6 +2800,16 @@ module Make (V : Value_ext) () = struct
       match (v1.node.kind, v2.node.kind) with
       | Float f1, Float f2 -> Bool.of_bool (F.eq f1 f2)
       | _ when equal v1 v2 -> Bool.not (is_nan v1)
+      (* Against a constant, [fp.eq] is decidable structurally: nothing is
+         [fp.eq] to a NaN, and a constant that is neither NaN nor a zero is the
+         only float holding its value, so equality of values and equality of bit
+         patterns coincide there. Only the two zeros, which are [fp.eq] to one
+         another, need the opaque form. This matters because solvers substitute
+         a structural equality but not an [fp.eq], and so reduce the operations
+         they would otherwise bit-blast in full (notably [fp.rem]). *)
+      | (Float f, _ | _, Float f) when F.is_nan f -> Bool.v_false
+      | (Float f, _ | _, Float f) when Stdlib.not (F.is_zero f) ->
+          Bool.sem_eq v1 v2
       | _ -> mk_commut_binop FEq v1 v2 <| TBool
 
     let lt v1 v2 =
@@ -2842,6 +2861,46 @@ module Make (V : Value_ext) () = struct
       | Float f -> Float (F.neg f) <| v.node.ty
       | Unop (FNeg, v) -> v
       | _ -> Unop (FNeg, v) <| v.node.ty
+
+    (* C's [fmod] (and so Rust's [%] on floats), which truncates [x/y] where
+       {!rem} rounds it to nearest. SMT-Lib has no such operator, so we emulate
+       it. *)
+    let fmod v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.fmod f1 f2) <| v1.node.ty
+      | _ ->
+          let r = rem v1 v2 in
+          let correction = Bool.ite (is_negative v1) (neg (abs v2)) (abs v2) in
+          Bool.ite
+            (Bool.sem_eq (is_negative r) (is_negative v1))
+            r (add r correction)
+
+    (* [fp.min]/[fp.max]: the non-NaN argument wins, and which of [-0.0] and
+       [+0.0] is returned is left unspecified. *)
+    let min v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.min f1 f2) <| v1.node.ty
+      | _ -> Binop (FMin, v1, v2) <| v1.node.ty
+
+    let max v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.max f1 f2) <| v1.node.ty
+      | _ -> Binop (FMax, v1, v2) <| v1.node.ty
+
+    (* The IEEE 754-2019 [minimum]/[maximum]: unlike {!min}/{!max} a NaN
+       propagates, and [-0.0] is strictly below [+0.0]. SMT-Lib has neither, so
+       they are built from comparisons. *)
+    let minimum v1 v2 =
+      Bool.ite (Bool.or_ (is_nan v1) (is_nan v2)) (nan (fp_of v1))
+      @@ Bool.ite (lt v1 v2) v1
+      @@ Bool.ite (lt v2 v1) v2
+      @@ Bool.ite (is_negative v1) v1 v2
+
+    let maximum v1 v2 =
+      Bool.ite (Bool.or_ (is_nan v1) (is_nan v2)) (nan (fp_of v1))
+      @@ Bool.ite (lt v1 v2) v2
+      @@ Bool.ite (lt v2 v1) v1
+      @@ Bool.ite (is_negative v1) v2 v1
 
     let round rm sv =
       match sv.node.kind with

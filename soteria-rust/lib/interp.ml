@@ -834,7 +834,7 @@ module Make (StateImpl : State.S) = struct
             | Sub _ -> ok (v1 -.@ v2)
             | Mul _ -> ok (v1 *.@ v2)
             | Div _ -> ok (v1 /.@ v2)
-            | Rem _ -> ok (Typed.Float.rem v1 v2)
+            | Rem _ -> ok (Typed.Float.fmod v1 v2)
             | _ ->
                 L.failwith "unexpected float binary operator (%a)"
                   Expressions.pp_binop op)

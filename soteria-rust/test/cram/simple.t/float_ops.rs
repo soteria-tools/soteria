@@ -2,7 +2,7 @@
 //! four IEEE-754 precisions. Each assertion below must hold *in the precision
 //! it is written at*, so evaluating any of them at a wider format (as Soteria
 //! did when floats were kept as strings and reduced through `f64`) fails.
-#![feature(f16, f128)]
+#![feature(f16, f128, float_minimum_maximum)]
 
 #[soteria::test]
 fn arithmetic() {
@@ -16,6 +16,17 @@ fn arithmetic() {
     assert!((-1.5f32).abs() == 1.5);
     assert!((2.0f64).mul_add(3.0, 1.0) == 7.0);
     assert!(-(4.5f128) + 4.5 == 0.0);
+
+    // `%` is C's fmod, so the result takes the sign of the dividend. The IEEE
+    // remainder rounds the quotient to nearest instead, and would give 1.0,
+    // -1.0, 1.0 and -0.5 here.
+    assert!(5.0f16 % 3.0 == 2.0);
+    assert!(-5.0f32 % 3.0 == -2.0);
+    assert!(5.0f64 % -3.0 == 2.0);
+    assert!(1.5f128 % 1.0 == 0.5);
+    assert!((5.0f32 % 0.0).is_nan() && (f32::INFINITY % 3.0).is_nan());
+    assert!(5.0f32 % f32::INFINITY == 5.0);
+    assert!((-0.0f64 % 1.0).is_sign_negative());
 
     // division by zero is infinite, not a trap
     assert!(1.0f16 / 0.0 == f16::INFINITY);
@@ -80,6 +91,29 @@ fn classification() {
     assert!(1.0f16.is_sign_positive() && (-1.0f16).is_sign_negative());
     assert!((3.0f32).copysign(-2.0) == -3.0);
     assert!((-3.0f64).copysign(2.0) == 3.0);
+}
+
+/// `min`/`max` let a number beat a NaN and leave the order of the two zeros
+/// unspecified; `minimum`/`maximum` propagate NaN and put `-0.0` below `+0.0`.
+#[soteria::test]
+fn min_max() {
+    assert!((1.0f16).max(2.0) == 2.0 && (1.0f16).min(2.0) == 1.0);
+    assert!((f32::NAN).max(2.0) == 2.0 && (2.0f32).max(f32::NAN) == 2.0);
+    assert!((f64::NAN).min(2.0) == 2.0 && (2.0f64).min(f64::NAN) == 2.0);
+    assert!((1.0f128).max(2.0) == 2.0 && (1.0f128).min(2.0) == 1.0);
+    assert!((-1.0f32).max(f32::INFINITY) == f32::INFINITY);
+
+    assert!((f16::NAN).maximum(2.0).is_nan());
+    assert!((2.0f32).maximum(f32::NAN).is_nan());
+    assert!((f64::NAN).minimum(2.0).is_nan());
+    assert!((2.0f128).minimum(f128::NAN).is_nan());
+    assert!((1.0f64).maximum(2.0) == 2.0 && (1.0f64).minimum(2.0) == 1.0);
+
+    // the signed zeros are ordered by minimum/maximum, unlike by min/max
+    assert!((0.0f32).maximum(-0.0).is_sign_positive());
+    assert!((-0.0f32).maximum(0.0).is_sign_positive());
+    assert!((0.0f64).minimum(-0.0).is_sign_negative());
+    assert!((-0.0f64).minimum(0.0).is_sign_negative());
 }
 
 /// The sign of a zero is carried by its sign bit, not by its value: `-0.0` and
@@ -257,6 +291,13 @@ fn symbolic() {
     let z: f64 = soteria::nondet_bytes();
     soteria::assume(z.is_nan());
     assert!(z != z && !(z < 0.0));
+
+    // one `%` on a symbolic operand: enough to exercise the fp.rem-based
+    // encoding, and no more -- fp.rem is by far the costliest operator to
+    // bit-blast, so a second unpinned one would not return
+    let m: f64 = soteria::nondet_bytes();
+    soteria::assume(m == -5.0);
+    assert!(m % 3.0 == -2.0);
 
     // nothing above 1.0 is subnormal, whatever the format
     let w: f128 = soteria::nondet_bytes();
