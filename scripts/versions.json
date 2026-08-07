@@ -1,6 +1,6 @@
 {
   "_comment": "Central version configuration for Soteria. Run `scripts/versionsync.py check` to verify versions are in sync, or `scripts/versionsync.py update` to update versions everywhere.",
-  "SOTERIA_VERSION": "0.2.2",
+  "SOTERIA_VERSION": "0.2.3",
   "CHARON_REPO": "soteria-tools/charon",
   "CHARON_COMMIT_HASH": "4398b734716b0f3c26a8b43b8791e698bc242139",
   "OBOL_REPO": "soteria-tools/obol",
