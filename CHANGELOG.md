@@ -11,6 +11,13 @@ request.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-07
+
+### Changed
+
+- Changed the dependencies of Soteria's test, removing an unresolved import in the absence of `soteria-c`.
+- Explicitly set `zarith`'s min version to `1.13`
+
 ## [0.2.0] - 2026-08-07
 
 A small patch update while we work on large scale changes. A Soteria Rust flag was changed, and we saw overall performance improvements of Soteria Rust and C, by up to 20% and 8% respectively!
