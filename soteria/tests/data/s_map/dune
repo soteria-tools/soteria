@@ -1,5 +1,6 @@
 (test
  (name s_map_tests)
  (libraries soteria alcotest fmt)
+ (enabled_if %{bin-available:z3})
  (preprocess
   (pps soteria.ppx)))

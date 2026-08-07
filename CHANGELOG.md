@@ -11,6 +11,12 @@ request.
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-08-07
+
+### Changed
+
+- Don't run OCaml tests that use the solver is Z3 is not installed.
+
 ## [0.2.2] - 2026-08-07
 
 ### Changed

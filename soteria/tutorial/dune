@@ -1,6 +1,7 @@
 (mdx
  (preludes prelude.ml)
- (libraries soteria zarith fmt soteria.ppx))
+ (libraries soteria zarith fmt soteria.ppx)
+ (enabled_if %{bin-available:z3}))
 
 (documentation
  (package soteria))

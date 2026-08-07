@@ -6,4 +6,5 @@
 
 (cram
  (deps ../../bin/soteria_linear.exe)
+ (enabled_if %{bin-available:z3})
  (applies_to :whole_subtree))
