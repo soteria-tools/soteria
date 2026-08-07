@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786106050708,
+  "lastUpdate": 1786111440913,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -7250,6 +7250,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 117.0137,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "14d5a1166b763538ca758571b9c0623845b730d1",
+          "message": "Release v0.2.3 (#474)",
+          "timestamp": "2026-08-07T14:51:14+01:00",
+          "tree_id": "31fdfc8fbe43cb37ba34e4c9cbb178e96e4e5dfd",
+          "url": "https://github.com/soteria-tools/soteria/commit/14d5a1166b763538ca758571b9c0623845b730d1"
+        },
+        "date": 1786111439455,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.07252782906,
+            "range": "± 0.0118",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.8103962064800001,
+            "range": "± 0.0126",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6286128685,
+            "range": "± 0.0068",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.6114901644000001,
+            "range": "± 0.1084",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 3.1615295026400005,
+            "range": "± 0.6668",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.5777524169999999,
+            "range": "± 0.0113",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.33082557196,
+            "range": "± 0.0046",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9823357150200003,
+            "range": "± 0.0258",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.267415301990695,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 372,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 131.0433,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 462,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 98,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 40,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 117.0282,
             "unit": "s"
           }
         ]
