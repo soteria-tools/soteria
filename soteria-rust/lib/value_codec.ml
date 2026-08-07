@@ -590,8 +590,8 @@ let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
       let size = 8 * size_of_literal_ty lit_ty in
       let min_z = Layout.min_value_z lit_ty in
       let max_z = Layout.max_value_z lit_ty in
-      let min_f = Typed.Float.mk fty (Z.to_string min_z) in
-      let max_f = Typed.Float.mk fty (Z.to_string (Z.succ max_z)) in
+      let min_f = Typed.Float.of_z fty min_z in
+      let max_f = Typed.Float.of_z fty (Z.succ max_z) in
       Typed.ite (Typed.Float.is_nan sv) (BV.mk_masked size Z.zero)
       @@ Typed.ite (sv <=.@ min_f) (BV.mk_masked size min_z)
       @@ Typed.ite (sv >=.@ max_f) (BV.mk_masked size max_z)

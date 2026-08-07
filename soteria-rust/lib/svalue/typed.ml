@@ -231,6 +231,7 @@ module Float = struct
   include Float
 
   let mk fty = mk (float_precision fty)
+  let of_z fty = of_z (float_precision fty)
 end
 
 (* This module exposes pointers as the two standalone embedded values, thin
