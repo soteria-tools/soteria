@@ -1,7 +1,4 @@
-//! Exercises the floating-point operations Soteria evaluates exactly, at all
-//! four IEEE-754 precisions. Each assertion below must hold *in the precision
-//! it is written at*, so evaluating any of them at a wider format (as Soteria
-//! did when floats were kept as strings and reduced through `f64`) fails.
+//! Float operations Soteria evaluates exactly, at all four IEEE-754 precisions
 #![feature(f16, f128, float_minimum_maximum)]
 
 #[soteria::test]
@@ -17,9 +14,7 @@ fn arithmetic() {
     assert!((2.0f64).mul_add(3.0, 1.0) == 7.0);
     assert!(-(4.5f128) + 4.5 == 0.0);
 
-    // `%` is C's fmod, so the result takes the sign of the dividend. The IEEE
-    // remainder rounds the quotient to nearest instead, and would give 1.0,
-    // -1.0, 1.0 and -0.5 here.
+    // `%` is fmod (sign of the dividend), not the IEEE remainder
     assert!(5.0f16 % 3.0 == 2.0);
     assert!(-5.0f32 % 3.0 == -2.0);
     assert!(5.0f64 % -3.0 == 2.0);
@@ -35,22 +30,24 @@ fn arithmetic() {
     assert!((f128::INFINITY - f128::INFINITY).is_nan());
 }
 
-/// Each width rounds in its own format: these are the cases that distinguish
-/// the four precisions from one another.
+/// Cases that distinguish the four precisions from one another
 #[soteria::test]
 fn precision() {
     // 0.1 + 0.2 == 0.3 holds in f32, but not in f64
     assert!(0.1f32 + 0.2 == 0.3);
     assert!(0.1f64 + 0.2 != 0.3);
 
-    // this decimal rounds up to the f32 after 1.0, but rounding it to f64
-    // first and only then to f32 lands back on 1.0
+    // rounds up at f32, but lands back on 1.0 if rounded via f64 first
     assert!(1.0000000596046448f32 != 1.0);
 
     // the first integer that is not representable, per format
     assert!(2048.0f16 + 1.0 == 2048.0); // 2^11
     assert!(16777216.0f32 + 1.0 == 16777216.0); // 2^24
     assert!(9007199254740992.0f64 + 1.0 == 9007199254740992.0); // 2^53
+
+    // ties round to even, not away: each sum is exactly halfway to the next float
+    assert!(1.0f32 + f32::from_bits(0x3380_0000) == 1.0); // + 2^-24
+    assert!(1.0f64 + f64::from_bits(0x3CA0_0000_0000_0000) == 1.0); // + 2^-53
 
     // 1e-20 is below half an ulp of 1.0 in f64, but not in f128
     assert!(1.0f64 + 1.0e-20 == 1.0);
@@ -93,8 +90,7 @@ fn classification() {
     assert!((-3.0f64).copysign(2.0) == 3.0);
 }
 
-/// `min`/`max` let a number beat a NaN and leave the order of the two zeros
-/// unspecified; `minimum`/`maximum` propagate NaN and put `-0.0` below `+0.0`.
+/// min/max ignore NaN; minimum/maximum propagate it and order the zeros
 #[soteria::test]
 fn min_max() {
     assert!((1.0f16).max(2.0) == 2.0 && (1.0f16).min(2.0) == 1.0);
@@ -116,9 +112,7 @@ fn min_max() {
     assert!((-0.0f64).minimum(0.0).is_sign_negative());
 }
 
-/// The sign of a zero is carried by its sign bit, not by its value: `-0.0` and
-/// `+0.0` compare equal, so anything deciding a sign by comparing against zero
-/// gets every assertion here wrong.
+/// A zero's sign lives in its sign bit, not its value: `-0.0 == +0.0`
 #[soteria::test]
 fn signed_zeros() {
     assert!((-0.0f16).is_sign_negative() && !(-0.0f16).is_sign_positive());
@@ -131,8 +125,7 @@ fn signed_zeros() {
     assert!((0.0f64).is_sign_positive() && !(0.0f64).is_sign_negative());
     assert!((0.0f128).is_sign_positive() && !(0.0f128).is_sign_negative());
 
-    // negation flips the sign bit, so it does not fix a zero's sign the way
-    // `0.0 - x` would
+    // negation flips the sign bit, unlike `0.0 - x`
     assert!((-(0.0f16)).is_sign_negative());
     assert!((-(0.0f32)).is_sign_negative());
     assert!((-(0.0f64)).to_bits() == 0x8000_0000_0000_0000);
@@ -149,8 +142,7 @@ fn signed_zeros() {
 
 #[soteria::test]
 fn comparisons() {
-    // NaN is unordered: every comparison with it is false, and it is not
-    // even equal to itself
+    // NaN is unordered: every comparison is false, including with itself
     let nan = f32::NAN;
     assert!(!(nan == nan) && nan != nan);
     assert!(!(nan < 0.0) && !(nan > 0.0) && !(nan <= 0.0) && !(nan >= 0.0));
@@ -178,6 +170,24 @@ fn rounding() {
     // rounding preserves infinities and NaN
     assert!(f32::INFINITY.floor().is_infinite());
     assert!(f64::NAN.round().is_nan());
+}
+
+/// `sqrt` is exactly specified, so these pin the correctly-rounded result
+#[soteria::test]
+fn square_root() {
+    assert!((4.0f16).sqrt() == 2.0);
+    assert!((2.25f32).sqrt() == 1.5);
+    assert!((9.0f64).sqrt() == 3.0);
+    assert!((6.25f128).sqrt() == 2.5);
+
+    // irrational roots are correctly rounded in their own format
+    assert!((2.0f32).sqrt() == 1.4142135);
+    assert!((2.0f64).sqrt() == 1.4142135623730951);
+
+    // negatives give NaN; the zeros and infinities are fixed points
+    assert!((-1.0f32).sqrt().is_nan() && f32::NAN.sqrt().is_nan());
+    assert!(f64::INFINITY.sqrt() == f64::INFINITY);
+    assert!((0.0f32).sqrt() == 0.0 && (-0.0f64).sqrt().is_sign_negative());
 }
 
 #[soteria::test]
@@ -216,8 +226,7 @@ fn int_conversions() {
     assert!(16777217i32 as f32 == 16777216.0);
 }
 
-/// `float as int` saturates in Rust rather than being undefined: NaN maps to
-/// zero, and anything out of range to the nearest bound.
+/// `float as int` saturates: NaN to zero, out of range to the nearest bound
 #[soteria::test]
 fn saturating_int_casts() {
     assert!(f16::NAN as u8 == 0);
@@ -242,21 +251,18 @@ fn saturating_int_casts() {
     assert!(-0.9f64 as i8 == 0);
     assert!(-2147483648.0f32 as i32 == i32::MIN);
 
-    // i32::MAX is not representable in f32: the literal below is really 2^31,
-    // which is out of range and so saturates
+    // i32::MAX is not an f32; this literal is really 2^31, so it saturates
     assert!(2147483647.0f32 as i32 == i32::MAX);
 }
 
-/// Casts between the float formats: widening is exact, narrowing rounds to
-/// nearest and overflows to infinity.
+/// Widening is exact; narrowing rounds to nearest and overflows to infinity
 #[soteria::test]
 fn float_casts() {
     assert!(1.5f16 as f32 == 1.5 && 1.5f16 as f128 == 1.5);
     assert!(1.5f32 as f64 == 1.5);
     assert!(1.5f128 as f64 == 1.5 && 1.5f64 as f16 == 1.5);
 
-    // widening keeps the value, which is *not* the same as the wider format's
-    // rendering of the same decimal
+    // widening keeps the value, not the wider format's reading of the decimal
     assert!(0.1f32 as f64 != 0.1f64);
     assert!(0.1f64 as f32 == 0.1f32);
 
@@ -276,13 +282,12 @@ fn float_casts() {
     assert!((f16::NAN as f128).is_nan());
 }
 
-/// The same operations, but on values the solver has to reason about rather
-/// than ones that fold away.
+/// The same operations, on unpinned values so they reach the solver
 #[soteria::test]
 fn symbolic() {
-    let x: f16 = soteria::nondet_bytes();
-    soteria::assume(x == 2.5);
-    assert!(x + x == 5.0);
+    let x: f32 = soteria::nondet_bytes();
+    soteria::assume(x > 1.0 && x < 2.0);
+    assert!(x + x > 2.0 && x + x < 4.0);
 
     let y: f32 = soteria::nondet_bytes();
     soteria::assume(y * y == 4.0 && y > 0.0);
@@ -292,12 +297,14 @@ fn symbolic() {
     soteria::assume(z.is_nan());
     assert!(z != z && !(z < 0.0));
 
-    // one `%` on a symbolic operand: enough to exercise the fp.rem-based
-    // encoding, and no more -- fp.rem is by far the costliest operator to
-    // bit-blast, so a second unpinned one would not return
-    let m: f64 = soteria::nondet_bytes();
-    soteria::assume(m == -5.0);
-    assert!(m % 3.0 == -2.0);
+    let s: f32 = soteria::nondet_bytes();
+    soteria::assume(s < 0.0);
+    assert!(s.sqrt().is_nan());
+
+    // only one symbolic `%`, at f16: fp.rem is the costliest operator to blast
+    let m: f16 = soteria::nondet_bytes();
+    soteria::assume(m > 0.0 && m < 3.0);
+    assert!(m % 3.0 == m);
 
     // nothing above 1.0 is subnormal, whatever the format
     let w: f128 = soteria::nondet_bytes();
@@ -305,8 +312,7 @@ fn symbolic() {
     assert!(!w.is_subnormal() && !w.is_nan());
 }
 
-/// The casts and sign tests above, on values rustc cannot constant-fold, so
-/// they are decided by Soteria and the solver rather than at compile time.
+/// Casts and sign tests on values rustc cannot constant-fold
 #[soteria::test]
 fn symbolic_casts() {
     let a: f32 = soteria::nondet_bytes();

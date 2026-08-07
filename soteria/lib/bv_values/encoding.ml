@@ -39,6 +39,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | Not -> bool_not
     | FAbs -> fp_abs
     | FNeg -> fp_neg
+    | FSqrt -> fp_sqrt
     | GetPtrLoc -> pointers_not_supported ()
     | GetPtrOfs -> pointers_not_supported ()
     | BvOfBool n -> fun b -> ite b (bv_k n Z.one) (bv_k n Z.zero)

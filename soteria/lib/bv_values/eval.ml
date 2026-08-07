@@ -46,6 +46,7 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
     | Not -> Bool.not
     | FAbs -> Float.abs
     | FNeg -> Float.neg
+    | FSqrt -> Float.sqrt
     | GetPtrLoc -> Ptr.loc
     | GetPtrOfs -> Ptr.ofs
     | BvOfBool n -> BitVec.of_bool n
