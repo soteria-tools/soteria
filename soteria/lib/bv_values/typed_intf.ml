@@ -308,6 +308,41 @@ module type S = sig
     val mul : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
     val div : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
     val rem : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+    val fmod : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    (** The IEEE 754-2019 [min] and [max]: unlike {!minimum} and {!maximum}, a
+        NaN is ignored, and [-0.0] is considered equal to [+0.0]. This is
+        equivalent to:
+        {@ocaml[
+        let min x y =
+          if is_nan x then y
+          else if is_nan y then x
+          else if lt x y then x
+          else if gt x y then y
+          else if is_negative x then x
+          else y
+        ]} *)
+    val min : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    (** IEEE 754-2019 [max]. See {!min} for the differences with {!maximum}. *)
+    val max : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    (** The IEEE 754-2019 [minimum]: unlike {!min} a NaN propagates, and [-0.0]
+        is strictly below [+0.0]. This is equivalent to:
+        {@ocaml[
+        let minimum x y =
+          if is_nan x || is_nan y then nan
+          else if lt x y then x
+          else if gt x y then y
+          else if is_negative x then x
+          else y
+        ]} *)
+    val minimum : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    (** IEEE-754-2019 [maximum]. See {!minimum} for the differences with {!max}.
+    *)
+    val maximum : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
     val abs : [< sfloat ] t -> [> sfloat ] t
     val neg : [< sfloat ] t -> [> sfloat ] t
     val is_normal : [< sfloat ] t -> [> sbool ] t

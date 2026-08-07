@@ -582,7 +582,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     and costs vs = List.fold_left (fun acc v -> acc + cost v) 0 vs
 
     and cost_binop : Svalue.Binop.t -> int = function
-      | FAdd | FSub | FMul | FDiv | FEq | FLt | FLeq -> 3
+      | FAdd | FSub | FMul | FDiv | FEq | FLt | FLeq | FMin | FMax -> 3
       | _ -> 1
 
     and cost_unop : Svalue.Unop.t -> int = function

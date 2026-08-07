@@ -237,6 +237,8 @@ let fp_sub f1 f2 = "fp.sub" $$. [ RoundingMode.default; f1; f2 ]
 let fp_mul f1 f2 = "fp.mul" $$. [ RoundingMode.default; f1; f2 ]
 let fp_div f1 f2 = "fp.div" $$. [ RoundingMode.default; f1; f2 ]
 let fp_rem f1 f2 = "fp.rem" $$. [ f1; f2 ]
+let fp_min f1 f2 = "fp.min" $$. [ f1; f2 ]
+let fp_max f1 f2 = "fp.max" $$. [ f1; f2 ]
 
 (* [fp_is fc f] tests if [f] belongs to floating-point class [fc]. *)
 let fp_is (fc : fpclass) f =
