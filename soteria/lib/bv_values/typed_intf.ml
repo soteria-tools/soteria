@@ -293,6 +293,7 @@ module type S = sig
     val to_bits_opt : [< sfloat ] t -> [> sint ] t option
 
     val to_float_opt : [< sfloat ] t -> float option
+    val sign_bit_opt : [< sfloat ] t -> bool option
     val approx : (float -> float) -> [< sfloat ] t -> [> sfloat ] t option
 
     val approx2 :

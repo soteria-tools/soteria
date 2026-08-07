@@ -684,6 +684,7 @@ module Make (V : Value_ext) () = struct
     val of_z : FloatPrecision.t -> Z.t -> t
     val to_bits_opt : t -> t option
     val to_float_opt : t -> float option
+    val sign_bit_opt : t -> bool option
     val approx : (float -> float) -> t -> t option
     val approx2 : (float -> float -> float) -> t -> t -> t option
     val zero : FloatPrecision.t -> t
@@ -2773,6 +2774,12 @@ module Make (V : Value_ext) () = struct
 
     let to_float_opt v =
       match v.node.kind with Float f -> Some (F.to_float f) | _ -> None
+
+    let sign_bit_opt v =
+      match v.node.kind with
+      | Float f ->
+          Some (Z.testbit (F.to_z f) (FloatPrecision.size (fp_of v) - 1))
+      | _ -> None
 
     let approx f v =
       Option.map
