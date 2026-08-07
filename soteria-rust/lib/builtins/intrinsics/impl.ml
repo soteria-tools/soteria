@@ -802,10 +802,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     let signed = Layout.is_signed ity in
     let size = 8 * Layout.size_of_literal_ty ity in
-    let max = Z.succ @@ Layout.max_value_z ity in
-    let min = Z.pred @@ Layout.min_value_z ity in
-    let max = Typed.Float.mk fty @@ Z.to_string max in
-    let min = Typed.Float.mk fty @@ Z.to_string min in
+    let max = Typed.Float.of_z fty (Z.succ @@ Layout.max_value_z ity) in
+    let min = Typed.Float.of_z fty (Z.pred @@ Layout.min_value_z ity) in
     (* we use min-1 and max+1, to be able to have a strict inequality, which
        avoids issues in cases of float precision loss (I think?) *)
     let+ () =

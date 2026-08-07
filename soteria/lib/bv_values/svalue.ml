@@ -701,6 +701,7 @@ module Make (V : Value_ext) () = struct
     (* constructors *)
     val mk : FloatPrecision.t -> string -> t
     val mk_bits : FloatPrecision.t -> Z.t -> t
+    val of_z : FloatPrecision.t -> Z.t -> t
     val to_bits_opt : t -> t option
     val zero : FloatPrecision.t -> t
     val neg_zero : FloatPrecision.t -> t
@@ -2823,6 +2824,11 @@ module Make (V : Value_ext) () = struct
       | None -> L.failwith "Invalid float literal: %S" s
 
     let mk_bits fp z = Float (F.of_bits_z fp z) <| t_float fp
+
+    (* A mathematical integer, rounded to [fp]; a magnitude too large for the
+       format gives an infinity. Unlike {!BitVec.to_float} the argument is not
+       the contents of a bit-vector, so it is not reduced to any width. *)
+    let of_z fp z = Float (F.of_z fp z) <| t_float fp
     let zero fp = Float (F.zero fp) <| t_float fp
     let neg_zero fp = Float (F.neg_zero fp) <| t_float fp
     let one fp = Float (F.one fp) <| t_float fp

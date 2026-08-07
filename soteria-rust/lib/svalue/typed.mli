@@ -143,6 +143,7 @@ module Float : sig
   include module type of Float
 
   val mk : Types.float_type -> string -> [> T.sfloat ] t
+  val of_z : Types.float_type -> Z.t -> [> T.sfloat ] t
 end
 
 module Ptr : sig
