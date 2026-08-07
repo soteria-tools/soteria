@@ -110,7 +110,7 @@ let filter_serialized_state relevant_vars (state : State.syn list) =
           else
             (* If the block is not freed, we record where the object was
                allocated *)
-            let leaked = not (Block.is_freed b) in
+            let leaked = not (Block.is_freed_syn b) in
             if leaked then Leak_set.add leak_origins b.info;
             [%l.trace
               "Filtering out unreachable location: %a which %a." Expr.pp loc
