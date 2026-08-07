@@ -47,13 +47,15 @@
   ppx_deriving
   ppx_deriving_hash
   fmt
+  printbox
   printbox-text
   htmlit
   (progress
    (>= 0.5.0))
   (grace
    (= 0.3.0))
-  zarith
+  (zarith
+   (>= 1.13))
   (odoc :with-doc)
   (mdx :with-test)
   (alcotest :with-test)
