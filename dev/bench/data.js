@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786093928965,
+  "lastUpdate": 1786102425281,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -6996,6 +6996,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 117.0333,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2264b417b1c9859ab2bd64861e216ae2c3a44a4b",
+          "message": "Release v0.2.1 (#472)",
+          "timestamp": "2026-08-07T12:21:05+01:00",
+          "tree_id": "173150fb823b4ca719753dcfe65e47b50cff6ee8",
+          "url": "https://github.com/soteria-tools/soteria/commit/2264b417b1c9859ab2bd64861e216ae2c3a44a4b"
+        },
+        "date": 1786102423840,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.05947992688,
+            "range": "± 0.0192",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.80720336874,
+            "range": "± 0.0081",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6343999709200001,
+            "range": "± 0.0133",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.4146718629,
+            "range": "± 0.0147",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 2.8581953231400004,
+            "range": "± 0.0254",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.5739448904800001,
+            "range": "± 0.0051",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.33007306474,
+            "range": "± 0.0048",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9867933723,
+            "range": "± 0.0273",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.316767835989594,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 372,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 131.0301,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 462,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 98,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 40,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 117.1433,
             "unit": "s"
           }
         ]
