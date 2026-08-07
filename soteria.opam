@@ -35,6 +35,7 @@ depends: [
   "alcotest" {with-test}
   "qcheck-core" {with-test}
   "qcheck-alcotest" {with-test}
+  "menhir" {with-test & >= "20230415"}
   "dune" {>= "3.23"}
   "ppxlib" {>= "0.38.0"}
   "ppx_mixins" {>= "0.2.0"}
@@ -42,7 +43,7 @@ depends: [
   "yojson" {< "3.0"}
   "unionFind" {>= "20220109"}
   "ppx_deriving_yojson"
-  "ocamlformat" {with-dev-setup & = "0.29.0"}
+  "ocamlformat" {(with-test | with-dev-setup) & = "0.29.0"}
   "ocaml-lsp-server" {with-dev-setup}
 ]
 build: [

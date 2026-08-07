@@ -61,6 +61,10 @@
   (alcotest :with-test)
   (qcheck-core :with-test)
   (qcheck-alcotest :with-test)
+  (menhir
+   (and
+    :with-test
+    (>= 20230415)))
   (dune
    (>= 3.23))
   (ppxlib
@@ -77,7 +81,7 @@
   ; [versionsync: OCAMLFORMAT_VERSION=0.29.0]
   (ocamlformat
    (and
-    :with-dev-setup
+    (or :with-test :with-dev-setup)
     (= 0.29.0)))
   (ocaml-lsp-server :with-dev-setup)))
 
