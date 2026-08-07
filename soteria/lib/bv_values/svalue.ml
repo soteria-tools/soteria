@@ -15,6 +15,8 @@ module FloatPrecision = struct
   let pp = F.pp_precision
   let show = F.show_precision
   let size = F.size
+  let exponent_bits = F.exponent_bits
+  let significand_bits = F.significand_bits
 
   let of_size n =
     match F.of_size n with
