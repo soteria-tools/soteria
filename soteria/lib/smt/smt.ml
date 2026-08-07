@@ -164,8 +164,9 @@ module RoundingMode = struct
     | Floor -> atom "RTN"
     | Truncate -> atom "RTZ"
 
-  (* Equivalent to NearestTiesToAway; default for FloatingPoint operations. *)
-  let default = to_sexp NearestTiesToAway
+  (** Equivalent to {!NearestTiesToEven}, the IEEE 754 default rounding, and the
+      one Rust and C use. *)
+  let default = to_sexp NearestTiesToEven
 end
 
 (** {2 Floating-point} *)
@@ -218,6 +219,7 @@ let f16_k f =
 
 let fp_abs f = "fp.abs" $$. [ f ]
 let fp_neg f = "fp.neg" $$. [ f ]
+let fp_sqrt f = "fp.sqrt" $$. [ RoundingMode.default; f ]
 let fp_eq f1 f2 = "fp.eq" $$. [ f1; f2 ]
 let fp_leq f1 f2 = "fp.leq" $$. [ f1; f2 ]
 let fp_lt f1 f2 = "fp.lt" $$. [ f1; f2 ]
