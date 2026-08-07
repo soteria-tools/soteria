@@ -292,6 +292,15 @@ module type S = sig
         representation of a float if it is concrete. *)
     val to_bits_opt : [< sfloat ] t -> [> sint ] t option
 
+    val to_float_opt : [< sfloat ] t -> float option
+    val approx : (float -> float) -> [< sfloat ] t -> [> sfloat ] t option
+
+    val approx2 :
+      (float -> float -> float) ->
+      [< sfloat ] t ->
+      [< sfloat ] t ->
+      [> sfloat ] t option
+
     val zero : FloatPrecision.t -> [> sfloat ] t
     val neg_zero : FloatPrecision.t -> [> sfloat ] t
     val one : FloatPrecision.t -> [> sfloat ] t

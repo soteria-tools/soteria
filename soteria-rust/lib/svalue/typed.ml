@@ -161,6 +161,10 @@ let cast_union ?adt v =
 module BitVec = struct
   include BitVec
 
+  let bv_to_z (ity : Types.integer_type) =
+    let signed = match ity with Signed _ -> true | Unsigned _ -> false in
+    BitVec.bv_to_z signed (size_of_literal_ty (lit_of_int_ty ity) * 8)
+
   let mk_lit ty = BitVec.mk_masked (size_of_literal_ty ty * 8)
   let mk_lit_nz ty = BitVec.mk_nz (size_of_literal_ty ty * 8)
   let mki_lit ty = BitVec.mki_masked (size_of_literal_ty ty * 8)

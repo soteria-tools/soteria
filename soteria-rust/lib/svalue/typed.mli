@@ -116,6 +116,10 @@ module BitVec : sig
   val of_constant_expr_opt : Types.constant_expr -> [> T.sint ] t option
   val of_scalar : Values.scalar_value -> [> T.sint ] t
 
+  (** Reads a bit-vector's contents as an integer of the given Rust type, which
+      supplies both the signedness and the width. *)
+  val bv_to_z : Types.integer_type -> Z.t -> Z.t
+
   (* from Z/int *)
 
   val mk_lit : Types.literal_type -> Z.t -> [> T.sint ] t

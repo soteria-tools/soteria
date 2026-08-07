@@ -705,6 +705,9 @@ module Make (V : Value_ext) () = struct
     val mk_bits : FloatPrecision.t -> Z.t -> t
     val of_z : FloatPrecision.t -> Z.t -> t
     val to_bits_opt : t -> t option
+    val to_float_opt : t -> float option
+    val approx : (float -> float) -> t -> t option
+    val approx2 : (float -> float -> float) -> t -> t -> t option
     val zero : FloatPrecision.t -> t
     val neg_zero : FloatPrecision.t -> t
     val one : FloatPrecision.t -> t
@@ -2821,17 +2824,37 @@ module Make (V : Value_ext) () = struct
       | TFloat fp -> fp
       | _ -> L.failwith "Unsupported float type"
 
+    let mk_raw fp f = Float f <| t_float fp
+
     let mk fp s =
       match F.of_string_opt fp s with
-      | Some f -> Float f <| t_float fp
+      | Some f -> mk_raw fp f
       | None -> L.failwith "Invalid float literal: %S" s
 
-    let mk_bits fp z = Float (F.of_bits_z fp z) <| t_float fp
+    let mk_bits fp z = mk_raw fp (F.of_bits_z fp z)
 
     (* A mathematical integer, rounded to [fp]; a magnitude too large for the
        format gives an infinity. Unlike {!BitVec.to_float} the argument is not
        the contents of a bit-vector, so it is not reduced to any width. *)
-    let of_z fp z = Float (F.of_z fp z) <| t_float fp
+    let of_z fp z = mk_raw fp (F.of_z fp z)
+
+    let to_float_opt v =
+      match v.node.kind with Float f -> Some (F.to_float f) | _ -> None
+
+    let approx f v =
+      Option.map
+        (fun x ->
+          let fp = fp_of v in
+          mk_raw fp (F.of_float fp (f x)))
+        (to_float_opt v)
+
+    let approx2 f v1 v2 =
+      Option.map2
+        (fun x1 x2 ->
+          let fp = fp_of v1 in
+          mk_raw fp (F.of_float fp (f x1 x2)))
+        (to_float_opt v1) (to_float_opt v2)
+
     let zero fp = Float (F.zero fp) <| t_float fp
     let neg_zero fp = Float (F.neg_zero fp) <| t_float fp
     let one fp = Float (F.one fp) <| t_float fp
