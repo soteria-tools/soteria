@@ -80,6 +80,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | Not -> bool_not
     | FAbs -> fp_abs
     | FNeg -> fp_neg
+    | FSqrt -> fp_sqrt
     | GetPtrLoc -> Ptr_sort.get_loc (Svalue.size_of ty)
     | GetPtrOfs -> Ptr_sort.get_ofs (Svalue.size_of ty)
     | BvOfBool n -> fun b -> ite b (bv_k n Z.one) (bv_k n Z.zero)

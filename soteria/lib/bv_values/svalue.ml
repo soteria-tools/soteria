@@ -82,6 +82,7 @@ module Unop = struct
        exact integer negation)? for optimisations only *)
     | FAbs
     | FNeg
+    | FSqrt
     | FIs of FloatClass.t
     | FIsNeg
     | FIsPos
@@ -94,6 +95,7 @@ module Unop = struct
     | Not -> Fmt.string ft "!"
     | FAbs -> Fmt.string ft "abs."
     | FNeg -> Fmt.string ft "neg."
+    | FSqrt -> Fmt.string ft "sqrt."
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
     | BvOfBool n -> Fmt.pf ft "b2bv[%d]" n
@@ -727,6 +729,7 @@ module Make (V : Value_ext) () = struct
     val maximum : t -> t -> t
     val abs : t -> t
     val neg : t -> t
+    val sqrt : t -> t
     val round : RoundingMode.t -> t -> t
 
     (* comparisons *)
@@ -2875,16 +2878,15 @@ module Make (V : Value_ext) () = struct
       match (v1.node.kind, v2.node.kind) with
       | Float f1, Float f2 -> Bool.of_bool (F.eq f1 f2)
       | _ when equal v1 v2 -> Bool.not (is_nan v1)
-      (* Against a constant, [fp.eq] is decidable structurally: nothing is
-         [fp.eq] to a NaN, and a constant that is neither NaN nor a zero is the
-         only float holding its value, so equality of values and equality of bit
-         patterns coincide there. Only the two zeros, which are [fp.eq] to one
-         another, need the opaque form. This matters because solvers substitute
-         a structural equality but not an [fp.eq], and so reduce the operations
-         they would otherwise bit-blast in full (notably [fp.rem]). *)
-      | (Float f, _ | _, Float f) when F.is_nan f -> Bool.v_false
-      | (Float f, _ | _, Float f) when Stdlib.not (F.is_zero f) ->
-          Bool.sem_eq v1 v2
+      (* Against a constant, [fp.eq] is decidable structurally *)
+      | Float f, _ ->
+          if F.is_nan f then Bool.v_false
+          else if F.is_zero f then is_zero v2
+          else Bool.sem_eq v1 v2
+      | _, Float f ->
+          if F.is_nan f then Bool.v_false
+          else if F.is_zero f then is_zero v1
+          else Bool.sem_eq v1 v2
       | _ -> mk_commut_binop FEq v1 v2 <| TBool
 
     let lt v1 v2 =
@@ -2976,6 +2978,11 @@ module Make (V : Value_ext) () = struct
       @@ Bool.ite (lt v1 v2) v2
       @@ Bool.ite (lt v2 v1) v1
       @@ Bool.ite (is_negative v1) v2 v1
+
+    let sqrt v =
+      match v.node.kind with
+      | Float f -> Float (F.sqrt f) <| v.node.ty
+      | _ -> Unop (FSqrt, v) <| v.node.ty
 
     let round rm sv =
       match sv.node.kind with

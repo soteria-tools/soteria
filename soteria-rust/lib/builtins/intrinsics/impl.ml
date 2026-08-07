@@ -417,24 +417,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let powif32 ~a ~x = powi_ F32 a x
   let powif64 ~a ~x = powi_ F64 a x
   let powif128 ~a ~x = powi_ F128 a x
-
-  let sqrt_ fp x =
-    let* () = floating_inaccuracy_warn () in
-    let p = Typed.float_precision fp in
-    if%sat x <.@ Typed.Float.zero p then ok (Typed.Float.nan p)
-    else if%sat
-      Typed.Float.is_infinite x
-      ||@ (x ==.@ Typed.Float.zero p)
-      ||@ Typed.Float.is_nan x
-    then ok (Typed.cast_float x)
-    else
-      let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-      Typed.cast_float res
-
-  let sqrtf16 ~x = sqrt_ F16 x
-  let sqrtf32 ~x = sqrt_ F32 x
-  let sqrtf64 ~x = sqrt_ F64 x
-  let sqrtf128 ~x = sqrt_ F128 x
+  let sqrt_ ~x = ok (Typed.Float.sqrt x)
+  let sqrtf16 = sqrt_
+  let sqrtf32 = sqrt_
+  let sqrtf64 = sqrt_
+  let sqrtf128 = sqrt_
   let minimum_number_nsz ~x ~y = ok (Typed.Float.min x y)
   let minimum_number_nsz_f16 = minimum_number_nsz
   let minimum_number_nsz_f32 = minimum_number_nsz
@@ -771,7 +758,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       | Sub _ -> (( -.@ ), "core::intrinsics::fsub_fast")
       | Mul _ -> (( *.@ ), "core::intrinsics::fmul_fast")
       | Div _ -> (( /.@ ), "core::intrinsics::fdiv_fast")
-      | Rem _ -> (Typed.Float.rem, "core::intrinsics::frem_fast")
+      | Rem _ -> (Typed.Float.fmod, "core::intrinsics::frem_fast")
       | _ -> L.failwith "fast_float: invalid binop"
     in
     let is_finite f =

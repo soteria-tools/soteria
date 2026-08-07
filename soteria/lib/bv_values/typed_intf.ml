@@ -346,6 +346,7 @@ module type S = sig
 
     val abs : [< sfloat ] t -> [> sfloat ] t
     val neg : [< sfloat ] t -> [> sfloat ] t
+    val sqrt : [< sfloat ] t -> [> sfloat ] t
     val is_normal : [< sfloat ] t -> [> sbool ] t
     val is_subnormal : [< sfloat ] t -> [> sbool ] t
     val is_zero : [< sfloat ] t -> [> sbool ] t
