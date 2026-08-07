@@ -40,16 +40,40 @@ jobs:
         with:
           path: _opam
           key: ${{ runner.os }}-${{ runner.arch }}-opam-testlib-${{ env.OCAML_VERSION }}-${{ hashFiles('soteria/*.opam') }}
-          restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-opam-testlib-${{ env.OCAML_VERSION }}-
 
       - name: Update opam
         run: |
           opam update || { rm -rf "$(opam var root)/repo/default"; opam update; }
 
-      # Install soteria as an opam package, exactly as an external consumer would.
-      - name: Install soteria
-        run: opam install ./soteria/soteria.opam -y
+      - name: Export tracked files, as opam-repository would see them
+        run: |
+          mkdir -p pkg
+          git -C soteria archive --format=tar HEAD | tar -x -C pkg
+          test -f pkg/soteria.opam
+
+      - name: Assert solver binaries are absent from the runner image
+        run: |
+          for t in z3 cvc5; do
+            if command -v "$t" >/dev/null 2>&1; then
+              echo "::error::'$t' is present in the runner image at $(command -v "$t"). This job can no longer prove soteria declares everything its tests need."
+              exit 1
+            fi
+          done
+
+      # The command opam CI actually runs
+      - name: Install soteria with tests and docs
+        run: opam install ./pkg/soteria.opam --with-test --with-doc -y
+
+      - name: Assert build tools came from the opam switch
+        run: |
+          for t in ocamlformat menhir; do
+            p="$(opam exec -- sh -c "command -v $t" || true)"
+            case "$p" in
+              "$GITHUB_WORKSPACE"/_opam/bin/*) ;;
+              "") echo "::error::'$t' is missing after install; it must be a declared dependency"; exit 1 ;;
+              *) echo "::error::'$t' resolved to $p, outside the opam switch, so it is not a declared dependency"; exit 1 ;;
+            esac
+          done
 
       - name: Write minimal test project
         run: |
