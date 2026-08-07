@@ -1,5 +1,15 @@
 open Charon
 
+type ('sc, 'ag) block_value_raw = ('sc, 'ag) Ext.block_value =
+  | Scalar of 'sc
+  | Aggregate of 'ag * Types.ty
+
+type ('sc, 'ag, 'ofs, 'sz) block_raw = ('sc, 'ag, 'ofs, 'sz) Ext.block = {
+  value : ('sc, 'ag) block_value_raw;
+  offset : 'ofs;
+  size : 'sz;
+}
+
 (* The extended ghost-typed interface, sharing [Solver_value]'s [t]/[ty] so
    values flow between the interpreter and the symex monad. *)
 include Soteria.Bv_values.Typed.S with module Ext = Ext.Rust_ext
@@ -17,9 +27,16 @@ module T : sig
   type poly = [ `Poly ]
   type ptr_meta = [ sptr_t | sint ]
 
+  (** Values with a direct scalar representation: integers, floats and full
+      pointers. Polymorphic values are scalars too, as they're not composite. *)
+  type scalar = [ sint | sfloat | sptr_f | poly ]
+
+  (** Structured values, made of several components. *)
+  type aggregate = [ tuple | enum | union ]
+
   (** The values that are allowed within the Rust interpreter as standalone
       values. *)
-  type any = [ sint | sfloat | sptr_f | tuple | enum | union | poly ]
+  type any = [ scalar | aggregate ]
 
   val pp_sptr_f : Format.formatter -> sptr_f -> unit
   val pp_sptr_t : Format.formatter -> sptr_t -> unit
@@ -27,8 +44,19 @@ module T : sig
   val pp_enum : Format.formatter -> enum -> unit
   val pp_union : Format.formatter -> union -> unit
   val pp_poly : Format.formatter -> poly -> unit
+  val pp_scalar : Format.formatter -> scalar -> unit
+  val pp_aggregate : Format.formatter -> aggregate -> unit
   val pp_any : Format.formatter -> any -> unit
 end
+
+(** A block's value: can either be an untyped scalar, or a typed aggregate. *)
+type block_value = (T.scalar t, T.aggregate t) block_value_raw
+
+(** A memory block: contains a value, with its offset and size inside some
+    unknown allocation or range. *)
+type block = (T.scalar t, T.aggregate t, T.sint t, T.nonzero t) block_raw
+
+val pp_block : Format.formatter -> block -> unit
 
 (* types *)
 
@@ -178,10 +206,7 @@ module Adt : sig
     Types.type_decl_ref -> [< T.sint ] t -> [< T.any ] t list -> [> T.enum ] t
 
   (** Creates a union value with the given value blocks. *)
-  val mk_union :
-    Types.type_decl_ref ->
-    ([< T.any ] t * [< T.sint ] t * [< T.nonzero ] t) list ->
-    [> T.union ] t
+  val mk_union : Types.type_decl_ref -> block list -> [> T.union ] t
 
   (** Creates an unknown polymorphic value. {b HACK: what does this even mean?}
   *)
@@ -191,8 +216,7 @@ module Adt : sig
   val unit : [> T.tuple ] t
 
   (** Gets the value blocks of a union. *)
-  val as_union :
-    [< T.union ] t -> ([> T.any ] t * [> T.sint ] t * [> T.nonzero ] t) list
+  val as_union : [< T.union ] t -> block list
 
   val as_tuple : [< T.tuple ] t -> [> T.any ] t list
   val as_array : [< T.tuple ] t -> [> T.any ] t iarray

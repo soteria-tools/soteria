@@ -167,10 +167,11 @@ module type S = sig
     include module type of Value_codec
 
     val encode :
+      ?depth:int ->
       offset:sint v ->
       any v ->
       Types.ty ->
-      ((any v * sint v * nonzero v) Iter.t, 'env) monad
+      (Typed.block Iter.t, 'env) monad
 
     val cast_literal :
       from_ty:Values.literal_type ->
@@ -181,11 +182,7 @@ module type S = sig
     val nondet_valid : Types.ty -> (any v, 'env) monad
 
     val ref_tys_in :
-      f:
-        ('acc ->
-        Types.ty ->
-        [< sptr_f ] v ->
-        ([> sptr_f ] v * 'acc, 'env) monad) ->
+      f:('acc -> Types.ty -> sptr_f v -> (sptr_f v * 'acc, 'env) monad) ->
       init:'acc ->
       Types.ty ->
       any v ->
@@ -217,11 +214,7 @@ module type S = sig
     val transmute :
       from:Types.ty -> to_:Types.ty -> [< any ] v -> ([> any ] v, 'env) t
 
-    val transmute_raw :
-      to_:Types.ty ->
-      ([< any ] v * [< sint ] v * [< nonzero ] v) list ->
-      ([> any ] v, 'env) t
-
+    val transmute_raw : to_:Types.ty -> Typed.block list -> ([> any ] v, 'env) t
     val free : [< sptr_f ] v -> (unit, 'env) t
 
     val borrow :
@@ -490,7 +483,9 @@ module Make (State : State_intf.S) :
   module Value_codec = struct
     include Value_codec
 
-    let[@inline] encode ~offset v ty = lift_err (encode ~offset v ty)
+    let[@inline] encode ?depth ~offset v ty =
+      lift_err (encode ?depth ~offset v ty)
+
     let[@inline] nondet_valid ty = lift_err (nondet_valid ty)
 
     (* We painfully lift [Layout.ref_tys_in] to make it nicer to use without

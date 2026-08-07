@@ -4,6 +4,20 @@ open Common.Charon_util
 open Soteria.Bv_values.Svalue
 open Ext.Rust_ext
 
+(* keep a handle on the unit [Ext], as [include Self] below shadows it with
+   [Ext.Rust_ext] *)
+module Ext0 = Ext
+
+type ('sc, 'ag) block_value_raw = ('sc, 'ag) Ext.block_value =
+  | Scalar of 'sc
+  | Aggregate of 'ag * Types.ty
+
+type ('sc, 'ag, 'ofs, 'sz) block_raw = ('sc, 'ag, 'ofs, 'sz) Ext.block = {
+  value : ('sc, 'ag) block_value_raw;
+  offset : 'ofs;
+  size : 'sz;
+}
+
 (* [Make_transparent] exposes [t]/[ty] as the underlying untyped svalue, so the
    extension helpers below can be written without ghost-typing ceremony. The
    [typed.mli] re-seals [t]/[ty] as abstract for the rest of Soteria Rust. *)
@@ -20,7 +34,9 @@ module T = struct
   type union = [ `Union ]
   type poly = [ `Poly ]
   type ptr_meta = [ sint | sptr_t ]
-  type any = [ sint | sfloat | sptr_f | tuple | enum | union | poly ]
+  type scalar = [ sint | sfloat | sptr_f | poly ]
+  type aggregate = [ tuple | enum | union ]
+  type any = [ scalar | aggregate ]
 
   let pp_sptr_f = Fmt.nop
   let pp_sptr_t = Fmt.nop
@@ -28,8 +44,15 @@ module T = struct
   let pp_enum = Fmt.nop
   let pp_union = Fmt.nop
   let pp_poly = Fmt.nop
+  let pp_scalar = Fmt.nop
+  let pp_aggregate = Fmt.nop
   let pp_any = Fmt.nop
 end
+
+type block_value = (T.scalar t, T.aggregate t) block_value_raw
+type block = (T.scalar t, T.aggregate t, T.sint t, T.nonzero t) block_raw
+
+let pp_block ft (block : block) = Ext0.pp_block ppa ppa ppa ppa ft block
 
 (** [CastError (value, expected, got)] *)
 exception CastError of T.any t * T.any ty * T.any ty
