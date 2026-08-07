@@ -7,10 +7,15 @@
     A solver relies on a value encoding, which is defined by the {!Value.S}
     signature as a way to encode values and types into SMT-LIB.
 
+    Encodings may require auxiliary global declarations (e.g. algebraic
+    datatypes); they request them through {!Decls.declare}, which solver
+    implementations handle.
+
     Soteria then provides an implementation of this interface for Z3 in {!Z3};
     more backends are planned for the future. *)
 
 module Solver_interface = Solver_interface
 module Value = Value
+module Decls = Decls
 module Z3 = Z3
 module Config = Config
