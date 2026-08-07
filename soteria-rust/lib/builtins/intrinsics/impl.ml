@@ -55,6 +55,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     if res then ok ()
     else error (`Panic (Some "core::intrinsics::assert_zero_valid"))
 
+  (** Re-expose [StateM.assume] to not have the intrinsic take precedence *)
+  let assume_sym = StateM.assume
+
   let assume ~b = assert_ b (`StdErr "core::intrinsics::assume with false")
 
   (* TODO: atomics are, for now, single-threaded *)
@@ -354,11 +357,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let p = Typed.float_precision fp in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res = Typed.cast_float res in
-    let* to_assume =
+    let+ () =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
-        ok [ Typed.Float.is_nan res ]
+        assume_sym [ Typed.Float.is_nan res ]
       else
-        ok
+        assume_sym
           [
             res <=.@ Typed.Float.one p;
             res >=.@ Typed.Float.neg (Typed.Float.one p);
@@ -366,7 +369,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
             ||@ (res ==.@ Typed.Float.one p);
           ]
     in
-    let+^ () = Rustsymex.assume to_assume in
     res
 
   let cosf16 ~x = cos_ F16 x
@@ -379,11 +381,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let p = Typed.float_precision fp in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res = Typed.cast_float res in
-    let* to_assume =
+    let+ () =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
-        ok [ Typed.Float.is_nan res ]
+        assume_sym [ Typed.Float.is_nan res ]
       else
-        ok
+        assume_sym
           [
             res <=.@ Typed.Float.one p;
             res >=.@ Typed.Float.neg (Typed.Float.one p);
@@ -391,7 +393,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
             ||@ (res ==.@ Typed.Float.zero p);
           ]
     in
-    let+^ () = Rustsymex.assume to_assume in
     res
 
   let sinf16 ~x = sin_ F16 x
@@ -423,6 +424,58 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let res = Option.value ~default:one (go None x (Z.abs n)) in
     if Z.lt n Z.zero then one /.@ res else res
 
+  (** Ankerl's optimised [pow] approximation, as modelled by CBMC in
+      [src/ansi-c/library/math.c] (function [pow]). See
+      https://martin.ankerl.com/2007/10/04/optimized-pow-approximation-for-java-and-c-c/
+  *)
+  let pow_approx fty x y =
+    let p = Typed.float_precision fty in
+    let size = Typed.FloatPrecision.size p in
+    let word = Stdlib.min size 32 in
+    let shift = size - word in
+    let mant = Typed.FloatPrecision.significand_bits p - 1 - shift in
+    let exp_bits = Typed.FloatPrecision.exponent_bits p in
+    let bias =
+      Z.mul (Z.shift_left Z.one mant)
+        (Z.pred (Z.shift_left Z.one (exp_bits - 1)))
+    in
+    let tuning =
+      Z.shift_right (Z.mul (Z.of_int 90253) (Z.shift_left Z.one mant)) 20
+    in
+    let* bits = Value_codec.float_to_bv_bits x in
+    let lead = if shift = 0 then bits else BV.extract shift (size - 1) bits in
+    let* c = lift_symex @@ Rustsymex.nondet (Typed.t_int word) in
+    let* () =
+      assume_sym
+        [
+          BV.leq ~signed:true (BV.mk_masked word (Z.neg tuning)) c;
+          BV.leq ~signed:true c (BV.mki word 1);
+        ]
+    in
+    (* wrapping is intended: this is bit arithmetic, not a Rust addition *)
+    let base = BV.no_ovf_unsafe (BV.add (BV.mk_masked word bias) c) in
+    let scaled =
+      BV.to_float ~rounding:NearestTiesToEven ~signed:true ~fp:p
+        (BV.no_ovf_unsafe (BV.sub lead base))
+    in
+    let mult = y *.@ scaled in
+    (* the exponent field would overflow past this, so saturate as CBMC does *)
+    let limit = Typed.Float.of_z fty (Z.shift_left Z.one 30) in
+    if%sat Typed.Float.abs mult >.@ limit then
+      if%sat y >.@ Typed.Float.zero p then ok (Typed.Float.infinity p)
+      else ok (Typed.Float.zero p)
+    else
+      let res_lead =
+        BV.no_ovf_unsafe
+          (BV.add
+             (BV.of_float ~rounding:Truncate ~signed:true ~size:word mult)
+             base)
+      in
+      let res_bits =
+        if shift = 0 then res_lead else BV.concat res_lead (BV.zero shift)
+      in
+      ok (BV.to_float_raw res_bits)
+
   let pow_ fp x y =
     let* () = floating_inaccuracy_warn () in
     let p = Typed.float_precision fp in
@@ -436,8 +489,17 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         match Typed.Float.approx2 Stdlib.Float.pow x y with
         | Some res -> ok res
         | None ->
-            let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-            Typed.cast_float res)
+            (* the approximation reads [x]'s exponent field as a logarithm, so
+               it only means anything for a positive, finite [x] *)
+            if%sat
+              x
+              >.@ Typed.Float.zero p
+              &&@ Typed.not (Typed.Float.is_infinite x)
+              &&@ Typed.not (Typed.Float.is_nan y)
+            then pow_approx fp x y
+            else
+              let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
+              Typed.cast_float res)
 
   let powf16 ~a ~x = pow_ F16 a x
   let powf32 ~a ~x = pow_ F32 a x
@@ -505,7 +567,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         else
           let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
           let res = Typed.cast_float res in
-          let+^ () = Rustsymex.assume [ res >.@ Typed.Float.zero p ] in
+          let+ () = assume_sym [ res >.@ Typed.Float.zero p ] in
           res
 
   let expf16 ~x = expf_ ~f:Stdlib.Float.exp F16 x
@@ -533,11 +595,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         else
           let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
           let res = Typed.cast_float res in
-          let* to_assume =
-            if%sat x <.@ exp then ok [ res <.@ Typed.Float.one p ]
-            else ok [ res >.@ Typed.Float.one p ]
+          let+ () =
+            if%sat x <.@ exp then assume_sym [ res <.@ Typed.Float.one p ]
+            else assume_sym [ res >.@ Typed.Float.one p ]
           in
-          let+^ () = Rustsymex.assume to_assume in
           res
 
   let e_value = Stdlib.Float.(to_string @@ exp 1.0)
