@@ -869,23 +869,27 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let r = Typed.cast_f t b in
     let bop, name =
       match bop with
-      | Add _ -> (( +.@ ), "core::intrinsics::fadd_fast")
-      | Sub _ -> (( -.@ ), "core::intrinsics::fsub_fast")
-      | Mul _ -> (( *.@ ), "core::intrinsics::fmul_fast")
-      | Div _ -> (( /.@ ), "core::intrinsics::fdiv_fast")
-      | Rem _ -> (Typed.Float.fmod, "core::intrinsics::frem_fast")
+      | Add _ -> ((fun x y -> ok (x +.@ y)), "core::intrinsics::fadd_fast")
+      | Sub _ -> ((fun x y -> ok (x -.@ y)), "core::intrinsics::fsub_fast")
+      | Mul _ -> ((fun x y -> ok (x *.@ y)), "core::intrinsics::fmul_fast")
+      | Div _ -> ((fun x y -> ok (x /.@ y)), "core::intrinsics::fdiv_fast")
+      | Rem _ ->
+          ( (fun x y ->
+              let+ r = Value_codec.optimised_rem x y in
+              Typed.Float.fmod_of_rem r x y),
+            "core::intrinsics::frem_fast" )
       | _ -> L.failwith "fast_float: invalid binop"
     in
     let is_finite f =
       Typed.((not (Float.is_nan f)) &&@ not (Float.is_infinite f))
     in
-    let res = bop l r in
+    let* res = bop l r in
     let+ () =
       assert_
-        (is_finite l &&@ is_finite r &&@ is_finite (bop l r))
+        (is_finite l &&@ is_finite r &&@ is_finite res)
         (`StdErr (name ^ ": operands and result must be finite"))
     in
-    res
+    Typed.as_any res
 
   let fadd_fast ~t ~a ~b = float_fast (Add OUB) ~t ~a ~b
   let fdiv_fast ~t ~a ~b = float_fast (Div OUB) ~t ~a ~b

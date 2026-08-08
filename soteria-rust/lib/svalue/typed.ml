@@ -236,6 +236,26 @@ module Float = struct
 
   let mk fty = mk (float_precision fty)
   let of_z fty = of_z (float_precision fty)
+
+  let rem_warning =
+    let warn =
+      String.Interned.intern
+        "a symbolic remainder operation on floats was performed on two \
+         symbolic operands. Solvers are typically very bad at reasoning about \
+         this, and it may lead to time outs."
+    in
+    fun x y ->
+      match (to_float_opt x, to_float_opt y) with
+      | None, None -> Soteria.Terminal.Warn.warn_once warn
+      | _ -> ()
+
+  let rem x y =
+    rem_warning x y;
+    rem x y
+
+  let fmod x y =
+    rem_warning x y;
+    fmod x y
 end
 
 (* This module exposes pointers as the two standalone embedded values, thin

@@ -64,7 +64,12 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
     | FIsPos -> Float.is_positive
     | FRound rm -> Float.round rm
 
-  let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct
+  let eval_nop : Nop.t -> t list -> t = function
+    | Distinct -> Bool.distinct
+    | Fma -> (
+        function
+        | [ a; b; c ] -> Float.fma a b c
+        | _ -> failwith "fp.fma expects three arguments")
 
   let rec eval ~force ~eval_var (x : t) : t =
     let eval' = eval ~force in
