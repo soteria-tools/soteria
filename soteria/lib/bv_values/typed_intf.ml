@@ -321,6 +321,11 @@ module type S = sig
     val rem : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
     val fmod : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 
+    val fmod_of_rem :
+      [< sfloat ] t -> [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    val fma : [< sfloat ] t -> [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
     (** The IEEE 754-2019 [min] and [max]: unlike {!minimum} and {!maximum}, a
         NaN is ignored, and [-0.0] is considered equal to [+0.0]. This is
         equivalent to:

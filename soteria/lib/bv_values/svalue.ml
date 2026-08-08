@@ -62,7 +62,8 @@ let int_size_of_size = function
   | _ -> None
 
 module Nop = struct
-  type t = Distinct [@@deriving eq, show { with_path = false }, ord, hash]
+  type t = Distinct | Fma
+  [@@deriving eq, show { with_path = false }, ord, hash]
 end
 
 module Unop = struct
@@ -729,6 +730,8 @@ module Make (V : Value_ext) () = struct
     val div : t -> t -> t
     val rem : t -> t -> t
     val fmod : t -> t -> t
+    val fmod_of_rem : t -> t -> t -> t
+    val fma : t -> t -> t -> t
     val min : t -> t -> t
     val max : t -> t -> t
     val minimum : t -> t -> t
@@ -2971,18 +2974,29 @@ module Make (V : Value_ext) () = struct
       | Unop (FNeg, v) -> v
       | _ -> Unop (FNeg, v) <| v.node.ty
 
+    (* [fp.fma]: [a * b + c] with a single rounding, which is what makes it
+       exact whenever the true result is representable -- an ordinary [a *.@ b
+       +.@ c] rounds twice. *)
+    let fma a b c =
+      match (a.node.kind, b.node.kind, c.node.kind) with
+      | Float fa, Float fb, Float fc -> Float (F.fma fa fb fc) <| a.node.ty
+      | _ -> Nop (Fma, [ a; b; c ]) <| a.node.ty
+
     (* C's [fmod] (and so Rust's [%] on floats), which truncates [x/y] where
        {!rem} rounds it to nearest. SMT-Lib has no such operator, so we emulate
        it. *)
+    (* [fmod] given an already-computed IEEE remainder, so a caller that has a
+       cheaper way to obtain one can reuse it. *)
+    let fmod_of_rem r v1 v2 =
+      let correction = Bool.ite (is_negative v1) (neg (abs v2)) (abs v2) in
+      Bool.ite
+        (Bool.sem_eq (is_negative r) (is_negative v1))
+        r (add r correction)
+
     let fmod v1 v2 =
       match (v1.node.kind, v2.node.kind) with
       | Float f1, Float f2 -> Float (F.fmod f1 f2) <| v1.node.ty
-      | _ ->
-          let r = rem v1 v2 in
-          let correction = Bool.ite (is_negative v1) (neg (abs v2)) (abs v2) in
-          Bool.ite
-            (Bool.sem_eq (is_negative r) (is_negative v1))
-            r (add r correction)
+      | _ -> fmod_of_rem (rem v1 v2) v1 v2
 
     (* [fp.min]/[fp.max]: the non-NaN argument wins, and which of [-0.0] and
        [+0.0] is returned is left unspecified. *)

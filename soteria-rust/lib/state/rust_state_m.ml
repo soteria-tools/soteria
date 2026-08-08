@@ -188,6 +188,9 @@ module type S = sig
     val nondet_valid : Types.ty -> (any v, 'env) monad
     val float_to_bv_bits : [< sfloat ] v -> ([> sint ] v, 'env) monad
 
+    val optimised_rem :
+      [< sfloat ] v -> [< sfloat ] v -> ([> sfloat ] v, 'env) monad
+
     val ref_tys_in :
       f:('acc -> Types.ty -> sptr_f v -> (sptr_f v * 'acc, 'env) monad) ->
       init:'acc ->
@@ -511,6 +514,7 @@ module Make (State : State_intf.S) :
 
     let[@inline] nondet_valid ty = lift_err (nondet_valid ty)
     let[@inline] float_to_bv_bits f = with_pointers_sym (float_to_bv_bits f)
+    let[@inline] optimised_rem x y = with_pointers_sym (optimised_rem x y)
 
     (* We painfully lift [Layout.ref_tys_in] to make it nicer to use without
        having to re-define. *)

@@ -662,6 +662,38 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
       let+ () = assume [ bv_f ==@ f ] in
       Typed.((bv : T.sint t :> [> T.sint ] t))
 
+(** The IEEE remainder of [x] by [y]. [fp.rem] is by a wide margin the costliest
+    operator of the FloatingPoint theory to bit-blast -- unusable at [f64] with
+    an unconstrained operand -- so we prefer [x - y*n] with [n] the integer
+    nearest [x/y] and a {e fused} multiply-add, which is far cheaper.
+
+    That form is not [fp.rem]: [n] may not be representable, and [x/y] may round
+    onto a tie and pick the neighbouring integer, either of which puts the
+    result out by a whole [y]. But when it is right it is exactly right, and
+    [correct] below detects that: a wrong [n] is off by at least one [y], so
+    [2|r| >= |y|], with equality only where [x/y] is exactly a half-integer --
+    and there round-to-nearest-ties-to-even makes the correct [n] the even one.
+
+    [if%sure] commits to the fast form only when that holds on every value the
+    path condition allows, and otherwise emits [fp.rem]; either way the result
+    is exact, and no branch is added. *)
+let optimised_rem (x : Typed.([< T.sfloat ] t)) (y : Typed.([< T.sfloat ] t)) :
+    Typed.([> T.sfloat ] t) DecayMap.SM.t =
+  let fp = Typed.Float.fp_of x in
+  let one = Typed.Float.one fp in
+  let two = one +.@ one in
+  let n = Typed.Float.round NearestTiesToEven (x /.@ y) in
+  let r = Typed.Float.fma (Typed.Float.neg y) n x in
+  let scaled = two *.@ Typed.Float.abs r in
+  let abs_y = Typed.Float.abs y in
+  let n_even =
+    let half = n /.@ two in
+    Typed.Float.round NearestTiesToEven half ==.@ half
+  in
+  let correct = scaled <.@ abs_y ||@ (scaled ==.@ abs_y &&@ n_even) in
+  if%sure correct then return (Typed.cast_float r)
+  else return (Typed.cast_float (Typed.Float.rem x y))
+
 (** Transmutes a singular rust value, without splitting. This is under the
     assumption that [size_of to_ty = size_of v], and both are primitives
     (literal or pointer). *)

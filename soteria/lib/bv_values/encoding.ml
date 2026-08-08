@@ -176,6 +176,9 @@ module Make (Typed : Typed_intf.Solver_value) = struct
         let v1 = encode_value_memo v1 in
         let v2 = encode_value_memo v2 in
         smt_of_binop binop v1 v2
+    | Nop (Fma, [ a; b; c ]) ->
+        fp_fma (encode_value_memo a) (encode_value_memo b) (encode_value_memo c)
+    | Nop (Fma, _) -> L.failwith "fp.fma expects three arguments"
     | Nop (Distinct, vs) ->
         let vs = List.map encode_value_memo vs in
         distinct vs
