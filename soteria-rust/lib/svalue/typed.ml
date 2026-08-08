@@ -242,7 +242,8 @@ module Float = struct
       String.Interned.intern
         "a symbolic remainder operation on floats was performed on two \
          symbolic operands. Solvers are typically very bad at reasoning about \
-         this, and it may lead to time outs."
+         this, and it may lead to time outs. See \
+         https://github.com/soteria-tools/soteria/issues/476"
     in
     fun x y ->
       match (to_float_opt x, to_float_opt y) with
