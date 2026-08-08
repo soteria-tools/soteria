@@ -704,6 +704,10 @@ module Make (V : Value_ext) () = struct
 
   module type Float = sig
     (* constructors *)
+
+    (** The raw node constructor; all others go through it. *)
+    val mk_raw : FloatPrecision.t -> F.t -> t
+
     val mk : FloatPrecision.t -> string -> t
     val mk_bits : FloatPrecision.t -> Z.t -> t
     val of_z : FloatPrecision.t -> Z.t -> t
@@ -2813,13 +2817,13 @@ module Make (V : Value_ext) () = struct
     let to_float ~rounding ~signed ~fp v =
       match (v.node.kind, int_size_of_size (size_of v.node.ty)) with
       | BitVec z, Some int_size ->
-          Float (F.int2float z int_size fp rounding ~signed) <| t_float fp
+          Float.mk_raw fp (F.int2float z int_size fp rounding ~signed)
       | _ -> Unop (FloatOfBv (rounding, signed, fp), v) <| t_float fp
 
     let to_float_raw v =
       let fp = FloatPrecision.of_size (size_of v.node.ty) in
       match v.node.kind with
-      | BitVec z -> Float (F.of_bits_z fp z) <| t_float fp
+      | BitVec z -> Float.mk_raw fp (F.of_bits_z fp z)
       | _ -> Unop (FloatOfBvRaw fp, v) <| t_float fp
   end
 
@@ -2867,12 +2871,12 @@ module Make (V : Value_ext) () = struct
           mk_raw fp (F.of_float fp (f x1 x2)))
         (to_float_opt v1) (to_float_opt v2)
 
-    let zero fp = Float (F.zero fp) <| t_float fp
-    let neg_zero fp = Float (F.neg_zero fp) <| t_float fp
-    let one fp = Float (F.one fp) <| t_float fp
-    let nan fp = Float (F.nan fp) <| t_float fp
-    let infinity fp = Float (F.infinity fp) <| t_float fp
-    let neg_infinity fp = Float (F.neg_infinity fp) <| t_float fp
+    let zero fp = mk_raw fp (F.zero fp)
+    let neg_zero fp = mk_raw fp (F.neg_zero fp)
+    let one fp = mk_raw fp (F.one fp)
+    let nan fp = mk_raw fp (F.nan fp)
+    let infinity fp = mk_raw fp (F.infinity fp)
+    let neg_infinity fp = mk_raw fp (F.neg_infinity fp)
 
     let to_bits_opt v =
       match v.node.kind with
@@ -2905,7 +2909,7 @@ module Make (V : Value_ext) () = struct
 
     let cast ~rounding ~fp v =
       match v.node.kind with
-      | Float f -> Float (F.convert rounding fp f) <| t_float fp
+      | Float f -> mk_raw fp (F.convert rounding fp f)
       | _ when FloatPrecision.equal (fp_of v) fp -> v
       | _ -> Unop (FloatOfFloat (rounding, fp), v) <| t_float fp
 
