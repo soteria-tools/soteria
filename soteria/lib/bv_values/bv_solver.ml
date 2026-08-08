@@ -420,9 +420,9 @@ struct
           let max = Z.(shift_left one n) in
           fun () -> Svalue.BitVec.mk n (Z.random_int max)
       | TBool -> fun () -> Svalue.Bool.of_bool (Random.bool ())
-      (* TODO: because we can't evaluate floats, we can never do a trivial check
-         for them. *)
-      | TFloat _ -> raise_notrace No_model
+      | TFloat p ->
+          let max = Z.(shift_left one (Svalue.FloatPrecision.size p)) in
+          fun () -> Svalue.Float.mk_bits p (Z.random_int max)
       (* TODO: figure this out *)
       | TPointer _ | TSeq _ | TExtension _ -> raise_notrace No_model
     in

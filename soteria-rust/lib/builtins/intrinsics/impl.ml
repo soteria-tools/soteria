@@ -55,6 +55,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     if res then ok ()
     else error (`Panic (Some "core::intrinsics::assert_zero_valid"))
 
+  (** Re-expose [StateM.assume] to not have the intrinsic take precedence *)
+  let assume_sym = StateM.assume
+
   let assume ~b = assert_ b (`StdErr "core::intrinsics::assume with false")
 
   (* TODO: atomics are, for now, single-threaded *)
@@ -351,21 +354,21 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let cos_ fp x =
     let* () = floating_inaccuracy_warn () in
+    let p = Typed.float_precision fp in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res = Typed.cast_float res in
-    let* to_assume =
+    let+ () =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
-        ok [ Typed.Float.is_nan res ]
+        assume_sym [ Typed.Float.is_nan res ]
       else
-        ok
+        assume_sym
           [
-            res <=.@ Typed.Float.mk fp "1.0";
-            res >=.@ Typed.Float.mk fp "-1.0";
-            Typed.not (x ==.@ Typed.Float.mk fp "0.0")
-            ||@ (res ==.@ Typed.Float.mk fp "1.0");
+            res <=.@ Typed.Float.one p;
+            res >=.@ Typed.Float.neg (Typed.Float.one p);
+            Typed.not (x ==.@ Typed.Float.zero p)
+            ||@ (res ==.@ Typed.Float.one p);
           ]
     in
-    let+^ () = Rustsymex.assume to_assume in
     res
 
   let cosf16 ~x = cos_ F16 x
@@ -375,21 +378,21 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let sin_ fp x =
     let* () = floating_inaccuracy_warn () in
+    let p = Typed.float_precision fp in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res = Typed.cast_float res in
-    let* to_assume =
+    let+ () =
       if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
-        ok [ Typed.Float.is_nan res ]
+        assume_sym [ Typed.Float.is_nan res ]
       else
-        ok
+        assume_sym
           [
-            res <=.@ Typed.Float.mk fp "1.0";
-            res >=.@ Typed.Float.mk fp "-1.0";
-            Typed.not (x ==.@ Typed.Float.mk fp "0.0")
-            ||@ (res ==.@ Typed.Float.mk fp "0.0");
+            res <=.@ Typed.Float.one p;
+            res >=.@ Typed.Float.neg (Typed.Float.one p);
+            Typed.not (x ==.@ Typed.Float.zero p)
+            ||@ (res ==.@ Typed.Float.zero p);
           ]
     in
-    let+^ () = Rustsymex.assume to_assume in
     res
 
   let sinf16 ~x = sin_ F16 x
@@ -397,10 +400,106 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let sinf64 ~x = sin_ F64 x
   let sinf128 ~x = sin_ F128 x
 
-  let pow_ fp _x _y =
+  (* Largest exponent we expand; beyond this the term grows without buying much,
+     so we fall back to a nondet. *)
+  let max_pow_expansion = 64
+
+  (* [x^n] by squaring, for a concrete [n]. This is what LLVM lowers a small
+     [powi] to anyway, and unlike a nondet it preserves what the caller usually
+     cares about -- that an even power is non-negative -- even when [x] is
+     symbolic. Squaring keeps the term logarithmic in [n]; [acc] stays [None]
+     until the first factor so that no identity multiply is emitted. *)
+  let pow_by_mult p (x : Typed.T.sfloat Typed.t) n =
+    let rec go acc b i =
+      if Z.equal i Z.zero then acc
+      else
+        let acc =
+          if Z.is_odd i then
+            Some (match acc with None -> b | Some a -> a *.@ b)
+          else acc
+        in
+        go acc (b *.@ b) (Z.shift_right i 1)
+    in
+    let one = Typed.Float.one p in
+    let res = Option.value ~default:one (go None x (Z.abs n)) in
+    if Z.lt n Z.zero then one /.@ res else res
+
+  (** Ankerl's optimised [pow] approximation, as modelled by CBMC in
+      [src/ansi-c/library/math.c] (function [pow]). See
+      https://martin.ankerl.com/2007/10/04/optimized-pow-approximation-for-java-and-c-c/
+  *)
+  let pow_approx fty x y =
+    let p = Typed.float_precision fty in
+    let size = Typed.FloatPrecision.size p in
+    let word = Stdlib.min size 32 in
+    let shift = size - word in
+    let mant = Typed.FloatPrecision.significand_bits p - 1 - shift in
+    let exp_bits = Typed.FloatPrecision.exponent_bits p in
+    let bias =
+      Z.mul (Z.shift_left Z.one mant)
+        (Z.pred (Z.shift_left Z.one (exp_bits - 1)))
+    in
+    let tuning =
+      Z.shift_right (Z.mul (Z.of_int 90253) (Z.shift_left Z.one mant)) 20
+    in
+    let* bits = Value_codec.float_to_bv_bits x in
+    let lead = if shift = 0 then bits else BV.extract shift (size - 1) bits in
+    let* c = lift_symex @@ Rustsymex.nondet (Typed.t_int word) in
+    let* () =
+      assume_sym
+        [
+          BV.leq ~signed:true (BV.mk_masked word (Z.neg tuning)) c;
+          BV.leq ~signed:true c (BV.mki word 1);
+        ]
+    in
+    (* wrapping is intended: this is bit arithmetic, not a Rust addition *)
+    let base = BV.no_ovf_unsafe (BV.add (BV.mk_masked word bias) c) in
+    let scaled =
+      BV.to_float ~rounding:NearestTiesToEven ~signed:true ~fp:p
+        (BV.no_ovf_unsafe (BV.sub lead base))
+    in
+    let mult = y *.@ scaled in
+    (* the exponent field would overflow past this, so saturate as CBMC does *)
+    let limit = Typed.Float.of_z fty (Z.shift_left Z.one 30) in
+    if%sat Typed.Float.abs mult >.@ limit then
+      if%sat y >.@ Typed.Float.zero p then ok (Typed.Float.infinity p)
+      else ok (Typed.Float.zero p)
+    else
+      let res_lead =
+        BV.no_ovf_unsafe
+          (BV.add
+             (BV.of_float ~rounding:Truncate ~signed:true ~size:word mult)
+             base)
+      in
+      let res_bits =
+        if shift = 0 then res_lead else BV.concat res_lead (BV.zero shift)
+      in
+      ok (BV.to_float_raw res_bits)
+
+  let pow_ fp x y =
     let* () = floating_inaccuracy_warn () in
-    let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-    Typed.cast_float res
+    let p = Typed.float_precision fp in
+    match Typed.Float.to_float_opt y with
+    | Some n
+      when Stdlib.Float.is_integer n
+           && Stdlib.Float.abs n <= Stdlib.float_of_int max_pow_expansion ->
+        ok
+          (Typed.cast_float (pow_by_mult p (Typed.cast_float x) (Z.of_float n)))
+    | _ -> (
+        match Typed.Float.approx2 Stdlib.Float.pow x y with
+        | Some res -> ok res
+        | None ->
+            (* the approximation reads [x]'s exponent field as a logarithm, so
+               it only means anything for a positive, finite [x] *)
+            if%sat
+              x
+              >.@ Typed.Float.zero p
+              &&@ Typed.not (Typed.Float.is_infinite x)
+              &&@ Typed.not (Typed.Float.is_nan y)
+            then pow_approx fp x y
+            else
+              let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
+              Typed.cast_float res)
 
   let powf16 ~a ~x = pow_ F16 a x
   let powf32 ~a ~x = pow_ F32 a x
@@ -409,89 +508,112 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let powi_ fp x y =
     let* () = floating_inaccuracy_warn () in
-    if%sat y ==@ U32.(0s) then ok (Typed.Float.mk fp "1.0")
-    else if%sat y ==@ U32.(1s) then ok (Typed.cast_float x)
-    else
-      let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-      Typed.cast_float res
+    let p = Typed.float_precision fp in
+    let n =
+      Option.map (Typed.BitVec.bv_to_z (Signed I32)) (Typed.BitVec.to_z y)
+    in
+    match n with
+    | Some n when Z.leq (Z.abs n) (Z.of_int max_pow_expansion) ->
+        ok (Typed.cast_float (pow_by_mult p (Typed.cast_float x) n))
+    | _ ->
+        let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
+        Typed.cast_float res
 
   let powif16 ~a ~x = powi_ F16 a x
   let powif32 ~a ~x = powi_ F32 a x
   let powif64 ~a ~x = powi_ F64 a x
   let powif128 ~a ~x = powi_ F128 a x
+  let sqrt_ ~x = ok (Typed.Float.sqrt x)
+  let sqrtf16 = sqrt_
+  let sqrtf32 = sqrt_
+  let sqrtf64 = sqrt_
+  let sqrtf128 = sqrt_
+  let minimum_number_nsz ~x ~y = ok (Typed.Float.min x y)
+  let minimum_number_nsz_f16 = minimum_number_nsz
+  let minimum_number_nsz_f32 = minimum_number_nsz
+  let minimum_number_nsz_f64 = minimum_number_nsz
+  let minimum_number_nsz_f128 = minimum_number_nsz
+  let maximum_number_nsz ~x ~y = ok (Typed.Float.max x y)
+  let maximum_number_nsz_f16 = maximum_number_nsz
+  let maximum_number_nsz_f32 = maximum_number_nsz
+  let maximum_number_nsz_f64 = maximum_number_nsz
+  let maximum_number_nsz_f128 = maximum_number_nsz
+  let minimum_ ~x ~y = ok (Typed.Float.minimum x y)
+  let minimumf16 = minimum_
+  let minimumf32 = minimum_
+  let minimumf64 = minimum_
+  let minimumf128 = minimum_
+  let maximum_ ~x ~y = ok (Typed.Float.maximum x y)
+  let maximumf16 = maximum_
+  let maximumf32 = maximum_
+  let maximumf64 = maximum_
+  let maximumf128 = maximum_
 
-  let sqrt_ fp x =
+  (* A concrete argument is evaluated with the host's libm, which pins the
+     result far more tightly than the constraints below; a symbolic one falls
+     back to the range the function is known to lie in. *)
+  let expf_ ~f fp x =
     let* () = floating_inaccuracy_warn () in
-    if%sat x <.@ Typed.Float.mk fp "0.0" then ok (Typed.Float.mk fp "NaN")
-    else if%sat
-      Typed.Float.is_infinite x
-      ||@ (x ==.@ Typed.Float.mk fp "0.0")
-      ||@ Typed.Float.is_nan x
-    then ok (Typed.cast_float x)
-    else
-      let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-      Typed.cast_float res
+    let p = Typed.float_precision fp in
+    match Typed.Float.approx f x with
+    | Some res -> ok res
+    | None ->
+        if%sat
+          Typed.Float.is_nan x
+          ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.zero p))
+        then ok (Typed.cast_float x)
+        else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.zero p)
+        then ok (Typed.Float.zero p)
+        else
+          let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
+          let res = Typed.cast_float res in
+          let+ () = assume_sym [ res >.@ Typed.Float.zero p ] in
+          res
 
-  let sqrtf16 ~x = sqrt_ F16 x
-  let sqrtf32 ~x = sqrt_ F32 x
-  let sqrtf64 ~x = sqrt_ F64 x
-  let sqrtf128 ~x = sqrt_ F128 x
+  let expf16 ~x = expf_ ~f:Stdlib.Float.exp F16 x
+  let expf32 ~x = expf_ ~f:Stdlib.Float.exp F32 x
+  let expf64 ~x = expf_ ~f:Stdlib.Float.exp F64 x
+  let expf128 ~x = expf_ ~f:Stdlib.Float.exp F128 x
+  let exp2 = Stdlib.Float.pow 2.0
+  let exp2f16 ~x = expf_ ~f:exp2 F16 x
+  let exp2f32 ~x = expf_ ~f:exp2 F32 x
+  let exp2f64 ~x = expf_ ~f:exp2 F64 x
+  let exp2f128 ~x = expf_ ~f:exp2 F128 x
 
-  let expf_ fp x =
+  let logf_ ~exp ~f fp x =
     let* () = floating_inaccuracy_warn () in
-    if%sat
-      Typed.Float.is_nan x
-      ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.mk fp "0.0"))
-    then ok (Typed.cast_float x)
-    else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.mk fp "0.0")
-    then ok (Typed.Float.mk fp "0.0")
-    else
-      let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-      let res = Typed.cast_float res in
-      let+^ () = Rustsymex.assume [ res >.@ Typed.Float.mk fp "0.0" ] in
-      res
+    let p = Typed.float_precision fp in
+    match Typed.Float.approx f x with
+    | Some res -> ok res
+    | None ->
+        let exp = Typed.Float.mk fp exp in
+        if%sat x <.@ Typed.Float.zero p then ok (Typed.Float.nan p)
+        else if%sat x ==.@ Typed.Float.zero p then
+          ok (Typed.Float.neg_infinity p)
+        else if%sat Typed.Float.is_infinite x then ok (Typed.Float.infinity p)
+        else if%sat x ==.@ exp then ok (Typed.Float.one p)
+        else
+          let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
+          let res = Typed.cast_float res in
+          let+ () =
+            if%sat x <.@ exp then assume_sym [ res <.@ Typed.Float.one p ]
+            else assume_sym [ res >.@ Typed.Float.one p ]
+          in
+          res
 
-  let expf16 ~x = expf_ F16 x
-  let expf32 ~x = expf_ F32 x
-  let expf64 ~x = expf_ F64 x
-  let expf128 ~x = expf_ F128 x
-
-  (* we also approximate 2^x as e^x *)
-  let exp2f16 ~x = expf_ F16 x
-  let exp2f32 ~x = expf_ F32 x
-  let exp2f64 ~x = expf_ F64 x
-  let exp2f128 ~x = expf_ F128 x
-
-  let logf_ ~exp fp x =
-    let* () = floating_inaccuracy_warn () in
-    let exp = Typed.Float.mk fp exp in
-    if%sat x <.@ Typed.Float.mk fp "0.0" then ok (Typed.Float.mk fp "NaN")
-    else if%sat x ==.@ Typed.Float.mk fp "0.0" then
-      ok (Typed.Float.mk fp "-inf")
-    else if%sat Typed.Float.is_infinite x then ok (Typed.Float.mk fp "inf")
-    else if%sat x ==.@ exp then ok (Typed.Float.mk fp "1.0")
-    else
-      let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-      let res = Typed.cast_float res in
-      let* to_assume =
-        if%sat x <.@ exp then ok [ res <.@ Typed.Float.mk fp "1.0" ]
-        else ok [ res >.@ Typed.Float.mk fp "1.0" ]
-      in
-      let+^ () = Rustsymex.assume to_assume in
-      res
-
-  let logf16 ~x = logf_ ~exp:"2.7182818" F16 x
-  let logf32 ~x = logf_ ~exp:"2.7182818" F32 x
-  let logf64 ~x = logf_ ~exp:"2.7182818" F64 x
-  let logf128 ~x = logf_ ~exp:"2.7182818" F128 x
-  let log10f16 ~x = logf_ ~exp:"10" F16 x
-  let log10f32 ~x = logf_ ~exp:"10" F32 x
-  let log10f64 ~x = logf_ ~exp:"10" F64 x
-  let log10f128 ~x = logf_ ~exp:"10" F128 x
-  let log2f16 ~x = logf_ ~exp:"2" F16 x
-  let log2f32 ~x = logf_ ~exp:"2" F32 x
-  let log2f64 ~x = logf_ ~exp:"2" F64 x
-  let log2f128 ~x = logf_ ~exp:"2" F128 x
+  let e_value = Stdlib.Float.(to_string @@ exp 1.0)
+  let logf16 ~x = logf_ ~exp:e_value ~f:Stdlib.Float.log F16 x
+  let logf32 ~x = logf_ ~exp:e_value ~f:Stdlib.Float.log F32 x
+  let logf64 ~x = logf_ ~exp:e_value ~f:Stdlib.Float.log F64 x
+  let logf128 ~x = logf_ ~exp:e_value ~f:Stdlib.Float.log F128 x
+  let log10f16 ~x = logf_ ~exp:"10" ~f:Stdlib.Float.log10 F16 x
+  let log10f32 ~x = logf_ ~exp:"10" ~f:Stdlib.Float.log10 F32 x
+  let log10f64 ~x = logf_ ~exp:"10" ~f:Stdlib.Float.log10 F64 x
+  let log10f128 ~x = logf_ ~exp:"10" ~f:Stdlib.Float.log10 F128 x
+  let log2f16 ~x = logf_ ~exp:"2" ~f:Stdlib.Float.log2 F16 x
+  let log2f32 ~x = logf_ ~exp:"2" ~f:Stdlib.Float.log2 F32 x
+  let log2f64 ~x = logf_ ~exp:"2" ~f:Stdlib.Float.log2 F64 x
+  let log2f128 ~x = logf_ ~exp:"2" ~f:Stdlib.Float.log2 F128 x
   let[@inline] float_rounding rm x = ok (Typed.Float.round rm x)
   let ceilf16 ~x = float_rounding Ceil x
   let ceilf32 ~x = float_rounding Ceil x
@@ -603,8 +725,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     State.store to_ t v_l
 
   let copy_sign ~x ~y =
-    let zero = Typed.Float.like y 0.0 in
-    if%sat[@lname "copy_sign < 0"] [@rname "copy_sign >=0"] y <.@ zero then
+    if%sat Typed.Float.is_negative y then
       ok (Typed.Float.neg (Typed.Float.abs x))
     else ok (Typed.Float.abs x)
 
@@ -748,23 +869,27 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let r = Typed.cast_f t b in
     let bop, name =
       match bop with
-      | Add _ -> (( +.@ ), "core::intrinsics::fadd_fast")
-      | Sub _ -> (( -.@ ), "core::intrinsics::fsub_fast")
-      | Mul _ -> (( *.@ ), "core::intrinsics::fmul_fast")
-      | Div _ -> (( /.@ ), "core::intrinsics::fdiv_fast")
-      | Rem _ -> (Typed.Float.rem, "core::intrinsics::frem_fast")
+      | Add _ -> ((fun x y -> ok (x +.@ y)), "core::intrinsics::fadd_fast")
+      | Sub _ -> ((fun x y -> ok (x -.@ y)), "core::intrinsics::fsub_fast")
+      | Mul _ -> ((fun x y -> ok (x *.@ y)), "core::intrinsics::fmul_fast")
+      | Div _ -> ((fun x y -> ok (x /.@ y)), "core::intrinsics::fdiv_fast")
+      | Rem _ ->
+          ( (fun x y ->
+              let+ r = Value_codec.optimised_rem x y in
+              Typed.Float.fmod_of_rem r x y),
+            "core::intrinsics::frem_fast" )
       | _ -> L.failwith "fast_float: invalid binop"
     in
     let is_finite f =
       Typed.((not (Float.is_nan f)) &&@ not (Float.is_infinite f))
     in
-    let res = bop l r in
+    let* res = bop l r in
     let+ () =
       assert_
-        (is_finite l &&@ is_finite r &&@ is_finite (bop l r))
+        (is_finite l &&@ is_finite r &&@ is_finite res)
         (`StdErr (name ^ ": operands and result must be finite"))
     in
-    res
+    Typed.as_any res
 
   let fadd_fast ~t ~a ~b = float_fast (Add OUB) ~t ~a ~b
   let fdiv_fast ~t ~a ~b = float_fast (Div OUB) ~t ~a ~b
@@ -783,10 +908,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     let signed = Layout.is_signed ity in
     let size = 8 * Layout.size_of_literal_ty ity in
-    let max = Z.succ @@ Layout.max_value_z ity in
-    let min = Z.pred @@ Layout.min_value_z ity in
-    let max = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float max in
-    let min = Typed.Float.mk fty @@ Stdlib.Float.to_string @@ Z.to_float min in
+    let max = Typed.Float.of_z fty (Z.succ @@ Layout.max_value_z ity) in
+    let min = Typed.Float.of_z fty (Z.pred @@ Layout.min_value_z ity) in
     (* we use min-1 and max+1, to be able to have a strict inequality, which
        avoids issues in cases of float precision loss (I think?) *)
     let+ () =
@@ -1070,16 +1193,19 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   (* A SIMD vector is a `#[repr(simd)]` struct wrapping a `[T; N]` array, so its
      value is [Tuple [ Tuple lanes ]]. *)
-  let simd_lanes elem_ty (lanes : Typed.([< T.any ] t)) =
+  let simd_lanes_with cast (lanes : Typed.([< T.any ] t)) =
     match%ty lanes with
     | TExtension (TTuple [ TExtension (TArray _) ]) ->
         let wrapper = Typed.Adt.as_tuple1 @@ lanes in
         let elems = Typed.Adt.as_array @@ Typed.cast_array wrapper in
-        ok (Iarray.map (Typed.cast_lit elem_ty) elems)
+        ok (Iarray.map cast elems)
     | _ ->
         not_impl
           "unsupported SIMD type definition, expected a struct wrapping a [T; \
            N] array"
+
+  let simd_lanes elem_ty = simd_lanes_with (Typed.cast_lit elem_ty)
+  let simd_float_lanes fty = simd_lanes_with (Typed.cast_f fty)
 
   let simd_of_lanes ty lanes =
     Typed.Adt.mk_tuple [ Typed.Adt.mk_array (TLiteral ty) lanes ]
@@ -1107,27 +1233,42 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   (* Elementwise comparison producing a mask: each lane of the result is
      all-ones (if the comparison holds) or all-zeros, with the width of [u]'s
      element. *)
-  let simd_cmp cmp ~u ~x ~y =
-    let lit = simd_elem_lit u in
-    let width = 8 * Layout.size_of_literal_ty lit in
+  let simd_cmp ~int_cmp ~float_cmp ~t ~u ~x ~y =
+    let elt = simd_elem_lit t in
+    let mask = simd_elem_lit u in
+    let width = 8 * Layout.size_of_literal_ty mask in
     let ones = BV.mk width Z.(pred (one lsl width)) in
     let zeros = BV.mki width 0 in
-    let lane a b = Typed.ite (cmp a b) ones zeros in
-    let* x = simd_lanes lit x in
-    let+ y = simd_lanes lit y in
-    simd_of_lanes lit (Iarray.map2 lane x y)
+    let lane cmp a b = Typed.ite (cmp a b) ones zeros in
+    match elt with
+    | TFloat fty ->
+        let* x = simd_float_lanes fty x in
+        let+ y = simd_float_lanes fty y in
+        simd_of_lanes mask (Iarray.map2 (lane float_cmp) x y)
+    | _ ->
+        let* x = simd_lanes elt x in
+        let+ y = simd_lanes elt y in
+        simd_of_lanes mask (Iarray.map2 (lane int_cmp) x y)
 
-  let simd_eq ~t:_ ~u ~x ~y = simd_cmp Typed.sem_eq ~u ~x ~y
-  let simd_ne ~t:_ ~u ~x ~y = simd_cmp (fun a b -> Typed.not (a ==@ b)) ~u ~x ~y
+  let simd_eq ~t ~u ~x ~y =
+    simd_cmp ~int_cmp:Typed.sem_eq ~float_cmp:Typed.Float.eq ~t ~u ~x ~y
 
-  let simd_signed_cmp cmp ~t ~u ~x ~y =
-    let signed = Layout.is_signed (simd_elem_lit t) in
-    simd_cmp (fun a b -> cmp ~signed a b) ~u ~x ~y
+  let simd_ne ~t ~u ~x ~y =
+    simd_cmp
+      ~int_cmp:(fun a b -> Typed.not (a ==@ b))
+      ~float_cmp:(fun a b -> Typed.not (Typed.Float.eq a b))
+      ~t ~u ~x ~y
 
-  let simd_ge ~t ~u ~x ~y = simd_signed_cmp BV.geq ~t ~u ~x ~y
-  let simd_gt ~t ~u ~x ~y = simd_signed_cmp BV.gt ~t ~u ~x ~y
-  let simd_le ~t ~u ~x ~y = simd_signed_cmp BV.leq ~t ~u ~x ~y
-  let simd_lt ~t ~u ~x ~y = simd_signed_cmp BV.lt ~t ~u ~x ~y
+  let simd_ordered_cmp int_cmp float_cmp ~t ~u ~x ~y =
+    let int_cmp a b =
+      int_cmp ~signed:(Layout.is_signed (simd_elem_lit t)) a b
+    in
+    simd_cmp ~int_cmp ~float_cmp:(fun a b -> float_cmp a b) ~t ~u ~x ~y
+
+  let simd_ge ~t ~u ~x ~y = simd_ordered_cmp BV.geq Typed.Float.geq ~t ~u ~x ~y
+  let simd_gt ~t ~u ~x ~y = simd_ordered_cmp BV.gt Typed.Float.gt ~t ~u ~x ~y
+  let simd_le ~t ~u ~x ~y = simd_ordered_cmp BV.leq Typed.Float.leq ~t ~u ~x ~y
+  let simd_lt ~t ~u ~x ~y = simd_ordered_cmp BV.lt Typed.Float.lt ~t ~u ~x ~y
 
   (* Elementwise binary operation over two vectors of the same shape. *)
   let simd_binop t op x y =

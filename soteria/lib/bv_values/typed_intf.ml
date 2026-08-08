@@ -284,11 +284,30 @@ module type S = sig
 
   module Float : sig
     val mk : FloatPrecision.t -> string -> [> sfloat ] t
-    val f16 : float -> [> sfloat ] t
-    val f32 : float -> [> sfloat ] t
-    val f64 : float -> [> sfloat ] t
-    val f128 : float -> [> sfloat ] t
-    val like : [< sfloat ] t -> float -> [> sfloat ] t
+    val mk_bits : FloatPrecision.t -> Z.t -> [> sfloat ] t
+    val of_z : FloatPrecision.t -> Z.t -> [> sfloat ] t
+
+    (** We cannot represent a symbolic float as a bitvector, for lack of an
+        SMT-LIB function for it. However, we can return the bitvector
+        representation of a float if it is concrete. *)
+    val to_bits_opt : [< sfloat ] t -> [> sint ] t option
+
+    val to_float_opt : [< sfloat ] t -> float option
+    val sign_bit_opt : [< sfloat ] t -> bool option
+    val approx : (float -> float) -> [< sfloat ] t -> [> sfloat ] t option
+
+    val approx2 :
+      (float -> float -> float) ->
+      [< sfloat ] t ->
+      [< sfloat ] t ->
+      [> sfloat ] t option
+
+    val zero : FloatPrecision.t -> [> sfloat ] t
+    val neg_zero : FloatPrecision.t -> [> sfloat ] t
+    val one : FloatPrecision.t -> [> sfloat ] t
+    val nan : FloatPrecision.t -> [> sfloat ] t
+    val infinity : FloatPrecision.t -> [> sfloat ] t
+    val neg_infinity : FloatPrecision.t -> [> sfloat ] t
     val fp_of : [< sfloat ] t -> FloatPrecision.t
     val eq : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
     val geq : [< sfloat ] t -> [< sfloat ] t -> [> sbool ] t
@@ -300,13 +319,63 @@ module type S = sig
     val mul : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
     val div : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
     val rem : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+    val fmod : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    val fmod_of_rem :
+      [< sfloat ] t -> [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    val fma : [< sfloat ] t -> [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    (** The IEEE 754-2019 [min] and [max]: unlike {!minimum} and {!maximum}, a
+        NaN is ignored, and [-0.0] is considered equal to [+0.0]. This is
+        equivalent to:
+        {@ocaml[
+        let min x y =
+          if is_nan x then y
+          else if is_nan y then x
+          else if lt x y then x
+          else if gt x y then y
+          else if is_negative x then x
+          else y
+        ]} *)
+    val min : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    (** IEEE 754-2019 [max]. See {!min} for the differences with {!maximum}. *)
+    val max : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    (** The IEEE 754-2019 [minimum]: unlike {!min} a NaN propagates, and [-0.0]
+        is strictly below [+0.0]. This is equivalent to:
+        {@ocaml[
+        let minimum x y =
+          if is_nan x || is_nan y then nan
+          else if lt x y then x
+          else if gt x y then y
+          else if is_negative x then x
+          else y
+        ]} *)
+    val minimum : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
+    (** IEEE-754-2019 [maximum]. See {!minimum} for the differences with {!max}.
+    *)
+    val maximum : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
+
     val abs : [< sfloat ] t -> [> sfloat ] t
     val neg : [< sfloat ] t -> [> sfloat ] t
+    val sqrt : [< sfloat ] t -> [> sfloat ] t
     val is_normal : [< sfloat ] t -> [> sbool ] t
     val is_subnormal : [< sfloat ] t -> [> sbool ] t
     val is_zero : [< sfloat ] t -> [> sbool ] t
     val is_infinite : [< sfloat ] t -> [> sbool ] t
     val is_nan : [< sfloat ] t -> [> sbool ] t
+    val is_negative : [< sfloat ] t -> [> sbool ] t
+    val is_positive : [< sfloat ] t -> [> sbool ] t
+
+    val cast :
+      rounding:RoundingMode.t ->
+      fp:FloatPrecision.t ->
+      [< sfloat ] t ->
+      [> sfloat ] t
+
     val round : RoundingMode.t -> [< sfloat ] t -> [> sfloat ] t
   end
 

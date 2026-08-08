@@ -79,12 +79,14 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     Typed.((not (Float.is_nan v)) &&@ not (Float.is_infinite v))
 
   let float_is_sign sign v =
-    let res =
-      match sign with
-      | `Pos -> Typed.Float.(leq (like v 0.) v)
-      | `Neg -> Typed.Float.(leq v (like v (-0.)))
-    in
-    Typed.(res ||@ Float.is_nan v)
+    (* read the concrete bit to avoid the [is_nan] approximation *)
+    match Typed.Float.sign_bit_opt v with
+    | Some neg ->
+        Typed.of_bool (match sign with `Neg -> neg | `Pos -> not neg)
+    | None -> (
+        match sign with
+        | `Pos -> Typed.Float.(is_positive v ||@ is_nan v)
+        | `Neg -> Typed.Float.(is_negative v ||@ is_nan v))
 
   (* ---- f16 ----- *)
 

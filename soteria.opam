@@ -30,6 +30,7 @@ depends: [
   "progress" {>= "0.5.0"}
   "grace" {= "0.3.0"}
   "zarith" {>= "1.13"}
+  "floatml"
   "odoc" {with-doc}
   "mdx" {with-test}
   "alcotest" {with-test}
@@ -64,3 +65,7 @@ build: [
 ]
 dev-repo: "git+https://github.com/soteria-tools/soteria.git"
 x-maintenance-intent: ["(latest)"]
+# Temporary, until FloatML is merged: https://github.com/ocaml/opam-repository/pull/30437
+pin-depends: [
+  ["floatml.~dev" "git+https://github.com/N1ark/floatml#96b7b26245cf0fab719f0f664b9387cdb6b91eca"]
+]

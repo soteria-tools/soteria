@@ -161,6 +161,10 @@ let cast_union ?adt v =
 module BitVec = struct
   include BitVec
 
+  let bv_to_z (ity : Types.integer_type) =
+    let signed = match ity with Signed _ -> true | Unsigned _ -> false in
+    BitVec.bv_to_z signed (size_of_literal_ty (lit_of_int_ty ity) * 8)
+
   let mk_lit ty = BitVec.mk_masked (size_of_literal_ty ty * 8)
   let mk_lit_nz ty = BitVec.mk_nz (size_of_literal_ty ty * 8)
   let mki_lit ty = BitVec.mki_masked (size_of_literal_ty ty * 8)
@@ -231,6 +235,28 @@ module Float = struct
   include Float
 
   let mk fty = mk (float_precision fty)
+  let of_z fty = of_z (float_precision fty)
+
+  let rem_warning =
+    let warn =
+      String.Interned.intern
+        "a symbolic remainder operation on floats was performed on two \
+         symbolic operands. Solvers are typically very bad at reasoning about \
+         this, and it may lead to time outs. See \
+         https://github.com/soteria-tools/soteria/issues/476"
+    in
+    fun x y ->
+      match (to_float_opt x, to_float_opt y) with
+      | None, None -> Soteria.Terminal.Warn.warn_once warn
+      | _ -> ()
+
+  let rem x y =
+    rem_warning x y;
+    rem x y
+
+  let fmod x y =
+    rem_warning x y;
+    fmod x y
 end
 
 (* This module exposes pointers as the two standalone embedded values, thin
