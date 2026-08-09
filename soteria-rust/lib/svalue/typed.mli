@@ -101,10 +101,6 @@ val cast_nonzero : [< T.sint ] t -> [> T.nonzero ] t
     checked coercion: it cannot change the underlying value's kind. *)
 val as_any : [< T.any ] t -> [> T.any ] t
 
-(* helpers *)
-
-val float_precision : Values.float_type -> FloatPrecision.t
-
 module BitVec : sig
   include module type of BitVec
 
@@ -139,15 +135,44 @@ module BitVec : sig
   val min : signed:bool -> ([< T.sint ] as 'a) t -> 'a t -> 'a t
   val max : signed:bool -> ([< T.sint ] as 'a) t -> 'a t -> 'a t
   val sure_is_zero : [< T.sint ] t -> bool
+
+  (* floats *)
+
+  val to_float :
+    rounding:RoundingMode.t ->
+    signed:bool ->
+    fp:Values.float_type ->
+    [< T.sint ] t ->
+    [> T.sfloat ] t
 end
 
 module BV = BitVec
+
+module FloatPrecision : sig
+  include module type of FloatPrecision
+
+  val size : Values.float_type -> int
+  val significand_bits : Values.float_type -> int
+  val exponent_bits : Values.float_type -> int
+end
 
 module Float : sig
   include module type of Float
 
   val mk : Types.float_type -> string -> [> T.sfloat ] t
+  val zero : Types.float_type -> [> T.sfloat ] t
+  val one : Types.float_type -> [> T.sfloat ] t
+  val infinity : Types.float_type -> [> T.sfloat ] t
+  val neg_infinity : Types.float_type -> [> T.sfloat ] t
+  val nan : Types.float_type -> [> T.sfloat ] t
   val of_z : Types.float_type -> Z.t -> [> T.sfloat ] t
+  val fp_of : [< T.sfloat ] t -> Types.float_type
+
+  val cast :
+    rounding:RoundingMode.t ->
+    fp:Types.float_type ->
+    [< T.sfloat ] t ->
+    [> T.sfloat ] t
 end
 
 module Ptr : sig

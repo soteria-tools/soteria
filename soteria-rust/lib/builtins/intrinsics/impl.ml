@@ -350,7 +350,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let cos_ fp x =
     let* () = floating_inaccuracy_warn () in
-    let p = Typed.float_precision fp in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res = Typed.cast_float res in
     let+ () =
@@ -359,10 +358,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       else
         assume_sym
           [
-            res <=.@ Typed.Float.one p;
-            res >=.@ Typed.Float.neg (Typed.Float.one p);
-            Typed.not (x ==.@ Typed.Float.zero p)
-            ||@ (res ==.@ Typed.Float.one p);
+            res <=.@ Typed.Float.one fp;
+            res >=.@ Typed.Float.neg (Typed.Float.one fp);
+            Typed.not (x ==.@ Typed.Float.zero fp)
+            ||@ (res ==.@ Typed.Float.one fp);
           ]
     in
     res
@@ -374,7 +373,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let sin_ fp x =
     let* () = floating_inaccuracy_warn () in
-    let p = Typed.float_precision fp in
     let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
     let res = Typed.cast_float res in
     let+ () =
@@ -383,10 +381,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       else
         assume_sym
           [
-            res <=.@ Typed.Float.one p;
-            res >=.@ Typed.Float.neg (Typed.Float.one p);
-            Typed.not (x ==.@ Typed.Float.zero p)
-            ||@ (res ==.@ Typed.Float.zero p);
+            res <=.@ Typed.Float.one fp;
+            res >=.@ Typed.Float.neg (Typed.Float.one fp);
+            Typed.not (x ==.@ Typed.Float.zero fp)
+            ||@ (res ==.@ Typed.Float.zero fp);
           ]
     in
     res
@@ -405,7 +403,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      cares about -- that an even power is non-negative -- even when [x] is
      symbolic. Squaring keeps the term logarithmic in [n]; [acc] stays [None]
      until the first factor so that no identity multiply is emitted. *)
-  let pow_by_mult p (x : Typed.T.sfloat Typed.t) n =
+  let pow_by_mult fp (x : Typed.T.sfloat Typed.t) n =
     let rec go acc b i =
       if Z.equal i Z.zero then acc
       else
@@ -416,7 +414,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         in
         go acc (b *.@ b) (Z.shift_right i 1)
     in
-    let one = Typed.Float.one p in
+    let one = Typed.Float.one fp in
     let res = Option.value ~default:one (go None x (Z.abs n)) in
     if Z.lt n Z.zero then one /.@ res else res
 
@@ -424,13 +422,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       [src/ansi-c/library/math.c] (function [pow]). See
       https://martin.ankerl.com/2007/10/04/optimized-pow-approximation-for-java-and-c-c/
   *)
-  let pow_approx fty x y =
-    let p = Typed.float_precision fty in
-    let size = Typed.FloatPrecision.size p in
+  let pow_approx fp x y =
+    let size = Typed.FloatPrecision.size fp in
     let word = Stdlib.min size 32 in
     let shift = size - word in
-    let mant = Typed.FloatPrecision.significand_bits p - 1 - shift in
-    let exp_bits = Typed.FloatPrecision.exponent_bits p in
+    let mant = Typed.FloatPrecision.significand_bits fp - 1 - shift in
+    let exp_bits = Typed.FloatPrecision.exponent_bits fp in
     let bias =
       Z.mul (Z.shift_left Z.one mant)
         (Z.pred (Z.shift_left Z.one (exp_bits - 1)))
@@ -451,15 +448,15 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     (* wrapping is intended: this is bit arithmetic, not a Rust addition *)
     let base = BV.no_ovf_unsafe (BV.add (BV.mk_masked word bias) c) in
     let scaled =
-      BV.to_float ~rounding:NearestTiesToEven ~signed:true ~fp:p
+      BV.to_float ~rounding:NearestTiesToEven ~signed:true ~fp
         (BV.no_ovf_unsafe (BV.sub lead base))
     in
     let mult = y *.@ scaled in
     (* the exponent field would overflow past this, so saturate as CBMC does *)
-    let limit = Typed.Float.of_z fty (Z.shift_left Z.one 30) in
+    let limit = Typed.Float.of_z fp (Z.shift_left Z.one 30) in
     if%sat Typed.Float.abs mult >.@ limit then
-      if%sat y >.@ Typed.Float.zero p then ok (Typed.Float.infinity p)
-      else ok (Typed.Float.zero p)
+      if%sat y >.@ Typed.Float.zero fp then ok (Typed.Float.infinity fp)
+      else ok (Typed.Float.zero fp)
     else
       let res_lead =
         BV.no_ovf_unsafe
@@ -474,13 +471,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let pow_ fp x y =
     let* () = floating_inaccuracy_warn () in
-    let p = Typed.float_precision fp in
     match Typed.Float.to_float_opt y with
     | Some n
       when Stdlib.Float.is_integer n
            && Stdlib.Float.abs n <= Stdlib.float_of_int max_pow_expansion ->
         ok
-          (Typed.cast_float (pow_by_mult p (Typed.cast_float x) (Z.of_float n)))
+          (Typed.cast_float
+             (pow_by_mult fp (Typed.cast_float x) (Z.of_float n)))
     | _ -> (
         match Typed.Float.approx2 Stdlib.Float.pow x y with
         | Some res -> ok res
@@ -489,7 +486,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
                it only means anything for a positive, finite [x] *)
             if%sat
               x
-              >.@ Typed.Float.zero p
+              >.@ Typed.Float.zero fp
               &&@ Typed.not (Typed.Float.is_infinite x)
               &&@ Typed.not (Typed.Float.is_nan y)
             then pow_approx fp x y
@@ -504,13 +501,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let powi_ fp x y =
     let* () = floating_inaccuracy_warn () in
-    let p = Typed.float_precision fp in
     let n =
       Option.map (Typed.BitVec.bv_to_z (Signed I32)) (Typed.BitVec.to_z y)
     in
     match n with
     | Some n when Z.leq (Z.abs n) (Z.of_int max_pow_expansion) ->
-        ok (Typed.cast_float (pow_by_mult p (Typed.cast_float x) n))
+        ok (Typed.cast_float (pow_by_mult fp (Typed.cast_float x) n))
     | _ ->
         let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
         Typed.cast_float res
@@ -550,20 +546,19 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      back to the range the function is known to lie in. *)
   let expf_ ~f fp x =
     let* () = floating_inaccuracy_warn () in
-    let p = Typed.float_precision fp in
     match Typed.Float.approx f x with
     | Some res -> ok res
     | None ->
         if%sat
           Typed.Float.is_nan x
-          ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.zero p))
+          ||@ (Typed.Float.is_infinite x &&@ (x >.@ Typed.Float.zero fp))
         then ok (Typed.cast_float x)
-        else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.zero p)
-        then ok (Typed.Float.zero p)
+        else if%sat Typed.Float.is_infinite x &&@ (x <.@ Typed.Float.zero fp)
+        then ok (Typed.Float.zero fp)
         else
           let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
           let res = Typed.cast_float res in
-          let+ () = assume_sym [ res >.@ Typed.Float.zero p ] in
+          let+ () = assume_sym [ res >.@ Typed.Float.zero fp ] in
           res
 
   let expf16 ~x = expf_ ~f:Stdlib.Float.exp F16 x
@@ -578,22 +573,21 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let logf_ ~exp ~f fp x =
     let* () = floating_inaccuracy_warn () in
-    let p = Typed.float_precision fp in
     match Typed.Float.approx f x with
     | Some res -> ok res
     | None ->
         let exp = Typed.Float.mk fp exp in
-        if%sat x <.@ Typed.Float.zero p then ok (Typed.Float.nan p)
-        else if%sat x ==.@ Typed.Float.zero p then
-          ok (Typed.Float.neg_infinity p)
-        else if%sat Typed.Float.is_infinite x then ok (Typed.Float.infinity p)
-        else if%sat x ==.@ exp then ok (Typed.Float.one p)
+        if%sat x <.@ Typed.Float.zero fp then ok (Typed.Float.nan fp)
+        else if%sat x ==.@ Typed.Float.zero fp then
+          ok (Typed.Float.neg_infinity fp)
+        else if%sat Typed.Float.is_infinite x then ok (Typed.Float.infinity fp)
+        else if%sat x ==.@ exp then ok (Typed.Float.one fp)
         else
           let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
           let res = Typed.cast_float res in
           let+ () =
-            if%sat x <.@ exp then assume_sym [ res <.@ Typed.Float.one p ]
-            else assume_sym [ res >.@ Typed.Float.one p ]
+            if%sat x <.@ exp then assume_sym [ res <.@ Typed.Float.one fp ]
+            else assume_sym [ res >.@ Typed.Float.one fp ]
           in
           res
 

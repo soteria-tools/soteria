@@ -619,12 +619,10 @@ let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
       @@ BV.of_float ~rounding:Truncate ~signed ~size sv
   | (TInt _ | TUInt _), TFloat fp ->
       let sv = Typed.cast_lit from_ty v in
-      let fp = Typed.float_precision fp in
       let signed = Layout.is_signed from_ty in
       BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv
-  | TFloat from_fp, TFloat to_fp ->
+  | TFloat from_fp, TFloat fp ->
       let sv = Typed.cast_f from_fp v in
-      let fp = Typed.float_precision to_fp in
       Typed.Float.cast ~rounding:NearestTiesToEven ~fp sv
   | TFloat _, _ | _, TFloat _ ->
       L.failwith "Unhandled float transmute: %a -> %a" pp_literal_ty from_ty
@@ -666,20 +664,30 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
     [fp.rem] {e if possible}, given how costly it is. This never branches. *)
 let optimised_rem (x : Typed.([< T.sfloat ] t)) (y : Typed.([< T.sfloat ] t)) :
     Typed.([> T.sfloat ] t) DecayMap.SM.t =
+  (* our goal is to avoid the [fp.rem] SMT operator, instead formulating [x % y]
+     as [x - (y * round(x/y))]. however this shortcut is not exact bc it goes
+     through intermediary roundings, so we check if it is exact. *)
   let fp = Typed.Float.fp_of x in
-  let one = Typed.Float.one fp in
-  let two = one +.@ one in
+  let two = Typed.Float.mk fp "2" in
+  (* [n] is the integer nearest [x/y], but [x/y] itself rounds, so this may be
+     the neighbour of the true quotient *)
   let n = Typed.Float.round NearestTiesToEven (x /.@ y) in
-  let r = Typed.Float.fma (Typed.Float.neg y) n x in
+  (* [x - y*n]: equal to [x % y] if [n] is correct *)
+  let r = Typed.Float.(fma (neg y) n x) in
+  (* compared as [2|r|] against [|y|] rather than [|r|] against [|y|/2]:
+     doubling is exact, whereas halving a subnormal [y] is not *)
   let scaled = two *.@ Typed.Float.abs r in
-  let abs_y = Typed.Float.abs y in
+  (* an integral float is even iff halving it stays integral *)
   let n_even =
     let half = n /.@ two in
     Typed.Float.round NearestTiesToEven half ==.@ half
   in
+  let abs_y = Typed.Float.abs y in
+  (* [r] is exact in two cases: [2|r| < |y|], since a wrong [n] is off by at
+     least one [y]; or [2|r| = |y|] with [n] even, since [x/y] is then exactly a
+     half-integer, where ties-to-even picks the even [n] *)
   let correct = scaled <.@ abs_y ||@ (scaled ==.@ abs_y &&@ n_even) in
-  if%sure correct then return (Typed.cast_float r)
-  else return (Typed.cast_float (Typed.Float.rem x y))
+  if%sure correct then return r else return (Typed.Float.rem x y)
 
 (** Transmutes a singular rust value, without splitting. This is under the
     assumption that [size_of to_ty = size_of v], and both are primitives

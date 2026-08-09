@@ -73,6 +73,13 @@ let todo_migration msg = raise (TypedMigration msg)
 let ( <| ) = Self.Svalue.( <| )
 let float_precision = Ext0.float_precision
 
+let of_float_precision :
+    Soteria.Bv_values.Svalue.FloatPrecision.t -> Values.float_type = function
+  | F16 -> F16
+  | F32 -> F32
+  | F64 -> F64
+  | F128 -> F128
+
 (* The raw pointer type; only used to materialise a fully-symbolic nondet
    pointer in [Value_codec] (see {!Ptr.of_raw}). *)
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
@@ -227,15 +234,33 @@ module BitVec = struct
   let max ~signed l r = ite (gt ~signed l r) l r
   let min ~signed l r = ite (lt ~signed l r) l r
   let sure_is_zero v = Option.is_some_and Z.(equal zero) (to_z v)
+
+  let to_float ~rounding ~signed ~fp v =
+    to_float ~rounding ~signed ~fp:(float_precision fp) v
 end
 
 module BV = BitVec
+
+module FloatPrecision = struct
+  include FloatPrecision
+
+  let size fp = size (float_precision fp)
+  let significand_bits fp = significand_bits (float_precision fp)
+  let exponent_bits fp = exponent_bits (float_precision fp)
+end
 
 module Float = struct
   include Float
 
   let mk fty = mk (float_precision fty)
+  let zero fp = zero (float_precision fp)
+  let one fp = one (float_precision fp)
+  let infinity fp = infinity (float_precision fp)
+  let neg_infinity fp = neg_infinity (float_precision fp)
+  let nan fp = nan (float_precision fp)
   let of_z fty = of_z (float_precision fty)
+  let fp_of v = of_float_precision (fp_of v)
+  let cast ~rounding ~fp v = cast ~rounding ~fp:(float_precision fp) v
 
   let rem_warning =
     let warn =
