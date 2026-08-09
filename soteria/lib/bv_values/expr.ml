@@ -60,6 +60,11 @@ struct
               let v1, s = apply ~missing_var s v1 in
               let v2, s = apply ~missing_var s v2 in
               (Svalue.Bool.ite cond v1 v2, s)
+          | Triop (triop, a, b, c) ->
+              let a, s = apply ~missing_var s a in
+              let b, s = apply ~missing_var s b in
+              let c, s = apply ~missing_var s c in
+              (Eval.eval_triop triop a b c, s)
           | Nop (nop, vs) ->
               let vs, s = apply_list ~missing_var s vs in
               (Eval.eval_nop nop vs, s)

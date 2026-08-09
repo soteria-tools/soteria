@@ -321,9 +321,15 @@ module type S = sig
     val rem : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
     val fmod : [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 
+    (** For [fmod_of_rem res x y], given [res] is some representation of
+        [rem x y], returns [mod]. We receive [res] as a parameter, to allow
+        optimisations where it is computed not through [rem] but through more
+        optimal representation (e.g. using [fma]). *)
     val fmod_of_rem :
       [< sfloat ] t -> [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 
+    (** [fma x y z] is the exact result of [x * y + z], rounded once to the
+        destination precision (rather than with intermediate rounding). *)
     val fma : [< sfloat ] t -> [< sfloat ] t -> [< sfloat ] t -> [> sfloat ] t
 
     (** The IEEE 754-2019 [min] and [max]: unlike {!minimum} and {!maximum}, a

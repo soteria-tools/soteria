@@ -662,21 +662,8 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
       let+ () = assume [ bv_f ==@ f ] in
       Typed.((bv : T.sint t :> [> T.sint ] t))
 
-(** The IEEE remainder of [x] by [y]. [fp.rem] is by a wide margin the costliest
-    operator of the FloatingPoint theory to bit-blast -- unusable at [f64] with
-    an unconstrained operand -- so we prefer [x - y*n] with [n] the integer
-    nearest [x/y] and a {e fused} multiply-add, which is far cheaper.
-
-    That form is not [fp.rem]: [n] may not be representable, and [x/y] may round
-    onto a tie and pick the neighbouring integer, either of which puts the
-    result out by a whole [y]. But when it is right it is exactly right, and
-    [correct] below detects that: a wrong [n] is off by at least one [y], so
-    [2|r| >= |y|], with equality only where [x/y] is exactly a half-integer --
-    and there round-to-nearest-ties-to-even makes the correct [n] the even one.
-
-    [if%sure] commits to the fast form only when that holds on every value the
-    path condition allows, and otherwise emits [fp.rem]; either way the result
-    is exact, and no branch is added. *)
+(** Equivalent to [Float.rem], but optimised to avoid actually using the
+    [fp.rem] {e if possible}, given how costly it is. This never branches. *)
 let optimised_rem (x : Typed.([< T.sfloat ] t)) (y : Typed.([< T.sfloat ] t)) :
     Typed.([> T.sfloat ] t) DecayMap.SM.t =
   let fp = Typed.Float.fp_of x in

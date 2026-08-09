@@ -64,12 +64,8 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
     | FIsPos -> Float.is_positive
     | FRound rm -> Float.round rm
 
-  let eval_nop : Nop.t -> t list -> t = function
-    | Distinct -> Bool.distinct
-    | Fma -> (
-        function
-        | [ a; b; c ] -> Float.fma a b c
-        | _ -> failwith "fp.fma expects three arguments")
+  let eval_triop : Triop.t -> t -> t -> t -> t = function Fma -> Float.fma
+  let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct
 
   let rec eval ~force ~eval_var (x : t) : t =
     let eval' = eval ~force in
@@ -92,6 +88,12 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
         let nv2 = eval v2 in
         if (not force) && v1 == nv1 && v2 == nv2 then x
         else eval_binop binop nv1 nv2
+    | Triop (triop, a, b, c) ->
+        let na = eval a in
+        let nb = eval b in
+        let nc = eval c in
+        if (not force) && a == na && b == nb && c == nc then x
+        else eval_triop triop na nb nc
     | Nop (nop, l) ->
         let l, changed = List.map_changed eval l in
         if (not force) && not changed then x else eval_nop nop l

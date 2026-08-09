@@ -62,8 +62,11 @@ let int_size_of_size = function
   | _ -> None
 
 module Nop = struct
-  type t = Distinct | Fma
-  [@@deriving eq, show { with_path = false }, ord, hash]
+  type t = Distinct [@@deriving eq, show { with_path = false }, ord, hash]
+end
+
+module Triop = struct
+  type t = Fma [@@deriving eq, show { with_path = false }, ord, hash]
 end
 
 module Unop = struct
@@ -275,6 +278,8 @@ type ('ghost, 't, 'ty) t_kind =
   | Seq of ('ghost, 't, 'ty) t list
   | Unop of Unop.t * ('ghost, 't, 'ty) t
   | Binop of Binop.t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
+  | Triop of
+      Triop.t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
   | Nop of Nop.t * ('ghost, 't, 'ty) t list
   | Ite of ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
   | Exists of (Var.t * 'ty ty) list * ('ghost, 't, 'ty) t
@@ -416,6 +421,7 @@ module Make (V : Value_ext) () = struct
   module Unop = Unop
   module Binop = Binop
   module Nop = Nop
+  module Triop = Triop
   module RoundingMode = RoundingMode
   module FloatClass = FloatClass
   module FloatPrecision = FloatPrecision
@@ -472,6 +478,10 @@ module Make (V : Value_ext) () = struct
           aux' l;
           aux' r
       | Unop (_, sv) -> aux' sv
+      | Triop (_, a, b, c) ->
+          aux' a;
+          aux' b;
+          aux' c
       | Nop (_, l) | Seq l -> List.iter aux' l
       | Ite (c, t, e) ->
           aux' c;
@@ -513,6 +523,7 @@ module Make (V : Value_ext) () = struct
         pf ft "(%a != %a)" pp v1 pp v2
     | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
     | Binop (op, v1, v2) -> pf ft "(%a %a %a)" pp v1 Binop.pp op pp v2
+    | Triop (op, a, b, c) -> pf ft "%a(%a, %a, %a)" Triop.pp op pp a pp b pp c
     | Nop (op, l) -> (
         let rec aux = function
           | acc, [] -> acc
@@ -567,6 +578,12 @@ module Make (V : Value_ext) () = struct
       | Unop (op, v) -> combine (combine (combine h 7) (Unop.hash op)) v.tag
       | Binop (op, l, r) ->
           combine (combine (combine (combine h 8) (Binop.hash op)) l.tag) r.tag
+      | Triop (op, a, b, c) ->
+          combine
+            (combine
+               (combine (combine (combine h 13) (Triop.hash op)) a.tag)
+               b.tag)
+            c.tag
       | Nop (op, l) ->
           List.fold_left
             (fun acc sv -> combine acc sv.tag)
@@ -2978,13 +2995,10 @@ module Make (V : Value_ext) () = struct
       | Unop (FNeg, v) -> v
       | _ -> Unop (FNeg, v) <| v.node.ty
 
-    (* [fp.fma]: [a * b + c] with a single rounding, which is what makes it
-       exact whenever the true result is representable -- an ordinary [a *.@ b
-       +.@ c] rounds twice. *)
     let fma a b c =
       match (a.node.kind, b.node.kind, c.node.kind) with
       | Float fa, Float fb, Float fc -> Float (F.fma fa fb fc) <| a.node.ty
-      | _ -> Nop (Fma, [ a; b; c ]) <| a.node.ty
+      | _ -> Triop (Fma, a, b, c) <| a.node.ty
 
     (* C's [fmod] (and so Rust's [%] on floats), which truncates [x/y] where
        {!rem} rounds it to nearest. SMT-Lib has no such operator, so we emulate

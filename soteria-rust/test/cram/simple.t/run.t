@@ -482,17 +482,10 @@ Test exactly-evaluated float operations, at every precision
         ((V|1| +. V|1|) <. 4f) /\ (0f <. V|2|) /\ fis(NaN)(V|3|) /\
         !((V|3| <. 0f)) /\ (V|4| <. 0f) /\ fis(NaN)(sqrt.(V|4|)) /\
         (0f <. V|5|) /\ (V|5| <. 3f) /\
-        ((((fround(NearestTiesToEven)((V|5| /. 3f)) /. 2f) ==. fround(NearestTiesToEven)((fround(NearestTiesToEven)((V|5| /. 3f)) /. 2f))) && (3f == (2f *. abs.(Fma(-3f,
-       fround(NearestTiesToEven)((V|5| /. 3f)),
-       V|5|))))) || ((2f *. abs.(Fma(-3f,
-       fround(NearestTiesToEven)((V|5| /. 3f)), V|5|))) <. 3f)) /\
-        (V|5| ==. ((fisneg(V|5|) == fisneg(Fma(-3f,
-       fround(NearestTiesToEven)((V|5| /. 3f)), V|5|))) ? Fma(-3f,
-       fround(NearestTiesToEven)((V|5| /. 3f)), V|5|) : (Fma(-3f,
-       fround(NearestTiesToEven)((V|5| /. 3f)),
-       V|5|) +. (fisneg(V|5|) ? -3f : 3f)))) /\ (1f <. V|6|) /\
-        !(fis(Subnormal)(V|6|)) /\ !(fis(NaN)(V|6|)) /\ (2f == V|2|) /\
-        (4f == (V|2| *. V|2|))
+        ((((fround(NearestTiesToEven)((V|5| /. 3f)) /. 2f) ==. fround(NearestTiesToEven)((fround(NearestTiesToEven)((V|5| /. 3f)) /. 2f))) && (3f == (2f *. abs.(Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|))))) || ((2f *. abs.(Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|))) <. 3f)) /\
+        (V|5| ==. ((fisneg(V|5|) == fisneg(Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|))) ? Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|) : (Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|) +. (fisneg(V|5|) ? -3f : 3f)))) /\
+        (1f <. V|6|) /\ !(fis(Subnormal)(V|6|)) /\ !(fis(NaN)(V|6|)) /\
+        (2f == V|2|) /\ (4f == (V|2| *. V|2|))
   
   => Running float_ops::symbolic_casts...
   note: float_ops::symbolic_casts: done in <time>, ran 1 branch

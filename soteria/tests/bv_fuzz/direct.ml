@@ -165,6 +165,10 @@ let collect_checked_assumptions (v : t) : t list =
     | Ptr (a, b) ->
         go a;
         go b
+    | Triop (_, a, b, c) ->
+        go a;
+        go b;
+        go c
     | Binop (Add checked, v1, v2) ->
         checked_assumptions assumptions checked v1 v2 BitVec.add_overflows;
         go v1;

@@ -915,7 +915,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     BV.of_float ~rounding:Truncate ~signed ~size f
 
-  let fmul_add ~a ~b ~c = ok ((a *.@ b) +.@ c)
+  let fmul_add ~a ~b ~c = ok (Typed.Float.fma a b c)
   let fmaf16 = fmul_add
   let fmaf32 = fmul_add
   let fmaf64 = fmul_add
