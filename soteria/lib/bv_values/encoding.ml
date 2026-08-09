@@ -143,6 +143,10 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | Leq false -> bv_uleq
     | BvConcat -> bv_concat
 
+  let smt_of_triop : Triop.t -> sexp -> sexp -> sexp -> sexp = function
+    | Fma -> fp_fma
+    | Ite -> ite
+
   let encode_var v = atom (Var.to_string v)
 
   let rec encode_value (v : Svalue.t) =
@@ -164,8 +168,6 @@ module Make (Typed : Typed_intf.Solver_value) = struct
         | _ :: _ ->
             List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat
         )
-    | Ite (c, t, e) ->
-        ite (encode_value_memo c) (encode_value_memo t) (encode_value_memo e)
     | Exists (vs, sv) ->
         let encode_binder (v, ty) = list [ encode_var v; sort_of_ty ty ] in
         exists (List.map encode_binder vs) (encode_value_memo sv)
@@ -176,8 +178,9 @@ module Make (Typed : Typed_intf.Solver_value) = struct
         let v1 = encode_value_memo v1 in
         let v2 = encode_value_memo v2 in
         smt_of_binop binop v1 v2
-    | Triop (Fma, a, b, c) ->
-        fp_fma (encode_value_memo a) (encode_value_memo b) (encode_value_memo c)
+    | Triop (op, v1, v2, v3) ->
+        smt_of_triop op (encode_value_memo v1) (encode_value_memo v2)
+          (encode_value_memo v3)
     | Nop (Distinct, vs) ->
         let vs = List.map encode_value_memo vs in
         distinct vs

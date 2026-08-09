@@ -66,7 +66,7 @@ module Nop = struct
 end
 
 module Triop = struct
-  type t = Fma [@@deriving eq, show { with_path = false }, ord, hash]
+  type t = Fma | Ite [@@deriving eq, show { with_path = false }, ord, hash]
 end
 
 module Unop = struct
@@ -281,7 +281,6 @@ type ('ghost, 't, 'ty) t_kind =
   | Triop of
       Triop.t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
   | Nop of Nop.t * ('ghost, 't, 'ty) t list
-  | Ite of ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
   | Exists of (Var.t * 'ty ty) list * ('ghost, 't, 'ty) t
   | Extension of 't
 
@@ -483,10 +482,6 @@ module Make (V : Value_ext) () = struct
           aux' b;
           aux' c
       | Nop (_, l) | Seq l -> List.iter aux' l
-      | Ite (c, t, e) ->
-          aux' c;
-          aux' t;
-          aux' e
       | Exists (vs, sv) ->
           let ignore =
             List.fold_left (fun ignore (v, _) -> Var.Set.add v ignore) ignore vs
@@ -515,7 +510,6 @@ module Make (V : Value_ext) () = struct
         else pf ft "0x%s" (Z.format ("0" ^ string_of_int (size / 4) ^ "x") bv)
     | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
     | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
-    | Ite (c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
     | Exists (vs, v) ->
         let var_pp ft (v, ty) = pf ft "V%a:%a" Var.pp v pp_ty ty in
         pf ft "∃ %a. %a" (list ~sep:comma var_pp) vs pp v
@@ -523,6 +517,7 @@ module Make (V : Value_ext) () = struct
         pf ft "(%a != %a)" pp v1 pp v2
     | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
     | Binop (op, v1, v2) -> pf ft "(%a %a %a)" pp v1 Binop.pp op pp v2
+    | Triop (Ite, c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
     | Triop (op, a, b, c) -> pf ft "%a(%a, %a, %a)" Triop.pp op pp a pp b pp c
     | Nop (op, l) -> (
         let rec aux = function
@@ -589,8 +584,6 @@ module Make (V : Value_ext) () = struct
             (fun acc sv -> combine acc sv.tag)
             (combine (combine h 9) (Nop.hash op))
             l
-      | Ite (c, t, e) ->
-          combine (combine (combine (combine h 10) c.tag) t.tag) e.tag
       | Exists (vs, sv) ->
           List.fold_left
             (fun acc (v, ty) ->
@@ -956,7 +949,7 @@ module Make (V : Value_ext) () = struct
         | Binop (Leq signed, v1, v2) -> BitVec.lt ~signed v2 v1
         | Binop (Or, v1, v2) -> and_ (not v1) (not v2)
         | Binop (And, v1, v2) -> or_ (not v1) (not v2)
-        | Ite (g, a, b) -> ite g (not a) (not b)
+        | Triop (Ite, g, a, b) -> ite g (not a) (not b)
         | Binop (Eq, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }, v)
         | Binop (Eq, v, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ })
           ->
@@ -979,14 +972,15 @@ module Make (V : Value_ext) () = struct
       | Unop (Not, g), _, _ -> ite g else_ if_
       | _ when equal guard if_ -> or_ guard else_
       | _ when equal guard else_ -> and_ guard if_
-      | _, Ite (g, x, _), _ when equal g guard -> ite guard x else_
-      | _, _, Ite (g, _, y) when equal g guard -> ite guard if_ y
-      | Binop (And, a, b), Ite (g, x, _), _ when equal g a || equal g b ->
+      | _, Triop (Ite, g, x, _), _ when equal g guard -> ite guard x else_
+      | _, _, Triop (Ite, g, _, y) when equal g guard -> ite guard if_ y
+      | Binop (And, a, b), Triop (Ite, g, x, _), _ when equal g a || equal g b
+        ->
           ite guard x else_
-      | Binop (Or, a, b), _, Ite (g, _, y) when equal g a || equal g b ->
+      | Binop (Or, a, b), _, Triop (Ite, g, _, y) when equal g a || equal g b ->
           ite guard if_ y
       | _ when equal if_ else_ -> if_
-      | _ -> Ite (guard, if_, else_) <| if_.node.ty
+      | _ -> Triop (Ite, guard, if_, else_) <| if_.node.ty
 
     and sem_eq v1 v2 =
       match[@warning "-ambiguous-var-in-pattern-guard"]
@@ -1080,7 +1074,7 @@ module Make (V : Value_ext) () = struct
             if fits then sem_eq x (BitVec.mk_masked sz q) else v_false
           else v_false
       (* distributing over a shared guard lets the branches cancel pairwise *)
-      | Ite (b, l, r), Ite (b', l', r') when equal b b' ->
+      | Triop (Ite, b, l, r), Triop (Ite, b', l', r') when equal b b' ->
           ite b (sem_eq l l') (sem_eq r r')
       (* Cancelling a common factor [a] from [a*b == a*d] is only sound when [a]
          is odd (invertible modulo 2^n), or when both multiplications are
@@ -1141,14 +1135,16 @@ module Make (V : Value_ext) () = struct
             sem_eq bv z_bv
       (* ite(b, A::B, C::D) == l :: r <=>
        * ite(b, A, C) == l && ite(b, B, D) == r *)
-      | ( Ite
-            ( b,
+      | ( Triop
+            ( Ite,
+              b,
               ({ node = { kind = BitVec _; _ }; _ } as t),
               ({ node = { kind = BitVec _; _ }; _ } as e) ),
           Binop (BvConcat, l, r) )
       | ( Binop (BvConcat, l, r),
-          Ite
-            ( b,
+          Triop
+            ( Ite,
+              b,
               ({ node = { kind = BitVec _; _ }; _ } as t),
               ({ node = { kind = BitVec _; _ }; _ } as e) ) ) ->
           let size_r = size_of r.node.ty in
@@ -1162,8 +1158,10 @@ module Make (V : Value_ext) () = struct
         when size_of l1.node.ty = size_of l2.node.ty ->
           and_ (sem_eq l1 l2) (sem_eq r1 r2)
       (* BvOfBool and If-then-elses *)
-      | Ite (b, l, t), (BitVec _ | Bool _) -> ite b (sem_eq l v2) (sem_eq t v2)
-      | (BitVec _ | Bool _), Ite (b, l, t) -> ite b (sem_eq v1 l) (sem_eq v1 t)
+      | Triop (Ite, b, l, t), (BitVec _ | Bool _) ->
+          ite b (sem_eq l v2) (sem_eq t v2)
+      | (BitVec _ | Bool _), Triop (Ite, b, l, t) ->
+          ite b (sem_eq v1 l) (sem_eq v1 t)
       | Bool false, _ -> not v2
       | _, Bool false -> not v1
       | Bool true, _ -> v2
@@ -1345,7 +1343,7 @@ module Make (V : Value_ext) () = struct
       | BitVec z when Z.(z > zero) -> Z.log2 z
       | BitVec z when Z.(equal z zero) -> size_of v.node.ty - 1
       | Binop (BitAnd, bv1, bv2) -> min (msb_of bv1) (msb_of bv2)
-      | Ite (_, l, r) -> max (msb_of l) (msb_of r)
+      | Triop (Ite, _, l, r) -> max (msb_of l) (msb_of r)
       | Unop (BvExtend (false, __), v) -> msb_of v
       | _ -> size_of v.node.ty - 1
 
@@ -1454,7 +1452,7 @@ module Make (V : Value_ext) () = struct
           else
             let common = mk (size_of v1.node.ty) (Z.div l1 l2) in
             mul ~checked v_l2 (add ~checked r2 (mul ~checked common r1))
-      | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+      | Triop (Ite, b, l, r), BitVec x | BitVec x, Triop (Ite, b, l, r) ->
           (* only propagate down ites if we know it's concrete *)
           let n = size_of v1.node.ty in
           let x = mk n x in
@@ -1513,11 +1511,11 @@ module Make (V : Value_ext) () = struct
           sub ~checked r1 r2
       | _l, Binop (Sub _, l', r) when equal v1 l' -> r
       (* distributing over a shared guard lets the branches cancel pairwise *)
-      | Ite (b, l, r), Ite (b', l', r') when equal b b' ->
+      | Triop (Ite, b, l, r), Triop (Ite, b', l', r') when equal b b' ->
           Bool.ite b (sub l l') (sub r r')
       (* only propagate down ites if we know it's concrete *)
-      | Ite (b, l, r), BitVec _ -> Bool.ite b (sub l v2) (sub r v2)
-      | BitVec _, Ite (b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)
+      | Triop (Ite, b, l, r), BitVec _ -> Bool.ite b (sub l v2) (sub r v2)
+      | BitVec _, Triop (Ite, b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)
       | Unop (BvOfBool n, b), BitVec _ -> Bool.ite b (sub (one n) v2) (neg v2)
       | BitVec _, Unop (BvOfBool n, b) -> Bool.ite b (sub v1 (one n)) v1
       | _ -> Binop (Sub checked, v1, v2) <| v1.node.ty
@@ -1527,7 +1525,7 @@ module Make (V : Value_ext) () = struct
       match v.node.kind with
       | BitVec bv -> mk_masked n Z.(neg bv)
       | Unop (Neg _, v) -> v
-      | Ite (b, l, r) -> Bool.ite b (neg ~checked l) (neg ~checked r)
+      | Triop (Ite, b, l, r) -> Bool.ite b (neg ~checked l) (neg ~checked r)
       | Unop (BvOfBool n, b) -> Bool.ite b (neg (one n)) (zero n)
       | _ -> Unop (Neg checked, v) <| v.node.ty
 
@@ -1585,7 +1583,7 @@ module Make (V : Value_ext) () = struct
       | BitVec bv ->
           let n = size_of v.node.ty in
           mk_masked n Z.(lognot bv)
-      | Ite (b, l, r) -> Bool.ite b (not l) (not r)
+      | Triop (Ite, b, l, r) -> Bool.ite b (not l) (not r)
       | _ -> Unop (BvNot, v) <| v.node.ty
 
     and and_ v1 v2 =
@@ -1611,8 +1609,8 @@ module Make (V : Value_ext) () = struct
              let low_mask = Z.(pred (one lsl bitwidth)) in
              Z.(equal (mask land low_mask) low_mask) ->
           base <| t_bv n
-      | BitVec _, Ite (b, l, r) -> Bool.ite b (and_ v1 l) (and_ v1 r)
-      | Ite (b, l, r), BitVec _ -> Bool.ite b (and_ l v2) (and_ r v2)
+      | BitVec _, Triop (Ite, b, l, r) -> Bool.ite b (and_ v1 l) (and_ v1 r)
+      | Triop (Ite, b, l, r), BitVec _ -> Bool.ite b (and_ l v2) (and_ r v2)
       | BitVec m1, Binop (BitAnd, x, { node = { kind = BitVec m2; _ }; _ })
       | BitVec m1, Binop (BitAnd, { node = { kind = BitVec m2; _ }; _ }, x)
       | Binop (BitAnd, x, { node = { kind = BitVec m2; _ }; _ }), BitVec m1
@@ -1761,8 +1759,8 @@ module Make (V : Value_ext) () = struct
       | Unop (BvOfBool _, _), BitVec o when Z.equal o Z.one -> v1
       | Unop (BvOfBool _, b1), Unop (BvOfBool _, b2) ->
           of_bool n (Bool.and_ b1 b2)
-      | ( Ite (b1, l1, { node = { kind = BitVec r1; _ }; _ }),
-          Ite (b2, l2, { node = { kind = BitVec r2; _ }; _ }) )
+      | ( Triop (Ite, b1, l1, { node = { kind = BitVec r1; _ }; _ }),
+          Triop (Ite, b2, l2, { node = { kind = BitVec r2; _ }; _ }) )
         when Z.(equal r1 zero) && Z.(equal r2 zero) ->
           let n = size_of v1.node.ty in
           Bool.ite (Bool.and_ b1 b2) (and_ l1 l2) (zero n)
@@ -1872,7 +1870,7 @@ module Make (V : Value_ext) () = struct
             let low_part = extract (from_ + shift) (prev_size - 1) v1 in
             let high_zeros = zero (to_ - (prev_size - shift - 1)) in
             concat high_zeros low_part
-      | Ite (b, l, r) ->
+      | Triop (Ite, b, l, r) ->
           let l = extract from_ to_ l in
           let r = extract from_ to_ r in
           Bool.ite b l r
@@ -1951,7 +1949,7 @@ module Make (V : Value_ext) () = struct
       | Unop (BvExtend (prev_signed, prev_by), v) when prev_signed = signed ->
           (* combine extensions *)
           extend ~signed (prev_by + extend_by) v
-      | Ite (b, l, r) ->
+      | Triop (Ite, b, l, r) ->
           let l = extend ~signed extend_by l in
           let r = extend ~signed extend_by r in
           Bool.ite b l r
@@ -2006,7 +2004,7 @@ module Make (V : Value_ext) () = struct
           Unop (BvExtract _, y) )
         when equal x y ->
           concat left (concat right v2)
-      | Ite (b1, l1, r1), Ite (b2, l2, r2) when equal b1 b2 ->
+      | Triop (Ite, b1, l1, r1), Triop (Ite, b2, l2, r2) when equal b1 b2 ->
           Bool.ite b1 (concat l1 l2) (concat r1 r2)
       | _, _ -> Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
 
@@ -2112,7 +2110,7 @@ module Make (V : Value_ext) () = struct
           mul ~checked:(checked_meet checked ckm) x
             (mk_masked (size_of v1.node.ty) Z.(n * m))
       (* only propagate down ites if we know it's concrete *)
-      | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+      | Triop (Ite, b, l, r), BitVec x | BitVec x, Triop (Ite, b, l, r) ->
           let n = size_of v1.node.ty in
           let x = mk n x in
           Bool.ite b (mul l x) (mul r x)
@@ -2276,8 +2274,10 @@ module Make (V : Value_ext) () = struct
        * => b && x = 0 *)
       | _, Unop (BvOfBool n, b) when Stdlib.not signed ->
           Bool.and_ b (Bool.sem_eq v1 (zero n))
-      | Ite (b, l, r), _ -> Bool.ite b (lt ~signed l v2) (lt ~signed r v2)
-      | _, Ite (b, l, r) -> Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
+      | Triop (Ite, b, l, r), _ ->
+          Bool.ite b (lt ~signed l v2) (lt ~signed r v2)
+      | _, Triop (Ite, b, l, r) ->
+          Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
       | _, BitVec x
         when signed
              && Z.(equal x zero)
@@ -2302,7 +2302,7 @@ module Make (V : Value_ext) () = struct
             | Binop (BvConcat, l, _) -> aux_lt_zero l
             | Unop (BvNot, v) -> Bool.not (aux_lt_zero v)
             | Unop (BvOfBool n, _) when n > 1 -> Bool.v_false
-            | Ite (_, l, r) ->
+            | Triop (Ite, _, l, r) ->
                 let pos_l = aux_lt_zero l in
                 let pos_r = aux_lt_zero r in
                 if pos_l = pos_r then pos_l else lt_zero v
@@ -2632,9 +2632,9 @@ module Make (V : Value_ext) () = struct
       | Binop (Div false, _, { node = { kind = BitVec d; _ }; _ }), BitVec n
         when Stdlib.not signed && Z.(gt (mul n d) (max_for false bits)) ->
           Bool.v_true
-      | Ite (b, l, r), BitVec _ ->
+      | Triop (Ite, b, l, r), BitVec _ ->
           Bool.ite b (leq ~signed l v2) (leq ~signed r v2)
-      | BitVec _, Ite (b, l, r) ->
+      | BitVec _, Triop (Ite, b, l, r) ->
           Bool.ite b (leq ~signed v1 l) (leq ~signed v1 r)
       | ( BitVec bv_v1,
           Binop (Sub checked, x, ({ node = { kind = BitVec bv_k; _ }; _ } as k))

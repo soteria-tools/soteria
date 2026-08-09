@@ -48,7 +48,7 @@ module Bool = struct
   let not_ v = Unop (Not, v) <| TBool
   let and_ v1 v2 = Binop (And, v1, v2) <| TBool
   let or_ v1 v2 = Binop (Or, v1, v2) <| TBool
-  let ite c t e = Ite (c, t, e) <| t.Hc.node.ty
+  let ite c t e = Triop (Ite, c, t, e) <| t.Hc.node.ty
 
   let eq v1 v2 =
     (* Eq always returns TBool *)
@@ -184,10 +184,6 @@ let collect_checked_assumptions (v : t) : t list =
     | Binop (_, v1, v2) ->
         go v1;
         go v2
-    | Ite (c, t, e) ->
-        go c;
-        go t;
-        go e
     | Seq vs | Nop (_, vs) -> List.iter go vs
     | Var _ | Bool _ | BitVec _ | Float _ -> ()
     | Exists _ ->
@@ -225,7 +221,7 @@ module Shrink = struct
         let left = if_ty v1 in
         let right = if_ty v2 in
         left @ right
-    | Ite (c, t, e) ->
+    | Triop (Ite, c, t, e) ->
         if equal c Bool.v_true then return t
         else if equal c Bool.v_false then return e
         else return t @ return e

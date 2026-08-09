@@ -75,7 +75,7 @@ struct
                 let se2 = simplify e2 in
                 if Svalue.equal se1 e1 && Svalue.equal se2 e2 then fallback v
                 else Svalue.Bool.or_ se1 se2
-            | Ite (g, e1, e2) ->
+            | Triop (Ite, g, e1, e2) ->
                 let sg = simplify g in
                 let se1 = simplify e1 in
                 let se2 = simplify e2 in
@@ -224,7 +224,7 @@ struct
                 let se2 = simplify e2 in
                 if Svalue.equal se1 e1 && Svalue.equal se2 e2 then fallback v
                 else Svalue.Bool.or_ se1 se2
-            | Ite (g, e1, e2) ->
+            | Triop (Ite, g, e1, e2) ->
                 let sg = simplify g in
                 let se1 = simplify e1 in
                 let se2 = simplify e2 in

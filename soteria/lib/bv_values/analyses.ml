@@ -570,7 +570,6 @@ module Make (Typed : Typed_intf.Solver_value) = struct
       match v.node.kind with
       | Binop (op, l, r) -> cost_binop op + cost l + cost r
       | Unop (op, v) -> cost_unop op + cost v
-      | Ite (i, t, e) -> cost i + cost t + cost e
       | Triop (op, a, b, c) -> cost_triop op + cost a + cost b + cost c
       | Nop (_, vs) -> costs vs
       | Var _ -> 3
@@ -585,7 +584,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
       | Extension _ -> 100_000
 
     and costs vs = List.fold_left (fun acc v -> acc + cost v) 0 vs
-    and cost_triop : Svalue.Triop.t -> int = function Fma -> 400
+    and cost_triop : Svalue.Triop.t -> int = function Fma -> 400 | Ite -> 0
 
     and cost_binop : Svalue.Binop.t -> int = function
       | FRem -> 12900

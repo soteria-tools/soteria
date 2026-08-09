@@ -64,7 +64,10 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
     | FIsPos -> Float.is_positive
     | FRound rm -> Float.round rm
 
-  let eval_triop : Triop.t -> t -> t -> t -> t = function Fma -> Float.fma
+  let eval_triop : Triop.t -> t -> t -> t -> t = function
+    | Fma -> Float.fma
+    | Ite -> Bool.ite
+
   let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct
 
   let rec eval ~force ~eval_var (x : t) : t =
@@ -88,6 +91,16 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
         let nv2 = eval v2 in
         if (not force) && v1 == nv1 && v2 == nv2 then x
         else eval_binop binop nv1 nv2
+    | Triop (Ite, guard, then_, else_) ->
+        (* eval this separately, to have lazy evaluation *)
+        let guard = eval guard in
+        if equal guard Bool.v_true then eval then_
+        else if equal guard Bool.v_false then eval else_
+        else
+          let nthen = eval then_ in
+          let nelse = eval else_ in
+          if (not force) && then_ == nthen && else_ == nelse then x
+          else Bool.ite guard nthen nelse
     | Triop (triop, a, b, c) ->
         let na = eval a in
         let nb = eval b in
@@ -97,15 +110,6 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
     | Nop (nop, l) ->
         let l, changed = List.map_changed eval l in
         if (not force) && not changed then x else eval_nop nop l
-    | Ite (guard, then_, else_) ->
-        let guard = eval guard in
-        if equal guard Bool.v_true then eval then_
-        else if equal guard Bool.v_false then eval else_
-        else
-          let nthen = eval then_ in
-          let nelse = eval else_ in
-          if (not force) && then_ == nthen && else_ == nelse then x
-          else Bool.ite guard nthen nelse
     | Exists (vs, sv) ->
         let eval_var' sv v ty =
           if List.exists (fun (v', _) -> Var.equal v v') vs then sv
