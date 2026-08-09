@@ -62,11 +62,17 @@ let int_size_of_size = function
   | _ -> None
 
 module Nop = struct
-  type t = Distinct [@@deriving eq, show { with_path = false }, ord, hash]
+  type t = Distinct [@@deriving eq, ord, hash]
+
+  let pp ft = function Distinct -> Fmt.string ft "distinct"
+  let show = Fmt.to_to_string pp
 end
 
 module Triop = struct
-  type t = Fma | Ite [@@deriving eq, show { with_path = false }, ord, hash]
+  type t = Fma | Ite [@@deriving eq, ord, hash]
+
+  let pp ft = function Fma -> Fmt.string ft "fma" | Ite -> Fmt.string ft "ite"
+  let show = Fmt.to_to_string pp
 end
 
 module Unop = struct

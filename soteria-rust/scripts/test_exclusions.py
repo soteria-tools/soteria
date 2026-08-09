@@ -76,7 +76,8 @@ KNOWN_ISSUES = {
     "pass/dyn-traits.rs": "VTable addresses should be randomised",
     "pass/enum_discriminant_ptr_value.rs": "We don't support disabling validation",
     "pass/extern_types.rs": "We don't handle extern types",
-    "pass/float_nan.rs": "HashSets are currently broken, unsure why",
+    "pass/float.rs": "Requires checking nondeterminism",
+    "pass/float_nan.rs": "We generate a single NaN, rather than a non-deterministic sign and payload",
     "pass/function_calls/abi_compat.rs": "We are too restrictive on fn pointer casts",
     "pass/function_pointers.rs": "We don't have nondeterministic function pointers for generic functions",
     "pass/intrinsics/fmuladd_nondeterministic.rs": "We don't implement fmuladd non-deterministically",
@@ -243,6 +244,7 @@ MIRI_EXCLUSIONS = [
     "pass/wtf8.rs",
     # ignored: we don't handle @revisions annotations
     "fail/intrinsics/typed-swap-invalid-scalar.rs",
+    "pass/float_extra_rounding_error.rs",
     # ignored: tests Miri fails
     "fail/no_main.rs",
     # ignored: tests with dependencies

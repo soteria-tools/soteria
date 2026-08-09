@@ -329,42 +329,30 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
                 ~f:(fun _ -> ok Typed.v_true)
                 ~fe:(fun _ -> error (`StdErr "catch_unwind unwinded in catch")))
 
-  (* HACK: floating point intrinsics for complex float operations are heavily
-     approximated, à la CBMC.
+  (* HACK: complex float operations are heavily approximated, à la CBMC.
 
      See
      https://github.com/diffblue/cbmc/blob/develop/src/ansi-c/library/math.c *)
-  let floating_inaccuracy_warn =
-    let msg =
-      String.Interned.intern
-        "A complex floating point intrinsic was encountered; it will be \
-         executed with a significant over-approximation."
-    in
-    fun () ->
-      match (Config.get ()).approx_floating_ops with
-      | Allow -> ok ()
-      | Warn ->
-          Soteria.Terminal.Warn.warn_once msg;
-          ok ()
-      | Deny -> vanish ()
-
   let cos_ fp x =
-    let* () = floating_inaccuracy_warn () in
-    let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-    let res = Typed.cast_float res in
-    let+ () =
-      if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
-        assume_sym [ Typed.Float.is_nan res ]
-      else
-        assume_sym
-          [
-            res <=.@ Typed.Float.one fp;
-            res >=.@ Typed.Float.neg (Typed.Float.one fp);
-            Typed.not (x ==.@ Typed.Float.zero fp)
-            ||@ (res ==.@ Typed.Float.one fp);
-          ]
-    in
-    res
+    let* () = Core.floating_inaccuracy_warn () in
+    match Typed.Float.approx Stdlib.Float.cos x with
+    | Some res -> ok res
+    | None ->
+        let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
+        let res = Typed.cast_float res in
+        let+ () =
+          if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
+            assume_sym [ Typed.Float.is_nan res ]
+          else
+            assume_sym
+              [
+                res <=.@ Typed.Float.one fp;
+                res >=.@ Typed.Float.neg (Typed.Float.one fp);
+                Typed.not (x ==.@ Typed.Float.zero fp)
+                ||@ (res ==.@ Typed.Float.one fp);
+              ]
+        in
+        res
 
   let cosf16 ~x = cos_ F16 x
   let cosf32 ~x = cos_ F32 x
@@ -372,22 +360,25 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let cosf128 ~x = cos_ F128 x
 
   let sin_ fp x =
-    let* () = floating_inaccuracy_warn () in
-    let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-    let res = Typed.cast_float res in
-    let+ () =
-      if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
-        assume_sym [ Typed.Float.is_nan res ]
-      else
-        assume_sym
-          [
-            res <=.@ Typed.Float.one fp;
-            res >=.@ Typed.Float.neg (Typed.Float.one fp);
-            Typed.not (x ==.@ Typed.Float.zero fp)
-            ||@ (res ==.@ Typed.Float.zero fp);
-          ]
-    in
-    res
+    let* () = Core.floating_inaccuracy_warn () in
+    match Typed.Float.approx Stdlib.Float.sin x with
+    | Some res -> ok res
+    | None ->
+        let* res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
+        let res = Typed.cast_float res in
+        let+ () =
+          if%sat Typed.Float.is_nan x ||@ Typed.Float.is_infinite x then
+            assume_sym [ Typed.Float.is_nan res ]
+          else
+            assume_sym
+              [
+                res <=.@ Typed.Float.one fp;
+                res >=.@ Typed.Float.neg (Typed.Float.one fp);
+                Typed.not (x ==.@ Typed.Float.zero fp)
+                ||@ (res ==.@ Typed.Float.zero fp);
+              ]
+        in
+        res
 
   let sinf16 ~x = sin_ F16 x
   let sinf32 ~x = sin_ F32 x
@@ -470,7 +461,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       ok (BV.to_float_raw res_bits)
 
   let pow_ fp x y =
-    let* () = floating_inaccuracy_warn () in
+    let* () = Core.floating_inaccuracy_warn () in
     match Typed.Float.to_float_opt y with
     | Some n
       when Stdlib.Float.is_integer n
@@ -500,16 +491,24 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let powf128 ~a ~x = pow_ F128 a x
 
   let powi_ fp x y =
-    let* () = floating_inaccuracy_warn () in
-    let n =
-      Option.map (Typed.BitVec.bv_to_z (Signed I32)) (Typed.BitVec.to_z y)
+    let* () = Core.floating_inaccuracy_warn () in
+    let nondet () =
+      let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
+      Typed.cast_float res
     in
-    match n with
+    match
+      Option.map (Typed.BitVec.bv_to_z (Signed I32)) (Typed.BitVec.to_z y)
+    with
     | Some n when Z.leq (Z.abs n) (Z.of_int max_pow_expansion) ->
         ok (Typed.cast_float (pow_by_mult fp (Typed.cast_float x) n))
-    | _ ->
-        let+ res = Value_codec.nondet_valid (TLiteral (TFloat fp)) in
-        Typed.cast_float res
+    | Some n -> (
+        (* too many factors to expand, but [powi] is allowed to round
+           differently from [powf], so the host's [pow] is a valid answer *)
+        let n = Z.to_float n in
+        match Typed.Float.approx (fun x -> Stdlib.Float.pow x n) x with
+        | Some res -> ok res
+        | None -> nondet ())
+    | None -> nondet ()
 
   let powif16 ~a ~x = powi_ F16 a x
   let powif32 ~a ~x = powi_ F32 a x
@@ -545,7 +544,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      result far more tightly than the constraints below; a symbolic one falls
      back to the range the function is known to lie in. *)
   let expf_ ~f fp x =
-    let* () = floating_inaccuracy_warn () in
+    let* () = Core.floating_inaccuracy_warn () in
     match Typed.Float.approx f x with
     | Some res -> ok res
     | None ->
@@ -572,7 +571,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let exp2f128 ~x = expf_ ~f:exp2 F128 x
 
   let logf_ ~exp ~f fp x =
-    let* () = floating_inaccuracy_warn () in
+    let* () = Core.floating_inaccuracy_warn () in
     match Typed.Float.approx f x with
     | Some res -> ok res
     | None ->
@@ -853,23 +852,24 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let x = Typed.cast_f f x in
     ok (Typed.Float.abs x)
 
+  let float_bop (bop : Expressions.binop) =
+    match bop with
+    | Add _ -> ((fun x y -> ok (x +.@ y)), "fadd")
+    | Sub _ -> ((fun x y -> ok (x -.@ y)), "fsub")
+    | Mul _ -> ((fun x y -> ok (x *.@ y)), "fmul")
+    | Div _ -> ((fun x y -> ok (x /.@ y)), "fdiv")
+    | Rem _ ->
+        ( (fun x y ->
+            let+ r = Value_codec.optimised_rem x y in
+            Typed.Float.fmod_of_rem r x y),
+          "frem" )
+    | _ -> L.failwith "float_bop: invalid binop"
+
   let float_fast (bop : Expressions.binop) ~(t : Types.ty) ~a ~b =
     let t = ty_as_float t in
     let l = Typed.cast_f t a in
     let r = Typed.cast_f t b in
-    let bop, name =
-      match bop with
-      | Add _ -> ((fun x y -> ok (x +.@ y)), "core::intrinsics::fadd_fast")
-      | Sub _ -> ((fun x y -> ok (x -.@ y)), "core::intrinsics::fsub_fast")
-      | Mul _ -> ((fun x y -> ok (x *.@ y)), "core::intrinsics::fmul_fast")
-      | Div _ -> ((fun x y -> ok (x /.@ y)), "core::intrinsics::fdiv_fast")
-      | Rem _ ->
-          ( (fun x y ->
-              let+ r = Value_codec.optimised_rem x y in
-              Typed.Float.fmod_of_rem r x y),
-            "core::intrinsics::frem_fast" )
-      | _ -> L.failwith "fast_float: invalid binop"
-    in
+    let bop, name = float_bop bop in
     let is_finite f =
       Typed.((not (Float.is_nan f)) &&@ not (Float.is_infinite f))
     in
@@ -877,8 +877,19 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let+ () =
       assert_
         (is_finite l &&@ is_finite r &&@ is_finite res)
-        (`StdErr (name ^ ": operands and result must be finite"))
+        (`StdErr
+           (Fmt.str
+              "core::intrinsics::%s_fast: operands and result must be finite"
+              name))
     in
+    Typed.as_any res
+
+  let float_algebraic (bop : Expressions.binop) ~(t : Types.ty) ~a ~b =
+    let t = ty_as_float t in
+    let l = Typed.cast_f t a in
+    let r = Typed.cast_f t b in
+    let bop, _ = float_bop bop in
+    let+ res = bop l r in
     Typed.as_any res
 
   let fadd_fast ~t ~a ~b = float_fast (Add OUB) ~t ~a ~b
@@ -886,6 +897,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let fmul_fast ~t ~a ~b = float_fast (Mul OUB) ~t ~a ~b
   let frem_fast ~t ~a ~b = float_fast (Rem OUB) ~t ~a ~b
   let fsub_fast ~t ~a ~b = float_fast (Sub OUB) ~t ~a ~b
+  let fadd_algebraic ~t ~a ~b = float_algebraic (Add OUB) ~t ~a ~b
+  let fdiv_algebraic ~t ~a ~b = float_algebraic (Div OUB) ~t ~a ~b
+  let fmul_algebraic ~t ~a ~b = float_algebraic (Mul OUB) ~t ~a ~b
+  let frem_algebraic ~t ~a ~b = float_algebraic (Rem OUB) ~t ~a ~b
+  let fsub_algebraic ~t ~a ~b = float_algebraic (Sub OUB) ~t ~a ~b
 
   let float_to_int_unchecked ~float ~int ~value =
     let fty = ty_as_float float in

@@ -254,6 +254,7 @@ module Float = struct
 
   let mk fty = mk (float_precision fty)
   let zero fp = zero (float_precision fp)
+  let neg_zero fp = neg_zero (float_precision fp)
   let one fp = one (float_precision fp)
   let infinity fp = infinity (float_precision fp)
   let neg_infinity fp = neg_infinity (float_precision fp)

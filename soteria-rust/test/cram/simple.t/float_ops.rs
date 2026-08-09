@@ -22,6 +22,8 @@ fn arithmetic() {
     assert!((5.0f32 % 0.0).is_nan() && (f32::INFINITY % 3.0).is_nan());
     assert!(5.0f32 % f32::INFINITY == 5.0);
     assert!((-0.0f64 % 1.0).is_sign_negative());
+    // an exact division leaves a zero of the dividend's sign
+    assert!((-4.0f32 % 2.0).is_sign_negative() && (4.0f32 % 2.0).is_sign_positive());
 
     // division by zero is infinite, not a trap
     assert!(1.0f16 / 0.0 == f16::INFINITY);

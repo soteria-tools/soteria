@@ -265,4 +265,22 @@ module M (StateM : State.StateM.S) = struct
         let* () = State.store ptr str_ty char_arr in
         let+ () = State.store_str_global str ptr in
         ptr
+
+  let floating_inaccuracy_msg =
+    String.Interned.intern
+      "A complex floating point intrinsic was encountered; it will be executed \
+       with a significant over-approximation."
+
+  (** Warn users that a floating point operation is being {b over}-approximated.
+      If approximating float operations are disabled, running this will vanish.
+      {b TODO: we should error in OX, not vanish.} *)
+  let floating_inaccuracy_warn () =
+    match (Config.get ()).approx_floating_ops with
+    | Allow -> ok ()
+    | Warn ->
+        Soteria.Terminal.Warn.warn_once floating_inaccuracy_msg;
+        ok ()
+    | Deny ->
+        (* TODO: error in OX *)
+        vanish ()
 end

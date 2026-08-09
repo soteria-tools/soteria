@@ -482,8 +482,7 @@ Test exactly-evaluated float operations, at every precision
         ((V|1| +. V|1|) <. 4f) /\ (0f <. V|2|) /\ fis(NaN)(V|3|) /\
         !((V|3| <. 0f)) /\ (V|4| <. 0f) /\ fis(NaN)(sqrt.(V|4|)) /\
         (0f <. V|5|) /\ (V|5| <. 3f) /\
-        ((((fround(NearestTiesToEven)((V|5| /. 3f)) /. 2f) ==. fround(NearestTiesToEven)((fround(NearestTiesToEven)((V|5| /. 3f)) /. 2f))) && (3f == (2f *. abs.(Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|))))) || ((2f *. abs.(Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|))) <. 3f)) /\
-        (V|5| ==. ((fisneg(V|5|) == fisneg(Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|))) ? Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|) : (Fma(-3f, fround(NearestTiesToEven)((V|5| /. 3f)), V|5|) +. (fisneg(V|5|) ? -3f : 3f)))) /\
+        (V|5| ==. ((fisneg(V|5|) == fisneg((V|5| rem. 3f))) ? (V|5| rem. 3f) : ((V|5| rem. 3f) +. (fisneg(V|5|) ? -3f : 3f)))) /\
         (1f <. V|6|) /\ !(fis(Subnormal)(V|6|)) /\ !(fis(NaN)(V|6|)) /\
         (2f == V|2|) /\ (4f == (V|2| *. V|2|))
   
@@ -503,14 +502,14 @@ Test exactly-evaluated float operations, at every precision
         (V|5| == bv2f[F64](V|6|))
   
   Statistics:
-  • Z3 check-sat calls: 26
-  • branch_on: branches 1.03% of calls (16 of 1551)
+  • Z3 check-sat calls: 27
+  • branch_on: branches 1.18% of calls (16 of 1356)
   • Execution time: <time>
-  • Steps: 529
-  • Function calls: 238
-  • Load accesses: 717 (91.35% through store)
+  • Steps: 533
+  • Function calls: 240
+  • Load accesses: 721 (91.4% through store)
   • Allocations: 50
-  • SAT checks: 50 (0 unknowns)
+  • SAT checks: 49 (0 unknowns)
   • SAT solving time: <time> (<%>)
   • Branches: 16 (0 unexplored)
   
@@ -795,7 +794,7 @@ successfuly.
   Compiling... done in <time>
   => Running ptr_diff_prov::diff_prov_same_address...
   note: ptr_diff_prov::diff_prov_same_address: done in <time>, ran 1 branch
-  PC 1: Distinct(V|1-2|) /\ (0x0000000000000001 <=u V|1|) /\
+  PC 1: distinct(V|1-2|) /\ (0x0000000000000001 <=u V|1|) /\
         (V|1| <=u 0x7ffffffffffffffd) /\ (0x0000000000000001 <=u V|2|) /\
         (V|2| <=u 0x7ffffffffffffffd)
   
@@ -944,8 +943,8 @@ Test TypeId equality and downcasting a `dyn Any`
   Compiling... done in <time>
   => Running type_id::main...
   note: type_id::main: done in <time>, ran 1 branch
-  PC 1: Distinct(V|1-2|) /\ (V|1| != V|2|) /\ Distinct(V|1-3|) /\
-        (V|1| != V|3|) /\ Distinct(V|1-4|) /\ Distinct(V|1-5|) /\
+  PC 1: distinct(V|1-2|) /\ (V|1| != V|2|) /\ distinct(V|1-3|) /\
+        (V|1| != V|3|) /\ distinct(V|1-4|) /\ distinct(V|1-5|) /\
         (V|4| != V|5|)
   
 Test that `align_offset` is answered from the allocation's alignment

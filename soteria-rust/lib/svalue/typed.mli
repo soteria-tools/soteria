@@ -161,6 +161,7 @@ module Float : sig
 
   val mk : Types.float_type -> string -> [> T.sfloat ] t
   val zero : Types.float_type -> [> T.sfloat ] t
+  val neg_zero : Types.float_type -> [> T.sfloat ] t
   val one : Types.float_type -> [> T.sfloat ] t
   val infinity : Types.float_type -> [> T.sfloat ] t
   val neg_infinity : Types.float_type -> [> T.sfloat ] t
