@@ -1,4 +1,0 @@
-# Temporary, until FloatML is merged: https://github.com/ocaml/opam-repository/pull/30437
-pin-depends: [
-  ["floatml.~dev" "git+https://github.com/N1ark/floatml#96b7b26245cf0fab719f0f664b9387cdb6b91eca"]
-]
