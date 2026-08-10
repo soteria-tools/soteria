@@ -990,6 +990,28 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let+ res = Core.eval_lit_binop op t x y in
     res
 
+  let funnel_ ~(side : [ `Left | `Right ]) ~t ~a ~b ~shift =
+    let t = TypesUtils.ty_as_literal t in
+    let bits = 8 * Layout.size_of_literal_ty t in
+    let a = Typed.cast_lit t a in
+    let b = Typed.cast_lit t b in
+    let+ () = assert_ (shift <@ BV.mki 32 bits) `InvalidShift in
+    let bits' = BV.mki_nz bits bits in
+    let shift =
+      if bits <= 32 then BV.extract 0 (bits - 1) shift
+      else if bits > 32 then BV.extend ~signed:false (bits - 32) shift
+      else (shift :> T.sint Typed.t)
+    in
+    let inv = bits' -!!@ shift in
+    match side with
+    | `Left -> a <<@ shift |@ (b >>@ inv)
+    | `Right -> b >>@ shift |@ (a <<@ inv)
+
+  let unchecked_funnel_shl ~t ~a ~b ~shift = funnel_ ~side:`Left ~t ~a ~b ~shift
+
+  let unchecked_funnel_shr ~t ~a ~b ~shift =
+    funnel_ ~side:`Right ~t ~a ~b ~shift
+
   let unchecked_add ~t ~x ~y = unchecked_op (Add OUB) ~t ~x ~y
   let unchecked_div ~t ~x ~y = unchecked_op (Div OUB) ~t ~x ~y
   let unchecked_mul ~t ~x ~y = unchecked_op (Mul OUB) ~t ~x ~y
