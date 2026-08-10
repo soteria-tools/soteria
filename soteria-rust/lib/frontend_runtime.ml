@@ -117,9 +117,16 @@ end
 
 (** Organise commands to send to the Soteria Rust frontend *)
 module Cmd = struct
-  type entry = Attrib of string | Name of string | Pub
+  type matcher = Attrib of string | Name of string | Pub
 
-  let entry_as_flag = function
+  type entry = {
+    matcher : matcher;
+    args : Svalue.Typed.T.any Svalue.Typed.t list;
+  }
+
+  let entry ?(args = []) matcher = { matcher; args }
+
+  let matcher_as_flag = function
     | Attrib a -> [ "--start-from-attribute=" ^ a ]
     | Name n -> (
         match (Config.get ()).frontend with
@@ -127,13 +134,15 @@ module Cmd = struct
         | Charon -> [ "--start-from-if-exists"; "crate::" ^ n ])
     | Pub -> [ "--start-from-pub" ]
 
-  let entry_matches_fn (fn : UllbcAst.fun_decl) = function
+  let matcher_matches_fn (fn : UllbcAst.fun_decl) = function
     | Attrib attrib -> decl_has_attr fn attrib
     | Name n -> (
         match List.last_opt fn.item_meta.name with
         | Some (PeIdent (name, _)) -> name = n
         | _ -> false)
     | Pub -> fn.item_meta.is_local && fn.item_meta.attr_info.public
+
+  let entry_matches_fn fn { matcher; _ } = matcher_matches_fn fn matcher
 
   type t = {
     charon : string list; [@default []]
@@ -151,7 +160,7 @@ module Cmd = struct
         (** Functions to mark as entry points, e.g.
             [Attrib "soteriatool::test"], when we are interested in filtering
             the entry-points. *)
-    expect_error : entry list; [@default []]
+    expect_error : matcher list; [@default []]
         (** Markers to know that an entry point is expected to fail. This is
             used to inverse the outcomes of the execution, so that we can use
             the same plugin for both expected-success and expected-failure
@@ -227,7 +236,11 @@ module Cmd = struct
       else rustc
     in
     let rustc = rustc @ user_specified @ features in
-    let entries = List.concat_map entry_as_flag entry_points in
+    let entries =
+      List.concat_map
+        (fun { matcher; _ } -> matcher_as_flag matcher)
+        entry_points
+    in
     let cmd, args =
       match (Config.get ()).frontend with
       | Obol -> ((Config.get ()).obol_path, obol @ entries)

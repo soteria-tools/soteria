@@ -29,9 +29,12 @@ module M (StateM : State.StateM.S) = struct
   open Syntax
 
   (* NonNull<u8> is a struct { pointer: *const u8 is !null }. Extract the inner
-     ptr. *)
+     ptr. We also accept a bare pointer, as Miri's allocation shims take one. *)
   let ptr_of_nonnull nonull =
-    Typed.cast_ptr_f @@ Typed.Adt.as_tuple1 @@ Typed.cast_tuple nonull
+    match%ty nonull with
+    | TExtension (TTuple _) ->
+        Typed.cast_ptr_f @@ Typed.Adt.as_tuple1 @@ Typed.cast_tuple nonull
+    | _ -> Typed.cast_ptr_f nonull
 
   (** Expects [std::mem::Alignment] OR just an alignment as a bitvector. We
       accept both forms, because the optim stub for [alloc_impl] passes a raw

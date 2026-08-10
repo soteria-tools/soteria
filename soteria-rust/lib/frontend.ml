@@ -96,11 +96,12 @@ end
 
 type entry_point_filter = {
   filter : Cmd.entry list;
-  expect_error : Cmd.entry list;
+  expect_error : Cmd.matcher list;
 }
 
 type entry_point = {
   fun_decl : UllbcAst.fun_decl;
+  args : Svalue.Typed.T.any Svalue.Typed.t list;
   expect_error : bool;
   fuel : Soteria.Symex.Fuel_gauge.t;
 }
@@ -134,7 +135,8 @@ let default () =
       @ opaque_names
       @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
     ~obol:opaque_names
-    ~entry_points:[ Name "main"; Attrib "soteriatool::test" ]
+    ~entry_points:
+      Cmd.[ entry (Name "main"); entry (Attrib "soteriatool::test") ]
     ~expect_error:[ Attrib "soteriatool::expect_fail" ]
     ~features:[ "soteria" ]
     ~rustc:
@@ -157,14 +159,16 @@ let default () =
 let kani () =
   let@ _ = Lib.with_compiled Kani in
   Cmd.make ~features:[ "kani" ]
-    ~entry_points:[ Attrib "kanitool::proof" ]
+    ~entry_points:[ Cmd.entry (Attrib "kanitool::proof") ]
     ~expect_error:[ Attrib "kanitool::should_panic" ]
     ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)" ]
     ()
 
 let miri () =
+  let args = Svalue.Typed.[ as_any (BV.usizei 0); as_any (Ptr.null_f ()) ] in
   Cmd.make ~features:[ "miri" ] ~rustc:[ "--edition"; "2021" ]
-    ~entry_points:[ Name "miri_start" ] ()
+    ~entry_points:[ Cmd.entry ~args (Name "miri_start") ]
+    ()
 
 (** Filters a name, according to the current {!Config.t.filter} and
     {!Config.t.exclude} settings. If there are no filters, all names are
@@ -187,15 +191,14 @@ let get_entry_point (filter : entry_point_filter) crate
     (decl : UllbcAst.fun_decl) =
   let ( let*! ) b f = if b then f () else None in
   (* check it's a valid entry-point *)
-  let*! () =
-    List.is_empty filter.filter
-    || List.exists (Cmd.entry_matches_fn decl) filter.filter
-  in
+  let matched = List.find_opt (Cmd.entry_matches_fn decl) filter.filter in
+  let*! () = List.is_empty filter.filter || Option.is_some matched in
   (* check it's filtered *)
   let*! () = filter_name crate decl.item_meta.name in
   (* build the entry point *)
+  let args = Option.fold ~none:[] ~some:(fun e -> Cmd.(e.args)) matched in
   let expect_error =
-    List.exists (Cmd.entry_matches_fn decl) filter.expect_error
+    List.exists (Cmd.matcher_matches_fn decl) filter.expect_error
   in
   let open Soteria.Symex in
   let fuel : Fuel_gauge.t =
@@ -210,7 +213,7 @@ let get_entry_point (filter : entry_point_filter) crate
       branching = get_or "soteriatool::branch_fuel" (Config.get ()).branch_fuel;
     }
   in
-  Some { fun_decl = decl; expect_error; fuel }
+  Some { fun_decl = decl; args; expect_error; fuel }
 
 let create_using_current_config () : mk_cmd * entry_point_filter =
   let config = Config.get () in
@@ -228,8 +231,11 @@ let create_using_current_config () : mk_cmd * entry_point_filter =
            compile it in a quirky way and it requires having a sysroot. Instead
            we want to look for the tests directly! So we add #[test] *)
         let entry_points =
-          Cmd.Attrib "test" :: cmd.entry_points
-          |> List.filter (function Cmd.Pub | Name "main" -> false | _ -> true)
+          Cmd.(entry (Attrib "test"))
+          :: List.filter
+               (function
+                 | Cmd.{ matcher = Pub | Name "main"; _ } -> false | _ -> true)
+               cmd.entry_points
         in
         let expect_error = Cmd.Attrib "should_panic" :: cmd.expect_error in
         { cmd with entry_points; expect_error }

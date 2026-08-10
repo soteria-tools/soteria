@@ -1246,6 +1246,13 @@ module Make (StateImpl : State.S) = struct
         ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let@ () = StateM.with_frame "Entry point" in
+    let* () =
+      if List.compare_lengths fundef.signature.inputs args = 0 then ok ()
+      else
+        let expected = List.length fundef.signature.inputs in
+        let received = List.length args in
+        error (`InvalidFnArgCount (expected, received))
+    in
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
     exec_real_fun fundef generics args
 
