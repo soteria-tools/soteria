@@ -809,19 +809,13 @@ module Make (Borrows : Tree_borrows.T) = struct
     let** () = tb_load_untyped ptr size in
     (* Freeing also requires there to be no strong protectors in the tree. See:
        https://github.com/minirust/minirust/blob/master/spec/mem/tree_borrows/memory.md *)
-
-    (* FIXME: this currently causes errors in LinkedList? Unsure why, would
-       required a length investigation... minimal repro:
-       LinkedList::from([42]).pop_back() *)
-
-    (* let** () =
-     *   with_ptr ptr (fun _ ->
-     *       Block.with_block_read_tb (fun tb ->
-     *           [%l.warn "%a" Tree_borrow.pp tb];
-     *           if Tree_borrow.strong_protector_exists tb then
-     *             Tree_block.SM.Result.error `InvalidFreeStrongProtector
-     *           else Tree_block.SM.Result.ok ()))
-     * in *)
+    let** () =
+      with_ptr Ghost ptr (fun _ ->
+          Block.with_block_read_tb (fun tb ->
+              if Borrows.Tree.strong_protector_exists tb then
+                Tree_block.SM.Result.error `InvalidFreeStrongProtector
+              else Tree_block.SM.Result.ok ()))
+    in
     [%l.debug "Freeing pointer %a" Sptr.pp ptr];
     with_heap
       (Heap.wrap loc (Freeable_block_with_meta.wrap (Freeable_block.free ())))
