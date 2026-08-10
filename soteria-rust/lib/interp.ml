@@ -876,7 +876,9 @@ module Make (StateImpl : State.S) = struct
             in
             Typed.as_any @@ Layout.Fields_shape.offset_of field fields)
     | Discriminant place ->
-        if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
+        let* layout = Layout.layout_of place.ty in
+        if layout.uninhabited then error (`RefToUninhabited place.ty)
+        else if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
           let open OptionM in
           let open Syntax in
           let* loc = resolve_place_lazy place in
@@ -895,9 +897,9 @@ module Make (StateImpl : State.S) = struct
                       @@ State.load_discriminant (Typed.Ptr.of_ptr_t d) place.ty
                   | None -> error `UninitializedMemoryAccess)
               | _ -> none ())
-        (* If a type doesn't have variants, return 0.
-           https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
-          else ok U8.(0s)
+          (* If a type doesn't have variants, return 0.
+             https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
+        else ok U8.(0s)
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
         let* adt = Poly.subst_tyref adt in
