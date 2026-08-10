@@ -321,7 +321,7 @@ module Make (StateImpl : State.S) = struct
         not_impl "vtable-reference constants are not yet supported: %a"
           Crate.pp_constant_expr const
     | CTypeId _ ->
-        (not_impl ~issue:187) "TypeId constants are not yet supported: %a"
+        not_impl ~issue:187 "TypeId constants are not yet supported: %a"
           Crate.pp_constant_expr const
     | COpaque msg ->
         not_impl "opaque constant: %s; something went wrong in the frontend" msg
@@ -603,6 +603,11 @@ module Make (StateImpl : State.S) = struct
           let+ inputs =
             Poly.push_generics ~params:fundef.generics ~args:fn_decl.generics
             @@ fun _ -> Poly.subst_tys fundef.signature.inputs
+          in
+          let inputs =
+            if fundef.signature.is_variadic then
+              inputs @ List.drop (List.length inputs) in_tys
+            else inputs
           in
           [%l.info
             "Resolved function call to %a" Crate.pp_name fundef.item_meta.name];
@@ -1176,6 +1181,9 @@ module Make (StateImpl : State.S) = struct
     | UnstructuredBody body -> (
         match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args
+        | None when fundef.signature.is_variadic ->
+            not_impl ~issue:479
+              "can't execute the body of the C-variadic function %s" name_str
         | None ->
             let@ () = with_loc ~loc:fundef.item_meta.span.data in
             let@@ () = with_env ~env:Store.empty in
@@ -1218,7 +1226,7 @@ module Make (StateImpl : State.S) = struct
                       (Lazy.force Frontend_runtime.Cmd.toolchain_version)
                   in
                   let tip = ("to get a sysroot, run", Some cmd) in
-                  (not_impl ~tip ~issue:322)
+                  not_impl ~tip ~issue:322
                     "can't execute function %a, try using a sysroot (--sysroot)"
                     Crate.pp_name name
             | ErrorBody err ->
