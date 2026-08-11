@@ -1005,8 +1005,11 @@ module Make (StateImpl : State.S) = struct
         Typed.Ptr.mk_ptr_f_opt ptr meta
     (* Array repetition *)
     | Repeat (value, ty, len) ->
-        let+ value = eval_operand value in
-        let len = int_of_constant_expr len in
+        let* value = eval_operand value in
+        let len = z_of_constant_expr len in
+        let+ len =
+          of_opt_not_impl "array is too large to build" (Z.to_int_opt len)
+        in
         (* FIXME: this is horrible for large arrays! *)
         let els = Iarray.init len (fun _ -> value) in
         Typed.Adt.mk_array ty els

@@ -78,9 +78,6 @@ let z_of_constant_expr : Types.constant_expr -> Z.t = function
       L.failwith "int_of_const_generic: unhandled const: %a"
         Types.pp_constant_expr cg
 
-let int_of_constant_expr (c : Types.constant_expr) : int =
-  Z.to_int (z_of_constant_expr c)
-
 let rec pp_ty fmt : Types.ty -> unit = function
   | TAdt { id = TAdtId id; generics } ->
       let adt = Crate.get_adt_raw id in

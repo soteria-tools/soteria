@@ -721,7 +721,10 @@ let rec nondet_raw :
       let++ fields = nondets_raw types in
       Typed.Adt.mk_tuple fields
   | TArray (ty, len) ->
-      let size = int_of_constant_expr len in
+      let size = z_of_constant_expr len in
+      let* size =
+        of_opt_not_impl "nondet: array length is too large" @@ Z.to_int_opt size
+      in
       let++ fields = nondets_raw @@ List.init size (fun _ -> ty) in
       Typed.Adt.mk_array ty (Iarray.of_list fields)
   | TAdt adt as ty -> (
