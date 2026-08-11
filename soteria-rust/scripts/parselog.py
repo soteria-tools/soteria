@@ -166,6 +166,13 @@ def categorise_soteria(test: str, *, expect_failure: bool) -> LogCategorisation:
 
         return Outcome.CRASH(err)
 
+    # An entry point that completes having explored no branch had every one of
+    # its paths vanish, which is almost always the engine assuming something
+    # contradictory. Nothing was verified, so this must not read as a success.
+    vanished = re.findall(r"^note: (.+): done in .*, ran 0 branches", test, re.M)
+    if vanished:
+        return [Outcome.VANISHED(f"all paths vanished in {fn}") for fn in vanished]
+
     err_regex = r"^error: (.+): found issues in"
     if re.search(err_regex, test, re.MULTILINE):
         if expect_failure:

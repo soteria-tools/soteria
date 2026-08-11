@@ -75,7 +75,7 @@ class Outcome(enum.Enum):
         return self == Outcome.TIME_OUT
 
     def is_tool(self) -> bool:
-        return self == Outcome.TOOL
+        return self in (Outcome.TOOL, Outcome.VANISHED)
 
     def is_simple(self) -> bool:
         return self in (
@@ -104,6 +104,7 @@ class Outcome(enum.Enum):
     TIME_OUT = "timeout", YELLOW
     UNSUPPORTED = "unsupported", ORANGE
     CRASH = "crash", ORANGE
+    VANISHED = "vanished", PURPLE
     UNKNOWN = "unknown", MAGENTA
 
 
