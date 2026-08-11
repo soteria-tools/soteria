@@ -80,6 +80,7 @@ module type S = sig
     'a option ->
     ('a, 'env) t
 
+  val simplify : 'a v -> ('a v, 'env) t
   val assume : sbool v list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
 
@@ -412,6 +413,7 @@ module Make (State : State_intf.S) :
     lift_symex (of_opt_not_impl ?tip ?issue msg x)
 
   let assume x = lift_symex (assume x)
+  let simplify x = lift_symex (simplify x)
 
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> with_loc ~loc (f () env state)

@@ -68,6 +68,7 @@
       },
       "std::io::stdio::print_to",
       "std::io::stdio::print_to_buffer_if_capture_used",
+      "core::ptr::align_offset",
       "alloc::raw_vec::handle_error",
       "core::panicking::panic",
       "core::panicking::panic_fmt",

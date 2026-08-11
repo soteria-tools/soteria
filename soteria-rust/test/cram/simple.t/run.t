@@ -860,4 +860,50 @@ Test TypeId equality and downcasting a `dyn Any`
         (V|1| != V|3|) /\ Distinct(V|1-4|) /\ Distinct(V|1-5|) /\
         (V|4| != V|5|)
   
-
+Test that `align_offset` is answered from the allocation's alignment
+  $ soteria-rust exec align_offset.rs
+  Compiling... done in <time>
+  => Running align_offset::offset_within_the_allocation_alignment...
+  note: align_offset::offset_within_the_allocation_alignment: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running align_offset::offset_beyond_the_allocation_alignment...
+  note: align_offset::offset_beyond_the_allocation_alignment: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7fffffffffffffee) /\
+        (0b00 == extract[0-1](V|1|)) /\ (0b000 == extract[0-2](V|1|))
+  
+  => Running align_offset::offset_asked_twice_for_one_allocation...
+  note: align_offset::offset_asked_twice_for_one_allocation: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7fffffffffffffbe) /\
+        (0b000 == extract[0-2](V|1|))
+  
+  => Running align_offset::offset_for_a_known_address...
+  note: align_offset::offset_for_a_known_address: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running align_offset::offset_wrapping_around_the_alignment...
+  note: align_offset::offset_wrapping_around_the_alignment: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running align_offset::offset_that_cannot_be_given...
+  note: align_offset::offset_that_cannot_be_given: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running align_offset::alignment_is_not_a_power_of_two...
+  error: align_offset::alignment_is_not_a_power_of_two: found issues in <time>, errors in 1 branch (out of 1)
+  error: Panic in align_offset::alignment_is_not_a_power_of_two
+       --> $RUSTLIB/library/core/src/ptr/const_ptr.rs:1299:13
+  1299 |              panic!("align_offset: align is not a power-of-two");
+       |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+       |              |
+       |              Triggering operation
+       |              3: Call trace
+       --> $TESTCASE_ROOT/align_offset.rs:82:13
+    80 |  fn alignment_is_not_a_power_of_two() {
+       |  ------------------------------------ 1: Entry point
+    81 |      let arr = [0u8; 8];
+    82 |      let _ = arr.as_ptr().align_offset(std::hint::black_box(3));
+       |              -------------------------------------------------- 2: Call trace
+  PC 1: empty
+  
+  [1]
