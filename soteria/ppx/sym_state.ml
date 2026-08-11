@@ -13,6 +13,25 @@ module Names = struct
   let context_attr = "soteria." ^ ppx ^ ".context"
 end
 
+module Config = struct
+  type _ Effect.t +=
+    | Get_syn_ty : core_type option Effect.t
+    | Get_symex_module : Longident.t Effect.t
+    | Get_inside_soteria : bool Effect.t
+
+  let get_syn_ty () = Effect.perform Get_syn_ty
+  let get_symex_module () = Effect.perform Get_symex_module
+  let get_inside_soteria () = Effect.perform Get_inside_soteria
+
+  let with_config ~(syn_ty : core_type option) ~(symex_module : Longident.t)
+      ~(inside_soteria : bool) f =
+    let open Effect.Deep in
+    try f () with
+    | effect Get_syn_ty, k -> continue k syn_ty
+    | effect Get_symex_module, k -> continue k symex_module
+    | effect Get_inside_soteria, k -> continue k inside_soteria
+end
+
 let record_of_names ?base names =
   pexp_record (List.map (fun n -> (lident n, evar n)) names) base
 
@@ -135,16 +154,36 @@ let mk_field ld =
   in
   { name = ld.pld_name.txt; kind; loc = ld.pld_loc }
 
+let parse_mod_t (ct : core_type) =
+  let@ _ = with_loc ct.ptyp_loc in
+  match ct.ptyp_desc with
+  | Ptyp_constr ({ txt = Ldot (path, "t"); _ }, []) -> path
+  | _ -> err "sum constructors must carry a single <Module>.t argument"
+
+(** A sum constructor [Foo of <Module>.t] becomes a managed field named after
+    the constructor. Context and ignored attributes are record-only. *)
+let mk_variant_field (cd : constructor_declaration) =
+  let@ loc = with_loc cd.pcd_loc in
+  let sym_state =
+    match cd.pcd_args with
+    | Pcstr_tuple [ ct ] -> parse_mod_t ct
+    | _ -> err "sum constructors must carry a single <Module>.t argument"
+  in
+  { name = cd.pcd_name.txt; kind = Managed { sym_state; context = None }; loc }
+
+(** A record models a product memory model (all fields owned together); a
+    variant models a sum memory model (exactly one variant active at a time). *)
+type shape = Record of field list | Variant of field list
+
 let fields_of_td_exn (td : type_declaration) =
   let@ _ = with_loc td.ptype_loc in
   if td.ptype_name.txt <> "t" then
     err ~loc:td.ptype_name.loc "only supports type named 't'";
-  let labels =
-    match td.ptype_kind with
-    | Ptype_record labels -> labels
-    | _ -> err "only supports record types"
-  in
-  labels |> List.map mk_field |> Attributes.validate
+  match td.ptype_kind with
+  | Ptype_record labels ->
+      Record (labels |> List.map mk_field |> Attributes.validate)
+  | Ptype_variant ctors -> Variant (List.map mk_variant_field ctors)
+  | _ -> err "only supports record or variant types"
 
 (** Folds over fields, applying f to each field and joining with join, with
     empty as the base case. *)
@@ -153,14 +192,28 @@ let fold_fields ~empty ~f ~join fields =
   | [] -> empty
   | hd :: tl -> List.fold_left (fun acc field -> join acc (f field)) (f hd) tl
 
+(** The module the syn constructors live in, when a parameterised manifest puts
+    them in another module. *)
+let syn_ctor_prefix (manifest : core_type option) : Longident.t option =
+  match manifest with
+  | Some { ptyp_desc = Ptyp_constr ({ txt = Ldot (m, _); _ }, _ :: _); _ } ->
+      Some m
+  | _ -> None
+
+(** The longident of a field Foo's syn constructor, qualified if needed. *)
+let syn_ctor_lident name =
+  match syn_ctor_prefix @@ Config.get_syn_ty () with
+  | None -> lident (Names.syn name)
+  | Some prefix -> wloc (Ldot (prefix, Names.syn name))
+
 (** For a field Foo, creates pattern [Ser_foo(v)] *)
 let ppat_field field =
   let loc = get_loc () in
-  ppat_construct (lident (Names.syn field.name)) (Some [%pat? v])
+  ppat_construct (syn_ctor_lident field.name) (Some [%pat? v])
 
 (** For a field Foo and expression e, creates expression [Ser_foo(e)] *)
 let constr_field field expr =
-  pexp_construct (lident (Names.syn field.name)) (Some expr)
+  pexp_construct (syn_ctor_lident field.name) (Some expr)
 
 let match_on_syn fields f e =
   let loc = get_loc () in
@@ -179,22 +232,28 @@ let match_on_syn fields f e =
   in
   pexp_match e (cases @ [ irrefutable ])
 
-let syn_type_item (syn_ty : longident option) fields =
+let syn_type_item fields =
   let syn_ctor_decl (field, { sym_state; _ }) =
     let arg_ty = ptyp_constr_dot sym_state "syn" [] in
     constructor_declaration ~name:(Names.syn field.name)
       ~args:(Pcstr_tuple [ arg_ty ]) ~res:None
   in
   let fields = managed_fields fields in
-  let manifest : core_type option =
-    match syn_ty with
-    | Some ty -> Some (ptyp_constr (wloc ty) [])
-    | None -> None
+  let manifest = Config.get_syn_ty () in
+  let kind =
+    match manifest with
+    | Some { ptyp_desc = Ptyp_constr (_, _ :: _); _ } ->
+        (* A parameterised manifest (e.g. [I.syn freeable_syn]) rebinds a type
+           constructor that has type parameters, but [syn] has none;
+           re-declaring its representation would be an arity mismatch. We alias
+           it transparently instead — the constructors come from the
+           manifest. *)
+        Ptype_abstract
+    | _ -> Ptype_variant (List.map syn_ctor_decl fields)
   in
   let td =
-    type_declaration ~name:"syn" ~params:[] ~cstrs:[]
-      ~kind:(Ptype_variant (List.map syn_ctor_decl fields))
-      ~private_:Public ~manifest
+    type_declaration ~name:"syn" ~params:[] ~cstrs:[] ~kind ~private_:Public
+      ~manifest
   in
   pstr_type Recursive [ td ]
 
@@ -305,13 +364,18 @@ let to_opt_item ~loc fields =
 
 let empty_item ~loc = [%stri let empty = None]
 
-let sm_item ~loc symex_module =
-  let symex_module = pmod_ident (wloc symex_module) in
+let sm_item ~loc =
+  (* When the PPX is used inside Soteria itself, [Soteria.Sym_states] is not in
+     scope; the modules must be referred to directly (e.g. [Sym_states]). *)
+  let make =
+    pmod_ident
+      (if Config.get_inside_soteria () then liddots' [ "State_monad"; "Make" ]
+       else liddots' [ "Soteria"; "Sym_states"; "State_monad"; "Make" ])
+  in
+  let symex_module = pmod_ident (wloc (Config.get_symex_module ())) in
   [%stri
     module SM =
-      Soteria.Sym_states.State_monad.Make
-        ([%m
-        symex_module])
+      [%m make] ([%m symex_module])
         (struct
           type nonrec t = t option
         end)]
@@ -585,14 +649,128 @@ let consume_item ~loc fields =
         let st = of_opt st in
         [%e mk_cons_prod_match ~loc ~kind:`Consume fields]]
 
-let make_impl ~loc ~symex_module ~syn_ty (td : type_declaration) =
-  let@ loc = with_loc loc in
-  let fields = fields_of_td_exn td in
+(** For a variant Foo, pattern [Foo v] over the (unwrapped) state. *)
+let ppat_variant field arg = ppat_construct (lident field.name) (Some arg)
+
+let pp_variant_item ~loc fields =
+  let mk_case (field, { sym_state; _ }) =
+    let lhs = ppat_variant field [%pat? v] in
+    let rhs =
+      [%expr
+        Format.fprintf fmt "@[<2>%s@ " [%e estring field.name];
+        [%e pexp_ident_dot sym_state "pp"] fmt v;
+        Format.fprintf fmt "@]"]
+    in
+    case ~lhs ~guard:None ~rhs
+  in
+  [%stri
+    let pp fmt x =
+      [%e pexp_match [%expr x] (List.map mk_case (managed_fields fields))]]
+
+let to_syn_variant_item ~loc fields =
+  let mk_case (field, { sym_state; _ }) =
+    let lhs = ppat_variant field [%pat? x] in
+    let rhs =
+      [%expr
+        List.map
+          (fun v -> [%e constr_field field [%expr v]])
+          ([%e pexp_ident_dot sym_state "to_syn"] x)]
+    in
+    case ~lhs ~guard:None ~rhs
+  in
+  [%stri
+    let to_syn (st : t) : syn list =
+      [%e pexp_match [%expr st] (List.map mk_case (managed_fields fields))]]
+
+let mk_variant_dispatch ~loc ~kind fields =
+  (*
+   * The variant stores a bare [Module.t], but the inner produce/consume work on
+   * [Module.t option] (its own empty state), so we wrap/unwrap around the call:
+   *
+   * match syn with
+   * | Ser_foo v ->
+   *     let* inner =
+   *       match st with
+   *       | None -> return None
+   *       | Some (Foo x) -> return (Some x)
+   *       | Some (Bar _) -> vanish ()
+   *     in
+   *     let+ inner' = Module.<produce/consume> v inner in
+   *     (match inner' with None -> None | Some y -> Some (Foo y))
+   *)
+  let fn_name =
+    match kind with `Produce -> "produce" | `Consume -> "consume"
+  in
+  let pure e =
+    match kind with
+    | `Produce -> [%expr return [%e e]]
+    | `Consume -> [%expr ok [%e e]]
+  in
+  let incompatible =
+    match kind with
+    | `Produce -> [%expr vanish ()]
+    | `Consume -> [%expr lfail (SM.Symex.Value.of_bool false)]
+  in
+  let mk_case field { sym_state; _ } =
+    let other_cases =
+      managed_fields fields
+      |> List.filter_map (fun (other, _) ->
+          if other.name = field.name then None
+          else
+            Some
+              (case
+                 ~lhs:[%pat? Some [%p ppat_variant other [%pat? _]]]
+                 ~guard:None ~rhs:incompatible))
+    in
+    let st_match =
+      pexp_match [%expr st]
+        (case ~lhs:[%pat? None] ~guard:None ~rhs:(pure [%expr None])
+        :: case
+             ~lhs:[%pat? Some [%p ppat_variant field [%pat? x]]]
+             ~guard:None
+             ~rhs:(pure [%expr Some x])
+        :: other_cases)
+    in
+    let call = [%expr [%e pexp_ident_dot sym_state fn_name] v inner] in
+    let call =
+      match kind with
+      | `Produce -> call
+      | `Consume ->
+          let lift_fixes = evar (Names.lift_fixes field.name) in
+          [%expr
+            let+? fixes = [%e call] in
+            [%e lift_fixes] fixes]
+    in
+    [%expr
+      let* inner = [%e st_match] in
+      let+ inner' = [%e call] in
+      match inner' with
+      | None -> None
+      | Some y -> Some [%e pexp_construct (lident field.name) (Some [%expr y])]]
+  in
+  match_on_syn fields mk_case [%expr syn]
+
+let produce_variant_item ~loc fields =
+  [%stri
+    let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =
+      let open SM.Symex.Producer in
+      let open SM.Symex.Producer.Syntax in
+      [%e mk_variant_dispatch ~loc ~kind:`Produce fields]]
+
+let consume_variant_item ~loc fields =
+  [%stri
+    let consume (syn : syn) (st : t option) :
+        (t option, syn list) SM.Symex.Consumer.t =
+      let open SM.Symex.Consumer in
+      let open SM.Symex.Consumer.Syntax in
+      [%e mk_variant_dispatch ~loc ~kind:`Consume fields]]
+
+let make_record_impl ~loc fields =
   [
-    sm_item ~loc symex_module;
+    sm_item ~loc;
     pp_item ~loc fields;
     show_item ~loc;
-    syn_type_item syn_ty fields;
+    syn_type_item fields;
     pp_syn_item ~loc fields;
     show_syn_item ~loc;
     of_opt_item ~loc fields;
@@ -606,26 +784,73 @@ let make_impl ~loc ~symex_module ~syn_ty (td : type_declaration) =
   @ List.map with_field_item (managed_fields fields)
   @ [ produce_item ~loc fields; consume_item ~loc fields ]
 
-let str_type_decl ~loc ~path:_ (_rec, tds) symex_module syn_ty =
+let make_variant_impl ~loc fields =
+  [
+    sm_item ~loc;
+    pp_variant_item ~loc fields;
+    show_item ~loc;
+    syn_type_item fields;
+    pp_syn_item ~loc fields;
+    show_syn_item ~loc;
+    empty_item ~loc;
+    to_syn_variant_item ~loc fields;
+    ins_outs_item ~loc fields;
+  ]
+  @ List.map lift_syn_fix_item (managed_fields fields)
+  @ [ produce_variant_item ~loc fields; consume_variant_item ~loc fields ]
+
+let make_impl ~loc (td : type_declaration) =
+  let@ loc = with_loc loc in
+  match fields_of_td_exn td with
+  | Record fields -> make_record_impl ~loc fields
+  | Variant fields -> make_variant_impl ~loc fields
+
+(* Convert a deriver payload expressions from the [syn] argument into a core
+   type. *)
+let rec core_type_of_expr (e : expression) : core_type =
+  let@ _ = with_loc e.pexp_loc in
+  match e.pexp_desc with
+  | Pexp_ident lid -> ptyp_constr lid []
+  | Pexp_apply (params, (_ :: _ as constrs)) ->
+      let constr_lid = function
+        | _, { pexp_desc = Pexp_ident lid; _ } -> lid
+        | _ -> err "syn expects a type, e.g. `Foo.t` or `I.syn freeable_syn`"
+      in
+      let init_params =
+        match params.pexp_desc with
+        | Pexp_tuple es -> List.map core_type_of_expr es
+        | _ -> [ core_type_of_expr params ]
+      in
+      let first, rest =
+        match List.map constr_lid constrs with
+        | c :: cs -> (c, cs)
+        | [] -> assert false
+      in
+      List.fold_left
+        (fun acc c -> ptyp_constr c [ acc ])
+        (ptyp_constr first init_params)
+        rest
+  | _ -> err "syn expects a type, e.g. `Foo.t` or `I.syn freeable_syn`"
+
+let str_type_decl ~loc ~path:_ (_rec, tds) symex_module syn_ty inside_soteria =
   let@ _ = with_loc loc in
   let symex_module =
     match symex_module with
     | Some { pexp_desc = Pexp_construct ({ txt; _ }, None); _ } -> txt
     | _ -> err "expected { symex = <Module> }"
   in
-  let syn_ty =
-    match syn_ty with
-    | Some { pexp_desc = Pexp_ident { txt; _ }; _ } -> Some txt
-    | None -> None
-    | _ -> err "expected { syn_ty = <ty> }"
-  in
+  let syn_ty = Option.map core_type_of_expr syn_ty in
+  let@ () = Config.with_config ~syn_ty ~symex_module ~inside_soteria in
   match tds with
-  | [ td ] -> make_impl ~loc ~symex_module ~syn_ty td
+  | [ td ] -> make_impl ~loc td
   | _ -> err "expects exactly one type declaration"
 
 let register () =
   let symex_arg = Deriving.Args.arg "symex" Ast_pattern.__ in
   let syn_ty_arg = Deriving.Args.arg "syn" Ast_pattern.__ in
-  let str_args = Deriving.Args.(empty +> symex_arg +> syn_ty_arg) in
+  let inside_soteria_arg = Deriving.Args.flag "inside_soteria" in
+  let str_args =
+    Deriving.Args.(empty +> symex_arg +> syn_ty_arg +> inside_soteria_arg)
+  in
   let str = Deriving.Generator.make str_args str_type_decl in
   Deriving.add Names.ppx ~str_type_decl:str |> Deriving.ignore

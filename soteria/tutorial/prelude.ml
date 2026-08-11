@@ -86,6 +86,8 @@ module Dummy_state = struct
 end
 module Heap = Dummy_state
 module Globs = Dummy_state
+module Inner = Dummy_state
+module Freed = Dummy_state
 module FunBiMap = struct
   type t = unit
   let empty = ()

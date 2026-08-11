@@ -10,6 +10,10 @@
   ./test.sh
   ./sym_state/prelude.ml
   ./sym_state/simple.ml
+  ./sym_state/sum.ml
+  ./sym_state/sum_single.ml
+  ./sym_state/invalid_ctor_arg.ml
+  ./sym_state/inside_soteria.ml
   ./sym_state/ignored.ml
   ./sym_state/ignored_single.ml
   ./sym_state/ignored_fields.ml
@@ -21,6 +25,7 @@
   ./sym_state/ignore_extra_key.ml
   ./sym_state/ignored_is_empty_pp.ml
   ./sym_state/syn_manifest.ml
+  ./sym_state/syn_manifest_type_args.ml
   ./sym_state/syn_manifest_mismatch.ml
   ./sym_state/invalid_non_t.ml
   ./sym_state/ignore_missing_empty.ml

@@ -183,7 +183,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     type 'a raw = ('a Soteria.Sym_states.Freeable.freeable, Meta.t) with_info
 
     let[@inline] is_leakable : 'a. 'a raw -> bool = function
-      | { node = Alive _; info = Some { kind = Heap; _ } } -> true
+      | { node = Ser_Alive _; info = Some { kind = Heap; _ } } -> true
       | _ -> false
 
     let[@inline] trace : 'a. 'a raw -> Trace.t option = function
@@ -261,7 +261,7 @@ module Make (Borrows : Tree_borrows.T) = struct
          let open SM.Syntax in
          let* block = SM.get_state () in
          match block with
-         | Some { node = Freed; _ } -> SM.Result.ok true
+         | Some { node = Freed (); _ } -> SM.Result.ok true
          | _ -> SM.Result.ok false)
   end
 
@@ -303,7 +303,7 @@ module Make (Borrows : Tree_borrows.T) = struct
   let pp_pretty ~ignore_freed ft { heap; _ } =
     let (ignore : 'a * Freeable_block_with_meta.t -> bool) =
       if ignore_freed then function
-        | _, { node = Freed; _ } -> true | _ -> false
+        | _, { node = Freed (); _ } -> true | _ -> false
       else fun _ -> false
     in
     match heap with
