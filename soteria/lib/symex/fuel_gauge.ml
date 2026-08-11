@@ -31,10 +31,7 @@ type t = {
 
 (* Divided by two to avoid overflow in case we add some bits to these values. *)
 let infinite = { steps = Infinite; branching = Infinite }
-
-let is_infinite = function
-  | { steps = Infinite; branching = Infinite } -> true
-  | _ -> false
+let is_infinite = [%matches? { steps = Infinite; branching = Infinite }]
 
 let consume_fuel_steps n gauge =
   if Fuel_value.geq gauge.steps n then

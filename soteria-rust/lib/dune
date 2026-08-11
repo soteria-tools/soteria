@@ -23,6 +23,7 @@
    soteria.ppx
    soteria-rust.ppx
    ppx_deriving_hash
+   ppx_matches
    ppx_mixins))
  (instrumentation
   (backend landmarks --auto)))

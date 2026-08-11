@@ -101,7 +101,7 @@ module Place = struct
                 else Typed.as_any vt
             | _ -> L.failwith "invalid metadata type"))
 
-  let is_local = function { kind = Local _; _ } -> true | _ -> false
+  let is_local = [%matches? { kind = Local _; _ }]
 
   let local local_id ty =
     { kind = Local local_id; origin = { kind = PlaceLocal local_id; ty } }
