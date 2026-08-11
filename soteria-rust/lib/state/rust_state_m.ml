@@ -160,7 +160,10 @@ module type S = sig
     val is_zst : Types.ty -> ([> sbool ] v, 'env) monad
     val is_1zst : Types.ty -> ([> sbool ] v, 'env) monad
     val is_abi_compatible : Types.ty -> Types.ty -> ([> sbool ] v, 'env) monad
-    val unsize_path : Types.ty -> (int list option, 'env) monad
+
+    val unsize_path :
+      from_ty:Types.ty -> to_ty:Types.ty -> (int list option, 'env) monad
+
     val normalise : Types.ty -> (Types.ty, 'env) monad
   end
 
@@ -488,7 +491,9 @@ module Make (State : State_intf.S) :
     let[@inline] is_abi_compatible ty1 ty2 =
       lift_err (is_abi_compatible ty1 ty2)
 
-    let[@inline] unsize_path ty = lift_err (unsize_path ty)
+    let[@inline] unsize_path ~from_ty ~to_ty =
+      lift_err (unsize_path ~from_ty ~to_ty)
+
     let[@inline] normalise ty = lift_err (normalise ty)
   end
 

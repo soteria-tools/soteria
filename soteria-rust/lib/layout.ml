@@ -573,29 +573,41 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
       ty1_1zst &&@ ty2_1zst
 
 (** Returns the path through an ADT to the pointer that is the target of an
-    unsizing operation, returning [None] if no path was found. If the path is
-    [Some], it is guaranteed that following the path leads to a pointer type.
+    unsizing operation from [from_ty] to [to_ty]; [None] is returned if no path
+    was found.
 
-    The path is found by recursively exploring the last non-ZST field of the
-    structure, until a pointer is found. *)
-let rec unsize_path ty : (int list option, _, _) Result.t =
+    The path is found by recursively exploring the field whose type differs
+    between the source and the target structure, ignoring 1ZSTs, until a pointer
+    is found. *)
+let unsize_path ~(from_ty : Types.ty) ~(to_ty : Types.ty) :
+    (int list option, _, _) Result.t =
   let ( let*** ) x f = bind (function Some x -> f x | None -> ok None) x in
-  let ( let**/ ) x f = bind (function Some _ as x -> ok x | None -> f ()) x in
-  let rec find_last_non_zst_field idx tys =
-    match tys with
-    | [] -> ok None
-    | ty :: rest ->
-        let**/ () = find_last_non_zst_field (idx + 1) rest in
-        let** is_zst = is_zst ty in
-        if%sat is_zst then ok None else ok (Some (idx, ty))
+  let rec find_coerced_field idx from_tys to_tys =
+    match (from_tys, to_tys) with
+    | [], [] -> ok None
+    | [], _ | _, [] -> L.failwith "unsize_path: mismatched types"
+    | from_ty :: from_rest, to_ty :: to_rest ->
+        if Types.equal_ty from_ty to_ty then
+          find_coerced_field (idx + 1) from_rest to_rest
+        else
+          let** is_1zst = is_1zst from_ty in
+          if%sat is_1zst then find_coerced_field (idx + 1) from_rest to_rest
+          else ok (Some (idx, from_ty, to_ty))
   in
-  let rec aux acc = function
-    | Types.TRawPtr _ | TRef _ -> ok (Some acc)
-    | TPattern (ty, _) -> aux acc ty
-    | TAdt adt when Crate.is_struct_or_tuple adt ->
-        let tys = Crate.as_struct_or_tuple adt in
-        let*** idx, ty = find_last_non_zst_field 0 tys in
-        aux (idx :: acc) ty
-    | ty -> ok None
+  let rec aux acc from_ty to_ty =
+    match (from_ty, to_ty) with
+    | (Types.TRawPtr _ | TRef _), _ -> ok (Some (List.rev acc))
+    | TPattern (from_ty, _), _ -> aux acc from_ty to_ty
+    | _, Types.TPattern (to_ty, _) -> aux acc from_ty to_ty
+    | TAdt from_adt, TAdt to_adt
+      when Crate.is_struct_or_tuple from_adt && Crate.is_struct_or_tuple to_adt
+      ->
+        let*** idx, from_ty, to_ty =
+          find_coerced_field 0
+            (Crate.as_struct_or_tuple from_adt)
+            (Crate.as_struct_or_tuple to_adt)
+        in
+        aux (idx :: acc) from_ty to_ty
+    | _ -> ok None
   in
-  map (Option.map List.rev) @@ aux [] ty
+  aux [] from_ty to_ty

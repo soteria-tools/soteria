@@ -771,6 +771,7 @@ module Make (StateImpl : State.S) = struct
               | _ -> Typed.cast_lit from_ty v
             in
             ok (Value_codec.cast_literal ~from_ty ~to_ty v)
+        | Cast (CastUnsize (_, _, MetaVTableUpcast [])) -> ok v
         | Cast (CastUnsize (from_ty, to_ty, meta)) -> (
             let rec with_ptr_meta v = function
               | [] ->
@@ -786,7 +787,7 @@ module Make (StateImpl : State.S) = struct
                   let+ target = with_ptr_meta (Typed.Adt.field_of idx v) rest in
                   Typed.Adt.set_field idx target v
             in
-            let* unsize_path = Layout.unsize_path from_ty in
+            let* unsize_path = Layout.unsize_path ~from_ty ~to_ty in
             match unsize_path with
             | Some path -> with_ptr_meta v path
             | None -> not_impl "don't know how to unsize through %a" pp_ty ty)

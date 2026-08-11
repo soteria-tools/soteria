@@ -839,3 +839,15 @@ from, rather than for the type of the field being accessed.
   PC 1: empty
   
   [1]
+
+Test unsizing a Box with a non-ZST allocator
+  $ soteria-rust exec unsize_custom_alloc.rs
+  Compiling... done in <time>
+  => Running unsize_custom_alloc::unsize_array_with_a_non_zst_allocator...
+  note: unsize_custom_alloc::unsize_array_with_a_non_zst_allocator: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running unsize_custom_alloc::upcast_with_a_pointer_allocator...
+  note: unsize_custom_alloc::upcast_with_a_pointer_allocator: done in <time>, ran 1 branch
+  PC 1: empty
+  

@@ -56,7 +56,6 @@ KNOWN_ISSUES = {
     "pass/packed-struct-dyn-trait.rs": "We don't handle repr(packed) with an unsized tail",
     "pass/pointers.rs": "The test expects the address to never equal 0x100, despite it being possible (https://rust-lang.zulipchat.com/#narrow/channel/269128-miri/topic/Test.20.60ptr.3A.3Aguaranteed_ne.60/near/577940570)",
     "pass/ptr_int_from_exposed.rs": "We don't handle shifting pointers between allocations in permissive provenance",
-    "pass/without-validation.rs": "Unsizing RefMut doesn't work",
 }
 
 
