@@ -391,6 +391,13 @@ module Make (StateImpl : State.S) = struct
         let off = Layout.Fields_shape.offset_of field fields in
         let* place_ty = Layout.normalise place.ty in
         let ptr_in = Typed.Ptr.ptr_of ptr in
+        let* off =
+          if not (Layout.is_dst place_ty) then ok off
+          else
+            let+ _, align = State.size_and_align_of_val place_ty ptr in
+            let align = Layout.packed_align base.ty align in
+            Layout.size_to_fit ~size:off ~align
+        in
         let+ ptr_in' = Sptr.offset ~check_signed:true off ptr_in in
         [%l.debug
           "Projecting ADT %a, field %d, with pointer %a to pointer %a"

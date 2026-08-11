@@ -113,6 +113,17 @@ let[@inline] size_to_fit ~size ~align =
     size
     (size +!!@ align -!!@ (size %@ align))
 
+(** The alignment a field of alignment [align] has within a value of type [ty]:
+    [repr(packed(n))] caps the alignment of every field to [n]. *)
+let packed_align (ty : Types.ty) align =
+  match ty with
+  | TAdt { id = TAdtId id; _ } -> (
+      match (Crate.get_adt_raw id).layout with
+      | [ (_triple, { repr = { align_modif = Some (Pack n); _ }; _ }) ] ->
+          BV.min ~signed:false align (BV.usizeinz n)
+      | _ -> align)
+  | _ -> align
+
 let mk ~size ~align ?(uninhabited = false)
     ?(fields : Fields_shape.t = Primitive) () =
   { size; align; uninhabited; fields }
