@@ -68,12 +68,7 @@ module type S = sig
     src:[< sptr_f ] v -> dst:[< sptr_f ] v -> size:sint Typed.t -> unit ret
 
   val transmute : from:Types.ty -> to_:Types.ty -> [< any ] v -> [> any ] v ret
-
-  val transmute_raw :
-    to_:Types.ty ->
-    ([< any ] v * [< sint ] v * [< nonzero ] v) list ->
-    [> any ] v ret
-
+  val transmute_raw : to_:Types.ty -> Typed.block list -> [> any ] v ret
   val zeros : [< sptr_f ] v -> [< nonzero ] v -> unit ret
   val with_pointers_sym : 'a Sptr.DecayMap.SM.t -> 'a SM.t
   val store_str_global : string -> [< sptr_f ] v -> unit ret

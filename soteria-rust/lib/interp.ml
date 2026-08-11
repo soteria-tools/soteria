@@ -257,28 +257,28 @@ module Make (StateImpl : State.S) = struct
           | ProvFunction f -> State.declare_fn (Real f)
           | ProvUnknown -> not_impl "Unknown provenance in RawMemory"
         in
+        let open Typed in
         let* blocks =
           map_list blocks ~f:(fun block ->
               match block with
               | `Byte (b, ofs) ->
-                  ok
-                    ( Typed.as_any b,
-                      BV.usizei ofs,
-                      BV.usizeinz (Typed.size_of_int b / 8) )
+                  let offset = BV.usizei ofs in
+                  let size = BV.usizeinz (size_of_int b / 8) in
+                  let b = Typed.((b : T.sint t :> T.scalar t)) in
+                  ok ({ value = Scalar b; offset; size } : Typed.block)
               | `Ptr (p, from_, size, ofs) ->
                   let* ptr = ptr_of_provenance p in
                   let ptr = Typed.Ptr.ptr_of ptr in
-                  if from_ = 0 && size = ptr_size then
-                    ok
-                      ( Typed.Ptr.mk_ptr_f ptr None,
-                        BV.usizei ofs,
-                        BV.usizeinz size )
-                  else
-                    let+ ptr_int = Sptr.decay ptr in
-                    let ptr_frag =
+                  let+ value =
+                    if from_ = 0 && size = ptr_size then
+                      ok (Typed.Ptr.mk_ptr_f ptr None)
+                    else
+                      let+ ptr_int = Sptr.decay ptr in
                       BV.extract (from_ * 8) ((from_ + size) * 8) ptr_int
-                    in
-                    (ptr_frag, BV.usizei ofs, BV.usizeinz size))
+                  in
+                  let offset = BV.usizei ofs in
+                  let size = BV.usizeinz size in
+                  { value = Scalar value; offset; size })
         in
         (* let the value decoder handle it *)
         State.transmute_raw ~to_:const.ty blocks
@@ -916,7 +916,7 @@ module Make (StateImpl : State.S) = struct
         let* layout = Layout.layout_of (TAdt adt) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
         let+ op_blocks =
-          Value_codec.encode ~offset value (type_of_operand op)
+          Value_codec.encode ~depth:0 ~offset value (type_of_operand op)
         in
         let op_blocks = Iter.to_list op_blocks in
         Typed.Adt.mk_union adt op_blocks
