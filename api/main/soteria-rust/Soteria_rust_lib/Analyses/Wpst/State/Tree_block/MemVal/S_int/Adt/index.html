@@ -17,11 +17,18 @@ let search_urls = ['../../../../../../../../db.js','../../../../../../../../../s
     list</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates an enum value with the given discriminant and fields.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_union"><a href="#val-mk_union" class="anchor"></a><code><span><span class="keyword">val</span> mk_union : 
   <span><span class="xref-unresolved">Charon</span>.Types.type_decl_ref <span class="arrow">&#45;&gt;</span></span>
-  <span><span><span>(<span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
-   * <span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span>
-       <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
-   * <span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.nonzero</span> ]</span>
-       <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span>
+  <span><span><span><span>(<span><span>[ <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span>
+   <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sfloat</span></span>
+   <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span></span>
+   <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.poly</span></span> ]</span>
+     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>,
+    <span><span>[ <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span>
+    <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span></span>
+    <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.union</span></span> ]</span>
+      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>,
+    <span><span>[ `NonZero <span>| `Zero</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>,
+    <span><span>[ `NonZero ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span>
+    <a href="../../../../../../../Svalue/Ext/index.html#type-block">Svalue.Ext.block</a></span>
     list</span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.union</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>Creates a union value with the given value blocks.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_poly"><a href="#val-mk_poly" class="anchor"></a><code><span><span class="keyword">val</span> mk_poly : 
@@ -31,11 +38,18 @@ let search_urls = ['../../../../../../../../db.js','../../../../../../../../../s
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div><div class="spec-doc"><p>The unit tuple value.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_union"><a href="#val-as_union" class="anchor"></a><code><span><span class="keyword">val</span> as_union : 
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.union</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.any</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
-   * <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span>
-       <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
-   * <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.nonzero</span> ]</span>
-       <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span>
+  <span><span><span>(<span><span>[ <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span>
+   <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sfloat</span></span>
+   <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span></span>
+   <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.poly</span></span> ]</span>
+     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>,
+    <span><span>[ <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span>
+    <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.enum</span></span>
+    <span>| <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.union</span></span> ]</span>
+      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>,
+    <span><span>[ `NonZero <span>| `Zero</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>,
+    <span><span>[ `NonZero ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>)</span>
+    <a href="../../../../../../../Svalue/Ext/index.html#type-block">Svalue.Ext.block</a></span>
     list</span></span></code></div><div class="spec-doc"><p>Gets the value blocks of a union.</p></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_tuple"><a href="#val-as_tuple" class="anchor"></a><code><span><span class="keyword">val</span> as_tuple : 
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.tuple</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
