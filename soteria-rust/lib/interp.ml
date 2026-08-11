@@ -21,8 +21,19 @@ module Make (StateImpl : State.S) = struct
   type 'a t = ('a, Store.t) StateM.t
   type 'err fun_exec = Typed.(T.any t) list -> (Typed.(T.any t), unit) StateM.t
 
-  type lazy_ptr = Store of Store.Place.t | Heap of Typed.T.sptr_f Typed.t
-  [@@deriving show { with_path = false }]
+  (** The pointer a place was created from, and the type it was created at.
+      {b A place must be aligned for that type}, not for the accessed subplace
+      (we trust projections to be well-aligned). This enables accesses to
+      [repr(packed)] ADTs without misaligned errors. *)
+  type align_root = (Typed.T.sptr_f Typed.t * Types.ty) option
+
+  type lazy_ptr =
+    | Store of Store.Place.t
+    | Heap of Typed.T.sptr_f Typed.t * align_root
+
+  let pp_lazy_ptr ft = function
+    | Store sp -> Fmt.pf ft "store(%a)" Store.Place.pp sp
+    | Heap (ptr, _) -> Fmt.pf ft "heap(%a)" Typed.ppa ptr
 
   (** Spills a local variable onto the heap *)
   let get_variable_ptr var_id =
@@ -327,30 +338,33 @@ module Make (StateImpl : State.S) = struct
         not_impl "opaque constant: %s; something went wrong in the frontend" msg
 
   (** Resolves a place to a pointer *)
-  and resolve_place (place : Expressions.place) : Typed.([> T.sptr_f ] t) t =
+  and resolve_place place = map fst @@ resolve_place_rooted place
+
+  (** Resolves a place to a pointer, along with the alignment requirement it
+      inherits from the pointer it was created from (see {!align_root}). *)
+  and resolve_place_rooted (place : Expressions.place) :
+      (Typed.T.sptr_f Typed.t * align_root) t =
     match place.kind with
     (* Just a local *)
-    | PlaceLocal v -> get_variable_ptr v
+    | PlaceLocal v ->
+        let+ ptr = get_variable_ptr v in
+        (ptr, None)
     (* Just a global *)
-    | PlaceGlobal g -> resolve_global g
+    | PlaceGlobal g ->
+        let+ ptr = resolve_global g in
+        (ptr, None)
     (* Dereference a pointer *)
-    | PlaceProjection (base, Deref) -> (
+    | PlaceProjection (base, Deref) ->
         (* read the pointer value of [base] without spilling it to the heap *)
         let* loc = resolve_place_lazy base in
         let* ptr = load_lazy loc base.ty in
         [%l.debug "Dereferencing %a of %a" Typed.ppa ptr pp_ty base.ty];
         let ptr = Typed.cast_ptr_f ptr in
-        let pointee = get_pointee base.ty in
-        match base.ty with
-        | TRef _ ->
-            (* HACK: this should be verified when loading the pointer, rather
-               than here *)
-            let+ () = Sptr.check_aligned ptr pointee in
-            ptr
-        | _ -> ok ptr)
+        (* dereferencing is what gives a place its alignment requirement *)
+        ok (ptr, Some (ptr, get_pointee base.ty))
     (* The metadata of a pointer type is just the second part of the pointer *)
     | PlaceProjection (base, PtrMetadata) ->
-        let* ptr = resolve_place base in
+        let* ptr, root = resolve_place_rooted base in
         let* () = State.fake_read ptr base.ty in
         let ptr = Typed.Ptr.ptr_of ptr in
         [%l.debug
@@ -360,10 +374,9 @@ module Make (StateImpl : State.S) = struct
             Usize.(1s)
             ptr
         in
-        Typed.Ptr.of_ptr_t ptr'
+        (Typed.Ptr.of_ptr_t ptr', root)
     | PlaceProjection (base, Field (kind, field)) ->
-        let* ptr = resolve_place base in
-        let* () = Sptr.check_aligned ptr base.ty in
+        let* ptr, root = resolve_place_rooted base in
         [%l.debug
           "Projecting field %a (kind %a) for %a" Types.pp_field_id field
             Expressions.pp_field_proj_kind kind Typed.ppa ptr];
@@ -378,14 +391,14 @@ module Make (StateImpl : State.S) = struct
         let off = Layout.Fields_shape.offset_of field fields in
         let* place_ty = Layout.normalise place.ty in
         let ptr_in = Typed.Ptr.ptr_of ptr in
-        let* ptr_in' = Sptr.offset ~check_signed:true off ptr_in in
+        let+ ptr_in' = Sptr.offset ~check_signed:true off ptr_in in
         [%l.debug
           "Projecting ADT %a, field %d, with pointer %a to pointer %a"
             Expressions.pp_field_proj_kind kind field Sptr.pp ptr_in Sptr.pp
             ptr_in'];
-        ok (Typed.Ptr.with_ptr ptr ptr_in')
+        (Typed.Ptr.with_ptr ptr ptr_in', root)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
-        let* ptr = resolve_place base in
+        let* ptr, root = resolve_place_rooted base in
         let* pointee = Layout.normalise base.ty in
         let* len, _ = len_of_indexable ~ptr ~pointee in
         let ptr = Typed.Ptr.ptr_of ptr in
@@ -399,9 +412,9 @@ module Make (StateImpl : State.S) = struct
         [%l.debug
           "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
             Typed.ppa ptr'];
-        Typed.Ptr.of_ptr_t ptr'
+        (Typed.Ptr.of_ptr_t ptr', root)
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
-        let* ptr = resolve_place base in
+        let* ptr, root = resolve_place_rooted base in
         let* pointee = Layout.normalise base.ty in
         let* len, ty = len_of_indexable ~ptr ~pointee in
         let ptr = Typed.Ptr.ptr_of ptr in
@@ -423,7 +436,7 @@ module Make (StateImpl : State.S) = struct
             Typed.ppa from Typed.ppa to_
             (if from_end then "(from end)" else "")
             Typed.ppa ptr' Typed.ppa slice_len];
-        Typed.Ptr.mk_ptr_f ptr' slice_len
+        (Typed.Ptr.mk_ptr_f ptr' slice_len, root)
 
   (* The length of an array or slice being indexed; used to bound-check. *)
   and len_of_indexable ~ptr ~pointee =
@@ -487,12 +500,14 @@ module Make (StateImpl : State.S) = struct
         let+ _ = Layout.layout_of place.ty in
         Store sp
     | None ->
-        let+ ptr = resolve_place place in
-        Heap ptr
+        let+ ptr, root = resolve_place_rooted place in
+        Heap (ptr, root)
 
   (** Given a lazy pointer, attempts performing a fallible operation [store]
       using the store. If the lazy pointer actually points to the heap, or if
-      the operation fails (returns [None]), uses [heap] instead. *)
+      the operation fails (returns [None]), uses [heap] instead. Pointer
+      alignment is checked before [heap] is called, so it is safe to skip
+      subsequent alignment checks through this pointer. *)
   and try_lazy :
       'a.
       store:(Store.Place.t -> Store.t -> 'a option t) ->
@@ -500,19 +515,28 @@ module Make (StateImpl : State.S) = struct
       lazy_ptr ->
       'a t =
    fun ~store ~heap loc ->
+    let heap (ptr, root) =
+      (* Now that we know a heap access is going to happen, check root align *)
+      let* () =
+        match root with
+        | None -> ok ()
+        | Some (root_ptr, root_ty) -> Sptr.check_aligned root_ptr root_ty
+      in
+      heap ptr
+    in
     match loc with
-    | Heap ptr -> heap ptr
+    | Heap (ptr, root) -> heap (ptr, root)
     | Store sp -> (
         let* s = get_env () in
         let* res_opt = store sp s in
         match res_opt with
         | Some res -> ok res
-        | None -> bind heap @@ resolve_place sp.origin)
+        | None -> bind heap @@ resolve_place_rooted sp.origin)
 
   and load_lazy loc ty : Typed.([> T.any ] t) t =
     Soteria.Stats.As_ctx.incr StatKeys.load_accesses;
     try_lazy loc
-      ~heap:(fun ptr -> State.load ptr ty)
+      ~heap:(fun ptr -> State.load ~ignore_align:true ptr ty)
       ~store:(fun sp store ->
         match Store.try_load sp store with
         | Some (Value v) ->
@@ -530,7 +554,7 @@ module Make (StateImpl : State.S) = struct
     let open OptionM.Syntax in
     [%l.info "Assigning %a <- %a" pp_lazy_ptr loc Typed.ppa v];
     try_lazy loc
-      ~heap:(fun ptr -> State.store ptr ty v)
+      ~heap:(fun ptr -> State.store ~ignore_align:true ptr ty v)
       ~store:(fun sp store ->
         let* store = get_env () in
         let*^ new_store = Store.try_store sp store v in
@@ -888,7 +912,8 @@ module Make (StateImpl : State.S) = struct
           let open Syntax in
           let* loc = resolve_place_lazy place in
           try_lazy loc
-            ~heap:(fun ptr -> State.load_discriminant ptr place.ty)
+            ~heap:(fun ptr ->
+              State.load_discriminant ~ignore_align:true ptr place.ty)
             ~store:(fun sp store ->
               let*^ v = Store.try_load sp store in
               match v with

@@ -803,3 +803,39 @@ Test destructors run when reached through `ptr::drop_in_place`.
   note: drop_in_place::main: done in <time>, ran 1 branch
   PC 1: empty
   
+Test that a place must be aligned for the type of the pointer it was created
+from, rather than for the type of the field being accessed.
+  $ soteria-rust exec place_align.rs
+  Compiling... done in <time>
+  => Running place_align::access_packed_field...
+  note: place_align::access_packed_field: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running place_align::deref_ptr_to_packed_field...
+  error: place_align::deref_ptr_to_packed_field: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Misaligned pointer; expected 0x0000000000000004, received 0x0000000000000001 with offset 0x0000000000000001 in place_align::deref_ptr_to_packed_field
+      --> $TESTCASE_ROOT/place_align.rs:30:22
+   27 |  fn deref_ptr_to_packed_field() {
+      |  ------------------------------ 1: Entry point
+      .  
+   30 |      let _ = unsafe { *q };
+      |                       ^^ Requires well-aligned pointer
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff9)
+  
+  => Running place_align::access_field_of_misaligned_struct...
+  error: place_align::access_field_of_misaligned_struct: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Misaligned pointer; expected 0x0000000000000004, received 0x0000000000000008 with offset 0x0000000000000001 in place_align::access_field_of_misaligned_struct
+      --> $TESTCASE_ROOT/place_align.rs:39:22
+   36 |  fn access_field_of_misaligned_struct() {
+      |  -------------------------------------- 1: Entry point
+      .  
+   39 |      let _ = unsafe { (*p).fill };
+      |                       ^^^^^^^^^ Requires well-aligned pointer
+  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7fffffffffffffde) /\
+        (0b000 == extract[0-2](V|1|))
+  
+  => Running place_align::addr_of_field_of_misaligned_struct...
+  note: place_align::addr_of_field_of_misaligned_struct: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  [1]

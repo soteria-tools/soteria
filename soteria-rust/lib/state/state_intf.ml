@@ -44,10 +44,21 @@ module type S = sig
   val pp_pretty : ignore_freed:bool -> t Fmt.t
 
   val empty : t option
-  val load : ?ignore_borrow:bool -> [< sptr_f ] v -> Types.ty -> [> any ] v ret
+
+  val load :
+    ?ignore_borrow:bool ->
+    ?ignore_align:bool ->
+    [< sptr_f ] v ->
+    Types.ty ->
+    [> any ] v ret
+
   val tb_load : [< sptr_f ] v -> Types.ty -> unit ret
-  val load_discriminant : [< sptr_f ] v -> Types.ty -> [> sint ] v ret
-  val store : [< sptr_f ] v -> Types.ty -> [< any ] v -> unit ret
+
+  val load_discriminant :
+    ?ignore_align:bool -> [< sptr_f ] v -> Types.ty -> [> sint ] v ret
+
+  val store :
+    ?ignore_align:bool -> [< sptr_f ] v -> Types.ty -> [< any ] v -> unit ret
 
   val alloc_untyped :
     ?span:Meta.span_data ->

@@ -194,10 +194,22 @@ module type S = sig
     val empty : st
 
     val load :
-      ?ignore_borrow:bool -> [< sptr_f ] v -> Types.ty -> ([> any ] v, 'env) t
+      ?ignore_borrow:bool ->
+      ?ignore_align:bool ->
+      [< sptr_f ] v ->
+      Types.ty ->
+      ([> any ] v, 'env) t
 
-    val load_discriminant : [< sptr_f ] v -> Types.ty -> ([> sint ] v, 'env) t
-    val store : [< sptr_f ] v -> Types.ty -> [< any ] v -> (unit, 'env) t
+    val load_discriminant :
+      ?ignore_align:bool -> [< sptr_f ] v -> Types.ty -> ([> sint ] v, 'env) t
+
+    val store :
+      ?ignore_align:bool ->
+      [< sptr_f ] v ->
+      Types.ty ->
+      [< any ] v ->
+      (unit, 'env) t
+
     val zeros : [< sptr_f ] v -> [< nonzero ] v -> (unit, 'env) t
     val alloc_ty : ?span:Meta.span_data -> Types.ty -> ([> sptr_f ] v, 'env) t
 
@@ -518,11 +530,15 @@ module Make (State : State_intf.S) :
 
     let empty = State.empty
 
-    let[@inline] load ?ignore_borrow ptr ty =
-      ESM.lift (load ?ignore_borrow ptr ty)
+    let[@inline] load ?ignore_borrow ?ignore_align ptr ty =
+      ESM.lift (load ?ignore_borrow ?ignore_align ptr ty)
 
-    let[@inline] load_discriminant ptr ty = ESM.lift (load_discriminant ptr ty)
-    let[@inline] store ptr ty v = ESM.lift (store ptr ty v)
+    let[@inline] load_discriminant ?ignore_align ptr ty =
+      ESM.lift (load_discriminant ?ignore_align ptr ty)
+
+    let[@inline] store ?ignore_align ptr ty v =
+      ESM.lift (store ?ignore_align ptr ty v)
+
     let[@inline] zeros ptr size = ESM.lift (zeros ptr size)
     let[@inline] alloc_ty ?span ty = ESM.lift (alloc_ty ?span ty)
 

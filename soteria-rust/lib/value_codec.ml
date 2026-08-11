@@ -848,6 +848,7 @@ let rec size_and_align_of_val ~load_vtable ~t ~(ptr : Typed.([< T.sptr_f ] t)) =
   let open Rustsymex.Syntax in
   (* Takes inspiration from rustc, to calculate the size and alignment of DSTs.
      https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
+  let** t = Layout.normalise t in
   if not (Layout.is_dst t) then
     let++ layout = Layout.layout_of t in
     (layout.size, layout.align)

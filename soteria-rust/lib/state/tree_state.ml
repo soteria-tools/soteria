@@ -379,18 +379,11 @@ module Make (Borrows : Tree_borrows.T) = struct
     in
     lift @@ Value_codec.size_and_align_of_val ~load_vtable ~t ~ptr
 
-  (** Checks the given pointer is well-aligned for the given type, possibly
-      reading in the heap to know what the alignment is (e.g. for [&dyn Trait]).
-      Returns the size of the type for that pointer (i.e. taking into account
-      metadata). *)
-  and check_ptr_align (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
-    (* The expected alignment of a dyn pointer is stored inside the VTable *)
-    let**^ ty = Layout.normalise ty in
-    let** size, exp_align = size_and_align_of_val ty ptr in
-    let ptr = Typed.Ptr.ptr_of ptr in
+  (** Checks the given pointer is aligned to [exp_align]. *)
+  and check_align (ptr : Typed.([< T.sptr_t ] t)) exp_align =
     [%l.debug
-      "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
-        exp_align pp_ty ty];
+      "Checking pointer alignment of %a: expect %a" Sptr.pp ptr Typed.ppa
+        exp_align];
     let loc, ofs = Typed.Ptr.decompose ptr in
     (* A pointer with no provenance is aligned to it's offset *)
     let align =
@@ -409,9 +402,9 @@ module Make (Borrows : Tree_borrows.T) = struct
          always be aligned; what matters most is whether it is guaranteed to be
          aligned. *)
       let* address = with_pointers_sym @@ Sptr.decay ptr in
-      if%sure address %@ exp_align ==@ Usize.(0s) then Result.ok size
+      if%sure address %@ exp_align ==@ Usize.(0s) then Result.ok ()
       else Result.error (`MisalignedPointer (exp_align, align, ofs))
-    else Result.ok size
+    else Result.ok ()
 
   and check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
     let check (ptr : Typed.([< T.sptr_t ] t)) size =
@@ -436,8 +429,10 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   and check_validity ~check_refs ty value =
     let default_check ptr ty =
-      let** size = check_ptr_align ptr ty in
-      check_non_dangling_untyped (Typed.Ptr.ptr_of ptr) size
+      let** size, align = size_and_align_of_val ty ptr in
+      let ptr = Typed.Ptr.ptr_of ptr in
+      let** () = check_align ptr align in
+      check_non_dangling_untyped ptr size
     in
     let check_ref =
       if check_refs then fun ptr ty ->
@@ -451,12 +446,17 @@ module Make (Borrows : Tree_borrows.T) = struct
       'a.
       ?ignore_borrow:bool ->
       ?check_refs:bool ->
+      ?ignore_align:bool ->
       ([< T.sptr_f ] as 'a) Typed.t ->
       Types.ty ->
       (Typed.([> T.any ] t), Error.t, syn list) Result.t =
-   fun ?ignore_borrow ?(check_refs = true) ptr ty ->
-    let** size = check_ptr_align ptr ty in
+   fun ?ignore_borrow ?(check_refs = true) ?(ignore_align = false) ptr ty ->
     let**^ ty = Layout.normalise ty in
+    let** size, align = size_and_align_of_val ty ptr in
+    let** () =
+      if ignore_align then Result.ok ()
+      else check_align (Typed.Ptr.ptr_of ptr) align
+    in
     let parser ~offset = Tree_block.Decoder.decode ~ptr ~offset ty in
     let** value =
       if%sat size ==@ Usize.(0s) then
@@ -473,8 +473,14 @@ module Make (Borrows : Tree_borrows.T) = struct
     let++ () = check_validity ~check_refs ty value in
     Typed.as_any value
 
-  and load_discriminant (ptr : Typed.([< T.sptr_f ] t)) ty =
-    let** _size = check_ptr_align ptr ty in
+  and load_discriminant ?(ignore_align = false) (ptr : Typed.([< T.sptr_f ] t))
+      ty =
+    let** () =
+      if ignore_align then Result.ok ()
+      else
+        let** _, align = size_and_align_of_val ty ptr in
+        check_align (Typed.Ptr.ptr_of ptr) align
+    in
     let**^ known_variant = Layout.enum_single_variant ty in
     let++ variant_id =
       match known_variant with
@@ -551,7 +557,8 @@ module Make (Borrows : Tree_borrows.T) = struct
     let**^ size = Layout.size_of ty in
     tb_load_untyped (Typed.Ptr.ptr_of ptr) size
 
-  let store (ptr : Typed.([< T.sptr_f ] t)) ty (sval : Typed.([< T.any ] t)) :
+  let store ?(ignore_align = false) (ptr : Typed.([< T.sptr_f ] t)) ty
+      (sval : Typed.([< T.any ] t)) :
       (unit, Error.with_trace, syn list) Result.t =
     [%l.debug "Executing Store with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Memory store" () in
@@ -564,10 +571,11 @@ module Make (Borrows : Tree_borrows.T) = struct
         if Layout.is_aggregate layout then Aggregate (Typed.cast sval, ty)
         else Scalar (Typed.cast sval)
       in
-      let** size = check_ptr_align ptr ty in
+      let** size, align = size_and_align_of_val ty ptr in
+      let ptr = Typed.Ptr.ptr_of ptr in
+      let** () = if ignore_align then Result.ok () else check_align ptr align in
       let* () = log "store" ptr in
       let size = Typed.BV.cast_nonzero size in
-      let ptr = Typed.Ptr.ptr_of ptr in
       let tag = Typed.Ptr.tag_of ptr in
       let@ ofs = with_ptr Write ptr in
       Block.with_block_read_tb (fun tb -> Tree_block.store ofs size sval tag tb)
@@ -660,7 +668,8 @@ module Make (Borrows : Tree_borrows.T) = struct
 
     let check_aligned ptr ty =
       let@ () = with_loc_err ~trace:"Requires well-aligned pointer" () in
-      SM.Result.map ignore @@ check_ptr_align ptr ty
+      let** _, align = size_and_align_of_val ty ptr in
+      check_align (Typed.Ptr.ptr_of ptr) align
 
     let check_non_dangling_untyped (ptr : Typed.([< T.sptr_t ] t)) size =
       let@ () = with_loc_err ~trace:"Dangling check" () in
@@ -678,17 +687,17 @@ module Make (Borrows : Tree_borrows.T) = struct
     ( (size : Typed.T.sint Typed.t :> Typed.([> T.sint ] t)),
       (align : Typed.T.nonzero Typed.t :> Typed.([> T.nonzero ] t)) )
 
-  let load ?ignore_borrow ptr ty =
+  let load ?ignore_borrow ?ignore_align ptr ty =
     [%l.debug "Executing Load with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Memory load" () in
-    load ?ignore_borrow ptr ty
+    load ?ignore_borrow ?ignore_align ptr ty
 
-  let load_discriminant ptr ty =
+  let load_discriminant ?ignore_align ptr ty =
     [%l.debug
       "Executing Load_discriminant with pointer %a for %a" Typed.ppa ptr pp_ty
         ty];
     let@ () = with_loc_err ~trace:"Memory load (discriminant)" () in
-    load_discriminant ptr ty
+    load_discriminant ?ignore_align ptr ty
 
   let fake_read ptr ty =
     [%l.debug
