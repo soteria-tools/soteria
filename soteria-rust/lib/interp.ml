@@ -331,9 +331,9 @@ module Make (StateImpl : State.S) = struct
     | CVTableRef _ ->
         not_impl "vtable-reference constants are not yet supported: %a"
           Crate.pp_constant_expr const
-    | CTypeId _ ->
-        not_impl ~issue:187 "TypeId constants are not yet supported: %a"
-          Crate.pp_constant_expr const
+    | CTypeId ty ->
+        let* id = State.type_id ty in
+        State.transmute ~from:(TLiteral (TUInt U128)) ~to_:const.ty id
     | COpaque msg ->
         not_impl "opaque constant: %s; something went wrong in the frontend" msg
 

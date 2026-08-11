@@ -249,6 +249,7 @@ module type S = sig
     val lookup_const_generic :
       Types.const_generic_var_id -> Types.ty -> ([> any ] v, 'env) t
 
+    val type_id : Types.ty -> (sint v, 'env) t
     val register_thread_exit : (unit -> (unit, unit) t) -> (unit, 'env) t
     val run_thread_exits : unit -> (unit, 'env) t
     val add_error : Error.with_trace -> (unit, 'env) t
@@ -573,6 +574,7 @@ module Make (State : State_intf.S) :
     let[@inline] lookup_const_generic id ty =
       ESM.lift (lookup_const_generic id ty)
 
+    let[@inline] type_id ty = ESM.lift (type_id ty)
     let[@inline] add_error e = ESM.lift (add_error e)
     let[@inline] pop_error () : ('a, 'env) monad = ESM.lift (pop_error ())
     let[@inline] leak_check () = ESM.lift (leak_check ())

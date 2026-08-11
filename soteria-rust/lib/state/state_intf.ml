@@ -98,6 +98,7 @@ module type S = sig
   val lookup_const_generic :
     Types.const_generic_var_id -> Types.ty -> [> any ] v ret
 
+  val type_id : Types.ty -> sint v ret
   val register_thread_exit : (unit -> unit ret) -> unit ret
   val run_thread_exits : unit -> unit ret
 end

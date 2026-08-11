@@ -851,3 +851,13 @@ Test unsizing a Box with a non-ZST allocator
   note: unsize_custom_alloc::upcast_with_a_pointer_allocator: done in <time>, ran 1 branch
   PC 1: empty
   
+Test TypeId equality and downcasting a `dyn Any`
+  $ soteria-rust exec type_id.rs
+  Compiling... done in <time>
+  => Running type_id::main...
+  note: type_id::main: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ (V|1| != V|2|) /\ Distinct(V|1-3|) /\
+        (V|1| != V|3|) /\ Distinct(V|1-4|) /\ Distinct(V|1-5|) /\
+        (V|4| != V|5|)
+  
+

@@ -988,6 +988,35 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let str = Fmt.to_to_string pp_ty t in
     Core.string_to_ptr str
 
+  let type_id_eq ~a ~b =
+    let words id =
+      Typed.Adt.as_tuple1 id |> Typed.cast_array |> Typed.Adt.as_array
+    in
+    let a = words a in
+    let b = words b in
+    Iter.of_iarray2 a b
+    |> fold_iter ~init:Typed.v_true ~f:(fun acc (a, b) ->
+        let* a = Sptr.decay Typed.(Ptr.ptr_of (cast_ptr_f a)) in
+        let+ b = Sptr.decay Typed.(Ptr.ptr_of (cast_ptr_f b)) in
+        acc &&@ (a ==@ b))
+    |> map (fun b -> Typed.((b : T.sbool t :> [> T.sbool ] t)))
+
+  let type_id_of_unknown name =
+    not_impl ~issue:187 "compile-time TypeId reflection is not supported (%s)"
+      name
+
+  let size_of_type_id ~id:_ = type_id_of_unknown "size_of_type_id"
+
+  let type_id_fields ~id:_ ~variant_index:_ =
+    type_id_of_unknown "type_id_fields"
+
+  let type_id_variants ~id:_ = type_id_of_unknown "type_id_variants"
+  let type_id_vtable ~id:_ ~trait:_ = type_id_of_unknown "type_id_vtable"
+  let type_of ~id:_ = type_id_of_unknown "type_of"
+
+  let type_id_field_representing_type ~id:_ ~variant_index:_ ~field_index:_ =
+    type_id_of_unknown "type_id_field_representing_type"
+
   let unchecked_op op ~t ~x ~y =
     let t = TypesUtils.ty_as_literal t in
     let x = Typed.cast_lit t x in
