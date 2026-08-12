@@ -7,6 +7,6 @@
 let charon_commit = "4398b734716b0f3c26a8b43b8791e698bc242139"
 
 (*
- * [versionsync: OBOL_COMMIT_HASH=d27ea9db94a7ad0bca8559a817a1936d19d38b5a]
+ * [versionsync: OBOL_COMMIT_HASH=bdf0d9dc090bfffcac80fdcdf7a0e30f40fbc120]
  *)
-let obol_commit = "d27ea9db94a7ad0bca8559a817a1936d19d38b5a"
+let obol_commit = "bdf0d9dc090bfffcac80fdcdf7a0e30f40fbc120"
