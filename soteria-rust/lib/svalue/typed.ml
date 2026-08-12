@@ -82,10 +82,15 @@ let float_precision :
 (* The raw pointer type; only used to materialise a fully-symbolic nondet
    pointer in [Value_codec] (see {!Ptr.of_raw}). *)
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
-let t_ptr_f () : 'a ty = TExtension TFullPtr
-let t_ptr_t () : 'a ty = TExtension TThinPtr
+let t_ptr_f () : _ ty = TExtension TFullPtr
+let t_ptr_t () : _ ty = TExtension TThinPtr
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
+let t_enum adt : _ ty = TExtension (TEnum adt)
+
+let t_as_enum : _ ty -> Types.type_decl_ref = function
+  | TExtension (TEnum adt) -> adt
+  | ty -> L.failwith "t_as_enum: expected enum type, got %a" ppa_ty ty
 
 let t_lit : Types.literal_type -> [> T.sint ] ty = function
   | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
@@ -372,7 +377,7 @@ module Adt = struct
     let elem_ty = if len = 0 then ty_of_rust elem_ty else get_ty arr.%(0) in
     Extension (Array arr) <| t_array elem_ty (Z.of_int len)
 
-  let mk_enum adt discr vs = Extension (Enum (discr, vs)) <| t_enum adt
+  let mk_enum adt v_id vs = Extension (Enum (v_id, vs)) <| t_enum adt
   let mk_union adt blocks = Extension (Union blocks) <| t_union adt
   let mk_poly ty_id = Extension (PolyVal ty_id) <| t_poly ()
 
@@ -396,9 +401,11 @@ module Adt = struct
     | Extension (Array vs) -> vs
     | _ -> todo_migration "as_array unop"
 
-  let as_enum_of_variant _var_id v =
+  let as_enum_of_variant var_id v =
     match kind v with
-    | Extension (Enum (_, vs)) -> vs
+    | Extension (Enum (v, vs)) ->
+        assert (Types.VariantId.equal_id v var_id);
+        vs
     | _ -> todo_migration "as_enum_of_variant unop"
 
   let as_tuple1 v =
@@ -419,11 +426,6 @@ module Adt = struct
     | Extension (PolyVal ty_id) -> ty_id
     | _ -> todo_migration "as_type_var unop"
 
-  let discriminant_of v =
-    match kind v with
-    | Extension (Enum (discr, _)) -> discr
-    | _ -> todo_migration "discriminant_of unop"
-
   let field_of idx v =
     match kind v with
     | Extension (Tuple vs) -> (
@@ -440,10 +442,11 @@ module Adt = struct
           L.failwith "Array index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "array_field_of op"
 
-  let field_of_variant _var_id idx v =
+  let field_of_variant var_id idx v =
     (* TODO: assert the variant? *)
     match kind v with
-    | Extension (Enum (_, vs)) -> (
+    | Extension (Enum (var, vs)) -> (
+        assert (Types.VariantId.equal_id var var_id);
         try List.nth vs idx
         with Invalid_argument _ ->
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
@@ -457,11 +460,12 @@ module Adt = struct
           L.failwith "Tuple index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "set_field op"
 
-  let set_field_of_variant _var_id idx f v =
+  let set_field_of_variant var_id idx f v =
     (* TODO: assert the variant *)
     match kind v with
-    | Extension (Enum (discr, vs)) -> (
-        try Extension (Enum (discr, List.set_nth idx f vs)) <| v.node.ty
+    | Extension (Enum (var, vs)) -> (
+        assert (Types.VariantId.equal_id var var_id);
+        try Extension (Enum (var, List.set_nth idx f vs)) <| v.node.ty
         with Invalid_argument _ ->
           L.failwith "Enum field index %d out of bounds for value %a" idx ppa v)
     | _ -> todo_migration "set_field_of_variant op"
@@ -482,6 +486,21 @@ module Adt = struct
   let update_field_of_variant var idx f v =
     set_field_of_variant var idx (f (field_of_variant var idx v)) v
 
+  let is_variant var_id v =
+    match kind v with
+    | Extension (Enum (var, _)) -> of_bool (Types.VariantId.equal_id var var_id)
+    | _ -> todo_migration "is_variant unop"
+
+  let discriminant_of (v : _ t) =
+    let variants = Crate.as_enum (t_as_enum v.node.ty) in
+    let rec aux : Types.variant list -> _ t = function
+      | [] -> L.failwith "discriminant_of: empty enum"
+      | [ var ] -> BV.of_literal var.discriminant
+      | var :: rest ->
+          ite (is_variant var.id v) (BV.of_literal var.discriminant) (aux rest)
+    in
+    aux variants
+
   module Checked = struct
     let mk_enum tref variant vs =
       let variant =
@@ -489,8 +508,7 @@ module Adt = struct
         |> List.find (fun (v : Types.variant) -> v.variant_name = variant)
       in
       assert (List.compare_lengths variant.fields vs = 0);
-      let discr = BV.of_literal variant.discriminant in
-      mk_enum tref discr vs
+      mk_enum tref variant.id vs
   end
 end
 

@@ -71,6 +71,7 @@ val t_usize : unit -> [> T.sint ] ty
 val t_lit : Types.literal_type -> [> T.sint ] ty
 val t_ptr_f : unit -> [> T.sptr_f ] ty
 val t_ptr_t : unit -> [> T.sptr_t ] ty
+val t_enum : Types.type_decl_ref -> [> T.enum ] ty
 
 (* casts *)
 
@@ -201,9 +202,12 @@ module Adt : sig
   (** Creates an array value with the given element type and elements. *)
   val mk_array : Types.ty -> [< T.any ] t iarray -> [> T.tuple ] t
 
-  (** Creates an enum value with the given discriminant and fields. *)
+  (** Creates an enum value with the given variant and fields. *)
   val mk_enum :
-    Types.type_decl_ref -> [< T.sint ] t -> [< T.any ] t list -> [> T.enum ] t
+    Types.type_decl_ref ->
+    Types.variant_id ->
+    [< T.any ] t list ->
+    [> T.enum ] t
 
   (** Creates a union value with the given value blocks. *)
   val mk_union : Types.type_decl_ref -> block list -> [> T.union ] t
@@ -232,6 +236,12 @@ module Adt : sig
   val as_tuple2 : [< T.tuple ] t -> [> T.any ] t * [> T.any ] t
   val as_tuple3 : [< T.tuple ] t -> [> T.any ] t * [> T.any ] t * [> T.any ] t
   val as_type_var : [< T.poly ] t -> Types.type_var_id
+
+  (** Whether the enum value is of the given variant. *)
+  val is_variant : Types.variant_id -> [< T.enum ] t -> [> T.sbool ] t
+
+  (** Get the discriminant of an enum. This may generate a large expression; if
+      you only need to check the variant, use {!is_variant} instead. *)
   val discriminant_of : [< T.enum ] t -> [> T.sint ] t
 
   (** Get the field of a tuple *)
