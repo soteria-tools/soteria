@@ -380,18 +380,17 @@ module Make (StateImpl : State.S) = struct
             ptr
         in
         (Typed.Ptr.of_ptr_t ptr', root)
-    | PlaceProjection (base, Field (kind, field)) ->
+    | PlaceProjection (base, Field (_, variant, field)) ->
         let* ptr, root = resolve_place_rooted base in
         [%l.debug
-          "Projecting field %a (kind %a) for %a" Types.pp_field_id field
-            Expressions.pp_field_proj_kind kind Typed.ppa ptr];
+          "Projecting field %a for %a" Types.pp_field_id field Typed.ppa ptr];
         let field = Types.FieldId.to_int field in
         let* layout = Layout.layout_of base.ty in
         let fields =
-          match kind with
-          | ProjAdt (_, Some variant) ->
+          match variant with
+          | Some variant ->
               Layout.Fields_shape.shape_for_variant variant layout.fields
-          | ProjAdt (_, None) | ProjTuple _ -> layout.fields
+          | None -> layout.fields
         in
         let off = Layout.Fields_shape.offset_of field fields in
         let* place_ty = Layout.normalise place.ty in
@@ -405,9 +404,8 @@ module Make (StateImpl : State.S) = struct
         in
         let+ ptr_in' = Sptr.offset ~check_signed:true off ptr_in in
         [%l.debug
-          "Projecting ADT %a, field %d, with pointer %a to pointer %a"
-            Expressions.pp_field_proj_kind kind field Sptr.pp ptr_in Sptr.pp
-            ptr_in'];
+          "Projecting ADT field %d, with pointer %a to pointer %a" field Sptr.pp
+            ptr Typed.ppa ptr_in'];
         (Typed.Ptr.with_ptr ptr ptr_in', root)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
         let* ptr, root = resolve_place_rooted base in
@@ -470,17 +468,12 @@ module Make (StateImpl : State.S) = struct
     let open Syntax in
     match origin.kind with
     | PlaceLocal v -> ok Store.Place.{ kind = Local v; origin }
-    | PlaceProjection (base, Field (kind, field)) ->
+    | PlaceProjection (base, Field (adt, variant, field)) ->
         (* we never go through unions, as they apply transmutations that require
            a heap access to be calculated. *)
-        let*^ () =
-          Option.of_bool
-            (match kind with
-            | ProjAdt (adt, None) -> not (Crate.is_union' adt)
-            | _ -> true)
-        in
+        let*^ () = Option.of_bool (not (Crate.is_union' adt)) in
         let++ base = build_store_place base in
-        Store.Place.{ kind = Field (base, kind, field); origin }
+        Store.Place.{ kind = Field (base, variant, field); origin }
     | PlaceProjection (base, PtrMetadata) ->
         let++ base = build_store_place base in
         Store.Place.{ kind = Metadata base; origin }
@@ -911,7 +904,7 @@ module Make (StateImpl : State.S) = struct
         | OffsetOf (ty, variant, field) ->
             let variant = Option.value variant ~default:Types.VariantId.zero in
             let field = Types.FieldId.to_int field in
-            let ty : Types.ty = TAdt ty in
+            let ty : Types.ty = TAdt (ty, None) in
             let+ layout = Layout.layout_of ty in
             let fields =
               Layout.Fields_shape.shape_for_variant variant layout.fields
@@ -959,7 +952,7 @@ module Make (StateImpl : State.S) = struct
         in
         let* value = eval_operand op in
         let field = Types.FieldId.to_int field in
-        let* layout = Layout.layout_of (TAdt adt) in
+        let* layout = Layout.layout_of (TAdt (adt, None)) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
         let+ op_blocks =
           Value_codec.encode ~depth:0 ~offset value (type_of_operand op)
@@ -991,13 +984,13 @@ module Make (StateImpl : State.S) = struct
         let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f ptr) in
         let+ meta =
           match meta_ty with
-          | TAdt { id = TTuple; generics = { types = []; _ } } -> ok None
+          | TAdt (_, Some TTuple) when TypesUtils.ty_is_unit meta_ty -> ok None
           | TLiteral (TInt Isize | TUInt Usize) ->
               ok (Some (Typed.cast_i Usize meta))
           | TRawPtr _ | TRef _ ->
               ok (Some (Typed.Ptr.ptr_of (Typed.cast_ptr_f meta)))
-          | TAdt adt when Crate.adt_has_lang_item RustcLangItemDynMetadata adt
-            ->
+          | TAdt (adt, _)
+            when Crate.adt_has_lang_item RustcLangItemDynMetadata adt ->
               let nonnull, _marker =
                 Typed.Adt.as_tuple2 (Typed.cast_tuple meta)
               in

@@ -143,7 +143,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         match (protect, ty) with
         | false, _ -> None
         | true, TRef _ -> Some Strong
-        | true, TAdt adt when adt_is_box adt -> Some Weak
+        | true, TAdt (adt, _) when adt_is_box adt -> Some Weak
         | true, _ -> L.failwith "Non-ref or box in borrow?"
       in
       let** tag = with_borrow (Borrows.Tree.borrow ~state ?protector tag) in

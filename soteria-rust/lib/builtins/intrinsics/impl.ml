@@ -246,10 +246,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let generics : Types.generic_args =
       TypesUtils.generic_args_of_params () location_adt.generics
     in
-    let tref : Types.type_decl_ref =
-      { id = TAdtId location_adt.def_id; generics }
-    in
-    let location_ty : Types.ty = TAdt tref in
+    let tref : Types.type_decl_ref = { id = location_adt.def_id; generics } in
+    let location_ty : Types.ty = TAdt (tref, None) in
     let* trace = get_trace () in
     let filename, col, line =
       match trace.loc with
@@ -1066,7 +1064,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let variant_count ~t =
     match (t : Types.ty) with
-    | TAdt adt when Crate.is_enum adt ->
+    | TAdt (adt, _) when Crate.is_enum adt ->
         let variants = Crate.as_enum adt in
         ok (BV.usizei (List.length variants))
     | _ -> error (`StdErr "core::intrinsics::variant_count used with non-enum")
@@ -1152,13 +1150,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   (* The element type of a SIMD vector, i.e. the [T] in its `[T; N]` field. *)
   let simd_elem_lit (ty : Types.ty) : Types.literal_type =
-    match Crate.as_struct_or_tuple (ty_as_adt ty) with
+    match Crate.as_struct_tys (ty_as_adt ty) with
     | [ TArray (TLiteral lit, _) ] -> lit
     | _ -> Fmt.failwith "expected a SIMD vector type, got %a" pp_ty ty
 
   (* The number of lanes [N] of a SIMD vector. *)
   let simd_len (ty : Types.ty) =
-    match Crate.as_struct_or_tuple (ty_as_adt ty) with
+    match Crate.as_struct_tys (ty_as_adt ty) with
     | [ TArray (_, len) ] ->
         let* len =
           of_opt_not_impl "simd_len with generic length"

@@ -137,7 +137,10 @@ let cast_array v =
    enum/union; callers that only know the kind (e.g. the generic store
    navigation) may omit it. *)
 let dummy_decl_ref =
-  { Types.id = TTuple; generics = TypesUtils.empty_generic_args }
+  {
+    Types.id = TypesUtils.unit_type_decl_id;
+    generics = TypesUtils.empty_generic_args;
+  }
 
 let cast_enum ?adt v =
   match (get_ty v, adt) with

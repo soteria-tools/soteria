@@ -79,7 +79,7 @@ let z_of_constant_expr : Types.constant_expr -> Z.t = function
         Types.pp_constant_expr cg
 
 let rec pp_ty fmt : Types.ty -> unit = function
-  | TAdt { id = TAdtId id; generics } ->
+  | TAdt ({ id; generics }, (None | Some TBox)) ->
       let adt = Crate.get_adt_raw id in
       let name, generics =
         match List.rev adt.item_meta.name with
@@ -93,16 +93,15 @@ let rec pp_ty fmt : Types.ty -> unit = function
             (adt.item_meta.name, args)
       in
       Fmt.pf fmt "%a%a" Crate.pp_name name Crate.pp_generic_args generics
-  | TAdt { id = TTuple; generics = { types = tys; _ } } ->
-      Fmt.pf fmt "(%a)" (Fmt.list ~sep:(Fmt.any ", ") pp_ty) tys
-  | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
-      Fmt.pf fmt "Box<%a>" pp_ty ty
-  | TAdt { id = TBuiltin TBox; _ } -> Fmt.string fmt "Box<?>"
+  | TAdt (tref, Some TTuple) ->
+      Fmt.pf fmt "(%a)"
+        (Fmt.list ~sep:(Fmt.any ", ") pp_ty)
+        (Crate.as_struct_tys tref)
   | TArray (ty, { kind = CLiteral (VScalar len); _ }) ->
       Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print (z_of_scalar len)
   | TArray (ty, _) -> Fmt.pf fmt "[%a; ?]" pp_ty ty
   | TSlice ty -> Fmt.pf fmt "[%a]" pp_ty ty
-  | TAdt { id = TBuiltin TStr; _ } -> Fmt.string fmt "str"
+  | TAdt (_, Some TStr) -> Fmt.string fmt "str"
   | TLiteral lit -> pp_literal_ty fmt lit
   | TNever -> Fmt.string fmt "!"
   | TRef (_, ty, RMut) -> Fmt.pf fmt "&mut %a" pp_ty ty
@@ -167,13 +166,6 @@ let mk_array_ty ty len : Types.ty =
         kind = CLiteral (VScalar (UnsignedScalar (Usize, len)));
       } )
 
-let mk_tuple_ty types : Types.ty =
-  TAdt
-    {
-      id = TTuple;
-      generics = { types; regions = []; const_generics = []; trait_refs = [] };
-    }
-
 (** The type [*const ()] *)
 let unit_ptr = Types.TRawPtr (TypesUtils.mk_unit_ty, RShared)
 
@@ -198,13 +190,10 @@ let decl_get_attr (decl : GAst.fun_decl) attr =
   meta_get_attr decl.item_meta attr
 
 let adt_is_lang_item lang_item (adt : Types.type_decl_ref) =
-  match adt.id with
-  | TAdtId id ->
-      let adt = Crate.get_adt_raw id in
-      Option.is_some_and
-        (Types.equal_rustc_lang_item lang_item)
-        adt.item_meta.lang_item
-  | _ -> false
+  let adt = Crate.get_adt_raw adt.id in
+  Option.is_some_and
+    (Types.equal_rustc_lang_item lang_item)
+    adt.item_meta.lang_item
 
 let adt_is_box = adt_is_lang_item RustcLangItemOwnedBox
 let adt_is_unsafe_cell = adt_is_lang_item RustcLangItemUnsafeCell
@@ -212,10 +201,10 @@ let adt_is_unsafe_cell = adt_is_lang_item RustcLangItemUnsafeCell
 let rec get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
   | TRawPtr (ty, _)
-  | TAdt { id = TBuiltin TBox; generics = { types = [ ty ]; _ } } ->
+  | TAdt ({ generics = { types = [ ty ]; _ }; _ }, Some TBox) ->
       ty
   | TPattern (ty, _) -> get_pointee ty
-  | TAdt adt when adt_is_box adt -> (
+  | TAdt (adt, _) when adt_is_box adt -> (
       if (Config.get ()).polymorphic then List.hd adt.generics.types
       else
         let adt = Crate.get_adt adt in
@@ -225,11 +214,11 @@ let rec get_pointee : Types.ty -> Types.ty = function
   | _ -> L.failwith "Non-pointer type given to get_pointee"
 
 let ty_as_adt : Types.ty -> Types.type_decl_ref = function
-  | TAdt tref -> tref
+  | TAdt (tref, _) -> tref
   | _ -> invalid_arg "ty_as_adt: not an ADT type"
 
 let ty_as_adt_opt : Types.ty -> Types.type_decl_ref option = function
-  | TAdt tref -> Some tref
+  | TAdt (tref, _) -> Some tref
   | _ -> None
 
 let return_place (body : 'a GAst.gexpr_body) : Expressions.place =

@@ -11,7 +11,7 @@ end)
 module Place = struct
   type kind =
     | Local of Expressions.local_id
-    | Field of t * Expressions.field_proj_kind * Types.field_id
+    | Field of t * Types.variant_id option * Types.field_id
     | Index of t * int (* Store places only support concrete offsets *)
     | Metadata of t (* The metadata "field" of a (possibly fat) pointer *)
 
@@ -39,13 +39,13 @@ module Place = struct
   let rec update_val { kind; _ } ~f v =
     match kind with
     | Local _ -> Some (f v)
-    | Field (base, ProjAdt (_, Some var), field) ->
+    | Field (base, Some var, field) ->
         let idx = Types.FieldId.to_int field in
         update_val base
           ~f:(fun v ->
             Typed.Adt.update_field_of_variant var idx f (Typed.cast_enum v))
           v
-    | Field (base, _, field) ->
+    | Field (base, None, field) ->
         let idx = Types.FieldId.to_int field in
         update_val base
           ~f:(fun v -> Typed.Adt.update_field idx f (Typed.cast_tuple v))
@@ -63,10 +63,10 @@ module Place = struct
   let rec read_val { kind; origin } v : Typed.T.any Typed.t =
     match kind with
     | Local _ -> v
-    | Field (base, ProjAdt (_, Some var), field) ->
+    | Field (base, Some var, field) ->
         let idx = Types.FieldId.to_int field in
         Typed.Adt.field_of_variant var idx (Typed.cast_enum (read_val base v))
-    | Field (base, _, field) ->
+    | Field (base, None, field) ->
         let idx = Types.FieldId.to_int field in
         Typed.Adt.field_of idx (Typed.cast_tuple (read_val base v))
     | Index (base, idx) ->
@@ -81,7 +81,7 @@ module Place = struct
         let ptr =
           match base.origin.ty with
           | TRawPtr _ | TRef _ -> Typed.cast_ptr_f base_v
-          | TAdt adt when adt_is_box adt -> Value_codec.ptr_of_box base_v
+          | TAdt (adt, _) when adt_is_box adt -> Value_codec.ptr_of_box base_v
           | _ ->
               L.failwith "tried loading metadata of non-pointer: %a" pp_ty
                 base.origin.ty

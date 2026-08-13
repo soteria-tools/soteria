@@ -146,9 +146,7 @@ let rec ty_of_rust : Types.ty -> 'g svty = function
   | TVar _ -> TExtension TPolyType
   | TPattern (ty, _) -> ty_of_rust ty
   | TArray (ty, n) -> TExtension (TArray (ty_of_rust ty, z_of_constant_expr n))
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      TExtension (TTuple (List.map ty_of_rust types))
-  | TAdt ({ id = TAdtId _; _ } as adt) -> (
+  | TAdt (adt, _) -> (
       assert (tyref_is_substituted adt);
       match (Crate.get_adt adt).kind with
       | Struct fs ->
@@ -160,8 +158,7 @@ let rec ty_of_rust : Types.ty -> 'g svty = function
       | kind ->
           L.failwith "ty_of_rust unexpected adt kind %a" Types.pp_type_decl_kind
             kind)
-  | ( TError _ | TPtrMetadata _ | TTraitType _ | TDynTrait _ | TSlice _
-    | TAdt { id = TBuiltin _; _ } ) as ty ->
+  | (TError _ | TPtrMetadata _ | TTraitType _ | TDynTrait _ | TSlice _) as ty ->
       L.failwith "ty_of_rust unexpected type %a" pp_ty ty
 
 let t_as_tuple (ty : 'g svty) =

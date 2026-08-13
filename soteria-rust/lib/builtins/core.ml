@@ -228,11 +228,7 @@ module M (StateM : State.StateM.S) = struct
     Compo_res.is_ok res
 
   let parse_string ptr =
-    let str_ty : Charon.Types.ty =
-      TAdt
-        { id = TBuiltin TStr; generics = Charon.TypesUtils.empty_generic_args }
-    in
-    let+ str_data = State.load ptr str_ty in
+    let+ str_data = State.load ptr (TSlice u8_ty) in
     Typed.Adt.as_array @@ Typed.cast_array str_data
     |> Monad.OptionM.map_m
          (module Iarray)

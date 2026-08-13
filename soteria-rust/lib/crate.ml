@@ -111,19 +111,12 @@ let get_adt_raw id =
 
 (** Gets an ADT in the crate, and applies the given generic arguments to it. *)
 let get_adt (adt_ref : Types.type_decl_ref) =
-  match adt_ref.id with
-  | TAdtId id ->
-      memoize (get_decl_cache ()).adt adt_ref @@ fun () ->
-      let open Substitute in
-      let adt = get_adt_raw id in
-      let subst =
-        make_sb_subst_from_generics adt.generics adt_ref.generics Self
-      in
-      let subst = subst_at_binder_zero subst in
-      st_substitute_visitor#visit_type_decl subst adt
-  | TBuiltin _ | TTuple ->
-      L.failwith "get_adt: unexpected non-ADT type decl id: %a" Types.pp_type_id
-        adt_ref.id
+  memoize (get_decl_cache ()).adt adt_ref @@ fun () ->
+  let open Substitute in
+  let adt = get_adt_raw adt_ref.id in
+  let subst = make_sb_subst_from_generics adt.generics adt_ref.generics Self in
+  let subst = subst_at_binder_zero subst in
+  st_substitute_visitor#visit_type_decl subst adt
 
 let get_adt_lang_item lang_item =
   let exception Found of Types.type_decl in
@@ -143,14 +136,12 @@ let get_adt_lang_item lang_item =
 let get_adt_lang_item_ref lang_item =
   let adt = get_adt_lang_item lang_item in
   let generics = TypesUtils.generic_args_of_params () adt.generics in
-  ({ id = TAdtId adt.def_id; generics } : Types.type_decl_ref)
+  ({ id = adt.def_id; generics } : Types.type_decl_ref)
 
 let adt_has_lang_item lang_item (adt_ref : Types.type_decl_ref) =
-  match adt_ref.id with
-  | TAdtId id ->
-      Option.equal Types.equal_rustc_lang_item
-        (get_adt_raw id).item_meta.lang_item (Some lang_item)
-  | TBuiltin _ | TTuple -> false
+  Option.is_some_and
+    (Types.equal_rustc_lang_item lang_item)
+    (get_adt_raw adt_ref.id).item_meta.lang_item
 
 let get_fun id =
   let crate = get_crate () in
@@ -205,25 +196,13 @@ let get_method_name (trait_ref : Types.trait_ref) method_id =
     trait_ref.trait_decl_ref.binder_value.id method_id
 
 let is_enum (adt_ref : Types.type_decl_ref) =
-  match adt_ref.id with
-  | TAdtId id -> [%matches? Enum _] (get_adt_raw id).kind
-  | _ -> false
+  [%matches? Enum _] (get_adt_raw adt_ref.id).kind
 
 let is_struct (adt_ref : Types.type_decl_ref) =
-  match adt_ref.id with
-  | TAdtId id -> [%matches? Struct _] (get_adt_raw id).kind
-  | _ -> false
-
-let is_struct_or_tuple (adt_ref : Types.type_decl_ref) =
-  match adt_ref.id with
-  | TTuple -> true
-  | TAdtId id -> [%matches? Struct _] (get_adt_raw id).kind
-  | _ -> false
+  [%matches? Struct _] (get_adt_raw adt_ref.id).kind
 
 let is_union (adt_ref : Types.type_decl_ref) =
-  match adt_ref.id with
-  | TAdtId id -> [%matches? Union _] (get_adt_raw id).kind
-  | _ -> false
+  [%matches? Union _] (get_adt_raw adt_ref.id).kind
 
 let is_union' (adt_id : Types.type_decl_id) =
   [%matches? Union _] (get_adt_raw adt_id).kind
@@ -238,12 +217,8 @@ let as_struct adt_ref =
   | Struct fields -> fields
   | _ -> L.failwith "as_struct expected a struct"
 
-let as_struct_or_tuple (adt_ref : Types.type_decl_ref) =
-  match adt_ref.id with
-  | TTuple -> adt_ref.generics.types
-  | TAdtId _ ->
-      as_struct adt_ref |> List.map (fun (f : Types.field) -> f.field_ty)
-  | _ -> L.failwith "as_struct_or_tuple expected a struct or tuple"
+let as_struct_tys adt_ref =
+  as_struct adt_ref |> List.map (fun (f : Types.field) -> f.field_ty)
 
 let as_union adt_ref =
   match (get_adt adt_ref).kind with
