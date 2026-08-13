@@ -45,6 +45,7 @@ module Make (StateImpl : State.S) = struct
           "Variable %a has pointer %a" Expressions.pp_var_id var_id Typed.ppa
             ptr];
         ok ptr
+    | Unowned ptr -> ok ptr
     | Dead -> error `DeadVariable
     | Uninit | Value _ -> (
         let* zst_dangling = Sptr.dangling_if_zst binding.ty in
@@ -87,16 +88,20 @@ module Make (StateImpl : State.S) = struct
     let arg_locals = List.sub ~from:1 ~len:locals.arg_count locals.locals in
     Iter.of_list_combine arg_locals args
     |> fold_iter ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
-        (* Passed (nested) references must be protected and be valid. *)
-        let* value, protected' =
-          Value_codec.ref_tys_in local.local_ty value ~init:acc
-            ~f:(fun acc ptr_ty ptr ->
-              let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
-              let pointee = Charon_util.get_pointee ptr_ty in
-              (ptr', (ptr', pointee) :: acc))
-        in
-        let+ () = map_env (Store.declare_value local.index value) in
-        protected')
+        let* ty = Layout.normalise local.local_ty in
+        if Layout.is_dst ty then
+          let value = Typed.cast_ptr_f value in
+          let+ () = map_env (Store.declare_unowned local.index value) in
+          acc
+        else
+          let* value, protected' =
+            Value_codec.ref_tys_in ty value ~init:acc ~f:(fun acc ptr_ty ptr ->
+                let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
+                let pointee = Charon_util.get_pointee ptr_ty in
+                (ptr', (ptr', pointee) :: acc))
+          in
+          let+ () = map_env (Store.declare_value local.index value) in
+          protected')
 
   (** [dealloc_stack ?protected_address store protected st] Deallocates the
       locations in [st] used for the variables in [store]; if
@@ -111,7 +116,7 @@ module Make (StateImpl : State.S) = struct
     let* store = get_env () in
     iter_iter (Store.iter_bindings store) ~f:(fun (_, binding) ->
         match (binding.kind, protected_address) with
-        | (Dead | Uninit | Value _), _ -> ok ()
+        | (Dead | Uninit | Value _ | Unowned _), _ -> ok ()
         | Stackptr ptr, None -> State.free ptr
         | Stackptr fptr, Some protect ->
             let ptr = Typed.Ptr.ptr_of fptr in
@@ -1035,7 +1040,7 @@ module Make (StateImpl : State.S) = struct
         let* () =
           match binding.kind with
           | Stackptr ptr -> State.free ptr
-          | Dead | Uninit | Value _ -> ok ()
+          | Dead | Uninit | Value _ | Unowned _ -> ok ()
         in
         map_env (Store.declare_uninit local)
     | StorageDead local -> (
@@ -1045,7 +1050,7 @@ module Make (StateImpl : State.S) = struct
         | Stackptr ptr ->
             let* () = State.free ptr in
             map_env (Store.dealloc local)
-        | Uninit | Value _ -> map_env (Store.dealloc local)
+        | Uninit | Value _ | Unowned _ -> map_env (Store.dealloc local)
         | Dead -> ok ())
     | Assert ({ cond; expected; check_kind = _ }, on_failure) ->
         let* cond = eval_operand cond in
@@ -1086,11 +1091,10 @@ module Make (StateImpl : State.S) = struct
         let* args =
           Iter.of_list_combine3 args in_tys exp_tys
           |> map_iter ~f:(fun (arg, from, to_) ->
-              (* An unsized value cannot be passed by value: the ABI passes a
-                 thin pointer to its data instead, and the callee (a vtable
-                 shim) takes the receiver by pointer. This happens for calls to
-                 dyn-compatible methods taking [self] by value, like [<dyn
-                 FnOnce>::call_once]. *)
+              (* An unsized value is passed as a pointer to its data, that keeps
+                 the metadata if the callee's parameter is unsized too; it is
+                 thin if the callee is a vtable shim taking the receiver by
+                 pointer, as for [<dyn FnOnce>::call_once]. *)
               let* from = Layout.normalise from in
               let* to_ = Layout.normalise to_ in
               if Layout.is_dst from then
@@ -1100,7 +1104,8 @@ module Make (StateImpl : State.S) = struct
                   | Constant _ -> L.failwith "unsized constant argument"
                 in
                 let+ ptr = resolve_place place in
-                Typed.Ptr.of_ptr_t (Typed.Ptr.ptr_of ptr)
+                if Layout.is_dst to_ then Typed.as_any ptr
+                else Typed.Ptr.of_ptr_t (Typed.Ptr.ptr_of ptr)
               else
                 let* arg = eval_operand arg in
                 if Types.equal_ty from to_ then ok arg
