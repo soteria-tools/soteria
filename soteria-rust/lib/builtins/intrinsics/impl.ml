@@ -809,10 +809,20 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let fmuladdf128 = fmul_add
   let forget ~t:_ ~arg:_ = ok ()
 
+  let is_val_statically_known_ux =
+    String.Interned.intern
+      "core::intrinsics::is_val_statically_known was stubbed to always return \
+       false, to avoid path explosion. This is an under-approximation, some \
+       paths may be missed."
+
+  (* UX: the caller must be correct for either answer, so a symbolic one only
+     doubles the paths -- and [format!] asks for one per call. We answer false,
+     like the fallback body Rust ships. See:
+     https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
   let is_val_statically_known ~t:_ ~arg:_ =
-    (* see:
-       https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
-    lift_symex @@ Rustsymex.nondet Typed.t_bool
+    if Soteria.Symex.Approx.As_ctx.is_ox () then
+      Soteria.Terminal.Warn.warn_once is_val_statically_known_ux;
+    ok Typed.v_false
 
   let float_minmax ~is_min ~x ~y : T.sfloat Typed.t ret =
     let x = (x :> T.sfloat Typed.t) in

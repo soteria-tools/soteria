@@ -47,7 +47,7 @@ KNOWN_ISSUES = {
     "pass/function_calls/abi_compat.rs": "We are too restrictive on fn pointer casts",
     "pass/function_pointers.rs": "We don't have nondeterministic function pointers for generic functions",
     "pass/intrinsics/fmuladd_nondeterministic.rs": "We don't implement fmuladd non-deterministically",
-    "pass/intrinsics/intrinsics.rs": "Our implementation of type_name is wrong",
+    "pass/intrinsics/intrinsics.rs": "We always answer false to is_val_statically_known",
     "pass/intrinsics/type-id.rs": "Debug-printing a TypeId branches on every digit of its symbolic value",
     "pass/issues/issue-120337-irrefutable-let-ice.rs": "Weird ! type in a union?",
     "pass/issues/issue-29746.rs": "vec! hardcodes the layout of types, but we don't calculate the layout of tuples properly",
