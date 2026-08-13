@@ -1064,8 +1064,35 @@ module Make (StateImpl : State.S) = struct
     | PlaceMention place ->
         let+ _ = resolve_place place in
         ()
-    | SetDiscriminant (_, _) ->
-        not_impl "writing enum discriminant directly is not yet supported"
+    | SetDiscriminant (place, variant) -> (
+        let* layout = Layout.layout_of place.ty in
+        let* variants =
+          match layout.fields with
+          | Enum (_, variants) -> ok variants
+          | _ -> not_impl "setting the discriminant of a non-enum"
+        in
+        let* ptr = resolve_place place in
+        let tagger, _ = variants.(Types.VariantId.to_int variant) in
+        match tagger with
+        | Some (offset, tag) ->
+            let size = Typed.size_of_int tag / 8 in
+            let tag_ty : Types.ty = TLiteral (TUInt (uint_ty_of_size size)) in
+            let ptr = Typed.Ptr.ptr_of ptr in
+            let* ptr = Sptr.offset ~check_signed:true offset ptr in
+            State.store (Typed.Ptr.of_ptr_t ptr) tag_ty tag
+        | None ->
+            (* The variant is untagged (or uninhabited), so it is only encoded
+               by the value itself; it must thus already be that variant. *)
+            let variants = Crate.as_enum (ty_as_adt place.ty) in
+            let expected =
+              (Types.VariantId.nth variants variant).discriminant
+            in
+            let* discr = State.load_discriminant ptr place.ty in
+            assert_
+              (discr ==@ BV.of_literal expected)
+              (`UBTransmute
+                 "set discriminant of an enum to its untagged variant, but the \
+                  value doesn't match"))
 
   and exec_block ~(body : UllbcAst.expr_body)
       ({ statements; terminator } : UllbcAst.block) =

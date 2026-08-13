@@ -16,6 +16,14 @@ let size_of_uint_ty : Values.u_int_ty -> int = function
   | U8 -> 1
   | Usize -> Crate.pointer_size ()
 
+let uint_ty_of_size : int -> Values.u_int_ty = function
+  | 16 -> U128
+  | 8 -> U64
+  | 4 -> U32
+  | 2 -> U16
+  | 1 -> U8
+  | size -> L.failwith "uint_ty_of_size: no unsigned type of size %d" size
+
 let size_of_literal_ty : Types.literal_type -> int = function
   | TInt int_ty -> size_of_int_ty int_ty
   | TUInt uint_ty -> size_of_uint_ty uint_ty
