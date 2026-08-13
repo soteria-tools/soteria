@@ -123,6 +123,19 @@ module DecayMap : DecayMapS = struct
   open SM
   open Syntax
 
+  let nondet_aligned_address align =
+    let open EntryExcl.SM in
+    let open Syntax in
+    match Typed.BV.to_z align with
+    | Some z when Z.(gt z one) ->
+        (* keep the lower bits concrete, so align checks reduce concretely *)
+        assert (Z.popcount z = 1);
+        let ptr_bits = 8 * Layout.size_of_uint_ty Usize in
+        let low_bits = Z.trailing_zeros z in
+        let+ high_bits = nondet (Typed.t_int (ptr_bits - low_bits)) in
+        Typed.BV.concat high_bits (Typed.BV.zero low_bits)
+    | _ -> nondet (Typed.t_usize ())
+
   let decay ~expose ~size ~align (loc : [< sloc ] Typed.t) : T.sint Typed.t SM.t
       =
     if%sat Typed.Ptr.is_null_loc loc then return Usize.(0s)
@@ -139,7 +152,7 @@ module DecayMap : DecayMapS = struct
          | Some { address; exposed = _ } -> Result.ok address
          | None ->
              Soteria.Stats.As_ctx.incr Rustsymex.StatKeys.decayed_pointers;
-             let* address = nondet (Typed.t_usize ()) in
+             let* address = nondet_aligned_address align in
              let isize_max = Layout.max_value_z (TInt Isize) in
              (* Distinct allocations live at distinct addresses. We
                 under-approximate this by only requiring the base addresses to
@@ -171,16 +184,19 @@ module DecayMap : DecayMapS = struct
 
        See
        https://doc.rust-lang.org/nightly/std/ptr/fn.with_exposed_provenance.html *)
-    let usize_ty = Typed.t_usize () in
     let+ map = get_state () in
     let bindings = syntactic_bindings (of_opt map) in
+    (* an address is built from a single fresh symbol, which we match on *)
+    let is_built_from var address =
+      match Iter.to_list (Typed.iter_vars address) with
+      | [ (v, _) ] -> Svalue.Var.equal v var
+      | _ -> false
+    in
     Typed.iter_vars loc_int
-    |> Iter.filter (fun (_, ty) -> Typed.equal_ty usize_ty ty)
     |> Iter.filter_map (fun (var, _) ->
-        let v = Typed.mk_var var usize_ty in
         Seq.find
           (fun (_, ({ address; exposed } : Entry.t)) ->
-            exposed && Typed.equal v address)
+            exposed && is_built_from var address)
           bindings)
     |> Iter.map (fun (loc, ({ address; _ } : Entry.t)) -> (loc, address))
     |> Iter.to_opt

@@ -232,8 +232,8 @@ Test exposing function pointers
   Compiling... done in <time>
   => Running expose_fn_ptr::main...
   note: expose_fn_ptr::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd) /\
-        (0x0 == extract[0-3](V|1|))
+  PC 1: ((V|1| ++ 0x0) <u 0x7ffffffffffffffe) /\
+        (0x0000000000000010 <=u (V|1| ++ 0x0))
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
   $ soteria-rust exec thread_local.rs --target aarch64-apple-darwin
@@ -342,8 +342,8 @@ Test recursive validity check for references; disabled
       .  
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00))
   
   [1]
 
@@ -381,8 +381,8 @@ Test recursive validity check for references; enabled
       .  
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00))
   
   [1]
 
@@ -420,8 +420,8 @@ Test recursive validity check for references; warn
       .  
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00))
   
   [1]
 
@@ -713,8 +713,8 @@ successfuly.
   
   => Running ptr_diff_prov::one_prov_one_no_prove_same_address...
   note: ptr_diff_prov::one_prov_one_no_prove_same_address: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0b000 == extract[0-2](V|1|))
+  PC 1: ((V|1| ++ 0b000) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000008 <=u (V|1| ++ 0b000))
   
 Test calls to FnOnce trait objects.
   $ soteria-rust exec box_fnonce.rs
@@ -831,8 +831,8 @@ from, rather than for the type of the field being accessed.
       .  
    39 |      let _ = unsafe { (*p).fill };
       |                       ^^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7fffffffffffffde) /\
-        (0b000 == extract[0-2](V|1|))
+  PC 1: ((V|1| ++ 0b000) <u 0x7fffffffffffffdf) /\
+        (0x0000000000000008 <=u (V|1| ++ 0b000))
   
   => Running place_align::addr_of_field_of_misaligned_struct...
   note: place_align::addr_of_field_of_misaligned_struct: done in <time>, ran 1 branch
@@ -869,8 +869,8 @@ Test that `align_offset` is answered from the allocation's alignment
   
   => Running align_offset::offset_beyond_the_allocation_alignment...
   note: align_offset::offset_beyond_the_allocation_alignment: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7fffffffffffffee) /\
-        (0b00 == extract[0-1](V|1|)) /\ (0b000 == extract[0-2](V|1|))
+  PC 1: ((V|1| ++ 0b00) <u 0x7fffffffffffffef) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\ (0b0 == extract[0-0](V|1|))
   
   => Running align_offset::offset_asked_twice_for_one_allocation...
   note: align_offset::offset_asked_twice_for_one_allocation: done in <time>, ran 1 branch
