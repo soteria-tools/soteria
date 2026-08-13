@@ -260,10 +260,10 @@ and translate_layout adt_kind ty (layout : Types.layout) =
   let uninhabited = layout.uninhabited in
   let discriminator = Option.map translate_discriminator layout.discriminator in
   let variant_layouts =
-    List.mapi
-      (fun i v_opt : (Fields_shape.tagger * Fields_shape.t) ->
+    List.map
+      (fun v_opt : (Fields_shape.tagger * Fields_shape.t) ->
         match (v_opt : Types.variant_layout option) with
-        | None | Some { uninhabited = true; _ } -> (None, Primitive)
+        | None -> (None, Primitive)
         | Some v ->
             let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
             let tagger =
