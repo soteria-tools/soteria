@@ -54,6 +54,59 @@ UnsafeCell allow foreign writes followed by local writes
   PC 1: empty
   
 
+Deallocating memory that is strongly protected by an interior mutable reference is allowed
+  $ soteria-rust exec cell-dealloc.rs
+  Compiling... done in <time>
+  => Running cell_dealloc::main...
+  note: cell_dealloc::main: done in <time>, ran 1 branch
+  PC 1: empty
+  
+
+Deallocating memory that is strongly protected by a mutable reference is not
+  $ soteria-rust exec protected-dealloc.rs
+  Compiling... done in <time>
+  => Running protected_dealloc::main...
+  error: protected_dealloc::main: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Tried freeing an allocation which was passed to a function by reference in protected_dealloc::main
+       --> $RUSTLIB/library/alloc/src/alloc.rs:128:14
+   128 |        unsafe { __rust_dealloc(ptr, layout.size(), layout.alignment()) }
+       |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+       |                 |
+       |                 Freeing memory
+       |                 10: Call trace
+       --> $RUSTLIB/library/alloc/src/boxed.rs:1958:17
+  1958 |                    self.1.deallocate(From::from(ptr.cast()), layout);
+       |                    ------------------------------------------------- 9: Call trace
+       --> $RUSTLIB/library/core/src/mem/mod.rs:1004:1
+  1004 |    }
+       |    - 7: Call trace
+       --> $RUSTLIB/library/core/src/ops/function.rs:250:5
+   250 |        extern "rust-call" fn call_once(self, args: Args) -> Self::Output;
+       |        ------------------------------------------------------------------ 5: Call trace
+       --> $RUSTLIB/library/core/src/ptr/mod.rs:825:1
+   824 |    #[lang = "drop_glue"]
+   825 | /  pub(crate) const unsafe fn drop_glue<T: PointeeSized>(_: &mut T)
+   826 | |  where
+   827 | |      T: [const] Destruct,
+       | \-------------------------' 8: Call trace
+   828 |    {
+       --> $TESTCASE_ROOT/protected-dealloc.rs:9:9
+     4 |        f(x)
+       |        ---- 3: Call trace
+       .    
+     7 |    fn main() {
+       |    --------- 1: Entry point
+     8 | /      inner(Box::leak(Box::new(0)), |raw| {
+       | |                                    ----- 4: Call trace
+     9 | |          drop(unsafe { Box::from_raw(raw) });
+       | |          ----------------------------------- 6: Call trace
+    10 | |      });
+       | \-------' 2: Call trace
+    11 |    }
+  PC 1: empty
+  
+  [1]
+
 Nested UnsafeCells work too -- skipped for now, due to Charon changing the translation of IS_ZST
   $ soteria-rust exec nested.rs
   Compiling... done in <time>
