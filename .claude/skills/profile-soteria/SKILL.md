@@ -224,5 +224,9 @@ measurement trap, or a benchmark that isolates a subsystem well, add it to
 - `references/tree-borrows.md` — Tree Borrows (`soteria-rust/lib/tree_borrows/`)
   specific findings: what `Raw.access`/`compact`/`borrow` actually cost, the
   realized optimizations and their benches, and the hard constraints.
+- `references/soteria-rust-benchmarks.md` — the soteria-rust bench harness
+  (`scripts/run_benchmarks.py`), running the exe outside `dune exec`, the
+  `--stats` workload gate, cross-commit A/B across Charon/Obol pins, and how
+  to read the CI comparison comment (it is not a same-run A/B).
 - `references/measurement-pitfalls.md` — what makes these benchmarks lie and
   how to get a number you can trust.
