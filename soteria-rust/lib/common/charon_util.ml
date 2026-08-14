@@ -183,6 +183,10 @@ let unit_ref = Types.TRef (RErased, TypesUtils.mk_unit_ty, RShared)
 (** The type [u8] *)
 let u8_ty = Types.TLiteral (TUInt U8)
 
+let mk_sig ?(is_unsafe = false) ?(is_variadic = false) ?(abi = Types.AbiRust)
+    inputs output : Types.fun_sig =
+  { inputs; output; is_unsafe; is_variadic; abi }
+
 let decl_has_attr (decl : GAst.fun_decl) attr =
   List.exists
     (function Meta.AttrUnknown { path; _ } -> path = attr | _ -> false)

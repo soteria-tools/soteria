@@ -55,7 +55,6 @@ KNOWN_ISSUES = {
     "fail/function_calls/return_pointer_on_unwind.rs": "We model printing as a no-op so the dereference doesn't occur",
     "fail/overlapping_assignment.rs": "MIR-only check for assignment overlap (we don't do this atm)",
     "fail/unaligned_pointers/intptrcast_alignment_check.rs": "With symbolic alignment, Miri doesn't allow address offsetting into alignment",
-    "fail/validity/cast_fn_ptr_invalid_caller_ret.rs": "We don't use a fn ptr's type for checking validity",
     "fail/validity/wrong-dyn-trait-generic.rs": "We don't check the validity of dyn casts",
     "fail/validity/wrong-dyn-trait.rs": "We don't check the validity of dyn casts",
     "pass/arrays.rs": "We materialise every element of an array, and the test builds a [(); usize::MAX]",

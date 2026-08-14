@@ -600,7 +600,7 @@ module Make (StateImpl : State.S) = struct
       The arguments must be passed, as for calls on [&dyn Trait] types the first
       argument holds the VTable pointer. *)
   and resolve_function ~in_tys ~out_ty :
-      GAst.fn_operand -> ('err fun_exec * Types.name option * Types.ty list) t =
+      GAst.fn_operand -> ('err fun_exec * Types.name option * Types.fun_sig) t =
     let validate_call ?(is_dyn = false) (fn : Types.fun_decl_ref) =
       let fn = Crate.get_fun fn.id in
       let rec check_tys l r =
@@ -624,23 +624,25 @@ module Make (StateImpl : State.S) = struct
       check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
     in
     let perform_call :
-        Fun_kind.t -> ('a fun_exec * Types.name option * Types.ty list) t =
+        Fun_kind.t -> ('a fun_exec * Types.name option * Types.fun_sig) t =
       function
-      | Synthetic _ as fn -> ok (exec_fun fn, None, in_tys)
+      | Synthetic _ as fn -> ok (exec_fun fn, None, mk_sig in_tys out_ty)
       | Real fn_decl as fn ->
           let fundef = Crate.get_fun fn_decl.id in
-          let+ inputs =
+          let+ fn_sig =
             Poly.push_generics ~params:fundef.generics ~args:fn_decl.generics
-            @@ fun _ -> Poly.subst_tys fundef.signature.inputs
+            @@ fun _ -> Poly.subst_fn_sig fundef.signature
           in
-          let inputs =
+          let fn_sig =
             if fundef.signature.is_variadic then
-              inputs @ List.drop (List.length inputs) in_tys
-            else inputs
+              let inputs = fn_sig.inputs in
+              let extras = List.drop (List.length inputs) in_tys in
+              { fn_sig with inputs = inputs @ extras }
+            else fn_sig
           in
           [%l.info
             "Resolved function call to %a" Crate.pp_name fundef.item_meta.name];
-          (exec_fun fn, Some fundef.item_meta.name, inputs)
+          (exec_fun fn, Some fundef.item_meta.name, fn_sig)
     in
     function
     (* Handle builtins separately *)
@@ -1103,13 +1105,14 @@ module Make (StateImpl : State.S) = struct
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
-        let* exec_fun, name, exp_tys =
-          resolve_function ~in_tys ~out_ty:dest.ty func
-        in
+        let* in_tys = Poly.subst_tys in_tys in
+        let* out_ty = Poly.subst_ty dest.ty in
+        let is_dyn_call = [%matches? FnOpDynamic _] func in
+        let* exec_fun, name, fn_sig = resolve_function ~in_tys ~out_ty func in
         (* the expected types of the function may differ to those passed, e.g.
            with function pointers or dyn calls, so we transmute here. *)
         let* args =
-          Iter.of_list_combine3 args in_tys exp_tys
+          Iter.of_list_combine3 args in_tys fn_sig.inputs
           |> map_iter ~f:(fun (arg, from, to_) ->
               (* An unsized value is passed as a pointer to its data, that keeps
                  the metadata if the callee's parameter is unsized too; it is
@@ -1128,7 +1131,7 @@ module Make (StateImpl : State.S) = struct
                 else Typed.Ptr.of_ptr_t (Typed.Ptr.ptr_of ptr)
               else
                 let* arg = eval_operand arg in
-                if Types.equal_ty from to_ then ok arg
+                if (not is_dyn_call) || Types.equal_ty from to_ then ok arg
                 else State.transmute ~from ~to_ arg)
         in
         [%l.info
@@ -1146,8 +1149,15 @@ module Make (StateImpl : State.S) = struct
             [%l.info
               "Returned %a <- %a from %a" Crate.pp_place dest Typed.ppa v
                 Crate.pp_fn_operand func];
+            (* like with arguments, the callee's return type may differ from the
+               one expected here. *)
+            let* v =
+              if (not is_dyn_call) || Types.equal_ty fn_sig.output out_ty then
+                ok v
+              else State.transmute ~from:fn_sig.output ~to_:out_ty v
+            in
             let* loc = resolve_place_lazy dest in
-            let* () = store_lazy loc dest.ty v in
+            let* () = store_lazy loc out_ty v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
