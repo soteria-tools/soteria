@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786724865570,
+  "lastUpdate": 1787043884996,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -7758,6 +7758,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 117.2239,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "71fc8f951c7800568f5350b8b3591f4c205e1a2c",
+          "message": "Force typedness of pointer metadata (#462)\n\n* Remove `Ptr.split,meta_of`/add `{len,vtable}_meta`\n\n* Remove `Layout.ptr_meta`, add `Typed.with_ptr`\n\n* Split off `mk_ptr_f`, add PtrMeta values",
+          "timestamp": "2026-08-18T08:46:21Z",
+          "tree_id": "1ee21d3656040cdc1529dac3fb979940c42c2150",
+          "url": "https://github.com/soteria-tools/soteria/commit/71fc8f951c7800568f5350b8b3591f4c205e1a2c"
+        },
+        "date": 1787043882946,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 2.04566571732,
+            "range": "± 0.0283",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.8371312555400001,
+            "range": "± 0.0078",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.6418647473,
+            "range": "± 0.0081",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.41217453309999996,
+            "range": "± 0.0028",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 2.9567606711200005,
+            "range": "± 0.0177",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.5771984758000002,
+            "range": "± 0.006",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.33776431278,
+            "range": "± 0.0045",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 2.0111770391599997,
+            "range": "± 0.0294",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.543180122971535,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 370,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 18,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 130.9296,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 462,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 98,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 40,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 117.663,
             "unit": "s"
           }
         ]
