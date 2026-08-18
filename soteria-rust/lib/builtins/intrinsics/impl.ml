@@ -30,17 +30,18 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let mul_with_overflow ~t ~x ~y = checked_op (Mul OUB) ~t ~x ~y
   let align_of ~t = Layout.align_of t
 
-  let arith_offset ~t ~dst ~offset =
-    let dst, meta = Typed.Ptr.split dst in
+  let arith_offset ~t ~dst:dst_full ~offset =
+    let dst = Typed.Ptr.ptr_of dst_full in
     let+ dst' = Sptr.offset ~ty:t offset dst in
-    Typed.Ptr.mk_ptr_f dst' meta
+    Typed.Ptr.with_ptr dst_full dst'
 
-  let offset ~ptr ~delta ~dst ~offset =
-    let dst, meta = Typed.Ptr.split @@ Typed.cast_ptr_f dst in
+  let offset ~ptr ~delta ~dst:dst_full ~offset =
+    let dst_full = Typed.cast_ptr_f dst_full in
+    let dst = Typed.Ptr.ptr_of dst_full in
     let offset = Typed.cast_i Usize offset in
     let check_signed = Layout.is_signed @@ TypesUtils.ty_as_literal delta in
     let+ dst' = Sptr.offset ~check_signed ~ty:ptr offset dst in
-    Typed.Ptr.mk_ptr_f dst' meta
+    Typed.Ptr.with_ptr dst_full dst'
 
   let assert_inhabited ~t =
     let* layout = Layout.layout_of t in
@@ -122,10 +123,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     atomic_warn ();
     let* old = State.load dst t in
     match (t, u) with
-    | (TRawPtr _ | TRef _), TLiteral (TUInt Usize) ->
-        let old_ptr, meta = Typed.Ptr.split (Typed.cast_ptr_f old) in
+    | (TRawPtr (pointee, _) | TRef (_, pointee, _)), TLiteral (TUInt Usize) ->
+        let old_fptr = Typed.cast_ptr_f old in
+        let old_ptr = Typed.Ptr.ptr_of old_fptr in
         let* new_ptr = ptr_op (Typed.cast_i Usize src) old_ptr in
-        let+ () = State.store dst t (Typed.Ptr.mk_ptr_f new_ptr meta) in
+        let+ () = State.store dst t (Typed.Ptr.with_ptr old_fptr new_ptr) in
         old
     | TLiteral lit, _ ->
         let* res =
@@ -525,8 +527,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       else
         let* l = Sptr.offset inc l in
         let* r = Sptr.offset inc r in
-        let* bl = State.load (Typed.Ptr.mk_ptr_f l None) u8_ty in
-        let* br = State.load (Typed.Ptr.mk_ptr_f r None) u8_ty in
+        let* bl = State.load (Typed.Ptr.of_ptr_t l) u8_ty in
+        let* br = State.load (Typed.Ptr.of_ptr_t r) u8_ty in
         (* compare_bytes reads all bytes and mustn't short-circuit, so we must
            keep reading; here we only modify the result if we haven't reached a
            conclusion yet *)
@@ -829,13 +831,15 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let maxnumf32 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf64 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf128 ~x ~y = float_minmax ~is_min:false ~x ~y
-  let ptr_guaranteed_cmp ~t:_ ~ptr ~other = Core.eval_ptr_binop Eq ptr other
 
-  let ptr_mask ~t:_ ~ptr ~mask =
-    let ptr, meta = Typed.Ptr.split ptr in
-    let* addr = Sptr.decay ptr in
+  let ptr_guaranteed_cmp ~t ~ptr ~other =
+    Core.eval_ptr_binop ~pointee:t Eq ptr other
+
+  let ptr_mask ~t ~ptr:ptr_full ~mask =
+    let ptr = Typed.Ptr.ptr_of ptr_full in
+    let+ addr = Sptr.decay ptr in
     let addr = addr &@ mask in
-    ok (Typed.Ptr.mk_ptr_f (Typed.Ptr.of_address addr) meta)
+    Typed.Ptr.with_ptr ptr_full (Typed.Ptr.of_address addr)
 
   let ptr_offset_from_ ~unsigned ~t ~ptr ~base : [> T.sint ] Typed.t ret =
     let zero = Usize.(0s) in
@@ -966,13 +970,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let size_of ~t = Layout.size_of t
 
   let size_of_val ~t ~ptr =
-    let meta = Typed.Ptr.meta_of ptr in
-    let+ size, _ = State.size_and_align_of_val t meta in
+    let+ size, _ = State.size_and_align_of_val t ptr in
     size
 
   let align_of_val ~t ~ptr =
-    let meta = Typed.Ptr.meta_of ptr in
-    let+ _, align = State.size_and_align_of_val t meta in
+    let+ _, align = State.size_and_align_of_val t ptr in
     align
 
   let transmute ~t_src ~dst ~src = State.transmute ~from:t_src ~to_:dst src
@@ -1009,9 +1011,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       Sptr.offset ~check_signed:true ~ty:(TLiteral (TUInt Usize))
         (BV.usizei slot) ptr
     in
-    let+ align =
-      State.load (Typed.Ptr.mk_ptr_f ptr None) (TLiteral (TUInt Usize))
-    in
+    let+ align = State.load (Typed.Ptr.of_ptr_t ptr) (TLiteral (TUInt Usize)) in
     Typed.cast_i Usize align
 
   let vtable_align ~ptr = read_vtable ~slot:2 ~ptr
@@ -1055,7 +1055,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
         ~f:(fun i ->
           let off = BV.usizei i in
           let* ptr = Sptr.offset ~check_signed:true off ptr in
-          State.store (Typed.Ptr.mk_ptr_f ptr None) u8_ty val_)
+          State.store (Typed.Ptr.of_ptr_t ptr) u8_ty val_)
 
   let volatile_load ~t ~src = State.load src t
   let volatile_set_memory = write_bytes

@@ -128,8 +128,8 @@ module Make (Borrows : Tree_borrows.T) = struct
         being reborrowed. *)
     let borrow ?(protect = false) (ptr_full : Typed.([< T.sptr_f ] t)) tag
         (ty : Types.ty) ofs =
-      let ptr, meta = Typed.Ptr.split ptr_full in
-      let pointee = get_pointee ty in
+      let**^ pointee = DecayMap.SM.lift @@ Layout.normalise (get_pointee ty) in
+      let ptr = Typed.Ptr.ptr_of ptr_full in
       (* FIXME: this logic is tree borrows related and should be handled there.
          https://github.com/soteria-tools/soteria/issues/301 *)
       let state : Tree_borrows.state =
@@ -148,7 +148,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       in
       let** tag = with_borrow (Borrows.Tree.borrow ~state ?protector tag) in
       let ptr' = Typed.Ptr.with_tag ptr (Some tag) in
-      let ptr_full' = Typed.Ptr.mk_ptr_f ptr' meta in
+      let ptr_full' = Typed.Ptr.with_ptr ptr_full ptr' in
       [%l.debug
         "%s pointer %a -> %a (%a)"
           (if protect then "Protecting" else "Borrowing")
@@ -365,7 +365,7 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   let with_ptr access ptr f = with_heap @@ Heap.with_ptr access ptr f
 
-  let rec size_and_align_of_val t (meta : Typed.([< T.ptr_meta ] t) option) =
+  let rec size_and_align_of_val t (ptr : Typed.([< T.sptr_f ] t)) =
     let* st = get_state () in
     let load_vtable field ptr =
       let open Rustsymex.Syntax in
@@ -373,11 +373,11 @@ module Make (Borrows : Tree_borrows.T) = struct
       let** field_size = Layout.size_of usize in
       let ofs = match field with `Size -> Usize.(1s) | `Align -> Usize.(2s) in
       let** ptr' = Sptr.raw_offset ptr (ofs *!!@ field_size) in
-      let ptr' = Typed.Ptr.mk_ptr_f ptr' None in
+      let ptr' = Typed.Ptr.of_ptr_t ptr' in
       let+ res, _ = load ~ignore_borrow:true ~check_refs:false ptr' usize st in
       Compo_res.map Typed.cast res
     in
-    lift @@ Value_codec.size_and_align_of_val ~load_vtable ~t ~meta
+    lift @@ Value_codec.size_and_align_of_val ~load_vtable ~t ~ptr
 
   (** Checks the given pointer is well-aligned for the given type, possibly
       reading in the heap to know what the alignment is (e.g. for [&dyn Trait]).
@@ -385,8 +385,9 @@ module Make (Borrows : Tree_borrows.T) = struct
       metadata). *)
   and check_ptr_align (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     (* The expected alignment of a dyn pointer is stored inside the VTable *)
-    let ptr, meta = Typed.Ptr.split ptr in
-    let** size, exp_align = size_and_align_of_val ty meta in
+    let**^ ty = Layout.normalise ty in
+    let** size, exp_align = size_and_align_of_val ty ptr in
+    let ptr = Typed.Ptr.ptr_of ptr in
     [%l.debug
       "Checking pointer alignment of %a: expect %a for %a" Sptr.pp ptr Typed.ppa
         exp_align pp_ty ty];
@@ -426,12 +427,12 @@ module Make (Borrows : Tree_borrows.T) = struct
       check ptr' Typed.(cast_nonzero @@ BV.no_ovf_unsafe (BV.neg size))
 
   and check_non_dangling (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
-    let ptr, meta = Typed.Ptr.split ptr in
+    let**^ ty = Layout.normalise ty in
     let**^ layout = Layout.layout_of ty in
     if layout.uninhabited then Result.error (`RefToUninhabited ty)
     else
-      let** size, _ = size_and_align_of_val ty meta in
-      check_non_dangling_untyped ptr size
+      let** size, _ = size_and_align_of_val ty ptr in
+      check_non_dangling_untyped (Typed.Ptr.ptr_of ptr) size
 
   and check_validity ~check_refs ty value =
     let default_check ptr ty =
@@ -455,8 +456,8 @@ module Make (Borrows : Tree_borrows.T) = struct
       (Typed.([> T.any ] t), Error.t, syn list) Result.t =
    fun ?ignore_borrow ?(check_refs = true) ptr ty ->
     let** size = check_ptr_align ptr ty in
-    let ptr, meta = Typed.Ptr.split ptr in
-    let parser ~offset = Tree_block.Decoder.decode ~meta ~offset ty in
+    let**^ ty = Layout.normalise ty in
+    let parser ~offset = Tree_block.Decoder.decode ~ptr ~offset ty in
     let** value =
       if%sat size ==@ Usize.(0s) then
         with_pointers
@@ -464,7 +465,9 @@ module Make (Borrows : Tree_borrows.T) = struct
              (Tree_block.apply_parser ~ignore_borrow:true None None
                 (parser ~offset:Usize.(0s)))
           |> ignore_state)
-      else apply_parser ?ignore_borrow ptr parser
+      else
+        let ptr = Typed.Ptr.ptr_of ptr in
+        apply_parser ?ignore_borrow ptr parser
     in
     [%l.debug "Finished reading rust value %a" Typed.ppa value];
     let++ () = check_validity ~check_refs ty value in
@@ -493,21 +496,20 @@ module Make (Borrows : Tree_borrows.T) = struct
       a no-op. *)
   and fake_read ptr ty =
     let open Syntax in
+    let**^ ty = Layout.normalise ty in
     let lint_level = (Config.get ()).reference_to_invalid_memory in
     let skip_check =
-      match (Typed.Ptr.meta_of ptr, lint_level) with
+      match (Layout.dst_kind ty, lint_level) with
       | _, Allow -> true
       | _, Warn when Config.get_mode () = Compositional -> true
-      | None, _ -> false
-      | Some l, _ -> (
-          match%ty l with
-          | TBitVector _ ->
-              (* TODO: we don't support symbolic slices *)
-              Option.is_none (Typed.BitVec.to_z l)
-          | _ ->
-              (* FIXME: i am not certain how one checks for the validity of a
-                 &dyn *)
-              true)
+      | NoneKind, _ -> false
+      | LenKind, _ ->
+          (* TODO: we don't support symbolic slices *)
+          Option.is_none (Typed.BitVec.to_z (Typed.Ptr.len_meta ptr))
+      | VTableKind, _ ->
+          (* FIXME: i am not certain how one checks for the validity of a
+             &dyn *)
+          true
     in
     if skip_check then Result.ok ()
     else (
@@ -592,7 +594,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             in
             (* next, we read *)
             Tree_block.apply_parser ~ignore_borrow:true None None
-            @@ Tree_block.Decoder.decode ~meta:None ~offset:Usize.(0s) to_)
+            @@ Tree_block.Decoder.decode ~offset:Usize.(0s) to_)
          |> ignore_state)
     in
     let++ () = check_validity ~check_refs:true to_ value in
@@ -669,12 +671,10 @@ module Make (Borrows : Tree_borrows.T) = struct
       check_non_dangling ptr ty
   end
 
-  let size_and_align_of_val ty (meta : Typed.([< T.ptr_meta ] t) option) =
+  let size_and_align_of_val ty ptr =
     [%l.debug "Executing Size_and_align_of_val for %a" pp_ty ty];
     let@ () = with_loc_err ~trace:"Size and alignment check" () in
-    let++ size, align =
-      size_and_align_of_val ty (meta :> Typed.T.ptr_meta Typed.t option)
-    in
+    let++ size, align = size_and_align_of_val ty ptr in
     ( (size : Typed.T.sint Typed.t :> Typed.([> T.sint ] t)),
       (align : Typed.T.nonzero Typed.t :> Typed.([> T.nonzero ] t)) )
 
@@ -774,7 +774,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     if%sat size ==@ Usize.(0s) then
       (* UX: we under-approximate and assume the address is align, though it can
          in fact be any well-aligned address. *)
-      Result.ok @@ Typed.Ptr.mk_ptr_f (Typed.Ptr.of_address align) None
+      Result.ok @@ Typed.Ptr.of_ptr_t (Typed.Ptr.of_address align)
     else
       let size = Typed.BV.cast_nonzero size in
       with_heap
@@ -787,7 +787,7 @@ module Make (Borrows : Tree_borrows.T) = struct
          let ptr = Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag ~align ~size in
          (* The pointer is necessarily not null *)
          let+ () = assume [ Typed.(not (Ptr.is_null_loc loc)) ] in
-         ok (Typed.Ptr.mk_ptr_f ptr None))
+         ok (Typed.Ptr.of_ptr_t ptr))
 
   let alloc_untyped ?span ~zeroed ~size ~align = alloc ?span ~zeroed size align
 
@@ -916,7 +916,7 @@ module Make (Borrows : Tree_borrows.T) = struct
                    let ptr =
                      Typed.Ptr.mk_ptr_t ~loc ~ofs ~align ~size ~tag:None
                    in
-                   Result.ok (Typed.Ptr.mk_ptr_f ptr None)))
+                   Result.ok (Typed.Ptr.of_ptr_t ptr)))
 
   let leak_check () : (unit, Error.with_trace, syn list) Result.t =
     [%l.debug "Executing Leak_check"];
@@ -974,8 +974,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             ~tag:None ~align
             ~size:Usize.(0s)
         in
-        let ptr = Typed.Ptr.mk_ptr_f ptr None in
-        Result.ok ptr
+        Result.ok (Typed.Ptr.of_ptr_t ptr)
     | None ->
         let span =
           match fn_def with
@@ -992,7 +991,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         let ptr = Typed.Ptr.ptr_of ptr in
         let ptr = Typed.Ptr.with_tag ptr None in
         let loc = Typed.Ptr.loc ptr in
-        let ptr = Typed.Ptr.mk_ptr_f ptr None in
+        let ptr = Typed.Ptr.of_ptr_t ptr in
         with_functions_sym (fun fns ->
             Rustsymex.Result.ok (ptr, FunBiMap.add loc fn_def fns))
 

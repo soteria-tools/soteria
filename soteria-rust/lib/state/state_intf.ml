@@ -60,7 +60,7 @@ module type S = sig
   val free : [< sptr_f ] v -> unit ret
 
   val size_and_align_of_val :
-    Types.ty -> [< ptr_meta ] v option -> ([> sint ] v * [> nonzero ] v) ret
+    Types.ty -> [< sptr_f ] v -> ([> sint ] v * [> nonzero ] v) ret
 
   val fake_read : [< sptr_f ] v -> Types.ty -> unit ret
 
