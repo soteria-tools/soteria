@@ -107,7 +107,17 @@ let search_urls = ['../../../../../../../../db.js','../../../../../../../../../s
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-as_id"><a href="#val-as_id" class="anchor"></a><code><span><span class="keyword">val</span> as_id : 
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_t</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_ptr_f"><a href="#val-mk_ptr_f" class="anchor"></a><code><span><span class="keyword">val</span> mk_ptr_f : 
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-of_ptr_t"><a href="#val-of_ptr_t" class="anchor"></a><code><span><span class="keyword">val</span> of_ptr_t : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_t</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_ptr_f"><a href="#val-mk_ptr_f" class="anchor"></a><code><span><span class="keyword">val</span> mk_ptr_f : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_t</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.ptr_meta</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-mk_ptr_f_opt"><a href="#val-mk_ptr_f_opt" class="anchor"></a><code><span><span class="keyword">val</span> mk_ptr_f_opt : 
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_t</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.ptr_meta</span> ]</span>
@@ -120,19 +130,20 @@ let search_urls = ['../../../../../../../../db.js','../../../../../../../../../s
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-of_address_f"><a href="#val-of_address_f" class="anchor"></a><code><span><span class="keyword">val</span> of_address_f : 
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span> ]</span>
-    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-split"><a href="#val-split" class="anchor"></a><code><span><span class="keyword">val</span> split : 
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-ptr_of"><a href="#val-ptr_of" class="anchor"></a><code><span><span class="keyword">val</span> ptr_of : 
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_t</span> ]</span>
-    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
-  * <span><span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.ptr_meta</span> ]</span>
-      <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
-      option</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-meta_of"><a href="#val-meta_of" class="anchor"></a><code><span><span class="keyword">val</span> meta_of : 
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-with_ptr"><a href="#val-with_ptr" class="anchor"></a><code><span><span class="keyword">val</span> with_ptr : 
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.ptr_meta</span> ]</span>
-    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span>
-    option</span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-ptr_of"><a href="#val-ptr_of" class="anchor"></a><code><span><span class="keyword">val</span> ptr_of : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_t</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-len_meta"><a href="#val-len_meta" class="anchor"></a><code><span><span class="keyword">val</span> len_meta : 
+  <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span> ]</span>
+    <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sint</span> ]</span> <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span></span></code></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-vtable_meta"><a href="#val-vtable_meta" class="anchor"></a><code><span><span class="keyword">val</span> vtable_meta : 
   <span><span><span>[&lt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_f</span> ]</span>
     <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.t</span></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>[&gt; <span class="xref-unresolved">Soteria_rust_lib__Svalue__Typed.T.sptr_t</span> ]</span>
