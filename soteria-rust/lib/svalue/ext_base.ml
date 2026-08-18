@@ -351,7 +351,7 @@ let set_array_field ~build idx x (v : 'ghost sv) =
   mk_array_of_svty ~build (array_elem_ty v.node.ty)
     (Iarray.copy_and_set idx x (as_array ~build v))
 
-(** {3 Unions and PolyVal} (limited support)  *)
+(** {3 Unions and PolyVal (limited support)} *)
 
 let mk_union ~build:(( <| ) : _ build) adt blocks =
   Extension (Union blocks) <| TExtension (TUnion adt)
