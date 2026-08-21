@@ -35,7 +35,8 @@ end
 
 (* the full values *)
 type 'g sv =
-  (('g, 'g ext_t, 'g ext_ty) Sv.t[@equal Sv.equal] [@compare Sv.compare])
+  (('g, 'g ext_t, 'g ext_ty) Sv.t
+  [@equal Sv.equal] [@compare Sv.compare] [@hash fun (v : _ Sv.t) -> v.tag])
 
 and 'g svty = 'g ext_ty Sv.ty
 
@@ -51,7 +52,9 @@ and 'g ptr = {
 
 (** The value inside a {!block}: either a scalar or an aggregate that can be
     split further. *)
-and ('sc, 'ag) block_value = Scalar of 'sc | Aggregate of 'ag * Types.ty
+and ('sc, 'ag) block_value =
+  | Scalar of 'sc
+  | Aggregate of 'ag * (Types.ty[@hash Hashtbl.hash])
 
 (** A block of an encoded value: a value, along with the offset it is at and the
     size it spans. [ty] is [Some] iff the value is a whole aggregate of that
@@ -64,9 +67,13 @@ and ('sc, 'ag, 'ofs, 'sz) block = {
 
 (* values *)
 and 'g ext_ty =
-  | TEnum of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+  | TEnum of
+      (Types.type_decl_ref
+      [@printer Crate.pp_type_decl_ref] [@hash Hashtbl.hash])
       (** the type decl ref of an {b enum} *)
-  | TUnion of (Types.type_decl_ref[@printer Crate.pp_type_decl_ref])
+  | TUnion of
+      (Types.type_decl_ref
+      [@printer Crate.pp_type_decl_ref] [@hash Hashtbl.hash])
       (** the type decl ref of a {b union} *)
   | TTuple of 'g svty list  (** structs and tuples (ordered fields) *)
   | TArray of 'g svty * Z.t  (** arrays (all elements share the same type) *)
@@ -84,16 +91,17 @@ and 'g ext_t =
   | PtrMeta of 'g ptr_meta
   | ThinPtr of 'g ptr
       (** thin pointer, without metadata but with extra info on the pointer *)
-  | Enum of Types.variant_id * 'g sv list  (** variant id * values *)
+  | Enum of (Types.variant_id[@hash Charon.Types.VariantId.to_int]) * 'g sv list
+      (** variant id * values *)
   | Tuple of 'g sv list  (** structs and tuples: ordered values *)
   | Array of 'g sv Iarray.t  (** arrays: ordered values, all of the same type *)
   | Union of ('g sv, 'g sv, 'g sv, 'g sv) block list
       (** list of blocks in the union *)
-  | PolyVal of Charon.Types.type_var_id
+  | PolyVal of (Charon.Types.type_var_id[@hash Charon.Types.TypeVarId.to_int])
       (** The opaque value of a type variable, identified by (type variable
           index, unique identifier). *)
   | Unop of Unop.t * 'g sv  (** unary operation *)
-[@@deriving eq, ord]
+[@@deriving eq, ord, hash]
 
 let pp_block_value pp_v pp_ag ft = function
   | Scalar v -> pp_v ft v

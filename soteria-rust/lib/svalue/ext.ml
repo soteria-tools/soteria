@@ -70,51 +70,9 @@ let iter_vars iter_vars = function
   | PolyVal _ -> ()
   | Unop (_, v) -> iter_vars v
 
-(* Allocation-free structural hash *)
-let[@inline] combine h x = (h * 65599) + x
-
-let rec hash_ty : 'ghost ty -> int = function
-  | TEnum ty -> combine 0 (Hashtbl.hash ty)
-  | TUnion ty -> combine 1 (Hashtbl.hash ty)
-  | TTuple tys ->
-      List.fold_left (fun acc ty -> combine acc (Sv.hash_ty hash_ty ty)) 2 tys
-  | TThinPtr -> 3
-  | TFullPtr -> 4
-  | TPolyType -> 5
-  | TArray (ty, n) -> combine (combine 6 (Sv.hash_ty hash_ty ty)) (Z.hash n)
-  | TPtrMeta -> 7
-
-(* TODO: so derivable *)
-let hash = function
-  | Ptr (ptr, meta) -> combine (combine ptr.tag 1) meta.tag
-  | PtrMeta MetaUnit -> combine 2 0
-  | PtrMeta (MetaLen v) -> combine 2 (combine v.tag 1)
-  | PtrMeta (MetaVTable v) -> combine 2 (combine v.tag 2)
-  | ThinPtr { ptr; tag; size; align } ->
-      combine
-        (combine (combine (combine ptr.tag 3) size.tag) align.tag)
-        (Option.fold ~none:(-1) ~some:Ptr_tag.hash tag)
-  | Enum (var, vals) ->
-      List.fold_left
-        (fun acc (v : _ sv) -> combine acc v.tag)
-        (combine (Types.VariantId.to_int var) 4)
-        vals
-  | Tuple vals ->
-      List.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 5 vals
-  | Array vals ->
-      Iarray.fold_left (fun acc (v : _ sv) -> combine acc v.tag) 8 vals
-  | Union vs ->
-      List.fold_left
-        (fun acc { value; offset : _ sv; size : _ sv } ->
-          let v =
-            match value with
-            | Scalar (v : _ sv) -> v.tag
-            | Aggregate ((ag : _ sv), ty) -> combine ag.tag (Hashtbl.hash ty)
-          in
-          combine (combine (combine acc v) offset.tag) size.tag)
-        6 vs
-  | PolyVal x -> combine 7 (Types.TypeVarId.to_int x)
-  | Unop (op, v) -> combine (combine (Unop.hash op) 9) v.tag
+let hash_ghost _ = 0
+let hash v = hash_ext_t hash_ghost v
+let hash_ty t = hash_ext_ty hash_ghost t
 
 let mk build ty v =
   match v with

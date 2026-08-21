@@ -28,4 +28,6 @@ let map_changed f vs =
   in
   (res, !changed)
 
+let hash_combine a b = (31 * a) + b
+let hash hash_elt = fold_left (fun acc v -> hash_combine acc (hash_elt v)) 0
 let pp ?sep pp_elt = Fmt.iter ?sep iter pp_elt
