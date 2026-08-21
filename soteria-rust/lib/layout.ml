@@ -64,7 +64,7 @@ let pp_meta_kind ft = function
 let rec dst_kind : Types.ty -> meta_kind = function
   | TSlice _ -> LenKind
   | TDynTrait _ -> VTableKind
-  | TAdt (adt, _) when Crate.is_struct adt -> (
+  | TAdt adt when Crate.is_struct adt -> (
       match List.last_opt (Crate.as_struct adt) with
       | None -> NoneKind
       | Some last -> dst_kind Types.(last.field_ty))
@@ -75,7 +75,7 @@ let rec dst_kind : Types.ty -> meta_kind = function
     element. Errors otherwise. *)
 let rec dst_slice_ty : Types.ty -> Types.ty = function
   | TSlice sub_ty -> sub_ty
-  | TAdt (adt, _) when Crate.is_struct adt -> (
+  | TAdt adt when Crate.is_struct adt -> (
       match List.last_opt (Crate.as_struct adt) with
       | None -> L.failwith "dst_slice_ty: unexpected type"
       | Some last -> dst_slice_ty Types.(last.field_ty))
@@ -100,11 +100,11 @@ let pointee_metadata (pointee : Types.ty) : Types.ty =
   | VTableKind ->
       let adt = Crate.get_adt_lang_item RustcLangItemDynMetadata in
       TAdt
-        ( {
-            id = adt.def_id;
-            generics = TypesUtils.mk_generic_args_from_types [ pointee ];
-          },
-          None )
+        {
+          id = adt.def_id;
+          generics = TypesUtils.mk_generic_args_from_types [ pointee ];
+          builtin = None;
+        }
 
 let[@inline] size_to_fit ~size ~align =
   Typed.ite
@@ -116,7 +116,7 @@ let[@inline] size_to_fit ~size ~align =
     [repr(packed(n))] caps the alignment of every field to [n]. *)
 let packed_align (ty : Types.ty) align =
   match ty with
-  | TAdt ({ id; _ }, None) -> (
+  | TAdt { id; _ } -> (
       match (Crate.get_adt_raw id).layout with
       | [ (_triple, { repr = { align_modif = Some (Pack n); _ }; _ }) ] ->
           BV.min ~signed:false align (BV.usizeinz n)
@@ -143,7 +143,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let align = align_of_literal_ty ty in
       ok (mk_concrete ~size ~align ())
   (* Fat pointers *)
-  | TAdt ({ generics = { types = [ sub_ty ]; _ }; _ }, Some TBox)
+  | TAdt { generics = { types = [ sub_ty ]; _ }; builtin = Some TBox; _ }
   | TRef (_, sub_ty, _)
   | TRawPtr (sub_ty, _)
     when is_dst sub_ty ->
@@ -153,7 +153,8 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
            ~fields:(Array { stride = BV.usizei ptr_size; is_ptr = true })
            ())
   (* Refs, pointers, boxes, function pointers *)
-  | TAdt (_, Some TBox) | TRef (_, _, _) | TRawPtr (_, _) | TFnPtr _ ->
+  | TAdt { builtin = Some TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) | TFnPtr _
+    ->
       let ptr_size = Crate.pointer_size () in
       ok (mk_concrete ~size:ptr_size ~align:ptr_size ())
   (* Dynamically sized types -- we assume they have a size of 0. In truth, these
@@ -171,7 +172,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   (* Same as above, but here we have even less information ! *)
   | TDynTrait _ -> ok (mk_concrete ~size:0 ~align:1 ())
   (* ADTs (struct, enum, tuple, etc.) *)
-  | TAdt (adt, _) -> (
+  | TAdt adt -> (
       let adt = Crate.get_adt adt in
       match (adt.layout, adt.kind) with
       (* FIXME: Charon has surprising behaviour when translating layouts in
@@ -484,7 +485,7 @@ let max_value_z : Types.literal_type -> Z.t = function
   | _ -> L.failwith "Invalid integer type for max_value_z"
 
 let rec is_unsafe_cell : Types.ty -> bool = function
-  | TAdt (adt, _) -> (
+  | TAdt adt -> (
       if adt_is_unsafe_cell adt then true
       else
         match (Crate.get_adt adt).kind with
@@ -505,8 +506,8 @@ let rec is_unsafe_cell : Types.ty -> bool = function
 let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   let is_ptr_like : Types.ty -> bool = function
     | TRef _ | TRawPtr _ -> true
-    | TAdt (_, Some TBox) -> true
-    | TAdt (adt, _) -> adt_is_box adt
+    | TAdt { builtin = Some TBox; _ } -> true
+    | TAdt adt -> adt_is_box adt
     | _ -> false
   in
   let is_repr_transparent (adt : Types.type_decl_ref) =
@@ -554,12 +555,12 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   (* We keep this later down to avoid the check for everything *)
   | ty1, ty2 when is_ptr_like ty1 && is_ptr_like ty2 -> ok Typed.v_true
   (* transparent ADTs: recurse *)
-  | TAdt (adt1, _), _ when is_repr_transparent adt1 -> (
+  | TAdt adt1, _ when is_repr_transparent adt1 -> (
       let** ty1 = as_transparent adt1 in
       match ty1 with
       | None -> is_1zst ty2
       | Some ty1 -> is_abi_compatible ty1 ty2)
-  | _, TAdt (adt2, _) when is_repr_transparent adt2 -> (
+  | _, TAdt adt2 when is_repr_transparent adt2 -> (
       let** ty2 = as_transparent adt2 in
       match ty2 with
       | None -> is_1zst ty1
@@ -599,7 +600,7 @@ let unsize_path ~(from_ty : Types.ty) ~(to_ty : Types.ty) :
     | (Types.TRawPtr _ | TRef _), _ -> ok (Some (List.rev acc))
     | TPattern (from_ty, _), _ -> aux acc from_ty to_ty
     | _, Types.TPattern (to_ty, _) -> aux acc from_ty to_ty
-    | TAdt (from_adt, _), TAdt (to_adt, _)
+    | TAdt from_adt, TAdt to_adt
       when Crate.is_struct from_adt && Crate.is_struct to_adt ->
         let*** idx, from_ty, to_ty =
           find_coerced_field 0

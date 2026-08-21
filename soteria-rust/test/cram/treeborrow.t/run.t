@@ -68,28 +68,28 @@ Deallocating memory that is strongly protected by a mutable reference is not
   => Running protected_dealloc::main...
   error: protected_dealloc::main: found issues in <time>, errors in 1 branch (out of 1)
   bug: Tried freeing an allocation which was passed to a function by reference in protected_dealloc::main
-       --> $RUSTLIB/library/alloc/src/alloc.rs:128:14
-   128 |        unsafe { __rust_dealloc(ptr, layout.size(), layout.alignment()) }
+       --> $RUSTLIB/library/alloc/src/alloc.rs:175:14
+   175 |        unsafe { __rust_dealloc(ptr, layout.size(), layout.alignment()) }
        |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
        |                 |
        |                 Freeing memory
        |                 10: Call trace
-       --> $RUSTLIB/library/alloc/src/boxed.rs:1958:17
-  1958 |                    self.1.deallocate(From::from(ptr.cast()), layout);
+       --> $RUSTLIB/library/alloc/src/boxed.rs:2000:17
+  2000 |                    self.1.deallocate(From::from(ptr.cast()), layout);
        |                    ------------------------------------------------- 9: Call trace
-       --> $RUSTLIB/library/core/src/mem/mod.rs:1004:1
-  1004 |    }
+       --> $RUSTLIB/library/core/src/mem/mod.rs:1049:1
+  1049 |    }
        |    - 7: Call trace
        --> $RUSTLIB/library/core/src/ops/function.rs:250:5
    250 |        extern "rust-call" fn call_once(self, args: Args) -> Self::Output;
        |        ------------------------------------------------------------------ 5: Call trace
-       --> $RUSTLIB/library/core/src/ptr/mod.rs:825:1
-   824 |    #[lang = "drop_glue"]
-   825 | /  pub(crate) const unsafe fn drop_glue<T: PointeeSized>(_: &mut T)
-   826 | |  where
-   827 | |      T: [const] Destruct,
+       --> $RUSTLIB/library/core/src/ptr/mod.rs:847:1
+   846 |    #[lang = "drop_glue"]
+   847 | /  pub(crate) const unsafe fn drop_glue<T: PointeeSized>(_: &mut T)
+   848 | |  where
+   849 | |      T: [const] Destruct,
        | \-------------------------' 8: Call trace
-   828 |    {
+   850 |    {
        --> $TESTCASE_ROOT/protected-dealloc.rs:9:9
      4 |        f(x)
        |        ---- 3: Call trace

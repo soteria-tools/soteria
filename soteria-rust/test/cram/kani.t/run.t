@@ -78,8 +78,8 @@ Test kani::assert
   => Running assert::override_asserteq_macro...
   error: assert::override_asserteq_macro: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion in assert::override_asserteq_macro
-      --> $RUSTLIB/library/core/src/panicking.rs:394:5
-  394 |      assert_failed_inner(kind, &left, &right, args)
+      --> $RUSTLIB/library/core/src/panicking.rs:407:5
+  407 |      assert_failed_inner(kind, &left, &right, args)
       |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       |      |
       |      Triggering operation
@@ -214,23 +214,23 @@ Test our simple Kani demo works
   => Running demo::memory_leak...
   error: demo::memory_leak: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak in demo::memory_leak
-      --> $RUSTLIB/library/alloc/src/alloc.rs:101:9
-  101 |            __rust_alloc(layout.size(), layout.alignment())
+      --> $RUSTLIB/library/alloc/src/alloc.rs:130:9
+  130 |            __rust_alloc(layout.size(), layout.alignment())
       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       |            |
       |            Triggering operation
       |            5: Allocation
       .    
-  331 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
-  332 | /          core::intrinsics::const_eval_select(
-  333 | |              (layout, zeroed),
-  334 | |              Global::alloc_impl_const,
-  335 | |              Global::alloc_impl_runtime,
-  336 | |          )
+  423 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
+  424 | /          core::intrinsics::const_eval_select(
+  425 | |              (layout, zeroed),
+  426 | |              Global::alloc_impl_const,
+  427 | |              Global::alloc_impl_runtime,
+  428 | |          )
       | \----------' 4: Call trace
-  337 |        }
-      --> $RUSTLIB/library/alloc/src/boxed.rs:286:19
-  286 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
+  429 |        }
+      --> $RUSTLIB/library/alloc/src/boxed.rs:290:19
+  290 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
       |                      -------------------------------------------------- 3: Call trace
       --> $TESTCASE_ROOT/demo.rs:33:21
    32 |    fn memory_leak() {

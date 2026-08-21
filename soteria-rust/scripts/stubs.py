@@ -66,13 +66,10 @@ class GenericParams(TypedDict):
     const_generics: list[ConstParam]
 
 
-class AdtId(TypedDict):
-    Adt: int
-
-
 class InnerTypeAdt(TypedDict):
-    id: str | AdtId
+    id: int
     generics: GenericParams
+    builtin: Optional[str]
 
 
 class TypeAdt(TypedDict):
@@ -256,14 +253,14 @@ def type_of(unique_ty: UniqueType) -> InterpType:
         return "ptr", None
 
     if "Adt" in ty:
-        adt_id = ty["Adt"]["id"]
-        if adt_id == "Tuple":
-            if len(ty["Adt"]["generics"]["types"]) == 0:
+        adt = ty["Adt"]
+        builtin = adt["builtin"]
+        if builtin == "Tuple":
+            if len(adt["generics"]["types"]) == 0:
                 return "unit", None
             return "tuple", None
-        if "Adt" in adt_id:
-            ty_decl_id = cast(AdtId, adt_id)["Adt"]
-            ty_decl = type_decls[ty_decl_id]
+        if builtin is None:
+            ty_decl = type_decls[adt["id"]]
             if "Struct" in ty_decl["kind"]:
                 return "tuple", None
             if "Union" in ty_decl["kind"]:
@@ -404,8 +401,8 @@ def sanitize_variant_name(name: list[PathElem]) -> str:
             impl = elem["Impl"]
             if "Ty" in impl:
                 ty = charon_type_of(impl["Ty"]["skip_binder"])
-                if "Adt" in ty and "Adt" in cast(TypeAdt, ty)["Adt"]["id"]:
-                    type_decl = type_decls[cast(Any, ty)["Adt"]["id"]["Adt"]]
+                if "Adt" in ty and cast(TypeAdt, ty)["Adt"]["builtin"] is None:
+                    type_decl = type_decls[cast(TypeAdt, ty)["Adt"]["id"]]
                     path.append(name_short(type_decl["item_meta"]["name"]))
         else:
             path.append("_")
@@ -1017,8 +1014,8 @@ def generate_custom_stubs() -> None:
                 impl = elem["Impl"]
                 if "Ty" in impl:
                     ty = charon_type_of(impl["Ty"]["skip_binder"])
-                    if "Adt" in ty and "Adt" in cast(TypeAdt, ty)["Adt"]["id"]:
-                        type_decl = type_decls[cast(Any, ty)["Adt"]["id"]["Adt"]]
+                    if "Adt" in ty and cast(TypeAdt, ty)["Adt"]["builtin"] is None:
+                        type_decl = type_decls[cast(TypeAdt, ty)["Adt"]["id"]]
                         name = name_short(type_decl["item_meta"]["name"])
                         if name == pat:
                             continue

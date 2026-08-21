@@ -380,7 +380,7 @@ module Make (StateImpl : State.S) = struct
             ptr
         in
         (Typed.Ptr.of_ptr_t ptr', root)
-    | PlaceProjection (base, Field (_, variant, field)) ->
+    | PlaceProjection (base, Field (variant, field)) ->
         let* ptr, root = resolve_place_rooted base in
         [%l.debug
           "Projecting field %a for %a" Types.pp_field_id field Typed.ppa ptr];
@@ -468,10 +468,12 @@ module Make (StateImpl : State.S) = struct
     let open Syntax in
     match origin.kind with
     | PlaceLocal v -> ok Store.Place.{ kind = Local v; origin }
-    | PlaceProjection (base, Field (adt, variant, field)) ->
+    | PlaceProjection (base, Field (variant, field)) ->
         (* we never go through unions, as they apply transmutations that require
            a heap access to be calculated. *)
-        let*^ () = Option.of_bool (not (Crate.is_union' adt)) in
+        let* ty = Layout.normalise base.ty in
+        let adt = ty_as_adt ty in
+        let*^ () = Option.of_bool (not (Crate.is_union adt)) in
         let++ base = build_store_place base in
         Store.Place.{ kind = Field (base, variant, field); origin }
     | PlaceProjection (base, PtrMetadata) ->
@@ -903,10 +905,10 @@ module Make (StateImpl : State.S) = struct
             ok (BV.of_bool Typed.v_false)
         | SizeOf -> Layout.size_of ty
         | AlignOf -> Layout.align_of ty
-        | OffsetOf (ty, variant, field) ->
+        | OffsetOf (tref, variant, field) ->
             let variant = Option.value variant ~default:Types.VariantId.zero in
             let field = Types.FieldId.to_int field in
-            let ty : Types.ty = TAdt (ty, None) in
+            let ty : Types.ty = TAdt tref in
             let+ layout = Layout.layout_of ty in
             let fields =
               Layout.Fields_shape.shape_for_variant variant layout.fields
@@ -954,7 +956,7 @@ module Make (StateImpl : State.S) = struct
         in
         let* value = eval_operand op in
         let field = Types.FieldId.to_int field in
-        let* layout = Layout.layout_of (TAdt (adt, None)) in
+        let* layout = Layout.layout_of (TAdt adt) in
         let offset = Layout.Fields_shape.offset_of field layout.fields in
         let+ op_blocks =
           Value_codec.encode ~depth:0 ~offset value (type_of_operand op)
@@ -986,13 +988,15 @@ module Make (StateImpl : State.S) = struct
         let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f ptr) in
         let+ meta =
           match meta_ty with
-          | TAdt (_, Some TTuple) when TypesUtils.ty_is_unit meta_ty -> ok None
+          | TAdt { builtin = Some TTuple; _ } when TypesUtils.ty_is_unit meta_ty
+            ->
+              ok None
           | TLiteral (TInt Isize | TUInt Usize) ->
               ok (Some (Typed.cast_i Usize meta))
           | TRawPtr _ | TRef _ ->
               ok (Some (Typed.Ptr.ptr_of (Typed.cast_ptr_f meta)))
-          | TAdt (adt, _)
-            when Crate.adt_has_lang_item RustcLangItemDynMetadata adt ->
+          | TAdt adt when Crate.adt_has_lang_item RustcLangItemDynMetadata adt
+            ->
               let nonnull, _marker =
                 Typed.Adt.as_tuple2 (Typed.cast_tuple meta)
               in

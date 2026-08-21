@@ -146,7 +146,7 @@ let rec ty_of_rust : Types.ty -> 'g svty = function
   | TVar _ -> TExtension TPolyType
   | TPattern (ty, _) -> ty_of_rust ty
   | TArray (ty, n) -> TExtension (TArray (ty_of_rust ty, z_of_constant_expr n))
-  | TAdt (adt, _) -> (
+  | TAdt adt -> (
       assert (tyref_is_substituted adt);
       match (Crate.get_adt adt).kind with
       | Struct fs ->

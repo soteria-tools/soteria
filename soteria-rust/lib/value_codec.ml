@@ -31,7 +31,7 @@ let iter_fields ?variant ?ptr layout (ty : Types.ty) =
         | Some len -> Iter.repeatz len sub_ty
         | None ->
             L.failwith "iter_fields: unsupported symbolic length for slice/str")
-    | TAdt (adt, _) -> (
+    | TAdt adt -> (
         let type_decl = Crate.get_adt adt in
         match (type_decl.kind, variant) with
         | Struct fields, _ ->
@@ -296,7 +296,7 @@ struct
     match (layout.fields, ty) with
     | _ when layout.uninhabited -> error (`RefToUninhabited ty)
     | _, TDynTrait _ -> L.failwith "decode: cannot decode an unsized dyn value"
-    | _, TAdt (adt, _) when Crate.is_union adt ->
+    | _, TAdt adt when Crate.is_union adt ->
         if%sat layout.size ==@ Usize.(0s) then ok (Typed.Adt.mk_union adt [])
         else
           (* FIXME: this isn't exactly correct; union actually doesn't copy the
@@ -334,7 +334,7 @@ struct
     | Arbitrary _, _ ->
         let+ fields = iter (iter_fields ?ptr layout ty) offset in
         Typed.Adt.mk_tuple fields
-    | Enum _, TAdt (adt, _) ->
+    | Enum _, TAdt adt ->
         let variants = Crate.as_enum adt in
         let* variant = variant_of_enum ~offset ty in
         let+ fields = iter (iter_fields ~variant ?ptr layout ty) offset in
@@ -527,7 +527,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       ref_box_validity ptr pointee
   (* NOTE: this check must go before the struct check, since boxes are
      structs *)
-  | TAdt (adt, _) when adt_is_box adt ->
+  | TAdt adt when adt_is_box adt ->
       let pointee = get_pointee ty in
       let ptr = ptr_of_box v in
       ref_box_validity ptr pointee
@@ -535,7 +535,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
   | TRawPtr (pointee, _) ->
       metadata_validity ~is_raw_ptr:true pointee (Typed.cast_ptr_f v)
   (* undefined.validity.enum *)
-  | TAdt (adt, _) when Crate.is_enum adt ->
+  | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_enum ~adt v in
       Iter.of_list (Crate.as_enum adt)
       |> Iter.filter_map (fun (variant : Types.variant) ->
@@ -554,7 +554,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
           |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f))
   (* undefined.validity.struct + undefined.validity.str, we represent [str] as a
      [struct([u8])] *)
-  | TAdt (adt, _) when Crate.is_struct adt ->
+  | TAdt adt when Crate.is_struct adt ->
       let v = Typed.cast_tuple v in
       Iter.of_list (Crate.as_struct_tys adt)
       |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of i v))
@@ -563,7 +563,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       Typed.Adt.as_array (Typed.cast_array v)
       |> iter (module Iarray) ~f:(fun v -> validity ~check_ref ty v f)
   (* undefined.validity.union *)
-  | TAdt (adt, _) when Crate.is_union adt -> ok ()
+  | TAdt adt when Crate.is_union adt -> ok ()
   (* fndefs are ZSTs *)
   | TFnDef _ -> ok ()
   (* we assume polymorphic data has no validity requirement *)
@@ -719,7 +719,7 @@ let rec nondet_raw :
       in
       let++ fields = nondets_raw @@ List.init size (fun _ -> ty) in
       Typed.Adt.mk_array ty (Iarray.of_list fields)
-  | TAdt (adt, _) as ty -> (
+  | TAdt adt as ty -> (
       let type_decl = Crate.get_adt adt in
       match type_decl.kind with
       | Enum [] -> vanish ()
@@ -807,15 +807,15 @@ let rec ref_tys_in
   in
   let* ty = Poly.subst_ty ty in
   match ty with
-  | TRef (_, _, _) | TAdt (_, Some TBox) ->
+  | TRef (_, _, _) | TAdt { builtin = Some TBox; _ } ->
       let v = Typed.cast_ptr_f v in
       let++ res, acc = fn init ty v in
       (Typed.as_any res, acc)
-  | TAdt (adt, _) when adt_is_box adt ->
+  | TAdt adt when adt_is_box adt ->
       let ptr, allocator, marker = unwrap_box v in
       let++ ptr, acc = fn init ty ptr in
       (mk_box ptr allocator marker, acc)
-  | TAdt (adt, _) when Crate.is_struct adt ->
+  | TAdt adt when Crate.is_struct adt ->
       let v = Typed.cast_tuple v in
       let++ vs, acc =
         fs' init (Crate.as_struct_tys adt) (Typed.Adt.as_tuple v)
@@ -825,7 +825,7 @@ let rec ref_tys_in
       let v = Typed.cast_array v in
       let++ vs, acc = fs init ty (Typed.Adt.as_array v) in
       (Typed.Adt.mk_array ty (Iarray.of_list vs), acc)
-  | TAdt (adt, _) when Crate.is_enum adt ->
+  | TAdt adt when Crate.is_enum adt ->
       let v = Typed.cast_enum ~adt v in
       let* var = variant_for_enum v adt in
       let vs = Typed.Adt.as_enum_of_variant var.id v in
@@ -862,7 +862,7 @@ let rec size_and_align_of_val ~load_vtable ~t ~(ptr : Typed.([< T.sptr_f ] t)) =
         let size = Typed.cast_i Usize size in
         let align = Typed.cast_i Usize align in
         (size, Typed.cast_nonzero align)
-    | TAdt (adt, _) ->
+    | TAdt adt ->
         let field_tys = Crate.as_struct_tys adt in
         let last_field_ty = List.last field_tys in
         let** layout = Layout.layout_of t in

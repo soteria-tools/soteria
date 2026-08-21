@@ -4,23 +4,23 @@ Test memory leaks
   => Running leak::main...
   error: leak::main: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak in leak::main
-      --> $RUSTLIB/library/alloc/src/alloc.rs:101:9
-  101 |            __rust_alloc(layout.size(), layout.alignment())
+      --> $RUSTLIB/library/alloc/src/alloc.rs:130:9
+  130 |            __rust_alloc(layout.size(), layout.alignment())
       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       |            |
       |            Triggering operation
       |            5: Allocation
       .    
-  331 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
-  332 | /          core::intrinsics::const_eval_select(
-  333 | |              (layout, zeroed),
-  334 | |              Global::alloc_impl_const,
-  335 | |              Global::alloc_impl_runtime,
-  336 | |          )
+  423 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
+  424 | /          core::intrinsics::const_eval_select(
+  425 | |              (layout, zeroed),
+  426 | |              Global::alloc_impl_const,
+  427 | |              Global::alloc_impl_runtime,
+  428 | |          )
       | \----------' 4: Call trace
-  337 |        }
-      --> $RUSTLIB/library/alloc/src/boxed.rs:286:19
-  286 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
+  429 |        }
+      --> $RUSTLIB/library/alloc/src/boxed.rs:290:19
+  290 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
       |                      -------------------------------------------------- 3: Call trace
       --> $TESTCASE_ROOT/leak.rs:2:22
     1 |    fn main() {
@@ -117,8 +117,8 @@ Check strict provenance disables int to ptr casts
   => Running provenance::with_exposed...
   error: provenance::with_exposed: found issues in <time>, errors in 1 branch (out of 1)
   bug: Attempted to cast an integer to an pointer with strict provenance in provenance::with_exposed
-       --> $RUSTLIB/library/core/src/ptr/mod.rs:1005:5
-  1005 |      addr as *const T
+       --> $RUSTLIB/library/core/src/ptr/mod.rs:1027:5
+  1027 |      addr as *const T
        |      ^^^^^^^^^^^^^^^^ Casting integer to pointer
        --> $TESTCASE_ROOT/provenance.rs:6:18
      2 |  fn with_exposed() {
@@ -247,7 +247,7 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
   
   tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
+       cargo +nightly-2026-08-18 miri setup --print-sysroot
   
   This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
@@ -256,7 +256,7 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
   
   tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
+       cargo +nightly-2026-08-18 miri setup --print-sysroot
   
   This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
@@ -274,7 +274,7 @@ This test must be run separtely on linux and macos as it yields different error 
   Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
   
   tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
+       cargo +nightly-2026-08-18 miri setup --print-sysroot
   
   This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
@@ -283,7 +283,7 @@ This test must be run separtely on linux and macos as it yields different error 
   Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
   
   tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
+       cargo +nightly-2026-08-18 miri setup --print-sysroot
   
   This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
@@ -534,8 +534,8 @@ Check we handle pattern types correctly
   => Running pattern_types::nonnull...
   error: pattern_types::nonnull: found issues in <time>, errors in 1 branch (out of 2)
   bug: UB: Transmute: Value violates pattern type constraint in pattern_types::nonnull
-      --> $RUSTLIB/library/core/src/ptr/non_null.rs:238:13
-  238 |              transmute(ptr)
+      --> $RUSTLIB/library/core/src/ptr/non_null.rs:247:13
+  247 |              transmute(ptr)
       |              ^^^^^^^^^^^^^^ Transmute
       --> $TESTCASE_ROOT/pattern_types.rs:12:25
    10 |  fn nonnull() {
@@ -893,8 +893,8 @@ Test that `align_offset` is answered from the allocation's alignment
   => Running align_offset::alignment_is_not_a_power_of_two...
   error: align_offset::alignment_is_not_a_power_of_two: found issues in <time>, errors in 1 branch (out of 1)
   error: Panic in align_offset::alignment_is_not_a_power_of_two
-       --> $RUSTLIB/library/core/src/ptr/const_ptr.rs:1299:13
-  1299 |              panic!("align_offset: align is not a power-of-two");
+       --> $RUSTLIB/library/core/src/ptr/const_ptr.rs:1282:13
+  1282 |              panic!("align_offset: align is not a power-of-two");
        |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
        |              |
        |              Triggering operation

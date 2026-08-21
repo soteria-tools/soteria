@@ -81,7 +81,7 @@ module Place = struct
         let ptr =
           match base.origin.ty with
           | TRawPtr _ | TRef _ -> Typed.cast_ptr_f base_v
-          | TAdt (adt, _) when adt_is_box adt -> Value_codec.ptr_of_box base_v
+          | TAdt adt when adt_is_box adt -> Value_codec.ptr_of_box base_v
           | _ ->
               L.failwith "tried loading metadata of non-pointer: %a" pp_ty
                 base.origin.ty

@@ -41,7 +41,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let atomic_fence ~ord:_ = not_impl "Unsupported intrinsic: atomic_fence"
 
-  let atomic_load ~t:_ ~ord:_ ~src:_ =
+  let atomic_load ~t:_ ~ord:_ ~volatile:_ ~src:_ =
     not_impl "Unsupported intrinsic: atomic_load"
 
   let atomic_max ~t:_ ~ord:_ ~dst:_ ~src:_ =
@@ -59,7 +59,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let atomic_singlethreadfence ~ord:_ =
     not_impl "Unsupported intrinsic: atomic_singlethreadfence"
 
-  let atomic_store ~t:_ ~ord:_ ~dst:_ ~val_:_ =
+  let atomic_store ~t:_ ~ord:_ ~volatile:_ ~dst:_ ~val_:_ =
     not_impl "Unsupported intrinsic: atomic_store"
 
   let atomic_umax ~t:_ ~ord:_ ~dst:_ ~src:_ =
@@ -174,6 +174,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let field_representing_type_actual_type_id ~frt_type_id:_ =
     not_impl "Unsupported intrinsic: field_representing_type_actual_type_id"
 
+  let field_representing_type_name ~frt_type_id:_ =
+    not_impl "Unsupported intrinsic: field_representing_type_name"
+
+  let field_representing_type_offset ~frt_type_id:_ =
+    not_impl "Unsupported intrinsic: field_representing_type_offset"
+
   let float_to_int_unchecked ~float:_ ~int:_ ~value:_ =
     not_impl "Unsupported intrinsic: float_to_int_unchecked"
 
@@ -260,6 +266,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     not_impl "Unsupported intrinsic: mul_with_overflow"
 
   let needs_drop ~t:_ = not_impl "Unsupported intrinsic: needs_drop"
+  let non_exhaustive ~id:_ = not_impl "Unsupported intrinsic: non_exhaustive"
 
   let nontemporal_store ~t:_ ~ptr:_ ~val_:_ =
     not_impl "Unsupported intrinsic: nontemporal_store"
@@ -567,6 +574,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let type_id_fields ~id:_ ~variant_index:_ =
     not_impl "Unsupported intrinsic: type_id_fields"
+
+  let type_id_generics ~id:_ =
+    not_impl "Unsupported intrinsic: type_id_generics"
+
+  let type_id_is_signed ~id:_ =
+    not_impl "Unsupported intrinsic: type_id_is_signed"
 
   let type_id_variants ~id:_ =
     not_impl "Unsupported intrinsic: type_id_variants"

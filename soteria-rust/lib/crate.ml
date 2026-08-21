@@ -136,7 +136,7 @@ let get_adt_lang_item lang_item =
 let get_adt_lang_item_ref lang_item =
   let adt = get_adt_lang_item lang_item in
   let generics = TypesUtils.generic_args_of_params () adt.generics in
-  ({ id = adt.def_id; generics } : Types.type_decl_ref)
+  ({ id = adt.def_id; generics; builtin = None } : Types.type_decl_ref)
 
 let adt_has_lang_item lang_item (adt_ref : Types.type_decl_ref) =
   Option.is_some_and
@@ -203,9 +203,6 @@ let is_struct (adt_ref : Types.type_decl_ref) =
 
 let is_union (adt_ref : Types.type_decl_ref) =
   [%matches? Union _] (get_adt_raw adt_ref.id).kind
-
-let is_union' (adt_id : Types.type_decl_id) =
-  [%matches? Union _] (get_adt_raw adt_id).kind
 
 let as_enum adt_ref =
   match (get_adt adt_ref).kind with

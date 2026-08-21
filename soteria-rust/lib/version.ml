@@ -2,11 +2,11 @@
    edit the version string by hand. *)
 
 (*
- * [versionsync: CHARON_COMMIT_HASH=a188d898cb71e2fafe8a7e17ece1e6fe29cb7f25]
+ * [versionsync: CHARON_COMMIT_HASH=26cee99d259d3c106394e2e1ab53f3feaa11f3c9]
  *)
-let charon_commit = "a188d898cb71e2fafe8a7e17ece1e6fe29cb7f25"
+let charon_commit = "26cee99d259d3c106394e2e1ab53f3feaa11f3c9"
 
 (*
- * [versionsync: OBOL_COMMIT_HASH=d4a72ec83b4e207f58adf02e9a21dfe8724d2cca]
+ * [versionsync: OBOL_COMMIT_HASH=885a6cd4da27e45de830a5e9e579437da69f73ed]
  *)
-let obol_commit = "d4a72ec83b4e207f58adf02e9a21dfe8724d2cca"
+let obol_commit = "885a6cd4da27e45de830a5e9e579437da69f73ed"

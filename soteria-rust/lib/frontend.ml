@@ -126,7 +126,6 @@ let default () =
          "--format=postcard";
          "--no-typecheck";
          "--no-normalize";
-         "--no-insert-storage-deads";
          (* Use the normal distributed sysroot; Charon otherwise defaults to a
             full-MIR Miri sysroot, whose std is incompatible with our
             separately-compiled [soteria] support crate. *)

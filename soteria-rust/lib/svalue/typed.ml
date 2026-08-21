@@ -140,6 +140,7 @@ let dummy_decl_ref =
   {
     Types.id = TypesUtils.unit_type_decl_id;
     generics = TypesUtils.empty_generic_args;
+    builtin = None;
   }
 
 let cast_enum ?adt v =

@@ -71,7 +71,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     atomic_warn ();
     ok ()
 
-  let atomic_load ~t ~ord:_ ~src =
+  let atomic_load ~t ~ord:_ ~volatile:_ ~src =
     atomic_warn ();
     State.load src t
 
@@ -79,7 +79,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     atomic_warn ();
     ok ()
 
-  let atomic_store ~t ~ord:_ ~dst ~val_ =
+  let atomic_store ~t ~ord:_ ~volatile:_ ~dst ~val_ =
     atomic_warn ();
     State.store dst t val_
 
@@ -242,12 +242,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      *     _filename: PhantomData<&'a str>,
      * }
      *)
-    let location_adt = Crate.get_adt_lang_item RustcLangItemPanicLocation in
-    let generics : Types.generic_args =
-      TypesUtils.generic_args_of_params () location_adt.generics
-    in
-    let tref : Types.type_decl_ref = { id = location_adt.def_id; generics } in
-    let location_ty : Types.ty = TAdt (tref, None) in
+    let location_ref = Crate.get_adt_lang_item_ref RustcLangItemPanicLocation in
+    let location_ty : Types.ty = TAdt location_ref in
     let* trace = get_trace () in
     let filename, col, line =
       match trace.loc with
@@ -1063,7 +1059,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   let variant_count ~t =
     match (t : Types.ty) with
-    | TAdt (adt, _) when Crate.is_enum adt ->
+    | TAdt adt when Crate.is_enum adt ->
         let variants = Crate.as_enum adt in
         ok (BV.usizei (List.length variants))
     | _ -> error (`StdErr "core::intrinsics::variant_count used with non-enum")
