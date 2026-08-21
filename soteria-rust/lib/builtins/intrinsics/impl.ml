@@ -843,7 +843,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let prefetch_read_instruction ~t:_ ~locality:_ ~data:_ = ok ()
   let prefetch_write_data ~t:_ ~locality:_ ~data:_ = ok ()
   let prefetch_write_instruction ~t:_ ~locality:_ ~data:_ = ok ()
-  let ptr_guaranteed_cmp ~t:_ ~ptr ~other = Core.eval_ptr_binop Eq ptr other
 
   let ptr_guaranteed_cmp ~t ~ptr ~other =
     Core.eval_ptr_binop ~pointee:t Eq ptr other
