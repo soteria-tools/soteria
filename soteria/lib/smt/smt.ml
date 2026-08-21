@@ -293,6 +293,7 @@ let bv_smulo l r = "bvsmulo" $$. [ l; r ]
 
 (** {2 Sequences} *)
 
+(* [t_seq elt] is the type of sequences of [elt]. *)
 let t_seq elt = "Seq" $. elt
 let seq_empty = atom "seq.empty"
 let seq_singl x = "seq.unit" $. x

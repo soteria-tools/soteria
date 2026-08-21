@@ -22,6 +22,9 @@ val copy_and_set : int -> 'a -> 'a t -> 'a t
     [!=]). *)
 val map_changed : ('a -> 'a) -> 'a t -> 'a t * bool
 
+(** Hashes this Iarray, using the given hashing function for its elements. *)
+val hash : ('a -> int) -> 'a t -> int
+
 val pp :
   ?sep:(Format.formatter -> unit -> unit) ->
   (Format.formatter -> 'a -> unit) ->

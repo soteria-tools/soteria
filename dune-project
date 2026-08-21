@@ -44,8 +44,10 @@
    (>= 0.9.0))
   (ppx_subliner
    (>= 0.2.1))
-  ppx_deriving
-  ppx_deriving_hash
+  (ppx_deriving
+   (>= 6.1.3))
+  (ppx_deriving_hash
+   (>= 0.1.4))
   fmt
   printbox
   printbox-text
