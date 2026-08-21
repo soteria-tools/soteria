@@ -48,13 +48,13 @@ module M (StateM : State.StateM.S) = struct
     | _ -> not_impl "miri_promise_symbolic_alignment: invalid arguments"
 
   let alloc args = Alloc.alloc ~zeroed:false args
-  let dealloc args = Alloc.dealloc args
+  let dealloc fun_sig args = Alloc.dealloc fun_sig args
   let nop _ = ok Typed.Adt.unit
 
-  let[@inline] fn_to_stub = function
+  let[@inline] fn_to_stub fun_sig = function
     | Nop -> nop
     | Alloc -> alloc
-    | Dealloc -> dealloc
+    | Dealloc -> dealloc fun_sig
     | AllocId -> alloc_id
     | PromiseAlignment -> promise_alignement
 end
