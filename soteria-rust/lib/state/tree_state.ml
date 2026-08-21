@@ -57,10 +57,10 @@ module Make (Borrows : Tree_borrows.T) = struct
     [@@deriving show { with_path = false }]
   end
 
-  type global = String of string | Global of Types.global_decl_id
+  type global = String of string | Global of Types.global_decl_ref
 
   module GlobMap = Map.Make (struct
-    type t = global = String of string | Global of Types.global_decl_id
+    type t = global = String of string | Global of Types.global_decl_ref
     [@@deriving show { with_path = false }, ord]
   end)
 

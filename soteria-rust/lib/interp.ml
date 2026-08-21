@@ -671,7 +671,11 @@ module Make (StateImpl : State.S) = struct
   and resolve_global (glob : Types.global_decl_ref) : Typed.([> T.sptr_f ] t) t
       =
     let decl = Crate.get_global glob.id in
-    let* v_opt = State.load_global glob.id in
+    let@ generics =
+      Poly.push_generics ~params:decl.generics ~args:glob.generics
+    in
+    let glob : Types.global_decl_ref = { glob with generics } in
+    let* v_opt = State.load_global glob in
     match v_opt with
     | Some v -> ok v
     | None ->
@@ -682,11 +686,12 @@ module Make (StateImpl : State.S) = struct
           | NamedConst | AnonConst -> Const glob
         in
         let@ () = with_alloc_kind ~kind in
-        let* ptr = State.alloc_ty ~span:decl.item_meta.span.data decl.ty in
-        let* () = State.store_global glob.id ptr in
+        let* ty = Poly.subst_ty decl.ty in
+        let* ptr = State.alloc_ty ~span:decl.item_meta.span.data ty in
+        let* () = State.store_global glob ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = resolve_constant decl.value in
-        let+ () = State.store ptr decl.ty v in
+        let+ () = State.store ptr ty v in
         [%l.info
           "Initialized global %a at %a to %a" Crate.pp_name decl.item_meta.name
             Typed.ppa ptr Typed.ppa v];

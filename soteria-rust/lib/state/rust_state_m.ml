@@ -241,8 +241,8 @@ module type S = sig
     val unprotect : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
     val with_exposed : [< sint ] v -> ([> sptr_f ] v, 'env) t
     val tb_load : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
-    val load_global : Types.global_decl_id -> ([> sptr_f ] v option, 'env) t
-    val store_global : Types.global_decl_id -> [< sptr_f ] v -> (unit, 'env) t
+    val load_global : Types.global_decl_ref -> ([> sptr_f ] v option, 'env) t
+    val store_global : Types.global_decl_ref -> [< sptr_f ] v -> (unit, 'env) t
     val load_str_global : string -> ([> sptr_f ] v option, 'env) t
     val store_str_global : string -> [< sptr_f ] v -> (unit, 'env) t
     val declare_fn : Fun_kind.t -> ([> sptr_f ] v, 'env) t

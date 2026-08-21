@@ -217,8 +217,6 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TPattern (ty, _) -> layout_of ty
   (* Type variables : non-deterministically generate a layout *)
   | TVar (Free _) ->
-      (* FIXME: we need to scope these type variables, as the T in foo<T> and in
-         bar<T> are "different" Ts. *)
       let* size = nondet (Typed.t_usize ()) in
       let* () = assume Usize.[ 0s <=$@ size; size <$@ 1024s ] in
       (* this is real non-determinism of the alignment; we don't do it because
