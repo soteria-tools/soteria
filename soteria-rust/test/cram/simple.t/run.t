@@ -868,6 +868,7 @@ Test that `align_offset` is answered from the allocation's alignment
   PC 1: empty
   
   => Running align_offset::offset_beyond_the_allocation_alignment...
+  warning: std::ptr::align_offset was stubbed to avoid path explosion. This is an under-approximation, some paths may be missed.
   note: align_offset::offset_beyond_the_allocation_alignment: done in <time>, ran 1 branch
   PC 1: ((V|1| ++ 0b00) <u 0x7fffffffffffffef) /\
         (0x0000000000000004 <=u (V|1| ++ 0b00)) /\ (0b0 == extract[0-0](V|1|))

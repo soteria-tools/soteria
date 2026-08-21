@@ -62,6 +62,11 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
       let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f ptr) in
       mk_res ptr size
 
+  let align_offset_ux =
+    String.Interned.intern
+      "std::ptr::align_offset was stubbed to avoid path explosion. This is an \
+       under-approximation, some paths may be missed."
+
   (** {@rust[
         pub(crate) const unsafe fn align_offset<T: Sized>(p: *const T, a: usize) -> usize
       ]}
@@ -178,6 +183,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     (* UX: can't find a right answer, and we want to avoid branching, so we
        under-approximate by constraining the allocation to sit somewhere we can
        answer for. *)
+    Soteria.Terminal.Warn.warn_once align_offset_ux;
     let assume_aligned () =
       let is_aligned = addr %@ tgt_align ==@ Usize.(0s) in
       (* ...unless the address is already pinned somewhere unaligned, to avoid
