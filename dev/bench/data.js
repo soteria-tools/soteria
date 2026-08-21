@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787043884996,
+  "lastUpdate": 1787321147421,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -7885,6 +7885,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 117.663,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4e9182b5e701d7b88afbb0fe99d9da39a350d492",
+          "message": "Encode rust values to SMT (#464)\n\n* Use `ppx_matches`\n\n* Add solver declarations\n\n* Minor juggle: split off ext into ext_base/ext\n\n* Tweak `Value_ext` interface\n\n* Move ADT constructors to `ext_base`\n\n* Properly implement `mk` and `eval`\n\n* Add encoding of our values !!!\n\nUpdate encoding.ml\n\n* Add `ThinPtrPart` unary operator\n\n* Add `FullPtrInner` unary operator\n\n* STYLE: reorganise code\n\n* Add `Field` unary operator (tuples)\n\n* Add `VariantField` unary operator (enums)\n\n* Add `ArrayField` unary operator\n\n* Add `IsVariant` unary operator\n\n* Add `FullPtrMeta` and `PtrMetaAs` unary ops\n\n* Do not branch on enums !\n\n* docs were failing\n\n* Use `ppx_deriving_hash` in soteria rust's values\n\n* oops",
+          "timestamp": "2026-08-21T13:43:46Z",
+          "tree_id": "a51910783c0dd769f6838c000d41d48901421e34",
+          "url": "https://github.com/soteria-tools/soteria/commit/4e9182b5e701d7b88afbb0fe99d9da39a350d492"
+        },
+        "date": 1787321144652,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 1.96611915246,
+            "range": "± 0.0223",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.8080437326800001,
+            "range": "± 0.008",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.63512272748,
+            "range": "± 0.0151",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.3996584016,
+            "range": "± 0.0032",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 2.8140251653999995,
+            "range": "± 0.0189",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.5651328261,
+            "range": "± 0.0054",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.33288667141999995,
+            "range": "± 0.0023",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9931273205000004,
+            "range": "± 0.0774",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.459690581075847,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 371,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 25,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 4,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 17,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 130.3847,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 462,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 98,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 40,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 9,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 116.9032,
             "unit": "s"
           }
         ]
