@@ -144,6 +144,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
  [`atomic::fence`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_load"><a href="#val-atomic_load" class="anchor"></a><code><span><span class="keyword">val</span> atomic_load : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">volatile</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">src</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sptr_f">Svalue.Typed.T.sptr_f</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Loads the current value of the pointer.
  `T` must be an integer or pointer type.
@@ -197,6 +198,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
  [`atomic::compiler_fence`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-atomic_store"><a href="#val-atomic_store" class="anchor"></a><code><span><span class="keyword">val</span> atomic_store : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">ord</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
+  <span><span class="label">volatile</span>:<span class="xref-unresolved">Charon</span>.Types.constant_expr <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">dst</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sptr_f">Svalue.Typed.T.sptr_f</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">val_</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(unit, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Stores the value at the specified memory location.
@@ -835,6 +837,18 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
  The more user-friendly version of this intrinsic is [`core::mem::type_info::FieldId::type_id`].
 
+ [`FieldRepresentingType`]: crate::field::FieldRepresentingType</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-field_representing_type_name"><a href="#val-field_representing_type_name" class="anchor"></a><code><span><span class="keyword">val</span> field_representing_type_name : 
+  <span><span class="label">frt_type_id</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-tuple">Svalue.Typed.T.tuple</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sptr_f">Svalue.Typed.T.sptr_f</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Gets the name of the field represented by the [`FieldRepresentingType`]'s `TypeId`.
+
+ The more user-friendly version of this intrinsic is [`core::mem::type_info::FieldId::name`].
+
+ [`FieldRepresentingType`]: crate::field::FieldRepresentingType</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-field_representing_type_offset"><a href="#val-field_representing_type_offset" class="anchor"></a><code><span><span class="keyword">val</span> field_representing_type_offset : 
+  <span><span class="label">frt_type_id</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-tuple">Svalue.Typed.T.tuple</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sint">Svalue.Typed.T.sint</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Gets the name of the field represented by the [`FieldRepresentingType`]'s `TypeId`.
+
+ The more user-friendly version of this intrinsic is [`core::mem::type_info::FieldId::name`].
+
  [`FieldRepresentingType`]: crate::field::FieldRepresentingType</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-float_to_int_unchecked"><a href="#val-float_to_int_unchecked" class="anchor"></a><code><span><span class="keyword">val</span> float_to_int_unchecked : 
   <span><span class="label">float</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">int</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -866,28 +880,28 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">b</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">c</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns `a * b + c` for `f128` values.
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns `a * b + c` without rounding the intermediate result for `f128` values.
 
  The stabilized version of this intrinsic is
  [`f128::mul_add`](../../std/primitive.f128.html#method.mul_add)</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fmaf16"><a href="#val-fmaf16" class="anchor"></a><code><span><span class="keyword">val</span> fmaf16 : 
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">b</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">c</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns `a * b + c` for `f16` values.
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns `a * b + c` without rounding the intermediate result for `f16` values.
 
  The stabilized version of this intrinsic is
  [`f16::mul_add`](../../std/primitive.f16.html#method.mul_add)</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fmaf32"><a href="#val-fmaf32" class="anchor"></a><code><span><span class="keyword">val</span> fmaf32 : 
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">b</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">c</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns `a * b + c` for `f32` values.
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns `a * b + c` without rounding the intermediate result for `f32` values.
 
  The stabilized version of this intrinsic is
  [`f32::mul_add`](../../std/primitive.f32.html#method.mul_add)</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fmaf64"><a href="#val-fmaf64" class="anchor"></a><code><span><span class="keyword">val</span> fmaf64 : 
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">b</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">c</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns `a * b + c` for `f64` values.
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sfloat">Svalue.Typed.T.sfloat</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns `a * b + c` without rounding the intermediate result for `f64` values.
 
  The stabilized version of this intrinsic is
  [`f64::mul_add`](../../std/primitive.f64.html#method.mul_add)</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-fmul_algebraic"><a href="#val-fmul_algebraic" class="anchor"></a><code><span><span class="keyword">val</span> fmul_algebraic : 
@@ -1371,7 +1385,9 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
  stable counterpart) wraps this intrinsic call in a `const` block so that
  backends only see an evaluated constant.
 
- The stabilized version of this intrinsic is [`mem::needs_drop`](crate::mem::needs_drop).</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-nontemporal_store"><a href="#val-nontemporal_store" class="anchor"></a><code><span><span class="keyword">val</span> nontemporal_store : 
+ The stabilized version of this intrinsic is [`mem::needs_drop`](crate::mem::needs_drop).</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-non_exhaustive"><a href="#val-non_exhaustive" class="anchor"></a><code><span><span class="keyword">val</span> non_exhaustive : 
+  <span><span class="label">id</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-tuple">Svalue.Typed.T.tuple</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sbool">Svalue.Typed.T.sbool</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Checks whether this type is non-exhaustive.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-nontemporal_store"><a href="#val-nontemporal_store" class="anchor"></a><code><span><span class="keyword">val</span> nontemporal_store : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">ptr</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sptr_f">Svalue.Typed.T.sptr_f</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">val_</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -2025,7 +2041,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
  # Safety
 
- Each element of `shift` must be less than `&lt;int&gt;::BITS`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_funnel_shr"><a href="#val-simd_funnel_shr" class="anchor"></a><code><span><span class="keyword">val</span> simd_funnel_shr : 
+ Each element of `shift` must be in `0..&lt;int&gt;::BITS`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_funnel_shr"><a href="#val-simd_funnel_shr" class="anchor"></a><code><span><span class="keyword">val</span> simd_funnel_shr : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">b</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -2042,7 +2058,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
  # Safety
 
- Each element of `shift` must be less than `&lt;int&gt;::BITS`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_gather"><a href="#val-simd_gather" class="anchor"></a><code><span><span class="keyword">val</span> simd_gather : 
+ Each element of `shift` must be in `0..&lt;int&gt;::BITS`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_gather"><a href="#val-simd_gather" class="anchor"></a><code><span><span class="keyword">val</span> simd_gather : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">v</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -2062,8 +2078,8 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
  `val`.
 
  # Safety
- Unmasked values in `T` must be readable as if by `&lt;ptr&gt;::read` (e.g. aligned to the element
- type).
+ Each pointer in `ptr` whose corresponding value in `mask` is `!0` must be readable as if by
+ [`ptr::read`][crate::ptr::read] (e.g. aligned to the element type).
 
  `mask` must only contain `0` or `!0` values.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_ge"><a href="#val-simd_ge" class="anchor"></a><code><span><span class="keyword">val</span> simd_ge : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -2160,6 +2176,9 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
  # Safety
  `ptr` must be aligned according to the `ALIGN` parameter, see [`SimdAlign`] for details.
 
+ Each pointer offset from `ptr` whose corresponding value in `mask` is `!0` must be readable as if
+ by [`ptr::read`][crate::ptr::read].
+
  `mask` must only contain `0` or `!0` values.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_masked_store"><a href="#val-simd_masked_store" class="anchor"></a><code><span><span class="keyword">val</span> simd_masked_store : 
   <span><span class="label">v</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -2183,6 +2202,9 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
  # Safety
  `ptr` must be aligned according to the `ALIGN` parameter, see [`SimdAlign`] for details.
+
+ Each pointer offset from `ptr` whose corresponding value in `mask` is `!0` must be writable as if
+ by [`ptr::write`][crate::ptr::write].
 
  `mask` must only contain `0` or `!0` values.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_maximum_number_nsz"><a href="#val-simd_maximum_number_nsz" class="anchor"></a><code><span><span class="keyword">val</span> simd_maximum_number_nsz : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -2408,8 +2430,8 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
  (This is relevant in case two of the stores overlap.)
 
  # Safety
- Unmasked values in `T` must be writeable as if by `&lt;ptr&gt;::write` (e.g. aligned to the element
- type).
+ Each pointer in `ptr` whose corresponding value in `mask` is `!0` must be writable as if by
+ [`ptr::write`][crate::ptr::write] (e.g. aligned to the element type).
 
  `mask` must only contain `0` or `!0` values.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_select"><a href="#val-simd_select" class="anchor"></a><code><span><span class="keyword">val</span> simd_select : 
   <span><span class="label">m</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -2451,13 +2473,13 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">rhs</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Shifts vector left elementwise, with UB on overflow.
 
- Shifts `lhs` left by `rhs`, shifting in sign bits for signed types.
+ Shifts `lhs` left by `rhs`, shifting in zeros.
 
  `T` must be a vector of integers.
 
  # Safety
 
- Each element of `rhs` must be less than `&lt;int&gt;::BITS`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_shr"><a href="#val-simd_shr" class="anchor"></a><code><span><span class="keyword">val</span> simd_shr : 
+ Each element of `rhs` must be in `0..&lt;int&gt;::BITS`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_shr"><a href="#val-simd_shr" class="anchor"></a><code><span><span class="keyword">val</span> simd_shr : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">lhs</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">rhs</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
@@ -2469,7 +2491,7 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
  # Safety
 
- Each element of `rhs` must be less than `&lt;int&gt;::BITS`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_shuffle"><a href="#val-simd_shuffle" class="anchor"></a><code><span><span class="keyword">val</span> simd_shuffle : 
+ Each element of `rhs` must be in `0..&lt;int&gt;::BITS`.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-simd_shuffle"><a href="#val-simd_shuffle" class="anchor"></a><code><span><span class="keyword">val</span> simd_shuffle : 
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">u</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">v</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
@@ -2970,19 +2992,19 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
 
  // This is how the standard library does it. This is the best method, if
  // you need to do something like this
- fn split_at_stdlib&lt;T&gt;(slice: &amp;mut [T], mid: usize)
+ fn split_at_stdlib&lt;T&gt;(to_split: &amp;mut [T], mid: usize)
                        -&gt; (&amp;mut [T], &amp;mut [T]) {
-     let len = slice.len();
+     let len = to_split.len();
      assert!(mid &lt;= len);
      unsafe {
-         let ptr = slice.as_mut_ptr();
-         // This now has three mutable references pointing at the same
-         // memory. `slice`, the rvalue ret.0, and the rvalue ret.1.
-         // `slice` is never used after `let ptr = ...`, and so one can
-         // treat it as &quot;dead&quot;, and therefore, you only have two real
-         // mutable slices.
-         (slice::from_raw_parts_mut(ptr, mid),
-          slice::from_raw_parts_mut(ptr.add(mid), len - mid))
+         let ptr = to_split.as_mut_ptr();
+         let fst = slice::from_raw_parts_mut(ptr, mid);
+         let snd = slice::from_raw_parts_mut(ptr.add(mid), len - mid);
+         // The function now has three mutable references to overlapping memory:
+         // `to_split`, `fst`, and `snd`.
+         // `to_split` is never used after `let ptr = ...` so it can be treated as &quot;dead&quot;.
+         // This leaves two &quot;live&quot; mutable slice references, `fst` and `snd`, with no overlap.
+         (fst, snd)
      }
  }
  ```</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-transmute_unchecked"><a href="#val-transmute_unchecked" class="anchor"></a><code><span><span class="keyword">val</span> transmute_unchecked : 
@@ -3037,7 +3059,14 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">variant_index</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-sint">Svalue.Typed.T.sint</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sint">Svalue.Typed.T.sint</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Gets the number of fields at the given `variant_index` represented by this `TypeId`.
 
- The more user-friendly version of this intrinsic is [`core::any::TypeId::fields`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-type_id_variants"><a href="#val-type_id_variants" class="anchor"></a><code><span><span class="keyword">val</span> type_id_variants : 
+ The more user-friendly version of this intrinsic is [`core::any::TypeId::fields`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-type_id_generics"><a href="#val-type_id_generics" class="anchor"></a><code><span><span class="keyword">val</span> type_id_generics : 
+  <span><span class="label">id</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-tuple">Svalue.Typed.T.tuple</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sptr_f">Svalue.Typed.T.sptr_f</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns the list of generic args on this type.
+ Only meaningful for Adts, closures, ... Everything else returns an empty slice.</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-type_id_is_signed"><a href="#val-type_id_is_signed" class="anchor"></a><code><span><span class="keyword">val</span> type_id_is_signed : 
+  <span><span class="label">id</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-tuple">Svalue.Typed.T.tuple</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sbool">Svalue.Typed.T.sbool</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns whether the type represented by this `TypeId` is a signed integer.
+
+ The more user-friendly version of this intrinsic is [`core::any::TypeId::is_signed`].</code></pre></div></div><div class="odoc-spec"><div class="spec value anchored" id="val-type_id_variants"><a href="#val-type_id_variants" class="anchor"></a><code><span><span class="keyword">val</span> type_id_variants : 
   <span><span class="label">id</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-tuple">Svalue.Typed.T.tuple</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-sint">Svalue.Typed.T.sint</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Gets the number of variants of the type represented by this `TypeId`.
 
@@ -3331,7 +3360,8 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">b</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns (a + b) mod 2&lt;sup&gt;N&lt;/sup&gt;, where N is the width of T in bits.
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Wrapping (modular) addition. Computes `a + b`,
+ wrapping around at the boundary of the type.
 
  Note that, unlike most intrinsics, this is safe to call;
  it does not require an `unsafe` block.
@@ -3344,7 +3374,8 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">b</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns (a * b) mod 2&lt;sup&gt;N&lt;/sup&gt;, where N is the width of T in bits.
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Wrapping (modular) multiplication. Computes `a *
+ b`, wrapping around at the boundary of the type.
 
  Note that, unlike most intrinsics, this is safe to call;
  it does not require an `unsafe` block.
@@ -3357,7 +3388,8 @@ let search_urls = ['../../../../db.js','../../../../../sherlodoc.js'];
   <span><span class="label">t</span>:<span class="xref-unresolved">Charon</span>.Types.ty <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">a</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
   <span><span class="label">b</span>:<span><span>[&lt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span> <span class="arrow">&#45;&gt;</span></span>
-  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Returns (a - b) mod 2&lt;sup&gt;N&lt;/sup&gt;, where N is the width of T in bits.
+  <span><span>(<span><span>[&gt; <a href="../../../Svalue/Typed/T/index.html#type-any">Svalue.Typed.T.any</a> ]</span> <a href="../../../Svalue/Typed/index.html#type-t">Svalue.Typed.t</a></span>, unit)</span> <a href="argument-1-StateM/index.html#type-t">StateM.t</a></span></span></code></div><div class="spec-doc"><pre class="language-markdown"><code>Wrapping (modular) subtraction. Computes `a - b`,
+ wrapping around at the boundary of the type.
 
  Note that, unlike most intrinsics, this is safe to call;
  it does not require an `unsafe` block.
