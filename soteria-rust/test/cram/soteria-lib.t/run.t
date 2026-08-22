@@ -42,8 +42,8 @@ Test #[soteria::*] annotations
   note: annots::test_expect_fail: done in <time>, ran 1 branch
   PC 1: empty
   
-Test branching on nondet enums: we want to avoid branching unless necessary (when comparing the discriminant, or accessing variant fields). Only 2 branches, as there are two tests, that must not branch.
-  $ soteria-rust exec nondet_branching.rs --stats stats.json && check_stat stats.json soteria.branches 2
+Test branching on nondet enums: we want to avoid branching unless necessary (when comparing the discriminant, or accessing variant fields). Only 4 branches, as there are three tests, two of which can't branch.
+  $ soteria-rust exec nondet_branching.rs --stats stats.json && check_stat stats.json soteria.branches 4
   Compiling... done in <time>
   => Running nondet_branching::scalar_enum...
   note: nondet_branching::scalar_enum: done in <time>, ran 1 branch
@@ -53,4 +53,9 @@ Test branching on nondet enums: we want to avoid branching unless necessary (whe
   => Running nondet_branching::enum_large...
   note: nondet_branching::enum_large: done in <time>, ran 1 branch
   PC 1: empty
+  
+  => Running nondet_branching::one_branch_per_match...
+  note: nondet_branching::one_branch_per_match: done in <time>, ran 2 branches
+  PC 1: V|1|.is<A>
+  PC 2: !(V|1|.is<A>)
   

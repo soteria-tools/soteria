@@ -45,3 +45,13 @@ fn enum_large() {
     let discr_0 = std::mem::discriminant(&r[0]);
     e[1] = BigEnum::A(1);
 }
+
+#[soteria::test]
+fn one_branch_per_match() {
+    let e: BigEnum = soteria::nondet_bytes();
+    // this should only lead to 2 branches
+    match e {
+        BigEnum::A(_) => {}
+        _ => {}
+    }
+}
