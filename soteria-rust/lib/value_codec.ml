@@ -160,7 +160,11 @@ struct
         let*^ m in
         SM.Result.ok m
 
-    let lift_rsymex (m : ('a, 'err, 'fix) Rustsymex.Result.t) : 'a t =
+    let lift_rsymex m : 'a t =
+     fun _handler _get_all _whole ->
+      SM.lift (DecayMap.SM.lift m) |> SM.map Compo_res.ok
+
+    let lift_rsymex_res m : 'a t =
      fun _handler _get_all _whole -> SM.lift (DecayMap.SM.lift m)
 
     let not_impl ?tip ?issue fmt =
@@ -169,7 +173,7 @@ struct
     let of_opt_not_impl ?tip ?issue msg x =
       lift @@ of_opt_not_impl ?tip ?issue msg x
 
-    let layout_of ty = lift_rsymex @@ Layout.layout_of ty
+    let layout_of ty = lift_rsymex_res @@ Layout.layout_of ty
     let normalise ty = lift_rsymex @@ Layout.normalise ty
 
     let assert_or_error cond err =
@@ -363,7 +367,7 @@ let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
         let++ ys = encode ?depth:depth' ~offset v ty in
         Iter.append acc ys)
   in
-  let** ty = Layout.normalise ty in
+  let* ty = Layout.normalise ty in
   let** layout = Layout.layout_of ty in
   if%sat layout.size ==@ Usize.(0s) then ok Iter.empty
   else
@@ -400,7 +404,7 @@ let rec encode ?depth ~offset (value : Typed.(T.any t)) (ty : Types.ty) :
     | Array { is_ptr = true; _ } ->
         let fptr = Typed.cast_ptr_f value in
         let ptr = Typed.Ptr.of_ptr_t (Typed.Ptr.ptr_of fptr) in
-        let** pointee = Layout.normalise (get_pointee ty) in
+        let* pointee = Layout.normalise (get_pointee ty) in
         let meta =
           match Layout.dst_kind pointee with
           | LenKind -> Typed.Ptr.len_meta fptr
@@ -500,7 +504,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
           (fun acc p -> acc ||@ pattern_valid_cond inner_ty v p)
           Typed.v_false pats
   in
-  let** ty = Layout.normalise ty in
+  let* ty = Layout.normalise ty in
   match (ty : Types.ty) with
   (* undefined.validity.bool *)
   | TLiteral TBool ->
@@ -842,7 +846,7 @@ let rec size_and_align_of_val ~load_vtable ~t ~(ptr : Typed.([< T.sptr_f ] t)) =
   let open Rustsymex.Syntax in
   (* Takes inspiration from rustc, to calculate the size and alignment of DSTs.
      https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
-  let** t = Layout.normalise t in
+  let* t = Layout.normalise t in
   if not (Layout.is_dst t) then
     let++ layout = Layout.layout_of t in
     (layout.size, layout.align)

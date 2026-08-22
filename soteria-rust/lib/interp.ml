@@ -987,7 +987,8 @@ module Make (StateImpl : State.S) = struct
           | [ ptr_op; meta_op ] ->
               let* ptr = eval_operand ptr_op in
               let* meta = eval_operand meta_op in
-              ok (ptr, meta, type_of_operand meta_op)
+              let+ meta_ty = Layout.normalise @@ type_of_operand meta_op in
+              (ptr, meta, meta_ty)
           | _ -> L.failwith "Non-2 arguments in AggregatedRawPtr?"
         in
         let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f ptr) in

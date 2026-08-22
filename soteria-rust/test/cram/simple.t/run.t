@@ -9,7 +9,10 @@ Test memory leaks
       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       |            |
       |            Triggering operation
-      |            5: Allocation
+      |            8: Allocation
+      .    
+  302 |                    let raw_ptr = if zeroed { alloc_zeroed(layout) } else { alloc(layout) };
+      |                                                                            ------------- 7: Call trace
       .    
   423 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
   424 | /          core::intrinsics::const_eval_select(
@@ -17,9 +20,15 @@ Test memory leaks
   426 | |              Global::alloc_impl_const,
   427 | |              Global::alloc_impl_runtime,
   428 | |          )
-      | \----------' 4: Call trace
+      | \----------' 6: Call trace
   429 |        }
+      .    
+  541 |            self.alloc_impl(layout, false)
+      |            ------------------------------ 5: Call trace
       --> $RUSTLIB/library/alloc/src/boxed.rs:290:19
+  251 |        match Global.allocate(layout) {
+      |              ----------------------- 4: Call trace
+      .    
   290 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
       |                      -------------------------------------------------- 3: Call trace
       --> $TESTCASE_ROOT/leak.rs:2:22
@@ -27,7 +36,9 @@ Test memory leaks
       |    --------- 1: Leaking function
     2 |        std::mem::forget(Box::new(11));
       |                         ------------ 2: Call trace
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   [1]
 
@@ -197,11 +208,18 @@ Test null and dangling pointers
   Compiling... done in <time>
   => Running dangling_ptrs::access_zst...
   note: dangling_ptrs::access_zst: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running dangling_ptrs::get_discriminant_zst...
   note: dangling_ptrs::get_discriminant_zst: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\ Distinct((V|1| ++ 0b00),
+       (V|2| ++ 0b00)) /\ ((V|2| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|2| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|2|)
   
   => Running dangling_ptrs::null_ptr_not_zst...
   error: dangling_ptrs::null_ptr_not_zst: found issues in <time>, errors in 1 branch (out of 1)
@@ -240,54 +258,65 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running thread_local::static_ref_cell...
-  warning: thread_local::static_ref_cell (<time>): an unsupported feature was reached
-  Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
-  
-  tip: to get a sysroot, run
-       cargo +nightly-2026-08-18 miri setup --print-sysroot
-  
-  This is tracked at https://github.com/soteria-tools/soteria/issues/322
+  note: thread_local::static_ref_cell: done in <time>, ran 1 branch
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\ Distinct((V|1| ++ 0b00),
+       (V|2| ++ 0x0)) /\ ((V|2| ++ 0x0) <u 0x7fffffffffffffbf) /\
+        (0x0000000000000010 <=u (V|2| ++ 0x0)) /\ Distinct((V|1| ++ 0b00),
+       (V|2| ++ 0x0), (V|3| ++ 0b000)) /\
+        ((V|3| ++ 0b000) <u 0x7fffffffffffffd7) /\
+        (0x0000000000000008 <=u (V|3| ++ 0b000)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0x000000000000001 <=u V|2|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|3|)
   
   => Running thread_local::pub_static_from_const_expr...
-  warning: thread_local::pub_static_from_const_expr (<time>): an unsupported feature was reached
-  Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
+  note: thread_local::pub_static_from_const_expr: done in <time>, ran 1 branch
+  PC 1: ((V|1| ++ 0x0) <u 0x7fffffffffffffbf) /\
+        (0x0000000000000010 <=u (V|1| ++ 0x0)) /\ Distinct((V|1| ++ 0x0),
+       (V|2| ++ 0b000)) /\ ((V|2| ++ 0b000) <u 0x7fffffffffffffd7) /\
+        (0x0000000000000008 <=u (V|2| ++ 0b000)) /\
+        (0x000000000000001 <=u V|1|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|2|)
   
-  tip: to get a sysroot, run
-       cargo +nightly-2026-08-18 miri setup --print-sysroot
-  
-  This is tracked at https://github.com/soteria-tools/soteria/issues/322
-  
-  [2]
 
 This test must be run separtely on linux and macos as it yields different error messages.
   $ soteria-rust exec thread_local.rs --target x86_64-unknown-linux-gnu
   Compiling... done in <time>
   => Running thread_local::pub_static_cell...
   note: thread_local::pub_static_cell: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running thread_local::static_ref_cell...
-  warning: thread_local::static_ref_cell (<time>): an unsupported feature was reached
-  Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
-  
-  tip: to get a sysroot, run
-       cargo +nightly-2026-08-18 miri setup --print-sysroot
-  
-  This is tracked at https://github.com/soteria-tools/soteria/issues/322
+  warning: An atomic intrinsic was encountered; it will be executed as sequential code
+  note: thread_local::static_ref_cell: done in <time>, ran 1 branch
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\ Distinct((V|1| ++ 0b00),
+       (V|2| ++ 0x0)) /\ ((V|2| ++ 0x0) <u 0x7fffffffffffffbf) /\
+        (0x0000000000000010 <=u (V|2| ++ 0x0)) /\ Distinct((V|1| ++ 0b00),
+       (V|2| ++ 0x0), (V|3| ++ 0b000)) /\
+        ((V|3| ++ 0b000) <u 0x7fffffffffffffd7) /\
+        (0x0000000000000008 <=u (V|3| ++ 0b000)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0x000000000000001 <=u V|2|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|3|)
   
   => Running thread_local::pub_static_from_const_expr...
-  warning: thread_local::pub_static_from_const_expr (<time>): an unsupported feature was reached
-  Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
+  note: thread_local::pub_static_from_const_expr: done in <time>, ran 1 branch
+  PC 1: ((V|1| ++ 0x0) <u 0x7fffffffffffffbf) /\
+        (0x0000000000000010 <=u (V|1| ++ 0x0)) /\ Distinct((V|1| ++ 0x0),
+       (V|2| ++ 0b000)) /\ ((V|2| ++ 0b000) <u 0x7fffffffffffffd7) /\
+        (0x0000000000000008 <=u (V|2| ++ 0b000)) /\
+        (0x000000000000001 <=u V|1|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|2|)
   
-  tip: to get a sysroot, run
-       cargo +nightly-2026-08-18 miri setup --print-sysroot
-  
-  This is tracked at https://github.com/soteria-tools/soteria/issues/322
-  
-  [2]
 
 Test cloning ZSTs works; in particular, this generates a function with an empty body that just returns, so if we don't handle the ZST case we get an uninit access.
   $ soteria-rust exec clone_zst.rs
@@ -320,7 +349,9 @@ Test recursive validity check for references; disabled
   Compiling... done in <time>
   => Running ref_validity::test_uninit_ref...
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -331,7 +362,9 @@ Test recursive validity check for references; disabled
       .  
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -343,7 +376,8 @@ Test recursive validity check for references; disabled
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
   PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
-        (0x0000000000000004 <=u (V|1| ++ 0b00))
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   [1]
 
@@ -359,7 +393,9 @@ Test recursive validity check for references; enabled
       .  
     7 |      let as_ref: &u32 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Fake read
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -370,7 +406,9 @@ Test recursive validity check for references; enabled
       .  
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -382,7 +420,8 @@ Test recursive validity check for references; enabled
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
   PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
-        (0x0000000000000004 <=u (V|1| ++ 0b00))
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   [1]
 
@@ -398,7 +437,9 @@ Test recursive validity check for references; warn
     7 |      let as_ref: &u32 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Triggering operation
   note: ref_validity::test_uninit_ref: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running ref_validity::test_dangling_ref...
   error: ref_validity::test_dangling_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -409,7 +450,9 @@ Test recursive validity check for references; warn
       .  
    17 |      let as_ref: &[u32; 2] = unsafe { &*as_ptr };
       |                                       ^^^^^^^^ Dangling check
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running ref_validity::test_unaligned_ref...
   error: ref_validity::test_unaligned_ref: found issues in <time>, errors in 1 branch (out of 1)
@@ -421,7 +464,8 @@ Test recursive validity check for references; warn
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
   PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
-        (0x0000000000000004 <=u (V|1| ++ 0b00))
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   [1]
 
@@ -469,42 +513,58 @@ Print the callgraph
   
   digraph callgraph {
     node [shape=box fontname="monospace"];
-    n0 [label="range::next" tooltip="core::iter::range::{impl Iterator for Range::<_>}::next::<i32>"];
-    n12 [label="impls::lt" tooltip="core::cmp::impls::impl_PartialOrd_i32_for_i32::lt"];
-    n15 [label="stdio::_print" tooltip="std::io::stdio::_print"];
-    n13 [label="range::forward_unchecked" tooltip="core::iter::range::impl_Step_for_i32::forward_unchecked"];
-    n7 [label="callgraph::limit" tooltip="callgraph::limit"];
-    n2 [label="callgraph::choose" tooltip="callgraph::choose"];
-    n16 [label="rt::new_display" tooltip="core::fmt::rt::{Argument::<'_>}::new_display::<'_, i32>"];
-    n14 [label="callgraph::main" tooltip="callgraph::main"];
-    n6 [label="callgraph::run" tooltip="callgraph::run"];
-    n8 [label="collect::into_iter" tooltip="core::iter::traits::collect::impl_IntoIterator_for_T::into_iter::<Range::<i32>>"];
-    n3 [label="callgraph::twice" tooltip="callgraph::twice"];
-    n4 [label="callgraph::dec" tooltip="callgraph::dec"];
-    n9 [label="callgraph::score" tooltip="callgraph::score"];
-    n10 [label="callgraph::ping" tooltip="callgraph::ping"];
-    n17 [label="fmt::new" tooltip="core::fmt::{Arguments::<'_>}::new::<'_, 12usize, 1usize>"];
-    n11 [label="callgraph::pong" tooltip="callgraph::pong"];
-    n5 [label="callgraph::inc" tooltip="callgraph::inc"];
-    n1 [label="range::spec_next" tooltip="core::iter::range::{impl RangeIteratorImpl for Range::<_>}::spec_next::<i32>"];
+    n7 [label="range::next" tooltip="core::iter::range::{impl Iterator for Range::<_>}::next::<i32>"];
+    n20 [label="impls::lt" tooltip="core::cmp::impls::impl_PartialOrd_i32_for_i32::lt"];
+    n24 [label="stdio::_print" tooltip="std::io::stdio::_print"];
+    n21 [label="range::forward_unchecked" tooltip="core::iter::range::impl_Step_for_i32::forward_unchecked"];
+    n14 [label="callgraph::limit" tooltip="callgraph::limit"];
+    n9 [label="callgraph::choose" tooltip="callgraph::choose"];
+    n23 [label="callgraph::main" tooltip="callgraph::main"];
+    n13 [label="callgraph::run" tooltip="callgraph::run"];
+    n3 [label="num::checked_add_unsigned" tooltip="core::num::{i32}::checked_add_unsigned"];
+    n0 [label="rt::new_display" tooltip="core::fmt::rt::{Argument::<'_>}::new_display::<'_, i32>"];
+    n15 [label="collect::into_iter" tooltip="core::iter::traits::collect::impl_IntoIterator_for_T::into_iter::<Range::<i32>>"];
+    n10 [label="callgraph::twice" tooltip="callgraph::twice"];
+    n22 [label="option::unwrap_unchecked" tooltip="core::option::{Option::<_>}::unwrap_unchecked::<i32>"];
+    n11 [label="callgraph::dec" tooltip="callgraph::dec"];
+    n16 [label="callgraph::score" tooltip="callgraph::score"];
+    n1 [label="non_null::from_ref" tooltip="core::ptr::non_null::{NonNull::<_>}::from_ref::<i32>"];
+    n17 [label="callgraph::ping" tooltip="callgraph::ping"];
+    n6 [label="non_null::as_ptr" tooltip="core::ptr::non_null::{NonNull::<_>}::as_ptr::<i32>"];
+    n19 [label="num::overflowing_add" tooltip="core::num::{i32}::overflowing_add"];
+    n25 [label="fmt::new" tooltip="core::fmt::{Arguments::<'_>}::new::<'_, 12usize, 1usize>"];
+    n18 [label="callgraph::pong" tooltip="callgraph::pong"];
+    n12 [label="callgraph::inc" tooltip="callgraph::inc"];
+    n4 [label="num::overflowing_add_unsigned" tooltip="core::num::{i32}::overflowing_add_unsigned"];
+    n5 [label="intrinsics::unlikely" tooltip="core::intrinsics::unlikely"];
+    n8 [label="range::spec_next" tooltip="core::iter::range::{impl RangeIteratorImpl for Range::<_>}::spec_next::<i32>"];
+    n2 [label="non_null::cast" tooltip="core::ptr::non_null::{NonNull::<_>}::cast::<i32, ()>"];
     n0 -> n1;
-    n2 -> n3;
-    n2 -> n4;
-    n2 -> n5;
-    n6 -> n0;
-    n6 -> n7;
-    n6 -> n8;
-    n6 -> n9;
-    n10 -> n11;
-    n1 -> n12;
-    n1 -> n13;
-    n14 -> n15;
-    n14 -> n16;
-    n14 -> n6;
-    n14 -> n17;
-    n9 -> n2;
+    n0 -> n2;
+    n3 -> n4;
+    n3 -> n5;
+    n2 -> n6;
+    n7 -> n8;
     n9 -> n10;
-    n11 -> n10;
+    n9 -> n11;
+    n9 -> n12;
+    n13 -> n7;
+    n13 -> n14;
+    n13 -> n15;
+    n13 -> n16;
+    n17 -> n18;
+    n4 -> n19;
+    n8 -> n20;
+    n8 -> n21;
+    n21 -> n3;
+    n21 -> n22;
+    n23 -> n24;
+    n23 -> n0;
+    n23 -> n13;
+    n23 -> n25;
+    n16 -> n9;
+    n16 -> n17;
+    n18 -> n17;
   }
 
 Check we trust addresses for pointer alignment
@@ -635,9 +695,11 @@ FIXME: now that named consts are globals, there is in fact a third allocation: t
   Compiling... done in <time>
   => Running box::main...
   note: box::main: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
-  check_stat: expected '2', got '3' for allocs
+  check_stat: expected '2', got '9' for allocs
   [1]
 
 Test that taking a reference to a ZST doesn't allocate it on the heap; the reference is a dangling pointer, so the value stays in the store.
@@ -672,7 +734,12 @@ Test we can use ptr::metadata to get the metadata of a trait object; this used t
   Compiling... done in <time>
   => Running nonnull::match_niched_enums...
   note: nonnull::match_niched_enums: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b000) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000008 <=u (V|1| ++ 0b000)) /\ Distinct((V|1| ++ 0b000),
+       (V|2| ++ 0b000)) /\ ((V|2| ++ 0b000) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000008 <=u (V|2| ++ 0b000)) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|2|)
   
   => Running nonnull::null_is_none...
   note: nonnull::null_is_none: done in <time>, ran 1 branch
@@ -680,7 +747,9 @@ Test we can use ptr::metadata to get the metadata of a trait object; this used t
   
   => Running nonnull::niche_ok...
   note: nonnull::niche_ok: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b000) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000008 <=u (V|1| ++ 0b000)) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|1|)
   
   => Running nonnull::niche_err...
   note: nonnull::niche_err: done in <time>, ran 1 branch
@@ -691,14 +760,61 @@ Test we can use ptr::metadata to get the metadata of a trait object; this used t
   PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
   PC 2: (0x0000000000000001 <=u V|1|)
   
+  check_stat: expected '0', got '3' for decayed_pointers
+  [1]
   $ soteria-rust exec btreeset_small.rs --stats stats.json && check_stat stats.json decayed_pointers 0
   Compiling... done in <time>
   => Running btreeset_small::test_treeset_is_ordered...
   note: btreeset_small::test_treeset_is_ordered: done in <time>, ran 3 branches
-  PC 1: (V|2| <u V|1|)
-  PC 2: (V|1| <=u V|2|) /\ (V|1| != V|2|)
-  PC 3: (V|1| <=u V|2|) /\ (V|1| == V|2|)
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\ (V|3| <u V|2|) /\
+        Distinct((V|1| ++ 0b00), (V|4| ++ 0b000)) /\
+        ((V|4| ++ 0b000) <u 0x7fffffffffffffc7) /\
+        (0x0000000000000008 <=u (V|4| ++ 0b000)) /\ Distinct((V|1| ++ 0b00),
+       (V|4| ++ 0b000), (V|5| ++ 0b00)) /\
+        ((V|5| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|5| ++ 0b00)) /\ Distinct((V|1| ++ 0b00),
+       (V|4| ++ 0b000), (V|5| ++ 0b00), (V|6| ++ 0b00)) /\
+        ((V|6| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|6| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|4|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|5|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|6|)
+  PC 2: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\ (V|2| <=u V|3|) /\
+        Distinct((V|1| ++ 0b00), (V|4| ++ 0b000)) /\
+        ((V|4| ++ 0b000) <u 0x7fffffffffffffc7) /\
+        (0x0000000000000008 <=u (V|4| ++ 0b000)) /\ (V|2| != V|3|) /\
+        Distinct((V|1| ++ 0b00), (V|4| ++ 0b000), (V|5| ++ 0b00)) /\
+        ((V|5| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|5| ++ 0b00)) /\ Distinct((V|1| ++ 0b00),
+       (V|4| ++ 0b000), (V|5| ++ 0b00), (V|6| ++ 0b00)) /\
+        ((V|6| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|6| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|4|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|5|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|6|)
+  PC 3: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\ (V|2| <=u V|3|) /\
+        Distinct((V|1| ++ 0b00), (V|4| ++ 0b000)) /\
+        ((V|4| ++ 0b000) <u 0x7fffffffffffffc7) /\
+        (0x0000000000000008 <=u (V|4| ++ 0b000)) /\ Distinct((V|1| ++ 0b00),
+       (V|4| ++ 0b000), (V|5| ++ 0b00)) /\
+        ((V|5| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|5| ++ 0b00)) /\ Distinct((V|1| ++ 0b00),
+       (V|4| ++ 0b000), (V|5| ++ 0b00), (V|6| ++ 0b00)) /\
+        ((V|6| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|6| ++ 0b00)) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|4|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|5|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|6|) /\
+        (V|2| == V|3|)
   
+  check_stat: expected '0', got '9' for decayed_pointers
+  [1]
 
 Pointers are compared by their addresses. Two pointer with equal addresses
 but different provenance should be decayed, compared, and checked to be equal
@@ -721,7 +837,16 @@ Test calls to FnOnce trait objects.
   Compiling... done in <time>
   => Running box_fnonce::main...
   note: box_fnonce::main: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b000) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000008 <=u (V|1| ++ 0b000)) /\ Distinct((V|1| ++ 0b000),
+       (V|2| ++ 0b00)) /\ ((V|2| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|2| ++ 0b00)) /\ Distinct((V|1| ++ 0b000),
+       (V|2| ++ 0b00), (V|3| ++ 0b00)) /\
+        ((V|3| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|3| ++ 0b00)) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|2|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|3|)
   
 Test the atomic read-modify-write intrinsics (fetch_and/or/xor/nand/sub/min/max), on both integers and pointers.
   $ soteria-rust exec atomics.rs
@@ -793,8 +918,29 @@ key, so the only branch is its equality with the concrete entry.
   warning: std::sys::random::hashmap_random_keys was stubbed to constant random keys, to avoid path explosion. This is an under-approximation, some paths may be missed.
   warning: std::hash::BuildHasher::hash_one was stubbed to always hash to 0, to avoid path explosion. This is an under-approximation, some paths may be missed.
   note: hashmap::main: done in <time>, ran 2 branches
-  PC 1: (0x00000007 == V|1|) /\ (0x00000007 == V|1|)
-  PC 2: (0x00000007 != V|1|)
+  PC 1: ((V|1| ++ 0b000) <u 0x7fffffffffffffe7) /\
+        (0x0000000000000008 <=u (V|1| ++ 0b000)) /\ Distinct((V|1| ++ 0b000),
+       (V|2| ++ 0b000)) /\ ((V|2| ++ 0b000) <u 0x7fffffffffffffd3) /\
+        (0x0000000000000008 <=u (V|2| ++ 0b000)) /\ Distinct((V|1| ++ 0b000),
+       (V|2| ++ 0b000), (V|4| ++ 0b000)) /\
+        ((V|4| ++ 0b000) <u 0x7fffffffffffffd3) /\
+        (0x0000000000000008 <=u (V|4| ++ 0b000)) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|2|) /\
+        (0x00000007 == V|3|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|4|) /\
+        (0x00000007 == V|3|)
+  PC 2: ((V|1| ++ 0b000) <u 0x7fffffffffffffe7) /\
+        (0x0000000000000008 <=u (V|1| ++ 0b000)) /\ Distinct((V|1| ++ 0b000),
+       (V|2| ++ 0b000)) /\ ((V|2| ++ 0b000) <u 0x7fffffffffffffd3) /\
+        (0x0000000000000008 <=u (V|2| ++ 0b000)) /\ Distinct((V|1| ++ 0b000),
+       (V|2| ++ 0b000), (V|4| ++ 0b000)) /\
+        ((V|4| ++ 0b000) <u 0x7fffffffffffffd3) /\
+        (0x0000000000000008 <=u (V|4| ++ 0b000)) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|1|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|2|) /\
+        (0x00000007 != V|3|) /\
+        (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|4|)
   
 Test destructors run when reached through `ptr::drop_in_place`.
   $ soteria-rust exec drop_in_place.rs
@@ -845,7 +991,7 @@ Test unsizing a Box with a non-ZST allocator
   Compiling... done in <time>
   => Running unsize_custom_alloc::unsize_array_with_a_non_zst_allocator...
   note: unsize_custom_alloc::unsize_array_with_a_non_zst_allocator: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffb)
   
   => Running unsize_custom_alloc::upcast_with_a_pointer_allocator...
   note: unsize_custom_alloc::upcast_with_a_pointer_allocator: done in <time>, ran 1 branch
@@ -856,16 +1002,20 @@ Test TypeId equality and downcasting a `dyn Any`
   Compiling... done in <time>
   => Running type_id::main...
   note: type_id::main: done in <time>, ran 1 branch
-  PC 1: Distinct(V|1-2|) /\ (V|1| != V|2|) /\ Distinct(V|1-3|) /\
-        (V|1| != V|3|) /\ Distinct(V|1-4|) /\ Distinct(V|1-5|) /\
-        (V|4| != V|5|)
+  PC 1: Distinct(V|1-2|) /\ (V|1| != V|2|) /\
+        ((V|3| ++ 0b00) <u 0x7ffffffffffffffb) /\
+        (0x0000000000000004 <=u (V|3| ++ 0b00)) /\ Distinct(V|1|, V|2|,
+       V|4|) /\ (V|1| != V|4|) /\ Distinct(V|1|, V|2|, V|4|, V|5|) /\
+        Distinct(V|1|, V|2|, V|4|, V|5|, V|6|) /\ (V|5| != V|6|) /\
+        (0b00000000000000000000000000000000000000000000000000000000000001 <=u V|3|)
   
 Test that `align_offset` is answered from the allocation's alignment
   $ soteria-rust exec align_offset.rs
   Compiling... done in <time>
   => Running align_offset::offset_within_the_allocation_alignment...
   note: align_offset::offset_within_the_allocation_alignment: done in <time>, ran 1 branch
-  PC 1: empty
+  PC 1: ((V|1| ++ 0b00) <u 0x7fffffffffffffef) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00))
   
   => Running align_offset::offset_beyond_the_allocation_alignment...
   warning: std::ptr::align_offset was stubbed to avoid path explosion. This is an under-approximation, some paths may be missed.
