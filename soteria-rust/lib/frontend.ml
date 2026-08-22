@@ -40,19 +40,19 @@ module Lib = struct
   let path lib = Lazy.force root / name lib
 
   (** [exec_cargo ?env lib args] executes the command [cargo <args>] for the
-      library [lib].
+      library [lib], and returns its standard output.
 
       @raise CompilationError
         if the command fails, with the error message from Cargo. *)
   let exec_cargo ?(env = []) lib args =
     let path = path lib in
     let env = Cmd.rustc_as_env () @ env in
-    let _, err, status =
+    let out, err, status =
       let@ () = Exe.run_in path in
       Exe.exec ~env (Cmd.cargo ()) args
     in
     match status with
-    | WEXITED (0 | 255) -> ()
+    | WEXITED (0 | 255) -> out
     | _ ->
         Fmt.kstr
           (compilation_err ("compiling plugin " ^ name lib))
@@ -61,46 +61,116 @@ module Lib = struct
           err
 
   (** Deletes the target directory of a target, to avoid duplicate builds *)
-  let clean lib = exec_cargo lib [ "clean" ]
+  let clean lib = ignore (exec_cargo lib [ "clean" ])
 
+  (** A target Cargo built, and the files it emitted for it. *)
+  type artifact = { name : string; files : string list }
+
+  (** The artifacts Cargo built, as listed by the [compiler-artifact] messages
+      of its JSON output.
+
+      Cargo will print different JSON messages, one per line. We are interested
+      in the [compiler-artifact] messages, that have the following shape:
+      {[
+      {
+        "reason": "compiler-artifact",
+        "target": { "name": "plugin", ... },
+        "filenames": [
+          "/path/to/plugin/target/<target>/debug/libplugin.rlib",
+          "/path/to/plugin/target/<target>/debug/build/plugin/<hash>/out/libplugin-<hash>.rmeta"
+        ],
+        ...
+      }
+      ]}
+
+      See also:
+      {{:https://doc.rust-lang.org/cargo/reference/external-tools.html#artifact-messages}
+       [compiler-artifact] documentation} *)
+  let artifacts_of_output lines =
+    let open Yojson.Safe.Util in
+    let ( $ ) json field = member field json in
+    Iter.of_list lines
+    |> Iter.filter_map (Option.of_exn Yojson.Safe.from_string)
+    |> Iter.filter (fun json ->
+        json $ "reason" |> to_string |> String.equal "compiler-artifact")
+    |> Iter.map (fun json ->
+        {
+          name = json $ "target" $ "name" |> to_string;
+          files = json $ "filenames" |> to_list |> filter_string;
+        })
+    |> Iter.to_list
+
+  (** The rustc flags needed to compile against [lib], given the built artifacts
+      for it. *)
+  let rustc_flags lib artifacts =
+    let artifact =
+      List.find (fun a -> String.equal a.name (name lib)) artifacts
+    in
+    let rlib =
+      List.find (fun f -> Filename.check_suffix f ".rlib") artifact.files
+    in
+    let search_dirs =
+      artifacts
+      |> List.concat_map (fun a -> a.files)
+      |> List.map (fun dir -> "-L" ^ Filename.dirname dir)
+    in
+    [ "--extern"; name lib ^ "=" ^ rlib ] @ search_dirs
+
+  (** File used to cache the rustc flags of a library. Allows
+      [--no-compile-plugins] to reuse the last build. *)
+  let flags_file lib = path lib / "target" / Lazy.force target / "soteria-flags"
+
+  (** Builds [lib] and returns the rustc flags to compile against it. If
+      [--no-compile-plugins] is set, the build is skipped and the flags recorded
+      by the last one are reused. *)
   let compile lib =
     let config = Config.get () in
-    if not config.no_compile_plugins then
+    let file = flags_file lib in
+    if config.no_compile_plugins then
+      try In_channel.with_open_text file In_channel.input_lines
+      with Sys_error _ ->
+        Fmt.kstr
+          (compilation_err ("compiling plugin " ^ name lib))
+          "No build of %s found; run [soteria-rust build-plugins] before using \
+           --no-compile-plugins"
+          (name lib)
+    else
       let env =
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
       in
       let args =
-        [ "build"; "--lib"; "--target"; Lazy.force target ]
-        @ if (Config.get ()).log_compilation then [ "--verbose" ] else []
+        [
+          "build";
+          "--lib";
+          "--target";
+          Lazy.force target;
+          "--message-format=json-render-diagnostics";
+        ]
+        @ (if config.log_compilation then [ "--verbose" ] else [])
+        @ if config.offline then [ "--offline" ] else []
       in
-      let args = if config.offline then args @ [ "--offline" ] else args in
-      exec_cargo ~env lib args
+      let stdout = exec_cargo ~env lib args in
+      let flags = rustc_flags lib (artifacts_of_output stdout) in
+      Out_channel.with_open_text file (fun out ->
+          flags |> List.iter (fun f -> Out_channel.output_string out (f ^ "\n")));
+      flags
 
   let with_compiled lib f =
     let path = path lib in
     let target = Lazy.force target in
-    compile lib;
+    let lib_imports = compile lib in
     let config : Cmd.t = f (path, target) in
-    let lib_imports =
-      [
-        "--extern";
-        name lib
-        ^ "="
-        ^ (path / "target" / target / "debug" / ("lib" ^ name lib ^ ".rlib"));
-        "-L" ^ (path / "target" / target / "debug" / "deps");
-        "-L" ^ (path / "target" / "debug" / "deps");
-      ]
-    in
     { config with rustc = config.rustc @ lib_imports }
 end
 
 type entry_point_filter = {
   filter : Cmd.entry list;
-  expect_error : Cmd.entry list;
+  expect_error : Cmd.matcher list;
 }
 
 type entry_point = {
   fun_decl : UllbcAst.fun_decl;
+  args : Svalue.Typed.T.any Svalue.Typed.t list;
   expect_error : bool;
   fuel : Soteria.Symex.Fuel_gauge.t;
 }
@@ -125,7 +195,6 @@ let default () =
          "--format=postcard";
          "--no-typecheck";
          "--no-normalize";
-         "--no-insert-storage-deads";
          (* Use the normal distributed sysroot; Charon otherwise defaults to a
             full-MIR Miri sysroot, whose std is incompatible with our
             separately-compiled [soteria] support crate. *)
@@ -134,7 +203,8 @@ let default () =
       @ opaque_names
       @ if (Config.get ()).polymorphic then [] else [ "--monomorphize" ])
     ~obol:opaque_names
-    ~entry_points:[ Name "main"; Attrib "soteriatool::test" ]
+    ~entry_points:
+      Cmd.[ entry (Name "main"); entry (Attrib "soteriatool::test") ]
     ~expect_error:[ Attrib "soteriatool::expect_fail" ]
     ~features:[ "soteria" ]
     ~rustc:
@@ -157,14 +227,16 @@ let default () =
 let kani () =
   let@ _ = Lib.with_compiled Kani in
   Cmd.make ~features:[ "kani" ]
-    ~entry_points:[ Attrib "kanitool::proof" ]
+    ~entry_points:[ Cmd.entry (Attrib "kanitool::proof") ]
     ~expect_error:[ Attrib "kanitool::should_panic" ]
     ~rustc:[ "-Z"; "crate-attr=register_tool(kanitool)" ]
     ()
 
 let miri () =
+  let args = Svalue.Typed.[ as_any (BV.usizei 0); as_any (Ptr.null_f ()) ] in
   Cmd.make ~features:[ "miri" ] ~rustc:[ "--edition"; "2021" ]
-    ~entry_points:[ Name "miri_start" ] ()
+    ~entry_points:[ Cmd.entry ~args (Name "miri_start") ]
+    ()
 
 (** Filters a name, according to the current {!Config.t.filter} and
     {!Config.t.exclude} settings. If there are no filters, all names are
@@ -187,15 +259,14 @@ let get_entry_point (filter : entry_point_filter) crate
     (decl : UllbcAst.fun_decl) =
   let ( let*! ) b f = if b then f () else None in
   (* check it's a valid entry-point *)
-  let*! () =
-    List.is_empty filter.filter
-    || List.exists (Cmd.entry_matches_fn decl) filter.filter
-  in
+  let matched = List.find_opt (Cmd.entry_matches_fn decl) filter.filter in
+  let*! () = List.is_empty filter.filter || Option.is_some matched in
   (* check it's filtered *)
   let*! () = filter_name crate decl.item_meta.name in
   (* build the entry point *)
+  let args = Option.fold ~none:[] ~some:(fun e -> Cmd.(e.args)) matched in
   let expect_error =
-    List.exists (Cmd.entry_matches_fn decl) filter.expect_error
+    List.exists (Cmd.matcher_matches_fn decl) filter.expect_error
   in
   let open Soteria.Symex in
   let fuel : Fuel_gauge.t =
@@ -210,7 +281,7 @@ let get_entry_point (filter : entry_point_filter) crate
       branching = get_or "soteriatool::branch_fuel" (Config.get ()).branch_fuel;
     }
   in
-  Some { fun_decl = decl; expect_error; fuel }
+  Some { fun_decl = decl; args; expect_error; fuel }
 
 let create_using_current_config () : mk_cmd * entry_point_filter =
   let config = Config.get () in
@@ -228,8 +299,11 @@ let create_using_current_config () : mk_cmd * entry_point_filter =
            compile it in a quirky way and it requires having a sysroot. Instead
            we want to look for the tests directly! So we add #[test] *)
         let entry_points =
-          Cmd.Attrib "test" :: cmd.entry_points
-          |> List.filter (function Cmd.Pub | Name "main" -> false | _ -> true)
+          Cmd.(entry (Attrib "test"))
+          :: List.filter
+               (function
+                 | Cmd.{ matcher = Pub | Name "main"; _ } -> false | _ -> true)
+               cmd.entry_points
         in
         let expect_error = Cmd.Attrib "should_panic" :: cmd.expect_error in
         { cmd with entry_points; expect_error }
@@ -335,5 +409,5 @@ let compile_all_plugins () =
   List.iter
     (fun l ->
       Lib.clean l;
-      Lib.compile l)
+      ignore (Lib.compile l))
     [ Soteria; Std; Kani ]

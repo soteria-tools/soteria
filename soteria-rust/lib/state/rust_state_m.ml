@@ -80,6 +80,7 @@ module type S = sig
     'a option ->
     ('a, 'env) t
 
+  val simplify : 'a v -> ('a v, 'env) t
   val assume : sbool v list -> (unit, 'env) t
   val with_loc : loc:Meta.span_data -> (unit -> ('a, 'env) t) -> ('a, 'env) t
 
@@ -121,6 +122,7 @@ module type S = sig
     val fill_params : Types.generic_params -> (Types.generic_args, 'a) monad
     val subst_ty : Types.ty -> (Types.ty, 'env) t
     val subst_tys : Types.ty list -> (Types.ty list, 'env) t
+    val subst_fn_sig : Types.fun_sig -> (Types.fun_sig, 'env) t
     val subst_tref : Types.trait_ref -> (Types.trait_ref, 'env) t
     val subst_tyref : Types.type_decl_ref -> (Types.type_decl_ref, 'env) t
     val subst_generic_args : Types.generic_args -> (Types.generic_args, 'env) t
@@ -160,7 +162,10 @@ module type S = sig
     val is_zst : Types.ty -> ([> sbool ] v, 'env) monad
     val is_1zst : Types.ty -> ([> sbool ] v, 'env) monad
     val is_abi_compatible : Types.ty -> Types.ty -> ([> sbool ] v, 'env) monad
-    val unsize_path : Types.ty -> (int list option, 'env) monad
+
+    val unsize_path :
+      from_ty:Types.ty -> to_ty:Types.ty -> (int list option, 'env) monad
+
     val normalise : Types.ty -> (Types.ty, 'env) monad
   end
 
@@ -194,10 +199,22 @@ module type S = sig
     val empty : st
 
     val load :
-      ?ignore_borrow:bool -> [< sptr_f ] v -> Types.ty -> ([> any ] v, 'env) t
+      ?ignore_borrow:bool ->
+      ?ignore_align:bool ->
+      [< sptr_f ] v ->
+      Types.ty ->
+      ([> any ] v, 'env) t
 
-    val load_discriminant : [< sptr_f ] v -> Types.ty -> ([> sint ] v, 'env) t
-    val store : [< sptr_f ] v -> Types.ty -> [< any ] v -> (unit, 'env) t
+    val load_discriminant :
+      ?ignore_align:bool -> [< sptr_f ] v -> Types.ty -> ([> sint ] v, 'env) t
+
+    val store :
+      ?ignore_align:bool ->
+      [< sptr_f ] v ->
+      Types.ty ->
+      [< any ] v ->
+      (unit, 'env) t
+
     val zeros : [< sptr_f ] v -> [< nonzero ] v -> (unit, 'env) t
     val alloc_ty : ?span:Meta.span_data -> Types.ty -> ([> sptr_f ] v, 'env) t
 
@@ -224,8 +241,8 @@ module type S = sig
     val unprotect : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
     val with_exposed : [< sint ] v -> ([> sptr_f ] v, 'env) t
     val tb_load : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
-    val load_global : Types.global_decl_id -> ([> sptr_f ] v option, 'env) t
-    val store_global : Types.global_decl_id -> [< sptr_f ] v -> (unit, 'env) t
+    val load_global : Types.global_decl_ref -> ([> sptr_f ] v option, 'env) t
+    val store_global : Types.global_decl_ref -> [< sptr_f ] v -> (unit, 'env) t
     val load_str_global : string -> ([> sptr_f ] v option, 'env) t
     val store_str_global : string -> [< sptr_f ] v -> (unit, 'env) t
     val declare_fn : Fun_kind.t -> ([> sptr_f ] v, 'env) t
@@ -234,6 +251,7 @@ module type S = sig
     val lookup_const_generic :
       Types.const_generic_var_id -> Types.ty -> ([> any ] v, 'env) t
 
+    val type_id : Types.ty -> (sint v, 'env) t
     val register_thread_exit : (unit -> (unit, unit) t) -> (unit, 'env) t
     val run_thread_exits : unit -> (unit, 'env) t
     val add_error : Error.with_trace -> (unit, 'env) t
@@ -396,6 +414,7 @@ module Make (State : State_intf.S) :
     lift_symex (of_opt_not_impl ?tip ?issue msg x)
 
   let assume x = lift_symex (assume x)
+  let simplify x = lift_symex (simplify x)
 
   let with_loc ~loc (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> with_loc ~loc (f () env state)
@@ -435,6 +454,7 @@ module Make (State : State_intf.S) :
     let[@inline] fill_params params = lift_symex (Poly.fill_params params)
     let[@inline] subst_ty ty = lift_symex (Poly.subst_ty ty)
     let[@inline] subst_tys tys = lift_symex (Poly.subst_tys tys)
+    let[@inline] subst_fn_sig fn_sig = lift_symex (Poly.subst_fn_sig fn_sig)
     let[@inline] subst_tref tref = lift_symex (Poly.subst_tref tref)
     let[@inline] subst_tyref tyref = lift_symex (Poly.subst_tyref tyref)
 
@@ -476,7 +496,9 @@ module Make (State : State_intf.S) :
     let[@inline] is_abi_compatible ty1 ty2 =
       lift_err (is_abi_compatible ty1 ty2)
 
-    let[@inline] unsize_path ty = lift_err (unsize_path ty)
+    let[@inline] unsize_path ~from_ty ~to_ty =
+      lift_err (unsize_path ~from_ty ~to_ty)
+
     let[@inline] normalise ty = lift_err (normalise ty)
   end
 
@@ -518,11 +540,15 @@ module Make (State : State_intf.S) :
 
     let empty = State.empty
 
-    let[@inline] load ?ignore_borrow ptr ty =
-      ESM.lift (load ?ignore_borrow ptr ty)
+    let[@inline] load ?ignore_borrow ?ignore_align ptr ty =
+      ESM.lift (load ?ignore_borrow ?ignore_align ptr ty)
 
-    let[@inline] load_discriminant ptr ty = ESM.lift (load_discriminant ptr ty)
-    let[@inline] store ptr ty v = ESM.lift (store ptr ty v)
+    let[@inline] load_discriminant ?ignore_align ptr ty =
+      ESM.lift (load_discriminant ?ignore_align ptr ty)
+
+    let[@inline] store ?ignore_align ptr ty v =
+      ESM.lift (store ?ignore_align ptr ty v)
+
     let[@inline] zeros ptr size = ESM.lift (zeros ptr size)
     let[@inline] alloc_ty ?span ty = ESM.lift (alloc_ty ?span ty)
 
@@ -552,6 +578,7 @@ module Make (State : State_intf.S) :
     let[@inline] lookup_const_generic id ty =
       ESM.lift (lookup_const_generic id ty)
 
+    let[@inline] type_id ty = ESM.lift (type_id ty)
     let[@inline] add_error e = ESM.lift (add_error e)
     let[@inline] pop_error () : ('a, 'env) monad = ESM.lift (pop_error ())
     let[@inline] leak_check () = ESM.lift (leak_check ())

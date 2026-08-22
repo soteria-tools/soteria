@@ -8,8 +8,8 @@ Test running Soteria Rust on a crate with tests
   => Running tests::test_nok#1...
   error: tests::test_nok#1: found issues in <time>, errors in 1 branch (out of 1)
   error: Failed assertion in tests::test_nok#1
-      --> $RUSTLIB/library/core/src/panicking.rs:394:5
-  394 |      assert_failed_inner(kind, &left, &right, args)
+      --> $RUSTLIB/library/core/src/panicking.rs:407:5
+  407 |      assert_failed_inner(kind, &left, &right, args)
       |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       |      |
       |      Triggering operation
@@ -24,8 +24,8 @@ Test running Soteria Rust on a crate with tests
   => Running tests::test_nok_expected#1...
   error: tests::test_nok_expected#1: found issues in <time>, errors in 1 branch (out of 1)
   error: Failed assertion in tests::test_nok_expected#1
-      --> $RUSTLIB/library/core/src/panicking.rs:394:5
-  394 |      assert_failed_inner(kind, &left, &right, args)
+      --> $RUSTLIB/library/core/src/panicking.rs:407:5
+  407 |      assert_failed_inner(kind, &left, &right, args)
       |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       |      |
       |      Triggering operation
@@ -47,8 +47,8 @@ Test running Soteria Rust on a crate with tests
   => Running soteria::tests::test_nok#1...
   error: soteria::tests::test_nok#1: found issues in <time>, errors in 1 branch (out of 2)
   error: Failed assertion in soteria::tests::test_nok#1
-      --> $RUSTLIB/library/core/src/panicking.rs:394:5
-  394 |      assert_failed_inner(kind, &left, &right, args)
+      --> $RUSTLIB/library/core/src/panicking.rs:407:5
+  407 |      assert_failed_inner(kind, &left, &right, args)
       |      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       |      |
       |      Triggering operation

@@ -51,9 +51,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "atomic_fence", [], [ ord ], [] ->
         let+ () = atomic_fence ~ord in
         Typed.Adt.unit
-    | "atomic_load", [ t ], [ ord ], [ src ] ->
+    | "atomic_load", [ t ], [ ord; volatile ], [ src ] ->
         let src = Typed.cast_ptr_f src in
-        atomic_load ~t ~ord ~src
+        atomic_load ~t ~ord ~volatile ~src
     | "atomic_max", [ t ], [ ord ], [ dst; src ] ->
         let dst = Typed.cast_ptr_f dst in
         atomic_max ~t ~ord ~dst ~src
@@ -69,9 +69,9 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "atomic_singlethreadfence", [], [ ord ], [] ->
         let+ () = atomic_singlethreadfence ~ord in
         Typed.Adt.unit
-    | "atomic_store", [ t ], [ ord ], [ dst; val_ ] ->
+    | "atomic_store", [ t ], [ ord; volatile ], [ dst; val_ ] ->
         let dst = Typed.cast_ptr_f dst in
-        let+ () = atomic_store ~t ~ord ~dst ~val_ in
+        let+ () = atomic_store ~t ~ord ~volatile ~dst ~val_ in
         Typed.Adt.unit
     | "atomic_umax", [ t ], [ ord ], [ dst; src ] ->
         let dst = Typed.cast_ptr_f dst in
@@ -235,6 +235,12 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "field_representing_type_actual_type_id", [], [], [ frt_type_id ] ->
         let frt_type_id = Typed.cast_tuple frt_type_id in
         field_representing_type_actual_type_id ~frt_type_id
+    | "field_representing_type_name", [], [], [ frt_type_id ] ->
+        let frt_type_id = Typed.cast_tuple frt_type_id in
+        field_representing_type_name ~frt_type_id
+    | "field_representing_type_offset", [], [], [ frt_type_id ] ->
+        let frt_type_id = Typed.cast_tuple frt_type_id in
+        field_representing_type_offset ~frt_type_id
     | "float_to_int_unchecked", [ float; int ], [], [ value ] ->
         float_to_int_unchecked ~float ~int ~value
     | "floorf128", [], [], [ x ] ->
@@ -404,6 +410,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
     | "mul_with_overflow", [ t ], [], [ x; y ] -> mul_with_overflow ~t ~x ~y
     | "needs_drop", [ t ], [], [] ->
         let+ ret = needs_drop ~t in
+        Typed.BitVec.of_bool ret
+    | "non_exhaustive", [], [], [ id ] ->
+        let id = Typed.cast_tuple id in
+        let+ ret = non_exhaustive ~id in
         Typed.BitVec.of_bool ret
     | "nontemporal_store", [ t ], [], [ ptr; val_ ] ->
         let ptr = Typed.cast_ptr_f ptr in
@@ -726,6 +736,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
         let id = Typed.cast_tuple id in
         let variant_index = Typed.cast_i Usize variant_index in
         type_id_fields ~id ~variant_index
+    | "type_id_generics", [], [], [ id ] ->
+        let id = Typed.cast_tuple id in
+        type_id_generics ~id
+    | "type_id_is_signed", [], [], [ id ] ->
+        let id = Typed.cast_tuple id in
+        let+ ret = type_id_is_signed ~id in
+        Typed.BitVec.of_bool ret
     | "type_id_variants", [], [], [ id ] ->
         let id = Typed.cast_tuple id in
         type_id_variants ~id

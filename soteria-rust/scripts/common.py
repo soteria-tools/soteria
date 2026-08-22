@@ -75,7 +75,7 @@ class Outcome(enum.Enum):
         return self == Outcome.TIME_OUT
 
     def is_tool(self) -> bool:
-        return self == Outcome.TOOL
+        return self in (Outcome.TOOL, Outcome.VANISHED)
 
     def is_simple(self) -> bool:
         return self in (
@@ -104,6 +104,7 @@ class Outcome(enum.Enum):
     TIME_OUT = "timeout", YELLOW
     UNSUPPORTED = "unsupported", ORANGE
     CRASH = "crash", ORANGE
+    VANISHED = "vanished", PURPLE
     UNKNOWN = "unknown", MAGENTA
 
 
@@ -124,6 +125,59 @@ def get_toolchain() -> str:
     return "-".join(os.path.basename(toolchain_path).split("-")[0:4])
 
 
+def toolchain_bin(cmd: str) -> str:
+    return (
+        subprocess.check_output(f"$(obol toolchain-path)/bin/{cmd}", shell=True)
+        .decode()
+        .strip()
+    )
+
+
+_target: Optional[str] = None
+
+
+def get_target() -> str:
+    """The host triple, e.g. `aarch64-apple-darwin`."""
+    global _target
+    if _target is None:
+        _target = os.environ.get("TARGET") or next(
+            line.removeprefix("host: ")
+            for line in toolchain_bin("cargo -vV").split("\n")
+            if line.startswith("host: ")
+        )
+    return _target
+
+
+_targets: Optional[list[str]] = None
+
+
+def get_targets() -> list[str]:
+    """The triples we can compile for, the host first, then those that behave
+    like it, so a test that must run elsewhere fails for as few incidental
+    reasons as possible. The sysroot has one directory per target it ships a
+    standard library for; the other targets are of no use to us."""
+    global _targets
+    if _targets is None:
+
+        def shape(target: str) -> list[str]:
+            behaviours = ("target_pointer_width", "target_endian")
+            cfg = toolchain_bin(f"rustc --print cfg --target={target}").split()
+            return sorted(c for c in cfg if c.startswith(behaviours))
+
+        sysroot = os.environ.get("RUST_SYSROOT") or toolchain_bin(
+            "rustc --print sysroot"
+        )
+        rustlib = Path(sysroot) / "lib" / "rustlib"
+        available = (d.name for d in rustlib.iterdir() if (d / "lib").is_dir())
+        host = get_target()
+        host_shape = shape(host)
+        _targets = [host] + sorted(
+            (t for t in available if t != host),
+            key=lambda t: (shape(t) != host_shape, t),
+        )
+    return _targets
+
+
 def get_sysroot(toolchain: str) -> str:
     if not toolchain.startswith("+"):
         toolchain = "+" + toolchain
@@ -141,16 +195,7 @@ def build_soteria():
         sysroot = get_sysroot(toolchain)
         os.environ["RUST_SYSROOT"] = sysroot
 
-    # find line starting with "host: "
-    targets = (
-        subprocess.check_output("$(obol toolchain-path)/bin/cargo -vV", shell=True)
-        .decode()
-        .split("\n")
-    )
-    for line in targets:
-        if line.startswith("host: "):
-            os.environ["TARGET"] = line[6:]
-            break
+    os.environ["TARGET"] = get_target()
 
     try:
         subprocess.check_call(

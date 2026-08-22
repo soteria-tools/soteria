@@ -224,6 +224,7 @@ module M (StateM : State.StateM.S) = struct
     val atomic_load :
       t:Types.ty ->
       ord:Types.constant_expr ->
+      volatile:Types.constant_expr ->
       src:Typed.([< T.sptr_f ] t) ->
       Typed.([> T.any ] t) ret
 
@@ -305,6 +306,7 @@ module M (StateM : State.StateM.S) = struct
     val atomic_store :
       t:Types.ty ->
       ord:Types.constant_expr ->
+      volatile:Types.constant_expr ->
       dst:Typed.([< T.sptr_f ] t) ->
       val_:Typed.([< T.any ] t) ->
       unit ret
@@ -1170,6 +1172,26 @@ module M (StateM : State.StateM.S) = struct
       frt_type_id:Typed.([< T.tuple ] t) -> Typed.([> T.tuple ] t) ret
 
     (** {@markdown[
+        Gets the name of the field represented by the [`FieldRepresentingType`]'s `TypeId`.
+
+         The more user-friendly version of this intrinsic is [`core::mem::type_info::FieldId::name`].
+
+         [`FieldRepresentingType`]: crate::field::FieldRepresentingType
+        ]} *)
+    val field_representing_type_name :
+      frt_type_id:Typed.([< T.tuple ] t) -> Typed.([> T.sptr_f ] t) ret
+
+    (** {@markdown[
+        Gets the name of the field represented by the [`FieldRepresentingType`]'s `TypeId`.
+
+         The more user-friendly version of this intrinsic is [`core::mem::type_info::FieldId::name`].
+
+         [`FieldRepresentingType`]: crate::field::FieldRepresentingType
+        ]} *)
+    val field_representing_type_offset :
+      frt_type_id:Typed.([< T.tuple ] t) -> Typed.([> T.sint ] t) ret
+
+    (** {@markdown[
         Converts with LLVM’s fptoui/fptosi, which may return undef for values out of range
          (<https://github.com/rust-lang/rust/issues/10184>)
 
@@ -1214,7 +1236,7 @@ module M (StateM : State.StateM.S) = struct
     val floorf64 : x:Typed.([< T.sfloat ] t) -> Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
-        Returns `a * b + c` for `f128` values.
+        Returns `a * b + c` without rounding the intermediate result for `f128` values.
 
          The stabilized version of this intrinsic is
          [`f128::mul_add`](../../std/primitive.f128.html#method.mul_add)
@@ -1226,7 +1248,7 @@ module M (StateM : State.StateM.S) = struct
       Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
-        Returns `a * b + c` for `f16` values.
+        Returns `a * b + c` without rounding the intermediate result for `f16` values.
 
          The stabilized version of this intrinsic is
          [`f16::mul_add`](../../std/primitive.f16.html#method.mul_add)
@@ -1238,7 +1260,7 @@ module M (StateM : State.StateM.S) = struct
       Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
-        Returns `a * b + c` for `f32` values.
+        Returns `a * b + c` without rounding the intermediate result for `f32` values.
 
          The stabilized version of this intrinsic is
          [`f32::mul_add`](../../std/primitive.f32.html#method.mul_add)
@@ -1250,7 +1272,7 @@ module M (StateM : State.StateM.S) = struct
       Typed.([> T.sfloat ] t) ret
 
     (** {@markdown[
-        Returns `a * b + c` for `f64` values.
+        Returns `a * b + c` without rounding the intermediate result for `f64` values.
 
          The stabilized version of this intrinsic is
          [`f64::mul_add`](../../std/primitive.f64.html#method.mul_add)
@@ -1920,6 +1942,11 @@ module M (StateM : State.StateM.S) = struct
          The stabilized version of this intrinsic is [`mem::needs_drop`](crate::mem::needs_drop).
         ]} *)
     val needs_drop : t:Types.ty -> Typed.([> T.sbool ] t) ret
+
+    (** {@markdown[
+        Checks whether this type is non-exhaustive.
+        ]} *)
+    val non_exhaustive : id:Typed.([< T.tuple ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
         Emits a `nontemporal` store, which gives a hint to the CPU that the data should not be held
@@ -2864,7 +2891,7 @@ module M (StateM : State.StateM.S) = struct
 
          # Safety
 
-         Each element of `shift` must be less than `<int>::BITS`.
+         Each element of `shift` must be in `0..<int>::BITS`.
         ]} *)
     val simd_funnel_shl :
       t:Types.ty ->
@@ -2886,7 +2913,7 @@ module M (StateM : State.StateM.S) = struct
 
          # Safety
 
-         Each element of `shift` must be less than `<int>::BITS`.
+         Each element of `shift` must be in `0..<int>::BITS`.
         ]} *)
     val simd_funnel_shr :
       t:Types.ty ->
@@ -2909,8 +2936,8 @@ module M (StateM : State.StateM.S) = struct
          `val`.
 
          # Safety
-         Unmasked values in `T` must be readable as if by `<ptr>::read` (e.g. aligned to the element
-         type).
+         Each pointer in `ptr` whose corresponding value in `mask` is `!0` must be readable as if by
+         [`ptr::read`][crate::ptr::read] (e.g. aligned to the element type).
 
          `mask` must only contain `0` or `!0` values.
         ]} *)
@@ -3041,6 +3068,9 @@ module M (StateM : State.StateM.S) = struct
          # Safety
          `ptr` must be aligned according to the `ALIGN` parameter, see [`SimdAlign`] for details.
 
+         Each pointer offset from `ptr` whose corresponding value in `mask` is `!0` must be readable as if
+         by [`ptr::read`][crate::ptr::read].
+
          `mask` must only contain `0` or `!0` values.
         ]} *)
     val simd_masked_load :
@@ -3069,6 +3099,9 @@ module M (StateM : State.StateM.S) = struct
 
          # Safety
          `ptr` must be aligned according to the `ALIGN` parameter, see [`SimdAlign`] for details.
+
+         Each pointer offset from `ptr` whose corresponding value in `mask` is `!0` must be writable as if
+         by [`ptr::write`][crate::ptr::write].
 
          `mask` must only contain `0` or `!0` values.
         ]} *)
@@ -3405,8 +3438,8 @@ module M (StateM : State.StateM.S) = struct
          (This is relevant in case two of the stores overlap.)
 
          # Safety
-         Unmasked values in `T` must be writeable as if by `<ptr>::write` (e.g. aligned to the element
-         type).
+         Each pointer in `ptr` whose corresponding value in `mask` is `!0` must be writable as if by
+         [`ptr::write`][crate::ptr::write] (e.g. aligned to the element type).
 
          `mask` must only contain `0` or `!0` values.
         ]} *)
@@ -3466,13 +3499,13 @@ module M (StateM : State.StateM.S) = struct
     (** {@markdown[
         Shifts vector left elementwise, with UB on overflow.
 
-         Shifts `lhs` left by `rhs`, shifting in sign bits for signed types.
+         Shifts `lhs` left by `rhs`, shifting in zeros.
 
          `T` must be a vector of integers.
 
          # Safety
 
-         Each element of `rhs` must be less than `<int>::BITS`.
+         Each element of `rhs` must be in `0..<int>::BITS`.
         ]} *)
     val simd_shl :
       t:Types.ty ->
@@ -3489,7 +3522,7 @@ module M (StateM : State.StateM.S) = struct
 
          # Safety
 
-         Each element of `rhs` must be less than `<int>::BITS`.
+         Each element of `rhs` must be in `0..<int>::BITS`.
         ]} *)
     val simd_shr :
       t:Types.ty ->
@@ -4096,19 +4129,19 @@ module M (StateM : State.StateM.S) = struct
 
          // This is how the standard library does it. This is the best method, if
          // you need to do something like this
-         fn split_at_stdlib<T>(slice: &mut [T], mid: usize)
+         fn split_at_stdlib<T>(to_split: &mut [T], mid: usize)
                                -> (&mut [T], &mut [T]) {
-             let len = slice.len();
+             let len = to_split.len();
              assert!(mid <= len);
              unsafe {
-                 let ptr = slice.as_mut_ptr();
-                 // This now has three mutable references pointing at the same
-                 // memory. `slice`, the rvalue ret.0, and the rvalue ret.1.
-                 // `slice` is never used after `let ptr = ...`, and so one can
-                 // treat it as "dead", and therefore, you only have two real
-                 // mutable slices.
-                 (slice::from_raw_parts_mut(ptr, mid),
-                  slice::from_raw_parts_mut(ptr.add(mid), len - mid))
+                 let ptr = to_split.as_mut_ptr();
+                 let fst = slice::from_raw_parts_mut(ptr, mid);
+                 let snd = slice::from_raw_parts_mut(ptr.add(mid), len - mid);
+                 // The function now has three mutable references to overlapping memory:
+                 // `to_split`, `fst`, and `snd`.
+                 // `to_split` is never used after `let ptr = ...` so it can be treated as "dead".
+                 // This leaves two "live" mutable slice references, `fst` and `snd`, with no overlap.
+                 (fst, snd)
              }
          }
          ```
@@ -4202,6 +4235,21 @@ module M (StateM : State.StateM.S) = struct
       id:Typed.([< T.tuple ] t) ->
       variant_index:Typed.([< T.sint ] t) ->
       Typed.([> T.sint ] t) ret
+
+    (** {@markdown[
+        Returns the list of generic args on this type.
+         Only meaningful for Adts, closures, ... Everything else returns an empty slice.
+        ]} *)
+    val type_id_generics :
+      id:Typed.([< T.tuple ] t) -> Typed.([> T.sptr_f ] t) ret
+
+    (** {@markdown[
+        Returns whether the type represented by this `TypeId` is a signed integer.
+
+         The more user-friendly version of this intrinsic is [`core::any::TypeId::is_signed`].
+        ]} *)
+    val type_id_is_signed :
+      id:Typed.([< T.tuple ] t) -> Typed.([> T.sbool ] t) ret
 
     (** {@markdown[
         Gets the number of variants of the type represented by this `TypeId`.
@@ -4616,7 +4664,8 @@ module M (StateM : State.StateM.S) = struct
     val vtable_size : ptr:Typed.([< T.sptr_f ] t) -> Typed.([> T.sint ] t) ret
 
     (** {@markdown[
-        Returns (a + b) mod 2<sup>N</sup>, where N is the width of T in bits.
+        Wrapping (modular) addition. Computes `a + b`,
+         wrapping around at the boundary of the type.
 
          Note that, unlike most intrinsics, this is safe to call;
          it does not require an `unsafe` block.
@@ -4634,7 +4683,8 @@ module M (StateM : State.StateM.S) = struct
       Typed.([> T.any ] t) ret
 
     (** {@markdown[
-        Returns (a * b) mod 2<sup>N</sup>, where N is the width of T in bits.
+        Wrapping (modular) multiplication. Computes `a *
+         b`, wrapping around at the boundary of the type.
 
          Note that, unlike most intrinsics, this is safe to call;
          it does not require an `unsafe` block.
@@ -4652,7 +4702,8 @@ module M (StateM : State.StateM.S) = struct
       Typed.([> T.any ] t) ret
 
     (** {@markdown[
-        Returns (a - b) mod 2<sup>N</sup>, where N is the width of T in bits.
+        Wrapping (modular) subtraction. Computes `a - b`,
+         wrapping around at the boundary of the type.
 
          Note that, unlike most intrinsics, this is safe to call;
          it does not require an `unsafe` block.

@@ -109,10 +109,10 @@ module M (StateM : State.StateM.S) = struct
     | Tokio f -> Tokio.fn_to_stub f fun_sig fun_exec generics
 
   let[@inline] extern_fn_to_stub fun_sig fun_exec = function
-    | Alloc f -> Alloc.fn_to_stub f
+    | Alloc f -> Alloc.fn_to_stub fun_sig f
     | ExtSystem f -> ExtSystem.fn_to_stub fun_sig fun_exec f
     | Libc f -> Libc.fn_to_stub f
-    | Miri f -> Miri.fn_to_stub f
+    | Miri f -> Miri.fn_to_stub fun_sig f
     | Std f -> Std.fn_to_stub f
 
   let get_generics (f : UllbcAst.fun_decl) generics =

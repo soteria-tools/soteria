@@ -11,7 +11,7 @@ end)
 module Place = struct
   type kind =
     | Local of Expressions.local_id
-    | Field of t * Expressions.field_proj_kind * Types.field_id
+    | Field of t * Types.variant_id option * Types.field_id
     | Index of t * int (* Store places only support concrete offsets *)
     | Metadata of t (* The metadata "field" of a (possibly fat) pointer *)
 
@@ -39,13 +39,13 @@ module Place = struct
   let rec update_val { kind; _ } ~f v =
     match kind with
     | Local _ -> Some (f v)
-    | Field (base, ProjAdt (_, Some var), field) ->
+    | Field (base, Some var, field) ->
         let idx = Types.FieldId.to_int field in
         update_val base
           ~f:(fun v ->
             Typed.Adt.update_field_of_variant var idx f (Typed.cast_enum v))
           v
-    | Field (base, _, field) ->
+    | Field (base, None, field) ->
         let idx = Types.FieldId.to_int field in
         update_val base
           ~f:(fun v -> Typed.Adt.update_field idx f (Typed.cast_tuple v))
@@ -63,10 +63,10 @@ module Place = struct
   let rec read_val { kind; origin } v : Typed.T.any Typed.t =
     match kind with
     | Local _ -> v
-    | Field (base, ProjAdt (_, Some var), field) ->
+    | Field (base, Some var, field) ->
         let idx = Types.FieldId.to_int field in
         Typed.Adt.field_of_variant var idx (Typed.cast_enum (read_val base v))
-    | Field (base, _, field) ->
+    | Field (base, None, field) ->
         let idx = Types.FieldId.to_int field in
         Typed.Adt.field_of idx (Typed.cast_tuple (read_val base v))
     | Index (base, idx) ->
@@ -108,10 +108,12 @@ end
 open Place
 
 module Binding = struct
-  (** We have four kinds of bindings:
+  (** We have five kinds of bindings:
 
       - Stackptr: the symbol is bound to a stack pointer, that lives in the
         heap.
+      - Unowned: the symbol is bound to a pointer to a value the function
+        doesn't own; this is e.g. how unsized arguments are passed.
       - Value: the symbol is bound to an immediate value; it does not have an
         address.
       - Uninit: the symbol is bound to an immediate, uninitialized value.
@@ -119,6 +121,7 @@ module Binding = struct
   *)
   type kind =
     | Stackptr of Typed.T.sptr_f Typed.t
+    | Unowned of Typed.T.sptr_f Typed.t
     | Value of Typed.T.any Typed.t
     | Uninit
     | Dead
@@ -129,6 +132,7 @@ module Binding = struct
   let pp ft { kind; ty } =
     match kind with
     | Stackptr ptr -> Fmt.pf ft "Stackptr(%a) : %a" Typed.ppa ptr pp_ty ty
+    | Unowned ptr -> Fmt.pf ft "Unowned(%a) : %a" Typed.ppa ptr pp_ty ty
     | Value v -> Fmt.pf ft "Value(%a) : %a" Typed.ppa v pp_ty ty
     | Uninit -> Fmt.pf ft "Uninit : %a" pp_ty ty
     | Dead -> Fmt.pf ft "Dead : %a" pp_ty ty
@@ -157,6 +161,7 @@ let[@inline] declare sym kind =
 
 let declare_value sym value t = declare sym (Value value) t
 let declare_ptr sym ptr t = declare sym (Stackptr ptr) t
+let declare_unowned sym ptr t = declare sym (Unowned ptr) t
 let declare_uninit sym t = declare sym Uninit t
 let dealloc sym t = declare sym Dead t
 let get_ty sym t = (Map.find sym t).ty
@@ -172,6 +177,7 @@ let try_load (place : Place.t) (store : t) : Binding.kind option =
   | Value c -> Some (Value (Place.read_val place c))
   | (Uninit | Dead) as k -> Some k
   | Stackptr _ as k -> if Place.is_local place then Some k else None
+  | Unowned _ -> None
 
 let try_store (place : Place.t) store value =
   let open Syntaxes.Option in

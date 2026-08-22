@@ -17,6 +17,12 @@ module M (StateM : State.StateM.S) = struct
     val _eprint : args:Typed.([< T.any ] t) -> unit ret
     val _print : args:Typed.([< T.any ] t) -> unit ret
 
+    val align_offset :
+      t:Types.ty ->
+      p:Typed.([< T.sptr_f ] t) ->
+      a:Typed.([< T.sint ] t) ->
+      Typed.([> T.sint ] t) ret
+
     val alloc_impl :
       fun_sig:Types.fun_sig ->
       self:Typed.([< T.sptr_f ] t) ->

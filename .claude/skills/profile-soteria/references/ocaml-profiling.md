@@ -41,6 +41,14 @@ grep -F 'Raw$access_1212' s.txt \
 
 (Use `grep -F` — symbol names contain `$`, which is a regex anchor otherwise.)
 
+**Trap — effects fragment the call graph.** The symex monad runs on OCaml 5
+effect handlers, so stacks are cut at `caml_runstack` and the tree is a forest
+of short chains rooted there rather than one deep spine. Self-time per symbol
+is still trustworthy; *ancestry* is not — walking up from a leaf to find "who
+called this" usually terminates at `caml_runstack`/`Stdlib__Fun$protect` and
+tells you nothing. When you need a caller attribution, use landmarks (§1),
+not `sample`.
+
 ## 1. OCaml CPU
 
 Profile the **native** executable (Soteria builds native; `dune build` then

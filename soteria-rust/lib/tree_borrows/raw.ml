@@ -141,7 +141,14 @@ let unprotect tag ({ tags; _ } as st) =
   { st with tags }
 
 let strong_protector_exists { tags; _ } =
-  Ptr_tag_map.exists (fun _ { protector; _ } -> protector = Some Strong) tags
+  (* Strong protectors on interior-mutable nodes do not prevent deallocation.
+     See rust-lang/unsafe-code-guidelines#433. *)
+  Ptr_tag_map.exists
+    (fun _ -> function
+      | { initial_state = Cell; _ } -> false
+      | { protector = Some Strong; _ } -> true
+      | _ -> false)
+    tags
 
 (** [tag -> (protected * state)], [protected] indicating the tag's protector
     (managed outside [tb_state]) was toggled. *)

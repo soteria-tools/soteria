@@ -44,6 +44,7 @@ type fn =
   | CorePanickingPanic
   | CorePanickingPanicFmt
   | CorePanickingPanicNounwindFmt
+  | CorePtrAlignOffset
   | CoreResultUnwrapFailed
   | StdIoStdioEprint
   | StdIoStdioPrint
@@ -92,6 +93,7 @@ let fn_pats : (string * fn) list =
     ("core::panicking::panic", CorePanickingPanic);
     ("core::panicking::panic_fmt", CorePanickingPanicFmt);
     ("core::panicking::panic_nounwind_fmt", CorePanickingPanicNounwindFmt);
+    ("core::ptr::align_offset", CorePtrAlignOffset);
     ("core::result::unwrap_failed", CoreResultUnwrapFailed);
     ("std::io::stdio::_eprint", StdIoStdioEprint);
     ("std::io::stdio::_print", StdIoStdioPrint);
@@ -264,6 +266,10 @@ module M (StateM : State.StateM.S) = struct
         in
         let+ () = panic_nounwind_fmt ~fmt ~force_no_backtrace in
         Typed.Adt.unit
+    | CorePtrAlignOffset, [ t ], [], [ p; a ] ->
+        let p = Typed.cast_ptr_f p in
+        let a = Typed.cast_i Usize a in
+        align_offset ~t ~p ~a
     | CoreResultUnwrapFailed, [], [], [ msg; error ] ->
         let msg = Typed.cast_ptr_f msg in
         let error = Typed.cast_ptr_f error in

@@ -44,10 +44,21 @@ module type S = sig
   val pp_pretty : ignore_freed:bool -> t Fmt.t
 
   val empty : t option
-  val load : ?ignore_borrow:bool -> [< sptr_f ] v -> Types.ty -> [> any ] v ret
+
+  val load :
+    ?ignore_borrow:bool ->
+    ?ignore_align:bool ->
+    [< sptr_f ] v ->
+    Types.ty ->
+    [> any ] v ret
+
   val tb_load : [< sptr_f ] v -> Types.ty -> unit ret
-  val load_discriminant : [< sptr_f ] v -> Types.ty -> [> sint ] v ret
-  val store : [< sptr_f ] v -> Types.ty -> [< any ] v -> unit ret
+
+  val load_discriminant :
+    ?ignore_align:bool -> [< sptr_f ] v -> Types.ty -> [> sint ] v ret
+
+  val store :
+    ?ignore_align:bool -> [< sptr_f ] v -> Types.ty -> [< any ] v -> unit ret
 
   val alloc_untyped :
     ?span:Meta.span_data ->
@@ -72,9 +83,9 @@ module type S = sig
   val zeros : [< sptr_f ] v -> [< nonzero ] v -> unit ret
   val with_pointers_sym : 'a Sptr.DecayMap.SM.t -> 'a SM.t
   val store_str_global : string -> [< sptr_f ] v -> unit ret
-  val store_global : Types.global_decl_id -> [< sptr_f ] v -> unit ret
+  val store_global : Types.global_decl_ref -> [< sptr_f ] v -> unit ret
   val load_str_global : string -> [> sptr_f ] v option ret
-  val load_global : Types.global_decl_id -> [> sptr_f ] v option ret
+  val load_global : Types.global_decl_ref -> [> sptr_f ] v option ret
   val borrow : ?protect:bool -> [< sptr_f ] v -> Types.ty -> [> sptr_f ] v ret
   val unprotect : [< sptr_f ] v -> Types.ty -> unit ret
   val with_exposed : [< sint ] Typed.t -> [> sptr_f ] v ret
@@ -87,6 +98,7 @@ module type S = sig
   val lookup_const_generic :
     Types.const_generic_var_id -> Types.ty -> [> any ] v ret
 
+  val type_id : Types.ty -> sint v ret
   val register_thread_exit : (unit -> unit ret) -> unit ret
   val run_thread_exits : unit -> unit ret
 end

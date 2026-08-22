@@ -4,23 +4,23 @@ Test memory leaks
   => Running leak::main...
   error: leak::main: found issues in <time>, errors in 1 branch (out of 1)
   warning: Memory leak in leak::main
-      --> $RUSTLIB/library/alloc/src/alloc.rs:101:9
-  101 |            __rust_alloc(layout.size(), layout.alignment())
+      --> $RUSTLIB/library/alloc/src/alloc.rs:130:9
+  130 |            __rust_alloc(layout.size(), layout.alignment())
       |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
       |            |
       |            Triggering operation
       |            5: Allocation
       .    
-  331 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
-  332 | /          core::intrinsics::const_eval_select(
-  333 | |              (layout, zeroed),
-  334 | |              Global::alloc_impl_const,
-  335 | |              Global::alloc_impl_runtime,
-  336 | |          )
+  423 |        const fn alloc_impl(&self, layout: Layout, zeroed: bool) -> Result<NonNull<[u8]>, AllocError> {
+  424 | /          core::intrinsics::const_eval_select(
+  425 | |              (layout, zeroed),
+  426 | |              Global::alloc_impl_const,
+  427 | |              Global::alloc_impl_runtime,
+  428 | |          )
       | \----------' 4: Call trace
-  337 |        }
-      --> $RUSTLIB/library/alloc/src/boxed.rs:286:19
-  286 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
+  429 |        }
+      --> $RUSTLIB/library/alloc/src/boxed.rs:290:19
+  290 |            let ptr = box_new_uninit(<T as SizedTypeProperties>::LAYOUT) as *mut T;
       |                      -------------------------------------------------- 3: Call trace
       --> $TESTCASE_ROOT/leak.rs:2:22
     1 |    fn main() {
@@ -117,8 +117,8 @@ Check strict provenance disables int to ptr casts
   => Running provenance::with_exposed...
   error: provenance::with_exposed: found issues in <time>, errors in 1 branch (out of 1)
   bug: Attempted to cast an integer to an pointer with strict provenance in provenance::with_exposed
-       --> $RUSTLIB/library/core/src/ptr/mod.rs:1005:5
-  1005 |      addr as *const T
+       --> $RUSTLIB/library/core/src/ptr/mod.rs:1027:5
+  1027 |      addr as *const T
        |      ^^^^^^^^^^^^^^^^ Casting integer to pointer
        --> $TESTCASE_ROOT/provenance.rs:6:18
      2 |  fn with_exposed() {
@@ -232,8 +232,8 @@ Test exposing function pointers
   Compiling... done in <time>
   => Running expose_fn_ptr::main...
   note: expose_fn_ptr::main: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000010 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffffd) /\
-        (0x0 == extract[0-3](V|1|))
+  PC 1: ((V|1| ++ 0x0) <u 0x7ffffffffffffffe) /\
+        (0x0000000000000010 <=u (V|1| ++ 0x0))
   
 Test thread local statics; the two warnings due to opaque functions are to be expected, as we do not run the test suite with a sysroot.
   $ soteria-rust exec thread_local.rs --target aarch64-apple-darwin
@@ -247,7 +247,7 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
   
   tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
+       cargo +nightly-2026-08-18 miri setup --print-sysroot
   
   This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
@@ -256,7 +256,7 @@ Test thread local statics; the two warnings due to opaque functions are to be ex
   Can't execute function std::sys::thread_local::destructors::list::register, try using a sysroot (--sysroot)
   
   tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
+       cargo +nightly-2026-08-18 miri setup --print-sysroot
   
   This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
@@ -274,7 +274,7 @@ This test must be run separtely on linux and macos as it yields different error 
   Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
   
   tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
+       cargo +nightly-2026-08-18 miri setup --print-sysroot
   
   This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
@@ -283,7 +283,7 @@ This test must be run separtely on linux and macos as it yields different error 
   Can't execute function std::sys::thread_local::destructors::linux_like::register, try using a sysroot (--sysroot)
   
   tip: to get a sysroot, run
-       cargo +nightly-2026-06-01 miri setup --print-sysroot
+       cargo +nightly-2026-08-18 miri setup --print-sysroot
   
   This is tracked at https://github.com/soteria-tools/soteria/issues/322
   
@@ -342,8 +342,8 @@ Test recursive validity check for references; disabled
       .  
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00))
   
   [1]
 
@@ -381,8 +381,8 @@ Test recursive validity check for references; enabled
       .  
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00))
   
   [1]
 
@@ -420,8 +420,8 @@ Test recursive validity check for references; warn
       .  
    25 |      let as_ref: &u64 = unsafe { &*as_ptr };
       |                                  ^^^^^^^^ Requires well-aligned pointer
-  PC 1: (0x0000000000000004 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0b00 == extract[0-1](V|1|))
+  PC 1: ((V|1| ++ 0b00) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00))
   
   [1]
 
@@ -534,8 +534,8 @@ Check we handle pattern types correctly
   => Running pattern_types::nonnull...
   error: pattern_types::nonnull: found issues in <time>, errors in 1 branch (out of 2)
   bug: UB: Transmute: Value violates pattern type constraint in pattern_types::nonnull
-      --> $RUSTLIB/library/core/src/ptr/non_null.rs:238:13
-  238 |              transmute(ptr)
+      --> $RUSTLIB/library/core/src/ptr/non_null.rs:247:13
+  247 |              transmute(ptr)
       |              ^^^^^^^^^^^^^^ Transmute
       --> $TESTCASE_ROOT/pattern_types.rs:12:25
    10 |  fn nonnull() {
@@ -713,8 +713,8 @@ successfuly.
   
   => Running ptr_diff_prov::one_prov_one_no_prove_same_address...
   note: ptr_diff_prov::one_prov_one_no_prove_same_address: done in <time>, ran 1 branch
-  PC 1: (0x0000000000000008 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff6) /\
-        (0b000 == extract[0-2](V|1|))
+  PC 1: ((V|1| ++ 0b000) <u 0x7ffffffffffffff7) /\
+        (0x0000000000000008 <=u (V|1| ++ 0b000))
   
 Test calls to FnOnce trait objects.
   $ soteria-rust exec box_fnonce.rs
@@ -752,29 +752,29 @@ Test a field access through a pointer derived from ptr.sub with a symbolic index
   Compiling... done in <time>
   => Running ptr_sub_field::main...
   note: ptr_sub_field::main: done in <time>, ran 4 branches
-  PC 1: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
-        (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
-        (0x0000000000000004 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
-        (0x0000000000000006 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000008) /\
-        (0x0000000000000000 == (0x0000000000000003 & V|1|))
-  PC 2: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
-        (0x0000000000000000 != (0x0000000000000003 & V|1|)) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000002) /\
-        (0x0000000000000003 <=u (0x0000000000000003 & V|1|)) /\
+  PC 1: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (V|1| & 0x0000000000000003)))) /\
+        (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009)) /\
+        (0x0000000000000004 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009)) /\
+        (0x0000000000000006 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009)) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009) <u 0x0000000000000008) /\
+        (0x0000000000000000 == (V|1| & 0x0000000000000003))
+  PC 2: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (V|1| & 0x0000000000000003)))) /\
+        (0x0000000000000000 != (V|1| & 0x0000000000000003)) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009) <u 0x0000000000000002) /\
+        (0x0000000000000003 <=u (V|1| & 0x0000000000000003)) /\
         (0b11 == extract[0-1](V|1|))
-  PC 3: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
-        (0x0000000000000000 != (0x0000000000000003 & V|1|)) /\
-        (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000004) /\
-        (0x0000000000000002 <=u (0x0000000000000003 & V|1|)) /\
+  PC 3: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (V|1| & 0x0000000000000003)))) /\
+        (0x0000000000000000 != (V|1| & 0x0000000000000003)) /\
+        (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009)) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009) <u 0x0000000000000004) /\
+        (0x0000000000000002 <=u (V|1| & 0x0000000000000003)) /\
         (extract[0-1](V|1|) == 0b10)
-  PC 4: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (0x0000000000000003 & V|1|)))) /\
-        (0x0000000000000000 != (0x0000000000000003 & V|1|)) /\
-        (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
-        (0x0000000000000004 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009)) /\
-        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (0x0000000000000003 & V|1|))) +cks 0x0000000000000009) <u 0x0000000000000006) /\
-        (0x0000000000000001 <=u (0x0000000000000003 & V|1|)) /\
+  PC 4: !((0x0000000000000000 -s_ovf (0x0000000000000001 +cku (V|1| & 0x0000000000000003)))) /\
+        (0x0000000000000000 != (V|1| & 0x0000000000000003)) /\
+        (0x0000000000000002 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009)) /\
+        (0x0000000000000004 <=u ((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009)) /\
+        (((0xfffffffffffffffe *cks (0x0000000000000001 +cku (V|1| & 0x0000000000000003))) +cks 0x0000000000000009) <u 0x0000000000000006) /\
+        (0x0000000000000001 <=u (V|1| & 0x0000000000000003)) /\
         (0b01 == extract[0-1](V|1|))
   
 Test the SIMD intrinsics used by hashbrown's NEON control group.
@@ -803,3 +803,108 @@ Test destructors run when reached through `ptr::drop_in_place`.
   note: drop_in_place::main: done in <time>, ran 1 branch
   PC 1: empty
   
+Test that a place must be aligned for the type of the pointer it was created
+from, rather than for the type of the field being accessed.
+  $ soteria-rust exec place_align.rs
+  Compiling... done in <time>
+  => Running place_align::access_packed_field...
+  note: place_align::access_packed_field: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running place_align::deref_ptr_to_packed_field...
+  error: place_align::deref_ptr_to_packed_field: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Misaligned pointer; expected 0x0000000000000004, received 0x0000000000000001 with offset 0x0000000000000001 in place_align::deref_ptr_to_packed_field
+      --> $TESTCASE_ROOT/place_align.rs:30:22
+   27 |  fn deref_ptr_to_packed_field() {
+      |  ------------------------------ 1: Entry point
+      .  
+   30 |      let _ = unsafe { *q };
+      |                       ^^ Requires well-aligned pointer
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7ffffffffffffff9)
+  
+  => Running place_align::access_field_of_misaligned_struct...
+  error: place_align::access_field_of_misaligned_struct: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Misaligned pointer; expected 0x0000000000000004, received 0x0000000000000008 with offset 0x0000000000000001 in place_align::access_field_of_misaligned_struct
+      --> $TESTCASE_ROOT/place_align.rs:39:22
+   36 |  fn access_field_of_misaligned_struct() {
+      |  -------------------------------------- 1: Entry point
+      .  
+   39 |      let _ = unsafe { (*p).fill };
+      |                       ^^^^^^^^^ Requires well-aligned pointer
+  PC 1: ((V|1| ++ 0b000) <u 0x7fffffffffffffdf) /\
+        (0x0000000000000008 <=u (V|1| ++ 0b000))
+  
+  => Running place_align::addr_of_field_of_misaligned_struct...
+  note: place_align::addr_of_field_of_misaligned_struct: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  [1]
+
+Test unsizing a Box with a non-ZST allocator
+  $ soteria-rust exec unsize_custom_alloc.rs
+  Compiling... done in <time>
+  => Running unsize_custom_alloc::unsize_array_with_a_non_zst_allocator...
+  note: unsize_custom_alloc::unsize_array_with_a_non_zst_allocator: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running unsize_custom_alloc::upcast_with_a_pointer_allocator...
+  note: unsize_custom_alloc::upcast_with_a_pointer_allocator: done in <time>, ran 1 branch
+  PC 1: empty
+  
+Test TypeId equality and downcasting a `dyn Any`
+  $ soteria-rust exec type_id.rs
+  Compiling... done in <time>
+  => Running type_id::main...
+  note: type_id::main: done in <time>, ran 1 branch
+  PC 1: Distinct(V|1-2|) /\ (V|1| != V|2|) /\ Distinct(V|1-3|) /\
+        (V|1| != V|3|) /\ Distinct(V|1-4|) /\ Distinct(V|1-5|) /\
+        (V|4| != V|5|)
+  
+Test that `align_offset` is answered from the allocation's alignment
+  $ soteria-rust exec align_offset.rs
+  Compiling... done in <time>
+  => Running align_offset::offset_within_the_allocation_alignment...
+  note: align_offset::offset_within_the_allocation_alignment: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running align_offset::offset_beyond_the_allocation_alignment...
+  warning: std::ptr::align_offset was stubbed to avoid path explosion. This is an under-approximation, some paths may be missed.
+  note: align_offset::offset_beyond_the_allocation_alignment: done in <time>, ran 1 branch
+  PC 1: ((V|1| ++ 0b00) <u 0x7fffffffffffffef) /\
+        (0x0000000000000004 <=u (V|1| ++ 0b00)) /\ (0b0 == extract[0-0](V|1|))
+  
+  => Running align_offset::offset_asked_twice_for_one_allocation...
+  note: align_offset::offset_asked_twice_for_one_allocation: done in <time>, ran 1 branch
+  PC 1: (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x7fffffffffffffbe) /\
+        (0b000 == extract[0-2](V|1|))
+  
+  => Running align_offset::offset_for_a_known_address...
+  note: align_offset::offset_for_a_known_address: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running align_offset::offset_wrapping_around_the_alignment...
+  note: align_offset::offset_wrapping_around_the_alignment: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running align_offset::offset_that_cannot_be_given...
+  note: align_offset::offset_that_cannot_be_given: done in <time>, ran 1 branch
+  PC 1: empty
+  
+  => Running align_offset::alignment_is_not_a_power_of_two...
+  error: align_offset::alignment_is_not_a_power_of_two: found issues in <time>, errors in 1 branch (out of 1)
+  error: Panic in align_offset::alignment_is_not_a_power_of_two
+       --> $RUSTLIB/library/core/src/ptr/const_ptr.rs:1282:13
+  1282 |              panic!("align_offset: align is not a power-of-two");
+       |              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+       |              |
+       |              Triggering operation
+       |              3: Call trace
+       --> $TESTCASE_ROOT/align_offset.rs:82:13
+    80 |  fn alignment_is_not_a_power_of_two() {
+       |  ------------------------------------ 1: Entry point
+    81 |      let arr = [0u8; 8];
+    82 |      let _ = arr.as_ptr().align_offset(std::hint::black_box(3));
+       |              -------------------------------------------------- 2: Call trace
+  PC 1: empty
+  
+  [1]

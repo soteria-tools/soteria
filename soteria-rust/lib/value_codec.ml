@@ -22,12 +22,8 @@ let variant_for_enum (enum : Typed.([< T.enum ] t)) adt =
     a singleton iterator for that value. *)
 let iter_fields ?variant ?ptr layout (ty : Types.ty) =
   let rec to_fields ?variant fields : Types.ty -> Types.ty Iter.t = function
-    | TAdt { id = TTuple; generics = { types; _ } } -> Iter.of_list types
     | TArray (ty, len) -> Iter.repeatz (z_of_constant_expr len) ty
-    | TSlice _ | TAdt { id = TBuiltin TStr; _ } -> (
-        let sub_ty =
-          match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8)
-        in
+    | TSlice sub_ty -> (
         let ptr = Option.get ~msg:"ptr required for slice" ptr in
         let len = Typed.Ptr.len_meta ptr in
         (* TODO: strings and slices of symbolic length *)
@@ -525,8 +521,6 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
   (* undefined.validity.scalar *)
   | TLiteral (TInt _ | TUInt _) -> ok ()
   | TLiteral (TFloat _) -> ok ()
-  (* undefined.validity.str *)
-  | TAdt { id = TBuiltin TStr; _ } -> ok ()
   (* undefined.validity.reference-box *)
   | TRef (_, pointee, _) ->
       let ptr = Typed.cast_ptr_f v in
@@ -558,10 +552,11 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
           |> Iter.mapi (fun i ty ->
               (ty, Typed.Adt.field_of_variant variant.id i v))
           |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f))
-  (* undefined.validity.struct *)
-  | TAdt adt when Crate.is_struct_or_tuple adt ->
+  (* undefined.validity.struct + undefined.validity.str, we represent [str] as a
+     [struct([u8])] *)
+  | TAdt adt when Crate.is_struct adt ->
       let v = Typed.cast_tuple v in
-      Iter.of_list (Crate.as_struct_or_tuple adt)
+      Iter.of_list (Crate.as_struct_tys adt)
       |> Iter.mapi (fun i ty -> (ty, Typed.Adt.field_of i v))
       |> iter_iter ~f:(fun (ty, v) -> validity ~check_ref ty v f)
   | TArray (ty, _) | TSlice ty ->
@@ -717,11 +712,11 @@ let rec nondet_raw :
       let+ ptr = nondet (Typed.t_ptr ()) in
       let ptr = Typed.Ptr.of_raw ~ptr ~size ~align ~tag:None in
       Ok (Typed.Ptr.of_ptr_t ptr)
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      let++ fields = nondets_raw types in
-      Typed.Adt.mk_tuple fields
   | TArray (ty, len) ->
-      let size = int_of_constant_expr len in
+      let size = z_of_constant_expr len in
+      let* size =
+        of_opt_not_impl "nondet: array length is too large" @@ Z.to_int_opt size
+      in
       let++ fields = nondets_raw @@ List.init size (fun _ -> ty) in
       Typed.Adt.mk_array ty (Iarray.of_list fields)
   | TAdt adt as ty -> (
@@ -812,19 +807,18 @@ let rec ref_tys_in
   in
   let* ty = Poly.subst_ty ty in
   match ty with
-  | TRef (_, _, _) | TAdt { id = TBuiltin TBox; _ } ->
+  | TRef (_, _, _) | TAdt { builtin = Some TBox; _ } ->
       let v = Typed.cast_ptr_f v in
       let++ res, acc = fn init ty v in
       (Typed.as_any res, acc)
   | TAdt adt when adt_is_box adt ->
-      (* a box has only one non ZST, the pointer *)
       let ptr, allocator, marker = unwrap_box v in
       let++ ptr, acc = fn init ty ptr in
       (mk_box ptr allocator marker, acc)
-  | TAdt adt when Crate.is_struct_or_tuple adt ->
+  | TAdt adt when Crate.is_struct adt ->
       let v = Typed.cast_tuple v in
       let++ vs, acc =
-        fs' init (Crate.as_struct_or_tuple adt) (Typed.Adt.as_tuple v)
+        fs' init (Crate.as_struct_tys adt) (Typed.Adt.as_tuple v)
       in
       (Typed.Adt.mk_tuple vs, acc)
   | TArray (ty, _) | TSlice ty ->
@@ -848,12 +842,13 @@ let rec size_and_align_of_val ~load_vtable ~t ~(ptr : Typed.([< T.sptr_f ] t)) =
   let open Rustsymex.Syntax in
   (* Takes inspiration from rustc, to calculate the size and alignment of DSTs.
      https://github.com/rust-lang/rust/blob/a8664a1534913ccff491937ec2dc7ec5d973c2bd/compiler/rustc_codegen_ssa/src/size_of_val.rs *)
+  let** t = Layout.normalise t in
   if not (Layout.is_dst t) then
     let++ layout = Layout.layout_of t in
     (layout.size, layout.align)
   else
     match t with
-    | TSlice _ | TAdt { id = TBuiltin TStr; _ } ->
+    | TSlice _ ->
         let sub_ty = Layout.dst_slice_ty t in
         let** layout = Layout.layout_of sub_ty in
         let len = Typed.Ptr.len_meta ptr in
@@ -867,25 +862,24 @@ let rec size_and_align_of_val ~load_vtable ~t ~(ptr : Typed.([< T.sptr_f ] t)) =
         let size = Typed.cast_i Usize size in
         let align = Typed.cast_i Usize align in
         (size, Typed.cast_nonzero align)
-    | TAdt { id = TTuple | TAdtId _; _ } ->
-        let field_tys =
-          match t with
-          | TAdt adt -> Crate.as_struct_or_tuple adt
-          | _ -> L.failwith "impossible"
-        in
+    | TAdt adt ->
+        let field_tys = Crate.as_struct_tys adt in
         let last_field_ty = List.last field_tys in
         let** layout = Layout.layout_of t in
         let last_field_ofs =
           match layout.fields with
           | Arbitrary offsets -> offsets.(Array.length offsets - 1)
+          | Primitive -> Usize.(0s)
           | _ -> L.failwith "size_and_align_of_val: Unexpected layout for ADT"
         in
         let++ unsized_size, unsized_align =
           size_and_align_of_val ~load_vtable ~t:last_field_ty ~ptr
         in
-        (* TODO: we need to check if [layout] is packed, in which case
-           unsized_align is 1! See 113-125 of above function. *)
+        let unsized_align = Layout.packed_align t unsized_align in
         let align = BV.max ~signed:false unsized_align layout.align in
+        let last_field_ofs =
+          Layout.size_to_fit ~size:last_field_ofs ~align:unsized_align
+        in
         let size = last_field_ofs +!!@ unsized_size in
         let size = Layout.size_to_fit ~size ~align in
         (size, align)

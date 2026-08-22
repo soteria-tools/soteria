@@ -15,7 +15,9 @@ let fn_pats =
     ("miri_pointer_name", Nop);
     ("miri_print_borrow_state", Nop);
     ("miri_run_provenance_gc", Nop);
+    ("miri_track_alloc", Nop);
     ("miri_write_to_stdout", Nop);
+    ("miri_write_to_stderr", Nop);
     ("miri_alloc", Alloc);
     ("miri_dealloc", Dealloc);
     ("miri_promise_symbolic_alignment", PromiseAlignment);
@@ -46,13 +48,13 @@ module M (StateM : State.StateM.S) = struct
     | _ -> not_impl "miri_promise_symbolic_alignment: invalid arguments"
 
   let alloc args = Alloc.alloc ~zeroed:false args
-  let dealloc args = Alloc.dealloc args
+  let dealloc fun_sig args = Alloc.dealloc fun_sig args
   let nop _ = ok Typed.Adt.unit
 
-  let[@inline] fn_to_stub = function
+  let[@inline] fn_to_stub fun_sig = function
     | Nop -> nop
     | Alloc -> alloc
-    | Dealloc -> dealloc
+    | Dealloc -> dealloc fun_sig
     | AllocId -> alloc_id
     | PromiseAlignment -> promise_alignement
 end

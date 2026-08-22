@@ -91,7 +91,7 @@ let exec_crate (crate : Charon.UllbcAst.crate)
 
   (* Aggregate statistics over all entry points, then dump them once. *)
   let@ () = Stats.As_ctx.with_dumped () in
-  let@ { fuel; fun_decl; expect_error } : Frontend.entry_point =
+  let@ { fuel; fun_decl; args; expect_error } : Frontend.entry_point =
     (Fun.flip List.map) entry_points
   in
   (* execute! *)
@@ -99,10 +99,6 @@ let exec_crate (crate : Charon.UllbcAst.crate)
   let@ () = print_outcomes entry_name in
   Fmt.pr "%a %a@." (pp_clr `Teal) "=>" (pp_style `Bold)
     ("Running " ^ entry_name ^ "...");
-  let args : Typed.([> T.any ] t) list =
-    if entry_name = "miri_start" then Typed.[ BV.usizei 0; Typed.Ptr.null_f () ]
-    else []
-  in
   let branches =
     let@ () = Crate.L.entry_point_section fun_decl.item_meta.name in
     let@ () = Layout.Session.with_layout_cache in

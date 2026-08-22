@@ -62,7 +62,7 @@ let pp_meta_kind ft = function
   | NoneKind -> Fmt.string ft "unit"
 
 let rec dst_kind : Types.ty -> meta_kind = function
-  | TAdt { id = TBuiltin TStr; _ } | TSlice _ -> LenKind
+  | TSlice _ -> LenKind
   | TDynTrait _ -> VTableKind
   | TAdt adt when Crate.is_struct adt -> (
       match List.last_opt (Crate.as_struct adt) with
@@ -74,7 +74,6 @@ let rec dst_kind : Types.ty -> meta_kind = function
 (** If this is a DST type with a slice tail, return the type of the slice's
     element. Errors otherwise. *)
 let rec dst_slice_ty : Types.ty -> Types.ty = function
-  | TAdt { id = TBuiltin TStr; _ } -> TLiteral (TUInt U8)
   | TSlice sub_ty -> sub_ty
   | TAdt adt when Crate.is_struct adt -> (
       match List.last_opt (Crate.as_struct adt) with
@@ -83,9 +82,8 @@ let rec dst_slice_ty : Types.ty -> Types.ty = function
   | ty -> L.failwith "dst_slice_ty: unexpected type: %a" pp_ty ty
 
 (** Returns the resulting type obtained when indexing into the given type. Only
-    valid for arrays, slices and [str]. *)
+    valid for arrays and slices. *)
 let index_ty : Types.ty -> Types.ty = function
-  | TAdt { id = TBuiltin TStr; _ } -> TLiteral (TUInt U8)
   | TSlice ty | TArray (ty, _) -> ty
   | ty -> L.failwith "slice_ty: unexpected type: %a" pp_ty ty
 
@@ -103,8 +101,9 @@ let pointee_metadata (pointee : Types.ty) : Types.ty =
       let adt = Crate.get_adt_lang_item RustcLangItemDynMetadata in
       TAdt
         {
-          id = TAdtId adt.def_id;
+          id = adt.def_id;
           generics = TypesUtils.mk_generic_args_from_types [ pointee ];
+          builtin = None;
         }
 
 let[@inline] size_to_fit ~size ~align =
@@ -112,6 +111,17 @@ let[@inline] size_to_fit ~size ~align =
     (size %@ align ==@ Usize.(0s))
     size
     (size +!!@ align -!!@ (size %@ align))
+
+(** The alignment a field of alignment [align] has within a value of type [ty]:
+    [repr(packed(n))] caps the alignment of every field to [n]. *)
+let packed_align (ty : Types.ty) align =
+  match ty with
+  | TAdt { id; _ } -> (
+      match (Crate.get_adt_raw id).layout with
+      | [ (_triple, { repr = { align_modif = Some (Pack n); _ }; _ }) ] ->
+          BV.min ~signed:false align (BV.usizeinz n)
+      | _ -> align)
+  | _ -> align
 
 let mk ~size ~align ?(uninhabited = false)
     ?(fields : Fields_shape.t = Primitive) () =
@@ -133,7 +143,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let align = align_of_literal_ty ty in
       ok (mk_concrete ~size ~align ())
   (* Fat pointers *)
-  | TAdt { id = TBuiltin TBox; generics = { types = [ sub_ty ]; _ } }
+  | TAdt { generics = { types = [ sub_ty ]; _ }; builtin = Some TBox; _ }
   | TRef (_, sub_ty, _)
   | TRawPtr (sub_ty, _)
     when is_dst sub_ty ->
@@ -143,7 +153,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
            ~fields:(Array { stride = BV.usizei ptr_size; is_ptr = true })
            ())
   (* Refs, pointers, boxes, function pointers *)
-  | TAdt { id = TBuiltin TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) | TFnPtr _
+  | TAdt { builtin = Some TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) | TFnPtr _
     ->
       let ptr_size = Crate.pointer_size () in
       ok (mk_concrete ~size:ptr_size ~align:ptr_size ())
@@ -153,7 +163,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
      layout, to get e.g. the offset of the tail in a DST struct. FIXME: Maybe we
      should mark the layout as a DST, and ensure a DST layout's size is never
      used for an allocation. *)
-  | TAdt { id = TBuiltin TStr; _ } | TSlice _ ->
+  | TSlice _ ->
       let sub_ty = match ty with TSlice ty -> ty | _ -> TLiteral (TUInt U8) in
       let++ sub_layout = layout_of sub_ty in
       mk ~size:(BV.usizei 0) ~align:sub_layout.align
@@ -161,10 +171,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
         ()
   (* Same as above, but here we have even less information ! *)
   | TDynTrait _ -> ok (mk_concrete ~size:0 ~align:1 ())
-  (* Tuples *)
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      compute_arbitrary_layout ty types
-  (* Custom ADTs (struct, enum, etc.) *)
+  (* ADTs (struct, enum, tuple, etc.) *)
   | TAdt adt -> (
       let adt = Crate.get_adt adt in
       match (adt.layout, adt.kind) with
@@ -210,8 +217,6 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TPattern (ty, _) -> layout_of ty
   (* Type variables : non-deterministically generate a layout *)
   | TVar (Free _) ->
-      (* FIXME: we need to scope these type variables, as the T in foo<T> and in
-         bar<T> are "different" Ts. *)
       let* size = nondet (Typed.t_usize ()) in
       let* () = assume Usize.[ 0s <=$@ size; size <$@ 1024s ] in
       (* this is real non-determinism of the alignment; we don't do it because
@@ -254,10 +259,10 @@ and translate_layout adt_kind ty (layout : Types.layout) =
   let uninhabited = layout.uninhabited in
   let discriminator = Option.map translate_discriminator layout.discriminator in
   let variant_layouts =
-    List.mapi
-      (fun i v_opt : (Fields_shape.tagger * Fields_shape.t) ->
+    List.map
+      (fun v_opt : (Fields_shape.tagger * Fields_shape.t) ->
         match (v_opt : Types.variant_layout option) with
-        | None | Some { uninhabited = true; _ } -> (None, Primitive)
+        | None -> (None, Primitive)
         | Some v ->
             let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
             let tagger =
@@ -478,9 +483,6 @@ let max_value_z : Types.literal_type -> Z.t = function
   | _ -> L.failwith "Invalid integer type for max_value_z"
 
 let rec is_unsafe_cell : Types.ty -> bool = function
-  | TAdt { id = TTuple; generics = { types; _ } } ->
-      List.exists is_unsafe_cell types
-  | TAdt { id = TBuiltin _; _ } -> false
   | TAdt adt -> (
       if adt_is_unsafe_cell adt then true
       else
@@ -502,16 +504,13 @@ let rec is_unsafe_cell : Types.ty -> bool = function
 let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   let is_ptr_like : Types.ty -> bool = function
     | TRef _ | TRawPtr _ -> true
-    | TAdt { id = TBuiltin TBox; _ } -> true
+    | TAdt { builtin = Some TBox; _ } -> true
     | TAdt adt -> adt_is_box adt
     | _ -> false
   in
   let is_repr_transparent (adt : Types.type_decl_ref) =
-    match adt.id with
-    | TAdtId id ->
-        [%matches? [ (_triple, { repr = { transparent = true; _ }; _ }) ]]
-          (Crate.get_adt_raw id).layout
-    | _ -> false
+    [%matches? [ (_triple, { repr = { transparent = true; _ }; _ }) ]]
+      (Crate.get_adt_raw adt.id).layout
   in
   let rec find_non_zst_field = function
     | [] -> Result.ok None
@@ -573,29 +572,40 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
       ty1_1zst &&@ ty2_1zst
 
 (** Returns the path through an ADT to the pointer that is the target of an
-    unsizing operation, returning [None] if no path was found. If the path is
-    [Some], it is guaranteed that following the path leads to a pointer type.
+    unsizing operation from [from_ty] to [to_ty]; [None] is returned if no path
+    was found.
 
-    The path is found by recursively exploring the last non-ZST field of the
-    structure, until a pointer is found. *)
-let rec unsize_path ty : (int list option, _, _) Result.t =
+    The path is found by recursively exploring the field whose type differs
+    between the source and the target structure, ignoring 1ZSTs, until a pointer
+    is found. *)
+let unsize_path ~(from_ty : Types.ty) ~(to_ty : Types.ty) :
+    (int list option, _, _) Result.t =
   let ( let*** ) x f = bind (function Some x -> f x | None -> ok None) x in
-  let ( let**/ ) x f = bind (function Some _ as x -> ok x | None -> f ()) x in
-  let rec find_last_non_zst_field idx tys =
-    match tys with
-    | [] -> ok None
-    | ty :: rest ->
-        let**/ () = find_last_non_zst_field (idx + 1) rest in
-        let** is_zst = is_zst ty in
-        if%sat is_zst then ok None else ok (Some (idx, ty))
+  let rec find_coerced_field idx from_tys to_tys =
+    match (from_tys, to_tys) with
+    | [], [] -> ok None
+    | [], _ | _, [] -> L.failwith "unsize_path: mismatched types"
+    | from_ty :: from_rest, to_ty :: to_rest ->
+        if Types.equal_ty from_ty to_ty then
+          find_coerced_field (idx + 1) from_rest to_rest
+        else
+          let** is_1zst = is_1zst from_ty in
+          if%sat is_1zst then find_coerced_field (idx + 1) from_rest to_rest
+          else ok (Some (idx, from_ty, to_ty))
   in
-  let rec aux acc = function
-    | Types.TRawPtr _ | TRef _ -> ok (Some acc)
-    | TPattern (ty, _) -> aux acc ty
-    | TAdt adt when Crate.is_struct_or_tuple adt ->
-        let tys = Crate.as_struct_or_tuple adt in
-        let*** idx, ty = find_last_non_zst_field 0 tys in
-        aux (idx :: acc) ty
-    | ty -> ok None
+  let rec aux acc from_ty to_ty =
+    match (from_ty, to_ty) with
+    | (Types.TRawPtr _ | TRef _), _ -> ok (Some (List.rev acc))
+    | TPattern (from_ty, _), _ -> aux acc from_ty to_ty
+    | _, Types.TPattern (to_ty, _) -> aux acc from_ty to_ty
+    | TAdt from_adt, TAdt to_adt
+      when Crate.is_struct from_adt && Crate.is_struct to_adt ->
+        let*** idx, from_ty, to_ty =
+          find_coerced_field 0
+            (Crate.as_struct_tys from_adt)
+            (Crate.as_struct_tys to_adt)
+        in
+        aux (idx :: acc) from_ty to_ty
+    | _ -> ok None
   in
-  map (Option.map List.rev) @@ aux [] ty
+  aux [] from_ty to_ty

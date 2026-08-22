@@ -6,6 +6,7 @@ open Svalue
 open Typed
 open Typed.Infix
 open Typed.Syntax
+open Common.Charon_util
 
 type fn =
   | Alloc of { zeroed : bool }
@@ -27,11 +28,6 @@ let fn_pats =
 module M (StateM : State.StateM.S) = struct
   open StateM
   open Syntax
-
-  (* NonNull<u8> is a struct { pointer: *const u8 is !null }. Extract the inner
-     ptr. *)
-  let ptr_of_nonnull nonull =
-    Typed.cast_ptr_f @@ Typed.Adt.as_tuple1 @@ Typed.cast_tuple nonull
 
   (** Expects [std::mem::Alignment] OR just an alignment as a bitvector. We
       accept both forms, because the optim stub for [alloc_impl] passes a raw
@@ -70,13 +66,17 @@ module M (StateM : State.StateM.S) = struct
     in
     State.alloc_untyped ~zeroed ~size ~align ()
 
-  let dealloc args =
+  let dealloc (fn_sig : Charon.Types.fun_sig) args =
     let ptr, size, align =
       match args with
-      | [ ptr_val; size; align ] ->
-          (ptr_of_nonnull ptr_val, Typed.cast_i Usize size, align_of_enum align)
+      | [ ptr; size; align ] ->
+          (ptr, Typed.cast_i Usize size, align_of_enum align)
       | _ -> L.failwith "dealloc: invalid arguments"
     in
+    let* ptr =
+      State.transmute ~from:(List.hd fn_sig.inputs) ~to_:unit_ptr ptr
+    in
+    let ptr = Typed.cast_ptr_f ptr in
     let ptr_in = Typed.Ptr.ptr_of ptr in
     let alloc_size, alloc_align = Typed.Ptr.allocation_info ptr_in in
     let* () =
@@ -85,16 +85,20 @@ module M (StateM : State.StateM.S) = struct
     let+ () = State.free ptr in
     Typed.Adt.unit
 
-  let realloc args =
+  let realloc (fn_sig : Charon.Types.fun_sig) args =
     let ptr, old_size, align, size =
       match args with
       | [ ptr; old_size; align; size ] ->
-          ( ptr_of_nonnull ptr,
+          ( ptr,
             Typed.cast_i Usize old_size,
             align_of_enum align,
             Typed.cast_i Usize size )
       | _ -> L.failwith "realloc: invalid arguments"
     in
+    let* ptr =
+      State.transmute ~from:(List.hd fn_sig.inputs) ~to_:unit_ptr ptr
+    in
+    let ptr = Typed.cast_ptr_f ptr in
     let ptr_in = Typed.Ptr.ptr_of ptr in
     let prev_size, prev_align = Typed.Ptr.allocation_info ptr_in in
     let* () =
@@ -111,10 +115,10 @@ module M (StateM : State.StateM.S) = struct
   let no_alloc_shim_is_unstable _ = ok Typed.Adt.unit
   let error_handler _ = error `InvalidAlloc
 
-  let[@inline] fn_to_stub = function
+  let[@inline] fn_to_stub fn_sig = function
     | Alloc { zeroed } -> alloc ~zeroed
-    | Dealloc -> dealloc
+    | Dealloc -> dealloc fn_sig
     | NoAllocShimIsUnstable -> no_alloc_shim_is_unstable
-    | Realloc -> realloc
+    | Realloc -> realloc fn_sig
     | ErrorHandler -> error_handler
 end

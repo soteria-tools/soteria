@@ -71,7 +71,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     atomic_warn ();
     ok ()
 
-  let atomic_load ~t ~ord:_ ~src =
+  let atomic_load ~t ~ord:_ ~volatile:_ ~src =
     atomic_warn ();
     State.load src t
 
@@ -79,7 +79,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     atomic_warn ();
     ok ()
 
-  let atomic_store ~t ~ord:_ ~dst ~val_ =
+  let atomic_store ~t ~ord:_ ~volatile:_ ~dst ~val_ =
     atomic_warn ();
     State.store dst t val_
 
@@ -242,14 +242,8 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
      *     _filename: PhantomData<&'a str>,
      * }
      *)
-    let location_adt = Crate.get_adt_lang_item RustcLangItemPanicLocation in
-    let generics : Types.generic_args =
-      TypesUtils.generic_args_of_params () location_adt.generics
-    in
-    let tref : Types.type_decl_ref =
-      { id = TAdtId location_adt.def_id; generics }
-    in
-    let location_ty : Types.ty = TAdt tref in
+    let location_ref = Crate.get_adt_lang_item_ref RustcLangItemPanicLocation in
+    let location_ty : Types.ty = TAdt location_ref in
     let* trace = get_trace () in
     let filename, col, line =
       match trace.loc with
@@ -809,10 +803,20 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let fmuladdf128 = fmul_add
   let forget ~t:_ ~arg:_ = ok ()
 
+  let is_val_statically_known_ux =
+    String.Interned.intern
+      "core::intrinsics::is_val_statically_known was stubbed to always return \
+       false, to avoid path explosion. This is an under-approximation, some \
+       paths may be missed."
+
+  (* UX: the caller must be correct for either answer, so a symbolic one only
+     doubles the paths -- and [format!] asks for one per call. We answer false,
+     like the fallback body Rust ships. See:
+     https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
   let is_val_statically_known ~t:_ ~arg:_ =
-    (* see:
-       https://doc.rust-lang.org/std/intrinsics/fn.is_val_statically_known.html *)
-    lift_symex @@ Rustsymex.nondet Typed.t_bool
+    if Soteria.Symex.Approx.As_ctx.is_ox () then
+      Soteria.Terminal.Warn.warn_once is_val_statically_known_ux;
+    ok Typed.v_false
 
   let float_minmax ~is_min ~x ~y : T.sfloat Typed.t ret =
     let x = (x :> T.sfloat Typed.t) in
@@ -831,6 +835,10 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let maxnumf32 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf64 ~x ~y = float_minmax ~is_min:false ~x ~y
   let maxnumf128 ~x ~y = float_minmax ~is_min:false ~x ~y
+  let prefetch_read_data ~t:_ ~locality:_ ~data:_ = ok ()
+  let prefetch_read_instruction ~t:_ ~locality:_ ~data:_ = ok ()
+  let prefetch_write_data ~t:_ ~locality:_ ~data:_ = ok ()
+  let prefetch_write_instruction ~t:_ ~locality:_ ~data:_ = ok ()
 
   let ptr_guaranteed_cmp ~t ~ptr ~other =
     Core.eval_ptr_binop ~pointee:t Eq ptr other
@@ -983,12 +991,63 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     let str = Fmt.to_to_string pp_ty t in
     Core.string_to_ptr str
 
+  let type_id_eq ~a ~b =
+    let words id =
+      Typed.Adt.as_tuple1 id |> Typed.cast_array |> Typed.Adt.as_array
+    in
+    let a = words a in
+    let b = words b in
+    Iter.of_iarray2 a b
+    |> fold_iter ~init:Typed.v_true ~f:(fun acc (a, b) ->
+        let* a = Sptr.decay Typed.(Ptr.ptr_of (cast_ptr_f a)) in
+        let+ b = Sptr.decay Typed.(Ptr.ptr_of (cast_ptr_f b)) in
+        acc &&@ (a ==@ b))
+    |> map (fun b -> Typed.((b : T.sbool t :> [> T.sbool ] t)))
+
+  let type_id_of_unknown name =
+    not_impl ~issue:187 "compile-time TypeId reflection is not supported (%s)"
+      name
+
+  let size_of_type_id ~id:_ = type_id_of_unknown "size_of_type_id"
+
+  let type_id_fields ~id:_ ~variant_index:_ =
+    type_id_of_unknown "type_id_fields"
+
+  let type_id_variants ~id:_ = type_id_of_unknown "type_id_variants"
+  let type_id_vtable ~id:_ ~trait:_ = type_id_of_unknown "type_id_vtable"
+  let type_of ~id:_ = type_id_of_unknown "type_of"
+
+  let type_id_field_representing_type ~id:_ ~variant_index:_ ~field_index:_ =
+    type_id_of_unknown "type_id_field_representing_type"
+
   let unchecked_op op ~t ~x ~y =
     let t = TypesUtils.ty_as_literal t in
     let x = Typed.cast_lit t x in
     let y = Typed.cast_lit t y in
     let+ res = Core.eval_lit_binop op t x y in
     res
+
+  let funnel_ ~(side : [ `Left | `Right ]) ~t ~a ~b ~shift =
+    let t = TypesUtils.ty_as_literal t in
+    let bits = 8 * Layout.size_of_literal_ty t in
+    let a = Typed.cast_lit t a in
+    let b = Typed.cast_lit t b in
+    let+ () = assert_ (shift <@ BV.mki 32 bits) `InvalidShift in
+    let bits' = BV.mki_nz bits bits in
+    let shift =
+      if bits <= 32 then BV.extract 0 (bits - 1) shift
+      else if bits > 32 then BV.extend ~signed:false (bits - 32) shift
+      else (shift :> T.sint Typed.t)
+    in
+    let inv = bits' -!!@ shift in
+    match side with
+    | `Left -> a <<@ shift |@ (b >>@ inv)
+    | `Right -> b >>@ shift |@ (a <<@ inv)
+
+  let unchecked_funnel_shl ~t ~a ~b ~shift = funnel_ ~side:`Left ~t ~a ~b ~shift
+
+  let unchecked_funnel_shr ~t ~a ~b ~shift =
+    funnel_ ~side:`Right ~t ~a ~b ~shift
 
   let unchecked_add ~t ~x ~y = unchecked_op (Add OUB) ~t ~x ~y
   let unchecked_div ~t ~x ~y = unchecked_op (Div OUB) ~t ~x ~y
@@ -1086,13 +1145,13 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
 
   (* The element type of a SIMD vector, i.e. the [T] in its `[T; N]` field. *)
   let simd_elem_lit (ty : Types.ty) : Types.literal_type =
-    match Crate.as_struct_or_tuple (ty_as_adt ty) with
+    match Crate.as_struct_tys (ty_as_adt ty) with
     | [ TArray (TLiteral lit, _) ] -> lit
     | _ -> Fmt.failwith "expected a SIMD vector type, got %a" pp_ty ty
 
   (* The number of lanes [N] of a SIMD vector. *)
   let simd_len (ty : Types.ty) =
-    match Crate.as_struct_or_tuple (ty_as_adt ty) with
+    match Crate.as_struct_tys (ty_as_adt ty) with
     | [ TArray (_, len) ] ->
         let* len =
           of_opt_not_impl "simd_len with generic length"

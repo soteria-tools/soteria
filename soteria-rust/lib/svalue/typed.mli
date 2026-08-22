@@ -127,6 +127,7 @@ module BitVec : sig
   val u128i : int -> [> T.sint ] t
   val usize : Z.t -> [> T.sint ] t
   val usizei : int -> [> T.sint ] t
+  val usizenz : Z.t -> [> T.nonzero ] t
   val usizeinz : int -> [> T.nonzero ] t
 
   (* helpers *)

@@ -167,9 +167,35 @@ def kani(opts: CliOpts) -> TestConfig:
 
 
 def miri(opts: CliOpts) -> TestConfig:
+    def target_flags(file: Path) -> list[str]:
+        """Miri gates tests on the platform with `//@only-target:` and
+        `//@ignore-target:` (and their `-host` equivalents, the same thing for
+        us), each a list of target triple substrings, optionally followed by a
+        `#` comment. We don't run the code, so rather than skip a test meant for
+        another platform, we analyse it for a target it applies to."""
+
+        def patterns(directive: str) -> list[str]:
+            line = get_config_line(file, f"//@{directive}:")
+            return line.split("#")[0].split() if line else []
+
+        only = patterns("only-target") + patterns("only-host")
+        ignore = patterns("ignore-target") + patterns("ignore-host")
+
+        def applies(target: str) -> bool:
+            return (not only or any(p in target for p in only)) and not any(
+                p in target for p in ignore
+            )
+
+        targets = get_targets()
+        if applies(targets[0]):
+            return []
+        # if no target applies, analyse it on the host anyway, and let it fail
+        target = next((t for t in targets if applies(t)), None)
+        return [f"--target={target}"] if target else []
+
     @with_cache
     def soteria_dyn_flags(file: Path) -> list[str]:
-        flags = []
+        flags = target_flags(file)
         config = get_config_line(file, "//@compile-flags:")
         config = config.split() if config else []
         while config:
@@ -213,12 +239,15 @@ def miri(opts: CliOpts) -> TestConfig:
                     "-Zoom=panic",
                     "-Cpanic",
                     "-Cdebug-assertions",
-                    # Target CPU/feature selection (e.g. enabling AVX2 for SIMD
-                    # intrinsic tests); Soteria doesn't gate on these.
-                    "-Ctarget-feature",
-                    "-Ctarget-cpu",
                 ]
             ):
+                continue
+
+            # Target CPU/feature selection (e.g. enabling AVX2 for SIMD
+            # intrinsic tests); rustc decides what these imply, so hand them to
+            # it rather than interpreting them ourselves.
+            if miri_flag.startswith(("-Ctarget-feature", "-Ctarget-cpu")):
+                flags.append(f"--rustc={miri_flag}")
                 continue
 
             # Miri runtime flags that tune its interpreter, scheduler, RNG,

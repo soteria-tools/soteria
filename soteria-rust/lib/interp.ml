@@ -21,8 +21,19 @@ module Make (StateImpl : State.S) = struct
   type 'a t = ('a, Store.t) StateM.t
   type 'err fun_exec = Typed.(T.any t) list -> (Typed.(T.any t), unit) StateM.t
 
-  type lazy_ptr = Store of Store.Place.t | Heap of Typed.T.sptr_f Typed.t
-  [@@deriving show { with_path = false }]
+  (** The pointer a place was created from, and the type it was created at.
+      {b A place must be aligned for that type}, not for the accessed subplace
+      (we trust projections to be well-aligned). This enables accesses to
+      [repr(packed)] ADTs without misaligned errors. *)
+  type align_root = (Typed.T.sptr_f Typed.t * Types.ty) option
+
+  type lazy_ptr =
+    | Store of Store.Place.t
+    | Heap of Typed.T.sptr_f Typed.t * align_root
+
+  let pp_lazy_ptr ft = function
+    | Store sp -> Fmt.pf ft "store(%a)" Store.Place.pp sp
+    | Heap (ptr, _) -> Fmt.pf ft "heap(%a)" Typed.ppa ptr
 
   (** Spills a local variable onto the heap *)
   let get_variable_ptr var_id =
@@ -34,6 +45,7 @@ module Make (StateImpl : State.S) = struct
           "Variable %a has pointer %a" Expressions.pp_var_id var_id Typed.ppa
             ptr];
         ok ptr
+    | Unowned ptr -> ok ptr
     | Dead -> error `DeadVariable
     | Uninit | Value _ -> (
         let* zst_dangling = Sptr.dangling_if_zst binding.ty in
@@ -76,16 +88,20 @@ module Make (StateImpl : State.S) = struct
     let arg_locals = List.sub ~from:1 ~len:locals.arg_count locals.locals in
     Iter.of_list_combine arg_locals args
     |> fold_iter ~init:[] ~f:(fun acc ((local : GAst.local), value) ->
-        (* Passed (nested) references must be protected and be valid. *)
-        let* value, protected' =
-          Value_codec.ref_tys_in local.local_ty value ~init:acc
-            ~f:(fun acc ptr_ty ptr ->
-              let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
-              let pointee = Charon_util.get_pointee ptr_ty in
-              (ptr', (ptr', pointee) :: acc))
-        in
-        let+ () = map_env (Store.declare_value local.index value) in
-        protected')
+        let* ty = Layout.normalise local.local_ty in
+        if Layout.is_dst ty then
+          let value = Typed.cast_ptr_f value in
+          let+ () = map_env (Store.declare_unowned local.index value) in
+          acc
+        else
+          let* value, protected' =
+            Value_codec.ref_tys_in ty value ~init:acc ~f:(fun acc ptr_ty ptr ->
+                let+ ptr' = State.borrow ~protect:true ptr ptr_ty in
+                let pointee = Charon_util.get_pointee ptr_ty in
+                (ptr', (ptr', pointee) :: acc))
+          in
+          let+ () = map_env (Store.declare_value local.index value) in
+          protected')
 
   (** [dealloc_stack ?protected_address store protected st] Deallocates the
       locations in [st] used for the variables in [store]; if
@@ -100,7 +116,7 @@ module Make (StateImpl : State.S) = struct
     let* store = get_env () in
     iter_iter (Store.iter_bindings store) ~f:(fun (_, binding) ->
         match (binding.kind, protected_address) with
-        | (Dead | Uninit | Value _), _ -> ok ()
+        | (Dead | Uninit | Value _ | Unowned _), _ -> ok ()
         | Stackptr ptr, None -> State.free ptr
         | Stackptr fptr, Some protect ->
             let ptr = Typed.Ptr.ptr_of fptr in
@@ -320,37 +336,40 @@ module Make (StateImpl : State.S) = struct
     | CVTableRef _ ->
         not_impl "vtable-reference constants are not yet supported: %a"
           Crate.pp_constant_expr const
-    | CTypeId _ ->
-        (not_impl ~issue:187) "TypeId constants are not yet supported: %a"
-          Crate.pp_constant_expr const
+    | CTypeId ty ->
+        let* id = State.type_id ty in
+        State.transmute ~from:(TLiteral (TUInt U128)) ~to_:const.ty id
     | COpaque msg ->
         not_impl "opaque constant: %s; something went wrong in the frontend" msg
 
   (** Resolves a place to a pointer *)
-  and resolve_place (place : Expressions.place) : Typed.([> T.sptr_f ] t) t =
+  and resolve_place place = map fst @@ resolve_place_rooted place
+
+  (** Resolves a place to a pointer, along with the alignment requirement it
+      inherits from the pointer it was created from (see {!align_root}). *)
+  and resolve_place_rooted (place : Expressions.place) :
+      (Typed.T.sptr_f Typed.t * align_root) t =
     match place.kind with
     (* Just a local *)
-    | PlaceLocal v -> get_variable_ptr v
+    | PlaceLocal v ->
+        let+ ptr = get_variable_ptr v in
+        (ptr, None)
     (* Just a global *)
-    | PlaceGlobal g -> resolve_global g
+    | PlaceGlobal g ->
+        let+ ptr = resolve_global g in
+        (ptr, None)
     (* Dereference a pointer *)
-    | PlaceProjection (base, Deref) -> (
+    | PlaceProjection (base, Deref) ->
         (* read the pointer value of [base] without spilling it to the heap *)
         let* loc = resolve_place_lazy base in
         let* ptr = load_lazy loc base.ty in
         [%l.debug "Dereferencing %a of %a" Typed.ppa ptr pp_ty base.ty];
         let ptr = Typed.cast_ptr_f ptr in
-        let pointee = get_pointee base.ty in
-        match base.ty with
-        | TRef _ ->
-            (* HACK: this should be verified when loading the pointer, rather
-               than here *)
-            let+ () = Sptr.check_aligned ptr pointee in
-            ptr
-        | _ -> ok ptr)
+        (* dereferencing is what gives a place its alignment requirement *)
+        ok (ptr, Some (ptr, get_pointee base.ty))
     (* The metadata of a pointer type is just the second part of the pointer *)
     | PlaceProjection (base, PtrMetadata) ->
-        let* ptr = resolve_place base in
+        let* ptr, root = resolve_place_rooted base in
         let* () = State.fake_read ptr base.ty in
         let ptr = Typed.Ptr.ptr_of ptr in
         [%l.debug
@@ -360,32 +379,36 @@ module Make (StateImpl : State.S) = struct
             Usize.(1s)
             ptr
         in
-        Typed.Ptr.of_ptr_t ptr'
-    | PlaceProjection (base, Field (kind, field)) ->
-        let* ptr = resolve_place base in
-        let* () = Sptr.check_aligned ptr base.ty in
+        (Typed.Ptr.of_ptr_t ptr', root)
+    | PlaceProjection (base, Field (variant, field)) ->
+        let* ptr, root = resolve_place_rooted base in
         [%l.debug
-          "Projecting field %a (kind %a) for %a" Types.pp_field_id field
-            Expressions.pp_field_proj_kind kind Typed.ppa ptr];
+          "Projecting field %a for %a" Types.pp_field_id field Typed.ppa ptr];
         let field = Types.FieldId.to_int field in
         let* layout = Layout.layout_of base.ty in
         let fields =
-          match kind with
-          | ProjAdt (_, Some variant) ->
+          match variant with
+          | Some variant ->
               Layout.Fields_shape.shape_for_variant variant layout.fields
-          | ProjAdt (_, None) | ProjTuple _ -> layout.fields
+          | None -> layout.fields
         in
         let off = Layout.Fields_shape.offset_of field fields in
         let* place_ty = Layout.normalise place.ty in
         let ptr_in = Typed.Ptr.ptr_of ptr in
-        let* ptr_in' = Sptr.offset ~check_signed:true off ptr_in in
+        let* off =
+          if not (Layout.is_dst place_ty) then ok off
+          else
+            let+ _, align = State.size_and_align_of_val place_ty ptr in
+            let align = Layout.packed_align base.ty align in
+            Layout.size_to_fit ~size:off ~align
+        in
+        let+ ptr_in' = Sptr.offset ~check_signed:true off ptr_in in
         [%l.debug
-          "Projecting ADT %a, field %d, with pointer %a to pointer %a"
-            Expressions.pp_field_proj_kind kind field Sptr.pp ptr_in Sptr.pp
-            ptr_in'];
-        ok (Typed.Ptr.with_ptr ptr ptr_in')
+          "Projecting ADT field %d, with pointer %a to pointer %a" field Sptr.pp
+            ptr Typed.ppa ptr_in'];
+        (Typed.Ptr.with_ptr ptr ptr_in', root)
     | PlaceProjection (base, ProjIndex (idx, from_end)) ->
-        let* ptr = resolve_place base in
+        let* ptr, root = resolve_place_rooted base in
         let* pointee = Layout.normalise base.ty in
         let* len, _ = len_of_indexable ~ptr ~pointee in
         let ptr = Typed.Ptr.ptr_of ptr in
@@ -399,9 +422,9 @@ module Make (StateImpl : State.S) = struct
         [%l.debug
           "Projected %a, index %a, to pointer %a" Sptr.pp ptr Typed.ppa idx
             Typed.ppa ptr'];
-        Typed.Ptr.of_ptr_t ptr'
+        (Typed.Ptr.of_ptr_t ptr', root)
     | PlaceProjection (base, Subslice (from, to_, from_end)) ->
-        let* ptr = resolve_place base in
+        let* ptr, root = resolve_place_rooted base in
         let* pointee = Layout.normalise base.ty in
         let* len, ty = len_of_indexable ~ptr ~pointee in
         let ptr = Typed.Ptr.ptr_of ptr in
@@ -423,7 +446,7 @@ module Make (StateImpl : State.S) = struct
             Typed.ppa from Typed.ppa to_
             (if from_end then "(from end)" else "")
             Typed.ppa ptr' Typed.ppa slice_len];
-        Typed.Ptr.mk_ptr_f ptr' slice_len
+        (Typed.Ptr.mk_ptr_f ptr' slice_len, root)
 
   (* The length of an array or slice being indexed; used to bound-check. *)
   and len_of_indexable ~ptr ~pointee =
@@ -445,17 +468,14 @@ module Make (StateImpl : State.S) = struct
     let open Syntax in
     match origin.kind with
     | PlaceLocal v -> ok Store.Place.{ kind = Local v; origin }
-    | PlaceProjection (base, Field (kind, field)) ->
+    | PlaceProjection (base, Field (variant, field)) ->
         (* we never go through unions, as they apply transmutations that require
            a heap access to be calculated. *)
-        let*^ () =
-          Option.of_bool
-            (match kind with
-            | ProjAdt (adt, None) -> not (Crate.is_union' adt)
-            | _ -> true)
-        in
+        let* ty = Layout.normalise base.ty in
+        let adt = ty_as_adt ty in
+        let*^ () = Option.of_bool (not (Crate.is_union adt)) in
         let++ base = build_store_place base in
-        Store.Place.{ kind = Field (base, kind, field); origin }
+        Store.Place.{ kind = Field (base, variant, field); origin }
     | PlaceProjection (base, PtrMetadata) ->
         let++ base = build_store_place base in
         Store.Place.{ kind = Metadata base; origin }
@@ -487,12 +507,14 @@ module Make (StateImpl : State.S) = struct
         let+ _ = Layout.layout_of place.ty in
         Store sp
     | None ->
-        let+ ptr = resolve_place place in
-        Heap ptr
+        let+ ptr, root = resolve_place_rooted place in
+        Heap (ptr, root)
 
   (** Given a lazy pointer, attempts performing a fallible operation [store]
       using the store. If the lazy pointer actually points to the heap, or if
-      the operation fails (returns [None]), uses [heap] instead. *)
+      the operation fails (returns [None]), uses [heap] instead. Pointer
+      alignment is checked before [heap] is called, so it is safe to skip
+      subsequent alignment checks through this pointer. *)
   and try_lazy :
       'a.
       store:(Store.Place.t -> Store.t -> 'a option t) ->
@@ -500,19 +522,28 @@ module Make (StateImpl : State.S) = struct
       lazy_ptr ->
       'a t =
    fun ~store ~heap loc ->
+    let heap (ptr, root) =
+      (* Now that we know a heap access is going to happen, check root align *)
+      let* () =
+        match root with
+        | None -> ok ()
+        | Some (root_ptr, root_ty) -> Sptr.check_aligned root_ptr root_ty
+      in
+      heap ptr
+    in
     match loc with
-    | Heap ptr -> heap ptr
+    | Heap (ptr, root) -> heap (ptr, root)
     | Store sp -> (
         let* s = get_env () in
         let* res_opt = store sp s in
         match res_opt with
         | Some res -> ok res
-        | None -> bind heap @@ resolve_place sp.origin)
+        | None -> bind heap @@ resolve_place_rooted sp.origin)
 
   and load_lazy loc ty : Typed.([> T.any ] t) t =
     Soteria.Stats.As_ctx.incr StatKeys.load_accesses;
     try_lazy loc
-      ~heap:(fun ptr -> State.load ptr ty)
+      ~heap:(fun ptr -> State.load ~ignore_align:true ptr ty)
       ~store:(fun sp store ->
         match Store.try_load sp store with
         | Some (Value v) ->
@@ -530,7 +561,7 @@ module Make (StateImpl : State.S) = struct
     let open OptionM.Syntax in
     [%l.info "Assigning %a <- %a" pp_lazy_ptr loc Typed.ppa v];
     try_lazy loc
-      ~heap:(fun ptr -> State.store ptr ty v)
+      ~heap:(fun ptr -> State.store ~ignore_align:true ptr ty v)
       ~store:(fun sp store ->
         let* store = get_env () in
         let*^ new_store = Store.try_store sp store v in
@@ -571,7 +602,7 @@ module Make (StateImpl : State.S) = struct
       The arguments must be passed, as for calls on [&dyn Trait] types the first
       argument holds the VTable pointer. *)
   and resolve_function ~in_tys ~out_ty :
-      GAst.fn_operand -> ('err fun_exec * Types.name option * Types.ty list) t =
+      GAst.fn_operand -> ('err fun_exec * Types.name option * Types.fun_sig) t =
     let validate_call ?(is_dyn = false) (fn : Types.fun_decl_ref) =
       let fn = Crate.get_fun fn.id in
       let rec check_tys l r =
@@ -595,18 +626,25 @@ module Make (StateImpl : State.S) = struct
       check_tys (out_ty :: in_tys) (fn.signature.output :: sig_ins)
     in
     let perform_call :
-        Fun_kind.t -> ('a fun_exec * Types.name option * Types.ty list) t =
+        Fun_kind.t -> ('a fun_exec * Types.name option * Types.fun_sig) t =
       function
-      | Synthetic _ as fn -> ok (exec_fun fn, None, in_tys)
+      | Synthetic _ as fn -> ok (exec_fun fn, None, mk_sig in_tys out_ty)
       | Real fn_decl as fn ->
           let fundef = Crate.get_fun fn_decl.id in
-          let+ inputs =
+          let+ fn_sig =
             Poly.push_generics ~params:fundef.generics ~args:fn_decl.generics
-            @@ fun _ -> Poly.subst_tys fundef.signature.inputs
+            @@ fun _ -> Poly.subst_fn_sig fundef.signature
+          in
+          let fn_sig =
+            if fundef.signature.is_variadic then
+              let inputs = fn_sig.inputs in
+              let extras = List.drop (List.length inputs) in_tys in
+              { fn_sig with inputs = inputs @ extras }
+            else fn_sig
           in
           [%l.info
             "Resolved function call to %a" Crate.pp_name fundef.item_meta.name];
-          (exec_fun fn, Some fundef.item_meta.name, inputs)
+          (exec_fun fn, Some fundef.item_meta.name, fn_sig)
     in
     function
     (* Handle builtins separately *)
@@ -633,7 +671,11 @@ module Make (StateImpl : State.S) = struct
   and resolve_global (glob : Types.global_decl_ref) : Typed.([> T.sptr_f ] t) t
       =
     let decl = Crate.get_global glob.id in
-    let* v_opt = State.load_global glob.id in
+    let@ generics =
+      Poly.push_generics ~params:decl.generics ~args:glob.generics
+    in
+    let glob : Types.global_decl_ref = { glob with generics } in
+    let* v_opt = State.load_global glob in
     match v_opt with
     | Some v -> ok v
     | None ->
@@ -644,11 +686,12 @@ module Make (StateImpl : State.S) = struct
           | NamedConst | AnonConst -> Const glob
         in
         let@ () = with_alloc_kind ~kind in
-        let* ptr = State.alloc_ty ~span:decl.item_meta.span.data decl.ty in
-        let* () = State.store_global glob.id ptr in
+        let* ty = Poly.subst_ty decl.ty in
+        let* ptr = State.alloc_ty ~span:decl.item_meta.span.data ty in
+        let* () = State.store_global glob ptr in
         (* And only after we compute it; this enables recursive globals *)
         let* v = resolve_constant decl.value in
-        let+ () = State.store ptr decl.ty v in
+        let+ () = State.store ptr ty v in
         [%l.info
           "Initialized global %a at %a to %a" Crate.pp_name decl.item_meta.name
             Typed.ppa ptr Typed.ppa v];
@@ -742,6 +785,7 @@ module Make (StateImpl : State.S) = struct
               | _ -> Typed.cast_lit from_ty v
             in
             ok (Value_codec.cast_literal ~from_ty ~to_ty v)
+        | Cast (CastUnsize (_, _, MetaVTableUpcast [])) -> ok v
         | Cast (CastUnsize (from_ty, to_ty, meta)) -> (
             let rec with_ptr_meta v = function
               | [] ->
@@ -757,7 +801,7 @@ module Make (StateImpl : State.S) = struct
                   let+ target = with_ptr_meta (Typed.Adt.field_of idx v) rest in
                   Typed.Adt.set_field idx target v
             in
-            let* unsize_path = Layout.unsize_path from_ty in
+            let* unsize_path = Layout.unsize_path ~from_ty ~to_ty in
             match unsize_path with
             | Some path -> with_ptr_meta v path
             | None -> not_impl "don't know how to unsize through %a" pp_ty ty)
@@ -866,22 +910,25 @@ module Make (StateImpl : State.S) = struct
             ok (BV.of_bool Typed.v_false)
         | SizeOf -> Layout.size_of ty
         | AlignOf -> Layout.align_of ty
-        | OffsetOf (ty, variant, field) ->
+        | OffsetOf (tref, variant, field) ->
             let variant = Option.value variant ~default:Types.VariantId.zero in
             let field = Types.FieldId.to_int field in
-            let ty : Types.ty = TAdt ty in
+            let ty : Types.ty = TAdt tref in
             let+ layout = Layout.layout_of ty in
             let fields =
               Layout.Fields_shape.shape_for_variant variant layout.fields
             in
             Typed.as_any @@ Layout.Fields_shape.offset_of field fields)
     | Discriminant place ->
-        if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
+        let* layout = Layout.layout_of place.ty in
+        if layout.uninhabited then error (`RefToUninhabited place.ty)
+        else if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
           let open OptionM in
           let open Syntax in
           let* loc = resolve_place_lazy place in
           try_lazy loc
-            ~heap:(fun ptr -> State.load_discriminant ptr place.ty)
+            ~heap:(fun ptr ->
+              State.load_discriminant ~ignore_align:true ptr place.ty)
             ~store:(fun sp store ->
               let*^ v = Store.try_load sp store in
               match v with
@@ -895,9 +942,9 @@ module Make (StateImpl : State.S) = struct
                       @@ State.load_discriminant (Typed.Ptr.of_ptr_t d) place.ty
                   | None -> error `UninitializedMemoryAccess)
               | _ -> none ())
-        (* If a type doesn't have variants, return 0.
-           https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
-          else ok U8.(0s)
+          (* If a type doesn't have variants, return 0.
+             https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
+        else ok U8.(0s)
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
         let* adt = Poly.subst_tyref adt in
@@ -946,7 +993,9 @@ module Make (StateImpl : State.S) = struct
         let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f ptr) in
         let+ meta =
           match meta_ty with
-          | TAdt { id = TTuple; generics = { types = []; _ } } -> ok None
+          | TAdt { builtin = Some TTuple; _ } when TypesUtils.ty_is_unit meta_ty
+            ->
+              ok None
           | TLiteral (TInt Isize | TUInt Usize) ->
               ok (Some (Typed.cast_i Usize meta))
           | TRawPtr _ | TRef _ ->
@@ -965,8 +1014,11 @@ module Make (StateImpl : State.S) = struct
         Typed.Ptr.mk_ptr_f_opt ptr meta
     (* Array repetition *)
     | Repeat (value, ty, len) ->
-        let+ value = eval_operand value in
-        let len = int_of_constant_expr len in
+        let* value = eval_operand value in
+        let len = z_of_constant_expr len in
+        let+ len =
+          of_opt_not_impl "array is too large to build" (Z.to_int_opt len)
+        in
         (* FIXME: this is horrible for large arrays! *)
         let els = Iarray.init len (fun _ -> value) in
         Typed.Adt.mk_array ty els
@@ -992,7 +1044,7 @@ module Make (StateImpl : State.S) = struct
         let* () =
           match binding.kind with
           | Stackptr ptr -> State.free ptr
-          | Dead | Uninit | Value _ -> ok ()
+          | Dead | Uninit | Value _ | Unowned _ -> ok ()
         in
         map_env (Store.declare_uninit local)
     | StorageDead local -> (
@@ -1002,7 +1054,7 @@ module Make (StateImpl : State.S) = struct
         | Stackptr ptr ->
             let* () = State.free ptr in
             map_env (Store.dealloc local)
-        | Uninit | Value _ -> map_env (Store.dealloc local)
+        | Uninit | Value _ | Unowned _ -> map_env (Store.dealloc local)
         | Dead -> ok ())
     | Assert ({ cond; expected; check_kind = _ }, on_failure) ->
         let* cond = eval_operand cond in
@@ -1023,8 +1075,35 @@ module Make (StateImpl : State.S) = struct
     | PlaceMention place ->
         let+ _ = resolve_place place in
         ()
-    | SetDiscriminant (_, _) ->
-        not_impl "writing enum discriminant directly is not yet supported"
+    | SetDiscriminant (place, variant) -> (
+        let* layout = Layout.layout_of place.ty in
+        let* variants =
+          match layout.fields with
+          | Enum (_, variants) -> ok variants
+          | _ -> not_impl "setting the discriminant of a non-enum"
+        in
+        let* ptr = resolve_place place in
+        let tagger, _ = variants.(Types.VariantId.to_int variant) in
+        match tagger with
+        | Some (offset, tag) ->
+            let size = Typed.size_of_int tag / 8 in
+            let tag_ty : Types.ty = TLiteral (TUInt (uint_ty_of_size size)) in
+            let ptr = Typed.Ptr.ptr_of ptr in
+            let* ptr = Sptr.offset ~check_signed:true offset ptr in
+            State.store (Typed.Ptr.of_ptr_t ptr) tag_ty tag
+        | None ->
+            (* The variant is untagged (or uninhabited), so it is only encoded
+               by the value itself; it must thus already be that variant. *)
+            let variants = Crate.as_enum (ty_as_adt place.ty) in
+            let expected =
+              (Types.VariantId.nth variants variant).discriminant
+            in
+            let* discr = State.load_discriminant ptr place.ty in
+            assert_
+              (discr ==@ BV.of_literal expected)
+              (`UBTransmute
+                 "set discriminant of an enum to its untagged variant, but the \
+                  value doesn't match"))
 
   and exec_block ~(body : UllbcAst.expr_body)
       ({ statements; terminator } : UllbcAst.block) =
@@ -1035,19 +1114,19 @@ module Make (StateImpl : State.S) = struct
     match terminator.kind with
     | Call ({ func; args; dest }, target, on_unwind) ->
         let in_tys = List.map type_of_operand args in
-        let* exec_fun, name, exp_tys =
-          resolve_function ~in_tys ~out_ty:dest.ty func
-        in
+        let* in_tys = Poly.subst_tys in_tys in
+        let* out_ty = Poly.subst_ty dest.ty in
+        let is_dyn_call = [%matches? FnOpDynamic _] func in
+        let* exec_fun, name, fn_sig = resolve_function ~in_tys ~out_ty func in
         (* the expected types of the function may differ to those passed, e.g.
            with function pointers or dyn calls, so we transmute here. *)
         let* args =
-          Iter.of_list_combine3 args in_tys exp_tys
+          Iter.of_list_combine3 args in_tys fn_sig.inputs
           |> map_iter ~f:(fun (arg, from, to_) ->
-              (* An unsized value cannot be passed by value: the ABI passes a
-                 thin pointer to its data instead, and the callee (a vtable
-                 shim) takes the receiver by pointer. This happens for calls to
-                 dyn-compatible methods taking [self] by value, like [<dyn
-                 FnOnce>::call_once]. *)
+              (* An unsized value is passed as a pointer to its data, that keeps
+                 the metadata if the callee's parameter is unsized too; it is
+                 thin if the callee is a vtable shim taking the receiver by
+                 pointer, as for [<dyn FnOnce>::call_once]. *)
               let* from = Layout.normalise from in
               let* to_ = Layout.normalise to_ in
               if Layout.is_dst from then
@@ -1057,10 +1136,11 @@ module Make (StateImpl : State.S) = struct
                   | Constant _ -> L.failwith "unsized constant argument"
                 in
                 let+ ptr = resolve_place place in
-                Typed.Ptr.of_ptr_t (Typed.Ptr.ptr_of ptr)
+                if Layout.is_dst to_ then Typed.as_any ptr
+                else Typed.Ptr.of_ptr_t (Typed.Ptr.ptr_of ptr)
               else
                 let* arg = eval_operand arg in
-                if Types.equal_ty from to_ then ok arg
+                if (not is_dyn_call) || Types.equal_ty from to_ then ok arg
                 else State.transmute ~from ~to_ arg)
         in
         [%l.info
@@ -1078,8 +1158,15 @@ module Make (StateImpl : State.S) = struct
             [%l.info
               "Returned %a <- %a from %a" Crate.pp_place dest Typed.ppa v
                 Crate.pp_fn_operand func];
+            (* like with arguments, the callee's return type may differ from the
+               one expected here. *)
+            let* v =
+              if (not is_dyn_call) || Types.equal_ty fn_sig.output out_ty then
+                ok v
+              else State.transmute ~from:fn_sig.output ~to_:out_ty v
+            in
             let* loc = resolve_place_lazy dest in
-            let* () = store_lazy loc dest.ty v in
+            let* () = store_lazy loc out_ty v in
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
@@ -1174,6 +1261,9 @@ module Make (StateImpl : State.S) = struct
     | UnstructuredBody body -> (
         match Std_funs.eval_stub fundef exec_fun generics with
         | Some stub -> stub args
+        | None when fundef.signature.is_variadic ->
+            not_impl ~issue:479
+              "can't execute the body of the C-variadic function %s" name_str
         | None ->
             let@ () = with_loc ~loc:fundef.item_meta.span.data in
             let@@ () = with_env ~env:Store.empty in
@@ -1216,7 +1306,7 @@ module Make (StateImpl : State.S) = struct
                       (Lazy.force Frontend_runtime.Cmd.toolchain_version)
                   in
                   let tip = ("to get a sysroot, run", Some cmd) in
-                  (not_impl ~tip ~issue:322)
+                  not_impl ~tip ~issue:322
                     "can't execute function %a, try using a sysroot (--sysroot)"
                     Crate.pp_name name
             | ErrorBody err ->
@@ -1246,6 +1336,13 @@ module Make (StateImpl : State.S) = struct
         ~loc:fundef.item_meta.span.data ~msg:"Entry point"
     in
     let@ () = StateM.with_frame "Entry point" in
+    let* () =
+      if List.compare_lengths fundef.signature.inputs args = 0 then ok ()
+      else
+        let expected = List.length fundef.signature.inputs in
+        let received = List.length args in
+        error (`InvalidFnArgCount (expected, received))
+    in
     let generics = TypesUtils.generic_args_of_params () fundef.generics in
     exec_real_fun fundef generics args
 
