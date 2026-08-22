@@ -128,7 +128,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         being reborrowed. *)
     let borrow ?(protect = false) (ptr_full : Typed.([< T.sptr_f ] t)) tag
         (ty : Types.ty) ofs =
-      let**^ pointee = DecayMap.SM.lift @@ Layout.normalise (get_pointee ty) in
+      let*^ pointee = DecayMap.SM.lift @@ Layout.normalise (get_pointee ty) in
       let ptr = Typed.Ptr.ptr_of ptr_full in
       (* FIXME: this logic is tree borrows related and should be handled there.
          https://github.com/soteria-tools/soteria/issues/301 *)
@@ -426,7 +426,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       check ptr' Typed.(cast_nonzero @@ BV.no_ovf_unsafe (BV.neg size))
 
   and check_non_dangling (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
-    let**^ ty = Layout.normalise ty in
+    let*^ ty = Layout.normalise ty in
     let**^ layout = Layout.layout_of ty in
     if layout.uninhabited then Result.error (`RefToUninhabited ty)
     else
@@ -457,7 +457,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       Types.ty ->
       (Typed.([> T.any ] t), Error.t, syn list) Result.t =
    fun ?ignore_borrow ?(check_refs = true) ?(ignore_align = false) ptr ty ->
-    let**^ ty = Layout.normalise ty in
+    let*^ ty = Layout.normalise ty in
     let** size, align = size_and_align_of_val ty ptr in
     let** () =
       if ignore_align then Result.ok ()
@@ -508,7 +508,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       a no-op. *)
   and fake_read ptr ty =
     let open Syntax in
-    let**^ ty = Layout.normalise ty in
+    let*^ ty = Layout.normalise ty in
     let lint_level = (Config.get ()).reference_to_invalid_memory in
     let skip_check =
       match (Layout.dst_kind ty, lint_level) with
@@ -568,7 +568,7 @@ module Make (Borrows : Tree_borrows.T) = struct
       (unit, Error.with_trace, syn list) Result.t =
     [%l.debug "Executing Store with pointer %a for %a" Typed.ppa ptr pp_ty ty];
     let@ () = with_loc_err ~trace:"Memory store" () in
-    let**^ ty = Layout.normalise ty in
+    let*^ ty = Layout.normalise ty in
     let**^ layout = Layout.layout_of ty in
     if%sat layout.size ==@ Usize.(0s) then Result.ok ()
     else
