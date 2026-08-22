@@ -41,3 +41,7 @@ let is_some_and f = function Some x -> f x | None -> false
 
 (** [true] if the option is [None] or if it is [Some x] and [f x] is true. *)
 let is_none_or f = function None -> true | Some x -> f x
+
+(** [of_exn f x] returns [Some (f x)] if [f x] does not raise an exception,
+    otherwise returns [None]. *)
+let of_exn (f : 'a -> 'b) (x : 'a) : 'b option = try Some (f x) with _ -> None

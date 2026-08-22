@@ -40,19 +40,19 @@ module Lib = struct
   let path lib = Lazy.force root / name lib
 
   (** [exec_cargo ?env lib args] executes the command [cargo <args>] for the
-      library [lib].
+      library [lib], and returns its standard output.
 
       @raise CompilationError
         if the command fails, with the error message from Cargo. *)
   let exec_cargo ?(env = []) lib args =
     let path = path lib in
     let env = Cmd.rustc_as_env () @ env in
-    let _, err, status =
+    let out, err, status =
       let@ () = Exe.run_in path in
       Exe.exec ~env (Cmd.cargo ()) args
     in
     match status with
-    | WEXITED (0 | 255) -> ()
+    | WEXITED (0 | 255) -> out
     | _ ->
         Fmt.kstr
           (compilation_err ("compiling plugin " ^ name lib))
@@ -61,36 +61,105 @@ module Lib = struct
           err
 
   (** Deletes the target directory of a target, to avoid duplicate builds *)
-  let clean lib = exec_cargo lib [ "clean" ]
+  let clean lib = ignore (exec_cargo lib [ "clean" ])
 
+  (** A target Cargo built, and the files it emitted for it. *)
+  type artifact = { name : string; files : string list }
+
+  (** The artifacts Cargo built, as listed by the [compiler-artifact] messages
+      of its JSON output.
+
+      Cargo will print different JSON messages, one per line. We are interested
+      in the [compiler-artifact] messages, that have the following shape:
+      {[
+      {
+        "reason": "compiler-artifact",
+        "target": { "name": "plugin", ... },
+        "filenames": [
+          "/path/to/plugin/target/<target>/debug/libplugin.rlib",
+          "/path/to/plugin/target/<target>/debug/build/plugin/<hash>/out/libplugin-<hash>.rmeta"
+        ],
+        ...
+      }
+      ]}
+
+      See also:
+      {{:https://doc.rust-lang.org/cargo/reference/external-tools.html#artifact-messages}
+       [compiler-artifact] documentation} *)
+  let artifacts_of_output lines =
+    let open Yojson.Safe.Util in
+    let ( $ ) json field = member field json in
+    Iter.of_list lines
+    |> Iter.filter_map (Option.of_exn Yojson.Safe.from_string)
+    |> Iter.filter (fun json ->
+        json $ "reason" |> to_string |> String.equal "compiler-artifact")
+    |> Iter.map (fun json ->
+        {
+          name = json $ "target" $ "name" |> to_string;
+          files = json $ "filenames" |> to_list |> filter_string;
+        })
+    |> Iter.to_list
+
+  (** The rustc flags needed to compile against [lib], given the built artifacts
+      for it. *)
+  let rustc_flags lib artifacts =
+    let artifact =
+      List.find (fun a -> String.equal a.name (name lib)) artifacts
+    in
+    let rlib =
+      List.find (fun f -> Filename.check_suffix f ".rlib") artifact.files
+    in
+    let search_dirs =
+      artifacts
+      |> List.concat_map (fun a -> a.files)
+      |> List.map (fun dir -> "-L" ^ Filename.dirname dir)
+    in
+    [ "--extern"; name lib ^ "=" ^ rlib ] @ search_dirs
+
+  (** File used to cache the rustc flags of a library. Allows
+      [--no-compile-plugins] to reuse the last build. *)
+  let flags_file lib = path lib / "target" / Lazy.force target / "soteria-flags"
+
+  (** Builds [lib] and returns the rustc flags to compile against it. If
+      [--no-compile-plugins] is set, the build is skipped and the flags recorded
+      by the last one are reused. *)
   let compile lib =
     let config = Config.get () in
-    if not config.no_compile_plugins then
+    let file = flags_file lib in
+    if config.no_compile_plugins then
+      try In_channel.with_open_text file In_channel.input_lines
+      with Sys_error _ ->
+        Fmt.kstr
+          (compilation_err ("compiling plugin " ^ name lib))
+          "No build of %s found; run [soteria-rust build-plugins] before using \
+           --no-compile-plugins"
+          (name lib)
+    else
       let env =
         Cmd.(current_rustc_flags () |> flags_for_cargo |> flags_as_rustc_env)
       in
       let args =
-        [ "build"; "--lib"; "--target"; Lazy.force target ]
-        @ if (Config.get ()).log_compilation then [ "--verbose" ] else []
+        [
+          "build";
+          "--lib";
+          "--target";
+          Lazy.force target;
+          "--message-format=json-render-diagnostics";
+        ]
+        @ (if config.log_compilation then [ "--verbose" ] else [])
+        @ if config.offline then [ "--offline" ] else []
       in
-      let args = if config.offline then args @ [ "--offline" ] else args in
-      exec_cargo ~env lib args
+      let stdout = exec_cargo ~env lib args in
+      let flags = rustc_flags lib (artifacts_of_output stdout) in
+      Out_channel.with_open_text file (fun out ->
+          flags |> List.iter (fun f -> Out_channel.output_string out (f ^ "\n")));
+      flags
 
   let with_compiled lib f =
     let path = path lib in
     let target = Lazy.force target in
-    compile lib;
+    let lib_imports = compile lib in
     let config : Cmd.t = f (path, target) in
-    let lib_imports =
-      [
-        "--extern";
-        name lib
-        ^ "="
-        ^ (path / "target" / target / "debug" / ("lib" ^ name lib ^ ".rlib"));
-        "-L" ^ (path / "target" / target / "debug" / "deps");
-        "-L" ^ (path / "target" / "debug" / "deps");
-      ]
-    in
     { config with rustc = config.rustc @ lib_imports }
 end
 
@@ -340,5 +409,5 @@ let compile_all_plugins () =
   List.iter
     (fun l ->
       Lib.clean l;
-      Lib.compile l)
+      ignore (Lib.compile l))
     [ Soteria; Std; Kani ]
