@@ -12,18 +12,6 @@ exception CompilationError of string * string
 let compilation_err info msg = raise (CompilationError (info, msg))
 
 module Lib = struct
-  let target =
-    lazy
-      (match (Config.get ()).target with
-      | Some t -> t
-      | None -> (
-          let env = Cmd.rustc_as_env () in
-          let info = Exe.exec_exn ~env (Cmd.cargo ()) [ "-vV" ] in
-          match List.find_opt (String.starts_with ~prefix:"host") info with
-          | Some s -> String.sub s 6 (String.length s - 6)
-          | None ->
-              compilation_err "executing rustc" "Couldn't find target host"))
-
   let root =
     lazy
       (match
@@ -118,7 +106,8 @@ module Lib = struct
 
   (** File used to cache the rustc flags of a library. Allows
       [--no-compile-plugins] to reuse the last build. *)
-  let flags_file lib = path lib / "target" / Lazy.force target / "soteria-flags"
+  let flags_file lib =
+    path lib / "target" / Lazy.force Cmd.target / "soteria-flags"
 
   (** Builds [lib] and returns the rustc flags to compile against it. If
       [--no-compile-plugins] is set, the build is skipped and the flags recorded
@@ -143,7 +132,7 @@ module Lib = struct
           "build";
           "--lib";
           "--target";
-          Lazy.force target;
+          Lazy.force Cmd.target;
           "--message-format=json-render-diagnostics";
         ]
         @ (if config.log_compilation then [ "--verbose" ] else [])
@@ -157,7 +146,7 @@ module Lib = struct
 
   let with_compiled lib f =
     let path = path lib in
-    let target = Lazy.force target in
+    let target = Lazy.force Cmd.target in
     let lib_imports = compile lib in
     let config : Cmd.t = f (path, target) in
     { config with rustc = config.rustc @ lib_imports }
@@ -195,9 +184,7 @@ let default () =
          "--format=postcard";
          "--no-typecheck";
          "--no-normalize";
-         (* Use the normal distributed sysroot; Charon otherwise defaults to a
-            full-MIR Miri sysroot, whose std is incompatible with our
-            separately-compiled [soteria] support crate. *)
+         (* Tell Charon to not specify any sysroot; we have our own *)
          "--sysroot=default";
        ]
       @ opaque_names
