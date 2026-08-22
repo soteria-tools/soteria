@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787321147421,
+  "lastUpdate": 1787402243813,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -8012,6 +8012,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 116.9032,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9c93c0c7887c84e86a9901dcd4bb08341b073a43",
+          "message": "Miscellaneous Rust improvements (#480)\n\n* cleanup known failures + restore fixed thing\n\n* rust: implement the unchecked_funnel_shl/shr intrinsics\n\n* rust: treat the prefetch intrinsics as no-ops\n\n* rust: let plugins provide the arguments to call an entry point with\n\n* rust: report reading the discriminant of an uninhabited enum as UB\n\n* rust: don't crash when calling a C-variadic function\n\n* rust: align a place for the pointer it was created from\n\n* Bump Obol\n\n* rust: pick the coerced field when unsizing through an ADT\n\n* rust: compute the offset of an unsized field at runtime\n\n* rust: support TypeId\n\n* remove `int_of_constant_expr`\n\n* rust: stub align_offset to avoid branching\n\n* rust: don't score a test whose paths all vanished as a pass\n\nAn entry point that completes having explored no branch had every one of its\npaths vanish, which is almost always the engine assuming something\ncontradictory. It reports no error, so the categoriser read it as a success --\na test could stop verifying anything at all and still count towards the score.\n\nReport those as `vanished` instead, naming the entry point, and count them\namong the tool errors.\n\n* rust: support passing an unsized value by value\n\n* rust: answer is_val_statically_known deterministically\n\nThe intrinsic returned a fresh symbolic boolean, so every call split the path\nin two; `format!` asks for one per call, so formatting n values in a loop cost\n2^n paths. Answer false, as the fallback body Rust ships does.\n\n* rust: build a decayed pointer's address with its low bits zeroed\n\n* rust: handle Miri target tests\n\n* rust: drop the known issues that now pass\n\n* Bump Charon and Obol\n\n* lol. lmao even.\n\n* rust: implement SetDiscriminant\n\n* rust: keep the field offsets of uninhabited variants\n\n* rust: stub miri_track_alloc and miri_write_to_stderr\n\nBoth are diagnostic-only, like the Miri externs already stubbed here.\n\n* rust: record the known issues behind the remaining suite failures\n\nEvery Miri and Kani failure that isn't Tree Borrows or floats now has an\nentry explaining why it fails.\n\nUpdate test_exclusions.py\n\n* rust: transmute return type of fn pointer\n\n* Fix freeing cells\n\n* Update claude files\n\n* review: proper ptr transmute\n\n* review: warn on align_offset ux\n\n* review: remove typo ^^\n\n* bump charon & obol again\n\n* fix globals dropping generics\n\n* Fix compiling plugins with new Cargo layout\n\n* bump obol again",
+          "timestamp": "2026-08-22T12:05:16Z",
+          "tree_id": "966d082639bcbe93108ba61844d174c1ae269a65",
+          "url": "https://github.com/soteria-tools/soteria/commit/9c93c0c7887c84e86a9901dcd4bb08341b073a43"
+        },
+        "date": 1787402241410,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 1.89457211174,
+            "range": "± 0.0252",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.80715167086,
+            "range": "± 0.0083",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.63318483044,
+            "range": "± 0.0079",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.40119496552000006,
+            "range": "± 0.0042",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 2.79925661046,
+            "range": "± 0.0195",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.57781758074,
+            "range": "± 0.0065",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.32990129294000003,
+            "range": "± 0.0049",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.95596987262,
+            "range": "± 0.0119",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 9.416053522843868,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 373,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 28,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 0,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 129.8551,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 498,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 85,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 20,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 6,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 109.7447,
             "unit": "s"
           }
         ]
