@@ -266,7 +266,6 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       (* we're basically guaranteed these won't error (ie. layout error) by now,
          so we can safely unwrap. *)
       let*^ ty = Layout.normalise ty in
-      let ty = get_ok ty in
       let*^ layout = Layout.layout_of ty in
       let layout = get_ok layout in
       let+^ v = Value_codec.nondet_valid ty in

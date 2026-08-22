@@ -68,8 +68,35 @@ let rec dst_kind : Types.ty -> meta_kind = function
       match List.last_opt (Crate.as_struct adt) with
       | None -> NoneKind
       | Some last -> dst_kind Types.(last.field_ty))
-  | TTraitType _ | TVar (Bound _) -> L.failwith "dst_kind: unnormalized type"
+  | TTraitType (tref, assoc_ty_id, args) ->
+      dst_kind (resolve_trait_ty tref assoc_ty_id args)
+  | TVar (Bound _) as ty ->
+      L.failwith "dst_kind: unnormalized type: %a" pp_ty ty
   | _ -> NoneKind
+
+(** Resolves the associated type [assoc_ty_id] of the trait reference [tref], if
+    the trait reference is resolved to an implementation. *)
+and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
+  match tref.kind with
+  | TraitImpl timplref ->
+      let impl = Crate.get_trait_impl timplref in
+      let trait_assoc_ty = Types.AssocTypeId.Map.find assoc_ty_id impl.types in
+      let trait_assoc_ty =
+        Substitute.(
+          apply_args_to_binder args
+            st_substitute_visitor#visit_trait_assoc_ty_impl trait_assoc_ty)
+      in
+      trait_assoc_ty.value
+  | BuiltinOrAuto (BuiltinPointee, _, _) -> (
+      let pointee = List.hd tref.trait_decl_ref.binder_value.generics.types in
+      match dst_kind pointee with
+      | NoneKind -> TypesUtils.mk_unit_ty
+      | LenKind -> TLiteral (TUInt Usize)
+      | VTableKind ->
+          let adt = Crate.get_adt_lang_item RustcLangItemDynMetadata in
+          let generics = TypesUtils.mk_generic_args_from_types [ pointee ] in
+          TAdt { id = adt.def_id; generics; builtin = None })
+  | _ -> L.failwith "resolve_trait_ty: can't resolve %a" Crate.pp_trait_ref tref
 
 (** If this is a DST type with a slice tail, return the type of the slice's
     element. Errors otherwise. *)
@@ -87,24 +114,9 @@ let index_ty : Types.ty -> Types.ty = function
   | TSlice ty | TArray (ty, _) -> ty
   | ty -> L.failwith "slice_ty: unexpected type: %a" pp_ty ty
 
-(** If this is a dynamically sized type (requiring a fat pointer) *)
+(** If this is a dynamically sized type (requiring a fat pointer). Requires the
+    input type to be normalised. *)
 let is_dst ty = dst_kind ty <> NoneKind
-
-(** The [Pointee::Metadata] associated type of a pointer to [pointee]: [()] for
-    sized types, [usize] for slices and [str], and [DynMetadata<Dyn>] for trait
-    objects. *)
-let pointee_metadata (pointee : Types.ty) : Types.ty =
-  match dst_kind pointee with
-  | NoneKind -> TypesUtils.mk_unit_ty
-  | LenKind -> TLiteral (TUInt Usize)
-  | VTableKind ->
-      let adt = Crate.get_adt_lang_item RustcLangItemDynMetadata in
-      TAdt
-        {
-          id = adt.def_id;
-          generics = TypesUtils.mk_generic_args_from_types [ pointee ];
-          builtin = None;
-        }
 
 let[@inline] size_to_fit ~size ~align =
   Typed.ite
@@ -234,8 +246,7 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TPtrMetadata _ -> not_impl_layout "pointer metadata" ty
   | TError _ -> not_impl_layout "error" ty
   | TTraitType (tref, assoc_ty_id, args) ->
-      let** resolved = resolve_trait_ty tref assoc_ty_id args in
-      layout_of resolved
+      layout_of (resolve_trait_ty tref assoc_ty_id args)
 
 and translate_discriminator : Types.discriminator -> Fields_shape.discriminator
     = function
@@ -407,28 +418,13 @@ and compute_union_layout ty members =
   let fields = Array.make (List.length members) (BV.usizei 0) in
   mk ~size ~align ~fields:(Arbitrary fields) ()
 
-and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
-  match tref.kind with
-  | TraitImpl timplref ->
-      let impl = Crate.get_trait_impl timplref in
-      let trait_assoc_ty = Types.AssocTypeId.Map.find assoc_ty_id impl.types in
-      (* HACK: we skip the binder here! *)
-      ok trait_assoc_ty.binder_value.value
-  | BuiltinOrAuto (BuiltinPointee, _, _) ->
-      let pointee = List.hd tref.trait_decl_ref.binder_value.generics.types in
-      ok (pointee_metadata pointee)
-  | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id, args))
-
 (** Normalise a type, by substituting any generics with the current generic
     environment, and resolving the trait type if needed. *)
 let normalise (ty : Types.ty) =
-  let** ty =
-    match ty with
-    | TTraitType (tref, name, args) -> resolve_trait_ty tref name args
-    | _ -> ok ty
-  in
-  let+ ty = Poly.subst_ty ty in
-  Ok ty
+  let* ty = Poly.subst_ty ty in
+  match ty with
+  | TTraitType (tref, name, args) -> return (resolve_trait_ty tref name args)
+  | _ -> return ty
 
 let[@inline] size_of ty =
   let++ { size; _ } = layout_of ty in
