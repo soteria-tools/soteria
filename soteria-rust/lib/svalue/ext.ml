@@ -10,6 +10,10 @@ let equal_ty = equal_ext_ty
 let compare_ty = compare_ext_ty
 let pp_ty ft (ty : 'ghost ty) = pp_ext_ty ft ty
 
+let pp_variant_name ft (var, ty) =
+  let vars = Crate.as_enum (t_as_enum ty) in
+  Fmt.string ft (Types.VariantId.nth vars var).variant_name
+
 let pp pp ft v =
   match v with
   | Ptr (ptr, meta) -> Fmt.pf ft "Ptr(%a, %a)" pp ptr pp meta
@@ -37,9 +41,9 @@ let pp pp ft v =
   | Unop (PtrMetaAs part, v) -> Fmt.pf ft "%a.as<%a>" pp v Unop.pp_ptr_meta part
   | Unop (Field i, v) -> Fmt.pf ft "%a.%d" pp v i
   | Unop (VariantField (var, i), v) ->
-      Fmt.pf ft "%a.as<%a>.%d" pp v Types.pp_variant_id var i
+      Fmt.pf ft "%a.as<%a>.%d" pp v pp_variant_name (var, v.node.ty) i
   | Unop (IsVariant var, v) ->
-      Fmt.pf ft "%a.is<%a>" pp v Types.pp_variant_id var
+      Fmt.pf ft "%a.is<%a>" pp v pp_variant_name (var, v.node.ty)
   | Unop (ArrayField i, v) -> Fmt.pf ft "%a[%d]" pp v i
 
 let iter_vars_ptr iter_vars { ptr; size; align; tag = _ } =

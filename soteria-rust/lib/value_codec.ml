@@ -8,13 +8,25 @@ module DecayMap = Sptr.DecayMap
 open DecayMap.SM
 open Syntax
 
-(** Returns the variant id and variant matching the given discriminant. *)
+(** Returns the concrete variant matching the given enum.
+    {b This function may branch on all variants, avoid it when possible.} *)
 let variant_for_enum (enum : Typed.([< T.enum ] t)) adt =
   let open Rustsymex in
   let open Syntax in
   let variants = Crate.as_enum adt in
   let* variant =
     match_on variants ~constr:(fun v -> Typed.Adt.is_variant v.id enum)
+  in
+  of_opt_not_impl "no matching variant for enum value" variant
+
+(** Returns the concrete variant matching the given discriminant.
+    {b This function may branch on all variants, avoid it when possible.} *)
+let variant_for_discriminant (discr : Typed.(T.sint t)) adt =
+  let open Rustsymex in
+  let open Syntax in
+  let variants = Crate.as_enum adt in
+  let* variant =
+    match_on variants ~constr:(fun v -> BV.of_literal v.discriminant ==@ discr)
   in
   of_opt_not_impl "no matching variant for enum discriminant" variant
 
@@ -171,6 +183,7 @@ struct
 
     let layout_of ty = lift_rsymex @@ Layout.layout_of ty
     let normalise ty = lift_rsymex @@ Layout.normalise ty
+    let enum_single_variant ty = lift_rsymex @@ Layout.enum_single_variant ty
 
     let assert_or_error cond err =
      fun _handler _get_all _whole state ->
@@ -183,6 +196,7 @@ struct
       let ( let* ) x f = bind f x
       let ( let+ ) x f = map f x
       let ( let*^ ) x f = bind f (lift x)
+      let ( let*^^ ) x f = bind f (lift @@ DecayMap.SM.lift x)
       let ( let- ) x f = match x with Some v -> ok v | None -> f ()
 
       module Symex_syntax = struct
@@ -195,15 +209,24 @@ struct
     end
   end
 
-  (** Parses the current variant of the enum at the given offset. This handles
-      cases such as niches, where the discriminant isn't directly encoded as a
-      tag. *)
-  let variant_of_enum ~offset ty : Types.variant_id ParserMonad.t =
+  (** Parses the current discriminant of the enum at the given offset. This
+      handles cases such as niches, where the discriminant isn't directly
+      encoded as a tag.
+
+      We return a discriminant rather than the variant ID, to avoid branching in
+      the cases where the enum is symbolic. If a concrete variant is needed, see
+      {!variant_for_discriminant} *)
+  let discriminant_of_enum ~offset ty : Typed.([> T.sint ] t) ParserMonad.t =
     let open ParserMonad in
     let open ParserMonad.Syntax in
+    let adt = ty_as_adt ty in
+    let variants = Crate.as_enum adt in
     let rec exec ?(pp_info = Fmt.nop) :
-        Fields_shape.discriminator -> Types.variant_id ParserMonad.t = function
-      | Known v -> ok v
+        Fields_shape.discriminator -> Typed.([> T.sint ] t) ParserMonad.t =
+      function
+      | Known v ->
+          let variant = Types.VariantId.nth variants v in
+          ok (BV.of_literal variant.discriminant)
       | Branch { offset = tag_ofs; tag_ty; children; fallback } ->
           (* You know what's cheaper than Pointer->Integer cast?
              Integer->Pointer cast. If the tag is pointer-sized, we read it as a
@@ -252,6 +275,21 @@ struct
             (`UBTransmute
                (Fmt.str "No valid variant for enum %a%a" Crate.pp_name
                   adt.item_meta.name pp_info ()))
+    in
+    let ( let+? ) x f = map (Option.map f) x in
+    let ( let/? ) x f = bind (function None -> f () | Some x -> ok x) x in
+    let/? () =
+      (* Don't query the memory if we know the variant *)
+      let+? variant = enum_single_variant ty in
+      let variant = Types.VariantId.nth variants variant in
+      Typed.BV.of_literal variant.discriminant
+    in
+    let/? () =
+      (* Try querying the enum as a whole, to avoid branching of the enum's
+         layout when it is symbolic. *)
+      let+? enum = query_whole ty offset in
+      let enum = Typed.cast_enum enum in
+      Typed.Adt.discriminant_of enum
     in
     let* layout = layout_of ty in
     match layout.fields with
@@ -335,10 +373,11 @@ struct
         let+ fields = iter (iter_fields ?ptr layout ty) offset in
         Typed.Adt.mk_tuple fields
     | Enum _, TAdt adt ->
-        let variants = Crate.as_enum adt in
-        let* variant = variant_of_enum ~offset ty in
-        let+ fields = iter (iter_fields ~variant ?ptr layout ty) offset in
-        let variant = Types.VariantId.nth variants variant in
+        let* discriminant = discriminant_of_enum ~offset ty in
+        let*^^ variant = variant_for_discriminant discriminant adt in
+        let+ fields =
+          iter (iter_fields ~variant:variant.id ?ptr layout ty) offset
+        in
         Typed.Adt.mk_enum adt variant.id fields
     | Enum _, _ -> L.failwith "decode: expected enum type for enum layout"
 end
