@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787402243813,
+  "lastUpdate": 1787571628516,
   "repoUrl": "https://github.com/soteria-tools/soteria",
   "entries": {
     "Soteria benchmarks": [
@@ -8139,6 +8139,133 @@ window.BENCHMARK_DATA = {
           {
             "name": "conformance-miri: total time",
             "value": 109.7447,
+            "unit": "s"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "opale.sjostedt@gmail.com",
+            "name": "opale",
+            "username": "N1ark"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "471f51dceb6904c717a159124230a3cb220a3302",
+          "message": "Significantly improve performance of floats (#475)\n\n* Add floats test\n\n* Use `floatml` !\n\n* Add `Float.to_bits_opt`, avoid unneeded nondet\n\n* Add `FNeg`, `FIsNeg`, `FIsPos`, `FloatOfFloat` ops\n\n* Add float conversion to C/Rust + intrinsic fixes\n\n* Add `Min, Max` binops + `minimum, maximum, fmod`\n\n* Avoid Z->string->F round trip\n\n* Fix default rounding mode\n\n* Add `sqrt` unop\n\n* Better equality analysis cost calculation\n\n* Improve float intrinsics precision\n\n* add arcane magic\n\n* fix `float_is_sign`\n\n* Pin floatml for now\n\n* (sloppy-ish) optimised rem to avoid `fp.rem`\n\n* use `Float.mk_raw`\n\n* link to issue\n\n* no pin anymore\n\n* Add Triop, make fma a triop\n\n* i guess ite is a triop\n\n* comment, and hide away Svalue.FloatPrecision\n\n* fix fast rem, impl libm, minor improvements\n\n* add `--no-shallow` flag to `versionsync.py`\n\n* Update third party notices",
+          "timestamp": "2026-08-24T11:16:46Z",
+          "tree_id": "ed153c8655c34c9b6e4975343a2d751c97a1eb4a",
+          "url": "https://github.com/soteria-tools/soteria/commit/471f51dceb6904c717a159124230a3cb220a3302"
+        },
+        "date": 1787571625571,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "rust-file: write-a-lot",
+            "value": 1.9058235844800002,
+            "range": "± 0.0206",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: write-a-lot (for loop)",
+            "value": 0.81462047604,
+            "range": "± 0.013",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: ctpop",
+            "value": 1.63236348698,
+            "range": "± 0.0081",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: array_init (rust)",
+            "value": 0.4042386305600001,
+            "range": "± 0.0043",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: btreeset sort (size 4)",
+            "value": 2.80962007468,
+            "range": "± 0.0193",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (chain)",
+            "value": 0.5797922106,
+            "range": "± 0.005",
+            "unit": "s"
+          },
+          {
+            "name": "rust-file: reborrow (tree)",
+            "value": 0.33499063564000003,
+            "range": "± 0.0035",
+            "unit": "s"
+          },
+          {
+            "name": "c: array_init (c)",
+            "value": 1.9132489853799999,
+            "range": "± 0.0168",
+            "unit": "s"
+          },
+          {
+            "name": "c-capture-db: Collections-C",
+            "value": 4.804202605970204,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-kani: passed",
+            "value": 386,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: failed",
+            "value": 16,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: unsupported",
+            "value": 0,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: timed out",
+            "value": 15,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-kani: total time",
+            "value": 125.1822,
+            "unit": "s"
+          },
+          {
+            "name": "conformance-miri: passed",
+            "value": 499,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: failed",
+            "value": 83,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: unsupported",
+            "value": 20,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: timed out",
+            "value": 6,
+            "unit": "tests"
+          },
+          {
+            "name": "conformance-miri: total time",
+            "value": 110.1988,
             "unit": "s"
           }
         ]
