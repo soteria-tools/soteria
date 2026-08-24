@@ -58,6 +58,7 @@
    (= 0.3.0))
   (zarith
    (>= 1.13))
+  floatml
   (odoc :with-doc)
   (mdx :with-test)
   (alcotest :with-test)

@@ -471,6 +471,7 @@ def pull_project(
     build_cmd: str,
     allow_init: bool,
     post_build_cmds: list[list[str]] | None = None,
+    shallow: bool = True,
 ) -> None:
     """
     Pull and build a single project.
@@ -485,6 +486,8 @@ def pull_project(
         post_build_cmds: Optional list of commands to run after the build, each
             as a list of strings. Run from target_dir so the project's
             rust-toolchain.toml is in scope.
+        shallow: If True, fetch the commit with --depth=1; otherwise fetch its
+            full history.
     """
     step(f"Processing {project}...")
 
@@ -512,9 +515,12 @@ def pull_project(
     else:
         success(f"Validated {project} repository at {target_dir}")
 
-    # Fetch only the specific commit with depth 1
+    # Fetch the specific commit, by default without its history
     info(f"Fetching commit {commit_hash[:8]} from {remote_name}...")
-    run_command(["git", "fetch", "--depth=1", remote_name, commit_hash], target_dir)
+    fetch_cmd = ["git", "fetch"]
+    if shallow:
+        fetch_cmd.append("--depth=1")
+    run_command(fetch_cmd + [remote_name, commit_hash], target_dir)
     success(f"Fetched commit {commit_hash[:8]}")
 
     # Force checkout the target commit
@@ -616,6 +622,7 @@ def cmd_pull(args: argparse.Namespace, root: Path, versions: dict[str, str]) -> 
                 config["build_cmd"],
                 args.init,
                 post_build_cmds=config.get("post_build_cmds"),
+                shallow=not args.no_shallow,
             )
         except SystemExit:
             # Error already printed
@@ -639,6 +646,7 @@ Examples:
   %(prog)s pull all                Pull and build both obol and charon
   %(prog)s pull all --init         Initialize and pull both repos (first time setup)
   %(prog)s pull obol --dir ~/code/obol  Pull obol from custom directory
+  %(prog)s pull all --no-shallow   Pull both repos with their full history
 
 Filters:
   Tags can include filters to transform values:
@@ -687,6 +695,11 @@ Filters:
         "--init",
         action="store_true",
         help="Initialize (clone) the repository if it doesn't exist",
+    )
+    pull_parser.add_argument(
+        "--no-shallow",
+        action="store_true",
+        help="Fetch the full history instead of only the target commit",
     )
 
     args = parser.parse_args()

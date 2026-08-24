@@ -609,12 +609,21 @@ let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
       let sv = Typed.cast_f fty v in
       let signed = Layout.is_signed lit_ty in
       let size = 8 * size_of_literal_ty lit_ty in
-      BV.of_float ~rounding:Truncate ~signed ~size sv
+      let min_z = Layout.min_value_z lit_ty in
+      let max_z = Layout.max_value_z lit_ty in
+      let min_f = Typed.Float.of_z fty min_z in
+      let max_f = Typed.Float.of_z fty (Z.succ max_z) in
+      Typed.ite (Typed.Float.is_nan sv) (BV.mk_masked size Z.zero)
+      @@ Typed.ite (sv <=.@ min_f) (BV.mk_masked size min_z)
+      @@ Typed.ite (sv >=.@ max_f) (BV.mk_masked size max_z)
+      @@ BV.of_float ~rounding:Truncate ~signed ~size sv
   | (TInt _ | TUInt _), TFloat fp ->
       let sv = Typed.cast_lit from_ty v in
-      let fp = Typed.float_precision fp in
       let signed = Layout.is_signed from_ty in
       BV.to_float ~rounding:NearestTiesToEven ~signed ~fp sv
+  | TFloat from_fp, TFloat fp ->
+      let sv = Typed.cast_f from_fp v in
+      Typed.Float.cast ~rounding:NearestTiesToEven ~fp sv
   | TFloat _, _ | _, TFloat _ ->
       L.failwith "Unhandled float transmute: %a -> %a" pp_literal_ty from_ty
         pp_literal_ty to_ty
@@ -638,14 +647,53 @@ let cast_literal ~(from_ty : Types.literal_type) ~(to_ty : Types.literal_type)
     sorts" *)
 let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
     Typed.([> T.sint ] t) DecayMap.SM.t =
-  let fp = Typed.Float.fp_of f in
-  let size = Typed.FloatPrecision.size fp in
-  let* bv = nondet (Typed.t_int size) in
-  let bv_f = BV.to_float_raw bv in
-  (* here we use structural equality rather than float equality; this is
-     intended. *)
-  let+ () = assume [ bv_f ==@ f ] in
-  Typed.((bv : T.sint t :> [> T.sint ] t))
+  (* avoid creating a nondet value if possible! *)
+  match Typed.Float.to_bits_opt f with
+  | Some bv -> return bv
+  | None ->
+      let fp = Typed.Float.fp_of f in
+      let size = Typed.FloatPrecision.size fp in
+      let* bv = nondet (Typed.t_int size) in
+      let bv_f = BV.to_float_raw bv in
+      (* here we use structural equality rather than float equality; this is
+         intended. *)
+      let+ () = assume [ bv_f ==@ f ] in
+      Typed.((bv : T.sint t :> [> T.sint ] t))
+
+(** Equivalent to [Float.rem], but optimised to avoid actually using the
+    [fp.rem] {e if possible}, given how costly it is. This never branches. *)
+let optimised_rem (x : Typed.([< T.sfloat ] t)) (y : Typed.([< T.sfloat ] t)) :
+    Typed.([> T.sfloat ] t) DecayMap.SM.t =
+  (* our goal is to avoid the [fp.rem] SMT operator, instead formulating [x % y]
+     as [x - (y * round(x/y))]. however this shortcut is not exact bc it goes
+     through intermediary roundings, so we check if it is exact. *)
+  let open Typed.Float in
+  let fp = fp_of x in
+  match fp with
+  (* for f16, [fp.rem] is faster! *)
+  | F16 -> return (rem x y)
+  | F32 | F64 | F128 ->
+      let two = mk fp "2" in
+      (* [n] is the integer nearest [x/y], but [x/y] itself rounds, so this may
+         be the neighbour of the true quotient *)
+      let n = round NearestTiesToEven (x /.@ y) in
+      (* [x - y*n]: equal to [x % y] if [n] is correct *)
+      let r = fma (neg y) n x in
+      (* compared as [2|r|] against [|y|] rather than [|r|] against [|y|/2]:
+         doubling is exact, whereas halving a subnormal [y] is not *)
+      let scaled = two *.@ abs r in
+      (* an integral float is even iff halving it stays integral *)
+      let half = n /.@ two in
+      let n_even = round NearestTiesToEven half ==.@ half in
+      let abs_y = abs y in
+      (* [r] is exact in two cases: [2|r| < |y|], since a wrong [n] is off by at
+         least one [y]; or [2|r| = |y|] with [n] even, since [x/y] is then
+         exactly a half-integer, where ties-to-even picks the even [n] *)
+      let correct = scaled <.@ abs_y ||@ (scaled ==.@ abs_y &&@ n_even) in
+      (* [y*n] cancelling leaves +0, but [fp.rem] returns [0] with [x]'s sign *)
+      let signed_zero = Typed.ite (is_negative x) (neg_zero fp) (zero fp) in
+      let r = Typed.ite (is_zero r) signed_zero r in
+      if%sure correct then return r else return (rem x y)
 
 (** Transmutes a singular rust value, without splitting. This is under the
     assumption that [size_of to_ty = size_of v], and both are primitives

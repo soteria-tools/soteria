@@ -58,12 +58,14 @@ type extern_fn =
   | Alloc of Extern.Alloc.fn
   | ExtSystem of Extern.System.fn
   | Libc of Extern.Libc.fn
+  | Libm of Extern.Libm.fn
   | Miri of Extern.Miri.fn
   | Std of Extern.Std.fn
 
 let extern_functions =
   (Extern.Alloc.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Alloc f)
   @ (Extern.Libc.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Libc f)
+  @ (Extern.Libm.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Libm f)
   @ (Extern.Miri.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Miri f)
   @ (Extern.Std.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> Std f)
   @ (Extern.System.fn_pats |> List.map @@ Pair.map_snd @@ fun f -> ExtSystem f)
@@ -91,6 +93,7 @@ module M (StateM : State.StateM.S) = struct
   module Alloc = Extern.Alloc.M (StateM)
   module ExtSystem = Extern.System.M (StateM)
   module Libc = Extern.Libc.M (StateM)
+  module Libm = Extern.Libm.M (StateM)
   module Miri = Extern.Miri.M (StateM)
   module Std = Extern.Std.M (StateM)
 
@@ -112,6 +115,7 @@ module M (StateM : State.StateM.S) = struct
     | Alloc f -> Alloc.fn_to_stub fun_sig f
     | ExtSystem f -> ExtSystem.fn_to_stub fun_sig fun_exec f
     | Libc f -> Libc.fn_to_stub f
+    | Libm f -> Libm.fn_to_stub f
     | Miri f -> Miri.fn_to_stub fun_sig f
     | Std f -> Std.fn_to_stub f
 

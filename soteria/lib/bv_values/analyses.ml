@@ -563,32 +563,60 @@ module Make (Typed : Typed_intf.Solver_value) = struct
       let copy (uf, refs) = (UnionFind.copy uf, refs)
     end)
 
+    (** One unit is roughly a thousand bytes of Z3's bit-blasted encoding of the
+        operator, measured at 32 bits with
+        [(then simplify fpa2bv simplify bit-blast)] *)
     let rec cost (v : Svalue.t) : int =
       match v.node.kind with
       | Binop (op, l, r) -> cost_binop op + cost l + cost r
       | Unop (op, v) -> cost_unop op + cost v
-      | Ite (i, t, e) -> cost i + cost t + cost e
+      | Triop (op, a, b, c) -> cost_triop op + cost a + cost b + cost c
       | Nop (_, vs) -> costs vs
       | Var _ -> 3
       | Float _ -> 2
       | Seq vs -> costs vs
       | Exists (_, sv) ->
-          (* quantifiers are very expensive *)
-          cost sv + 1024
+          (* quantifiers escape the bit-blasting the costs below measure, so
+             they outrank every operator *)
+          cost sv + 100_000
       | Ptr _ | Bool _ | BitVec _ -> 1
       (* TODO: cost for extensions *)
-      | Extension _ -> 1024
+      | Extension _ -> 100_000
 
     and costs vs = List.fold_left (fun acc v -> acc + cost v) 0 vs
+    and cost_triop : Svalue.Triop.t -> int = function Fma -> 400 | Ite -> 0
 
     and cost_binop : Svalue.Binop.t -> int = function
-      | FAdd | FSub | FMul | FDiv | FEq | FLt | FLeq -> 3
-      | _ -> 1
+      | FRem -> 12900
+      | Div true | Rem true | Mod -> 12700
+      | Rem false -> 7100
+      | Div false -> 3600
+      | Mul _ -> 1900
+      | FDiv -> 1300
+      | FMul -> 345
+      | MulOvf _ -> 200
+      | FAdd | FSub -> 130
+      | Sub _ -> 97
+      | Add _ -> 75
+      | Shl | LShr | AShr -> 35
+      | FMin | FMax -> 24
+      | FLt | FLeq | SubOvf true -> 12
+      | AddOvf true -> 9
+      | AddOvf false | SubOvf false | Lt _ | Leq _ -> 5
+      | FEq -> 3
+      | And | Or | Eq | BitAnd | BitOr | BitXor | BvConcat -> 1
 
     and cost_unop : Svalue.Unop.t -> int = function
-      | FRound _ | FIs _ -> 5
-      | BvOfFloat _ | FloatOfBv _ -> 4
-      | _ -> 1
+      | BvOfFloat _ -> 1400
+      | FSqrt -> 280
+      | FloatOfFloat _ -> 255
+      | FloatOfBv _ -> 78
+      | FRound _ -> 65
+      | Neg _ -> 10
+      | FAbs | FNeg | FloatOfBvRaw _ -> 4
+      | Not | GetPtrLoc | GetPtrOfs | BvNot | BvOfBool _ | BvExtend _
+      | BvExtract _ | FIs _ | FIsNeg | FIsPos ->
+          1
 
     let get_or_make v ((uf, refs) as st) =
       match VMap.find_opt v refs with

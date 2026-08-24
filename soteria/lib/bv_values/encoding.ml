@@ -79,6 +79,8 @@ module Make (Typed : Typed_intf.Solver_value) = struct
   let smt_of_unop ~ty : Unop.t -> sexp -> sexp = function
     | Not -> bool_not
     | FAbs -> fp_abs
+    | FNeg -> fp_neg
+    | FSqrt -> fp_sqrt
     | GetPtrLoc -> Ptr_sort.get_loc (Svalue.size_of ty)
     | GetPtrOfs -> Ptr_sort.get_ofs (Svalue.size_of ty)
     | BvOfBool n -> fun b -> ite b (bv_k n Z.one) (bv_k n Z.zero)
@@ -89,12 +91,16 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | FloatOfBv (rm, false, fp) ->
         float_of_ubv (rm_to_smt rm) (FloatPrecision.size fp)
     | FloatOfBvRaw fp -> float_of_bv (FloatPrecision.size fp)
+    | FloatOfFloat (rm, fp) ->
+        float_of_float (rm_to_smt rm) (FloatPrecision.size fp)
     | BvExtract (from_, to_) -> bv_extract to_ from_
     | BvExtend (true, by) -> bv_sign_extend by
     | BvExtend (false, by) -> bv_zero_extend by
     | BvNot -> bv_not
     | Neg _ -> bv_neg
     | FIs fc -> fp_is (FloatClass.as_fpclass fc)
+    | FIsNeg -> fp_is_negative
+    | FIsPos -> fp_is_positive
     | FRound rm -> fp_round (rm_to_smt rm)
 
   let smt_of_binop : Binop.t -> sexp -> sexp -> sexp = function
@@ -109,6 +115,8 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | FMul -> fp_mul
     | FDiv -> fp_div
     | FRem -> fp_rem
+    | FMin -> fp_min
+    | FMax -> fp_max
     | BitAnd -> bv_and
     | BitOr -> bv_or
     | BitXor -> bv_xor
@@ -135,17 +143,18 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | Leq false -> bv_uleq
     | BvConcat -> bv_concat
 
+  let smt_of_triop : Triop.t -> sexp -> sexp -> sexp -> sexp = function
+    | Fma -> fp_fma
+    | Ite -> ite
+
   let encode_var v = atom (Var.to_string v)
 
   let rec encode_value (v : Svalue.t) =
     match v.node.kind with
     | Var v -> encode_var v
-    | Float f -> (
-        match Svalue.precision_of_f v.node.ty with
-        | F16 -> f16_k @@ Float.of_string f
-        | F32 -> f32_k @@ Float.of_string f
-        | F64 -> f64_k @@ Float.of_string f
-        | F128 -> f128_k @@ Float.of_string f)
+    | Float f ->
+        let size = FloatPrecision.size (Svalue.precision_of_f v.node.ty) in
+        float_of_bv size (bv_k size (Floatml.AnyFloat.to_z f))
     | Bool b -> bool_k b
     | BitVec z ->
         let n = Svalue.size_of v.node.ty in
@@ -159,8 +168,6 @@ module Make (Typed : Typed_intf.Solver_value) = struct
         | _ :: _ ->
             List.map (fun v -> seq_singl (encode_value_memo v)) vs |> seq_concat
         )
-    | Ite (c, t, e) ->
-        ite (encode_value_memo c) (encode_value_memo t) (encode_value_memo e)
     | Exists (vs, sv) ->
         let encode_binder (v, ty) = list [ encode_var v; sort_of_ty ty ] in
         exists (List.map encode_binder vs) (encode_value_memo sv)
@@ -171,6 +178,9 @@ module Make (Typed : Typed_intf.Solver_value) = struct
         let v1 = encode_value_memo v1 in
         let v2 = encode_value_memo v2 in
         smt_of_binop binop v1 v2
+    | Triop (op, v1, v2, v3) ->
+        smt_of_triop op (encode_value_memo v1) (encode_value_memo v2)
+          (encode_value_memo v3)
     | Nop (Distinct, vs) ->
         let vs = List.map encode_value_memo vs in
         distinct vs

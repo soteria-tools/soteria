@@ -73,6 +73,13 @@ let todo_migration msg = raise (TypedMigration msg)
 let ( <| ) = Self.Svalue.( <| )
 let float_precision = Ext0.float_precision
 
+let of_float_precision :
+    Soteria.Bv_values.Svalue.FloatPrecision.t -> Values.float_type = function
+  | F16 -> F16
+  | F32 -> F32
+  | F64 -> F64
+  | F128 -> F128
+
 (* The raw pointer type; only used to materialise a fully-symbolic nondet
    pointer in [Value_codec] (see {!Ptr.of_raw}). *)
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
@@ -161,6 +168,10 @@ let cast_union ?adt v =
 module BitVec = struct
   include BitVec
 
+  let bv_to_z (ity : Types.integer_type) =
+    let signed = match ity with Signed _ -> true | Unsigned _ -> false in
+    BitVec.bv_to_z signed (size_of_literal_ty (lit_of_int_ty ity) * 8)
+
   let mk_lit ty = BitVec.mk_masked (size_of_literal_ty ty * 8)
   let mk_lit_nz ty = BitVec.mk_nz (size_of_literal_ty ty * 8)
   let mki_lit ty = BitVec.mki_masked (size_of_literal_ty ty * 8)
@@ -223,14 +234,55 @@ module BitVec = struct
   let max ~signed l r = ite (gt ~signed l r) l r
   let min ~signed l r = ite (lt ~signed l r) l r
   let sure_is_zero v = Option.is_some_and Z.(equal zero) (to_z v)
+
+  let to_float ~rounding ~signed ~fp v =
+    to_float ~rounding ~signed ~fp:(float_precision fp) v
 end
 
 module BV = BitVec
+
+module FloatPrecision = struct
+  include FloatPrecision
+
+  let size fp = size (float_precision fp)
+  let significand_bits fp = significand_bits (float_precision fp)
+  let exponent_bits fp = exponent_bits (float_precision fp)
+end
 
 module Float = struct
   include Float
 
   let mk fty = mk (float_precision fty)
+  let zero fp = zero (float_precision fp)
+  let neg_zero fp = neg_zero (float_precision fp)
+  let one fp = one (float_precision fp)
+  let infinity fp = infinity (float_precision fp)
+  let neg_infinity fp = neg_infinity (float_precision fp)
+  let nan fp = nan (float_precision fp)
+  let of_z fty = of_z (float_precision fty)
+  let fp_of v = of_float_precision (fp_of v)
+  let cast ~rounding ~fp v = cast ~rounding ~fp:(float_precision fp) v
+
+  let rem_warning =
+    let warn =
+      String.Interned.intern
+        "a symbolic remainder operation on floats was performed on two \
+         symbolic operands. Solvers are typically very bad at reasoning about \
+         this, and it may lead to time outs. See \
+         https://github.com/soteria-tools/soteria/issues/476"
+    in
+    fun x y ->
+      match (to_float_opt x, to_float_opt y) with
+      | None, None -> Soteria.Terminal.Warn.warn_once warn
+      | _ -> ()
+
+  let rem x y =
+    rem_warning x y;
+    rem x y
+
+  let fmod x y =
+    rem_warning x y;
+    fmod x y
 end
 
 (* This module exposes pointers as the two standalone embedded values, thin

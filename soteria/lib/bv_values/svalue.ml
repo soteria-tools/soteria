@@ -3,18 +3,25 @@ open Hc
 open Soteria_std
 module Var = Symex.Var
 
+(** Concrete floating-point values, of any of the four precisions. *)
+module F = Floatml.AnyFloat
+
 module FloatPrecision = struct
-  type t = F16 | F32 | F64 | F128
-  [@@deriving eq, show { with_path = false }, ord, hash]
+  type t = F.precision = F16 | F32 | F64 | F128
 
-  let size = function F16 -> 16 | F32 -> 32 | F64 -> 64 | F128 -> 128
+  let equal = F.equal_precision
+  let compare = F.compare_precision
+  let hash = F.hash_precision
+  let pp = F.pp_precision
+  let show = F.show_precision
+  let size = F.size
+  let exponent_bits = F.exponent_bits
+  let significand_bits = F.significand_bits
 
-  let of_size = function
-    | 16 -> F16
-    | 32 -> F32
-    | 64 -> F64
-    | 128 -> F128
-    | _ -> L.failwith "Invalid float size"
+  let of_size n =
+    match F.of_size n with
+    | Some p -> p
+    | None -> L.failwith "Invalid float size"
 end
 
 module FloatClass = struct
@@ -30,12 +37,42 @@ module FloatClass = struct
 end
 
 module RoundingMode = struct
-  type t = NearestTiesToEven | NearestTiesToAway | Ceil | Floor | Truncate
-  [@@deriving eq, show { with_path = false }, ord, hash]
+  type t = Floatml.rounding_mode =
+    | NearestTiesToEven
+    | Truncate
+    | Ceil
+    | Floor
+    | NearestTiesToAway
+
+  let equal = Floatml.equal_rounding_mode
+  let compare = Floatml.compare_rounding_mode
+  let hash = Floatml.hash_rounding_mode
+  let pp = Floatml.pp_rounding_mode
+  let show = Floatml.show_rounding_mode
 end
 
+(** The [Floatml] integer width for a bit-vector of [n] bits, if [Floatml] can
+    convert that width to or from a float. *)
+let int_size_of_size = function
+  | 8 -> Some Floatml.Int8
+  | 16 -> Some Floatml.Int16
+  | 32 -> Some Floatml.Int32
+  | 64 -> Some Floatml.Int64
+  | 128 -> Some Floatml.Int128
+  | _ -> None
+
 module Nop = struct
-  type t = Distinct [@@deriving eq, show { with_path = false }, ord, hash]
+  type t = Distinct [@@deriving eq, ord, hash]
+
+  let pp ft = function Distinct -> Fmt.string ft "distinct"
+  let show = Fmt.to_to_string pp
+end
+
+module Triop = struct
+  type t = Fma | Ite [@@deriving eq, ord, hash]
+
+  let pp ft = function Fma -> Fmt.string ft "fma" | Ite -> Fmt.string ft "ite"
+  let show = Fmt.to_to_string pp
 end
 
 module Unop = struct
@@ -48,6 +85,7 @@ module Unop = struct
     | FloatOfBv of
         RoundingMode.t * bool * FloatPrecision.t (* signed * precision *)
     | FloatOfBvRaw of FloatPrecision.t
+    | FloatOfFloat of RoundingMode.t * FloatPrecision.t (* target precision *)
     | BvExtract of int * int (* from idx (incl) * to idx (incl) *)
     | BvExtend of bool * int (* signed * by N bits *)
     | BvNot
@@ -55,7 +93,11 @@ module Unop = struct
     (* is this negation overflow-checked (operand <> INT_MIN, so it behaves like
        exact integer negation)? for optimisations only *)
     | FAbs
+    | FNeg
+    | FSqrt
     | FIs of FloatClass.t
+    | FIsNeg
+    | FIsPos
     | FRound of RoundingMode.t
   [@@deriving eq, ord, hash]
 
@@ -64,6 +106,8 @@ module Unop = struct
   let pp ft = function
     | Not -> Fmt.string ft "!"
     | FAbs -> Fmt.string ft "abs."
+    | FNeg -> Fmt.string ft "neg."
+    | FSqrt -> Fmt.string ft "sqrt."
     | GetPtrLoc -> Fmt.string ft "loc"
     | GetPtrOfs -> Fmt.string ft "ofs"
     | BvOfBool n -> Fmt.pf ft "b2bv[%d]" n
@@ -73,11 +117,15 @@ module Unop = struct
         Fmt.pf ft "%abv2f[%a,%a]" pp_signed signed RoundingMode.pp rm
           FloatPrecision.pp p
     | FloatOfBvRaw p -> Fmt.pf ft "bv2f[%a]" FloatPrecision.pp p
+    | FloatOfFloat (rm, p) ->
+        Fmt.pf ft "f2f[%a,%a]" RoundingMode.pp rm FloatPrecision.pp p
     | BvExtract (from, to_) -> Fmt.pf ft "extract[%d-%d]" from to_
     | BvExtend (signed, by) -> Fmt.pf ft "extend[%a%d]" pp_signed signed by
     | BvNot -> Fmt.string ft "!bv"
     | Neg checked -> Fmt.pf ft "-%s" (if checked then "ck" else "")
     | FIs fc -> Fmt.pf ft "fis(%a)" FloatClass.pp fc
+    | FIsNeg -> Fmt.string ft "fisneg"
+    | FIsPos -> Fmt.string ft "fispos"
     | FRound mode -> Fmt.pf ft "fround(%a)" RoundingMode.pp mode
 end
 
@@ -125,6 +173,8 @@ module Binop = struct
     | FMul
     | FDiv
     | FRem
+    | FMin
+    | FMax
     (* BitVector arithmetic *)
     | Add of checked
       (* in which signedness(es) is this overflow-checked? for optimisations
@@ -173,6 +223,8 @@ module Binop = struct
     | FMul -> Fmt.string ft "*."
     | FDiv -> Fmt.string ft "/."
     | FRem -> Fmt.string ft "rem."
+    | FMin -> Fmt.string ft "min."
+    | FMax -> Fmt.string ft "max."
     | Add checked -> Fmt.pf ft "+%a" pp_checked checked
     | Sub checked -> Fmt.pf ft "-%a" pp_checked checked
     | Mul checked -> Fmt.pf ft "*%a" pp_checked checked
@@ -226,14 +278,15 @@ let compare_hash_consed _ t1 t2 = Int.compare t1.tag t2.tag
 type ('ghost, 't, 'ty) t_kind =
   | Var of Var.t
   | Bool of bool
-  | Float of string
+  | Float of F.t
   | Ptr of ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
   | BitVec of Z.t [@printer Fmt.of_to_string (Z.format "%#x")]
   | Seq of ('ghost, 't, 'ty) t list
   | Unop of Unop.t * ('ghost, 't, 'ty) t
   | Binop of Binop.t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
+  | Triop of
+      Triop.t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
   | Nop of Nop.t * ('ghost, 't, 'ty) t list
-  | Ite of ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
   | Exists of (Var.t * 'ty ty) list * ('ghost, 't, 'ty) t
   | Extension of 't
 
@@ -373,6 +426,7 @@ module Make (V : Value_ext) () = struct
   module Unop = Unop
   module Binop = Binop
   module Nop = Nop
+  module Triop = Triop
   module RoundingMode = RoundingMode
   module FloatClass = FloatClass
   module FloatPrecision = FloatPrecision
@@ -429,11 +483,11 @@ module Make (V : Value_ext) () = struct
           aux' l;
           aux' r
       | Unop (_, sv) -> aux' sv
+      | Triop (_, a, b, c) ->
+          aux' a;
+          aux' b;
+          aux' c
       | Nop (_, l) | Seq l -> List.iter aux' l
-      | Ite (c, t, e) ->
-          aux' c;
-          aux' t;
-          aux' e
       | Exists (vs, sv) ->
           let ignore =
             List.fold_left (fun ignore (v, _) -> Var.Set.add v ignore) ignore vs
@@ -454,7 +508,7 @@ module Make (V : Value_ext) () = struct
     match t.node.kind with
     | Var v -> pf ft "V%a" Var.pp v
     | Bool b -> pf ft "%b" b
-    | Float f -> pf ft "%sf" f
+    | Float f -> pf ft "%sf" (F.to_string f)
     | BitVec bv ->
         let size = size_of t.node.ty in
         if size mod 4 <> 0 then
@@ -462,7 +516,6 @@ module Make (V : Value_ext) () = struct
         else pf ft "0x%s" (Z.format ("0" ^ string_of_int (size / 4) ^ "x") bv)
     | Ptr (l, o) -> pf ft "&(%a, %a)" pp l pp o
     | Seq l -> pf ft "%a" (brackets (list ~sep:comma pp)) l
-    | Ite (c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
     | Exists (vs, v) ->
         let var_pp ft (v, ty) = pf ft "V%a:%a" Var.pp v pp_ty ty in
         pf ft "∃ %a. %a" (list ~sep:comma var_pp) vs pp v
@@ -470,6 +523,8 @@ module Make (V : Value_ext) () = struct
         pf ft "(%a != %a)" pp v1 pp v2
     | Unop (op, v) -> pf ft "%a(%a)" Unop.pp op pp v
     | Binop (op, v1, v2) -> pf ft "(%a %a %a)" pp v1 Binop.pp op pp v2
+    | Triop (Ite, c, t, e) -> pf ft "(%a ? %a : %a)" pp c pp t pp e
+    | Triop (op, a, b, c) -> pf ft "%a(%a, %a, %a)" Triop.pp op pp a pp b pp c
     | Nop (op, l) -> (
         let rec aux = function
           | acc, [] -> acc
@@ -499,6 +554,7 @@ module Make (V : Value_ext) () = struct
     ||
     match (a.node.kind, b.node.kind) with
     | BitVec a, BitVec b -> not (Z.equal a b)
+    | Float a, Float b -> not (F.equal a b)
     | Bool a, Bool b -> a <> b
     | Ptr (la, oa), Ptr (lb, ob) -> sure_neq la lb || sure_neq oa ob
     | _ -> false
@@ -515,7 +571,7 @@ module Make (V : Value_ext) () = struct
       match kind with
       | Bool b -> combine (combine h 1) (if b then 1 else 2)
       | Var v -> combine (combine h 2) (Var.to_int v)
-      | Float f -> combine (combine h 3) (Hashtbl.hash f)
+      | Float f -> combine (combine h 3) (F.hash f)
       | BitVec z -> combine (combine h 4) (Z.hash z)
       | Ptr (l, r) -> combine (combine (combine h 5) l.tag) r.tag
       | Seq l ->
@@ -523,13 +579,17 @@ module Make (V : Value_ext) () = struct
       | Unop (op, v) -> combine (combine (combine h 7) (Unop.hash op)) v.tag
       | Binop (op, l, r) ->
           combine (combine (combine (combine h 8) (Binop.hash op)) l.tag) r.tag
+      | Triop (op, a, b, c) ->
+          combine
+            (combine
+               (combine (combine (combine h 13) (Triop.hash op)) a.tag)
+               b.tag)
+            c.tag
       | Nop (op, l) ->
           List.fold_left
             (fun acc sv -> combine acc sv.tag)
             (combine (combine h 9) (Nop.hash op))
             l
-      | Ite (c, t, e) ->
-          combine (combine (combine (combine h 10) c.tag) t.tag) e.tag
       | Exists (vs, sv) ->
           List.fold_left
             (fun acc (v, ty) ->
@@ -660,13 +720,28 @@ module Make (V : Value_ext) () = struct
 
   module type Float = sig
     (* constructors *)
+
+    (** The raw node constructor; all others go through it. *)
+    val mk_raw : FloatPrecision.t -> F.t -> t
+
     val mk : FloatPrecision.t -> string -> t
-    val f16 : float -> t
-    val f32 : float -> t
-    val f64 : float -> t
-    val f128 : float -> t
-    val like : t -> float -> t
+    val mk_bits : FloatPrecision.t -> Z.t -> t
+    val of_z : FloatPrecision.t -> Z.t -> t
+    val to_bits_opt : t -> t option
+    val to_float_opt : t -> float option
+    val sign_bit_opt : t -> bool option
+    val approx : (float -> float) -> t -> t option
+    val approx2 : (float -> float -> float) -> t -> t -> t option
+    val zero : FloatPrecision.t -> t
+    val neg_zero : FloatPrecision.t -> t
+    val one : FloatPrecision.t -> t
+    val nan : FloatPrecision.t -> t
+    val infinity : FloatPrecision.t -> t
+    val neg_infinity : FloatPrecision.t -> t
     val fp_of : t -> FloatPrecision.t
+
+    (* conversion between precisions *)
+    val cast : rounding:RoundingMode.t -> fp:FloatPrecision.t -> t -> t
 
     (* arithmetic *)
     val add : t -> t -> t
@@ -674,8 +749,16 @@ module Make (V : Value_ext) () = struct
     val mul : t -> t -> t
     val div : t -> t -> t
     val rem : t -> t -> t
+    val fmod : t -> t -> t
+    val fmod_of_rem : t -> t -> t -> t
+    val fma : t -> t -> t -> t
+    val min : t -> t -> t
+    val max : t -> t -> t
+    val minimum : t -> t -> t
+    val maximum : t -> t -> t
     val abs : t -> t
     val neg : t -> t
+    val sqrt : t -> t
     val round : RoundingMode.t -> t -> t
 
     (* comparisons *)
@@ -692,6 +775,8 @@ module Make (V : Value_ext) () = struct
     val is_zero : t -> t
     val is_infinite : t -> t
     val is_nan : t -> t
+    val is_negative : t -> t
+    val is_positive : t -> t
   end
 
   (** {2 Booleans} *)
@@ -870,7 +955,7 @@ module Make (V : Value_ext) () = struct
         | Binop (Leq signed, v1, v2) -> BitVec.lt ~signed v2 v1
         | Binop (Or, v1, v2) -> and_ (not v1) (not v2)
         | Binop (And, v1, v2) -> or_ (not v1) (not v2)
-        | Ite (g, a, b) -> ite g (not a) (not b)
+        | Triop (Ite, g, a, b) -> ite g (not a) (not b)
         | Binop (Eq, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ }, v)
         | Binop (Eq, v, { node = { kind = BitVec bv; ty = TBitVector 1 }; _ })
           ->
@@ -893,14 +978,15 @@ module Make (V : Value_ext) () = struct
       | Unop (Not, g), _, _ -> ite g else_ if_
       | _ when equal guard if_ -> or_ guard else_
       | _ when equal guard else_ -> and_ guard if_
-      | _, Ite (g, x, _), _ when equal g guard -> ite guard x else_
-      | _, _, Ite (g, _, y) when equal g guard -> ite guard if_ y
-      | Binop (And, a, b), Ite (g, x, _), _ when equal g a || equal g b ->
+      | _, Triop (Ite, g, x, _), _ when equal g guard -> ite guard x else_
+      | _, _, Triop (Ite, g, _, y) when equal g guard -> ite guard if_ y
+      | Binop (And, a, b), Triop (Ite, g, x, _), _ when equal g a || equal g b
+        ->
           ite guard x else_
-      | Binop (Or, a, b), _, Ite (g, _, y) when equal g a || equal g b ->
+      | Binop (Or, a, b), _, Triop (Ite, g, _, y) when equal g a || equal g b ->
           ite guard if_ y
       | _ when equal if_ else_ -> if_
-      | _ -> Ite (guard, if_, else_) <| if_.node.ty
+      | _ -> Triop (Ite, guard, if_, else_) <| if_.node.ty
 
     and sem_eq v1 v2 =
       match[@warning "-ambiguous-var-in-pattern-guard"]
@@ -910,6 +996,7 @@ module Make (V : Value_ext) () = struct
       | Bool b1, Bool b2 -> of_bool (b1 = b2)
       | Ptr (l1, o1), Ptr (l2, o2) -> and_ (sem_eq l1 l2) (sem_eq o1 o2)
       | BitVec b1, BitVec b2 -> of_bool (Z.equal b1 b2)
+      | Float f1, Float f2 -> of_bool (F.bits_equal f1 f2)
       (* Arithmetics *)
       | BitVec _, Unop (Neg _, v2) -> sem_eq (BitVec.neg v1) v2
       | Unop (Neg _, v1), BitVec _ -> sem_eq v1 (BitVec.neg v2)
@@ -993,7 +1080,7 @@ module Make (V : Value_ext) () = struct
             if fits then sem_eq x (BitVec.mk_masked sz q) else v_false
           else v_false
       (* distributing over a shared guard lets the branches cancel pairwise *)
-      | Ite (b, l, r), Ite (b', l', r') when equal b b' ->
+      | Triop (Ite, b, l, r), Triop (Ite, b', l', r') when equal b b' ->
           ite b (sem_eq l l') (sem_eq r r')
       (* Cancelling a common factor [a] from [a*b == a*d] is only sound when [a]
          is odd (invertible modulo 2^n), or when both multiplications are
@@ -1054,14 +1141,16 @@ module Make (V : Value_ext) () = struct
             sem_eq bv z_bv
       (* ite(b, A::B, C::D) == l :: r <=>
        * ite(b, A, C) == l && ite(b, B, D) == r *)
-      | ( Ite
-            ( b,
+      | ( Triop
+            ( Ite,
+              b,
               ({ node = { kind = BitVec _; _ }; _ } as t),
               ({ node = { kind = BitVec _; _ }; _ } as e) ),
           Binop (BvConcat, l, r) )
       | ( Binop (BvConcat, l, r),
-          Ite
-            ( b,
+          Triop
+            ( Ite,
+              b,
               ({ node = { kind = BitVec _; _ }; _ } as t),
               ({ node = { kind = BitVec _; _ }; _ } as e) ) ) ->
           let size_r = size_of r.node.ty in
@@ -1075,8 +1164,10 @@ module Make (V : Value_ext) () = struct
         when size_of l1.node.ty = size_of l2.node.ty ->
           and_ (sem_eq l1 l2) (sem_eq r1 r2)
       (* BvOfBool and If-then-elses *)
-      | Ite (b, l, t), (BitVec _ | Bool _) -> ite b (sem_eq l v2) (sem_eq t v2)
-      | (BitVec _ | Bool _), Ite (b, l, t) -> ite b (sem_eq v1 l) (sem_eq v1 t)
+      | Triop (Ite, b, l, t), (BitVec _ | Bool _) ->
+          ite b (sem_eq l v2) (sem_eq t v2)
+      | (BitVec _ | Bool _), Triop (Ite, b, l, t) ->
+          ite b (sem_eq v1 l) (sem_eq v1 t)
       | Bool false, _ -> not v2
       | _, Bool false -> not v1
       | Bool true, _ -> v2
@@ -1258,7 +1349,7 @@ module Make (V : Value_ext) () = struct
       | BitVec z when Z.(z > zero) -> Z.log2 z
       | BitVec z when Z.(equal z zero) -> size_of v.node.ty - 1
       | Binop (BitAnd, bv1, bv2) -> min (msb_of bv1) (msb_of bv2)
-      | Ite (_, l, r) -> max (msb_of l) (msb_of r)
+      | Triop (Ite, _, l, r) -> max (msb_of l) (msb_of r)
       | Unop (BvExtend (false, __), v) -> msb_of v
       | _ -> size_of v.node.ty - 1
 
@@ -1367,7 +1458,7 @@ module Make (V : Value_ext) () = struct
           else
             let common = mk (size_of v1.node.ty) (Z.div l1 l2) in
             mul ~checked v_l2 (add ~checked r2 (mul ~checked common r1))
-      | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+      | Triop (Ite, b, l, r), BitVec x | BitVec x, Triop (Ite, b, l, r) ->
           (* only propagate down ites if we know it's concrete *)
           let n = size_of v1.node.ty in
           let x = mk n x in
@@ -1426,11 +1517,11 @@ module Make (V : Value_ext) () = struct
           sub ~checked r1 r2
       | _l, Binop (Sub _, l', r) when equal v1 l' -> r
       (* distributing over a shared guard lets the branches cancel pairwise *)
-      | Ite (b, l, r), Ite (b', l', r') when equal b b' ->
+      | Triop (Ite, b, l, r), Triop (Ite, b', l', r') when equal b b' ->
           Bool.ite b (sub l l') (sub r r')
       (* only propagate down ites if we know it's concrete *)
-      | Ite (b, l, r), BitVec _ -> Bool.ite b (sub l v2) (sub r v2)
-      | BitVec _, Ite (b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)
+      | Triop (Ite, b, l, r), BitVec _ -> Bool.ite b (sub l v2) (sub r v2)
+      | BitVec _, Triop (Ite, b, l, r) -> Bool.ite b (sub v1 l) (sub v1 r)
       | Unop (BvOfBool n, b), BitVec _ -> Bool.ite b (sub (one n) v2) (neg v2)
       | BitVec _, Unop (BvOfBool n, b) -> Bool.ite b (sub v1 (one n)) v1
       | _ -> Binop (Sub checked, v1, v2) <| v1.node.ty
@@ -1440,7 +1531,7 @@ module Make (V : Value_ext) () = struct
       match v.node.kind with
       | BitVec bv -> mk_masked n Z.(neg bv)
       | Unop (Neg _, v) -> v
-      | Ite (b, l, r) -> Bool.ite b (neg ~checked l) (neg ~checked r)
+      | Triop (Ite, b, l, r) -> Bool.ite b (neg ~checked l) (neg ~checked r)
       | Unop (BvOfBool n, b) -> Bool.ite b (neg (one n)) (zero n)
       | _ -> Unop (Neg checked, v) <| v.node.ty
 
@@ -1498,7 +1589,7 @@ module Make (V : Value_ext) () = struct
       | BitVec bv ->
           let n = size_of v.node.ty in
           mk_masked n Z.(lognot bv)
-      | Ite (b, l, r) -> Bool.ite b (not l) (not r)
+      | Triop (Ite, b, l, r) -> Bool.ite b (not l) (not r)
       | _ -> Unop (BvNot, v) <| v.node.ty
 
     and and_ v1 v2 =
@@ -1524,8 +1615,8 @@ module Make (V : Value_ext) () = struct
              let low_mask = Z.(pred (one lsl bitwidth)) in
              Z.(equal (mask land low_mask) low_mask) ->
           base <| t_bv n
-      | BitVec _, Ite (b, l, r) -> Bool.ite b (and_ v1 l) (and_ v1 r)
-      | Ite (b, l, r), BitVec _ -> Bool.ite b (and_ l v2) (and_ r v2)
+      | BitVec _, Triop (Ite, b, l, r) -> Bool.ite b (and_ v1 l) (and_ v1 r)
+      | Triop (Ite, b, l, r), BitVec _ -> Bool.ite b (and_ l v2) (and_ r v2)
       | BitVec m1, Binop (BitAnd, x, { node = { kind = BitVec m2; _ }; _ })
       | BitVec m1, Binop (BitAnd, { node = { kind = BitVec m2; _ }; _ }, x)
       | Binop (BitAnd, x, { node = { kind = BitVec m2; _ }; _ }), BitVec m1
@@ -1674,8 +1765,8 @@ module Make (V : Value_ext) () = struct
       | Unop (BvOfBool _, _), BitVec o when Z.equal o Z.one -> v1
       | Unop (BvOfBool _, b1), Unop (BvOfBool _, b2) ->
           of_bool n (Bool.and_ b1 b2)
-      | ( Ite (b1, l1, { node = { kind = BitVec r1; _ }; _ }),
-          Ite (b2, l2, { node = { kind = BitVec r2; _ }; _ }) )
+      | ( Triop (Ite, b1, l1, { node = { kind = BitVec r1; _ }; _ }),
+          Triop (Ite, b2, l2, { node = { kind = BitVec r2; _ }; _ }) )
         when Z.(equal r1 zero) && Z.(equal r2 zero) ->
           let n = size_of v1.node.ty in
           Bool.ite (Bool.and_ b1 b2) (and_ l1 l2) (zero n)
@@ -1785,7 +1876,7 @@ module Make (V : Value_ext) () = struct
             let low_part = extract (from_ + shift) (prev_size - 1) v1 in
             let high_zeros = zero (to_ - (prev_size - shift - 1)) in
             concat high_zeros low_part
-      | Ite (b, l, r) ->
+      | Triop (Ite, b, l, r) ->
           let l = extract from_ to_ l in
           let r = extract from_ to_ r in
           Bool.ite b l r
@@ -1864,7 +1955,7 @@ module Make (V : Value_ext) () = struct
       | Unop (BvExtend (prev_signed, prev_by), v) when prev_signed = signed ->
           (* combine extensions *)
           extend ~signed (prev_by + extend_by) v
-      | Ite (b, l, r) ->
+      | Triop (Ite, b, l, r) ->
           let l = extend ~signed extend_by l in
           let r = extend ~signed extend_by r in
           Bool.ite b l r
@@ -1919,7 +2010,7 @@ module Make (V : Value_ext) () = struct
           Unop (BvExtract _, y) )
         when equal x y ->
           concat left (concat right v2)
-      | Ite (b1, l1, r1), Ite (b2, l2, r2) when equal b1 b2 ->
+      | Triop (Ite, b1, l1, r1), Triop (Ite, b2, l2, r2) when equal b1 b2 ->
           Bool.ite b1 (concat l1 l2) (concat r1 r2)
       | _, _ -> Binop (BvConcat, v1, v2) <| t_bv (n1 + n2)
 
@@ -2025,7 +2116,7 @@ module Make (V : Value_ext) () = struct
           mul ~checked:(checked_meet checked ckm) x
             (mk_masked (size_of v1.node.ty) Z.(n * m))
       (* only propagate down ites if we know it's concrete *)
-      | Ite (b, l, r), BitVec x | BitVec x, Ite (b, l, r) ->
+      | Triop (Ite, b, l, r), BitVec x | BitVec x, Triop (Ite, b, l, r) ->
           let n = size_of v1.node.ty in
           let x = mk n x in
           Bool.ite b (mul l x) (mul r x)
@@ -2189,8 +2280,10 @@ module Make (V : Value_ext) () = struct
        * => b && x = 0 *)
       | _, Unop (BvOfBool n, b) when Stdlib.not signed ->
           Bool.and_ b (Bool.sem_eq v1 (zero n))
-      | Ite (b, l, r), _ -> Bool.ite b (lt ~signed l v2) (lt ~signed r v2)
-      | _, Ite (b, l, r) -> Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
+      | Triop (Ite, b, l, r), _ ->
+          Bool.ite b (lt ~signed l v2) (lt ~signed r v2)
+      | _, Triop (Ite, b, l, r) ->
+          Bool.ite b (lt ~signed v1 l) (lt ~signed v1 r)
       | _, BitVec x
         when signed
              && Z.(equal x zero)
@@ -2215,7 +2308,7 @@ module Make (V : Value_ext) () = struct
             | Binop (BvConcat, l, _) -> aux_lt_zero l
             | Unop (BvNot, v) -> Bool.not (aux_lt_zero v)
             | Unop (BvOfBool n, _) when n > 1 -> Bool.v_false
-            | Ite (_, l, r) ->
+            | Triop (Ite, _, l, r) ->
                 let pos_l = aux_lt_zero l in
                 let pos_r = aux_lt_zero r in
                 if pos_l = pos_r then pos_l else lt_zero v
@@ -2545,9 +2638,9 @@ module Make (V : Value_ext) () = struct
       | Binop (Div false, _, { node = { kind = BitVec d; _ }; _ }), BitVec n
         when Stdlib.not signed && Z.(gt (mul n d) (max_for false bits)) ->
           Bool.v_true
-      | Ite (b, l, r), BitVec _ ->
+      | Triop (Ite, b, l, r), BitVec _ ->
           Bool.ite b (leq ~signed l v2) (leq ~signed r v2)
-      | BitVec _, Ite (b, l, r) ->
+      | BitVec _, Triop (Ite, b, l, r) ->
           Bool.ite b (leq ~signed v1 l) (leq ~signed v1 r)
       | ( BitVec bv_v1,
           Binop (Sub checked, x, ({ node = { kind = BitVec bv_k; _ }; _ } as k))
@@ -2732,39 +2825,93 @@ module Make (V : Value_ext) () = struct
           else Binop (SubOvf signed, v1, v2) <| TBool
 
     let of_float ~rounding ~signed ~size v =
-      Unop (BvOfFloat (rounding, signed, size), v) <| t_bv size
+      let default () =
+        Unop (BvOfFloat (rounding, signed, size), v) <| t_bv size
+      in
+      match (v.node.kind, int_size_of_size size) with
+      | Float f, Some int_size -> (
+          match F.float2int f int_size rounding ~signed with
+          | Some z -> mk_masked size z
+          (* NaN, infinite, or out of range: SMT-Lib leaves the result
+             unspecified, so we keep the term symbolic. *)
+          | None -> default ())
+      | _ -> default ()
 
     let to_float ~rounding ~signed ~fp v =
-      Unop (FloatOfBv (rounding, signed, fp), v) <| t_float fp
+      match (v.node.kind, int_size_of_size (size_of v.node.ty)) with
+      | BitVec z, Some int_size ->
+          Float.mk_raw fp (F.int2float z int_size fp rounding ~signed)
+      | _ -> Unop (FloatOfBv (rounding, signed, fp), v) <| t_float fp
 
     let to_float_raw v =
       let fp = FloatPrecision.of_size (size_of v.node.ty) in
-      Unop (FloatOfBvRaw fp, v) <| t_float fp
+      match v.node.kind with
+      | BitVec z -> Float.mk_raw fp (F.of_bits_z fp z)
+      | _ -> Unop (FloatOfBvRaw fp, v) <| t_float fp
   end
 
   (** {2 Floating point} *)
   and Float : Float = struct
-    let f2str = Stdlib.Float.to_string
-    let str2f = Stdlib.Float.of_string
-    let mk fp f = Float f <| t_float fp
-    let mk_f fp f = Float (f2str f) <| t_float fp
-    let like v f = Float (f2str f) <| v.node.ty
-
     let fp_of v =
       match v.node.ty with
       | TFloat fp -> fp
       | _ -> L.failwith "Unsupported float type"
 
-    let f16 f = mk_f F16 f
-    let f32 f = mk_f F32 f
-    let f64 f = mk_f F64 f
-    let f128 f = mk_f F128 f
+    let mk_raw fp f = Float f <| t_float fp
+
+    let mk fp s =
+      match F.of_string_opt fp s with
+      | Some f -> mk_raw fp f
+      | None -> L.failwith "Invalid float literal: %S" s
+
+    let mk_bits fp z = mk_raw fp (F.of_bits_z fp z)
+
+    (* A mathematical integer, rounded to [fp]; a magnitude too large for the
+       format gives an infinity. Unlike {!BitVec.to_float} the argument is not
+       the contents of a bit-vector, so it is not reduced to any width. *)
+    let of_z fp z = mk_raw fp (F.of_z fp z)
+
+    let to_float_opt v =
+      match v.node.kind with Float f -> Some (F.to_float f) | _ -> None
+
+    let sign_bit_opt v =
+      match v.node.kind with
+      | Float f ->
+          Some (Z.testbit (F.to_z f) (FloatPrecision.size (fp_of v) - 1))
+      | _ -> None
+
+    let approx f v =
+      Option.map
+        (fun x ->
+          let fp = fp_of v in
+          mk_raw fp (F.of_float fp (f x)))
+        (to_float_opt v)
+
+    let approx2 f v1 v2 =
+      Option.map2
+        (fun x1 x2 ->
+          let fp = fp_of v1 in
+          mk_raw fp (F.of_float fp (f x1 x2)))
+        (to_float_opt v1) (to_float_opt v2)
+
+    let zero fp = mk_raw fp (F.zero fp)
+    let neg_zero fp = mk_raw fp (F.neg_zero fp)
+    let one fp = mk_raw fp (F.one fp)
+    let nan fp = mk_raw fp (F.nan fp)
+    let infinity fp = mk_raw fp (F.infinity fp)
+    let neg_infinity fp = mk_raw fp (F.neg_infinity fp)
+
+    let to_bits_opt v =
+      match v.node.kind with
+      | Float f ->
+          let size = FloatPrecision.size (fp_of v) in
+          Some (BitVec.mk_masked size (F.to_z f))
+      | _ -> None
 
     let[@inline] is_floatclass fc =
      fun sv ->
       match sv.node.kind with
-      | Float f ->
-          Bool.of_bool (FloatClass.as_fpclass fc = classify_float (str2f f))
+      | Float f -> Bool.of_bool (FloatClass.as_fpclass fc = F.fpclass f)
       | _ -> Unop (FIs fc, sv) <| TBool
 
     let is_normal = is_floatclass Normal
@@ -2773,38 +2920,144 @@ module Make (V : Value_ext) () = struct
     let is_nan = is_floatclass NaN
     let is_zero = is_floatclass Zero
 
+    let is_negative v =
+      match v.node.kind with
+      | Float f -> Bool.of_bool (F.is_negative f)
+      | _ -> Unop (FIsNeg, v) <| TBool
+
+    let is_positive v =
+      match v.node.kind with
+      | Float f -> Bool.of_bool (F.is_positive f)
+      | _ -> Unop (FIsPos, v) <| TBool
+
+    let cast ~rounding ~fp v =
+      match v.node.kind with
+      | Float f -> mk_raw fp (F.convert rounding fp f)
+      | _ when FloatPrecision.equal (fp_of v) fp -> v
+      | _ -> Unop (FloatOfFloat (rounding, fp), v) <| t_float fp
+
     let eq v1 v2 =
-      if equal v1 v2 then Bool.not (is_nan v1)
-      else mk_commut_binop FEq v1 v2 <| TBool
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Bool.of_bool (F.eq f1 f2)
+      | _ when equal v1 v2 -> Bool.not (is_nan v1)
+      (* Against a constant, [fp.eq] is decidable structurally *)
+      | Float f, _ ->
+          if F.is_nan f then Bool.v_false
+          else if F.is_zero f then is_zero v2
+          else Bool.sem_eq v1 v2
+      | _, Float f ->
+          if F.is_nan f then Bool.v_false
+          else if F.is_zero f then is_zero v1
+          else Bool.sem_eq v1 v2
+      | _ -> mk_commut_binop FEq v1 v2 <| TBool
 
     let lt v1 v2 =
       match (v1.node.kind, v2.node.kind) with
-      | Float f1, Float f2 -> Bool.of_bool (str2f f1 < str2f f2)
+      | Float f1, Float f2 -> Bool.of_bool (F.lt f1 f2)
       | _ -> Binop (FLt, v1, v2) <| TBool
 
     let leq v1 v2 =
       match (v1.node.kind, v2.node.kind) with
-      | Float f1, Float f2 -> Bool.of_bool (str2f f1 <= str2f f2)
+      | Float f1, Float f2 -> Bool.of_bool (F.le f1 f2)
       | _ -> Binop (FLeq, v1, v2) <| TBool
 
     let gt v1 v2 = lt v2 v1
     let geq v1 v2 = leq v2 v1
-    let add v1 v2 = mk_commut_binop FAdd v1 v2 <| v1.node.ty
-    let sub v1 v2 = Binop (FSub, v1, v2) <| v1.node.ty
-    let div v1 v2 = Binop (FDiv, v1, v2) <| v1.node.ty
-    let mul v1 v2 = mk_commut_binop FMul v1 v2 <| v1.node.ty
-    let rem v1 v2 = Binop (FRem, v1, v2) <| v1.node.ty
+
+    let add v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.add f1 f2) <| v1.node.ty
+      | _ -> mk_commut_binop FAdd v1 v2 <| v1.node.ty
+
+    let sub v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.sub f1 f2) <| v1.node.ty
+      | _ -> Binop (FSub, v1, v2) <| v1.node.ty
+
+    let div v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.div f1 f2) <| v1.node.ty
+      | _ -> Binop (FDiv, v1, v2) <| v1.node.ty
+
+    let mul v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.mul f1 f2) <| v1.node.ty
+      | _ -> mk_commut_binop FMul v1 v2 <| v1.node.ty
+
+    let rem v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.rem f1 f2) <| v1.node.ty
+      | _ -> Binop (FRem, v1, v2) <| v1.node.ty
 
     let abs v =
       match v.node.kind with
+      | Float f -> Float (F.abs f) <| v.node.ty
       | Unop (FAbs, _) -> v
       | _ -> Unop (FAbs, v) <| v.node.ty
 
     let neg v =
-      let fp = fp_of v in
-      Binop (FSub, mk fp "0.0", v) <| v.node.ty
+      match v.node.kind with
+      | Float f -> Float (F.neg f) <| v.node.ty
+      | Unop (FNeg, v) -> v
+      | _ -> Unop (FNeg, v) <| v.node.ty
 
-    let round rm sv = Unop (FRound rm, sv) <| sv.node.ty
+    let fma a b c =
+      match (a.node.kind, b.node.kind, c.node.kind) with
+      | Float fa, Float fb, Float fc -> Float (F.fma fa fb fc) <| a.node.ty
+      | _ -> Triop (Fma, a, b, c) <| a.node.ty
+
+    (* C's [fmod] (and so Rust's [%] on floats), which truncates [x/y] where
+       {!rem} rounds it to nearest. SMT-Lib has no such operator, so we emulate
+       it. *)
+    (* [fmod] given an already-computed IEEE remainder, so a caller that has a
+       cheaper way to obtain one can reuse it. *)
+    let fmod_of_rem r v1 v2 =
+      let correction = Bool.ite (is_negative v1) (neg (abs v2)) (abs v2) in
+      Bool.ite
+        (Bool.sem_eq (is_negative r) (is_negative v1))
+        r (add r correction)
+
+    let fmod v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.fmod f1 f2) <| v1.node.ty
+      | _ -> fmod_of_rem (rem v1 v2) v1 v2
+
+    (* [fp.min]/[fp.max]: the non-NaN argument wins, and which of [-0.0] and
+       [+0.0] is returned is left unspecified. *)
+    let min v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.min f1 f2) <| v1.node.ty
+      | _ -> Binop (FMin, v1, v2) <| v1.node.ty
+
+    let max v1 v2 =
+      match (v1.node.kind, v2.node.kind) with
+      | Float f1, Float f2 -> Float (F.max f1 f2) <| v1.node.ty
+      | _ -> Binop (FMax, v1, v2) <| v1.node.ty
+
+    (* The IEEE 754-2019 [minimum]/[maximum]: unlike {!min}/{!max} a NaN
+       propagates, and [-0.0] is strictly below [+0.0]. SMT-Lib has neither, so
+       they are built from comparisons. *)
+    let minimum v1 v2 =
+      Bool.ite (Bool.or_ (is_nan v1) (is_nan v2)) (nan (fp_of v1))
+      @@ Bool.ite (lt v1 v2) v1
+      @@ Bool.ite (lt v2 v1) v2
+      @@ Bool.ite (is_negative v1) v1 v2
+
+    let maximum v1 v2 =
+      Bool.ite (Bool.or_ (is_nan v1) (is_nan v2)) (nan (fp_of v1))
+      @@ Bool.ite (lt v1 v2) v2
+      @@ Bool.ite (lt v2 v1) v1
+      @@ Bool.ite (is_negative v1) v2 v1
+
+    let sqrt v =
+      match v.node.kind with
+      | Float f -> Float (F.sqrt f) <| v.node.ty
+      | _ -> Unop (FSqrt, v) <| v.node.ty
+
+    let round rm sv =
+      match sv.node.kind with
+      | Float f -> Float (F.round rm f) <| sv.node.ty
+      | _ -> Unop (FRound rm, sv) <| sv.node.ty
   end
 
   (** {2 Pointers} *)

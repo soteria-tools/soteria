@@ -250,11 +250,11 @@ let test_fp_constants () =
     (to_string (f64_k (-0.0)));
   Alcotest.(check string)
     "f16 wraps f32"
-    (Printf.sprintf "((_ to_fp 5 11) RNA %s)" (to_string (f32_k 1.0)))
+    (Printf.sprintf "((_ to_fp 5 11) RNE %s)" (to_string (f32_k 1.0)))
     (to_string (f16_k 1.0));
   Alcotest.(check string)
     "f128 wraps f64"
-    (Printf.sprintf "((_ to_fp 15 113) RNA %s)" (to_string (f64_k 1.0)))
+    (Printf.sprintf "((_ to_fp 15 113) RNE %s)" (to_string (f64_k 1.0)))
     (to_string (f128_k 1.0));
   Alcotest.(check bool) "f32 nan well-formed" true (is_fp (f32_k Float.nan));
   Alcotest.(check bool)
@@ -272,7 +272,7 @@ let test_rounding_modes () =
   Alcotest.(check string) "RTP" "RTP" (to_string (to_sexp Ceil));
   Alcotest.(check string) "RTN" "RTN" (to_string (to_sexp Floor));
   Alcotest.(check string) "RTZ" "RTZ" (to_string (to_sexp Truncate));
-  Alcotest.(check string) "default RNA" "RNA" (to_string default)
+  Alcotest.(check string) "default RNE" "RNE" (to_string default)
 
 let test_rounding_deriving () =
   let open RoundingMode in
@@ -285,7 +285,7 @@ let test_rounding_deriving () =
 
 let test_fp_ops () =
   Alcotest.(check string)
-    "fp_add carries rm" "(fp.add RNA a b)"
+    "fp_add carries rm" "(fp.add RNE a b)"
     (to_string (fp_add (atom "a") (atom "b")));
   Alcotest.(check string)
     "fp_rem no rm" "(fp.rem a b)"

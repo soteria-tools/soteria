@@ -175,8 +175,9 @@ module RoundingMode = struct
     | Floor -> atom "RTN"
     | Truncate -> atom "RTZ"
 
-  (* Equivalent to NearestTiesToAway; default for FloatingPoint operations. *)
-  let default = to_sexp NearestTiesToAway
+  (** Equivalent to {!NearestTiesToEven}, the IEEE 754 default rounding, and the
+      one Rust and C use. *)
+  let default = to_sexp NearestTiesToEven
 end
 
 (** {2 Floating-point} *)
@@ -228,6 +229,8 @@ let f16_k f =
   app (ifam "to_fp" (float_shape 16)) [ RoundingMode.default; f32_k f ]
 
 let fp_abs f = "fp.abs" $. f
+let fp_neg f = "fp.neg" $. f
+let fp_sqrt f = "fp.sqrt" $$. [ RoundingMode.default; f ]
 let fp_eq f1 f2 = "fp.eq" $$. [ f1; f2 ]
 let fp_leq f1 f2 = "fp.leq" $$. [ f1; f2 ]
 let fp_lt f1 f2 = "fp.lt" $$. [ f1; f2 ]
@@ -236,6 +239,9 @@ let fp_sub f1 f2 = "fp.sub" $$. [ RoundingMode.default; f1; f2 ]
 let fp_mul f1 f2 = "fp.mul" $$. [ RoundingMode.default; f1; f2 ]
 let fp_div f1 f2 = "fp.div" $$. [ RoundingMode.default; f1; f2 ]
 let fp_rem f1 f2 = "fp.rem" $$. [ f1; f2 ]
+let fp_fma f1 f2 f3 = "fp.fma" $$. [ RoundingMode.default; f1; f2; f3 ]
+let fp_min f1 f2 = "fp.min" $$. [ f1; f2 ]
+let fp_max f1 f2 = "fp.max" $$. [ f1; f2 ]
 
 (* [fp_is fc f] tests if [f] belongs to floating-point class [fc]. *)
 let fp_is (fc : fpclass) f =
@@ -245,6 +251,9 @@ let fp_is (fc : fpclass) f =
   | FP_zero -> "fp.isZero" $. f
   | FP_infinite -> "fp.isInfinite" $. f
   | FP_nan -> "fp.isNaN" $. f
+
+let fp_is_negative f = "fp.isNegative" $$. [ f ]
+let fp_is_positive f = "fp.isPositive" $$. [ f ]
 
 let fp_round (rm : RoundingMode.t) f =
   "fp.roundToIntegral" $$. [ RoundingMode.to_sexp rm; f ]
@@ -261,6 +270,9 @@ let float_of_ubv rm size bv =
 (* Numeric conversion of a signed bit-vector to a float. *)
 let float_of_sbv rm size bv =
   ifam "to_fp" (float_shape size) $$ [ RoundingMode.to_sexp rm; bv ]
+
+let float_of_float rm size f =
+  app (ifam "to_fp" (float_shape size)) [ RoundingMode.to_sexp rm; f ]
 
 (* Numeric conversion of a float to an unsigned [n]-bit bit-vector; undefined if
    out of range, NaN or inf. *)
