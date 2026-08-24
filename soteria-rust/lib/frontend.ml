@@ -292,21 +292,24 @@ let create_using_current_config () : mk_cmd * entry_point_filter =
   in
   let cmd = List.fold_left Cmd.concat_cmd Cmd.empty cmd_parts in
   let cmd =
-    match config.test with
-    | None -> cmd
-    | Some _ ->
-        (* HACK: if we're in test mode, we want to ignore main because Rust will
-           compile it in a quirky way and it requires having a sysroot. Instead
-           we want to look for the tests directly! So we add #[test] *)
-        let entry_points =
-          Cmd.(entry (Attrib "test"))
-          :: List.filter
-               (function
-                 | Cmd.{ matcher = Pub | Name "main"; _ } -> false | _ -> true)
-               cmd.entry_points
-        in
-        let expect_error = Cmd.Attrib "should_panic" :: cmd.expect_error in
-        { cmd with entry_points; expect_error }
+    if Option.is_none config.test && not config.lib then cmd
+    else
+      (* HACK: in test mode (--test or --lib) we ignore main because Rust will
+         compile it in a quirky way and it requires having a sysroot. Instead we
+         look for the tests directly! *)
+      let test_attr =
+        if config.with_libtest then
+          [ Cmd.{ matcher = Attrib "test"; args = [] } ]
+        else []
+      in
+      let entry_points =
+        test_attr @ cmd.entry_points
+        |> List.filter (function
+          | Cmd.{ matcher = Cmd.Pub | Name "main"; _ } -> false
+          | _ -> true)
+      in
+      let expect_error = Cmd.Attrib "should_panic" :: cmd.expect_error in
+      { cmd with entry_points; expect_error }
   in
   let mk_cmd =
    fun ?input ~output () ->
@@ -373,10 +376,12 @@ let parse_ullbc_of_file ~(mk_cmd : mk_cmd) file_name =
 
 (** Given a Rust file, parse it into LLBC, using Charon. *)
 let parse_ullbc_of_crate ~(mk_cmd : mk_cmd) crate_dir =
+  let config = Config.get () in
   let filename =
-    match (Config.get ()).test with
-    | Some test -> "test-" ^ test ^ ".ullbc"
-    | None -> "crate.ullbc"
+    match (config.test, config.lib) with
+    | Some test, _ -> "test-" ^ test ^ ".ullbc"
+    | None, true -> "test-lib.ullbc"
+    | _ -> "crate.ullbc"
   in
   let output = crate_dir / filename in
   let cmd = mk_cmd ~output () in

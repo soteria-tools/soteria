@@ -149,6 +149,16 @@
          --kani
              Use the Kani library
   
+         --lib
+             Analyse the library's unit tests in [src/]. By default, the
+             crate's source is analysed, not the tests. Mutually exclusive with
+             --test.
+  
+         --libtest
+             When analysing a test target (--test or --lib), also discover the
+             crate's ordinary #[test] functions, not just Soteria's own
+             harnesses (#[soteria::test]). Has no effect when analysing source.
+  
          --log-compilation
              Log the compilation process
   
@@ -186,9 +196,10 @@
              the current machine is used.
   
          --test=VAL
-             The test profile to use to compile the crate; this only has an
-             effect if analysing a crate. Use [lib] for unit tests in [src/].
-             By default, the crate's source is analysed, not the tests.
+             The integration-test target to compile and analyse (a file in
+             [tests/]); this only has an effect if analysing a crate. By
+             default, the crate's source is analysed, not the tests. Mutually
+             exclusive with --lib.
   
   ANALYSIS OPTIONS
          --approx-floating-ops=ENUM (absent=warn)
@@ -438,6 +449,16 @@
          --kani
              Use the Kani library
   
+         --lib
+             Analyse the library's unit tests in [src/]. By default, the
+             crate's source is analysed, not the tests. Mutually exclusive with
+             --test.
+  
+         --libtest
+             When analysing a test target (--test or --lib), also discover the
+             crate's ordinary #[test] functions, not just Soteria's own
+             harnesses (#[soteria::test]). Has no effect when analysing source.
+  
          --log-compilation
              Log the compilation process
   
@@ -475,9 +496,10 @@
              the current machine is used.
   
          --test=VAL
-             The test profile to use to compile the crate; this only has an
-             effect if analysing a crate. Use [lib] for unit tests in [src/].
-             By default, the crate's source is analysed, not the tests.
+             The integration-test target to compile and analyse (a file in
+             [tests/]); this only has an effect if analysing a crate. By
+             default, the crate's source is analysed, not the tests. Mutually
+             exclusive with --lib.
   
   ANALYSIS OPTIONS
          --approx-floating-ops=ENUM (absent=warn)
@@ -723,6 +745,16 @@
          --kani
              Use the Kani library
   
+         --lib
+             Analyse the library's unit tests in [src/]. By default, the
+             crate's source is analysed, not the tests. Mutually exclusive with
+             --test.
+  
+         --libtest
+             When analysing a test target (--test or --lib), also discover the
+             crate's ordinary #[test] functions, not just Soteria's own
+             harnesses (#[soteria::test]). Has no effect when analysing source.
+  
          --log-compilation
              Log the compilation process
   
@@ -760,9 +792,10 @@
              the current machine is used.
   
          --test=VAL
-             The test profile to use to compile the crate; this only has an
-             effect if analysing a crate. Use [lib] for unit tests in [src/].
-             By default, the crate's source is analysed, not the tests.
+             The integration-test target to compile and analyse (a file in
+             [tests/]); this only has an effect if analysing a crate. By
+             default, the crate's source is analysed, not the tests. Mutually
+             exclusive with --lib.
   
   ANALYSIS OPTIONS
          --approx-floating-ops=ENUM (absent=warn)
