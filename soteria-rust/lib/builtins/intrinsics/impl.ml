@@ -428,7 +428,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     in
     let* bits = Value_codec.float_to_bv_bits x in
     let lead = if shift = 0 then bits else BV.extract shift (size - 1) bits in
-    let* c = lift_symex @@ Rustsymex.nondet (Typed.t_int word) in
+    let* c = lift_symex @@ Rustsymex.nondet (Typed.t_int_bits word) in
     let* () =
       assume_sym
         [

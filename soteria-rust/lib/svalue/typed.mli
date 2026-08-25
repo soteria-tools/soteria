@@ -71,6 +71,9 @@ val t_ptr : unit -> [> T.sptr ] ty
 
 val t_float : Types.float_type -> T.sfloat ty
 val t_usize : unit -> [> T.sint ] ty
+val t_int_bits : int -> [> T.sint ] ty
+val t_int_bytes : int -> [> T.sint ] ty
+val t_int : Values.u_int_ty -> [> T.sint ] ty
 val t_lit : Types.literal_type -> [> T.sint ] ty
 val t_ptr_f : unit -> [> T.sptr_f ] ty
 val t_ptr_t : unit -> [> T.sptr_t ] ty
