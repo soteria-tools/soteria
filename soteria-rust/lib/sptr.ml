@@ -59,21 +59,21 @@ module type DecayMapS = sig
 end
 
 module DecayMap : DecayMapS = struct
+  module Abstr = Soteria.Data.Abstr.M (Rustsymex)
+
   module MapKey = struct
-    include Typed
+    include Abstr.With_syn_of_value (struct
+      type ty = sloc
 
-    type t = sloc Typed.t
-    type syn = Expr.t [@@deriving show { with_path = false }]
+      let ty () = Typed.t_loc ()
+    end)
 
+    let compare = Typed.compare
+    let sem_eq = Typed.sem_eq
+    let distinct_seq = Typed.distinct_seq
     let to_int = unique_tag
-    let pp = ppa
-    let show = Fmt.to_to_string pp
     let simplify = Rustsymex.simplify
     let fresh _ = L.failwith "Cannot allocate in DecayMap"
-    let to_syn = Expr.of_value
-    let learn_eq s l = Consumer.learn_eq s l
-    let exprs_syn s : Expr.t list = [ s ]
-    let subst = Expr.subst
   end
 
   module Entry = struct
@@ -101,11 +101,11 @@ module DecayMap : DecayMapS = struct
       { address = Expr.subst s address; exposed }
   end
 
-  module EntryExcl = Soteria.Sym_states.Agree.Make (Rustsymex) (Entry)
+  module EntryAg = Soteria.Sym_states.Agree.Make (Rustsymex) (Entry)
 
   include
     Soteria.Sym_states.Pmap.Direct_access_patricia_tree (Rustsymex) (MapKey)
-      (EntryExcl)
+      (EntryAg)
 
   module SM = struct
     include SM
@@ -124,7 +124,7 @@ module DecayMap : DecayMapS = struct
   open Syntax
 
   let nondet_aligned_address align =
-    let open EntryExcl.SM in
+    let open EntryAg.SM in
     let open Syntax in
     match Typed.BV.to_z align with
     | Some z when Z.(gt z one) ->
@@ -142,7 +142,7 @@ module DecayMap : DecayMapS = struct
     else
       let* state = get_state () in
       wrap loc
-        (let open EntryExcl.SM in
+        (let open EntryAg.SM in
          let open Syntax in
          let* entry = get_state () in
          match entry with
