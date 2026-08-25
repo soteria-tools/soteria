@@ -68,7 +68,7 @@ module type S = sig
   val ppa_ty : Format.formatter -> 'a ty -> unit
   val equal_ty : 'a ty -> 'b ty -> bool
   val t_bool : [> sbool ] ty
-  val t_int : int -> [> sint ] ty
+  val t_bv : int -> [> sint ] ty
   val t_ptr : int -> [> sptr ] ty
   val t_loc : int -> [> sloc ] ty
   val t_seq : ([< any ] as 'a) ty -> [> 'a sseq ] ty
@@ -509,7 +509,7 @@ module type Solver_value = sig
 
   open T
 
-  val t_int : int -> [> sint ] ty
+  val t_bv : int -> [> sint ] ty
   val untype_type : 'a ty -> Svalue.ty
   val iter_vars : 'a t -> (Var.t * 'b ty -> unit) -> unit
   val type_ : Svalue.t -> 'a t
