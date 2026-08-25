@@ -285,12 +285,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             empty = Types.ConstGenericVarId.Map.empty;
             pp = Types.ConstGenericVarId.Map.pp Typed.ppa;
           }]
-    type_ids : Typed.(T.sint t) Rustsymex.TypeMap.t;
-        [@sym_state.ignore
-          {
-            empty = Rustsymex.TypeMap.empty;
-            pp = Rustsymex.TypeMap.pp Typed.ppa;
-          }]
+    type_ids : Type_id_map.t option;
   }
   [@@deriving sym_state { symex = Rustsymex }]
 
@@ -1000,24 +995,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         ( (v : Typed.T.any Typed.t :> Typed.([> T.any ] t)),
           Types.ConstGenericVarId.Map.add id v const_generics )
 
-  let type_id ty =
-    let open Rustsymex in
-    let open Syntax in
-    let@ type_ids = with_type_ids_sym in
-    match Rustsymex.TypeMap.find_opt ty type_ids with
-    | Some id -> Result.ok (id, type_ids)
-    | None ->
-        (* the identifier of a type is opaque; all we know is that distinct
-           types have distinct identifiers. *)
-        let* id = nondet (Typed.t_lit (TUInt U128)) in
-        let distinct =
-          Rustsymex.TypeMap.to_seq type_ids
-          |> Seq.map snd
-          |> Seq.cons id
-          |> Typed.distinct_seq
-        in
-        let+ () = assume [ distinct ] in
-        Ok (id, Rustsymex.TypeMap.add ty id type_ids)
+  let type_id ty = with_type_ids @@ Type_id_map.get_type_id ty
 
   let register_thread_exit callback =
     (* HACK: we cannot expect thread exit callbacks to miss with syn, because
