@@ -59,11 +59,6 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   type global = String of string | Global of Types.global_decl_ref
 
-  module GlobMap = Map.Make (struct
-    type t = global = String of string | Global of Types.global_decl_ref
-    [@@deriving show { with_path = false }, ord]
-  end)
-
   module FunBiMap = struct
     include
       Bimap.MakePp
@@ -273,13 +268,7 @@ module Make (Borrows : Tree_borrows.T) = struct
             is_empty = FunBiMap.is_empty;
             pp = FunBiMap.pp;
           }]
-    globals : Typed.(T.sptr_f t) GlobMap.t;
-        [@sym_state.ignore
-          {
-            empty = GlobMap.empty;
-            is_empty = GlobMap.is_empty;
-            pp = GlobMap.pp Typed.ppa;
-          }]
+    globals : Glob_map.t option;
     errors : Error.with_trace list;
         [@sym_state.ignore
           { empty = []; pp = Fmt.Dump.list Error.pp_with_trace }]
@@ -845,32 +834,13 @@ module Make (Borrows : Tree_borrows.T) = struct
     Block.with_block (Tree_block.zero_range ofs size)
 
   let store_str_global str (ptr : Typed.([< T.sptr_f ] t)) =
-    let@ globals = with_globals_sym in
-    let globals =
-      GlobMap.add (String str) (ptr :> Typed.T.sptr_f Typed.t) globals
-    in
-    Rustsymex.Result.ok ((), globals)
+    with_globals @@ Glob_map.store_str_global str ptr
 
   let store_global g (ptr : Typed.([< T.sptr_f ] t)) =
-    let@ globals = with_globals_sym in
-    let globals =
-      GlobMap.add (Global g) (ptr :> Typed.T.sptr_f Typed.t) globals
-    in
-    Rustsymex.Result.ok ((), globals)
+    with_globals @@ Glob_map.store_global g ptr
 
-  let load_str_global str =
-    let@ globals = with_globals_sym in
-    let ptr = GlobMap.find_opt (String str) globals in
-    Rustsymex.Result.ok
-      ( (ptr : Typed.T.sptr_f Typed.t option :> Typed.([> T.sptr_f ] t) option),
-        globals )
-
-  let load_global g =
-    let@ globals = with_globals_sym in
-    let ptr = GlobMap.find_opt (Global g) globals in
-    Rustsymex.Result.ok
-      ( (ptr : Typed.T.sptr_f Typed.t option :> Typed.([> T.sptr_f ] t) option),
-        globals )
+  let load_str_global str = with_globals @@ Glob_map.load_str_global str
+  let load_global g = with_globals @@ Glob_map.load_global g
 
   let borrow ?protect (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     [%l.debug "Executing Borrow with pointer %a for %a" Typed.ppa ptr pp_ty ty];
