@@ -88,6 +88,7 @@ module With_origin =
       let pp = Fmt_ail.pp_loc
     end)
 
+module Abstr = Soteria.Data.Abstr.M (CSYMEX)
 module Freeable = Soteria.Sym_states.Freeable.Make (CSYMEX)
 
 module Pmap_direct_access =

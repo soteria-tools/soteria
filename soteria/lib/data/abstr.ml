@@ -50,4 +50,31 @@ module M (Symex : Symex.Base) = struct
 
     val simplify : t -> t Symex.t
   end
+
+  (** Given a value type, creates a module satisfying {!S_with_syn}. This is
+      helpful to create a bridge between {!Symex.Value} and abstractions, which
+      expect a slightly different interface.
+
+      @see <https://github.com/soteria-tools/soteria/issues/344> *)
+  module With_syn_of_value (V : sig
+    type ty
+
+    (** Create the runtime type value for this type. Used for
+        {!S_with_syn.fresh}, which uses it to call {!Symex.nondet}. *)
+    val ty : unit -> ty Symex.Value.ty
+  end) :
+    S_with_syn
+      with type t = V.ty Symex.Value.t
+       and type syn = Symex.Value.Expr.t = struct
+    type t = V.ty Symex.Value.t
+    type syn = Symex.Value.Expr.t [@@deriving show { with_path = false }]
+
+    let fresh () = Symex.nondet (V.ty ())
+    let pp x = Symex.Value.ppa x
+    let show x = Fmt.to_to_string pp x
+    let to_syn = Symex.Value.Expr.of_value
+    let learn_eq = Symex.Consumer.learn_eq
+    let exprs_syn s : Symex.Value.Expr.t list = [ s ]
+    let subst = Symex.Value.Expr.subst
+  end
 end
