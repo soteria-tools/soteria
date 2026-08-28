@@ -143,18 +143,14 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
       let align = align_of_literal_ty ty in
       ok (mk_concrete ~size ~align ())
   (* Fat pointers *)
-  | TAdt { generics = { types = [ sub_ty ]; _ }; builtin = Some TBox; _ }
-  | TRef (_, sub_ty, _)
-  | TRawPtr (sub_ty, _)
-    when is_dst sub_ty ->
+  | (TRef (_, sub_ty, _) | TRawPtr (sub_ty, _)) when is_dst sub_ty ->
       let ptr_size = Crate.pointer_size () in
       ok
         (mk_concrete ~size:(ptr_size * 2) ~align:ptr_size
            ~fields:(Array { stride = BV.usizei ptr_size; is_ptr = true })
            ())
-  (* Refs, pointers, boxes, function pointers *)
-  | TAdt { builtin = Some TBox; _ } | TRef (_, _, _) | TRawPtr (_, _) | TFnPtr _
-    ->
+  (* Refs, pointers, function pointers *)
+  | TRef (_, _, _) | TRawPtr (_, _) | TFnPtr _ ->
       let ptr_size = Crate.pointer_size () in
       ok (mk_concrete ~size:ptr_size ~align:ptr_size ())
   (* Dynamically sized types -- we assume they have a size of 0. In truth, these
@@ -242,6 +238,7 @@ and translate_discriminator : Types.discriminator -> Fields_shape.discriminator
   | Known v -> Known v
   | Invalid -> Invalid
   | Branch (offset, int_ty, children, fallback) ->
+      let offset = Option.get ~msg:"discriminator: unknown ofs" offset.chosen in
       let offset = BV.usizei offset in
       let children =
         List.map
@@ -264,7 +261,12 @@ and translate_layout adt_kind ty (layout : Types.layout) =
         match (v_opt : Types.variant_layout option) with
         | None -> (None, Primitive)
         | Some v ->
-            let ofs = Array.of_list (List.map BV.usizei v.field_offsets) in
+            let ofs =
+              v.field_offsets
+              |> List.map (fun (ofs : Types.offset_expr) ->
+                  Option.get ~msg:"layout: unknown ofs" ofs.chosen |> BV.usizei)
+              |> Array.of_list
+            in
             let tagger =
               match v.tagger with
               | [] -> None
@@ -294,14 +296,14 @@ and translate_layout adt_kind ty (layout : Types.layout) =
   ok layout
 
 and compute_size ty size =
-  match size with
+  match size.chosen with
   | Some s -> BV.usizei s
   | None ->
       layout_warning "Inferred size=0" ty;
       BV.usizei 0
 
 and compute_align ty align =
-  match align with
+  match align.chosen with
   | Some a -> BV.usizeinz a
   | None ->
       layout_warning "Inferred align=1" ty;
@@ -414,7 +416,7 @@ and resolve_trait_ty (tref : Types.trait_ref) assoc_ty_id args =
       let trait_assoc_ty = Types.AssocTypeId.Map.find assoc_ty_id impl.types in
       (* HACK: we skip the binder here! *)
       ok trait_assoc_ty.binder_value.value
-  | BuiltinOrAuto (BuiltinPointee, _, _) ->
+  | BuiltinOrAuto (BuiltinPointee, _, _, _) ->
       let pointee = List.hd tref.trait_decl_ref.binder_value.generics.types in
       ok (pointee_metadata pointee)
   | _ -> not_impl_layout "trait type" (TTraitType (tref, assoc_ty_id, args))
@@ -505,7 +507,6 @@ let rec is_abi_compatible (ty1 : Types.ty) (ty2 : Types.ty) =
   let is_ptr_like : Types.ty -> bool = function
     | TRef _ | TRawPtr _ -> true
     | TAdt { builtin = Some TBox; _ } -> true
-    | TAdt adt -> adt_is_box adt
     | _ -> false
   in
   let is_repr_transparent (adt : Types.type_decl_ref) =

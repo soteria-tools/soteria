@@ -217,7 +217,7 @@ let rec get_pointee : Types.ty -> Types.ty = function
   | TAdt { generics = { types = [ ty ]; _ }; builtin = Some TBox } ->
       ty
   | TPattern (ty, _) -> get_pointee ty
-  | TAdt adt when adt_is_box adt -> (
+  | TAdt ({ builtin = Some TBox; _ } as adt) -> (
       if (Config.get ()).polymorphic then List.hd adt.generics.types
       else
         let adt = Crate.get_adt adt in

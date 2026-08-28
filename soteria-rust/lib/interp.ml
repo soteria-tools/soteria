@@ -339,6 +339,12 @@ module Make (StateImpl : State.S) = struct
     | CTypeId ty ->
         let* id = State.type_id ty in
         State.transmute ~from:(TLiteral (TUInt U128)) ~to_:const.ty id
+    | CSizeOf ty -> Layout.size_of ty
+    | CAlignOf ty -> Layout.align_of ty
+    | CDiscriminant (ty, var) ->
+        let variants = Crate.as_enum ty in
+        let variant = Types.VariantId.nth variants var in
+        ok (BV.of_literal variant.discriminant)
     | COpaque msg ->
         not_impl "opaque constant: %s; something went wrong in the frontend" msg
 
@@ -590,6 +596,32 @@ module Make (StateImpl : State.S) = struct
         match help with
         | None -> not_impl "unknown unsizing metadata"
         | Some help -> not_impl "unknown unsizing metadata: %s" (help ()))
+
+  and resolve_discriminant (place : Expressions.place) =
+    let* layout = Layout.layout_of place.ty in
+    if layout.uninhabited then error (`RefToUninhabited place.ty)
+    else if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
+      let open OptionM in
+      let open Syntax in
+      let* loc = resolve_place_lazy place in
+      try_lazy loc
+        ~heap:(fun ptr ->
+          State.load_discriminant ~ignore_align:true ptr place.ty)
+        ~store:(fun sp store ->
+          let*^ v = Store.try_load sp store in
+          match v with
+          | Value enum -> ok (Typed.Adt.discriminant_of (Typed.cast_enum enum))
+          | Uninit -> (
+              let* dangling = Sptr.dangling_if_zst sp.origin.ty in
+              match dangling with
+              | Some d ->
+                  OptionM.lift
+                  @@ State.load_discriminant (Typed.Ptr.of_ptr_t d) place.ty
+              | None -> error `UninitializedMemoryAccess)
+          | _ -> none ())
+      (* If a type doesn't have variants, return 0.
+         https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
+    else ok U8.(0s)
 
   (** Resolve a function operand, returning a callable symbolic function to
       execute it. It also returns the types expected of the function, which is
@@ -921,32 +953,7 @@ module Make (StateImpl : State.S) = struct
               Layout.Fields_shape.shape_for_variant variant layout.fields
             in
             Typed.as_any @@ Layout.Fields_shape.offset_of field fields)
-    | Discriminant place ->
-        let* layout = Layout.layout_of place.ty in
-        if layout.uninhabited then error (`RefToUninhabited place.ty)
-        else if Option.is_some_and Crate.is_enum (ty_as_adt_opt place.ty) then
-          let open OptionM in
-          let open Syntax in
-          let* loc = resolve_place_lazy place in
-          try_lazy loc
-            ~heap:(fun ptr ->
-              State.load_discriminant ~ignore_align:true ptr place.ty)
-            ~store:(fun sp store ->
-              let*^ v = Store.try_load sp store in
-              match v with
-              | Value enum ->
-                  ok (Typed.Adt.discriminant_of (Typed.cast_enum enum))
-              | Uninit -> (
-                  let* dangling = Sptr.dangling_if_zst sp.origin.ty in
-                  match dangling with
-                  | Some d ->
-                      OptionM.lift
-                      @@ State.load_discriminant (Typed.Ptr.of_ptr_t d) place.ty
-                  | None -> error `UninitializedMemoryAccess)
-              | _ -> none ())
-          (* If a type doesn't have variants, return 0.
-             https://doc.rust-lang.org/std/intrinsics/fn.discriminant_value.html *)
-        else ok U8.(0s)
+    | Discriminant place -> resolve_discriminant place
     (* Enum aggregate *)
     | Aggregate (AggregatedAdt (adt, Some v_id, None), vals) ->
         let* adt = Poly.subst_tyref adt in
@@ -1189,36 +1196,37 @@ module Make (StateImpl : State.S) = struct
             let+ () = State.tb_load ptr pointee in
             (ptr, ()))
         |> map fst
-    | Switch (discr, switch) -> (
-        let* discr = eval_operand discr in
-        match switch with
-        | If (if_block, else_block) ->
-            [%l.info
-              "Switch if/else %a/%a for %a" UllbcAst.pp_block_id if_block
-                UllbcAst.pp_block_id else_block Typed.ppa discr];
-            let bool_discr = BV.to_bool (Typed.cast_lit TBool discr) in
-            if%sat[@lname "if case"] [@rname "else case"] bool_discr then
-              let block = UllbcAst.BlockId.nth body.body if_block in
-              exec_block ~body block
-            else
-              let block = UllbcAst.BlockId.nth body.body else_block in
-              exec_block ~body block
-        | SwitchInt (lit, options, default) ->
-            [%l.info
-              "Switch options %a (else %a) for %a"
-                Fmt.(
-                  list ~sep:comma
-                  @@ pair ~sep:(any "->") string UllbcAst.pp_block_id)
-                (List.map
-                   (fun (v, b) -> (Print.literal_to_string v, b))
-                   options)
-                UllbcAst.pp_block_id default Typed.ppa discr];
-            let discr = Typed.cast_lit lit discr in
-            let compare_discr = fun (v, _) -> discr ==@ BV.of_literal v in
-            let*^ block = match_on options ~constr:compare_discr in
-            let block = Option.fold ~none:default ~some:snd block in
-            let block = UllbcAst.BlockId.nth body.body block in
-            exec_block ~body block)
+    | Switch (switch, branches) ->
+        let* discr =
+          match switch.scrutinee with
+          | SwitchValue op -> eval_operand op
+          | SwitchDiscriminant p -> resolve_discriminant p
+        in
+        [%l.info
+          "Switch %a: %a (else %a)" Typed.ppa discr
+            Fmt.(
+              list ~sep:comma
+              @@ pair ~sep:(any "->") string UllbcAst.pp_block_id)
+            (List.map
+               (fun (v, b) ->
+                 ( Fmt.to_to_string Crate.pp_constant_expr v,
+                   GAst.BranchId.nth branches b ))
+               switch.branches)
+            Fmt.(option ~none:(any "UB") UllbcAst.pp_block_id)
+            (Option.map (GAst.BranchId.nth branches) switch.fallback)];
+        let rec aux = function
+          | (c, br) :: rest ->
+              let* c = resolve_constant c in
+              if%sat Typed.not (c ==@ discr) then aux rest else ok br
+          | [] -> (
+              match switch.fallback with
+              | Some br -> ok br
+              | None -> not_impl "infallible match failed")
+        in
+        let* branch = aux switch.branches in
+        let block = GAst.BranchId.nth branches branch in
+        let block = UllbcAst.BlockId.nth body.body block in
+        exec_block ~body block
     | Drop (drop_kind, place, fn_ptr, target, on_unwind) ->
         assert (drop_kind = Precise);
         let* place_ptr = resolve_place place in

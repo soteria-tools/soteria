@@ -48,10 +48,10 @@ Try creating a generic vec
   
   => Running vec::with_capacity...
   note: vec::with_capacity: done in <time>, ran 2 branches
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
-  PC 2: (V|2| <u (0x7fffffffffffffff - (0x000000000000000a *cku V|1|))) /\
+  PC 1: (V|2| <u (0x7fffffffffffffff - (0x000000000000000a *cku V|1|))) /\
         (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
         (0x0000000000000001 <=u V|2|)
+  PC 2: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
   
   [1]
 
@@ -84,13 +84,13 @@ Try const generics
   
   => Running const_generics::test_poly_const_generic2...
   note: const_generics::test_poly_const_generic2: done in <time>, ran 6 branches
-  PC 1: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
-  PC 2: (0x0000000000000001 == V|1|) /\ (0x0000000000000001 == V|1|)
-  PC 3: (V|1| == 0x0000000000000008) /\ (V|1| == 0x0000000000000008)
-  PC 4: (V|1| == 0x000000000000000f) /\ (V|1| == 0x000000000000000f)
-  PC 5: (V|1| == 0x00000000000000ff) /\ (V|1| == 0x00000000000000ff)
-  PC 6: (0x0000000000000002 <=u V|1|) /\ (V|1| != 0x0000000000000008) /\
+  PC 1: (0x0000000000000002 <=u V|1|) /\ (V|1| != 0x0000000000000008) /\
         (V|1| != 0x000000000000000f) /\ (V|1| != 0x00000000000000ff)
+  PC 2: (V|1| == 0x00000000000000ff) /\ (V|1| == 0x00000000000000ff)
+  PC 3: (V|1| == 0x000000000000000f) /\ (V|1| == 0x000000000000000f)
+  PC 4: (V|1| == 0x0000000000000008) /\ (V|1| == 0x0000000000000008)
+  PC 5: (0x0000000000000001 == V|1|) /\ (0x0000000000000001 == V|1|)
+  PC 6: (0x0000000000000000 == V|1|) /\ (0x0000000000000000 == V|1|)
   
 Test generating nondeterministic values of type T
   $ soteria-rust exec nondet_t.rs --frontend charon --poly
@@ -169,6 +169,8 @@ Test linked lists, to ensure dropping the list works despite the generic type
         ((0b000 == extract[0-2](V|1|)) || (V|1| <=s (0x0000000000000010 +cks ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) /\
         ((0b000 == extract[0-2](V|1|)) ? ((0b000 == extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <=s (0x0000000000000008 +cks V|1|))) : ((0b000 != extract[0-2](V|1|)) || (V|1| <=s (0x0000000000000008 +cks ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))))) /\
         ((0b000 == extract[0-2](V|1|)) ? ((0b000 == extract[0-2](V|1|)) || (V|1| <s (0x0000000000000008 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) : ((0b000 != extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) <s (0x0000000000000008 +ck V|1|)))) /\
+        ((0b000 == extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) != 0xfffffffffffffff0)) /\
+        ((0b000 == extract[0-2](V|1|)) || (((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))) != 0xfffffffffffffff0)) /\
         (0x0000000000000001 <=u V|1|) /\ (V|1| <=u 0x00000000000003ff) /\
         (0b0000000000000000000000000000000000000000000000000000000000001 <=u V|2|) /\
         ((((0b000 == extract[0-2](V|1|)) || (0b000 == extract[0-2](((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))))) ? ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000010 +cks V|1|) : (0x0000000000000010 +cks ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))) : ((0x0000000000000018 +cks ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|)))) - extend[u61](extract[0-2](((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))))) == ((0b000 == extract[0-2](V|1|)) ? (0x0000000000000010 +ck V|1|) : (0x0000000000000010 +ck ((0x0000000000000008 +ck V|1|) -ck extend[u61](extract[0-2](V|1|))))))

@@ -109,12 +109,12 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
 
 **Manual installation:**
 1. **Clone Obol at the correct commit:**
-   <!-- [versionsync: OBOL_COMMIT_HASH=514e0fa36ecba85da8e3a764f869634488f4782f] -->
+   <!-- [versionsync: OBOL_COMMIT_HASH=e3f6c91ace22af0425983f04f0efdf11484e7c45] -->
    ```sh
    cd ..
    git clone https://github.com/soteria-tools/obol.git
    cd obol
-   git checkout 514e0fa36ecba85da8e3a764f869634488f4782f
+   git checkout e3f6c91ace22af0425983f04f0efdf11484e7c45
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `OBOL_COMMIT_HASH`.
 
@@ -140,12 +140,12 @@ To use Soteria Rust, you need a frontend to translate Rust code to an intermedia
 
 **Manual installation:**
 1. **Clone Charon at the correct commit:**
-   <!-- [versionsync: CHARON_COMMIT_HASH=26cee99d259d3c106394e2e1ab53f3feaa11f3c9] -->
+   <!-- [versionsync: CHARON_COMMIT_HASH=207929a6792b527a9748fd728317686e1b0c2f86] -->
    ```sh
    cd ..
    git clone https://github.com/soteria-tools/charon.git
    cd charon
-   git checkout 26cee99d259d3c106394e2e1ab53f3feaa11f3c9
+   git checkout 207929a6792b527a9748fd728317686e1b0c2f86
    ```
    > **Note:** The required commit hash can always be found in [`scripts/versions.json`](scripts/versions.json) under `CHARON_COMMIT_HASH`.
 

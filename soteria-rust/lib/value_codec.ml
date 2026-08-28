@@ -527,7 +527,7 @@ let rec validity ?(check_ref = fun _ _ -> Rustsymex.Result.ok ()) ty v f =
       ref_box_validity ptr pointee
   (* NOTE: this check must go before the struct check, since boxes are
      structs *)
-  | TAdt adt when adt_is_box adt ->
+  | TAdt { builtin = Some TBox; _ } ->
       let pointee = get_pointee ty in
       let ptr = ptr_of_box v in
       ref_box_validity ptr pointee
@@ -855,11 +855,11 @@ let rec ref_tys_in
   in
   let* ty = Poly.subst_ty ty in
   match ty with
-  | TRef (_, _, _) | TAdt { builtin = Some TBox; _ } ->
+  | TRef (_, _, _) ->
       let v = Typed.cast_ptr_f v in
       let++ res, acc = fn init ty v in
       (Typed.as_any res, acc)
-  | TAdt adt when adt_is_box adt ->
+  | TAdt { builtin = Some TBox; _ } ->
       let ptr, allocator, marker = unwrap_box v in
       let++ ptr, acc = fn init ty ptr in
       (mk_box ptr allocator marker, acc)
