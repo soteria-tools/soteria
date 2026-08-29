@@ -373,12 +373,11 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   let rec size_and_align_of_val t (ptr : Typed.([< T.sptr_f ] t)) =
     let* st = get_state () in
-    let load_vtable field ptr =
+    let load_vtable dyn_pred field ptr =
       let open Rustsymex.Syntax in
       let usize : Types.ty = TLiteral (TUInt Usize) in
-      let** field_size = Layout.size_of usize in
-      let ofs = match field with `Size -> Usize.(1s) | `Align -> Usize.(2s) in
-      let** ptr' = Sptr.raw_offset ptr (ofs *!!@ field_size) in
+      let** ofs = Layout.vtable_field_offset dyn_pred field in
+      let** ptr' = Sptr.raw_offset ptr ofs in
       let ptr' = Typed.Ptr.of_ptr_t ptr' in
       let+ res, _ = load ~ignore_borrow:true ~check_refs:false ptr' usize st in
       Compo_res.map Typed.cast res

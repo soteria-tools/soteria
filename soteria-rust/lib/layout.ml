@@ -440,6 +440,26 @@ let[@inline] align_of ty =
   let++ { align; _ } = layout_of ty in
   (Typed.cast align :> Typed.([> T.nonzero ] t))
 
+(** The byte offset of [field] within the vtable of the [dyn Trait] predicate
+    [dyn_pred]. *)
+let vtable_field_offset (dyn_pred : Types.dyn_predicate)
+    (field : Types.v_table_field) =
+  match Crate.dyn_vtable_ref dyn_pred with
+  | None ->
+      (* Obol doesn't declare VTable structs, using instead the rustc hardcoded
+         layout. *)
+      let idx =
+        match field with
+        | VTableSize -> 1
+        | VTableAlign -> 2
+        | _ -> L.failwith "vtable_field_offset: unexpected field"
+      in
+      ok (BV.usizei (idx * Crate.pointer_size ()))
+  | Some vt_ref ->
+      let idx = Crate.vtable_field_index vt_ref field in
+      let++ { fields; _ } = layout_of (TAdt vt_ref) in
+      Fields_shape.offset_of idx fields
+
 (** Whether the given type is a 1ZST: it must have size 0 and alignment 1. *)
 let[@inline] is_1zst ty =
   let++ layout = layout_of ty in

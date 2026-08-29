@@ -903,10 +903,10 @@ let rec size_and_align_of_val ~load_vtable ~t ~(ptr : Typed.([< T.sptr_f ] t)) =
         let size, ovf_mul = layout.size *?@ len in
         let++ () = assert_or_error (Typed.not ovf_mul) `Overflow in
         (size, layout.align)
-    | TDynTrait _ ->
+    | TDynTrait dyn_pred ->
         let meta = Typed.Ptr.vtable_meta ptr in
-        let** size = load_vtable `Size meta in
-        let++ align = load_vtable `Align meta in
+        let** size = load_vtable dyn_pred Types.VTableSize meta in
+        let++ align = load_vtable dyn_pred Types.VTableAlign meta in
         let size = Typed.cast_i Usize size in
         let align = Typed.cast_i Usize align in
         (size, Typed.cast_nonzero align)

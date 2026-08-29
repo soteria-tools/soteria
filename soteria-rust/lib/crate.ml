@@ -187,6 +187,22 @@ let get_trait_decl (trait_ref : Types.trait_decl_ref) =
   let subst = subst_at_binder_zero subst in
   st_substitute_visitor#visit_trait_decl subst trait
 
+(** The vtable struct of the trait a [dyn Trait] predicate refers to, if the
+    frontend declares one. *)
+let dyn_vtable_ref (dyn_pred : Types.dyn_predicate) =
+  match dyn_pred.binder.binder_params.trait_clauses with
+  | principal :: _markers ->
+      (get_trait_decl principal.trait.binder_value).vtable
+  | [] -> None
+
+(** The index of [field] in the vtable struct [vt_ref]. *)
+let vtable_field_index (vt_ref : Types.type_decl_ref) field =
+  match (get_adt_raw vt_ref.id).src with
+  | VTableType (_, field_map, _) ->
+      List.find_index (Types.equal_v_table_field field) field_map
+      |> Option.get ~msg:"no matching field in vtable field map"
+  | _ -> L.failwith "tried getting vtable field of non-vtable"
+
 let get_assoc_type_name (trait_ref : Types.trait_ref) type_id =
   Charon.GAstUtils.get_assoc_type_name (get_crate ())
     trait_ref.trait_decl_ref.binder_value.id type_id

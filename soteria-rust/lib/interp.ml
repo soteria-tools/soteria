@@ -333,9 +333,20 @@ module Make (StateImpl : State.S) = struct
     | CFnPtr fn_ptr ->
         let* fn = resolve_fn_ptr fn_ptr in
         State.declare_fn fn
-    | CVTableRef _ ->
-        not_impl "vtable-reference constants are not yet supported: %a"
-          Crate.pp_constant_expr const
+    | CVTableRef tref -> (
+        let* tref = Poly.subst_tref tref in
+        match tref.kind with
+        | TraitImpl implref ->
+            let trait_impl = Crate.get_trait_impl implref in
+            let* global =
+              of_opt_not_impl "vtable for non dyn-compatible trait"
+                trait_impl.vtable
+            in
+            let+ ptr = resolve_global global in
+            Typed.as_any ptr
+        | _ ->
+            not_impl "vtable reference on a non-impl trait ref: %a"
+              Crate.pp_constant_expr const)
     | CTypeId ty ->
         let* id = State.type_id ty in
         State.transmute ~from:(TLiteral (TUInt U128)) ~to_:const.ty id
@@ -354,7 +365,7 @@ module Make (StateImpl : State.S) = struct
   (** Resolves a place to a pointer, along with the alignment requirement it
       inherits from the pointer it was created from (see {!align_root}). *)
   and resolve_place_rooted (place : Expressions.place) :
-      (Typed.T.sptr_f Typed.t * align_root) t =
+      (Typed.([> T.sptr_f ] t) * align_root) t =
     match place.kind with
     (* Just a local *)
     | PlaceLocal v ->
@@ -709,7 +720,7 @@ module Make (StateImpl : State.S) = struct
     let glob : Types.global_decl_ref = { glob with generics } in
     let* v_opt = State.load_global glob in
     match v_opt with
-    | Some v -> ok v
+    | Some v -> ok Typed.((v : T.sptr_f t :> [> T.sptr_f ] t))
     | None ->
         (* First we allocate the global and store it in the State *)
         let kind : Alloc_kind.t =
@@ -727,7 +738,7 @@ module Make (StateImpl : State.S) = struct
         [%l.info
           "Initialized global %a at %a to %a" Crate.pp_name decl.item_meta.name
             Typed.ppa ptr Typed.ppa v];
-        (ptr : Typed.T.sptr_f Typed.t :> Typed.([> T.sptr_f ] t))
+        Typed.((ptr : T.sptr_f t :> [> T.sptr_f ] t))
 
   and eval_operand (op : Expressions.operand) =
     match op with
@@ -805,6 +816,9 @@ module Make (StateImpl : State.S) = struct
                 else
                   let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f v) in
                   Typed.Ptr.of_ptr_t ptr
+            | (TRef _ | TRawPtr _ | TFnPtr _), TFnPtr _ ->
+                let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f v) in
+                ok (Typed.Ptr.of_ptr_t ptr)
             | _ ->
                 L.failwith "unexpected types for CastRawPtr: %a -> %a" pp_ty
                   from_ty pp_ty to_ty)
@@ -837,8 +851,12 @@ module Make (StateImpl : State.S) = struct
             match unsize_path with
             | Some path -> with_ptr_meta v path
             | None -> not_impl "don't know how to unsize through %a" pp_ty ty)
-        | Cast (CastConcretize (_from, _to)) ->
-            not_impl "Unsupported: dyn (concretize)"
+        | Cast (CastConcretize (from_ty, to_ty)) -> (
+            match to_ty with
+            | TRef _ | TRawPtr _ ->
+                let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f v) in
+                ok (Typed.Ptr.of_ptr_t ptr)
+            | _ -> not_impl "don't know how to concretize to %a" pp_ty to_ty)
         | Cast (CastFnPtr (_from, _to)) -> (
             match type_of_operand e with
             | TFnDef fn_ptr ->
