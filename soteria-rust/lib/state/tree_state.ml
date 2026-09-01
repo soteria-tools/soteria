@@ -57,24 +57,6 @@ module Make (Borrows : Tree_borrows.T) = struct
     [@@deriving show { with_path = false }]
   end
 
-  type global = String of string | Global of Types.global_decl_ref
-
-  module FunBiMap = struct
-    include
-      Bimap.MakePp
-        (struct
-          type t = T.sloc Typed.t
-
-          let compare = Typed.compare
-          let pp = Typed.ppa
-          let show = Fmt.to_to_string pp
-        end)
-        (Fun_kind)
-
-    let get_fn = find_l
-    let get_loc = find_r
-  end
-
   module Block = struct
     type t = { block : Tree_block.t option; borrow : Borrows.Tree.t option }
     [@@deriving sym_state { symex = DecayMap.SM }]
@@ -261,13 +243,7 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   type t = {
     heap : Heap.t option; [@sym_state.context { field = pointers }]
-    functions : FunBiMap.t;
-        [@sym_state.ignore
-          {
-            empty = FunBiMap.empty;
-            is_empty = FunBiMap.is_empty;
-            pp = FunBiMap.pp;
-          }]
+    functions : Functions_map.t option;
     globals : Glob_map.t option;
     errors : Error.with_trace list;
         [@sym_state.ignore
@@ -935,51 +911,31 @@ module Make (Borrows : Tree_borrows.T) = struct
     Result.error error
 
   let declare_fn fn_def =
+    (* TODO: allow functions with set alignment + flag for default *)
     let align = Usize.(16s) in
-    let** result =
-      with_functions_sym (fun fns ->
-          Rustsymex.Result.ok (FunBiMap.get_loc fn_def fns, fns))
+    let size = Usize.(1s) in
+    let** result = with_functions @@ Functions_map.lookup_fn_loc fn_def in
+    let++ loc =
+      match result with
+      | Some loc -> Result.ok loc
+      | None ->
+          (* NOTE: allocate with a non-zero size, as otherwise we skip creating
+             an allocation and the function pointer doesn't have provenance. *)
+          let span = Fun_kind.span fn_def in
+          let** ptr =
+            with_alloc_kind (Function fn_def) @@ fun () ->
+            alloc_untyped ?span ~zeroed:false ~size ~align
+          in
+          let loc = Typed.Ptr.(loc @@ ptr_of ptr) in
+          let++ () = with_functions @@ Functions_map.declare_fn_at loc fn_def in
+          loc
     in
-    match result with
-    | Some loc ->
-        let ptr =
-          Typed.Ptr.mk_ptr_t ~loc
-            ~ofs:Usize.(0s)
-            ~tag:None ~align
-            ~size:Usize.(0s)
-        in
-        Result.ok (Typed.Ptr.of_ptr_t ptr)
-    | None ->
-        let span =
-          match fn_def with
-          | Real fn -> Some (Crate.get_fun fn.id).item_meta.span.data
-          | Synthetic _ -> None
-        in
-        (* NOTE: here we must allocate with a non-zero size, as otherwise we
-           skip creating an actual allocation and the function pointers will
-           thus have no provenance. *)
-        let** ptr =
-          with_alloc_kind (Function fn_def) @@ fun () ->
-          alloc_untyped ?span ~zeroed:false ~size:Usize.(1s) ~align
-        in
-        let ptr = Typed.Ptr.ptr_of ptr in
-        let ptr = Typed.Ptr.with_tag ptr None in
-        let loc = Typed.Ptr.loc ptr in
-        let ptr = Typed.Ptr.of_ptr_t ptr in
-        with_functions_sym (fun fns ->
-            Rustsymex.Result.ok (ptr, FunBiMap.add loc fn_def fns))
+    Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag:None ~size ~align
+    |> Typed.Ptr.of_ptr_t
 
   let lookup_fn (ptr : Typed.([< T.sptr_f ] t)) =
-    let open Rustsymex in
-    let open Syntax in
     let@ () = with_loc_err ~trace:"Accessing function pointer" () in
-    let@ functions = with_functions_sym in
-    let ptr = Typed.Ptr.ptr_of ptr in
-    let loc, ofs = Typed.Ptr.decompose ptr in
-    let** () = assert_or_error (ofs ==@ Usize.(0s)) `MisalignedFnPointer in
-    match FunBiMap.get_fn loc functions with
-    | Some fn -> Result.ok (fn, functions)
-    | None -> Result.error `NotAFnPointer
+    with_functions @@ Functions_map.lookup_fn ptr
 
   let lookup_const_generic id ty =
     let open Rustsymex in
