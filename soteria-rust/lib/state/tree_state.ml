@@ -241,6 +241,11 @@ module Make (Borrows : Tree_borrows.T) = struct
          | _ -> SM.Result.ok false)
   end
 
+  type 'st unit_state_fn =
+    unit ->
+    'st ->
+    ((unit, Error.with_trace, unit) Compo_res.t * 'st) Rustsymex.t
+
   type t = {
     heap : Heap.t option; [@sym_state.context { field = pointers }]
     functions : Functions_map.t option;
@@ -249,11 +254,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         [@sym_state.ignore
           { empty = []; pp = Fmt.Dump.list Error.pp_with_trace }]
     pointers : DecayMap.t option;
-    thread_destructor :
-      (unit ->
-      t option ->
-      ((unit, Error.with_trace, unit) Compo_res.t * t option) Rustsymex.t)
-      option;
+    thread_destructor : t option unit_state_fn option;
         [@sym_state.ignore { empty = None }]
     const_generics : Typed.(T.any t) Types.ConstGenericVarId.Map.t;
         [@sym_state.ignore
