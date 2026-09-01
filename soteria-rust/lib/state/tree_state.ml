@@ -256,12 +256,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     pointers : DecayMap.t option;
     thread_destructor : t option unit_state_fn option;
         [@sym_state.ignore { empty = None }]
-    const_generics : Typed.(T.any t) Types.ConstGenericVarId.Map.t;
-        [@sym_state.ignore
-          {
-            empty = Types.ConstGenericVarId.Map.empty;
-            pp = Types.ConstGenericVarId.Map.pp Typed.ppa;
-          }]
+    const_generics : Const_generic_env.t option;
     type_ids : Type_id_map.t option;
   }
   [@@deriving sym_state { symex = Rustsymex }]
@@ -942,15 +937,7 @@ module Make (Borrows : Tree_borrows.T) = struct
     let open Rustsymex in
     let open Syntax in
     let@ () = with_loc_err ~trace:"Accessing const generic" () in
-    let@ const_generics = with_const_generics_sym in
-    match Types.ConstGenericVarId.Map.find_opt id const_generics with
-    | Some v ->
-        Result.ok
-          ((v : Typed.T.any Typed.t :> Typed.([> T.any ] t)), const_generics)
-    | None ->
-        let++ v = Value_codec.nondet_valid ty in
-        ( (v : Typed.T.any Typed.t :> Typed.([> T.any ] t)),
-          Types.ConstGenericVarId.Map.add id v const_generics )
+    with_const_generics @@ Const_generic_env.lookup_const_generic id ty
 
   let type_id ty = with_type_ids @@ Type_id_map.get_type_id ty
 
