@@ -224,3 +224,35 @@ module T (M : Monad.Base) :
   let map_error f = M.map (map_error f)
   let map_missing f = M.map (map_missing f)
 end)
+
+module T2 (M : sig
+  type ('a, 'b) t
+
+  val return : 'a -> ('a, 'b) t
+  val bind : ('a -> ('c, 'b) t) -> ('a, 'b) t -> ('c, 'b) t
+  val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
+end) =
+struct
+  type nonrec ('a, 'b, 'err, 'fix) t = (('a, 'err, 'fix) t, 'b) M.t
+
+  let ok x = M.return (Ok x)
+  let error e = M.return (Error e)
+  let miss f = M.return (Missing f)
+
+  let bind f =
+    M.bind @@ function
+    | Ok v -> f v
+    | Error e -> M.return (Error e)
+    | Missing f' -> M.return (Missing f')
+
+  let bind2 f fe =
+    M.bind @@ function
+    | Ok v -> f v
+    | Error e -> fe e
+    | Missing f' -> M.return (Missing f')
+
+  let map (f : 'a -> 'c) : ('a, _, _, _) t -> ('c, _, _, _) t = M.map @@ map f
+  let map_error f = M.map (map_error f)
+  let map_missing f = M.map (map_missing f)
+  let lift (x : ('a, 'b) M.t) : ('a, _, _, _) t = M.map (fun x -> Ok x) x
+end

@@ -4,41 +4,6 @@ open Charon
 open Common
 open Svalue
 
-module Compo_resT2 (I : sig
-  type fix
-  type error
-end) (M : sig
-  type ('a, 'b) t
-
-  val return : 'a -> ('a, 'b) t
-  val bind : ('a -> ('c, 'b) t) -> ('a, 'b) t -> ('c, 'b) t
-  val map : ('a -> 'c) -> ('a, 'b) t -> ('c, 'b) t
-end) =
-struct
-  open I
-
-  type ('a, 'b) t = (('a, error, fix) Compo_res.t, 'b) M.t
-
-  let ok x = M.return (Ok x)
-  let error e = M.return (Error e)
-  let miss f = M.return (Missing f)
-
-  let bind f =
-    M.bind @@ function
-    | Ok v -> f v
-    | Error e -> M.return (Error e)
-    | Missing f' -> M.return (Missing f')
-
-  let bind2 f fe =
-    M.bind @@ function
-    | Ok v -> f v
-    | Error e -> fe e
-    | Missing f' -> M.return (Missing f')
-
-  let map (f : 'a -> 'c) : ('a, 'b) t -> ('c, 'b) t = M.map @@ Compo_res.map f
-  let lift (x : ('a, 'b) M.t) : ('a, 'b) t = M.map Compo_res.ok x
-end
-
 module type S = sig
   open Typed.T
 
@@ -329,21 +294,13 @@ module Make (State : State_intf.S) :
     include MONAD
 
     module Result = struct
-      let l = lift
+      include Compo_res.T2 (MONAD)
 
-      include
-        Compo_resT2
-          (struct
-            type fix = syn list
-            type error = Error.with_trace
-          end)
-          (MONAD)
-
-      let lift_state x = lift @@ l x
+      let lift_state x = lift @@ MONAD.lift x
     end
   end
 
-  type ('a, 'env) t = ('a, 'env) ESM.Result.t
+  type ('a, 'env) t = ('a, 'env, Error.with_trace, syn list) ESM.Result.t
   type ('a, 'env) monad = ('a, 'env) t
 
   let ok x : ('a, 'env) t = ESM.Result.ok x
