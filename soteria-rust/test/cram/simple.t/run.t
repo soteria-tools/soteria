@@ -73,6 +73,48 @@ Test unwinding, and catching that unwind; we need to ignore leaks as this uses a
         (V|2| <=u 0x7ffffffffffffffd) /\ (0x01 == V|1|)
   PC 2: (0x00 == V|1|) /\ (0x00 == V|1|)
   
+Test that a panic while already unwinding is reported as a terminated unwind,
+rather than confusing the two errors in flight.
+  $ soteria-rust exec double_unwind.rs --ignore-leaks
+  Compiling... done in <time>
+  => Running double_unwind::panic_in_drop_while_unwinding...
+  error: double_unwind::panic_in_drop_while_unwinding: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Terminated unwind in double_unwind::panic_in_drop_while_unwinding
+      --> $TESTCASE_ROOT/double_unwind.rs:15:1
+   12 |  fn panic_in_drop_while_unwinding() {
+      |  ---------------------------------- 1: Entry point
+      .  
+   15 |  }
+      |  ^ Triggering operation
+  PC 1: empty
+  
+  => Running double_unwind::nested_unwind_in_catch_unwind...
+  error: double_unwind::nested_unwind_in_catch_unwind: found issues in <time>, errors in 1 branch (out of 1)
+  bug: Terminated unwind in double_unwind::nested_unwind_in_catch_unwind
+      --> $RUSTLIB/library/std/src/panicking.rs:576:43
+  544 |            return if intrinsics::catch_unwind(do_call, &raw mut data, do_catch) {
+      |                      ----------------------------------------------------------
+      |                      |
+      |                      4: catch_unwind try
+      |                      3: Call trace
+      .    
+  576 |                (*data).r = ManuallyDrop::new(f());
+      |                                              --- 5: Call trace
+      --> $TESTCASE_ROOT/double_unwind.rs:36:5
+   32 |    fn nested_unwind_in_catch_unwind() {
+      |    ---------------------------------- 1: Entry point
+   33 |        let _ = std::panic::catch_unwind(|| {
+      | /--------------'
+   34 | |          let _d = CallingDrop;
+   35 | |          panic!("first panic");
+   36 | |      });
+      | |      ^ Triggering operation
+      | \-------' 2: Call trace
+   37 |    }
+  PC 1: empty
+  
+  [1]
+
 Test that we properly handle the niche optimisation
   $ soteria-rust exec niche_optim.rs --ignore-leaks
   Compiling... done in <time>
