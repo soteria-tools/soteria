@@ -245,9 +245,6 @@ module Make (Borrows : Tree_borrows.T) = struct
     heap : Heap.t option; [@sym_state.context { field = pointers }]
     functions : Functions_map.t option;
     globals : Glob_map.t option;
-    errors : Error.with_trace list;
-        [@sym_state.ignore
-          { empty = []; pp = Fmt.Dump.list Error.pp_with_trace }]
     pointers : DecayMap.t option;
     thread_destructor : t option Thread_destructors.t option;
     const_generics : Const_generic_env.t option;
@@ -886,19 +883,6 @@ module Make (Borrows : Tree_borrows.T) = struct
            Trace.rename ~rev:true 0 "Leaking function" leak_trace
          in
          Result.error (Error.decorate leak_trace `MemoryLeak))
-
-  let add_error e =
-    let@ errors = with_errors_sym in
-    Rustsymex.Result.ok ((), e :: errors)
-
-  let pop_error () =
-    let** error =
-      let@ errors = with_errors_sym in
-      match errors with
-      | e :: rest -> Rustsymex.Result.ok (e, rest)
-      | _ -> L.failwith "pop_error with no errors?"
-    in
-    Result.error error
 
   let declare_fn fn_def =
     (* TODO: allow functions with set alignment + flag for default *)
