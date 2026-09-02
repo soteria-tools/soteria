@@ -62,6 +62,8 @@ module type S = sig
     ('a, 'env) t
 
   val with_frame : string -> (unit -> ('a, 'env) t) -> ('a, 'env) t
+  val set_unwind_error : Error.with_trace -> (unit, 'env) t
+  val resume_unwind_error : unit -> ('a, 'env) t
 
   val unwind_with :
     f:('a -> ('b, 'env) t) ->
@@ -223,8 +225,6 @@ module type S = sig
     val type_id : Types.ty -> (sint v, 'env) t
     val register_thread_exit : (unit -> (unit, unit) t) -> (unit, 'env) t
     val run_thread_exits : unit -> (unit, 'env) t
-    val add_error : Error.with_trace -> (unit, 'env) t
-    val pop_error : unit -> ('a, 'env) t
     val leak_check : unit -> (unit, 'env) t
     val fake_read : [< sptr_f ] v -> Types.ty -> (unit, 'env) t
 
@@ -392,6 +392,12 @@ module Make (State : State_intf.S) :
   let with_frame name (f : unit -> ('a, 'env) t) : ('a, 'env) t =
    fun env state -> Rustsymex.with_frame name (fun () -> f () env state)
 
+  let[@inline] set_unwind_error err =
+    lift_symex @@ Rustsymex.set_unwind_error err
+
+  let[@inline] resume_unwind_error () =
+    ESM.lift @@ State.SM.lift @@ Rustsymex.resume_unwind_error ()
+
   let[@inline] unwind_with ~f ~fe : ('a, 'env) monad -> ('b, 'env) monad =
     ESM.Result.bind2 f (fun ((err_ty, _) as err) ->
         if Error.is_unwindable err_ty then fe err else error_raw err)
@@ -542,8 +548,6 @@ module Make (State : State_intf.S) :
       ESM.lift (lookup_const_generic id ty)
 
     let[@inline] type_id ty = ESM.lift (type_id ty)
-    let[@inline] add_error e = ESM.lift (add_error e)
-    let[@inline] pop_error () : ('a, 'env) monad = ESM.lift (pop_error ())
     let[@inline] leak_check () = ESM.lift (leak_check ())
 
     let[@inline] register_thread_exit (f : unit -> (unit, unit) monad) =

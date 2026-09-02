@@ -90,8 +90,6 @@ module type S = sig
   val unprotect : [< sptr_f ] v -> Types.ty -> unit ret
   val with_exposed : [< sint ] Typed.t -> [> sptr_f ] v ret
   val leak_check : unit -> unit ret
-  val add_error : Error.with_trace -> unit ret
-  val pop_error : unit -> 'a ret
   val declare_fn : Fun_kind.t -> [> sptr_f ] v ret
   val lookup_fn : [< sptr_f ] v -> Fun_kind.t ret
 
