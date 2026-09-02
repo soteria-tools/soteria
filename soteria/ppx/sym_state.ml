@@ -594,6 +594,7 @@ let make_impl ~loc ~symex_module ~syn_ty (td : type_declaration) =
   let@ loc = with_loc loc in
   let fields = fields_of_td_exn td in
   [
+    [%stri [@@@ocaml.warning "-unreachable-case"]];
     sm_item ~loc symex_module;
     pp_item ~loc fields;
     show_item ~loc;

@@ -14,6 +14,8 @@ Reject manifest syn mismatch
   
     let _ = fun (_ : t) -> ()
   
+    [@@@ocaml.warning "-unreachable-case"]
+  
     module SM =
       Soteria.Sym_states.State_monad.Make
         (Symex)
@@ -121,9 +123,9 @@ Reject manifest syn mismatch
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]
-  File "out.ml", lines 36-37, characters 4-28:
-  36 | ....type syn = Syn.t =
-  37 |       | Ser_heap of Heap.syn.
+  File "out.ml", lines 37-38, characters 4-28:
+  37 | ....type syn = Syn.t =
+  38 |       | Ser_heap of Heap.syn.
   Error: This variant or record definition does not match that of type Syn.t
          An extra constructor, Ser_steps, is provided in the original definition.
   [1]

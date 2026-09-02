@@ -24,6 +24,8 @@ Parametrised state components
   
     let _ = fun (_ : t) -> ()
   
+    [@@@ocaml.warning "-unreachable-case"]
+  
     module SM =
       Soteria.Sym_states.State_monad.Make
         (Symex)
