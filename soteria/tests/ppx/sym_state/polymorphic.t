@@ -53,11 +53,11 @@ Parametrised state components
     type syn = Ser_heap of Heap.syn | Ser_callback of t option Callback.syn
   
     let pp_syn ft (s : syn) =
-      match s with
+      (match s with
       | Ser_heap v -> Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_heap" Heap.pp_syn v
       | Ser_callback v ->
-          Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_callback" Callback.pp_syn v
-      | _ -> .
+          Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_callback" Callback.pp_syn v)
+      [@warning "-unreachable-case"]
   
     let _ = pp_syn
     let show_syn s = Format.asprintf "%a" pp_syn s
@@ -80,10 +80,10 @@ Parametrised state components
     let _ = to_syn
   
     let ins_outs (syn : syn) =
-      match syn with
+      (match syn with
       | Ser_heap v -> Heap.ins_outs v
-      | Ser_callback v -> Callback.ins_outs v
-      | _ -> .
+      | Ser_callback v -> Callback.ins_outs v)
+      [@warning "-unreachable-case"]
   
     let _ = ins_outs
     let lift_heap_fixes = List.map (fun v -> Ser_heap v)
@@ -123,14 +123,14 @@ Parametrised state components
     let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =
       let open SM.Symex.Producer.Syntax in
       let st = of_opt st in
-      match syn with
+      (match syn with
       | Ser_heap v ->
           let+ heap = Heap.produce v st.heap in
           to_opt { st with heap }
       | Ser_callback v ->
           let+ callback = Callback.produce v st.callback in
-          to_opt { st with callback }
-      | _ -> .
+          to_opt { st with callback })
+      [@warning "-unreachable-case"]
   
     let _ = produce
   
@@ -138,7 +138,7 @@ Parametrised state components
         (t option, syn list) SM.Symex.Consumer.t =
       let open SM.Symex.Consumer.Syntax in
       let st = of_opt st in
-      match syn with
+      (match syn with
       | Ser_heap v ->
           let+ heap =
             let+? fixes = Heap.consume v st.heap in
@@ -150,8 +150,8 @@ Parametrised state components
             let+? fixes = Callback.consume v st.callback in
             lift_callback_fixes fixes
           in
-          to_opt { st with callback }
-      | _ -> .
+          to_opt { st with callback })
+      [@warning "-unreachable-case"]
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]
