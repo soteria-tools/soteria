@@ -96,7 +96,10 @@ Ignored field usage
     let _ = empty
     let to_syn (_ : t) : syn list = []
     let _ = to_syn
-    let ins_outs (syn : syn) = match syn with _ -> .
+  
+    let ins_outs (syn : syn) =
+      (match syn with _ -> .) [@warning "-unreachable-case"]
+  
     let _ = ins_outs
   
     let with_my_int_1_sym f =

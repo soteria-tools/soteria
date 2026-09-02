@@ -177,12 +177,14 @@ let match_on_syn fields f e =
         case ~lhs ~guard:None ~rhs)
       (managed_fields fields)
   in
-  (* we add an irrefutable case at the end, so that the pattern match is still
-     valid if there are no managed fields. *)
-  let irrefutable =
-    case ~lhs:[%pat? _] ~guard:None ~rhs:(pexp_unreachable ())
+  (* add a default case for when no managed fields are present *)
+  let cases =
+    if List.is_empty cases then
+      [ case ~lhs:[%pat? _] ~guard:None ~rhs:(pexp_unreachable ()) ]
+    else cases
   in
-  pexp_match e (cases @ [ irrefutable ])
+  (* Silence unreachable warns for uninhabited [syn] *)
+  [%expr [%e pexp_match e cases] [@warning "-unreachable-case"]]
 
 let syn_type_item (syn_ty : longident option) fields =
   let syn_ctor_decl (field, { sym_state; args; _ }) =
