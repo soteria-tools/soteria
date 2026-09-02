@@ -241,11 +241,6 @@ module Make (Borrows : Tree_borrows.T) = struct
          | _ -> SM.Result.ok false)
   end
 
-  type 'st unit_state_fn =
-    unit ->
-    'st ->
-    ((unit, Error.with_trace, unit) Compo_res.t * 'st) Rustsymex.t
-
   type t = {
     heap : Heap.t option; [@sym_state.context { field = pointers }]
     functions : Functions_map.t option;
@@ -254,8 +249,7 @@ module Make (Borrows : Tree_borrows.T) = struct
         [@sym_state.ignore
           { empty = []; pp = Fmt.Dump.list Error.pp_with_trace }]
     pointers : DecayMap.t option;
-    thread_destructor : t option unit_state_fn option;
-        [@sym_state.ignore { empty = None }]
+    thread_destructor : t option Thread_destructors.t option;
     const_generics : Const_generic_env.t option;
     type_ids : Type_id_map.t option;
   }
@@ -942,27 +936,11 @@ module Make (Borrows : Tree_borrows.T) = struct
   let type_id ty = with_type_ids @@ Type_id_map.get_type_id ty
 
   let register_thread_exit callback =
-    (* HACK: we cannot expect thread exit callbacks to miss with syn, because
-       when we define the callback type the syn type has not yet been defined.
-       Instead we expect it to return unit; for now we fail, while we figure out
-       a solution. *)
-    let@ thread_destructor = with_thread_destructor_sym in
-    let callback () =
-      SM.Result.map_missing
-        (fun _ -> L.failwith "TODO: Miss in thread exit")
-        (callback ())
-    in
-    let destructor =
-      match thread_destructor with
-      | None -> callback
-      | Some destructor -> fun () -> Result.bind callback (destructor ())
-    in
-    Rustsymex.Result.ok ((), Some destructor)
+    with_thread_destructor @@ Thread_destructors.register_thread_exit callback
 
   let run_thread_exits () =
-    let* st_opt = SM.get_state () in
-    let st = of_opt st_opt in
-    match st.thread_destructor with
-    | None -> Result.ok ()
-    | Some destructor -> SM.Result.map_missing (fun () -> []) (destructor ())
+    let** callback =
+      with_thread_destructor @@ Thread_destructors.get_thread_exits ()
+    in
+    callback ()
 end
