@@ -26,15 +26,15 @@ module Make (Typed : Typed_intf.Solver_value) = struct
 
     (** Adds a constraint to the current analysis, updating the currently
         tracked data. *)
-    val add_constraint : t -> Svalue.t -> Svalue.t * Var.Set.t
+    val add_constraint : t -> Svalue.t -> Svalue.t * Dep.Set.t
 
     (** Filters the given iterator of symbolic values, keeping only those
         relevant to the given variable according to the analysis. *)
     val filter : t -> Var.t -> Svalue.ty -> Svalue.t Iter.t -> Svalue.t Iter.t
 
-    (** Encode all the information relevant to the given variables and conjuncts
-        them with the given accumulator. *)
-    val encode : ?vars:Var.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
+    (** Encode all the information relevant to the given dependencies and
+        conjuncts them with the given accumulator. *)
+    val encode : ?deps:Dep.Hashset.t -> t -> Typed.sbool Typed.t Iter.t
   end
 
   module Merge (A1 : S) (A2 : S) : S = struct
@@ -43,15 +43,15 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     let simplify (a1, a2) v = v |> A1.simplify a1 |> A2.simplify a2
 
     let add_constraint (a1, a2) v =
-      let v', vars1 = A1.add_constraint a1 v in
-      let v'', vars2 = A2.add_constraint a2 v' in
-      (v'', Var.Set.union vars1 vars2)
+      let v', deps1 = A1.add_constraint a1 v in
+      let v'', deps2 = A2.add_constraint a2 v' in
+      (v'', Dep.Set.union deps1 deps2)
 
     let filter (a1, a2) var ty vs =
       vs |> A1.filter a1 var ty |> A2.filter a2 var ty
 
-    let encode ?vars (a1, a2) : Typed.sbool Typed.t Iter.t =
-      Iter.append (A1.encode ?vars a1) (A2.encode ?vars a2)
+    let encode ?deps (a1, a2) : Typed.sbool Typed.t Iter.t =
+      Iter.append (A1.encode ?deps a1) (A2.encode ?deps a2)
   end
 
   module None : S = struct
@@ -62,9 +62,9 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     let save () = ()
     let reset () = ()
     let simplify () v = v
-    let add_constraint () v = (v, Var.Set.empty)
+    let add_constraint () v = (v, Dep.Set.empty)
     let filter () _ _ vs = vs
-    let encode ?vars:_ () = Iter.empty
+    let encode ?deps:_ () = Iter.empty
   end
 
   module Interval : S = struct
@@ -268,8 +268,8 @@ module Make (Typed : Typed_intf.Solver_value) = struct
 
         Returns [(learnt, dirty, st)]: [learnt] is the constraint to be added to
         the PC (e.g. [false] if this constraint is unfeasible), [dirty] is to
-        mark variables whose range has changed and for which a new SAT check may
-        be needed, and [st] is the new state. *)
+        mark dependencies whose range has changed and for which a new SAT check
+        may be needed, and [st] is the new state. *)
     let update st var size new_range =
       let range = get size var st in
       let range', redundant = Data.add range new_range in
@@ -278,7 +278,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
             m "Useless range  %a: %a %a = %a" Var.pp var Data.pp range Range.pps
               new_range Data.pp range');
         let is_ok = not (Data.is_empty range) in
-        (Svalue.Bool.of_bool is_ok, Var.Set.empty, st))
+        (Svalue.Bool.of_bool is_ok, Dep.Set.empty, st))
       else
         let st = Var.Map.add var range' st in
         log (fun m ->
@@ -290,16 +290,16 @@ module Make (Typed : Typed_intf.Solver_value) = struct
           let const = Svalue.BitVec.mk size (fst range'.pos) in
           let var = mk_var size var in
           let eq = const ==@ var in
-          (eq, Var.Set.empty, st)
+          (eq, Dep.Set.empty, st)
         else if Data.is_empty range' then
           (* The range is empty, so this cannot be true *)
-          (Svalue.Bool.v_false, Var.Set.empty, st)
+          (Svalue.Bool.v_false, Dep.Set.empty, st)
         else
           (* We could cleanly absorb the range, so the PC doesn't need to store
              it -- however we must mark this variable as dirty, as maybe the
              modified range still renders the branch infeasible, e.g. because of
              some additional PC assertions. *)
-          (Svalue.Bool.v_true, Var.Set.singleton var, st)
+          (Svalue.Bool.v_true, Dep.Set.singleton (Dep.Var var), st)
 
     let rec as_range (v : Svalue.t) =
       (* For the inequalities, see https://ceur-ws.org/Vol-1617/paper8.pdf *)
@@ -432,23 +432,23 @@ module Make (Typed : Typed_intf.Solver_value) = struct
         Returns [(simp, learnt, dirty, st)]: [simp] is the simplified constraint
         (which may be [true] if the constraint was entirely absorbed, or [false]
         if it was deemed unfeasible), [learnt] is additional facts learnt from
-        the simplified formula, [dirty] is the set of variables whose ranges
+        the simplified formula, [dirty] is the set of dependencies whose ranges
         changed, and [st] is the updated state. *)
     let rec add_constraint (v : Svalue.t) st :
-        Svalue.t * Svalue.t * Var.Set.t * st =
+        Svalue.t * Svalue.t * Dep.Set.t * st =
       match (v.node.kind, lazy (as_range v)) with
       | Binop (And, v1, v2), _ ->
-          let v1', learnt1, vars1, st' = add_constraint v1 st in
-          let v2', learnt2, vars2, st'' = add_constraint v2 st' in
+          let v1', learnt1, deps1, st' = add_constraint v1 st in
+          let v2', learnt2, deps2, st'' = add_constraint v2 st' in
 
           log (fun m ->
               m "%a && %a => %a && %a" Svalue.pp v1 Svalue.pp v2 Svalue.pp v1'
                 Svalue.pp v2');
-          (v1' &&@ v2', learnt1 &&@ learnt2, Var.Set.union vars1 vars2, st'')
+          (v1' &&@ v2', learnt1 &&@ learnt2, Dep.Set.union deps1 deps2, st'')
       | _, (lazy (Some (var, size, srange))) ->
-          let learnt, vars, st' = update st var size srange in
-          (Svalue.Bool.v_true, learnt, vars, st')
-      | _, (lazy None) -> (v, Svalue.Bool.v_true, Var.Set.empty, st)
+          let learnt, deps, st' = update st var size srange in
+          (Svalue.Bool.v_true, learnt, deps, st')
+      | _, (lazy None) -> (v, Svalue.Bool.v_true, Dep.Set.empty, st)
 
     let rec simplify (v : Svalue.t) st =
       match (v.node.kind, lazy (as_range v)) with
@@ -493,15 +493,15 @@ module Make (Typed : Typed_intf.Solver_value) = struct
 
     let add_constraint v st =
       log (fun m -> m "Adding constraint: %a" Svalue.pp v);
-      let v', learnt, vars, st' = add_constraint v st in
-      if v <> v' || not (Var.Set.is_empty vars) then
+      let v', learnt, deps, st' = add_constraint v st in
+      if v <> v' || not (Dep.Set.is_empty deps) then
         log (fun m ->
             m "Change: %a -> %a + %a (%a)@." Svalue.pp v Svalue.pp v' Svalue.pp
               learnt
-              Fmt.(list ~sep:(any ", ") Var.pp)
-              (Var.Set.to_list vars))
+              Fmt.(list ~sep:(any ", ") Dep.pp)
+              (Dep.Set.to_list deps))
       else log (fun m -> m "No change.@.");
-      ((v' &&@ learnt, vars), st')
+      ((v' &&@ learnt, deps), st')
 
     let filter var ty vs st =
       match ty with
@@ -534,9 +534,11 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     let add_constraint st v = wrap (add_constraint v) st
     let filter st var ty vs = wrap_read (filter var ty vs) st
 
-    let encode ?vars st : Typed.sbool Typed.t Iter.t =
+    let encode ?deps st : Typed.sbool Typed.t Iter.t =
       let to_check =
-        Option.fold ~none:(fun _ -> true) ~some:Var.Hashset.mem vars
+        match deps with
+        | None -> fun _ -> true
+        | Some deps -> fun v -> Dep.Hashset.relevant deps (Dep.Var v)
       in
       wrap_read
         (fun m f ->
@@ -573,6 +575,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
       | Triop (op, a, b, c) -> cost_triop op + cost a + cost b + cost c
       | Nop (_, vs) -> costs vs
       | Var _ -> 3
+      | Uninterp (_, args) -> 3 + costs args
       | Float _ -> 2
       | Seq vs -> costs vs
       | Exists (_, sv) ->
@@ -670,31 +673,31 @@ module Make (Typed : Typed_intf.Solver_value) = struct
       in
       Eval.eval ~eval_var:(eval_var st) v |> simplify ~fuel:3
 
-    let add_vars v s =
-      Svalue.iter_vars v |> Iter.fold (fun s (v, _) -> Var.Set.add v s) s
+    let add_deps v s =
+      Svalue.iter_deps v |> Iter.fold (fun s d -> Dep.Set.add d s) s
 
     let add_constraint (v : Svalue.t) st =
       match v.node.kind with
       | Binop (Eq, v1, v2) ->
-          let vars = Var.Set.empty |> add_vars v1 |> add_vars v2 in
+          let deps = Dep.Set.empty |> add_deps v1 |> add_deps v2 in
           let v1, st = get_or_make v1 st in
           let v2, st = get_or_make v2 st in
           merge v1 v2 st;
-          ((Svalue.Bool.v_true, vars), st)
+          ((Svalue.Bool.v_true, deps), st)
       | Unop (Not, { node = { kind = Nop (Distinct, hd :: tl); _ }; _ }) ->
-          let vars = add_vars hd Var.Set.empty in
+          let deps = add_deps hd Dep.Set.empty in
           let v1, st = get_or_make hd st in
-          let rec aux vars st = function
-            | [] -> (vars, st)
+          let rec aux deps st = function
+            | [] -> (deps, st)
             | v2 :: rest ->
-                let vars = add_vars v2 vars in
+                let deps = add_deps v2 deps in
                 let v2, st = get_or_make v2 st in
                 merge v1 v2 st;
-                aux vars st rest
+                aux deps st rest
           in
-          let vars, st = aux vars st tl in
-          ((Svalue.Bool.v_true, vars), st)
-      | _ -> ((v, Var.Set.empty), st)
+          let deps, st = aux deps st tl in
+          ((Svalue.Bool.v_true, deps), st)
+      | _ -> ((v, Dep.Set.empty), st)
 
     (** In equality analysis we can be certain of the value of a variable, so we
         can entirely replace the set of possible values [vs] with the
@@ -705,7 +708,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
       | None -> vs
       | Some v_repr -> Iter.singleton v_repr
 
-    let encode ?vars (uf, refs) f =
+    let encode ?deps (uf, refs) f =
       let module URefTbl = Hashtbl.Make (struct
         type t = Svalue.t UnionFind.rref
 
@@ -713,12 +716,11 @@ module Make (Typed : Typed_intf.Solver_value) = struct
         let hash = Hashtbl.hash
       end) in
       let is_relevant =
-        match vars with
+        match deps with
         | None -> fun _ -> true
-        | Some vars ->
+        | Some deps ->
             fun v ->
-              Svalue.iter_vars v
-              |> Iter.exists (fun (v, _) -> Var.Hashset.mem vars v)
+              Svalue.iter_deps v |> Iter.exists (Dep.Hashset.relevant deps)
       in
       let relevant_refs = URefTbl.create 8 in
       VMap.iter
@@ -744,6 +746,6 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     let simplify st v = wrap_read (simplify v) st
     let add_constraint st v = wrap (add_constraint v) st
     let filter st var ty vs = wrap_read (filter var ty vs) st
-    let encode ?vars st = wrap_read (encode ?vars) st
+    let encode ?deps st = wrap_read (encode ?deps) st
   end
 end
