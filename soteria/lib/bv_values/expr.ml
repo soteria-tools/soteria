@@ -66,6 +66,9 @@ struct
           | Exists (vs, sv) ->
               let (vs, sv), s = apply_bound ~missing_var s vs sv in
               (Svalue.Bool.mk_exists vs sv, s)
+          | Uninterp (f, args) ->
+              let args, s = apply_list ~missing_var s args in
+              (mk_uninterp f args v.node.ty, s)
           | Extension x ->
               let x, s = Ext.apply_subst apply ~missing_var s x in
               (Ext.mk ( <| ) v.node.ty x, s))

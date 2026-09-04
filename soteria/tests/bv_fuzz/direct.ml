@@ -184,7 +184,7 @@ let collect_checked_assumptions (v : t) : t list =
     | Binop (_, v1, v2) ->
         go v1;
         go v2
-    | Seq vs | Nop (_, vs) -> List.iter go vs
+    | Seq vs | Nop (_, vs) | Uninterp (_, vs) -> List.iter go vs
     | Var _ | Bool _ | BitVec _ | Float _ -> ()
     | Exists _ ->
         failwith

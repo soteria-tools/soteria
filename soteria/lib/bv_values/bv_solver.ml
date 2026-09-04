@@ -249,7 +249,7 @@ struct
         is not directly in the PC. *)
     type slot_content =
       | Asrt of Typed.sbool Typed.t [@printer Typed.ppa]
-      | Dirty of Var.Set.t [@printer Fmt.(iter ~sep:comma) Var.Set.iter Var.pp]
+      | Dirty of Dep.Set.t [@printer Fmt.(iter ~sep:comma) Dep.Set.iter Dep.pp]
     [@@deriving show]
 
     (** Each slot holds a symbolic boolean, as well a boolean indicating if it
@@ -321,22 +321,22 @@ struct
 
     (** We aggregate the unchecked constraints. We start from the right and
         collect all constraints marked as unchecked. We also aggregate all
-        variables contained by the unchecked assertions, and fetch, All
-        assertions (even checked) that also contain these variables. In the end,
-        we need to fetch the closure from these variables.
+        {{!Dep}dependencies} of the unchecked assertions, and fetch all
+        assertions (even checked) that are relevant to these dependencies. In
+        the end, we need to fetch the closure from these dependencies.
 
         The function returns the list to encode, as well the set of all
-        variables required. *)
+        dependencies required. *)
     let unchecked_constraints t =
       let changed = ref false in
-      let var_set = Var.Hashset.with_capacity 8 in
-      let vars value = Value.iter_vars value |> Iter.map fst in
+      let dep_set = Dep.Hashset.with_capacity 8 in
+      let deps value = Svalue.iter_deps (Typed.untyped value) in
       let to_encode = Dynarray.create () in
-      let add_vars_raw vars = Var.Hashset.add_iter var_set vars in
-      let add_vars vars =
-        vars @@ fun v -> changed := Var.Hashset.add_check var_set v || !changed
+      let add_deps_raw deps = Dep.Hashset.add_iter dep_set deps in
+      let add_deps deps =
+        deps @@ fun v -> changed := Dep.Hashset.add_check dep_set v || !changed
       in
-      let relevant = Iter.exists (Var.Hashset.mem var_set) in
+      let relevant = Iter.exists (Dep.Hashset.relevant dep_set) in
       (* We need to reach some kind of fixpoint *)
       let rec aux_checked others seq =
         match seq () with
@@ -346,21 +346,21 @@ struct
               aux_checked Seq.empty others)
             else ()
         | Seq.Cons (({ value = Asrt value; _ } as slot), rest) ->
-            let vars = vars value in
-            if relevant vars then (
-              add_vars vars;
+            let deps = deps value in
+            if relevant deps then (
+              add_deps deps;
               Dynarray.add_last to_encode value;
               aux_checked others rest)
             else
               let others = fun () -> Seq.Cons (slot, others) in
               aux_checked others rest
-        | Seq.Cons ({ value = Dirty vars; _ }, rest) ->
-            let vars = Fun.flip Var.Set.iter vars in
-            if relevant vars then
-              (* Variables that are together in a Dirty slot might indicate a
-                 relationship between the variables. We need to consider them
+        | Seq.Cons ({ value = Dirty deps; _ }, rest) ->
+            let deps = Fun.flip Dep.Set.iter deps in
+            if relevant deps then
+              (* Dependencies that are together in a Dirty slot might indicate a
+                 relationship between them. We need to consider them
                  connected. *)
-              add_vars vars;
+              add_deps deps;
             aux_checked others rest
       in
       let rec aux seq =
@@ -368,15 +368,15 @@ struct
         | Seq.Nil -> ()
         | Cons ({ value = Asrt value; checked = false }, rest) ->
             Dynarray.add_last to_encode value;
-            add_vars_raw (vars value);
+            add_deps_raw (deps value);
             aux rest
-        | Cons ({ value = Dirty vars; checked = false }, rest) ->
-            add_vars_raw (fun f -> Var.Set.iter f vars);
+        | Cons ({ value = Dirty deps; checked = false }, rest) ->
+            add_deps_raw (fun f -> Dep.Set.iter f deps);
             aux rest
         | Cons ({ checked = true; _ }, _) -> aux_checked Seq.empty seq
       in
       let () = aux (to_seq_rev t) in
-      (to_encode, var_set)
+      (to_encode, dep_set)
   end
 
   type t = {
@@ -402,10 +402,10 @@ struct
     let iter = vs |> Iter.of_list |> Iter.flat_map Typed.split_ands in
     iter @@ fun v ->
     let v = if simplified then v else simplify solver v in
-    let v, vars = Analysis.add_constraint solver.analysis (Typed.untyped v) in
+    let v, deps = Analysis.add_constraint solver.analysis (Typed.untyped v) in
     Solver_state.add_constraint solver.state (Typed.type_ v);
-    if not (Var.Set.is_empty vars) then
-      Solver_state.dirty_variable solver.state vars
+    if not (Dep.Set.is_empty deps) then
+      Solver_state.dirty_variable solver.state deps
 
   let memo_sat_check_tbl : Symex.Solver_result.t Svalue.Hashtbl.t =
     Svalue.Hashtbl.create 1023
@@ -488,7 +488,7 @@ struct
     | Some true -> Symex.Solver_result.Sat
     | Some false -> Unsat
     | None ->
-        let to_check, relevant_vars =
+        let to_check, relevant_deps =
           Solver_state.unchecked_constraints solver.state
         in
         (* This will put the check in a somewhat-normal form, to increase cache
@@ -496,7 +496,7 @@ struct
         let to_check = Dynarray.fold_left Typed.and_ Typed.v_true to_check in
         let to_check =
           Iter.fold Typed.and_ to_check
-            (Analysis.encode ~vars:relevant_vars solver.analysis)
+            (Analysis.encode ~deps:relevant_deps solver.analysis)
         in
         let answer = check_sat_raw_memo solver to_check in
         if answer = Sat then Solver_state.mark_checked solver.state;

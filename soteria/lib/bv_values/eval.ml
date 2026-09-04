@@ -120,6 +120,9 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
     | Seq l ->
         let l, changed = List.map_changed eval l in
         if (not force) && not changed then x else SSeq.mk ~seq_ty:x.node.ty l
+    | Uninterp (f, args) ->
+        let args, changed = List.map_changed eval args in
+        if (not force) && not changed then x else mk_uninterp f args x.node.ty
     | Extension ext ->
         let ext' = Ext.eval eval ext in
         if (not force) && ext == ext' then x else Ext.mk ( <| ) x.node.ty ext'
