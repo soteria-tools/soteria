@@ -104,6 +104,11 @@ module type S = sig
     Soteria_std.String.Interned.t -> Svalue.t list -> 'a ty -> 'a t
 
   val iter_vars : 'a t -> (Var.t * 'b ty -> unit) -> unit
+
+  (** Whether the value is a literal, i.e. built only of constants: it then
+      contains no variable nor uninterpreted function application. *)
+  val is_literal : 'a t -> bool
+
   val type_ : Svalue.t -> 'a t
   val type_checked : Svalue.t -> 'a ty -> 'a t option
   val cast : 'a t -> 'b t
