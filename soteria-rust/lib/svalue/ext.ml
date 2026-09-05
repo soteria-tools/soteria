@@ -31,6 +31,7 @@ let pp pp ft v =
         (Fmt.list ~sep:(Fmt.any ", ") (pp_block pp pp pp pp))
         vs
   | PolyVal tid -> Fmt.pf ft "PolyVal(%a)" Charon.Types.pp_type_var_id tid
+  | TypeVar tid -> Fmt.pf ft "T%a" Charon.Types.pp_type_var_id tid
   | Unop (ThinPtrPart part, v) -> Fmt.pf ft "%a.%a" pp v Unop.pp_ptr_part part
   | Unop (FullPtrInner, v) -> Fmt.pf ft "thin(%a)" pp v
   | Unop (FullPtrMeta, v) -> Fmt.pf ft "meta(%a)" pp v
@@ -68,7 +69,7 @@ let iter x iter =
   | Enum (_, vals) | Tuple vals -> List.iter iter vals
   | Array vals -> Iarray.iter iter vals
   | Union vs -> List.iter (iter_block iter) vs
-  | PolyVal _ -> ()
+  | PolyVal _ | TypeVar _ -> ()
   | Unop (_, v) -> iter v
 
 let is_literal is_literal = function
@@ -105,6 +106,7 @@ let mk build ty v =
   | Enum (v_id, vs) -> mk_enum ~build (t_as_enum ty) v_id vs
   | Union blocks -> mk_union ~build (t_as_union ty) blocks
   | PolyVal ty_id -> mk_poly ~build ty_id
+  | TypeVar ty_id -> mk_type_var ~build ty_id
   | Unop (op, v) -> apply_unop ~build op v
 
 let eval eval v =
@@ -155,7 +157,7 @@ let eval eval v =
           vs
       in
       if changed then Union vs' else v
-  | PolyVal _ -> v
+  | PolyVal _ | TypeVar _ -> v
   | Unop (op, x) ->
       let x' = eval x in
       if x == x' then v else Unop (op, x')
@@ -232,7 +234,7 @@ let apply_subst apply ~missing_var s = function
   | Union vs ->
       let vs, s = apply_list (apply_block apply) ~missing_var s vs in
       (Union vs, s)
-  | PolyVal _ as v -> (v, s)
+  | (PolyVal _ | TypeVar _) as v -> (v, s)
   | Unop (op, v) ->
       let v, s = apply ~missing_var s v in
       (Unop (op, v), s)
