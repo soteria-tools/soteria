@@ -653,7 +653,7 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
   | None ->
       let fp = Typed.Float.fp_of f in
       let size = Typed.FloatPrecision.size fp in
-      let* bv = nondet (Typed.t_int size) in
+      let* bv = nondet (Typed.t_int_bits size) in
       let bv_f = BV.to_float_raw bv in
       (* here we use structural equality rather than float equality; this is
          intended. *)
@@ -785,9 +785,9 @@ let rec nondet_raw :
             let* sizei =
               match BV.to_z size with
               | Some s -> return (Z.to_int s)
-              | None -> vanish ()
+              | None -> not_impl "nondeterministic union of symbolic size"
             in
-            let+ bytes = nondet (Typed.t_int (sizei * 8)) in
+            let+ bytes = nondet (Typed.t_int_bytes sizei) in
             Ok
               (Typed.Adt.mk_union adt
                  [

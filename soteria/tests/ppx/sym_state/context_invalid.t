@@ -13,6 +13,8 @@ Context that doesn't match the monad type
   
     let _ = fun (_ : t) -> ()
   
+    [@@@ocaml.warning "-unreachable-case"]
+  
     module SM =
       Soteria.Sym_states.State_monad.Make
         (Symex)
@@ -163,8 +165,8 @@ Context that doesn't match the monad type
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]
-  File "out.ml", line 108, characters 16-52:
-  108 |                 (Excl_int.produce v st.my_super_int)
+  File "out.ml", line 109, characters 16-52:
+  109 |                 (Excl_int.produce v st.my_super_int)
                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   Error: This expression has type
            Prelude.Excl_int.SM.st Prelude.Excl_int.SM.Symex.Producer.t =

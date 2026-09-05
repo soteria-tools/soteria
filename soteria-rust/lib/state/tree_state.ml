@@ -57,29 +57,6 @@ module Make (Borrows : Tree_borrows.T) = struct
     [@@deriving show { with_path = false }]
   end
 
-  type global = String of string | Global of Types.global_decl_ref
-
-  module GlobMap = Map.Make (struct
-    type t = global = String of string | Global of Types.global_decl_ref
-    [@@deriving show { with_path = false }, ord]
-  end)
-
-  module FunBiMap = struct
-    include
-      Bimap.MakePp
-        (struct
-          type t = T.sloc Typed.t
-
-          let compare = Typed.compare
-          let pp = Typed.ppa
-          let show = Fmt.to_to_string pp
-        end)
-        (Fun_kind)
-
-    let get_fn = find_l
-    let get_loc = find_r
-  end
-
   module Block = struct
     type t = { block : Tree_block.t option; borrow : Borrows.Tree.t option }
     [@@deriving sym_state { symex = DecayMap.SM }]
@@ -266,42 +243,12 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   type t = {
     heap : Heap.t option; [@sym_state.context { field = pointers }]
-    functions : FunBiMap.t;
-        [@sym_state.ignore
-          {
-            empty = FunBiMap.empty;
-            is_empty = FunBiMap.is_empty;
-            pp = FunBiMap.pp;
-          }]
-    globals : Typed.(T.sptr_f t) GlobMap.t;
-        [@sym_state.ignore
-          {
-            empty = GlobMap.empty;
-            is_empty = GlobMap.is_empty;
-            pp = GlobMap.pp Typed.ppa;
-          }]
-    errors : Error.with_trace list;
-        [@sym_state.ignore
-          { empty = []; pp = Fmt.Dump.list Error.pp_with_trace }]
+    functions : Functions_map.t option;
+    globals : Glob_map.t option;
     pointers : DecayMap.t option;
-    thread_destructor :
-      (unit ->
-      t option ->
-      ((unit, Error.with_trace, unit) Compo_res.t * t option) Rustsymex.t)
-      option;
-        [@sym_state.ignore { empty = None }]
-    const_generics : Typed.(T.any t) Types.ConstGenericVarId.Map.t;
-        [@sym_state.ignore
-          {
-            empty = Types.ConstGenericVarId.Map.empty;
-            pp = Types.ConstGenericVarId.Map.pp Typed.ppa;
-          }]
-    type_ids : Typed.(T.sint t) Rustsymex.TypeMap.t;
-        [@sym_state.ignore
-          {
-            empty = Rustsymex.TypeMap.empty;
-            pp = Rustsymex.TypeMap.pp Typed.ppa;
-          }]
+    thread_destructor : t option Thread_destructors.t option;
+    const_generics : Const_generic_env.t option;
+    type_ids : Type_id_map.t option;
   }
   [@@deriving sym_state { symex = Rustsymex }]
 
@@ -845,32 +792,13 @@ module Make (Borrows : Tree_borrows.T) = struct
     Block.with_block (Tree_block.zero_range ofs size)
 
   let store_str_global str (ptr : Typed.([< T.sptr_f ] t)) =
-    let@ globals = with_globals_sym in
-    let globals =
-      GlobMap.add (String str) (ptr :> Typed.T.sptr_f Typed.t) globals
-    in
-    Rustsymex.Result.ok ((), globals)
+    with_globals @@ Glob_map.store_str_global str ptr
 
   let store_global g (ptr : Typed.([< T.sptr_f ] t)) =
-    let@ globals = with_globals_sym in
-    let globals =
-      GlobMap.add (Global g) (ptr :> Typed.T.sptr_f Typed.t) globals
-    in
-    Rustsymex.Result.ok ((), globals)
+    with_globals @@ Glob_map.store_global g ptr
 
-  let load_str_global str =
-    let@ globals = with_globals_sym in
-    let ptr = GlobMap.find_opt (String str) globals in
-    Rustsymex.Result.ok
-      ( (ptr : Typed.T.sptr_f Typed.t option :> Typed.([> T.sptr_f ] t) option),
-        globals )
-
-  let load_global g =
-    let@ globals = with_globals_sym in
-    let ptr = GlobMap.find_opt (Global g) globals in
-    Rustsymex.Result.ok
-      ( (ptr : Typed.T.sptr_f Typed.t option :> Typed.([> T.sptr_f ] t) option),
-        globals )
+  let load_str_global str = with_globals @@ Glob_map.load_str_global str
+  let load_global g = with_globals @@ Glob_map.load_global g
 
   let borrow ?protect (ptr : Typed.([< T.sptr_f ] t)) (ty : Types.ty) =
     [%l.debug "Executing Borrow with pointer %a for %a" Typed.ppa ptr pp_ty ty];
@@ -956,121 +884,47 @@ module Make (Borrows : Tree_borrows.T) = struct
          in
          Result.error (Error.decorate leak_trace `MemoryLeak))
 
-  let add_error e =
-    let@ errors = with_errors_sym in
-    Rustsymex.Result.ok ((), e :: errors)
-
-  let pop_error () =
-    let** error =
-      let@ errors = with_errors_sym in
-      match errors with
-      | e :: rest -> Rustsymex.Result.ok (e, rest)
-      | _ -> L.failwith "pop_error with no errors?"
-    in
-    Result.error error
-
   let declare_fn fn_def =
+    (* TODO: allow functions with set alignment + flag for default *)
     let align = Usize.(16s) in
-    let** result =
-      with_functions_sym (fun fns ->
-          Rustsymex.Result.ok (FunBiMap.get_loc fn_def fns, fns))
+    let size = Usize.(1s) in
+    let** result = with_functions @@ Functions_map.lookup_fn_loc fn_def in
+    let++ loc =
+      match result with
+      | Some loc -> Result.ok loc
+      | None ->
+          (* NOTE: allocate with a non-zero size, as otherwise we skip creating
+             an allocation and the function pointer doesn't have provenance. *)
+          let span = Fun_kind.span fn_def in
+          let** ptr =
+            with_alloc_kind (Function fn_def) @@ fun () ->
+            alloc_untyped ?span ~zeroed:false ~size ~align
+          in
+          let loc = Typed.Ptr.(loc @@ ptr_of ptr) in
+          let++ () = with_functions @@ Functions_map.declare_fn_at loc fn_def in
+          loc
     in
-    match result with
-    | Some loc ->
-        let ptr =
-          Typed.Ptr.mk_ptr_t ~loc
-            ~ofs:Usize.(0s)
-            ~tag:None ~align
-            ~size:Usize.(0s)
-        in
-        Result.ok (Typed.Ptr.of_ptr_t ptr)
-    | None ->
-        let span =
-          match fn_def with
-          | Real fn -> Some (Crate.get_fun fn.id).item_meta.span.data
-          | Synthetic _ -> None
-        in
-        (* NOTE: here we must allocate with a non-zero size, as otherwise we
-           skip creating an actual allocation and the function pointers will
-           thus have no provenance. *)
-        let** ptr =
-          with_alloc_kind (Function fn_def) @@ fun () ->
-          alloc_untyped ?span ~zeroed:false ~size:Usize.(1s) ~align
-        in
-        let ptr = Typed.Ptr.ptr_of ptr in
-        let ptr = Typed.Ptr.with_tag ptr None in
-        let loc = Typed.Ptr.loc ptr in
-        let ptr = Typed.Ptr.of_ptr_t ptr in
-        with_functions_sym (fun fns ->
-            Rustsymex.Result.ok (ptr, FunBiMap.add loc fn_def fns))
+    Typed.Ptr.mk_ptr_t ~loc ~ofs:Usize.(0s) ~tag:None ~size ~align
+    |> Typed.Ptr.of_ptr_t
 
   let lookup_fn (ptr : Typed.([< T.sptr_f ] t)) =
-    let open Rustsymex in
-    let open Syntax in
     let@ () = with_loc_err ~trace:"Accessing function pointer" () in
-    let@ functions = with_functions_sym in
-    let ptr = Typed.Ptr.ptr_of ptr in
-    let loc, ofs = Typed.Ptr.decompose ptr in
-    let** () = assert_or_error (ofs ==@ Usize.(0s)) `MisalignedFnPointer in
-    match FunBiMap.get_fn loc functions with
-    | Some fn -> Result.ok (fn, functions)
-    | None -> Result.error `NotAFnPointer
+    with_functions @@ Functions_map.lookup_fn ptr
 
   let lookup_const_generic id ty =
     let open Rustsymex in
     let open Syntax in
     let@ () = with_loc_err ~trace:"Accessing const generic" () in
-    let@ const_generics = with_const_generics_sym in
-    match Types.ConstGenericVarId.Map.find_opt id const_generics with
-    | Some v ->
-        Result.ok
-          ((v : Typed.T.any Typed.t :> Typed.([> T.any ] t)), const_generics)
-    | None ->
-        let++ v = Value_codec.nondet_valid ty in
-        ( (v : Typed.T.any Typed.t :> Typed.([> T.any ] t)),
-          Types.ConstGenericVarId.Map.add id v const_generics )
+    with_const_generics @@ Const_generic_env.lookup_const_generic id ty
 
-  let type_id ty =
-    let open Rustsymex in
-    let open Syntax in
-    let@ type_ids = with_type_ids_sym in
-    match Rustsymex.TypeMap.find_opt ty type_ids with
-    | Some id -> Result.ok (id, type_ids)
-    | None ->
-        (* the identifier of a type is opaque; all we know is that distinct
-           types have distinct identifiers. *)
-        let* id = nondet (Typed.t_lit (TUInt U128)) in
-        let distinct =
-          Rustsymex.TypeMap.to_seq type_ids
-          |> Seq.map snd
-          |> Seq.cons id
-          |> Typed.distinct_seq
-        in
-        let+ () = assume [ distinct ] in
-        Ok (id, Rustsymex.TypeMap.add ty id type_ids)
+  let type_id ty = with_type_ids @@ Type_id_map.get_type_id ty
 
   let register_thread_exit callback =
-    (* HACK: we cannot expect thread exit callbacks to miss with syn, because
-       when we define the callback type the syn type has not yet been defined.
-       Instead we expect it to return unit; for now we fail, while we figure out
-       a solution. *)
-    let@ thread_destructor = with_thread_destructor_sym in
-    let callback () =
-      SM.Result.map_missing
-        (fun _ -> L.failwith "TODO: Miss in thread exit")
-        (callback ())
-    in
-    let destructor =
-      match thread_destructor with
-      | None -> callback
-      | Some destructor -> fun () -> Result.bind callback (destructor ())
-    in
-    Rustsymex.Result.ok ((), Some destructor)
+    with_thread_destructor @@ Thread_destructors.register_thread_exit callback
 
   let run_thread_exits () =
-    let* st_opt = SM.get_state () in
-    let st = of_opt st_opt in
-    match st.thread_destructor with
-    | None -> Result.ok ()
-    | Some destructor -> SM.Result.map_missing (fun () -> []) (destructor ())
+    let** callback =
+      with_thread_destructor @@ Thread_destructors.get_thread_exits ()
+    in
+    callback ()
 end

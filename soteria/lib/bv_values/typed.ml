@@ -70,8 +70,6 @@ end = struct
   type nonrec +'a ty = ty
   type sbool = T.sbool
 
-  let t_int = t_bv
-
   include Bool
 
   let[@inline] get_ty x = x.node.ty

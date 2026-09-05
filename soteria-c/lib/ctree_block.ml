@@ -61,7 +61,7 @@ module MemVal = struct
           Csymex.of_opt_not_impl ~msg:"Int constraints"
             (Layout.int_constraints int_ty)
         in
-        let* value = Csymex.nondet (Typed.t_int (8 * size)) in
+        let* value = Csymex.nondet (Typed.t_bv (8 * size)) in
         let+ () = Csymex.assume (constrs value) in
         ((value :> T.cval Typed.t), ty)
     | _ -> Fmt.kstr not_impl "Nondet of type %a" Fmt_ail.pp_ty ty
