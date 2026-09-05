@@ -272,7 +272,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
       let+^ v = Value_codec.nondet_valid ty in
       let v = get_ok v in
       let v = Typed.Expr.of_value v in
-      [ (if Layout.is_aggregate layout then SScalar v else SAggregate (v, ty)) ]
+      [ (if Layout.is_aggregate layout then SAggregate (v, ty) else SScalar v) ]
 
     type tree = (t, Typed.(T.sint t)) TB.tree
 

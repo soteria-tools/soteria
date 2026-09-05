@@ -83,6 +83,7 @@ and 'g ext_ty =
       (** the type of a pointer's metadata (unit, length or metadata). this is
           not exposed to the user! *)
   | TPolyType
+  | TTypeVar  (** the sort of type variables, see [TypeVar] *)
 
 and 'g ptr_meta = MetaLen of 'g sv | MetaVTable of 'g sv | MetaUnit
 
@@ -100,6 +101,9 @@ and 'g ext_t =
   | PolyVal of (Charon.Types.type_var_id[@hash Charon.Types.TypeVarId.to_int])
       (** The opaque value of a type variable, identified by (type variable
           index, unique identifier). *)
+  | TypeVar of (Charon.Types.type_var_id[@hash Charon.Types.TypeVarId.to_int])
+      (** A type variable itself, as a value of sort [TTypeVar]; used as the
+          argument of uninterpreted functions over types (e.g. their size). *)
   | Unop of Unop.t * 'g sv  (** unary operation *)
 [@@deriving eq, ord, hash]
 
@@ -126,6 +130,7 @@ let rec pp_ext_ty ft : 'g ext_ty -> unit = function
   | TFullPtr -> Fmt.string ft "TFullPtr"
   | TPtrMeta -> Fmt.string ft "TPtrMeta"
   | TPolyType -> Fmt.string ft "TPolyType"
+  | TTypeVar -> Fmt.string ft "TTypeVar"
 
 and pp_svty ft (ty : 'g svty) = Sv.pp_ty pp_ext_ty ft ty
 
@@ -363,6 +368,9 @@ let mk_union ~build:(( <| ) : _ build) adt blocks =
 
 let mk_poly ~build:(( <| ) : _ build) ty_id =
   Extension (PolyVal ty_id) <| TExtension TPolyType
+
+let mk_type_var ~build:(( <| ) : _ build) ty_id =
+  Extension (TypeVar ty_id) <| TExtension TTypeVar
 
 (** {3 Operators} *)
 

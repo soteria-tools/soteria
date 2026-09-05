@@ -35,8 +35,7 @@ module Session = struct
         | Some layout -> ok layout
         | None ->
             let** layout = f () in
-            let is_concrete = Iter.is_empty (iter_vars layout) in
-            if is_concrete then (
+            if only_has_literals layout then (
               Hashtbl.add cache ty layout;
               Result.ok layout)
             else
@@ -215,9 +214,9 @@ let rec layout_of (ty : Types.ty) : (t, 'e, 'f) Rustsymex.Result.t =
   | TFnDef _ -> ok (mk_concrete ~size:0 ~align:1 ~fields:Primitive ())
   (* Pattern types -- just their content, we assume they're primitives *)
   | TPattern (ty, _) -> layout_of ty
-  (* Type variables : non-deterministically generate a layout *)
-  | TVar (Free _) ->
-      let* size = nondet (Typed.t_usize ()) in
+  (* Type variables : the size is an uninterpreted function of the variable. *)
+  | TVar (Free id) ->
+      let size = Typed.Fns.size_of_type_var id in
       let* () = assume Usize.[ 0s <=$@ size; size <$@ 1024s ] in
       (* this is real non-determinism of the alignment; we don't do it because
          it creates quite expensive formulae that we want to avoid. We make the

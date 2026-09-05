@@ -324,6 +324,13 @@ module Adt : sig
   end
 end
 
+module Fns : sig
+  (** The size, in bytes, of the type the given type variable stands for. This
+      is an uninterpreted function of the variable, so the same variable always
+      denotes the same size. Returns a [usize]-sized bitvector. *)
+  val size_of_type_var : Types.type_var_id -> [> T.sint ] t
+end
+
 module Syntax : sig
   module U8 : sig
     module Sym_int_syntax : sig

@@ -126,6 +126,7 @@ let encode_ty sort_of_ty = function
   | TThinPtr -> Thin_ptr_sort.sort ()
   | TFullPtr -> Full_ptr_sort.sort ()
   | TPtrMeta -> Ptr_meta_sort.sort ()
+  | TTypeVar -> t_int
   | (TUnion _ | TPolyType) as ty ->
       L.failwith "Cannot encode type %a to SMT-LIB" pp_ext_ty ty
 
@@ -186,5 +187,6 @@ let encode_value sort_of_ty encode ~ty = function
   | PtrMeta (MetaLen v) -> Ptr_meta_sort.mk_int (encode v)
   | PtrMeta (MetaVTable v) -> Ptr_meta_sort.mk_ptr (encode v)
   | Unop (op, v) -> encode_unop sort_of_ty ~ty:v.node.ty op (encode v)
+  | TypeVar ty_id -> int_k (Types.TypeVarId.to_int ty_id)
   | Union _ -> L.failwith "Cannot encode union values to SMT-LIB"
   | PolyVal _ -> L.failwith "Cannot encode polymorphic values to SMT-LIB"
