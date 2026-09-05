@@ -40,13 +40,12 @@ module MonadState = struct
         (** In polymorphic mode, the current substitution to be applied to
             generics. See also {!Poly}. *)
     generic_layouts : Layout_common.t TypeMap.t;
-        (** The map of generic layouts, for types with generics.
-            {b This is soundness critical}, it is not "just" a cache. A cache
-            implies that we are allowed to clear it, and things are okay. It is
-            not the case here: if we lose information on a generic
-            (nondeterministic) layout, recomputing it will create new symbolic
-            variables, which may not match the layout that was previously
-            computed. *)
+        (** Cache of the layouts of polymorphic types. Computing such a layout
+            adds assumptions to the path condition, so it is cached per path:
+            the cache is aligned with the path condition, and a path either
+            computed the layout itself or inherited it, and its assumptions,
+            from a prefix. Layouts are deterministic, so losing this cache is
+            harmless. *)
     alloc_kind : Common.Alloc_kind.t;
         (** The current allocation kind. This is needed to mark all allocations
             done in a constant's initialiser as related to the constant, so that
@@ -65,14 +64,6 @@ end
 
 include Soteria.Sym_states.State_monad.Make (MonoSymex) (MonadState)
 include Syntaxes.FunctionWrap
-
-(* FIXME: for now, the [run] functions omit the [MonadState] that is obtained by
-   the end of the execution. Once we do polymorphic bi-abduction this won't be
-   sound, since [generic_layouts] contains information that must be serialized!
-
-   There are two solutions to this: either we move this information to the
-   state, and remove it from [MonadState], or add a [serialized] type to
-   [Rustsymex], along with the relevant [produce], [consume], etc. *)
 
 let run ?stats ?flamegraph ?fuel ~mode symex =
   run_with_state ~state:MonadState.empty symex
