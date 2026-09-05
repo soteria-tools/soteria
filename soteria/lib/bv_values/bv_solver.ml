@@ -351,17 +351,16 @@ struct
               add_deps deps;
               Dynarray.add_last to_encode value;
               aux_checked others rest)
-            else
-              let others = fun () -> Seq.Cons (slot, others) in
-              aux_checked others rest
-        | Seq.Cons ({ value = Dirty deps; _ }, rest) ->
+            else aux_checked (Seq.cons slot others) rest
+        | Seq.Cons (({ value = Dirty deps; _ } as slot), rest) ->
             let deps = Fun.flip Dep.Set.iter deps in
-            if relevant deps then
+            if relevant deps then (
               (* Dependencies that are together in a Dirty slot might indicate a
                  relationship between them. We need to consider them
                  connected. *)
               add_deps deps;
-            aux_checked others rest
+              aux_checked others rest)
+            else aux_checked (Seq.cons slot others) rest
       in
       let rec aux seq =
         match seq () with

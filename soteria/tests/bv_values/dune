@@ -1,4 +1,4 @@
-(test
- (name uninterp)
+(tests
+ (names uninterp dirty_slots)
  (libraries soteria alcotest)
  (enabled_if %{bin-available:z3}))
