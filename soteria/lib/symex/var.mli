@@ -3,9 +3,6 @@ open Soteria_std
 (** Variable names are integers under the hood *)
 type t
 
-(** Iterator over variables and their types *)
-type 'ty iter_vars = (t * 'ty -> unit) -> unit
-
 (** Hashes the variable name *)
 val hash : t -> int
 
