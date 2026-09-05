@@ -70,9 +70,9 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
 
   let eval_nop : Nop.t -> t list -> t = function Distinct -> Bool.distinct
 
-  let rec eval ~force ~eval_var (x : t) : t =
-    let eval' = eval ~force in
-    let eval = eval ~force ~eval_var in
+  let rec eval ~force ~eval_var ~eval_uninterp (x : t) : t =
+    let eval' = eval ~force ~eval_uninterp in
+    let eval = eval ~force ~eval_var ~eval_uninterp in
     match x.node.kind with
     | Var v -> eval_var x v x.node.ty
     | Bool _ | Float _ | BitVec _ -> x
@@ -122,17 +122,21 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
         if (not force) && not changed then x else SSeq.mk ~seq_ty:x.node.ty l
     | Uninterp (f, args) ->
         let args, changed = List.map_changed eval args in
-        if (not force) && not changed then x else mk_uninterp f args x.node.ty
+        let x =
+          if (not force) && not changed then x else mk_uninterp f args x.node.ty
+        in
+        eval_uninterp x
     | Extension ext ->
         let ext' = Ext.eval eval ext in
         if (not force) && ext == ext' then x else Ext.mk ( <| ) x.node.ty ext'
 
-  (** Evaluates an expression; will call [eval_var] on each [Var] encountered.
-      If evaluation errors (e.g. from a division by zero), gives up and returns
-      the original expression. The [force] flag forces evaluation to proceed
-      even if no sub-expressions changed (required if evaluating an expression
-      that has not been constructed using smart constructors). *)
+  (** Evaluates an expression; will call [eval_var] on each [Var] encountered,
+      and [eval_uninterp] on each [Uninterp] application (after evaluating its
+      arguments). If evaluation errors (e.g. from a division by zero), gives up
+      and returns the original expression. The [force] flag forces evaluation to
+      proceed even if no sub-expressions changed (required if evaluating an
+      expression that has not been constructed using smart constructors). *)
   let eval ?(force = false) ?(eval_var : t -> Var.t -> ty -> t = fun x _ _ -> x)
-      (x : t) : t =
-    try eval ~force ~eval_var x with Division_by_zero -> x
+      ?(eval_uninterp : t -> t = Fun.id) (x : t) : t =
+    try eval ~force ~eval_var ~eval_uninterp x with Division_by_zero -> x
 end
