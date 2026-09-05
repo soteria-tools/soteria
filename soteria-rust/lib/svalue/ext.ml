@@ -42,33 +42,52 @@ let pp pp ft v =
       Fmt.pf ft "%a.is<%a>" pp v Types.pp_variant_id var
   | Unop (ArrayField i, v) -> Fmt.pf ft "%a[%d]" pp v i
 
-let iter_vars_ptr iter_vars { ptr; size; align; tag = _ } =
-  iter_vars ptr;
-  iter_vars size;
-  iter_vars align
+let iter_ptr iter { ptr; size; align; tag = _ } =
+  iter ptr;
+  iter size;
+  iter align
 
-let iter_vars_block_value iter_vars = function
-  | Scalar v -> iter_vars v
-  | Aggregate (ag, _ty) -> iter_vars ag
+let iter_block_value iter = function
+  | Scalar v -> iter v
+  | Aggregate (ag, _ty) -> iter ag
 
-let iter_vars_block iter_vars { value; offset; size } =
-  iter_vars_block_value iter_vars value;
-  iter_vars offset;
-  iter_vars size
+let iter_block iter { value; offset; size } =
+  iter_block_value iter value;
+  iter offset;
+  iter size
 
 (* TODO: derivable *)
-let iter_vars iter_vars = function
+let iter x iter =
+  match x with
   | Ptr (ptr, meta) ->
-      iter_vars ptr;
-      iter_vars meta
+      iter ptr;
+      iter meta
   | PtrMeta MetaUnit -> ()
-  | PtrMeta (MetaLen len | MetaVTable len) -> iter_vars len
-  | ThinPtr ptr -> iter_vars_ptr iter_vars ptr
-  | Enum (_, vals) | Tuple vals -> List.iter iter_vars vals
-  | Array vals -> Iarray.iter iter_vars vals
-  | Union vs -> List.iter (iter_vars_block iter_vars) vs
+  | PtrMeta (MetaLen len | MetaVTable len) -> iter len
+  | ThinPtr ptr -> iter_ptr iter ptr
+  | Enum (_, vals) | Tuple vals -> List.iter iter vals
+  | Array vals -> Iarray.iter iter vals
+  | Union vs -> List.iter (iter_block iter) vs
   | PolyVal _ -> ()
-  | Unop (_, v) -> iter_vars v
+  | Unop (_, v) -> iter v
+
+let is_literal is_literal = function
+  | Ptr (ptr, meta) -> is_literal ptr && is_literal meta
+  | PtrMeta MetaUnit -> true
+  | PtrMeta (MetaLen v | MetaVTable v) -> is_literal v
+  | ThinPtr { ptr; size; align; tag } ->
+      (* A pointer's tag is not part of its encoding, so two thin pointers may
+         be semantically equal while differing in their tag. *)
+      Option.is_none tag
+      && is_literal ptr
+      && is_literal size
+      && is_literal align
+  | Enum (_, vals) | Tuple vals -> List.for_all is_literal vals
+  | Array vals -> Iarray.for_all is_literal vals
+  | TypeVar _ -> true
+  | Unop _ -> false
+  (* ??? we over-approximate (sound) *)
+  | Union _ | PolyVal _ -> false
 
 let hash_ghost _ = 0
 let hash v = hash_ext_t hash_ghost v
