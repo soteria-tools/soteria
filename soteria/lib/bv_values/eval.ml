@@ -116,7 +116,7 @@ module Make (Ext : Value_ext) (V : module type of Svalue.Make (Ext) ()) = struct
           else eval_var sv v ty
         in
         let nsv = eval' ~eval_var:eval_var' sv in
-        if (not force) && sv == nsv then x else Bool.mk_exists vs sv
+        if (not force) && sv == nsv then x else Bool.mk_exists vs nsv
     | Seq l ->
         let l, changed = List.map_changed eval l in
         if (not force) && not changed then x else SSeq.mk ~seq_ty:x.node.ty l
