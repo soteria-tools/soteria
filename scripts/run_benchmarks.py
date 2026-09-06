@@ -7,7 +7,7 @@ benchmark-action/github-action-benchmark with `tool: customSmallerIsBetter`:
     [ { "name": "...", "unit": "s", "value": <mean>, "range": "± <stddev>" }, ... ]
 
 Four kinds of benchmarks are supported, configured under the matching key in
-benchmarks.json (every entry accepts `args` and `no_hyperfine`, see below):
+benchmarks.json (every entry accepts `args` and `runs`, see below):
 
   - "rust_files":   a single .rs file, compiled once then run with --no-compile
   - "rust_crates":  a crate root, compiled once then run with --no-compile
@@ -25,8 +25,9 @@ Per-entry fields:
   - "path"          (required) file or project root, relative to the repo root
   - "name"          (optional) label used in the report; defaults to the path
   - "args"          (optional) list of extra arguments passed to the tool
-  - "no_hyperfine"  (optional) if true, time a single run instead of using
-                    hyperfine (use for benchmarks too long to run repeatedly)
+  - "runs"          (optional) how many hyperfine runs to time; defaults to
+                    HYPERFINE_RUNS. Lower it for benchmarks too slow to run
+                    the default number of times
   - "mode"          (c_biab only) "gen-summaries" or "capture-db"
   - "compile_commands" (c_biab/capture-db only) path to compile_commands.json
                     relative to the project root; defaults to
@@ -45,7 +46,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -76,23 +76,15 @@ def run(cmd: list[str], cwd: Optional[Path] = None, check: bool = False) -> int:
     return result.returncode
 
 
-def measure(cmd: list[str], no_hyperfine: bool, cwd: Optional[Path] = None) -> dict:
-    """Measure `cmd` and return {"value": seconds, "range": "± stddev" | None}.
+def measure(cmd: list[str], runs: int, cwd: Optional[Path] = None) -> dict:
+    """Measure `cmd` over `runs` hyperfine runs and return
+    {"value": seconds, "range": "± stddev"}.
 
     Soteria tools exit non-zero when they find a bug, which is expected here, so
-    failures are tolerated (hyperfine `-i`, ignored return code otherwise).
+    failures are tolerated (hyperfine `-i`).
     """
-    if no_hyperfine:
-        log(f"timing single run: {shlex.join(cmd)}")
-        start = time.perf_counter()
-        run(cmd, cwd=cwd)
-        elapsed = time.perf_counter() - start
-        return {"value": elapsed, "range": None}
-
     if shutil.which("hyperfine") is None:
-        raise SystemExit(
-            'hyperfine not found in PATH; install it or set "no_hyperfine": true'
-        )
+        raise SystemExit("hyperfine not found in PATH; install it")
 
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
         export_path = Path(tmp.name)
@@ -101,7 +93,7 @@ def measure(cmd: list[str], no_hyperfine: bool, cwd: Optional[Path] = None) -> d
         "--warmup",
         str(HYPERFINE_WARMUP),
         "--runs",
-        str(HYPERFINE_RUNS),
+        str(runs),
         "-i",
         "--export-json",
         str(export_path),
@@ -129,7 +121,7 @@ def bench_rust(entry: dict, kind: str) -> dict:
     run([soteria_rust, "compile", str(target), *args])
 
     cmd = [soteria_rust, "exec", str(target), "--no-compile", *args]
-    stats = measure(cmd, entry.get("no_hyperfine", False))
+    stats = measure(cmd, entry.get("runs", HYPERFINE_RUNS))
     return make_result(entry, kind, stats)
 
 
@@ -138,7 +130,7 @@ def bench_c_file(entry: dict) -> dict:
     target = resolve(entry["path"])
     args = entry.get("args", [])
     cmd = [soteria_c, "exec", str(target), *args]
-    stats = measure(cmd, entry.get("no_hyperfine", False))
+    stats = measure(cmd, entry.get("runs", HYPERFINE_RUNS))
     return make_result(entry, "c", stats)
 
 
@@ -179,7 +171,7 @@ def bench_c_project(entry: dict) -> dict:
             raise SystemExit(f"failed to produce compilation database at {db}")
         cmd = [soteria_c, "capture-db", str(db), *args]
 
-    stats = measure(cmd, entry.get("no_hyperfine", False))
+    stats = measure(cmd, entry.get("runs", HYPERFINE_RUNS))
     return make_result(entry, f"c-{mode}", stats)
 
 

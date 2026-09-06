@@ -62,10 +62,11 @@
           },
           "description": "Extra arguments forwarded to the Soteria tool."
         },
-        "no_hyperfine": {
-          "type": "boolean",
-          "default": false,
-          "description": "When true, time a single run instead of using hyperfine. Use for benchmarks that are too slow to run 10+ times."
+        "runs": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Number of hyperfine runs used to time this benchmark. Lower it for benchmarks that are too slow to run the default number of times."
         }
       }
     },
@@ -92,10 +93,11 @@
           },
           "description": "Extra arguments forwarded to soteria-c."
         },
-        "no_hyperfine": {
-          "type": "boolean",
-          "default": false,
-          "description": "When true, time a single run instead of using hyperfine."
+        "runs": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Number of hyperfine runs used to time this benchmark. Lower it for benchmarks that are too slow to run the default number of times."
         },
         "mode": {
           "type": "string",
