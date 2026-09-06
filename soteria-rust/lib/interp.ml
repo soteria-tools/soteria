@@ -563,7 +563,6 @@ module Make (StateImpl : State.S) = struct
     try_lazy loc
       ~heap:(fun ptr -> State.store ~ignore_align:true ptr ty v)
       ~store:(fun sp store ->
-        let* store = get_env () in
         let*^ new_store = Store.try_store sp store v in
         OptionM.lift @@ set_env new_store)
 
@@ -971,7 +970,7 @@ module Make (StateImpl : State.S) = struct
         let op_blocks = Iter.to_list op_blocks in
         Typed.Adt.mk_union adt op_blocks
     (* Struct aggregate *)
-    | Aggregate (AggregatedAdt (adt, None, None), operands) ->
+    | Aggregate (AggregatedAdt (_, None, None), operands) ->
         let+ values = eval_operand_list operands in
         Typed.Adt.mk_tuple values
     (* Invalid aggregate (not sure, but seems like it) *)
@@ -983,7 +982,6 @@ module Make (StateImpl : State.S) = struct
         Typed.Adt.mk_array ty (Iarray.of_list values)
     (* Raw pointer construction *)
     | Aggregate (AggregatedRawPtr (_, _), operands) ->
-        let* values = eval_operand_list operands in
         let* ptr, meta, meta_ty =
           match operands with
           | [ ptr_op; meta_op ] ->
@@ -1327,7 +1325,7 @@ module Make (StateImpl : State.S) = struct
         let fn = Crate.get_fun fundef.id in
         exec_real_fun fn fundef.generics args
 
-  let exec_fun ~args ~state (fundef : UllbcAst.fun_decl) =
+  let exec_fun ~args (fundef : UllbcAst.fun_decl) =
     (* HACK: we protect this function with a bind to make sure no effects are
        raised before the handlers are correctly setup. For a way of fixing this,
        see
@@ -1350,11 +1348,11 @@ module Make (StateImpl : State.S) = struct
 
   let exec_fun_compo ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
-    exec_fun ~args ~state fundef
+    exec_fun ~args fundef
 
   let exec_fun_as_whole_prog ~args ~state (fundef : UllbcAst.fun_decl) =
     let@ () = run ~env:() ~state in
-    let* value = exec_fun ~args ~state fundef in
+    let* value = exec_fun ~args fundef in
     let value = Typed.Expr.of_value value in
     let* () = State.run_thread_exits () in
     if (Config.get ()).ignore_leaks then ok value

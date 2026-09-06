@@ -142,13 +142,6 @@ module Make (Typed : Typed_intf.Solver_value) = struct
 
       let mk n = { pos = Range.default n; negs = []; size = n }
 
-      (** Equality of two datas *)
-      let equal d1 d2 =
-        Range.eq d1.pos d2.pos
-        && List.length d1.negs = List.length d2.negs
-        (* this is ok because we sort negs *)
-        && List.for_all2 Range.eq d1.negs d2.negs
-
       let apply_negs size pos negs =
         (* First, try filtering out negations that are included in others, and
            join them *)
@@ -218,16 +211,6 @@ module Make (Typed : Typed_intf.Solver_value) = struct
 
       (** Whether the data represents a singleton set. *)
       let is_singleton { pos = m, n; _ } = Z.equal m n
-
-      (** The union of two data sets; overapproximates. *)
-      let union d1 d2 =
-        let pos = Range.union d1.pos d2.pos in
-        (* we grossly overapproximate, and only keep negations that are in
-           both *)
-        let negs =
-          List.filter (fun neg -> List.exists (Range.eq neg) d2.negs) d1.negs
-        in
-        { pos; negs; size = d1.size }
 
       (** [iter_sval_equivalent v d] returns an iterator over the set of
           symbolic values to encode the data [d] for variable [v]. *)

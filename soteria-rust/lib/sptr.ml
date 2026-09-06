@@ -4,7 +4,6 @@
     the {{!Svalue.Typed.Ptr}[Svalue.Ptr]} module. *)
 
 open Rustsymex
-open Charon
 open Svalue
 open Typed
 open Typed.Syntax

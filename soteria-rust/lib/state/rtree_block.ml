@@ -625,7 +625,7 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
             Ok (Some res))
       (Tree.iter_leaves_rev t)
 
-  let init ?ty range (v : Typed.block_value) tb : Tree.t =
+  let init range (v : Typed.block_value) tb : Tree.t =
     let leaf =
       match v with
       | Scalar v -> Scalar v
@@ -722,7 +722,6 @@ module Make (Borrows : Tree_borrows.M(DecayMap.SM).S) = struct
   let store (ofs : Typed.([< T.sint ] t)) (size : Typed.([< T.nonzero ] t))
       (value : Typed.block_value) (tag : Ptr_tag.t option)
       (tb : Borrows.Tree.t option) : (unit, 'err, 'fix) SM.Result.t =
-    let open SM.Syntax in
     (* manually coerce so types line up *)
     let ofs = (ofs :> Typed.(T.sint t)) in
     let ((_, bound) as range) = Range.of_low_and_size ofs size in

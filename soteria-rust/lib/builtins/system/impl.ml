@@ -4,7 +4,6 @@ open Common.Charon_util
 
 module M (StateM : State.StateM.S) : Intf.M(StateM).S = struct
   open StateM
-  open Syntax
 
   let hashmap_random_keys_ux =
     String.Interned.intern

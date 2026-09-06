@@ -1,7 +1,6 @@
 open Charon
 open Svalue
 open Typed.Syntax
-open Typed.Infix
 open Common.Charon_util
 
 type fn =

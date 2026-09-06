@@ -109,14 +109,14 @@ let rec pp_ty fmt : Types.ty -> unit = function
       Fmt.pf fmt "[%a; %a]" pp_ty ty Z.pp_print (z_of_scalar len)
   | TArray (ty, _) -> Fmt.pf fmt "[%a; ?]" pp_ty ty
   | TSlice ty -> Fmt.pf fmt "[%a]" pp_ty ty
-  | TAdt { builtin = Some TStr } -> Fmt.string fmt "str"
+  | TAdt { builtin = Some TStr; _ } -> Fmt.string fmt "str"
   | TLiteral lit -> pp_literal_ty fmt lit
   | TNever -> Fmt.string fmt "!"
   | TRef (_, ty, RMut) -> Fmt.pf fmt "&mut %a" pp_ty ty
   | TRef (_, ty, RShared) -> Fmt.pf fmt "&%a" pp_ty ty
   | TRawPtr (ty, RMut) -> Fmt.pf fmt "*mut %a" pp_ty ty
   | TRawPtr (ty, RShared) -> Fmt.pf fmt "*const %a" pp_ty ty
-  | TFnPtr { binder_value = { inputs; output; is_unsafe }; _ } ->
+  | TFnPtr { binder_value = { inputs; output; is_unsafe; _ }; _ } ->
       Fmt.pf fmt "%sfn (%a) -> %a"
         (if is_unsafe then "unsafe " else "")
         Fmt.(list ~sep:(any ", ") pp_ty)
@@ -214,7 +214,7 @@ let adt_is_unsafe_cell = adt_is_lang_item RustcLangItemUnsafeCell
 let rec get_pointee : Types.ty -> Types.ty = function
   | TRef (_, ty, _)
   | TRawPtr (ty, _)
-  | TAdt { generics = { types = [ ty ]; _ }; builtin = Some TBox } ->
+  | TAdt { generics = { types = [ ty ]; _ }; builtin = Some TBox; _ } ->
       ty
   | TPattern (ty, _) -> get_pointee ty
   | TAdt adt when adt_is_box adt -> (

@@ -105,8 +105,6 @@ module Place = struct
     { kind = Local local_id; origin = { kind = PlaceLocal local_id; ty } }
 end
 
-open Place
-
 module Binding = struct
   (** We have five kinds of bindings:
 

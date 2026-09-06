@@ -123,7 +123,7 @@ let get_adt_lang_item lang_item =
   let crate = get_crate () in
   try
     crate.type_decls
-    |> Types.TypeDeclId.Map.iter (fun id (adt : Types.type_decl) ->
+    |> Types.TypeDeclId.Map.iter (fun _ (adt : Types.type_decl) ->
         if
           Option.equal Types.equal_rustc_lang_item adt.item_meta.lang_item
             (Some lang_item)
