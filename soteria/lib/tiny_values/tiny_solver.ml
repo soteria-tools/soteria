@@ -259,12 +259,16 @@ struct
               add_vars vars;
               Dynarray.add_last to_encode value;
               aux_checked others rest)
-            else
-              let others = fun () -> Seq.Cons (slot, others) in
-              aux_checked others rest
-        | Seq.Cons ({ value = Dirty _; _ }, rest) ->
-            (* A dirty checked variable can be ignored *)
-            aux_checked others rest
+            else aux_checked (Seq.cons slot others) rest
+        | Seq.Cons (({ value = Dirty vars; _ } as slot), rest) ->
+            let vars = Fun.flip Var.Set.iter vars in
+            if relevant vars then (
+              (* Dependencies that are together in a Dirty slot might indicate a
+                 relationship between them. We need to consider them
+                 connected. *)
+              add_vars vars;
+              aux_checked others rest)
+            else aux_checked (Seq.cons slot others) rest
       in
       let rec aux seq =
         match seq () with
