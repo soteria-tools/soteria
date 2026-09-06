@@ -93,7 +93,7 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     end
 
     let mk_var n v : Svalue.t = Svalue.mk_var v (TBitVector n)
-    let mk_var_ty n v : Typed.T.sint Typed.t = Typed.mk_var v (Typed.t_int n)
+    let mk_var_ty n v : Typed.T.sint Typed.t = Typed.mk_var v (Typed.t_bv n)
     let max_for n = Z.(pred (shift_left one n))
 
     type sign = Pos | Neg

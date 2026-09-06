@@ -29,6 +29,13 @@ end)
 module MonadState = struct
   type t = {
     trace : Trace.t;  (** The current trace of execution *)
+    errors : Error.with_trace list;
+        (** The stack of errors that are currently causing us to unwind. This is
+            only used within a function: if a terminator sees a panic (e.g. in a
+            call or drop), we need to remember what the error was, while
+            unwinding to a block within that function to cleanup, before
+            reaching [Charon.UllbcAst.UnwindResume], which propagates the error
+            down the callstack. *)
     subst : Charon.Substitute.subst;
         (** In polymorphic mode, the current substitution to be applied to
             generics. See also {!Poly}. *)
@@ -49,6 +56,7 @@ module MonadState = struct
   let empty =
     {
       trace = Trace.empty;
+      errors = [];
       subst = Charon.Substitute.empty_subst;
       generic_layouts = TypeMap.empty;
       alloc_kind = Heap;
@@ -190,6 +198,18 @@ let with_extra_call_trace ?name ~loc ~msg (f : 'a t) : 'a t =
   Call_graph.add_edge cur_trace.name name;
   let+ result, st = f { st with trace = new_trace } in
   (result, { st with trace = cur_trace })
+
+let set_unwind_error err : unit t =
+  let open Syntax in
+  let* st = get_state () in
+  set_state { st with errors = err :: st.errors }
+
+let resume_unwind_error () : (_, Error.with_trace, _) Result.t =
+  let open Syntax in
+  let* st = get_state () in
+  let err, errors = List.take_first st.errors in
+  let* () = set_state { st with errors } in
+  Result.error err
 
 let not_impl ?tip ?issue fmt =
   Fmt.kstr

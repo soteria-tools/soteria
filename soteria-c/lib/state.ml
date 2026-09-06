@@ -12,13 +12,11 @@ module Heap = struct
       (struct
         include Typed
 
-        type t = T.sloc Typed.t [@@deriving show { with_path = false }]
-        type syn = Expr.t [@@deriving show { with_path = false }]
+        include Abstr.With_syn_of_value (struct
+          type ty = T.sloc
 
-        let to_syn (loc : t) : syn = Expr.of_value loc
-        let exprs_syn (loc : syn) : Expr.t list = [ loc ]
-        let learn_eq s l = Consumer.learn_eq s l
-        let subst = Expr.subst
+          let ty () = Typed.t_loc
+        end)
 
         let fresh () =
           match Config.current_mode () with

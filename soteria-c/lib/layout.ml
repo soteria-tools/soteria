@@ -342,7 +342,7 @@ let nondet_c_ty_ (ty : ctype_) : Typed.T.cval Typed.t Csymex.t =
       Csymex.return (Typed.Ptr.mk loc ofs)
   | Basic (Integer ity) ->
       let* size = size_of_int_ty_unsupported ity in
-      let* res = Csymex.nondet (Typed.t_int (8 * size)) in
+      let* res = Csymex.nondet (Typed.t_bv (8 * size)) in
       let constrs = int_constraints ity |> Option.get in
       let+ () = Csymex.assume (constrs res) in
       (res :> Typed.T.cval Typed.t)
