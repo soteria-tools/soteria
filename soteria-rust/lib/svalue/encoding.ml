@@ -119,6 +119,10 @@ end
 (* More explicit than an [ignore] *)
 let gen_decl = ignore
 
+(** Type variables are encoded as bitvectors, so that the solver stays within
+    bitvector theory. *)
+let type_var_bits = 8
+
 let encode_ty sort_of_ty = function
   | TTuple tys -> Tuple_sort.sort (List.map sort_of_ty tys)
   | TEnum adt -> Enum_sort.sort sort_of_ty adt
@@ -126,6 +130,7 @@ let encode_ty sort_of_ty = function
   | TThinPtr -> Thin_ptr_sort.sort ()
   | TFullPtr -> Full_ptr_sort.sort ()
   | TPtrMeta -> Ptr_meta_sort.sort ()
+  | TTypeVar -> t_bits type_var_bits
   | (TUnion _ | TPolyType) as ty ->
       L.failwith "Cannot encode type %a to SMT-LIB" pp_ext_ty ty
 
@@ -186,5 +191,11 @@ let encode_value sort_of_ty encode ~ty = function
   | PtrMeta (MetaLen v) -> Ptr_meta_sort.mk_int (encode v)
   | PtrMeta (MetaVTable v) -> Ptr_meta_sort.mk_ptr (encode v)
   | Unop (op, v) -> encode_unop sort_of_ty ~ty:v.node.ty op (encode v)
+  | TypeVar ty_id ->
+      let id = Types.TypeVarId.to_int ty_id in
+      if id >= 1 lsl type_var_bits then
+        L.failwith "Type variable %a does not fit in %d bits"
+          Types.pp_type_var_id ty_id type_var_bits;
+      bv_k type_var_bits (Z.of_int id)
   | Union _ -> L.failwith "Cannot encode union values to SMT-LIB"
   | PolyVal _ -> L.failwith "Cannot encode polymorphic values to SMT-LIB"

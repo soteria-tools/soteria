@@ -495,6 +495,14 @@ module Adt = struct
   end
 end
 
+module Fns = struct
+  let size_of_fn = String.Interned.intern "size_of"
+
+  let size_of_type_var ty_id =
+    let ty_var = Ext0.mk_type_var ~build:( <| ) ty_id in
+    mk_uninterp size_of_fn [ ty_var ] (t_usize ())
+end
+
 module Syntax = struct
   module U8 = struct
     module Sym_int_syntax = struct
