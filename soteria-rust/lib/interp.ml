@@ -987,7 +987,8 @@ module Make (StateImpl : State.S) = struct
           | [ ptr_op; meta_op ] ->
               let* ptr = eval_operand ptr_op in
               let* meta = eval_operand meta_op in
-              ok (ptr, meta, type_of_operand meta_op)
+              let+ meta_ty = Layout.normalise @@ type_of_operand meta_op in
+              (ptr, meta, meta_ty)
           | _ -> L.failwith "Non-2 arguments in AggregatedRawPtr?"
         in
         let ptr = Typed.Ptr.ptr_of (Typed.cast_ptr_f ptr) in
@@ -1295,7 +1296,7 @@ module Make (StateImpl : State.S) = struct
                 not_impl "can't execute function %a, compilation skipped it"
                   Crate.pp_name name
             | MissingBody ->
-                if Option.is_some (Config.get ()).sysroot then
+                if (Config.get ()).sysroot <> Some "default" then
                   not_impl
                     "can't execute function %a, the function's body was not \
                      found while compiling"
@@ -1305,9 +1306,14 @@ module Make (StateImpl : State.S) = struct
                     Fmt.str "cargo +%s miri setup --print-sysroot"
                       (Lazy.force Frontend_runtime.Cmd.toolchain_version)
                   in
-                  let tip = ("to get a sysroot, run", Some cmd) in
-                  not_impl ~tip ~issue:322
-                    "can't execute function %a, try using a sysroot (--sysroot)"
+                  let tip =
+                    ( "either do not pass `--sysroot default`, or to get a \
+                       sysroot manually, run",
+                      Some cmd )
+                  in
+                  (not_impl ~tip ~issue:322)
+                    "can't execute function %a, try not passing `--sysroot \
+                     default`"
                     Crate.pp_name name
             | ErrorBody err ->
                 not_impl
