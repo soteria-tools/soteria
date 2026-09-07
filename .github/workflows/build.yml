@@ -108,6 +108,19 @@ jobs:
         with:
           path: charon-bin
           key: ${{ runner.os }}-${{ runner.arch }}-charon-${{ env.CHARON_COMMIT_HASH }}
+      - name: Restore cargo cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #[actionpin: v5]
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ../obol/target
+            ../charon/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ env.OBOL_COMMIT_HASH }}-${{ env.CHARON_COMMIT_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+        if: ${{ !steps.restore-charon-cache.outputs.cache-hit || !steps.restore-obol-cache.outputs.cache-hit }}
       # On macOS, we need make
       - name: Install gmake (macOS)
         run: brew install make
