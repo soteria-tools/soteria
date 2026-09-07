@@ -1,7 +1,7 @@
 # Versions managed by scripts/versionsync.py - edit scripts/versions.json to change
 pin-depends: [
-  # [versionsync: CHARON_COMMIT_HASH=207929a6792b527a9748fd728317686e1b0c2f86]
-  ["name_matcher_parser.~dev" "git+https://github.com/soteria-tools/charon#207929a6792b527a9748fd728317686e1b0c2f86"]
-  # [versionsync: CHARON_COMMIT_HASH=207929a6792b527a9748fd728317686e1b0c2f86]
-  ["charon.~dev" "git+https://github.com/soteria-tools/charon#207929a6792b527a9748fd728317686e1b0c2f86"]
+  # [versionsync: CHARON_COMMIT_HASH=0a1af8ffa44afed63b184b4e6d4755d830491154]
+  ["name_matcher_parser.~dev" "git+https://github.com/soteria-tools/charon#0a1af8ffa44afed63b184b4e6d4755d830491154"]
+  # [versionsync: CHARON_COMMIT_HASH=0a1af8ffa44afed63b184b4e6d4755d830491154]
+  ["charon.~dev" "git+https://github.com/soteria-tools/charon#0a1af8ffa44afed63b184b4e6d4755d830491154"]
 ]
