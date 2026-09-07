@@ -7,6 +7,13 @@ module SM_Base = Rustsymex
    STATIC::<usize> and STATIC::<Id::<usize>> point to the same thing, where
    [type Id<T> = T] *)
 
+(* NOTE: globals are lazily initialised: [load] returns [None] when a global is
+   absent, and the interpreter then evaluates the initialiser and allocates a
+   block for it. For statics this is not frame preserving: the binding (and its
+   block) may be in the frame, so in compositional mode [load] should miss
+   instead. For consts and string literals, Rust does not guarantee address
+   identity, so allocating a fresh block per use is sound. *)
+
 type global = String of string | Global of Types.global_decl_ref
 [@@deriving show { with_path = false }, ord, eq]
 
@@ -17,7 +24,7 @@ end
 module Abstr = Soteria.Data.Abstr.M (SM_Base)
 
 module Entry =
-  Soteria.Sym_states.Excl.Make
+  Soteria.Sym_states.Agree.Make
     (SM_Base)
     (Abstr.With_syn_of_value (struct
       type ty = Typed.T.sptr_f

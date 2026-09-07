@@ -13,7 +13,7 @@ end
 module Abstr = Soteria.Data.Abstr.M (SM_Base)
 
 module Entry =
-  Soteria.Sym_states.Excl.Make
+  Soteria.Sym_states.Agree.Make
     (SM_Base)
     (Abstr.With_syn_of_value (struct
       type ty = Typed.T.sint

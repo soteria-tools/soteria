@@ -63,7 +63,7 @@ module M (Symex : Symex.Base) = struct
         {!S_with_syn.fresh}, which uses it to call {!Symex.nondet}. *)
     val ty : unit -> ty Symex.Value.ty
   end) :
-    S_with_syn
+    [%mixins S_with_syn + Sem_eq]
       with type t = V.ty Symex.Value.t
        and type syn = Symex.Value.Expr.t = struct
     type t = V.ty Symex.Value.t
@@ -76,5 +76,6 @@ module M (Symex : Symex.Base) = struct
     let learn_eq = Symex.Consumer.learn_eq
     let exprs_syn s : Symex.Value.Expr.t list = [ s ]
     let subst = Symex.Value.Expr.subst
+    let sem_eq = Symex.Value.sem_eq_untyped
   end
 end

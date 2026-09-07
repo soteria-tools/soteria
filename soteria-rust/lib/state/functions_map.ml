@@ -16,7 +16,6 @@ module Key = struct
   end)
 
   let compare = Typed.compare
-  let sem_eq = Typed.sem_eq
   let simplify = SM_Base.simplify
   let distinct_seq = Typed.distinct_seq
   let to_int = Typed.unique_tag
@@ -55,7 +54,12 @@ let lookup_fn ptr =
      let* st = get_state () in
      match st with
      | Some fn -> Result.ok fn
-     | None -> Result.error `NotAFnPointer)
+     | None ->
+         (* FIXME: this is not sound in compositional reasoning: the binding may
+            be in the frame, so this should be a miss with fix [(loc, ?fn)]. We
+            cannot produce that fix though, since [Fun_kind.t] is not a symbolic
+            value. *)
+         Result.error `NotAFnPointer)
 
 let lookup_fn_loc fn_ref =
   let* fns = get_state () in

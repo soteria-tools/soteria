@@ -7,6 +7,16 @@ module SM_Base = Rustsymex
    and have a [Typed.type_var_id -> Layout] map to store the layout of generic
    types *)
 
+(* NOTE: the const generic IDs used here are only relevant for the environment
+   of the current analysed function. In compositional mode, one must be careful
+   to remap and unify the const generic arguments properly. For example: [rust{
+
+   fn foo<const C1: u32, const C2: u32>() -> (u32, u32) { (C1, C2) }
+
+   fn bar<const C: u32>() -> (u32, u32) { foo::<C, C>() }
+
+   }] *)
+
 module Key = struct
   type t = Types.const_generic_var_id
   [@@deriving show { with_path = false }, ord]
@@ -15,7 +25,7 @@ end
 module Abstr = Soteria.Data.Abstr.M (SM_Base)
 
 module Entry =
-  Soteria.Sym_states.Excl.Make
+  Soteria.Sym_states.Agree.Make
     (SM_Base)
     (Abstr.With_syn_of_value (struct
       type ty = Typed.T.any

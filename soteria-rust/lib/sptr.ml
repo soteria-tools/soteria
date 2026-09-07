@@ -68,7 +68,6 @@ module DecayMap : DecayMapS = struct
     end)
 
     let compare = Typed.compare
-    let sem_eq = Typed.sem_eq
     let distinct_seq = Typed.distinct_seq
     let to_int = unique_tag
     let simplify = Rustsymex.simplify
