@@ -33,8 +33,6 @@ module Entry =
     end))
 
 include Soteria.Sym_states.Pmap.Concrete (SM_Base) (Key) (Entry)
-open SM
-open Syntax
 
 let add_assert_new (g : global) (ptr : Typed.([< T.sptr_f ] t)) =
   wrap g (fun prev ->

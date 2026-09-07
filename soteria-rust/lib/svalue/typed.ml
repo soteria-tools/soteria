@@ -85,15 +85,12 @@ let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
 let t_ptr_f () : _ ty = TExtension TFullPtr
 let t_ptr_t () : _ ty = TExtension TThinPtr
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
-let t_enum adt : _ ty = TExtension (TEnum adt)
-let t_int_bits n = t_bv n
 let t_int_bytes n = t_bv (8 * n)
 let t_int uint = t_int_bytes (size_of_uint_ty uint)
 let t_usize () = t_int Usize
 
 let t_lit : Types.literal_type -> [> T.sint ] ty = function
-  | (TInt _ | TUInt _ | TBool | TChar) as ty ->
-      t_int_bits (size_of_literal_ty ty * 8)
+  | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_bv (size_of_literal_ty ty * 8)
   | TFloat _ -> failwith "t_lit: unexpected float literal type"
 
 let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
@@ -133,7 +130,7 @@ let cast_tuple v =
 let cast_array v =
   match get_ty v with
   | TExtension (TArray _) -> v
-  | _ -> cast_error v (t_array (t_int_bits 1) Z.zero)
+  | _ -> cast_error v (t_array (t_bv 1) Z.zero)
 
 (* The [adt] ref, when given, additionally checks the value is that precise
    enum/union; callers that only know the kind (e.g. the generic store
@@ -403,19 +400,17 @@ module Adt = struct
   let as_tuple v = Ext0.as_tuple ~build:( <| ) v
 
   let as_tuple1 v =
-    match as_tuple v with
-    | [ a ] -> a
-    | _ -> cast_error v (t_tuple [ t_int_bits 1 ])
+    match as_tuple v with [ a ] -> a | _ -> cast_error v (t_tuple [ t_bv 1 ])
 
   let as_tuple2 v =
     match as_tuple v with
     | [ a; b ] -> (a, b)
-    | _ -> cast_error v (t_tuple [ t_int_bits 2 ])
+    | _ -> cast_error v (t_tuple [ t_bv 2 ])
 
   let as_tuple3 v =
     match as_tuple v with
     | [ a; b; c ] -> (a, b, c)
-    | _ -> cast_error v (t_tuple [ t_int_bits 3 ])
+    | _ -> cast_error v (t_tuple [ t_bv 3 ])
 
   let field_of idx v = Ext0.field_of ~build:( <| ) idx v
   let set_field idx f v = Ext0.set_field ~build:( <| ) idx f v

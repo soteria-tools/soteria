@@ -909,8 +909,6 @@ module Make (Borrows : Tree_borrows.T) = struct
     with_functions @@ Functions_map.lookup_fn ptr
 
   let lookup_const_generic id ty =
-    let open Rustsymex in
-    let open Syntax in
     let@ () = with_loc_err ~trace:"Accessing const generic" () in
     with_const_generics @@ Const_generic_env.lookup_const_generic id ty
 

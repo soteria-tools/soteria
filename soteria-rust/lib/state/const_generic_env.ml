@@ -1,6 +1,5 @@
 open Svalue
 open Charon
-open Compo_res
 module SM_Base = Rustsymex
 
 (* TODO: we should move the symbolic layout cache out of Rustsymex into here,
@@ -34,8 +33,6 @@ module Entry =
     end))
 
 include Soteria.Sym_states.Pmap.Concrete (SM_Base) (Key) (Entry)
-open SM
-open Syntax
 
 let lookup_const_generic id ty =
   wrap id

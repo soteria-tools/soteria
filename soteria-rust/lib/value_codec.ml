@@ -653,7 +653,7 @@ let float_to_bv_bits (f : Typed.([< T.sfloat ] t)) :
   | None ->
       let fp = Typed.Float.fp_of f in
       let size = Typed.FloatPrecision.size fp in
-      let* bv = nondet (Typed.t_int_bits size) in
+      let* bv = nondet (Typed.t_bv size) in
       let bv_f = BV.to_float_raw bv in
       (* here we use structural equality rather than float equality; this is
          intended. *)

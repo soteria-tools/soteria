@@ -1,4 +1,3 @@
-open Compo_res
 module SM_Base = Rustsymex
 
 (* NOTE: for the benefit of code modularity, we define thread destructors here.
