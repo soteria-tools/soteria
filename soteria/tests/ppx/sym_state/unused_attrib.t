@@ -33,9 +33,9 @@ Ignored field usage
     type syn = Ser_heap of Heap.syn
   
     let pp_syn ft (s : syn) =
-      match s with
-      | Ser_heap v -> Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_heap" Heap.pp_syn v
-      | _ -> .
+      (match s with
+      | Ser_heap v -> Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_heap" Heap.pp_syn v)
+      [@warning "-unreachable-case"]
   
     let _ = pp_syn
     let show_syn s = Format.asprintf "%a" pp_syn s
@@ -55,7 +55,9 @@ Ignored field usage
     let _ = to_syn
   
     let ins_outs (syn : syn) =
-      match syn with Ser_heap v -> Heap.ins_outs v | _ -> .
+      (match syn with
+      | Ser_heap v -> Heap.ins_outs v)
+      [@warning "-unreachable-case"]
   
     let _ = ins_outs
     let lift_heap_fixes = List.map (fun v -> Ser_heap v)
@@ -77,11 +79,11 @@ Ignored field usage
     let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =
       let open SM.Symex.Producer.Syntax in
       let st = of_opt st in
-      match syn with
+      (match syn with
       | Ser_heap v ->
           let+ heap = Heap.produce v st.heap in
-          to_opt { heap }
-      | _ -> .
+          to_opt { heap })
+      [@warning "-unreachable-case"]
   
     let _ = produce
   
@@ -89,14 +91,14 @@ Ignored field usage
         (t option, syn list) SM.Symex.Consumer.t =
       let open SM.Symex.Consumer.Syntax in
       let st = of_opt st in
-      match syn with
+      (match syn with
       | Ser_heap v ->
           let+ heap =
             let+? fixes = Heap.consume v st.heap in
             lift_heap_fixes fixes
           in
-          to_opt { heap }
-      | _ -> .
+          to_opt { heap })
+      [@warning "-unreachable-case"]
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]

@@ -1,13 +1,23 @@
-Reject manifest syn mismatch
-  $ ../test.sh syn_manifest_mismatch.ml
+Parametrised state components
+  $ ../test.sh polymorphic.ml
   open Prelude
   
-  module Syn = struct
-    type t = Ser_heap of Heap.syn | Ser_steps of Typed.Expr.t
+  module Callback = struct
+    type 'st t = 'st -> 'st Symex.t
+    type _ syn = |
+  
+    let pp ft (_ : _ t) = Fmt.string ft "<callback>"
+    let show x = (Fmt.to_to_string pp) x
+    let pp_syn _ (syn : _ syn) = match syn with _ -> .
+    let show_syn (syn : _ syn) = match syn with _ -> .
+    let to_syn (_ : 'st t) : 'st syn list = []
+    let ins_outs (syn : _ syn) = match syn with _ -> .
+    let produce (syn : _ syn) _ = match syn with _ -> .
+    let consume (syn : _ syn) _ = match syn with _ -> .
   end
   
-  type t = { heap : Heap.t option; steps : int [@sym_state.ignore { empty = 0 }] }
-  [@@deriving sym_state { symex = Symex; syn = Syn.t }]
+  type t = { heap : Heap.t option; callback : t option Callback.t option }
+  [@@deriving sym_state { symex = Symex }]
   
   include struct
     [@@@ocaml.warning "-60"]
@@ -29,30 +39,32 @@ Reject manifest syn mismatch
       | Some v -> Heap.pp fmt v);
       Format.fprintf fmt "@]";
       Format.fprintf fmt ";@ ";
-      Format.fprintf fmt "@[%s =@ <ignored>@]" "steps";
+      Format.fprintf fmt "@[%s =@ " "callback";
+      (match x.callback with
+      | None -> Format.pp_print_string fmt "empty"
+      | Some v -> Callback.pp fmt v);
+      Format.fprintf fmt "@]";
       Format.fprintf fmt "@ }@]"
   
     let _ = pp
     let show x = Format.asprintf "%a" pp x
     let _ = show
   
-    type syn = Syn.t = Ser_heap of Heap.syn
+    type syn = Ser_heap of Heap.syn | Ser_callback of t option Callback.syn
   
     let pp_syn ft (s : syn) =
       (match s with
-      | Ser_heap v -> Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_heap" Heap.pp_syn v)
+      | Ser_heap v -> Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_heap" Heap.pp_syn v
+      | Ser_callback v ->
+          Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_callback" Callback.pp_syn v)
       [@warning "-unreachable-case"]
   
     let _ = pp_syn
     let show_syn s = Format.asprintf "%a" pp_syn s
     let _ = show_syn
-    let of_opt = function None -> { heap = None; steps = 0 } | Some v -> v
+    let of_opt = function None -> { heap = None; callback = None } | Some v -> v
     let _ = of_opt
-  
-    let to_opt = function
-      | { heap = None; steps } when steps = 0 -> None
-      | t -> Some t
-  
+    let to_opt = function { heap = None; callback = None } -> None | t -> Some t
     let _ = to_opt
     let empty = None
     let _ = empty
@@ -61,17 +73,23 @@ Reject manifest syn mismatch
       List.map
         (fun v -> Ser_heap v)
         (Option.fold ~none:[] ~some:Heap.to_syn st.heap)
+      @ List.map
+          (fun v -> Ser_callback v)
+          (Option.fold ~none:[] ~some:Callback.to_syn st.callback)
   
     let _ = to_syn
   
     let ins_outs (syn : syn) =
       (match syn with
-      | Ser_heap v -> Heap.ins_outs v)
+      | Ser_heap v -> Heap.ins_outs v
+      | Ser_callback v -> Callback.ins_outs v)
       [@warning "-unreachable-case"]
   
     let _ = ins_outs
     let lift_heap_fixes = List.map (fun v -> Ser_heap v)
     let _ = lift_heap_fixes
+    let lift_callback_fixes = List.map (fun v -> Ser_callback v)
+    let _ = lift_callback_fixes
   
     let with_heap_sym f =
       let open SM.Syntax in
@@ -84,18 +102,23 @@ Reject manifest syn mismatch
   
     let _ = with_heap_sym
   
-    let with_steps_sym f =
+    let with_callback_sym f =
       let open SM.Syntax in
       let* st_opt = SM.get_state () in
       let st = of_opt st_opt in
-      let { steps; _ } = st in
-      let**^ res, steps = f steps in
-      let* () = SM.set_state (to_opt { st with steps }) in
-      SM.Result.ok res
+      let { callback; _ } = st in
+      let*^ res, callback = f callback in
+      let+ () = SM.set_state (to_opt { st with callback }) in
+      res
   
-    let _ = with_steps_sym
+    let _ = with_callback_sym
     let with_heap f = SM.Result.map_missing lift_heap_fixes (with_heap_sym f)
     let _ = with_heap
+  
+    let with_callback f =
+      SM.Result.map_missing lift_callback_fixes (with_callback_sym f)
+  
+    let _ = with_callback
   
     let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =
       let open SM.Symex.Producer.Syntax in
@@ -103,7 +126,10 @@ Reject manifest syn mismatch
       (match syn with
       | Ser_heap v ->
           let+ heap = Heap.produce v st.heap in
-          to_opt { st with heap })
+          to_opt { st with heap }
+      | Ser_callback v ->
+          let+ callback = Callback.produce v st.callback in
+          to_opt { st with callback })
       [@warning "-unreachable-case"]
   
     let _ = produce
@@ -118,14 +144,15 @@ Reject manifest syn mismatch
             let+? fixes = Heap.consume v st.heap in
             lift_heap_fixes fixes
           in
-          to_opt { st with heap })
+          to_opt { st with heap }
+      | Ser_callback v ->
+          let+ callback =
+            let+? fixes = Callback.consume v st.callback in
+            lift_callback_fixes fixes
+          in
+          to_opt { st with callback })
       [@warning "-unreachable-case"]
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]
-  File "out.ml", lines 36-37, characters 4-28:
-  36 | ....type syn = Syn.t =
-  37 |       | Ser_heap of Heap.syn.
-  Error: This variant or record definition does not match that of type Syn.t
-         An extra constructor, Ser_steps, is provided in the original definition.
-  [1]
+  Success ✅
