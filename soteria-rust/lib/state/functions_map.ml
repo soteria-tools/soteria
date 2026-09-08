@@ -52,14 +52,16 @@ let lookup_fn ptr =
     (let open Entry.SM in
      let open Syntax in
      let* st = get_state () in
-     match st with
-     | Some fn -> Result.ok fn
-     | None ->
-         (* FIXME: this is not sound in compositional reasoning: the binding may
-            be in the frame, so this should be a miss with fix [(loc, ?fn)]. We
-            cannot produce that fix though, since [Fun_kind.t] is not a symbolic
-            value. *)
-         Result.error `NotAFnPointer)
+     match (st, Config.get_mode ()) with
+     | Some fn, _ -> Result.ok fn
+     | None, Whole_program -> Result.error `NotAFnPointer
+     | None, Compositional ->
+         (* FIXME: the binding may be in the frame, so we can't error. this
+            should be a miss with fix [(loc, ?fn)], which we can't produce since
+            [Fun_kind.t] is not a symbolic value. *)
+         Entry.SM.lift
+         @@ Rustsymex.not_impl
+              "tried looking up a function pointer that is not known.")
 
 let lookup_fn_loc fn_ref =
   let* fns = get_state () in
