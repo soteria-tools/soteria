@@ -144,7 +144,7 @@ module DecayMap : DecayMapS = struct
          let open Syntax in
          let* entry = get_state () in
          match entry with
-         | Some { address; exposed } when Stdlib.not exposed && expose ->
+         | Some { address; exposed = false } when expose ->
              let* () = set_state (Some { address; exposed = true }) in
              Result.ok address
          | Some { address; exposed = _ } -> Result.ok address

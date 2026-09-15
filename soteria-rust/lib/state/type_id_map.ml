@@ -33,6 +33,13 @@ let get_type_id (ty : Types.ty) =
     | None ->
         let open Rustsymex in
         let open Syntax in
+        (* FIXME: this is not sound in compositional reasoning: the binding may
+           be in the frame, so this should be a miss with fix [(ty, ?id)] --
+           which [Agree.unwrap] would give us, as the entry type is statically
+           known. The fix would lose the distinctness assumption below, but
+           [produce] re-establishes it. Until then, the id minted here is only
+           known to be distinct from the ids of the local fragment, and may
+           collide with the frame's id for this or for another type. *)
         (* the identifier of a type is opaque; all we know is that distinct
            types have distinct identifiers. *)
         let* id = nondet (Typed.t_lit (TUInt U128)) in

@@ -906,6 +906,30 @@ module Make (Borrows : Tree_borrows.T) = struct
 
   let lookup_fn (ptr : Typed.([< T.sptr_f ] t)) =
     let@ () = with_loc_err ~trace:"Accessing function pointer" () in
+    (* first check whether this is a function pointer *)
+    let* () =
+      with_heap
+        (let open Heap.SM in
+         let open Heap.SM.Syntax in
+         let loc = Typed.Ptr.loc (Typed.Ptr.ptr_of ptr) in
+         let** block =
+           Heap.wrap loc @@ Freeable_block_with_meta.SM.Result.get_state ()
+         in
+         let as_fn =
+           block |> Option.bind (fun (b : Freeable_block_with_meta.t) -> b.info)
+         in
+         match as_fn with
+         | None ->
+             Result.miss_no_fix ()
+               ~reason:"Lookup function pointer with no matching allocation?"
+         | Some { info = Some { kind; _ }; _ } -> (
+             match kind with
+             | Function _ ->
+                 if%sat Typed.Ptr.ofs (Typed.Ptr.ptr_of ptr) ==@ Usize.(0s) then
+                   Result.ok ()
+                 else Result.error `AccessedFnPointer
+             | _ -> Result.error `AccessedFnPointer))
+    in
     with_functions @@ Functions_map.lookup_fn ptr
 
   let lookup_const_generic id ty =

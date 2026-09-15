@@ -26,11 +26,20 @@ module Abstr = Soteria.Data.Abstr.M (SM_Base)
 module Entry =
   Soteria.Sym_states.Agree.Make
     (SM_Base)
-    (Abstr.With_syn_of_value (struct
-      type ty = Typed.T.sptr_f
+    (struct
+      include Abstr.With_syn_of_value (struct
+        type ty = Typed.T.sptr_f
 
-      let ty () = Typed.t_ptr_f ()
-    end))
+        let ty () = Typed.t_ptr_f ()
+      end)
+
+      let sem_eq x y =
+        match Typed.cast_checked2 x y with
+        | Some (x, y, _) -> Typed.sem_eq x y
+        | None ->
+            L.failwith "produced global %a disagrees in type with %a" Typed.ppa
+              x Typed.ppa y
+    end)
 
 include Soteria.Sym_states.Pmap.Concrete (SM_Base) (Key) (Entry)
 
@@ -41,15 +50,6 @@ let add_assert_new (g : global) (ptr : Typed.([< T.sptr_f ] t)) =
 
 let store_str_global str ptr = add_assert_new (String str) ptr
 let store_global g ptr = add_assert_new (Global g) ptr
-
-let load g =
-  wrap g (fun curr ->
-      SM_Base.return
-        ( Ok
-            (curr
-              : Typed.T.sptr_f Typed.t option
-              :> Typed.([> T.sptr_f ] t) option),
-          curr ))
-
+let load g = wrap g @@ Entry.load ()
 let load_str_global str = load (String str)
 let load_global g = load (Global g)
