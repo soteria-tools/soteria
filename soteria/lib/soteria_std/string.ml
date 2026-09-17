@@ -17,6 +17,7 @@ module Interned : sig
 
   val hash : t -> int
   val equal : t -> t -> bool
+  val compare : t -> t -> int
   val pp : Format.formatter -> t -> unit
 end = struct
   module HC = Hc.Make_strong_thread_safe (struct
@@ -28,10 +29,11 @@ end = struct
 
   type t = string Hc.hash_consed
 
-  let intern s = HC.hashcons s
-  let to_string hc = hc.Hc.node
-  let tag hc = hc.Hc.tag
-  let hash s = Int.hash @@ tag s
-  let equal s1 s2 = tag s1 = tag s2
-  let pp ft s = Fmt.string ft (to_string s)
+  let[@inline] intern s = HC.hashcons s
+  let[@inline] to_string hc = hc.Hc.node
+  let[@inline] tag hc = hc.Hc.tag
+  let[@inline] hash s = Int.hash @@ tag s
+  let[@inline] equal s1 s2 = tag s1 = tag s2
+  let[@inline] compare s1 s2 = Int.compare (tag s1) (tag s2)
+  let[@inline] pp ft s = Fmt.string ft (to_string s)
 end

@@ -287,6 +287,7 @@ type ('ghost, 't, 'ty) t_kind =
   | Triop of
       Triop.t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t * ('ghost, 't, 'ty) t
   | Nop of Nop.t * ('ghost, 't, 'ty) t list
+  | Uninterp of String.Interned.t * ('ghost, 't, 'ty) t list
   | Exists of (Var.t * 'ty ty) list * ('ghost, 't, 'ty) t
   | Extension of 't
 
@@ -314,7 +315,16 @@ let[@inline] compare a b = Int.compare a.tag b.tag
     application of {!Make}, so it cannot — and must not — name a concrete ghost.
     Each operation instead receives svalue-level callbacks already specialised
     to the embedding application's ghost, and applies them to the svalues nested
-    inside an extension value. *)
+    inside an extension value.
+
+    Due to how {{!Bv_solver}the solver for [Bv_values]} works and how it decides
+    how to trim path conditions, it is {b unsound} to have non-deterministic or
+    otherwise opaque terms (e.g. uninterpreted functions) as part of your
+    extension's values, as they may not be reliably encoded by the solver. For
+    symbolic variables, you must use [Var], and for uninterpreted functions, you
+    must use [Uninterp], as the solver will treat those specially. Relatedly, it
+    is also {b unsound} to not implement [iter] correctly, as values may not be
+    sent to the solver. *)
 module type Value_ext = sig
   (** [_ super_t] is the enclosing svalue *)
   type ('ghost, 't, 'ty) super_t := ('ghost, 't, 'ty) t
@@ -333,7 +343,16 @@ module type Value_ext = sig
 
   val pp : 'g super_t Fmt.t -> 'g t Fmt.t
   val pp_ty : 'g ty Fmt.t
-  val iter_vars : ('g super_t -> unit) -> 'g t -> unit
+
+  (** [iter x] returns an iterator over all svalues in [x] *)
+  val iter : 'g t -> 'g super_t Iter.t
+
+  (** [is_literal is_literal_super x] is [true] if [x] is a literal: a value
+      built only of constants, that is canonical under hash-consing. It is
+      always sound to return [false] (some queries may just be less optimised).
+  *)
+  val is_literal : ('g super_t -> bool) -> 'g t -> bool
+
   val hash : 'g t -> int
   val hash_ty : 'g ty -> int
 
@@ -396,7 +415,8 @@ module Dummy_ext : Value_ext = struct
   type 'ghost t = | [@@deriving eq, ord]
   type 'ghost ty = | [@@deriving eq, ord]
 
-  let iter_vars _ (x : _ t) = match x with _ -> .
+  let iter (x : _ t) = match x with _ -> .
+  let is_literal _ (x : _ t) = match x with _ -> .
   let hash (x : _ t) = match x with _ -> .
   let hash_ty (x : _ ty) = match x with _ -> .
   let pp _ _ (x : _ t) = match x with _ -> .
@@ -473,11 +493,31 @@ module Make (V : Value_ext) () = struct
   let unique_tag t = t.tag
   let is_bool_ty = [%matches? TBool]
 
-  let[@inline] iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
+  (** [is_literal sv] is [true] if [sv] is a literal: a value built only of
+      constants. Literals are canonical under hash-consing, meaning
+      [is_literal x and is_literal y] implies [equal x y <=> sem_eq x y]. *)
+  let rec is_literal (sv : t) : bool =
+    match sv.node.kind with
+    | Bool _ | Float _ | BitVec _ -> true
+    | Ptr (l, r) -> is_literal l && is_literal r
+    | Seq l -> List.for_all is_literal l
+    | Var _ | Uninterp _ | Unop _ | Binop _ | Triop _ | Nop _ | Exists _ ->
+        false
+    | Extension x -> V.is_literal is_literal x
+
+  (** [iter_deps_ty sv f] iterates over the dependencies of [sv], along with
+      their type: the free variables of [sv] and its uninterpreted function
+      applications. *)
+  let iter_deps_ty (sv : t) (f : Dep.t * ty -> unit) : unit =
     let rec aux ~ignore (sv : t) : unit =
       let aux' = aux ~ignore in
       match sv.node.kind with
-      | Var v -> if Var.Set.mem v ignore then () else f (v, sv.node.ty)
+      | Var v -> if not (Var.Set.mem v ignore) then f (Var v, sv.node.ty)
+      | Uninterp (fn, args) ->
+          if List.for_all is_literal args then f (App (fn, sv.tag), sv.node.ty)
+          else (
+            f (Sym fn, sv.node.ty);
+            List.iter aux' args)
       | Bool _ | Float _ | BitVec _ -> ()
       | Ptr (l, r) | Binop (_, l, r) ->
           aux' l;
@@ -493,9 +533,15 @@ module Make (V : Value_ext) () = struct
             List.fold_left (fun ignore (v, _) -> Var.Set.add v ignore) ignore vs
           in
           aux ~ignore sv
-      | Extension x -> V.iter_vars aux' x
+      | Extension x -> V.iter x aux'
     in
     aux ~ignore:Var.Set.empty sv
+
+  let[@inline] iter_deps (sv : t) (f : Dep.t -> unit) : unit =
+    iter_deps_ty sv (fun (d, _) -> f d)
+
+  let[@inline] iter_vars (sv : t) (f : Var.t * ty -> unit) : unit =
+    iter_deps_ty sv (function Dep.Var v, ty -> f (v, ty) | _ -> ())
 
   let size_of = function
     | TBitVector n -> n
@@ -543,6 +589,8 @@ module Make (V : Value_ext) () = struct
         match range with
         | Some (min, max) -> pf ft "%a(V|%d-%d|)" Nop.pp op min max
         | None -> pf ft "%a(%a)" Nop.pp op (list ~sep:comma pp) l)
+    | Uninterp (f, args) ->
+        pf ft "%a(%a)" String.Interned.pp f (list ~sep:comma pp) args
     | Extension x -> V.pp pp ft x
 
   let[@inline] equal (a : t) (b : t) = Int.equal a.tag b.tag
@@ -590,6 +638,11 @@ module Make (V : Value_ext) () = struct
             (fun acc sv -> combine acc sv.tag)
             (combine (combine h 9) (Nop.hash op))
             l
+      | Uninterp (f, args) ->
+          List.fold_left
+            (fun acc sv -> combine acc sv.tag)
+            (combine (combine h 10) (String.Interned.hash f))
+            args
       | Exists (vs, sv) ->
           List.fold_left
             (fun acc (v, ty) ->
@@ -608,6 +661,10 @@ module Make (V : Value_ext) () = struct
 
   let ( <| ) kind ty : t = Hcons.hashcons { kind; ty }
   let mk_var v ty = Var v <| ty
+
+  (** [mk_uninterp f args ty] applies the uninterpreted function [f] to [args],
+      at return type [ty]. *)
+  let mk_uninterp f args ty = Uninterp (f, args) <| ty
 
   (** We put commutative binary operators in some sort of normal form where
       element with the smallest id is on the LHS, to increase cache hits. *)

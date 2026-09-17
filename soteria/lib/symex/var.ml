@@ -1,7 +1,6 @@
 open Soteria_std
 
 type t = int
-type 'ty iter_vars = (t * 'ty -> unit) -> unit
 
 let hash = Int.hash
 let[@inline] of_int i = i

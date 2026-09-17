@@ -149,6 +149,12 @@ module Make (Typed : Typed_intf.Solver_value) = struct
 
   let encode_var v = atom (Var.to_string v)
 
+  let uninterp_fun f arg_sorts ret_sort =
+    let name = quote ("@" ^ String.Interned.to_string f) in
+    Solvers.Decls.declare ~key:name (fun yield ->
+        yield (declare_fun name arg_sorts ret_sort));
+    name
+
   let rec encode_value (v : Svalue.t) =
     match v.node.kind with
     | Var v -> encode_var v
@@ -184,6 +190,10 @@ module Make (Typed : Typed_intf.Solver_value) = struct
     | Nop (Distinct, vs) ->
         let vs = List.map encode_value_memo vs in
         distinct vs
+    | Uninterp (f, args) ->
+        let arg_sorts = List.map (fun a -> sort_of_ty Hc.(a.node.ty)) args in
+        let name = uninterp_fun f arg_sorts (sort_of_ty v.node.ty) in
+        app_ name (List.map encode_value_memo args)
     | Extension x ->
         Typed.Ext.encode_value sort_of_ty encode_value_memo ~ty:v.node.ty x
 
