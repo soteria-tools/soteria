@@ -218,5 +218,13 @@ let apply_subst apply ~missing_var s = function
       let v, s = apply ~missing_var s v in
       (Unop (op, v), s)
 
+let learn build learn s (x : 'g t) (v : 'g sv) =
+  match x with
+  | Tuple vs ->
+      let enumerated = Iter.of_list vs |> Iter.enumerate in
+      Monad.OptionM.fold_iter enumerated ~init:s ~f:(fun s (i, e) ->
+          learn s e (field_of ~build i v))
+  | _ -> None
+
 let encode_ty = Encoding.encode_ty
 let encode_value = Encoding.encode_value

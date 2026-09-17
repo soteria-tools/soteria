@@ -100,3 +100,10 @@ let group_pairs_by (type k) ?(compare = compare) seq =
 (** Creates an iterator from a function that iterates over bindings. *)
 let of_iter_bindings (f : ('k -> 'v -> unit) -> 'a -> unit) (x : 'a) seq =
   f (fun k v -> seq (k, v)) x
+
+let enumerate (i : 'a t) k =
+  let idx = ref 0 in
+  i (fun x ->
+      let v = (!idx, x) in
+      incr idx;
+      k v)
