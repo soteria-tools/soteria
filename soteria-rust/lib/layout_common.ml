@@ -72,38 +72,38 @@ module Fields_shape = struct
         L.failwith "Shape %a has no variant %a" pp s Types.VariantId.pp_id
           variant
 
-  let rec iter_vars_discriminator (d : discriminator) f : unit =
+  let rec iter_discriminator (d : discriminator) f : unit =
     match d with
     | Invalid | Known _ -> ()
     | Branch { offset; tag_ty = _; children; fallback } ->
-        iter_vars offset f;
+        f offset;
         List.iter
           (fun (from_, to_, child) ->
-            iter_vars from_ f;
-            iter_vars to_ f;
-            iter_vars_discriminator child f)
+            f from_;
+            f to_;
+            iter_discriminator child f)
           children;
-        iter_vars_discriminator fallback f
+        iter_discriminator fallback f
 
-  let iter_vars_tagger (t : tagger) f : unit =
+  let iter_tagger (t : tagger) f : unit =
     match t with
     | None -> ()
     | Some (from_, to_) ->
-        iter_vars from_ f;
-        iter_vars to_ f
+        f from_;
+        f to_
 
-  let rec iter_vars fields f : unit =
+  let rec iter fields (f : 'a Typed.t -> unit) : unit =
     match fields with
     | Primitive -> ()
-    | Arbitrary fields -> Array.iter (fun v -> Typed.iter_vars v f) fields
+    | Arbitrary fields -> Array.iter (fun v -> f v) fields
     | Enum (discr, layouts) ->
-        iter_vars_discriminator discr f;
+        iter_discriminator discr f;
         Array.iter
           (fun (t, v) ->
-            iter_vars_tagger t f;
-            iter_vars v f)
+            iter_tagger t f;
+            iter v f)
           layouts
-    | Array { stride; _ } -> Typed.iter_vars stride f
+    | Array { stride; _ } -> f stride
 end
 
 (* TODO: size should be an [option], for unsized types *)
@@ -115,11 +115,22 @@ type t = {
 }
 [@@deriving show]
 
-let iter_vars ({ size; align; fields; uninhabited = _ } : t)
-    (f : Svalue.Var.t * 'a Typed.ty -> unit) : unit =
-  iter_vars size f;
-  iter_vars align f;
-  Fields_shape.iter_vars fields f
+(** [iter_values l f] applies [f] to every symbolic value in the layout [l]. *)
+let iter_values ({ size; align; fields; uninhabited = _ } : t)
+    (f : 'a. 'a Typed.t -> unit) : unit =
+  f size;
+  f align;
+  Fields_shape.iter fields f
+
+(** Whether the layout is made only of literal values, i.e. it does not depend
+    on the path (through variables or type variables). *)
+let only_has_literals (l : t) : bool =
+  let exception Non_literal in
+  try
+    (iter_values l) (fun t ->
+        if Typed.is_literal t then () else raise_notrace Non_literal);
+    true
+  with Non_literal -> false
 
 (** Whether this layout is an aggregate layout, i.e. it has several fields,
     rather than representing just one atomic value. *)
