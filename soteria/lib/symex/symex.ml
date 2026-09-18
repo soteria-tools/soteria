@@ -1022,6 +1022,7 @@ module Make (Sol : Solver.Mutable_incremental) :
       f =
     let@ () = Effects.Bookkeeping.manage (module Flamegraph) flamegraph in
     let@ () = Effects.Bookkeeping.manage (module Stats.As_ctx) stats in
+    let () = Stats.As_ctx.incr StatKeys.branches in
     let@ () = Stats.As_ctx.add_time_of_to StatKeys.exec_time in
     let@ () = Symex_state.run ~init_fuel:fuel in
     let@ () = Approx.As_ctx.with_mode mode in
