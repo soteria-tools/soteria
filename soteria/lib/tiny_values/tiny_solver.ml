@@ -142,10 +142,6 @@ module Make
 struct
   module Value = Typed
 
-  module Var_counter = Var.Incr_counter_mut (struct
-    let start_at = 1
-  end)
-
   module Solver_state = struct
     (** Inside a slot, we either have an assertion, or a marker indicating that
         all assertions relating to a variable may need to be rechecked -- for

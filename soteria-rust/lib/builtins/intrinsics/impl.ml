@@ -126,7 +126,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
     atomic_warn ();
     let* old = State.load dst t in
     match (t, u) with
-    | (TRawPtr (pointee, _) | TRef (_, pointee, _)), TLiteral (TUInt Usize) ->
+    | (TRawPtr (_, _) | TRef (_, _, _)), TLiteral (TUInt Usize) ->
         let old_fptr = Typed.cast_ptr_f old in
         let old_ptr = Typed.Ptr.ptr_of old_fptr in
         let* new_ptr = ptr_op (Typed.cast_i Usize src) old_ptr in
@@ -951,23 +951,6 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
       Soteria.Terminal.Warn.warn_once is_val_statically_known_ux;
     ok Typed.v_false
 
-  let float_minmax ~is_min ~x ~y : T.sfloat Typed.t ret =
-    let x = (x :> T.sfloat Typed.t) in
-    let y = (y :> T.sfloat Typed.t) in
-    if%sat Typed.Float.is_nan x then ok y
-    else if%sat Typed.Float.is_nan y then ok x
-    else
-      let op = if is_min then ( <.@ ) else ( >.@ ) in
-      ok (Typed.ite (op x y) x y)
-
-  let minnumf16 ~x ~y = float_minmax ~is_min:true ~x ~y
-  let minnumf32 ~x ~y = float_minmax ~is_min:true ~x ~y
-  let minnumf64 ~x ~y = float_minmax ~is_min:true ~x ~y
-  let minnumf128 ~x ~y = float_minmax ~is_min:true ~x ~y
-  let maxnumf16 ~x ~y = float_minmax ~is_min:false ~x ~y
-  let maxnumf32 ~x ~y = float_minmax ~is_min:false ~x ~y
-  let maxnumf64 ~x ~y = float_minmax ~is_min:false ~x ~y
-  let maxnumf128 ~x ~y = float_minmax ~is_min:false ~x ~y
   let prefetch_read_data ~t:_ ~locality:_ ~data:_ = ok ()
   let prefetch_read_instruction ~t:_ ~locality:_ ~data:_ = ok ()
   let prefetch_write_data ~t:_ ~locality:_ ~data:_ = ok ()
@@ -976,7 +959,7 @@ module M (StateM : State.StateM.S) : Intf.M(StateM).Impl = struct
   let ptr_guaranteed_cmp ~t ~ptr ~other =
     Core.eval_ptr_binop ~pointee:t Eq ptr other
 
-  let ptr_mask ~t ~ptr:ptr_full ~mask =
+  let ptr_mask ~t:_ ~ptr:ptr_full ~mask =
     let ptr = Typed.Ptr.ptr_of ptr_full in
     let+ addr = Sptr.decay ptr in
     let addr = addr &@ mask in

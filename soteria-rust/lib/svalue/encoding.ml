@@ -1,5 +1,4 @@
 open Charon
-open Common.Charon_util
 open Soteria.Smt
 open Ext_base
 

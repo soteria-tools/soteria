@@ -234,7 +234,6 @@ module Make (Borrows : Tree_borrows.T) = struct
         (ptr : Typed.([< T.sptr_t ] t))
         (f : [< T.sint ] Typed.t -> ('a, 'err, 'fix list) Block.SM.Result.t) :
         ('a, 'err, syn list) SM.Result.t =
-      let open SM in
       let open SM.Syntax in
       let* () = print_access access ptr in
       let**^ () =
@@ -361,7 +360,6 @@ module Make (Borrows : Tree_borrows.T) = struct
       (parser : offset:T.sint Typed.t -> a Tree_block.Decoder.ParserMonad.t) :
       (a, Error.t, syn list) Result.t =
     let* () = log "load" ptr in
-    let open Block.SM.Syntax in
     let tag = Typed.Ptr.tag_of ptr in
     let@@ () = with_heap in
     let@ offset = Heap.with_ptr ~check_ptr:false Read ptr in
@@ -937,7 +935,6 @@ module Make (Borrows : Tree_borrows.T) = struct
          Heap.syntactic_bindings (Heap.of_opt heap)
          |> Seq.filter_map (fun (k, (v : Freeable_block_with_meta.t)) ->
              (* FIXME: This only works because our addresses are concrete *)
-             let open DecayMap.SM in
              match (v.node, v.info) with
              | Alive _, Some { kind = Heap; trace; _ } -> Some (k, trace)
              | _ -> None)

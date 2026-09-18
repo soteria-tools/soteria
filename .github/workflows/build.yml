@@ -44,6 +44,19 @@ jobs:
       - name: Setup Z3
         uses: cda-tum/setup-z3@7bfe87519f27304460db44284cb8cc59f50f5fc9 #[actionpin: v1]
         id: z3
+      # Install Rust
+      - name: Get Rust toolchain
+        run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 #[actionpin: v1]
+        with:
+          target: x86_64-unknown-linux-gnu,aarch64-apple-darwin
+      # The macOS image ships a Homebrew rustc/cargo in /opt/homebrew/bin, which
+      # comes before rustup's shims on PATH; it ignores rust-toolchain files, so
+      # Charon would be built with stable and fail to find the rustc-dev crates.
+      - name: Prefer rustup over Homebrew Rust (macOS)
+        run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+        if: ${{ runner.os == 'macOS' }}
       - name: Setup OCaml
         uses: ocaml/setup-ocaml@e32b06a3e831ff2fbc6f08cf35be2085e3918014 #[actionpin: v3]
         with:
@@ -81,13 +94,6 @@ jobs:
       - name: Check mld formatting
         run: find . -name "*.mld" -not -path "./_opam/*" -not -path "./_build/*" -exec ocamlformat --doc --check {} \;
 
-      # Install Rust
-      - name: Get Rust toolchain
-        run: curl https://raw.githubusercontent.com/$OBOL_REPO/$OBOL_COMMIT_HASH/rust-toolchain.toml > rust-toolchain
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@46268bd060767258de96ed93c1251119784f2ab6 #[actionpin: v1]
-        with:
-          target: x86_64-unknown-linux-gnu,aarch64-apple-darwin
       # Restore caches for Obol and Charon
       - name: Restore Obol cache
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #[actionpin: v5]
@@ -102,6 +108,19 @@ jobs:
         with:
           path: charon-bin
           key: ${{ runner.os }}-${{ runner.arch }}-charon-${{ env.CHARON_COMMIT_HASH }}
+      - name: Restore cargo cache
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae #[actionpin: v5]
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ../obol/target
+            ../charon/target
+          key: ${{ runner.os }}-${{ runner.arch }}-cargo-${{ env.OBOL_COMMIT_HASH }}-${{ env.CHARON_COMMIT_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-cargo-
+        if: ${{ !steps.restore-charon-cache.outputs.cache-hit || !steps.restore-obol-cache.outputs.cache-hit }}
       # On macOS, we need make
       - name: Install gmake (macOS)
         run: brew install make

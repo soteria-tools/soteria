@@ -1,4 +1,3 @@
-open Iarray.Infix
 open Charon
 open Common.Charon_util
 open Soteria.Bv_values.Svalue
@@ -85,10 +84,8 @@ let of_float_precision :
 let t_ptr () = t_ptr (8 * size_of_uint_ty Usize)
 let t_ptr_f () : _ ty = TExtension TFullPtr
 let t_ptr_t () : _ ty = TExtension TThinPtr
-let t_ptr_meta () : _ ty = TExtension TPtrMeta
 let t_loc () = t_loc (8 * size_of_uint_ty Usize)
 let t_usize () = t_int (8 * size_of_uint_ty Usize)
-let t_enum adt : _ ty = TExtension (TEnum adt)
 
 let t_lit : Types.literal_type -> [> T.sint ] ty = function
   | (TInt _ | TUInt _ | TBool | TChar) as ty -> t_int (size_of_literal_ty ty * 8)
@@ -97,7 +94,6 @@ let t_lit : Types.literal_type -> [> T.sint ] ty = function
 let t_float (ty : Types.float_type) : [< T.sfloat ] ty =
   t_float (float_precision ty)
 
-let t_unit : [> T.tuple ] ty = TExtension (TTuple [])
 let t_tuple tys : [> T.tuple ] ty = TExtension (TTuple tys)
 let t_array ty n : [> T.tuple ] ty = TExtension (TArray (ty, n))
 
@@ -108,8 +104,6 @@ let t_enum adt : [> T.enum ] ty =
 let t_union adt : [> T.union ] ty =
   assert (Common.Charon_util.tyref_is_substituted adt);
   TExtension (TUnion adt)
-
-let t_poly () : [> T.poly ] ty = TExtension TPolyType
 
 let cast_checked ~ty v =
   match cast_checked v ty with Some v -> v | None -> cast_error v ty
@@ -181,21 +175,14 @@ module BitVec = struct
   let u8nz = mk_lit_nz (TUInt U8)
   let u8inz = mki_lit_nz (TUInt U8)
   let u16 = mk_lit (TUInt U16)
-  let u16i = mki_lit (TUInt U16)
-  let u16nz = mk_lit_nz (TUInt U16)
-  let u16inz = mki_lit_nz (TUInt U16)
   let u32 = mk_lit (TUInt U32)
   let u32i = mki_lit (TUInt U32)
   let u32nz = mk_lit_nz (TUInt U32)
   let u32inz = mki_lit_nz (TUInt U32)
   let u64 = mk_lit (TUInt U64)
   let u64i = mki_lit (TUInt U64)
-  let u64nz = mk_lit_nz (TUInt U64)
-  let u64inz = mki_lit_nz (TUInt U64)
   let u128 = mk_lit (TUInt U128)
   let u128i = mki_lit (TUInt U128)
-  let u128nz = mk_lit_nz (TUInt U128)
-  let u128inz = mki_lit_nz (TUInt U128)
   let usize z = mk_lit (TUInt Usize) z
   let usizei z = mki_lit (TUInt Usize) z
   let usizenz z = mk_lit_nz (TUInt Usize) z

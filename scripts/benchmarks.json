@@ -45,7 +45,8 @@
       "name": "Collections-C",
       "path": "benchmark-projects/Collections-C",
       "mode": "capture-db",
-      "no_hyperfine": true
+      "args": ["--solver-timeout", "100"],
+      "runs": 5
     }
   ]
 }

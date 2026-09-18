@@ -19,13 +19,6 @@ module Key = struct
   let pp = pp
 end
 
-module type TagMap = sig
-  type tag := t
-  type 'a t
-
-  val update : tag -> ('a option -> 'a option) -> 'a t -> 'a t
-end
-
 module type TagSet = sig
   type tag := t
   type t

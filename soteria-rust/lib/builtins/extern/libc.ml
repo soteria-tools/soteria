@@ -45,7 +45,7 @@ module M (StateM : State.StateM.S) = struct
           Typed.Adt.unit
     | _ -> failwith "free: invalid arguments"
 
-  let sysconf args =
+  let sysconf _args =
     (* https://man7.org/linux/man-pages/man3/sysconf.3.html
      * It is basically ok to always return the i64 `-1` saying "I don't know"
      *)

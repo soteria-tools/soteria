@@ -51,7 +51,7 @@ let maybe_list_tests (crate, entry_points) =
     in
     print_endline (Yojson.Safe.to_string (`List names))
 
-let do_compilation config target =
+let do_compilation target =
   let compile () = Frontend.parse_ullbc_with_entry_points target in
   let targets = wrap_step "Compiling" compile in
   maybe_list_tests targets;
@@ -59,12 +59,12 @@ let do_compilation config target =
 
 let compile config target =
   let@ () = with_exn_and_config Whole_program config in
-  let _ = do_compilation config target in
+  let _ = do_compilation target in
   Analyses.Outcome.Ok
 
 let exec_wpst config target =
   let@ () = with_exn_and_config Whole_program config in
-  let targets = do_compilation config target in
+  let targets = do_compilation target in
   Analyses.Wpst.exec targets
 
 let build_plugins config =

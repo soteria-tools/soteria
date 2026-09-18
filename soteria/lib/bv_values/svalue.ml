@@ -367,6 +367,20 @@ module type Value_ext = sig
     'g t ->
     'g t * 'subst
 
+  (** [learn build learn_super subst x v] extends [subst] so that it maps the
+      free variables of the extension value [x] in such a way that [x] and the
+      value [v] become equal, or returns [None] if [x] cannot be inverted.
+
+      [learn_super] performs the same operation on the svalues nested in [x],
+      and [build] is as in {!mk}. *)
+  val learn :
+    (('g, 'g t, 'g ty) t_kind -> 'g super_ty -> 'g super_t) ->
+    ('subst -> 'g super_t -> 'g super_t -> 'subst option) ->
+    'subst ->
+    'g t ->
+    'g super_t ->
+    'subst option
+
   (** [encode_ty encode_ty ty] is the SMT-LIB sort representing [ty];
       [encode_ty] encodes the types nested inside it. The encoder may use
       {{!Soteria.Solvers.Decls.declare}[Solvers.Decls.declare]} to introduce
@@ -404,6 +418,7 @@ module Dummy_ext : Value_ext = struct
   let mk _ _ (x : _ t) = match x with _ -> .
   let eval _ (x : _ t) = match x with _ -> .
   let apply_subst _ ~missing_var:_ _ (x : _ t) = match x with _ -> .
+  let learn _ _ _ (x : _ t) _ = match x with _ -> .
   let encode_ty _ (x : _ ty) = match x with _ -> .
   let encode_value _ _ ~ty:_ (x : _ t) = match x with _ -> .
 end

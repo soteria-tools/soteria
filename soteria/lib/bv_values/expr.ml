@@ -184,6 +184,8 @@ struct
           let v_e1 = BitVec.extract size_e2 (size_e2 + size_e1 - 1) v in
           let* s = learn s e1 v_e1 in
           learn s e2 v_e2
+      (* Extension values delegate to the extension declaration. *)
+      | Extension x -> Ext.learn ( <| ) learn s x v
       (* Pointer: Ptr(loc_e, ofs_e) = Ptr(loc_v, ofs_v) => learn each
          component *)
       | Ptr (loc_e, ofs_e) ->
