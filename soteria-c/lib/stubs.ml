@@ -200,7 +200,7 @@ module M (State : State_intf.S) = struct
           in
           let sizeofint = Layout.c_int_size * 8 in
           let* char_int =
-            Typed.cast_checked s2 (Typed.t_int sizeofint)
+            Typed.cast_checked s2 (Typed.t_bv sizeofint)
             |> of_opt_not_impl ~msg:"memset with non-pointer s2"
           in
           let+ count =

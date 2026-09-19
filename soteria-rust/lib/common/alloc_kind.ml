@@ -9,3 +9,5 @@ type t =
   | StaticString
   | AnonConst
 [@@deriving show { with_path = false }]
+
+let as_function = function Function f -> Some f | _ -> None

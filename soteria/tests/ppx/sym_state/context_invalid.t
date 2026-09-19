@@ -42,11 +42,11 @@ Context that doesn't match the monad type
     type syn = Ser_my_int of Excl_int.syn | Ser_my_super_int of Excl_int.syn
   
     let pp_syn ft (s : syn) =
-      match s with
+      (match s with
       | Ser_my_int v -> Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_my_int" Excl_int.pp_syn v
       | Ser_my_super_int v ->
-          Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_my_super_int" Excl_int.pp_syn v
-      | _ -> .
+          Fmt.pf ft "(@[<2>%s@ %a@])" "Ser_my_super_int" Excl_int.pp_syn v)
+      [@warning "-unreachable-case"]
   
     let _ = pp_syn
     let show_syn s = Format.asprintf "%a" pp_syn s
@@ -77,10 +77,10 @@ Context that doesn't match the monad type
     let _ = to_syn
   
     let ins_outs (syn : syn) =
-      match syn with
+      (match syn with
       | Ser_my_int v -> Excl_int.ins_outs v
-      | Ser_my_super_int v -> Excl_int.ins_outs v
-      | _ -> .
+      | Ser_my_super_int v -> Excl_int.ins_outs v)
+      [@warning "-unreachable-case"]
   
     let _ = ins_outs
     let lift_my_int_fixes = List.map (fun v -> Ser_my_int v)
@@ -125,7 +125,7 @@ Context that doesn't match the monad type
     let produce (syn : syn) (st : t option) : t option SM.Symex.Producer.t =
       let open SM.Symex.Producer.Syntax in
       let st = of_opt st in
-      match syn with
+      (match syn with
       | Ser_my_int v ->
           let+ my_int = Excl_int.produce v st.my_int in
           to_opt { st with my_int }
@@ -134,8 +134,8 @@ Context that doesn't match the monad type
             Excl_int.SM.Producer.run_with_state ~state:st.my_int
               (Excl_int.produce v st.my_super_int)
           in
-          to_opt { my_super_int; my_int }
-      | _ -> .
+          to_opt { my_super_int; my_int })
+      [@warning "-unreachable-case"]
   
     let _ = produce
   
@@ -143,7 +143,7 @@ Context that doesn't match the monad type
         (t option, syn list) SM.Symex.Consumer.t =
       let open SM.Symex.Consumer.Syntax in
       let st = of_opt st in
-      match syn with
+      (match syn with
       | Ser_my_int v ->
           let+ my_int =
             let+? fixes = Excl_int.consume v st.my_int in
@@ -158,14 +158,14 @@ Context that doesn't match the monad type
             in
             lift_my_super_int_fixes fixes
           in
-          to_opt { my_super_int; my_int }
-      | _ -> .
+          to_opt { my_super_int; my_int })
+      [@warning "-unreachable-case"]
   
     let _ = consume
   end [@@ocaml.doc "@inline"] [@@merlin.hide]
-  File "out.ml", line 108, characters 16-52:
-  108 |                 (Excl_int.produce v st.my_super_int)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "out.ml", line 108, characters 18-54:
+  108 |                   (Excl_int.produce v st.my_super_int)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   Error: This expression has type
            Prelude.Excl_int.SM.st Prelude.Excl_int.SM.Symex.Producer.t =
              Prelude.Excl_int.SM.st

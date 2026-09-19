@@ -28,7 +28,12 @@ type ignored_field = {
   pp : expression option;
 }
 
-type managed_field = { sym_state : Longident.t; context : context_attr option }
+type managed_field = {
+  sym_state : Longident.t;
+  args : core_type list;
+  context : context_attr option;
+}
+
 type field_kind = Managed of managed_field | Ignored of ignored_field
 type field = { name : string; kind : field_kind; loc : Location.t }
 
@@ -119,7 +124,7 @@ let parse_mod_t_option (ct : core_type) =
   match ct.ptyp_desc with
   | Ptyp_constr ({ txt = Lident "option"; _ }, [ { ptyp_desc; _ } ]) -> (
       match ptyp_desc with
-      | Ptyp_constr ({ txt = Ldot (path, "t"); _ }, []) -> path
+      | Ptyp_constr ({ txt = Ldot (path, "t"); _ }, args) -> (path, args)
       | _ -> err "expects record fields of type <Module>.t option")
   | _ -> err "expects record fields of type <Module>.t option"
 
@@ -129,9 +134,9 @@ let mk_field ld =
     match Attributes.Ignore.find_opt ld with
     | Some ignored -> Ignored ignored
     | None ->
-        let sym_state = parse_mod_t_option ld.pld_type in
+        let sym_state, args = parse_mod_t_option ld.pld_type in
         let context = Attributes.Context.find_opt ld in
-        Managed { sym_state; context }
+        Managed { sym_state; args; context }
   in
   { name = ld.pld_name.txt; kind; loc = ld.pld_loc }
 
@@ -172,16 +177,18 @@ let match_on_syn fields f e =
         case ~lhs ~guard:None ~rhs)
       (managed_fields fields)
   in
-  (* we add an irrefutable case at the end, so that the pattern match is still
-     valid if there are no managed fields. *)
-  let irrefutable =
-    case ~lhs:[%pat? _] ~guard:None ~rhs:(pexp_unreachable ())
+  (* add a default case for when no managed fields are present *)
+  let cases =
+    if List.is_empty cases then
+      [ case ~lhs:[%pat? _] ~guard:None ~rhs:(pexp_unreachable ()) ]
+    else cases
   in
-  pexp_match e (cases @ [ irrefutable ])
+  (* Silence unreachable warns for uninhabited [syn] *)
+  [%expr [%e pexp_match e cases] [@warning "-unreachable-case"]]
 
 let syn_type_item (syn_ty : longident option) fields =
-  let syn_ctor_decl (field, { sym_state; _ }) =
-    let arg_ty = ptyp_constr_dot sym_state "syn" [] in
+  let syn_ctor_decl (field, { sym_state; args; _ }) =
+    let arg_ty = ptyp_constr_dot sym_state "syn" args in
     constructor_declaration ~name:(Names.syn field.name)
       ~args:(Pcstr_tuple [ arg_ty ]) ~res:None
   in

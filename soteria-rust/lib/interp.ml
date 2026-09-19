@@ -1171,7 +1171,7 @@ module Make (StateImpl : State.S) = struct
             let block = UllbcAst.BlockId.nth body.body target in
             exec_block ~body block)
           ~fe:(fun err ->
-            let* () = State.add_error err in
+            let* () = set_unwind_error err in
             [%l.info "Unwinding from %a" Crate.pp_fn_operand func];
             let block = UllbcAst.BlockId.nth body.body on_unwind in
             exec_block ~body block)
@@ -1233,7 +1233,7 @@ module Make (StateImpl : State.S) = struct
             [%l.info "Dropped with %a" Fun_kind.pp drop_fn];
             exec_block ~body block)
           ~fe:(fun err ->
-            let* () = State.add_error err in
+            let* () = set_unwind_error err in
             [%l.info "Unwinding drop from %a" Fun_kind.pp drop_fn];
             let block = UllbcAst.BlockId.nth body.body on_unwind in
             exec_block ~body block)
@@ -1244,7 +1244,7 @@ module Make (StateImpl : State.S) = struct
         | Panic name ->
             let name = Option.map (Fmt.to_to_string Crate.pp_name) name in
             error (`Panic name))
-    | UnwindResume -> State.pop_error ()
+    | UnwindResume -> resume_unwind_error ()
     | TAssert _ -> L.failwith "Charon desugars assert terminators for us"
     | InlineAsm _ -> not_impl "inline assembly is not supported"
 

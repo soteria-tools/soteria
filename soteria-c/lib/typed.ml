@@ -12,7 +12,7 @@ let c_int_bits =
 
 let t_loc = t_loc ptr_bits
 let t_ptr = t_ptr ptr_bits
-let t_usize = t_int ptr_bits
+let t_usize = t_bv ptr_bits
 
 module BitVec = struct
   include BitVec
