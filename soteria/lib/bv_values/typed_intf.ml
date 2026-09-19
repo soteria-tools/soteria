@@ -99,6 +99,10 @@ module type S = sig
   val untype_type : 'a ty -> Svalue.ty
   val kind : 'a t -> Svalue.t_kind
   val mk_var : Var.t -> 'a ty -> 'a t
+
+  val mk_uninterp :
+    Soteria_std.String.Interned.t -> Svalue.t list -> 'a ty -> 'a t
+
   val iter_vars : 'a t -> (Var.t * 'b ty -> unit) -> unit
   val type_ : Svalue.t -> 'a t
   val type_checked : Svalue.t -> 'a ty -> 'a t option
